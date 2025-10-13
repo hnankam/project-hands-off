@@ -945,7 +945,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
         return null;
       }
       
-      console.log('[useCoAgentStateRender] Rendering inline with state:', state);
+      //console.log('[useCoAgentStateRender] Rendering inline with state:', state);
       
       // Render the TaskProgressCard inline (without controls - read-only)
       // New cards start expanded and non-historical

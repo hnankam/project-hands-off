@@ -323,14 +323,25 @@ export const CustomUserMessage: React.FC<{ message?: any }> = ({ message }) => {
           className="copilotKitMessageControls"
           style={{
             position: 'absolute',
-            bottom: '-0.40rem',
+            bottom: '0rem',
             right: '0.5rem',
             display: 'flex',
+            maxHeight: '100%',
             gap: '0.25rem',
             opacity: isHovered ? 1 : 0,
             visibility: isHovered ? 'visible' : 'hidden',
             transition: 'opacity 0.2s ease-in-out, visibility 0.2s ease-in-out',
             zIndex: 10000,
+            // Add background with left-side fade
+            background: isLight 
+              ? 'linear-gradient(to right, rgba(229, 231, 235, 0) 0%, rgba(229, 231, 235, 0.8) 20%, rgba(229, 231, 235, 0.95) 40%, rgb(229, 231, 235) 60%)'
+              : 'linear-gradient(to right, rgba(21, 28, 36, 0) 0%, rgba(21, 28, 36, 0.8) 20%, rgba(21, 28, 36, 0.95) 40%, rgb(21, 28, 36) 60%)',
+            paddingLeft: '3rem',
+            // paddingRight: '0.5rem',
+            paddingTop: '0.25rem',
+            // paddingBottom: '-0.25rem',
+            borderRadius: '6px',
+            marginRight: '-0.5rem',
           }}
         >
           {/* Copy Button */}
@@ -353,7 +364,6 @@ export const CustomUserMessage: React.FC<{ message?: any }> = ({ message }) => {
               alignItems: 'center',
               justifyContent: 'center',
               transition: 'all 0.2s ease',
-              margin: '0px',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'scale(1.15)';

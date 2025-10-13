@@ -611,6 +611,14 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   height: 25px !important;
 }
 
+.copilotKitUserMessage > .copilotKitMessageControls > .copilotKitMessageControlButton {
+  margin-bottom: 0rem !important;
+}
+
+.dark .copilotKitUserMessage > .copilotKitMessageControls > .copilotKitMessageControlButton {
+  margin-bottom: 0rem !important;
+}
+
 .copilotKitAssistantMessage > .copilotKitMessageControls > .copilotKitMessageControlButton > svg {
   min-width: 14px !important;
   min-height: 14px !important;
