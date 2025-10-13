@@ -337,8 +337,8 @@ export const CustomUserMessage: React.FC<{ message?: any }> = ({ message }) => {
               ? 'linear-gradient(to right, rgba(229, 231, 235, 0) 0%, rgba(229, 231, 235, 0.8) 20%, rgba(229, 231, 235, 0.95) 40%, rgb(229, 231, 235) 60%)'
               : 'linear-gradient(to right, rgba(21, 28, 36, 0) 0%, rgba(21, 28, 36, 0.8) 20%, rgba(21, 28, 36, 0.95) 40%, rgb(21, 28, 36) 60%)',
             paddingLeft: '3rem',
-            // paddingRight: '0.5rem',
-            paddingTop: '0.25rem',
+            paddingRight: '0.5rem',
+            paddingTop: '0.35rem',
             // paddingBottom: '-0.25rem',
             borderRadius: '6px',
             marginRight: '-0.5rem',
