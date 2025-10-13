@@ -67,13 +67,13 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
 
   // Debug logging
   React.useEffect(() => {
-    console.log('[TaskProgressCard] Component rendered');
-    console.log('[TaskProgressCard] State:', state);
-    console.log('[TaskProgressCard] setState available:', !!setState);
-    console.log('[TaskProgressCard] Steps:', state.steps);
+    // console.log('[TaskProgressCard] Component rendered');
+    // console.log('[TaskProgressCard] State:', state);
+    // console.log('[TaskProgressCard] setState available:', !!setState);
+    // console.log('[TaskProgressCard] Steps:', state.steps);
     if (state.steps) {
       state.steps.forEach((step, idx) => {
-        console.log(`[TaskProgressCard] Step ${idx}:`, step.description, 'status:', step.status);
+        //console.log(`[TaskProgressCard] Step ${idx}:`, step.description, 'status:', step.status);
       });
     }
   }, [state, setState]);

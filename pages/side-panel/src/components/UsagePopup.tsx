@@ -53,10 +53,10 @@ export const UsagePopup: FC<UsagePopupProps> = ({
 
   return (
     <>
-      {/* Simple Popup */}
+      {/* Compact Popup */}
       <div 
-        className="fixed top-12 left-4 z-50 animate-slideDown"
-        style={{ maxWidth: '320px' }}
+        className="fixed top-10 left-3 z-50 animate-slideDown"
+        style={{ maxWidth: '300px' }}
       >
         <div
           ref={popupRef}
@@ -75,12 +75,12 @@ export const UsagePopup: FC<UsagePopupProps> = ({
             </h3>
             <button
               onClick={onClose}
-              className={`p-0.5 rounded transition-colors ${
+              className={`p-1 rounded transition-colors ${
                 isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800'
               }`}
             >
               <svg
-                className={`w-4 h-4 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}
+                className={`w-3.5 h-3.5 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -96,7 +96,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
           </div>
 
           {/* Content */}
-          <div className="p-3 space-y-3">
+          <div className="p-3 space-y-2.5">
             <UsageDisplay
               lastUsage={lastUsage}
               cumulativeUsage={cumulativeUsage}
@@ -108,14 +108,14 @@ export const UsagePopup: FC<UsagePopupProps> = ({
             {/* Additional Info */}
             {lastUsage && (
               <div
-                className={`rounded p-2 text-xs ${
+                className={`rounded p-2 text-[11px] ${
                   isLight ? 'bg-gray-50 border border-gray-200' : 'bg-gray-800 border border-gray-700'
                 }`}
               >
                 <div className={`font-medium mb-1.5 ${isLight ? 'text-gray-900' : 'text-white'}`}>
                   Last Request
                 </div>
-                <div className={`space-y-0.5 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
+                <div className={`space-y-1 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
                   <div className="flex justify-between gap-2">
                     <span>Agent:</span>
                     <span className="font-mono">{lastUsage.agent_type}</span>
@@ -137,14 +137,14 @@ export const UsagePopup: FC<UsagePopupProps> = ({
             {/* Average Stats */}
             {cumulativeUsage.requestCount > 1 && (
               <div
-                className={`rounded p-2 text-xs ${
+                className={`rounded p-2 text-[11px] ${
                   isLight ? 'bg-blue-50 border border-blue-200' : 'bg-blue-900/20 border border-blue-700'
                 }`}
               >
                 <div className={`font-medium mb-1.5 ${isLight ? 'text-blue-900' : 'text-blue-300'}`}>
                   Averages
                 </div>
-                <div className={`space-y-0.5 ${isLight ? 'text-blue-700' : 'text-blue-400'}`}>
+                <div className={`space-y-1 ${isLight ? 'text-blue-700' : 'text-blue-400'}`}>
                   <div className="flex justify-between gap-2">
                     <span>Per Request:</span>
                     <span className="font-mono">
@@ -162,7 +162,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
                   onReset();
                   onClose();
                 }}
-                className={`w-full px-2 py-1.5 rounded text-xs font-medium transition-colors ${
+                className={`w-full px-2 py-1.5 rounded text-[11px] font-medium transition-colors ${
                   isLight
                     ? 'text-red-600 hover:bg-red-50 border border-red-200'
                     : 'text-red-400 hover:bg-red-900/30 border border-red-700'

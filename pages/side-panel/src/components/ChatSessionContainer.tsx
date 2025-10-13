@@ -142,6 +142,80 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
     }
   });
   
+  // Panel visibility hook (must be called before useMessagePersistence)
+  const {
+    isPanelVisible,
+    setIsPanelVisible,
+    isPanelInteractive,
+    setIsPanelInteractive,
+    isPanelActive,
+    panelJustOpenedRef
+  } = usePanelVisibility({
+    isActive,
+    onVisibilityChange: (isVisible) => {
+      if (!isVisible) {
+        debug.log('[ChatSessionContainer] Panel hidden, clearing content cache');
+        clearCache();
+      }
+    },
+    onClickInPanel: (event) => {
+      // Handle click logic for content refresh and interaction
+      const target = event?.target as HTMLElement;
+      if (target) {
+        const shouldSkipFocus = 
+          target.closest('button') || 
+          target.closest('input') || 
+          target.closest('textarea') ||
+          target.closest('a') ||
+          target.closest('[role="tab"]') ||
+          target.closest('[role="button"]') ||
+          target.closest('[data-session-id]') ||
+          target.closest('.session-tabs-scroll') ||
+          target.closest('[contenteditable="true"]') ||
+          target.matches('button') ||
+          target.matches('input') ||
+          target.matches('textarea') ||
+          target.matches('[contenteditable="true"]') ||
+          (target.className && typeof target.className === 'string' && 
+           (target.className.includes('session') || 
+            target.className.includes('cursor-pointer')));
+          
+        if (shouldSkipFocus) {
+          if (!isPanelInteractive) {
+            setIsPanelInteractive(true);
+            debug.log('[ChatSessionContainer] User clicked in panel, marking as interactive (no auto-focus)');
+          }
+          return;
+        }
+      }
+      
+      // User clicked inside the panel - mark as interactive
+      const wasInactive = !isPanelInteractive;
+      
+      if (wasInactive) {
+        setIsPanelInteractive(true);
+        debug.log('[ChatSessionContainer] User clicked in panel, marking as interactive');
+        
+        // Clear stale indicator if showing
+        if (showStaleIndicator) {
+          setShowStaleIndicator(false);
+        }
+        
+        // Simple auto-focus attempt
+        setTimeout(() => {
+          const input = document.querySelector('.copilotKitInput textarea') as HTMLTextAreaElement;
+          if (input && input.offsetParent !== null) {
+            input.focus();
+            debug.log('[ChatSessionContainer] ✅ Auto-focused chat input');
+          }
+        }, TIMING_CONSTANTS.AUTO_FOCUS_DELAY);
+      }
+    },
+    onPanelBlur: () => {
+      debug.log('[ChatSessionContainer] Panel lost focus');
+    }
+  });
+  
   // Message persistence
   const {
     storedMessages,
@@ -153,6 +227,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
   } = useMessagePersistence({
     sessionId,
     isActive,
+    isPanelVisible,
     saveMessagesRef,
     restoreMessagesRef
   });
@@ -294,77 +369,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [switchingStep, shouldLoadMessagesAfterSwitch]);
-  
-  // Panel visibility management
-  const {
-    isPanelVisible,
-    setIsPanelVisible,
-    isPanelInteractive,
-    setIsPanelInteractive,
-    isPanelActive,
-    panelJustOpenedRef
-  } = usePanelVisibility({
-    isActive,
-    onVisibilityChange: (isVisible) => {
-      if (!isVisible) {
-        debug.log('[ChatSessionContainer] Panel hidden, clearing content cache');
-        clearCache();
-      }
-    },
-    onClickInPanel: (event) => {
-      // Handle click logic for content refresh and interaction
-      const target = event?.target as HTMLElement;
-      if (target) {
-        const shouldSkipFocus = 
-          target.closest('button') || 
-          target.closest('input') || 
-          target.closest('textarea') ||
-          target.closest('a') ||
-          target.closest('[role="tab"]') ||
-          target.closest('[role="button"]') ||
-          target.closest('[data-session-id]') ||
-          target.closest('.session-tabs-scroll') ||
-          target.closest('[contenteditable="true"]') ||
-          target.matches('button') ||
-          target.matches('input') ||
-          target.matches('textarea') ||
-          target.matches('[contenteditable="true"]') ||
-          (target.className && typeof target.className === 'string' && 
-           (target.className.includes('session') || 
-            target.className.includes('cursor-pointer')));
-          
-        if (shouldSkipFocus) {
-          if (!isPanelInteractive) {
-            setIsPanelInteractive(true);
-            debug.log('[ChatSessionContainer] User clicked in panel, marking as interactive (no auto-focus)');
-          }
-          return;
-        }
-      }
-      
-      // User clicked inside the panel - mark as interactive
-      const wasInactive = !isPanelInteractive;
-      
-      if (wasInactive) {
-        setIsPanelInteractive(true);
-        debug.log('[ChatSessionContainer] User clicked in panel, marking as interactive');
-        
-        // Clear stale indicator if showing
-        if (showStaleIndicator) {
-          setShowStaleIndicator(false);
-        }
-        
-        // Simple auto-focus attempt
-        setTimeout(() => {
-          const input = document.querySelector('.copilotKitInput textarea') as HTMLTextAreaElement;
-          if (input && input.offsetParent !== null) {
-            input.focus();
-            debug.log('[ChatSessionContainer] ✅ Auto-focused chat input');
-          }
-        }, TIMING_CONSTANTS.AUTO_FOCUS_DELAY);
-      }
-    }
-  });
   
   // Content refresh hook
   const { triggerManualRefresh } = useContentRefresh({

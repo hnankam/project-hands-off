@@ -17,6 +17,7 @@ export interface MessageData {
 export interface UseMessagePersistenceProps {
   sessionId: string;
   isActive: boolean;
+  isPanelVisible?: boolean;
   saveMessagesRef: React.MutableRefObject<(() => MessageData) | null>;
   restoreMessagesRef: React.MutableRefObject<((messages: any[]) => void) | null>;
 }
@@ -41,6 +42,7 @@ export interface UseMessagePersistenceReturn {
 export const useMessagePersistence = ({
   sessionId,
   isActive,
+  isPanelVisible = true,
   saveMessagesRef,
   restoreMessagesRef
 }: UseMessagePersistenceProps): UseMessagePersistenceReturn => {
@@ -146,29 +148,58 @@ export const useMessagePersistence = ({
       setStoredMessages(messages);
       setStoredFilteredMessagesCount(countFilteredMessages(messages));
       debug.log('[useMessagePersistence] Messages loaded successfully');
+      
+      // Verify messages were actually set after a short delay
+      // If they were cleared, try restoring again (handles CopilotKit initialization race)
+      setTimeout(() => {
+        // Check if we have access to the current messages through saveMessagesRef
+        if (saveMessagesRef.current) {
+          const currentMessageData = saveMessagesRef.current();
+          if (currentMessageData.allMessages.length === 0 && messages.length > 0) {
+            debug.log('[useMessagePersistence] Messages were cleared after restore, retrying...');
+            if (restoreMessagesRef.current) {
+              restoreMessagesRef.current(messages);
+              debug.log('[useMessagePersistence] Messages re-restored successfully');
+            }
+          }
+        }
+      }, 200);
     } catch (error) {
       debug.error('[useMessagePersistence] Failed to load messages:', error);
     }
-  }, [sessionId, restoreMessagesRef, countFilteredMessages]);
+  }, [sessionId, restoreMessagesRef, saveMessagesRef, countFilteredMessages]);
 
-  // Auto-restore messages when session becomes active (only once per session open)
+  // Auto-restore messages when session becomes active or panel is reopened
   const hasAutoRestoredRef = useRef(false);
+  const panelOpenTimeRef = useRef<number>(0);
+  
+  // Track when panel becomes visible
+  useEffect(() => {
+    if (isPanelVisible && isActive) {
+      panelOpenTimeRef.current = Date.now();
+    }
+  }, [isPanelVisible, isActive]);
   
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | undefined;
     
-    // Only auto-restore once when session becomes active
-    if (isActive && !hasAutoRestoredRef.current) {
+    // Auto-restore when:
+    // 1. Session becomes active and hasn't been restored yet
+    // 2. Panel becomes visible again (reopened) for an active session
+    if (isActive && isPanelVisible && !hasAutoRestoredRef.current) {
       hasAutoRestoredRef.current = true;
       
-      // PERFORMANCE: Reduced delay from 100ms to 50ms for faster session switching
+      // Wait longer to ensure CopilotKit has fully initialized before restoring
+      // This prevents CopilotKit from overriding restored messages with empty thread state
       timeoutId = setTimeout(() => {
+        debug.log('[useMessagePersistence] Auto-restore triggered - waiting for CopilotKit initialization');
         handleLoadMessages();
-      }, TIMING_CONSTANTS.AUTO_RESTORE_DELAY);
+      }, 500); // Increased from 50ms to 500ms to allow CopilotKit to initialize
     }
     
-    // Reset flag when session becomes inactive so it can auto-restore when reactivated
-    if (!isActive) {
+    // Reset flag when session becomes inactive OR panel becomes hidden
+    // This allows auto-restore to trigger again when reactivated or panel reopens
+    if (!isActive || !isPanelVisible) {
       hasAutoRestoredRef.current = false;
     }
     
@@ -177,7 +208,39 @@ export const useMessagePersistence = ({
         clearTimeout(timeoutId);
       }
     };
-  }, [isActive, handleLoadMessages]);
+  }, [isActive, isPanelVisible, handleLoadMessages]);
+  
+  // Monitor for unexpected message clearing shortly after panel opens
+  // and auto-restore if it happens (handles CopilotKit race conditions)
+  useEffect(() => {
+    if (!saveMessagesRef.current || !restoreMessagesRef.current) return;
+    if (!isActive || !isPanelVisible) return;
+    
+    const timeSincePanelOpen = Date.now() - panelOpenTimeRef.current;
+    // Only monitor for the first 2 seconds after panel opens
+    if (timeSincePanelOpen > 2000) return;
+    
+    const intervalId = setInterval(() => {
+      if (saveMessagesRef.current && restoreMessagesRef.current && storedMessages.length > 0) {
+        const currentMessageData = saveMessagesRef.current();
+        // If messages were unexpectedly cleared, restore them
+        if (currentMessageData.allMessages.length === 0) {
+          debug.log('[useMessagePersistence] Messages unexpectedly cleared, auto-restoring...');
+          restoreMessagesRef.current(storedMessages);
+        }
+      }
+    }, 300); // Check every 300ms
+    
+    // Stop monitoring after 2 seconds
+    const stopTimeoutId = setTimeout(() => {
+      clearInterval(intervalId);
+    }, 2000);
+    
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(stopTimeoutId);
+    };
+  }, [isActive, isPanelVisible, storedMessages, saveMessagesRef, restoreMessagesRef]);
 
   return {
     storedMessages,

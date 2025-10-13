@@ -233,7 +233,7 @@ input:focus {
   max-width: 100% !important; /* Allow full width instead of 80% */
   width: 100% !important; /* Force full width */
   margin-bottom: 0 !important;
-  margin-top: 0.25rem !important;
+  margin-top: 1rem !important;
 }
 
 .copilotKitAssistantMessage {
@@ -249,13 +249,12 @@ input:focus {
 
 .copilotKitMessageControlButton {
   color: black !important;
-  margin-bottom: 0.5rem !important;
+  margin-bottom: 0.75rem !important;
 }
 
 .dark .copilotKitMessageControlButton {
   color: #ffffff !important;
-  margin-bottom: 0.5rem !important;
-
+  margin-bottom: 0.75rem !important;
 }
 
 .copilotKitActivityDot {
@@ -263,17 +262,9 @@ input:focus {
   margin-top: 0.5rem !important;
 }
 
-.copilotKitInputControlButton {
-  color: black !important;
-}
-
 .dark .copilotKitActivityDot{
   background-color: #ffffff !important;
   margin-top: 0.5rem !important;
-}
-
-.dark .copilotKitInputControlButton {
-  color: #ffffff !important;
 }
 
 .copilotKitInput {
@@ -606,4 +597,30 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   height: 0 !important;
   overflow: hidden !important;
   pointer-events: none !important;
+}
+
+.copilotKitInputControlButton {
+  color: black !important;
+  width: 25px !important;
+  height: 25px !important;
+}
+
+.dark .copilotKitInputControlButton {
+  color: #ffffff !important;
+  width: 25px !important;
+  height: 25px !important;
+}
+
+.copilotKitAssistantMessage > .copilotKitMessageControls > .copilotKitMessageControlButton > svg {
+  min-width: 14px !important;
+  min-height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+}
+
+.dark .copilotKitAssistantMessage > .copilotKitMessageControls > .copilotKitMessageControlButton > svg {
+  min-width: 14px !important;
+  min-height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
 }

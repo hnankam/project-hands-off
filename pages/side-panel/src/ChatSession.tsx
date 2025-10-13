@@ -49,6 +49,20 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
     getCurrentTabTitle
   } = useTabManagement({ isActive });
   
+  // OPTIMIZATION: Use panel visibility hook first (needed by message persistence)
+  const {
+    isPanelVisible,
+    setIsPanelVisible,
+    isPanelInteractive,
+    setIsPanelInteractive,
+    isPanelActive,
+    panelJustOpenedRef
+  } = usePanelVisibility({
+    isActive,
+    onVisibilityChange: (isVisible) => handleVisibilityChangeCallback.current?.(isVisible),
+    onClickInPanel: (event) => handleClickInPanelCallback.current?.(event)
+  });
+  
   // OPTIMIZATION: Use message persistence hook to consolidate save/load logic
   const {
     storedMessages,
@@ -60,6 +74,7 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
   } = useMessagePersistence({
     sessionId,
     isActive,
+    isPanelVisible,
     saveMessagesRef,
     restoreMessagesRef
   });
@@ -88,20 +103,6 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
   // Forward declarations for callbacks (defined below after dependencies)
   const handleVisibilityChangeCallback = useRef<((isVisible: boolean) => void) | null>(null);
   const handleClickInPanelCallback = useRef<((event?: Event) => void) | null>(null);
-  
-  // OPTIMIZATION: Use panel visibility hook to consolidate visibility tracking
-  const {
-    isPanelVisible,
-    setIsPanelVisible,
-    isPanelInteractive,
-    setIsPanelInteractive,
-    isPanelActive,
-    panelJustOpenedRef
-  } = usePanelVisibility({
-    isActive,
-    onVisibilityChange: (isVisible) => handleVisibilityChangeCallback.current?.(isVisible),
-    onClickInPanel: (event) => handleClickInPanelCallback.current?.(event)
-  });
   
   // Track if content is stale and user should refresh
   const [showStaleIndicator, setShowStaleIndicator] = useState(false);

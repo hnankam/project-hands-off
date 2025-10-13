@@ -9,6 +9,7 @@ import { AgentState } from '../lib/types';
 import { ProverbsCard } from './Proverbs';
 import { MoonCard } from './Moon';
 import { TaskProgressCard, AgentStepState } from './TaskProgressCard';
+import { CustomUserMessage } from './CustomUserMessage';
 import { z } from "zod";
 
 import { 
@@ -148,10 +149,15 @@ export const ChatInner: FC<ChatInnerProps> = ({
   useEffect(() => {
     restoreMessagesRef.current = (messagesToRestore: any[]) => {
       if (messagesToRestore && messagesToRestore.length > 0) {
+        debug.log(`[ChatInner] Restoring ${messagesToRestore.length} messages`);
         setMessages(messagesToRestore);
+        // Log current messages after a short delay to verify they were set
+        setTimeout(() => {
+          debug.log(`[ChatInner] Messages after restore: ${messages.length}`);
+        }, 100);
       }
     };
-  }, [setMessages, restoreMessagesRef]);
+  }, [setMessages, restoreMessagesRef, messages.length]);
 
   // Update message count whenever filtered messages change
   // PERFORMANCE: Only updates if count actually changed
@@ -201,7 +207,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
     
     return {
       pageHTML: pageHTML.substring(0, 1000),
-      shadowContent: shadowContent,
+      shadowContent: shadowContent?.slice(0, 10),
       pageTitle: pageTitle,
       pageURL: pageURL,
       documentInfo: documentInfo,
@@ -1161,6 +1167,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
           //   console.log('[ChatInner] Thumbs up');
           // }}
           markdownTagRenderers={customMarkdownTagRenderers}
+          UserMessage={CustomUserMessage}
         />
       </div>
     </div>

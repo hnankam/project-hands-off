@@ -23,3 +23,15 @@ tsconfig.tsbuildinfo
 
 # compiled
 **/tailwind-output.css
+
+# virtual environments
+.venv/
+**/.venv/
+copilotkit-pydantic/.venv/
+copilotkit-adk/.venv/
+copilotkit-crewai/.venv/
+copilotkit-langchain/.venv/
+copilotkit-openai/.venv/
+copilotkit-anthropic/.venv/
+copilotkit-google/.venv/
+copilotkit-bedrock/.venv/
