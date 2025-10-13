@@ -1,61 +1,70 @@
 import '@src/Popup.css';
-import { t } from '@extension/i18n';
-import { PROJECT_URL_OBJECT, useStorage, withErrorBoundary, withSuspense } from '@extension/shared';
+import '@extension/ui/global.css';
+import { useStorage, withErrorBoundary, withSuspense } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
-import { cn, ErrorDisplay, LoadingSpinner, ToggleButton } from '@extension/ui';
-
-const notificationOptions = {
-  type: 'basic',
-  iconUrl: chrome.runtime.getURL('icon-34.png'),
-  title: 'Injecting content script error',
-  message: 'You cannot inject script here!',
-} as const;
+import { cn, ErrorDisplay, LoadingSpinner, Button } from '@extension/ui';
+import { useState, useEffect } from 'react';
 
 const Popup = () => {
   const { isLight } = useStorage(exampleThemeStorage);
-  const logo = isLight ? 'popup/logo_vertical.svg' : 'popup/logo_vertical_dark.svg';
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
 
-  const goGithubSite = () => chrome.tabs.create(PROJECT_URL_OBJECT);
+  // Check if side panel is open on component mount and listen for messages
+  useEffect(() => {
+    const checkPanelState = async () => {
+      try {
+        const windowId = (await chrome.windows.getCurrent()).id;
+        // Note: There's no direct API to check if side panel is open
+        // We'll track the state based on our own actions
+        setIsPanelOpen(false);
+      } catch (error) {
+        console.error('Failed to check panel state:', error);
+      }
+    };
+    checkPanelState();
 
-  const injectContentScript = async () => {
-    const [tab] = await chrome.tabs.query({ currentWindow: true, active: true });
+    // Listen for messages from side panel
+    const handleMessage = (message: any) => {
+      if (message.action === 'sidePanelClosed') {
+        setIsPanelOpen(false);
+      }
+    };
 
-    if (tab.url!.startsWith('about:') || tab.url!.startsWith('chrome:')) {
-      chrome.notifications.create('inject-error', notificationOptions);
-    }
+    chrome.runtime.onMessage.addListener(handleMessage);
+    return () => chrome.runtime.onMessage.removeListener(handleMessage);
+  }, []);
 
-    await chrome.scripting
-      .executeScript({
-        target: { tabId: tab.id! },
-        files: ['/content-runtime/example.iife.js', '/content-runtime/all.iife.js'],
-      })
-      .catch(err => {
-        // Handling errors related to other paths
-        if (err.message.includes('Cannot access a chrome:// URL')) {
-          chrome.notifications.create('inject-error', notificationOptions);
+  const toggleSidePanel = async () => {
+    try {
+      const windowId = (await chrome.windows.getCurrent()).id;
+      
+      if (isPanelOpen) {
+        // Send a message to the side panel to close itself
+        chrome.runtime.sendMessage({ action: 'closeSidePanel' });
+        setIsPanelOpen(false);
+      } else {
+        // Open the side panel
+        if (windowId) {
+          await chrome.sidePanel.open({ windowId });
         }
-      });
+        setIsPanelOpen(true);
+      }
+    } catch (error) {
+      console.error('Failed to toggle side panel:', error);
+    }
   };
 
   return (
     <div className={cn('App', isLight ? 'bg-slate-50' : 'bg-gray-800')}>
-      <header className={cn('App-header', isLight ? 'text-gray-900' : 'text-gray-100')}>
-        <button onClick={goGithubSite}>
-          <img src={chrome.runtime.getURL(logo)} className="App-logo" alt="logo" />
-        </button>
-        <p>
-          Edit <code>pages/popup/src/Popup.tsx</code>
-        </p>
-        <button
-          className={cn(
-            'mt-4 rounded px-4 py-1 font-bold shadow hover:scale-105',
-            isLight ? 'bg-blue-200 text-black' : 'bg-gray-700 text-white',
-          )}
-          onClick={injectContentScript}>
-          {t('injectButton')}
-        </button>
-        <ToggleButton>{t('toggleTheme')}</ToggleButton>
-      </header>
+      <div className={cn('App-header', isLight ? 'text-gray-900' : 'text-gray-100')}>
+        <Button
+          variant={isPanelOpen ? "destructive" : "default"}
+          size="lg"
+          className="hover:scale-105 transition-transform"
+          onClick={toggleSidePanel}>
+          {isPanelOpen ? 'Close Side Panel' : 'Open Side Panel'}
+        </Button>
+      </div>
     </div>
   );
 };

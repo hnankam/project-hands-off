@@ -1,30 +1,609 @@
-.App {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  text-align: center;
+Reset and base styles
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
   height: 100%;
-  padding: 1rem;
+  overflow: auto;
+  background-color: #f9fafb; /* Light theme background - prevents gray flash */
 }
 
-.App-logo {
-  height: 50vmin;
-  margin-bottom: 1rem;
+/* Dark theme background */
+.dark body {
+  background-color: #0C1117; /* Dark theme background */
 }
 
-.App-header {
+#root {
+  height: 100%;
+  min-height: 100vh;
+  background-color: #f9fafb; /* Light theme background - prevents gray flash */
+}
+
+/* Dark theme background for root */
+.dark #root {
+  background-color: #0C1117; /* Dark theme background */
+}
+
+/* App container background */
+#app-container {
+  height: 100%;
+  min-height: 100vh;
+  background-color: #f9fafb; /* Light theme background - prevents gray flash */
+}
+
+/* Dark theme background for app container */
+.dark #app-container {
+  background-color: #0C1117; /* Dark theme background */
+}
+
+/* Side panel specific styles */
+.side-panel {
+  height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Input focus styles */
+input:focus {
+  outline: none;
+}
+
+/* Scrollbar styles for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+/* Dark theme scrollbar */
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5);
+}
+
+/* Session tabs scrollbar - ultra-minimal horizontal scrollbar */
+.session-tabs-scroll {
+  scrollbar-width: 1px !important; /* Hide scrollbar in Firefox */
+  -ms-overflow-style: 1px !important; /* Hide scrollbar in IE/Edge */
+}
+
+/* Show a minimal scrollbar only on hover for webkit browsers */
+.session-tabs-scroll::-webkit-scrollbar {
+  width: 0px !important;
+  height: 0px !important;
+}
+
+.session-tabs-scroll:hover::-webkit-scrollbar {
+  width: 1px !important;
+  height: 1px !important;
+}
+
+.session-tabs-scroll::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.session-tabs-scroll::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3) !important;
+  border-radius: 1px !important;
+}
+
+.session-tabs-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5) !important;
+}
+
+/* Dark theme session tabs scrollbar */
+.dark .session-tabs-scroll::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3) !important;
+}
+
+.dark .session-tabs-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5) !important;
+}
+
+/* Dropdown menu styles to ensure proper display */
+.dropdown-menu {
+  position: relative;
+  z-index: 9999;
+}
+
+.dropdown-menu-content {
+  position: absolute;
+  z-index: 10000;
+  overflow: visible;
+}
+
+/* CopilotKit Dark Mode Support */
+:root {
+  /* Light mode CopilotKit variables */
+  --copilot-kit-primary-color: #e5e7eb; /*#111827;*/
+  --copilot-kit-background-color: #ffffff;
+  --copilot-kit-secondary-color: #f9fafb;
+  --copilot-kit-muted-color: #f3f4f6;
+  --copilot-kit-accent-color: #e5e7eb;
+  --copilot-kit-border-color: #e5e7eb;
+  --copilot-kit-input-background-color: #ffffff;
+  --copilot-kit-response-background-color: #f9fafb;
+  --copilot-kit-response-border-color: #e5e7eb;
+  --copilot-kit-separator-color: #e5e7eb;
+  --copilot-kit-text-color: #0C1117;
+  --copilot-kit-text-muted-color: #6b7280;
+  --copilot-kit-contrast-color: #0C1117 !important;
+} 
+
+.dark {
+  /* Dark mode CopilotKit variables - matches status bar bg-gray-800 */
+  --copilot-kit-primary-color: #151B23 !important;
+  --copilot-kit-background-color: #0C1117 !important; /* gray-800 - match status bar */
+  --copilot-kit-secondary-color: #151C24 !important; /* gray-800 - match status bar */
+  --copilot-kit-muted-color: #374151 !important; /* gray-800 */
+  --copilot-kit-accent-color: #151C24 !important; /* gray-700 */
+  --copilot-kit-border-color: #374151 !important; /* gray-700 to match border */
+  --copilot-kit-input-background-color: #151C24 !important; /* gray-800 */
+  --copilot-kit-response-background-color: #151C24 !important; /* gray-800 - match status bar */
+  --copilot-kit-response-border-color: #ffffff !important;
+  --copilot-kit-separator-color: #374151 !important; /* gray-700 to match border */
+  --copilot-kit-text-color: #f9fafb !important;
+  --copilot-kit-text-muted-color: #9ca3af !important;
+  --copilot-kit-contrast-color: #ffffff !important; /* gray-800 */
+  --copilot-kit-secondary-contrast-color: #ffffff !important; /* gray-800 */
+}
+
+/* CopilotChat - Ensure proper scrolling and layout */
+.copilot-chat-container {
   height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
+  overflow: hidden;
 }
 
-code {
-  background: rgba(148, 163, 184, 0.5);
-  border-radius: 0.25rem;
-  padding: 0.2rem 0.5rem;
+/* Target CopilotKit's actual DOM structure */
+.copilot-chat-container > div {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Ensure CopilotKit chat fills its container */
+.copilotKitChat {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Wrapper for CopilotChat to ensure proper flex behavior */
+.copilot-chat-wrapper {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Ensure smooth scrolling with floating card */
+.copilot-chat-wrapper > div:not(.sticky) {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Messages area - make it scrollable */
+.copilot-chat-container .overflow-y-auto {
+  flex: 1;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+}
+
+/* Input area - keep it fixed at bottom */
+.copilot-chat-container .border-t {
+  flex-shrink: 0;
+}
+
+.copilotKitMessagesContainer {
+  padding-left: 0.75rem !important;
+  padding-right: 0.75rem !important;
+}
+
+/* Reduce font sizes throughout CopilotChat */
+.copilot-chat-container {
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+}
+
+.copilotKitUserMessage {
+  border-radius: 10px !important;
+  margin-left: 0 !important; /* Remove auto margin that pushes to right */
+  max-width: 100% !important; /* Allow full width instead of 80% */
+  width: 100% !important; /* Force full width */
+  margin-bottom: 0 !important;
+  margin-top: 0.25rem !important;
+}
+
+.copilotKitAssistantMessage {
+  max-width: 100% !important; /* Allow full width instead of 80% */
+  width: 100% !important; /* Force full width */
+}
+
+/* Move message controls to the right side */
+.copilotKitMessage.copilotKitAssistantMessage .copilotKitMessageControls {
+  left: auto !important; /* Remove left positioning */
+  right: 0 !important; /* Position on the right side */
+}
+
+.copilotKitMessageControlButton {
+  color: black !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.dark .copilotKitMessageControlButton {
+  color: #ffffff !important;
+  margin-bottom: 0.5rem !important;
+
+}
+
+.copilotKitActivityDot {
+  background-color: black !important;
+  margin-top: 0.5rem !important;
+}
+
+.copilotKitInputControlButton {
+  color: black !important;
+}
+
+.dark .copilotKitActivityDot{
+  background-color: #ffffff !important;
+  margin-top: 0.5rem !important;
+}
+
+.dark .copilotKitInputControlButton {
+  color: #ffffff !important;
+}
+
+.copilotKitInput {
+  border-radius: 10px !important;
+}
+
+/* More specific selectors to avoid affecting message controls */
+.copilot-chat-container p,
+.copilot-chat-container div:not([role="group"]):not([class*="controls"]):not([class*="actions"]),
+.copilot-chat-container span:not([role="group"] span) {
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+/* Specific targeting for common CopilotKit classes */
+.copilot-chat-container .text-sm {
+  font-size: 10px !important;
+}
+
+.copilot-chat-container .text-base {
+  font-size: 10px !important;
+}
+
+.copilot-chat-container .text-lg {
+  font-size: 10px !important;
+}
+
+.copilot-chat-container .text-xl {
+  font-size: 10px !important;
+}
+
+/* Input field specific styling */
+.copilot-chat-container input,
+.copilot-chat-container textarea {
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+}
+
+/* Message content styling - more specific to avoid controls */
+.copilot-chat-container [class*="message"] p,
+.copilot-chat-container [class*="message"] div:not([role="group"]),
+.copilot-chat-container [class*="message"] span:not(button span) {
+  font-size: 9px !important;
+  line-height: 1.4 !important;
+}
+
+/* Ensure suggestion buttons are visible and interactive */
+.copilot-chat-container button[class*="suggestion"],
+.copilot-chat-container button[class*="Suggestion"] {
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* Message controls - hide by default and show on hover */
+.copilot-chat-container .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitAssistantMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitUserMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessage:last-child .copilotKitMessageControls,
+.copilot-chat-container .copilotKitAssistantMessage:last-of-type .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessages > div:last-child .copilotKitMessageControls,
+.copilot-chat-container [class*="copilotKitMessage"]:last-child .copilotKitMessageControls {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out !important;
+}
+
+/* Show controls on hover for any message */
+.copilot-chat-container .copilotKitMessage:hover .copilotKitMessageControls,
+.copilot-chat-container .copilotKitAssistantMessage:hover .copilotKitMessageControls,
+.copilot-chat-container .copilotKitUserMessage:hover .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessage:last-child:hover .copilotKitMessageControls,
+.copilot-chat-container .copilotKitAssistantMessage:last-of-type:hover .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessages > div:last-child:hover .copilotKitMessageControls,
+.copilot-chat-container [class*="copilotKitMessage"]:last-child:hover .copilotKitMessageControls {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+/* Individual suggestion buttons - ABSOLUTELY NO WRAP OR SHRINK */
+footer div[class*="suggestions"] button {
+  font-size: 0.75rem !important;
+  padding: 6px 12px !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  flex-grow: 0 !important;
+  flex-basis: auto !important;
+  border-radius: 9999px !important;
+  min-width: max-content !important;
+  max-width: none !important;
+  width: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+  word-wrap: normal !important;
+  overflow-wrap: normal !important;
+}
+
+/* Ensure scrollbar is visible */
+.copilot-chat-container .overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+}
+
+.copilot-chat-container .overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 3px;
+}
+
+.copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+/* Dark theme scrollbar */
+.dark .copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3);
+}
+
+.dark .copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5);
+}
+
+/* Make only the SVG icon smaller, keep button size */
+.copilot-chat-container .copilotKitInputControls svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+.copilotKitInput {
+  border-bottom-left-radius: 0.75rem;
+  border-bottom-right-radius: 0.75rem;
+  border-top-left-radius: 0.75rem;
+  border-top-right-radius: 0.75rem;
+  border: 1px solid var(--copilot-kit-separator-color) !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.copilotKitMessagesContainer > div:not([class]) {
+  margin-bottom: 0px !important;
+}
+
+/* Fade text effect for long tab names */
+.fade-text {
+  position: relative;
+}
+
+.fade-text::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: max(10%, 60px);
+  background-color: var(--fade-bg-color, #f9fafb);
+  mask: linear-gradient(to right, transparent 0%, transparent 10%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.8) 80%, rgba(0,0,0,1) 100%);
+  -webkit-mask: linear-gradient(to right, transparent 0%, transparent 10%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.8) 80%, rgba(0,0,0,1) 100%);
+  pointer-events: none;
+}
+
+/* Tab fade text effect for session tabs */
+.tab-fade-text {
+  position: relative;
+}
+
+.tab-fade-text::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: max(15%, 30px);
+  background-color: var(--fade-bg-color, #ffffff);
+  mask: linear-gradient(to right, transparent 0%, transparent 10%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.8) 80%, rgba(0,0,0,1) 100%);
+  -webkit-mask: linear-gradient(to right, transparent 0%, transparent 10%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.8) 80%, rgba(0,0,0,1) 100%);
+  pointer-events: none;
+  transition: background-color 0.2s ease;
+}
+
+/* Handle hover states for inactive tabs */
+.group:hover .tab-fade-text::after {
+  background-color: var(--fade-hover-bg-color, var(--fade-bg-color, #ffffff));
+}
+
+/* Hide CopilotKit branding */
+p.poweredBy {
+  /* Your styles here */
+  display: none !important;
+}
+
+/* Smooth transitions for content status changes */
+.content-status-indicator {
+  transition: all 0.3s ease-in-out;
+}
+
+.content-status-indicator svg {
+  transition: transform 0.2s ease-in-out;
+}
+
+.content-status-indicator:hover svg {
+  transform: scale(1.1);
+}
+
+/* Smooth opacity transitions for content updates */
+.copilot-chat-container {
+  transition: opacity 0.2s ease-in-out;
+}
+
+/* Loading state animations */
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.content-refreshing {
+  animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+/* Suggestions footer wrapper - add position relative for fade effect */
+.copilotKitMessagesFooter {
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+/* Hide scrollbar on footer completely - same as session tabs parent */
+.copilotKitMessagesFooter::-webkit-scrollbar,
+footer.copilotKitMessagesFooter::-webkit-scrollbar,
+.copilotKitMessages footer::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.copilotKitMessagesFooter,
+footer.copilotKitMessagesFooter,
+.copilotKitMessages footer {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+/* Suggestions single-line scrollable layout */
+.copilotKitMessagesFooter > div[class="suggestions"] {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: thin !important;
+  gap: 8px !important;
+  padding: 8px 4px !important;
+}
+
+/* Fade effect at the end of suggestions - positioned on parent */
+.copilotKitMessagesFooter::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 60px;
+  background: linear-gradient(to right, transparent 0%, var(--suggestions-fade-bg) 80%);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Light mode fade background - match CopilotKit background */
+.copilotKitMessagesFooter {
+  --suggestions-fade-bg: var(--copilot-kit-background-color, #ffffff);
+}
+
+/* Dark mode fade background - use CopilotKit's background color */
+.dark .copilotKitMessagesFooter,
+.copilot-chat-container.dark .copilotKitMessagesFooter {
+  --suggestions-fade-bg: var(--copilot-kit-background-color, #1f2937);
+}
+
+/* Suggestions scrollbar styling - same as session tabs (hidden by default, show on hover) */
+.copilotKitMessagesFooter > div[class="suggestions"] {
+  scrollbar-width: 1px !important; /* Firefox */
+  -ms-overflow-style: 1px !important; /* IE/Edge */
+}
+
+/* Hide scrollbar by default */
+.copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar {
+  width: 0px !important;
+  height: 0px !important;
+}
+
+/* Show minimal scrollbar only on hover - stays 1px even when hovering scrollbar */
+.copilotKitMessagesFooter > div[class="suggestions"]:hover::-webkit-scrollbar,
+.copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar:hover {
+  width: 1px !important;
+  height: 1px !important;
+}
+
+.copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3) !important;
+  border-radius: 1px !important;
+}
+
+.copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5) !important;
+}
+
+/* Dark mode scrollbar */
+.dark .copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3) !important;
+}
+
+.dark .copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5) !important;
+}
+
+/* Hide CopilotKit suggestions when toggle is off */
+body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
 }

@@ -23,7 +23,10 @@
     "@extension/shared": "workspace:*",
     "@extension/storage": "workspace:*",
     "@extension/i18n": "workspace:*",
-    "@extension/ui": "workspace:*"
+    "@extension/ui": "workspace:*",
+    "@copilotkit/react-core": "^1.10.6",
+    "@copilotkit/react-ui": "^1.10.6",
+    "zod": "^3.24.4"
   },
   "devDependencies": {
     "@extension/tailwindcss-config": "workspace:*",

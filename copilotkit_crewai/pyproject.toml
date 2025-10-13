@@ -1,0 +1,24 @@
+[project]
+name = "copilotkit_crewai"
+version = "0.1.0"
+description = "copilotkit-crewai using crewAI"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai[tools]>=0.203.0,<1.0.0",
+    "pylance!=0.38.2"
+]
+
+[project.scripts]
+copilotkit_crewai = "copilotkit_crewai.main:run"
+run_crew = "copilotkit_crewai.main:run"
+train = "copilotkit_crewai.main:train"
+replay = "copilotkit_crewai.main:replay"
+test = "copilotkit_crewai.main:test"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.crewai]
+type = "crew"

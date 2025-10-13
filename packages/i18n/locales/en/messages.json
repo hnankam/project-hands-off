@@ -1,17 +1,17 @@
 {
   "extensionDescription": {
     "description": "Extension description",
-    "message": "Chrome extension boilerplate developed with Vite, React and Typescript"
+    "message": "Project Hands-Off is a Chrome extension is AI-powered helps you manage your webflows."
   },
   "extensionName": {
     "description": "Extension name",
-    "message": "Chrome extension boilerplate"
+    "message": "Project Hands-Off"
   },
   "toggleTheme": {
     "message": "Toggle theme"
   },
   "injectButton": {
-    "message": "Click to inject Content Scripts"
+    "message": "Click to inject Project Hands-Off"
   },
   "greeting": {
     "description": "Greeting message",
