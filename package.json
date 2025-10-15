@@ -20,6 +20,8 @@
     "base-build": "pnpm clean:bundle && turbo build",
     "build": "pnpm set-global-env && pnpm base-build",
     "build:firefox": "pnpm set-global-env CLI_CEB_FIREFOX=true && pnpm base-build",
+    "build:cached": "pnpm set-global-env && turbo build",
+    "build:cached:firefox": "pnpm set-global-env CLI_CEB_FIREFOX=true && turbo build",
     "base-dev": "pnpm clean:bundle && turbo ready && turbo watch dev",
     "dev": "pnpm set-global-env CLI_CEB_DEV=true && pnpm base-dev",
     "dev:firefox": "pnpm set-global-env CLI_CEB_DEV=true CLI_CEB_FIREFOX=true && pnpm base-dev",
@@ -38,10 +40,12 @@
     "postinstall": "pnpm copy-env"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.7.5",
+    "@surrealdb/wasm": "^1.4.1",
     "@themaximalist/vectordb.js": "^0.1.2",
-    "fastembed": "^2.0.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "surrealdb": "^1.3.2"
   },
   "devDependencies": {
     "@eslint/compat": "^1.2.9",

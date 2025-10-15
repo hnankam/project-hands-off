@@ -8,18 +8,48 @@
     "ready": {
       "dependsOn": ["^ready"],
       "outputs": ["../../dist/**", "dist/**"],
-      "cache": false
+      "inputs": [
+        "src/**",
+        "lib/**",
+        "*.ts",
+        "*.tsx",
+        "*.mts",
+        "*.json"
+      ],
+      "cache": true
     },
     "dev": {
       "dependsOn": ["ready"],
       "outputs": ["../../dist/**", "dist/**"],
-      "cache": false,
+      "inputs": [
+        "src/**",
+        "public/**",
+        "*.ts",
+        "*.tsx",
+        "*.mts",
+        "*.json",
+        "!**/*.test.ts",
+        "!**/*.test.tsx"
+      ],
+      "env": ["NODE_ENV", "CLI_CEB_DEV", "CLI_CEB_FIREFOX"],
+      "cache": true,
       "persistent": true
     },
     "build": {
       "dependsOn": ["ready", "^build"],
       "outputs": ["../../dist/**", "dist/**"],
-      "cache": false
+      "inputs": [
+        "src/**",
+        "public/**",
+        "*.ts",
+        "*.tsx",
+        "*.mts",
+        "*.json",
+        "!**/*.test.ts",
+        "!**/*.test.tsx"
+      ],
+      "env": ["NODE_ENV", "CLI_CEB_DEV", "CLI_CEB_FIREFOX"],
+      "cache": true
     },
     "e2e": {
       "cache": false

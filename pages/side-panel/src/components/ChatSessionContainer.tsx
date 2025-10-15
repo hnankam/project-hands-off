@@ -196,6 +196,12 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
         setIsPanelInteractive(true);
         debug.log('[ChatSessionContainer] User clicked in panel, marking as interactive');
         
+        // Trigger content refresh when becoming interactive (handles tab changes while panel was inactive)
+        if (currentTabId) {
+          debug.log('[ChatSessionContainer] Triggering content refresh on interaction');
+          fetchFreshPageContent(false, currentTabId);
+        }
+        
         // Clear stale indicator if showing
         if (showStaleIndicator) {
           setShowStaleIndicator(false);

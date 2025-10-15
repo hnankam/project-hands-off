@@ -57,7 +57,10 @@ export const useTabManager = ({
     }
   }, [currentTabId, getCurrentTabTitle, onTabChange]);
   
-  // Listen to tab changes and update title
+  // Track when changes happen while visible but not interactive
+  const pendingRefreshRef = useRef<boolean>(false);
+
+  // Listen to tab changes and update title (always, regardless of panel visibility)
   // Only active when session is active
   useEffect(() => {
     if (!isActive) return; // Only run for the active session
@@ -83,13 +86,8 @@ export const useTabManager = ({
     const handleTabUpdatedForTitle = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
       if (tabId === currentTabId && changeInfo.title) {
         const newTitle = changeInfo.title;
-        
-        // Always update ref
         currentTabTitleRef.current = newTitle;
-        
-        // Increment version to trigger minimal re-render
         setTabTitleVersion(prev => prev + 1);
-        
         debug.log(`[TabManager] Tab title updated: ${newTitle} (version: ${tabTitleVersion + 1})`);
       }
     };
@@ -106,10 +104,14 @@ export const useTabManager = ({
     };
   }, [currentTabId, isActive, tabTitleVersion]);
 
-  // Smart tab change handling with content preservation (only for active session)
+  // Tab and URL change tracking - whenever session is active (even if panel not interactive)
   useEffect(() => {
-    // CRITICAL: Only listen to tab changes when session is active AND panel is interactive
-    if (!isActive || !isPanelInteractive) return;
+    // Only track changes when session is active (don't require panel to be visible/interactive)
+    if (!isActive) {
+      return;
+    }
+    
+    debug.log(`[TabManager] Tab change tracking enabled (interactive: ${isPanelInteractive}, visible: ${isPanelVisible})`);
     
     const handleTabActivated = (activeInfo: chrome.tabs.TabActiveInfo) => {
       const previousTabId = currentTabId;
@@ -117,19 +119,26 @@ export const useTabManager = ({
       // Only process if tab actually changed
       if (previousTabId === activeInfo.tabId) return;
       
-      debug.log(`[TabManager] Tab activated (active panel): ${previousTabId} -> ${activeInfo.tabId}`);
+      debug.log(`[TabManager] Tab activated: ${previousTabId} -> ${activeInfo.tabId} (interactive: ${isPanelInteractive})`);
       
       // Update tab ID immediately to avoid race conditions
       setCurrentTabId(activeInfo.tabId);
       
-      // Trigger content refresh for new tab
-      onContentRefresh(activeInfo.tabId);
+      // ALWAYS mark for pending refresh when tab changes (ensures refresh happens when user clicks back)
+      pendingRefreshRef.current = true;
+      debug.log('[TabManager] Tab changed - marked for pending refresh');
+      
+      // If interactive NOW, also refresh immediately (but keep pending flag in case panel becomes inactive)
+      if (isPanelInteractive) {
+        debug.log('[TabManager] Panel is interactive - refreshing immediately (keeping pending flag)');
+        onContentRefresh(activeInfo.tabId);
+      }
     };
 
     const handleTabUpdated = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
-      // Handle URL changes - force auto refresh
+      // Handle URL changes
       if (tabId === currentTabId && changeInfo.url) {
-        debug.log('[TabManager] URL changed for current tab, forcing auto refresh');
+        debug.log(`[TabManager] URL changed for current tab (interactive: ${isPanelInteractive})`);
         
         // Update tab title immediately if available
         if (changeInfo.title || tab.title) {
@@ -138,13 +147,21 @@ export const useTabManager = ({
           setTabTitleVersion(prev => prev + 1);
         }
         
-        // Debounce the refresh to avoid excessive calls
-        if (tabChangeTimeoutRef.current) {
-          clearTimeout(tabChangeTimeoutRef.current);
+        // ALWAYS mark for pending refresh when URL changes (ensures refresh happens when user clicks back)
+        pendingRefreshRef.current = true;
+        debug.log('[TabManager] URL changed - marked for pending refresh');
+        
+        // If interactive NOW, also refresh immediately (but keep pending flag in case panel becomes inactive)
+        if (isPanelInteractive) {
+          debug.log('[TabManager] Panel is interactive - refreshing immediately (keeping pending flag)');
+          // Debounce the refresh to avoid excessive calls
+          if (tabChangeTimeoutRef.current) {
+            clearTimeout(tabChangeTimeoutRef.current);
+          }
+          tabChangeTimeoutRef.current = setTimeout(() => {
+            onContentRefresh(tabId);
+          }, TIMING_CONSTANTS.URL_CHANGE_DELAY);
         }
-        tabChangeTimeoutRef.current = setTimeout(() => {
-          onContentRefresh(tabId);
-        }, TIMING_CONSTANTS.URL_CHANGE_DELAY);
       }
     };
 
@@ -158,7 +175,42 @@ export const useTabManager = ({
         clearTimeout(tabChangeTimeoutRef.current);
       }
     };
-  }, [currentTabId, isActive, isPanelVisible, isPanelInteractive, onContentRefresh]);
+  }, [currentTabId, isActive, isPanelInteractive, onContentRefresh]);
+
+  // Trigger refresh when panel becomes interactive (if there's a pending refresh)
+  const previousIsPanelInteractiveRef = useRef(isPanelInteractive);
+  
+  useEffect(() => {
+    const wasNotInteractive = !previousIsPanelInteractiveRef.current;
+    const isNowInteractive = isPanelInteractive;
+    const justBecameInteractive = wasNotInteractive && isNowInteractive;
+    const justBecameNotInteractive = previousIsPanelInteractiveRef.current && !isNowInteractive;
+    
+    // Debug: Log ALL interactive state changes
+    if (justBecameInteractive) {
+      debug.log(`[TabManager] ✅ Panel became interactive (pending: ${pendingRefreshRef.current}, tabId: ${currentTabId}, active: ${isActive})`);
+    } else if (justBecameNotInteractive) {
+      debug.log(`[TabManager] ❌ Panel became NOT interactive (pending: ${pendingRefreshRef.current})`);
+    }
+    
+    // Log current state on every change
+    debug.log(`[TabManager] Interactive state: was=${previousIsPanelInteractiveRef.current}, now=${isPanelInteractive}, changed=${justBecameInteractive}`);
+    
+    // When panel becomes interactive, check for pending refresh
+    if (justBecameInteractive && isActive && currentTabId && pendingRefreshRef.current) {
+      debug.log('[TabManager] Panel just became interactive and has pending refresh - triggering now');
+      onContentRefresh(currentTabId);
+      // Clear pending after triggering refresh
+      pendingRefreshRef.current = false;
+      debug.log('[TabManager] Cleared pending refresh flag after triggering');
+    } else if (justBecameInteractive && isActive && currentTabId && !pendingRefreshRef.current) {
+      debug.log('[TabManager] Panel became interactive but no pending refresh');
+    } else if (justBecameInteractive && (!isActive || !currentTabId)) {
+      debug.log(`[TabManager] Panel became interactive but conditions not met (active: ${isActive}, tabId: ${currentTabId})`);
+    }
+    
+    previousIsPanelInteractiveRef.current = isPanelInteractive;
+  }, [isPanelInteractive, isActive, currentTabId, onContentRefresh]);
 
   // Get current tab for on-demand content fetching
   const initialTabFetchRef = useRef<boolean>(false);
@@ -166,16 +218,21 @@ export const useTabManager = ({
   const isFetchingRef = useRef<boolean>(false);
   
   useEffect(() => {
-    // Detect when panel transitions from hidden to visible for ANY session
+    // Detect when panel transitions from hidden to visible
     const panelJustBecameVisible = !lastPanelVisibleState.current && isPanelVisible;
     lastPanelVisibleState.current = isPanelVisible;
     
+    // Clear pending refresh when panel becomes visible (we'll refresh anyway)
+    if (panelJustBecameVisible && pendingRefreshRef.current) {
+      debug.log('[TabManager] Panel opened - clearing pending refresh flag (will refresh anyway)');
+      pendingRefreshRef.current = false;
+    }
+    
     // Only run for active session AND when:
-    // 1. Panel is interactive (user clicked), OR
-    // 2. Panel just opened (needs initial content fetch), OR
-    // 3. First time for this session (new session tabs need initial content)
+    // 1. Panel just became visible (always refresh on open), OR
+    // 2. First time for this session (initial content fetch)
     const isFirstTime = !initialTabFetchRef.current;
-    const shouldFetchContent = isPanelInteractive || panelJustBecameVisible || isFirstTime;
+    const shouldFetchContent = panelJustBecameVisible || isFirstTime;
     
     if (!isActive || !shouldFetchContent) return;
     
@@ -191,21 +248,18 @@ export const useTabManager = ({
             debug.log('Got current tab for on-demand content:', response);
             const isFirstTimeGettingTab = !currentTabId && !initialTabFetchRef.current;
             const needsRefreshAfterPanelOpen = panelJustBecameVisible;
-            const tabChanged = currentTabId && currentTabId !== response.tabId;
             
             setCurrentTabId(response.tabId);
             setCurrentTabTitle(response.title || '');
             currentTabTitleRef.current = response.title || '';
             setTabTitleVersion(prev => prev + 1);
             
-            // Auto-fetch content in these cases:
-            const needsFetch = isFirstTimeGettingTab || needsRefreshAfterPanelOpen || tabChanged;
+            // Auto-fetch content when panel opens or first time
+            const needsFetch = isFirstTimeGettingTab || needsRefreshAfterPanelOpen;
             
             if (needsFetch) {
-              const reason = isFirstTimeGettingTab ? 'first time' : 
-                            needsRefreshAfterPanelOpen ? 'panel just opened' : 
-                            tabChanged ? 'tab changed' : 'cache stale/missing';
-              debug.log(`[TabManager] useEffect: Auto-fetching content (${reason})`);
+              const reason = isFirstTimeGettingTab ? 'first time' : 'panel just opened';
+              debug.log(`[TabManager] Auto-fetching content (${reason})`);
               
               // Only fetch if not already loading or fetching
               if (!isFetchingRef.current) {
@@ -214,10 +268,8 @@ export const useTabManager = ({
                 onContentRefresh(response.tabId);
                 isFetchingRef.current = false;
               } else {
-                debug.log('[TabManager] useEffect: Skipping fetch - already loading or fetching');
+                debug.log('[TabManager] Skipping fetch - already loading or fetching');
               }
-            } else {
-              //debug.log('[TabManager] useEffect: Cache is fresh, no fetch needed');
             }
           } else {
             debug.log('No active tab found');
@@ -231,7 +283,7 @@ export const useTabManager = ({
     };
 
     getCurrentTab();
-  }, [currentTabId, isActive, isPanelVisible, isPanelInteractive, onContentRefresh]);
+  }, [currentTabId, isActive, isPanelVisible, onContentRefresh]);
 
   return {
     currentTabId,

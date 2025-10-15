@@ -32,6 +32,17 @@ export default defineConfig({
     nodePolyfills(),
   ],
   publicDir: resolve(rootDir, 'public'),
+  optimizeDeps: {
+    exclude: ['@surrealdb/wasm'],
+    esbuildOptions: {
+      target: 'esnext',
+    },
+  },
+  esbuild: {
+    supported: {
+      'top-level-await': true,
+    },
+  },
   build: {
     lib: {
       name: 'BackgroundScript',

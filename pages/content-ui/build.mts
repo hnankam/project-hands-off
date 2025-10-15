@@ -28,10 +28,12 @@ const configs = Object.entries(getContentScriptEntries(matchesDir)).map(([name, 
         fileName: name,
       },
       outDir: resolve(rootDir, '..', '..', 'dist', 'content-ui'),
+      emptyOutDir: false, // Don't clear outDir to keep all build outputs
     },
   }),
 }));
 
+// Build in parallel (faster)
 const builds = configs.map(async ({ name, config }) => {
   const folder = resolve(matchesDir, name);
   const args = {
