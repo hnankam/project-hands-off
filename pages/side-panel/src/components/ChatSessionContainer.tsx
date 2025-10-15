@@ -385,9 +385,14 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
   // Auto-refresh content when panel becomes active (visible or user interacts)
   const previousIsPanelVisibleRef = useRef(isPanelVisible);
   const previousIsPanelInteractiveRef = useRef(isPanelInteractive);
-  const lastFetchedTabIdRef = useRef<number | null>(null);
-  const lastFetchTimeRef = useRef<number>(0);
+  // Disabled: lastFetchedTabIdRef and lastFetchTimeRef were only used by the disabled useEffect below
+  // const lastFetchedTabIdRef = useRef<number | null>(null);
+  // const lastFetchTimeRef = useRef<number>(0);
   
+  // DISABLED: This useEffect was causing duplicate content fetches
+  // ChatSession.tsx already handles content fetching for panel state changes
+  // Keeping this would cause double fetches when panel becomes active
+  /*
   useEffect(() => {
     const wasHidden = !previousIsPanelVisibleRef.current;
     const isNowVisible = isPanelVisible;
@@ -417,6 +422,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
     previousIsPanelVisibleRef.current = isPanelVisible;
     previousIsPanelInteractiveRef.current = isPanelInteractive;
   }, [isPanelVisible, isPanelInteractive, isActive, currentTabId, fetchFreshPageContent]);
+  */
+  
+  // Update refs without triggering fetch (tracked for potential future use)
+  useEffect(() => {
+    previousIsPanelVisibleRef.current = isPanelVisible;
+    previousIsPanelInteractiveRef.current = isPanelInteractive;
+  }, [isPanelVisible, isPanelInteractive]);
   
   // Get the current session
   const sessionTitle = currentSession?.title || 'New Session';

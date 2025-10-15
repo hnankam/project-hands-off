@@ -38,6 +38,8 @@
     "postinstall": "pnpm copy-env"
   },
   "dependencies": {
+    "@themaximalist/vectordb.js": "^0.1.2",
+    "fastembed": "^2.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

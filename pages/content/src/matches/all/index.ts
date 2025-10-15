@@ -54,10 +54,6 @@ class PageAnalyzer {
           console.log('[CEB] Analyzing page on request');
           this.analyzePageContent();
           sendResponse({ success: true });
-        } else if (message.type === 'getPageContent') {
-          console.log('[CEB] Getting page content on request');
-          const content = this.extractPageContent();
-          sendResponse({ content });
         }
       } catch (error) {
         console.error('[CEB] Error handling message:', error);
@@ -557,6 +553,31 @@ class PageAnalyzer {
 
   // Extract meaningful DOM update information from mutations
   private extractDOMUpdate(mutations: MutationRecord[]) {
+    // Inline HTML cleaner for DOM updates
+    const cleanHtmlQuick = (html: string): string => {
+      if (!html || html.length === 0) return '';
+      
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      
+      // Remove unnecessary elements
+      ['script', 'style', 'link', 'meta', 'noscript', 'iframe'].forEach(selector => {
+        doc.querySelectorAll(selector).forEach(el => el.remove());
+      });
+      
+      // Remove inline styles
+      doc.querySelectorAll('*').forEach(el => el.removeAttribute('style'));
+      
+      // Get cleaned HTML and normalize whitespace
+      let cleaned = doc.body.innerHTML;
+      cleaned = cleaned
+        .replace(/>\s+</g, '><')
+        .replace(/\n\s*\n+/g, '\n')
+        .replace(/^\s+|\s+$/g, '');
+      
+      return cleaned;
+    };
+    
     const addedElements: any[] = [];
     const removedElements: any[] = [];
     const textChanges: any[] = [];
@@ -574,12 +595,16 @@ class PageAnalyzer {
             
             const textContent = element.textContent?.trim() || '';
             if (textContent.length > 5) {
+              // Clean the innerHTML before sending
+              const rawInnerHTML = element.innerHTML || '';
+              const cleanedInnerHTML = cleanHtmlQuick(rawInnerHTML);
+              
               addedElements.push({
                 tagName,
                 id: element.id || null,
                 className: element.className || null,
-                textContent: textContent.substring(0, 500), // Limit size
-                innerHTML: element.innerHTML?.substring(0, 1000) || '', // Limited HTML
+                textContent: textContent,
+                innerHTML: cleanedInnerHTML, // Cleaned HTML
                 attributes: {
                   href: element.getAttribute('href'),
                   src: element.getAttribute('src'),
@@ -672,207 +697,34 @@ class PageAnalyzer {
     this.lastAnalysisTime = Date.now();
     
     try {
-      const content = this.extractPageContent();
-      const contentHash = this.generateContentHash(content);
+      // Simple content change detection - just check if the body text changed
+      const currentBodyText = document.body.innerText;
+      const contentHash = this.generateContentHash({ text: currentBodyText, url: window.location.href });
 
-      // Only send update if content has changed significantly
+      // Only notify if content has changed
       if (contentHash !== this.lastContentHash) {
-        // Double-check if the change is actually significant by comparing key elements
-        if (this.isSignificantContentChange(content)) {
-          this.lastContentHash = contentHash;
-          
-          const updateData = {
-            ...content,
-            timestamp: this.lastAnalysisTime,
-            url: window.location.href,
-            title: document.title
-          };
-          
-          // Send page content to background script (reduced logging)
-          chrome.runtime.sendMessage({
-            type: 'pageContentUpdate',
-            data: updateData
-          }).catch(error => {
-            // Only log errors, not success messages
-            console.error('[CEB] Failed to send page content update:', error);
-          });
-        }
-        // Removed excessive "not significant enough" logging
+        this.lastContentHash = contentHash;
+        
+        // Send notification to background script that content changed
+        // Background script will extract content on-demand using executeScript
+        chrome.runtime.sendMessage({
+          type: 'domContentChanged',
+          timestamp: this.lastAnalysisTime,
+          url: window.location.href,
+          title: document.title
+        }).catch(error => {
+          // Only log errors, not success messages
+          console.error('[CEB] Failed to send DOM change notification:', error);
+        });
       }
-      // Removed "unchanged" logging to reduce noise
     } catch (error) {
       console.error('[CEB] Error analyzing page content:', error);
     }
   }
 
-  private isSignificantContentChange(newContent: any): boolean {
-    // For the first analysis, always consider it significant
-    if (!this.lastContentHash) {
-      return true;
-    }
-
-    // Check if key structural elements have changed significantly
-    const keyElements = [
-      'headings', 'forms', 'tables', 'videos', 'iframes'
-    ];
-
-    // If any key structural elements changed, it's significant
-    for (const element of keyElements) {
-      if (newContent[element] && Array.isArray(newContent[element])) {
-        // For arrays, check if the count changed significantly
-        const currentCount = newContent[element].length;
-        // We don't have the previous count easily accessible, so we'll rely on hash comparison
-        // This is a placeholder for more sophisticated comparison if needed
-      }
-    }
-
-    // Check if text content changed significantly (more than 10% change)
-    if (newContent.textContent) {
-      const textLength = newContent.textContent.length;
-      // Since we don't store previous content, we'll rely on the hash comparison
-      // This method serves as an additional filter for edge cases
-    }
-
-    // For now, if we got here, the hash was different, so consider it significant
-    // This method can be enhanced with more sophisticated comparison logic
-    return true;
-  }
-
-  private extractPageContent() {
-    // PERFORMANCE OPTIMIZED: Only extract essential data on demand
-    return {
-      // Basic page info (always needed)
-      url: window.location.href,
-      title: document.title,
-      
-      // Full text content (lightweight)
-      textContent: document.body.innerText,
-      
-      // Complete DOM content with form data (for AI interaction)
-      allDOMContent: this.extractOptimizedDOMContent()
-    };
-  }
-
-  // REMOVED: Dead code - extractHeadings, extractParagraphs, extractLinks, extractImages, 
-  // extractMetadata, analyzePageStructure, extractForms, extractButtons, getPerformanceMetrics,
-  // getFirstPaint, checkAccessibility, checkHeadingStructure, extractTables, extractLists,
-  // extractVideos, extractIframes, extractSEOData, extractSocialMediaData, calculateReadingTime
-  // These methods were never called after removing them from extractPageContent()
-
-  private extractOptimizedDOMContent() {
-    // Check for Shadow DOM
-    const shadowRoots: Array<{
-      hostElement: string;
-      hostId: string;
-      hostClass: string;
-      shadowContentSize: number;
-      shadowHTML: string;
-      fullContent: string;
-      textContent: string;
-    }> = [];
-    let totalShadowContentSize = 0;
-    
-    // Find all elements with shadow roots
-    document.querySelectorAll('*').forEach(element => {
-      if (element.shadowRoot) {
-        const shadowHTML = element.shadowRoot.innerHTML;
-        const shadowSize = shadowHTML.length;
-        totalShadowContentSize += shadowSize;
-        
-        shadowRoots.push({
-          hostElement: element.tagName,
-          hostId: element.id || 'no-id',
-          hostClass: element.className || 'no-class',
-          shadowContentSize: shadowSize,
-          shadowHTML: shadowHTML, // Full shadow content
-          fullContent: shadowHTML,
-          textContent: element.shadowRoot.textContent || ''
-        });
-      }
-    });
-    
-    // Log Shadow DOM detection results
-    if (shadowRoots.length > 0) {
-      console.log(`🔍 [Shadow DOM Detection] Found ${shadowRoots.length} shadow root(s) with total content size: ${totalShadowContentSize} characters`);
-      shadowRoots.forEach((root, index) => {
-        console.log(`   Shadow Root ${index + 1}:`, {
-          host: `${root.hostElement}${root.hostId ? '#' + root.hostId : ''}${root.hostClass ? '.' + root.hostClass.split(' ')[0] : ''}`,
-          size: `${root.shadowContentSize} chars`,
-          preview: root.shadowHTML
-        });
-      });
-    } else {
-      console.log('🔍 [Shadow DOM Detection] No shadow roots detected');
-    }
-    
-    // PERFORMANCE OPTIMIZED: Only extract what's actually needed for AI interactions
-    // Removed: 10,000+ element iterations, computed styles, bounding rects, scripts content
-    return {
-      // Complete HTML structure (needed for CSS selectors)
-      fullHTML: document.documentElement.outerHTML,
-      
-      // Shadow DOM content (for content not visible in main DOM)
-      shadowContent: shadowRoots.map(root => ({
-        hostElement: root.hostElement,
-        hostId: root.hostId,
-        hostClass: root.hostClass,
-        content: root.fullContent,
-        textContent: root.textContent
-      })),
-      
-      // All form data (needed for form interactions)
-      allFormData: Array.from(document.querySelectorAll('input, select, textarea')).map(input => ({
-        tagName: input.tagName,
-        type: input.getAttribute('type') || '',
-        name: input.getAttribute('name') || '',
-        id: input.id,
-        value: (input as HTMLInputElement).value || '',
-        placeholder: input.getAttribute('placeholder') || '',
-        checked: (input as HTMLInputElement).checked,
-        selected: (input as HTMLSelectElement).selectedIndex,
-        textContent: input.textContent || ''
-      })),
-      
-      // Document metadata (lightweight)
-      documentInfo: {
-        title: document.title,
-        url: document.URL,
-        referrer: document.referrer,
-        domain: document.domain,
-        lastModified: document.lastModified,
-        readyState: document.readyState,
-        characterSet: document.characterSet,
-        contentType: document.contentType
-      },
-      
-      // Window information (lightweight)
-      windowInfo: {
-        innerWidth: window.innerWidth,
-        innerHeight: window.innerHeight,
-        scrollX: window.scrollX,
-        scrollY: window.scrollY,
-        location: {
-          href: window.location.href,
-          protocol: window.location.protocol,
-          host: window.location.host,
-          hostname: window.location.hostname,
-          port: window.location.port,
-          pathname: window.location.pathname,
-          search: window.location.search,
-          hash: window.location.hash
-        },
-        userAgent: navigator.userAgent,
-        language: navigator.language,
-        platform: navigator.platform
-      },
-      
-      timestamp: Date.now()
-    };
-  }
-
-
-  // REMOVED: extractDynamicContent() - was extremely expensive (10,000+ getComputedStyle calls)
-  // The fullHTML and textContent already provide all necessary information
+  // REMOVED: extractPageContent() and extractOptimizedDOMContent() - dead code
+  // All extraction now happens via background script's inline executeScript function
+  // which runs in page context and has access to cleanHtmlForAgent
 
   private generateContentHash(content: any): string {
     // Simple hash function for content comparison

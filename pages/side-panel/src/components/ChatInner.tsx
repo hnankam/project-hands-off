@@ -183,6 +183,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
       };
     }
 
+    // HTML is already cleaned in the content script, so just extract it
     const pageHTML = currentPageContent.allDOMContent?.fullHTML || '';
     const shadowContent = currentPageContent.allDOMContent?.shadowContent || [];
     const pageTitle = currentPageContent.title || 'Untitled Page';
@@ -192,7 +193,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
     const allFormData = currentPageContent.allDOMContent?.allFormData || [];
     const clickableElements = currentPageContent.allDOMContent?.clickableElements || [];
     
-    debug.log('📦 [ChatSession] Processing currentPageContent:', {
+    debug.log('📦 [ChatSession] Processing currentPageContent (already cleaned in content script):', {
       pageTitle,
       pageURL,
       hasHTML: !!pageHTML,
@@ -206,8 +207,8 @@ export const ChatInner: FC<ChatInnerProps> = ({
     });
     
     return {
-      pageHTML: pageHTML.substring(0, 1000),
-      shadowContent: shadowContent?.slice(0, 10),
+      pageHTML: pageHTML,
+      shadowContent: shadowContent,
       pageTitle: pageTitle,
       pageURL: pageURL,
       documentInfo: documentInfo,
@@ -226,7 +227,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
         pageTitle: pageContentForAgent.pageTitle,
         pageURL: pageContentForAgent.pageURL,
         htmlLength: pageContentForAgent.pageHTML?.length || 0,
-        htmlPreview: pageContentForAgent.pageHTML?.substring(0, 500) || '',
+        htmlPreview: pageContentForAgent.pageHTML?.substring(0, 700) || '',
         shadowContentCount: pageContentForAgent.shadowContent?.length || 0,
         shadowContentPreview: pageContentForAgent.shadowContent?.slice(0, 2).map((sc: any) => ({
           host: `${sc.hostElement}${sc.hostId ? '#' + sc.hostId : ''}`,
@@ -269,7 +270,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   }, [latestDOMUpdate, generateSuggestions, showSuggestions]);
 
   useCopilotReadable({
-    description: "The current web page content including: pageHTML (full HTML structure), documentInfo (title, URL, referrer, domain, lastModified, readyState, characterSet, contentType), windowInfo (viewport dimensions, scroll position, detailed location object, userAgent, language, platform), and allFormData (array of all form inputs, selects, and textareas with their tagName, type, name, id, value, placeholder, checked, selected, and textContent). Analyze the pageHTML to understand the page structure, find elements, and determine CSS selectors for interaction. Use allFormData to understand form fields and their current values without parsing HTML. Use documentInfo and windowInfo for additional context about the page state and environment.",
+    description: "The current web page content including: pageHTML (full HTML structure, cleaned and optimized), shadowContent (array of Shadow DOM content with hostElement, hostId, hostClass, and cleaned HTML content for elements not visible in main DOM), documentInfo (title, URL, referrer, domain, lastModified, readyState, characterSet, contentType), windowInfo (viewport dimensions, scroll position, detailed location object, userAgent, language, platform), and allFormData (array of all form inputs, selects, and textareas with their tagName, type, name, id, value, placeholder, checked, selected, and textContent). Analyze the pageHTML to understand the page structure, find elements, and determine CSS selectors for interaction. Check shadowContent if you can't find elements in the main pageHTML. Use allFormData to understand form fields and their current values without parsing HTML. Use documentInfo and windowInfo for additional context about the page state and environment.",
     value: pageContentForAgent,
   });
 

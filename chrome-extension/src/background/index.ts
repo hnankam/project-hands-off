@@ -11,7 +11,7 @@ declare global {
 }
 
 exampleThemeStorage.get().then(theme => {
-  console.log('theme', theme);
+  // console.log('theme', theme);
 });
 
 // Conditional logging (set to false in production)
@@ -20,9 +20,9 @@ const log = (...args: any[]) => DEBUG && console.log(...args);
 const logError = (...args: any[]) => console.error(...args); // Always log errors
 
 log('Background loaded');
-log("Edit 'chrome-extension/src/background/index.ts' and save to reload.");
+// log("Edit 'chrome-extension/src/background/index.ts' and save to reload.");
 
-// Interface for page content data (memory-only, not persisted to storage)
+// Interface for page content data (memory-only, not persisted to storage for small pages, use indexedDB for large pages)
 interface PageContentData {
   [tabId: string]: {
     content: any;
@@ -39,13 +39,13 @@ let currentPageContent: PageContentData = {};
 chrome.runtime.onInstalled.addListener(() => {
   // Enable auto-opening side panel when extension icon is clicked
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-  log('Extension installed - side panel auto-open enabled');
+  // log('Extension installed - side panel auto-open enabled');
 });
 
 // Also set on startup to ensure side panel auto-open works
 chrome.runtime.onStartup.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-  log('Extension startup - side panel auto-open enabled');
+  // log('Extension startup - side panel auto-open enabled');
 });
 
 // Handle messages from content scripts and side panel
@@ -133,12 +133,67 @@ async function handlePageContentUpdate(data: any, tabId?: number, skipBroadcast 
     title: data.title
   };
 
-  // Only store in memory, do NOT persist to chrome.storage
-  // Page content can be large and we don't need to persist it
-
   // Skip broadcast for on-demand fetches (they get direct response)
   // This prevents duplicate processing in the side panel
   if (!skipBroadcast) {
+    // Log content size before broadcasting to content manager
+    const contentString = JSON.stringify(data);
+    const totalSizeKB = (contentString.length / 1024).toFixed(2);
+    const totalSizeMB = (contentString.length / (1024 * 1024)).toFixed(2);
+    
+    log('📊 [Background] Content size before sending to ContentManager:');
+    log(`   Total size: ${totalSizeKB} KB (${totalSizeMB} MB)`);
+    log(`   URL: ${data.url}`);
+    log(`   Title: ${data.title}`);
+    
+    // Log sizes of individual content sections
+    if (data.allDOMContent) {
+      if (data.allDOMContent.fullHTML) {
+        log('   - fullHTML sample: ', data.allDOMContent.fullHTML.substring(0, 200));
+        const htmlSizeKB = (data.allDOMContent.fullHTML.length / 1024).toFixed(2);
+        log(`   - fullHTML: ${htmlSizeKB} KB`);
+      }
+      if (data.textContent) {
+        log('   - textContent sample: ', data.textContent.substring(0, 200));
+        const textSizeKB = (data.textContent.length / 1024).toFixed(2);
+        log(`   - textContent: ${textSizeKB} KB`);
+      }
+      if (data.allDOMContent.allFormData) {
+        const formDataSize = (JSON.stringify(data.allDOMContent.allFormData).length / 1024).toFixed(2);
+        log(`   - allFormData: ${formDataSize} KB (${data.allDOMContent.allFormData.length} elements)`);
+        if (data.allDOMContent.allFormData.length > 0) {
+          log('   - allFormData first 3 elements:', data.allDOMContent.allFormData.slice(0, 3).map((f: any) => ({
+            type: f.type,
+            name: f.name,
+            label: f.label,
+            selector: f.bestSelector
+          })));
+        }
+      }
+      if (data.allDOMContent.clickableElements) {
+        const clickableSize = (JSON.stringify(data.allDOMContent.clickableElements).length / 1024).toFixed(2);
+        log(`   - clickableElements: ${clickableSize} KB (${data.allDOMContent.clickableElements.length} elements)`);
+        if (data.allDOMContent.clickableElements.length > 0) {
+          log('   - clickableElements first 3 elements:', data.allDOMContent.clickableElements.slice(0, 3).map((c: any) => ({
+            tagName: c.tagName,
+            text: c.text?.substring(0, 50),
+            selector: c.selector
+          })));
+        }
+      }
+      if (data.allDOMContent.shadowContent && data.allDOMContent.shadowContent.length > 0) {
+        const shadowSize = (JSON.stringify(data.allDOMContent.shadowContent).length / 1024).toFixed(2);
+        log(`   - shadowContent: ${shadowSize} KB (${data.allDOMContent.shadowContent.length} shadow roots)`);
+        // data.allDOMContent.shadowContent.forEach((shadow: any, index: number) => {
+        //   log(`   - shadowContent root ${index + 1}:`, {
+        //     host: `${shadow.hostElement}${shadow.hostId ? '#' + shadow.hostId : ''}`,
+        //     contentSize: (shadow.content?.length || 0) + ' chars',
+        //     textPreview: shadow.textContent?.substring(0, 100)
+        //   });
+        // });
+      }
+    }
+    
     log('[Background] Broadcasting pageContentUpdated for tab:', tabId);
     // Notify side panel about the update
     chrome.runtime.sendMessage({
@@ -153,7 +208,7 @@ async function handlePageContentUpdate(data: any, tabId?: number, skipBroadcast 
   }
 }
 
-// Unified page content extraction function (consolidates old requestPageAnalysis + handleGetPageContentOnDemand)
+// Unified page content extraction function
 async function extractPageContent(tabId?: number, sendResponse?: (response: any) => void) {
   if (!tabId) {
     sendResponse?.({ success: false, error: 'No tab ID provided' });
@@ -237,11 +292,112 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
         target: { tabId: tabId },
         files: ['utils.js']
       });
-
+      
       // Then run the content extraction script
       const results = await chrome.scripting.executeScript({
         target: { tabId: tabId },
         func: () => {
+
+          // HTML Cleaning Function (runs in page context to clean before sending data)
+          const cleanHtmlForAgent = (html: string) => {
+            if (!html || html.length === 0) {
+              return {
+                cleanedHtml: '',
+                originalSize: 0,
+                cleanedSize: 0,
+                reductionPercentage: 0,
+                originalSample: '',
+                cleanedSample: ''
+              };
+            }
+
+            const originalSize = html.length;
+            const originalSample = html.substring(0, 500);
+
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+
+            // Remove unnecessary elements
+            const selectorsToRemove = ['head', 'script', 'style', 'link', 'meta', 'noscript', 'iframe', 'object', 'embed', 'svg'];
+
+            selectorsToRemove.forEach(selector => {
+              const elements = doc.querySelectorAll(selector);
+              elements.forEach(element => {
+                // For iframes and SVGs, keep a placeholder with relevant attributes
+                if (selector === 'iframe') {
+                  const placeholder = doc.createElement('div');
+                  placeholder.setAttribute('data-iframe-placeholder', 'true');
+                  placeholder.setAttribute('data-src', element.getAttribute('src') || '');
+                  placeholder.textContent = `[IFRAME: ${element.getAttribute('src') || 'unknown'}]`;
+                  element.replaceWith(placeholder);
+                } else if (selector === 'svg') {
+                  const placeholder = doc.createElement('div');
+                  placeholder.setAttribute('data-svg-placeholder', 'true');
+                  placeholder.textContent = '[SVG]';
+                  element.replaceWith(placeholder);
+                } else {
+                  element.remove();
+                }
+              });
+            });
+
+            // Remove inline styles from all elements
+            doc.querySelectorAll('*').forEach(element => {
+              element.removeAttribute('style');
+            });
+
+            // Remove data URLs from images (keep src but remove base64 data)
+            doc.querySelectorAll('img').forEach(img => {
+              const src = img.getAttribute('src');
+              if (src && src.startsWith('data:')) {
+                img.setAttribute('data-original-src', 'data:image/...[removed]');
+                img.removeAttribute('src');
+              }
+              // Remove srcset which can contain large data
+              img.removeAttribute('srcset');
+            });
+
+            // Remove video/audio source elements but keep the video/audio tags
+            doc.querySelectorAll('source').forEach(source => {
+              const placeholder = doc.createElement('span');
+              placeholder.textContent = `[SOURCE: ${source.getAttribute('src') || 'unknown'}]`;
+              source.replaceWith(placeholder);
+            });
+
+            // Remove comments
+            const removeComments = (node: Node) => {
+              const childNodes = Array.from(node.childNodes);
+              childNodes.forEach(child => {
+                if (child.nodeType === Node.COMMENT_NODE) {
+                  child.remove();
+                } else if (child.nodeType === Node.ELEMENT_NODE) {
+                  removeComments(child);
+                }
+              });
+            };
+            removeComments(doc.body);
+
+            let cleanedHtml = doc.documentElement.outerHTML;
+            
+            // Normalize whitespace: remove multiple newlines and excessive spaces
+            cleanedHtml = cleanedHtml
+              .replace(/>\s+</g, '><')           // Remove whitespace between tags
+              .replace(/\n\s*\n+/g, '\n')        // Replace multiple newlines with single newline
+              .replace(/^\s+|\s+$/g, '');        // Trim leading/trailing whitespace
+            
+            const cleanedSize = cleanedHtml.length;
+            const cleanedSample = cleanedHtml.substring(0, 500);
+            const reductionPercentage = ((originalSize - cleanedSize) / originalSize) * 100;
+
+            return {
+              cleanedHtml,
+              originalSize,
+              cleanedSize,
+              reductionPercentage,
+              originalSample,
+              cleanedSample
+            };
+          };
 
           // Robust fallback selector generation when finder fails
           const generateRobustFallbackSelector = (el: Element): { selector: string; isUnique: boolean } => {
@@ -399,17 +555,76 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
             });
             
             // Log Shadow DOM detection results
-            if (shadowRoots.length > 0) {
-              console.log(`🔍 [Shadow DOM Detection] Found ${shadowRoots.length} shadow root(s) with total content size: ${totalShadowContentSize} characters`);
-              shadowRoots.forEach((root, index) => {
-                console.log(`   Shadow Root ${index + 1}:`, {
-                  host: `${root.hostElement}${root.hostId ? '#' + root.hostId : ''}${root.hostClass ? '.' + root.hostClass.split(' ')[0] : ''}`,
-                  size: `${root.shadowContentSize} chars`,
-                  preview: root.shadowHTML
+            // Shadow DOM detection logging disabled to reduce console noise
+            // if (shadowRoots.length > 0) {
+            //   console.log(`🔍 [Shadow DOM Detection] Found ${shadowRoots.length} shadow root(s) with total content size: ${totalShadowContentSize} characters`);
+            //   // shadowRoots.forEach((root, index) => {
+            //   //   console.log(`   Shadow Root ${index + 1}:`, {
+            //   //     host: `${root.hostElement}${root.hostId ? '#' + root.hostId : ''}${root.hostClass ? '.' + root.hostClass.split(' ')[0] : ''}`,
+            //   //     size: `${root.shadowContentSize} chars`,
+            //   //     preview: root.shadowHTML
+            //   //   });
+            //   // });
+            // } else {
+            //   console.log('🔍 [Shadow DOM Detection] No shadow roots detected');
+            // }
+            
+            // Extract and clean HTML before sending
+            const rawFullHTML = document.documentElement.outerHTML;
+            const mainHtmlCleaningResult = cleanHtmlForAgent(rawFullHTML);
+            
+            // Log main HTML cleaning results
+            console.log('🧹 [Background] Main HTML Cleaning Results:', {
+              originalSize: `${(mainHtmlCleaningResult.originalSize / 1024).toFixed(2)} KB`,
+              cleanedSize: `${(mainHtmlCleaningResult.cleanedSize / 1024).toFixed(2)} KB`,
+              reductionPercentage: `${mainHtmlCleaningResult.reductionPercentage.toFixed(2)}%`,
+              savedBytes: `${((mainHtmlCleaningResult.originalSize - mainHtmlCleaningResult.cleanedSize) / 1024).toFixed(2)} KB`
+            });
+            
+            console.log('📄 [Background] Original HTML Sample (first 500 chars):', mainHtmlCleaningResult.originalSample);
+            console.log('✨ [Background] Cleaned HTML Sample (first 500 chars):', mainHtmlCleaningResult.cleanedSample);
+            
+            // Clean shadow content
+            const cleanedShadowRoots = shadowRoots.map((root, index) => {
+              const shadowCleaningResult = cleanHtmlForAgent(root.fullContent);
+              
+              // Log shadow content cleaning results for the first shadow root
+              if (index === 0 && shadowCleaningResult.originalSize > 0) {
+                console.log(`🧹 [Background] Shadow DOM Cleaning Results (${shadowRoots.length} shadow root${shadowRoots.length > 1 ? 's' : ''}):`, {
+                  shadowRootIndex: index + 1,
+                  hostElement: root.hostElement,
+                  hostId: root.hostId,
+                  originalSize: `${(shadowCleaningResult.originalSize / 1024).toFixed(2)} KB`,
+                  cleanedSize: `${(shadowCleaningResult.cleanedSize / 1024).toFixed(2)} KB`,
+                  reductionPercentage: `${shadowCleaningResult.reductionPercentage.toFixed(2)}%`,
+                  savedBytes: `${((shadowCleaningResult.originalSize - shadowCleaningResult.cleanedSize) / 1024).toFixed(2)} KB`
                 });
+                console.log('📄 [Background] Original Shadow Content Sample:', shadowCleaningResult.originalSample);
+                console.log('✨ [Background] Cleaned Shadow Content Sample:', shadowCleaningResult.cleanedSample);
+              }
+              
+              return {
+                hostElement: root.hostElement,
+                hostId: root.hostId,
+                hostClass: root.hostClass,
+                content: shadowCleaningResult.cleanedHtml
+                // textContent removed - it's huge (251KB) and redundant since agent can parse HTML
+              };
+            });
+            
+            // Calculate total savings
+            const totalOriginalSize = mainHtmlCleaningResult.originalSize + shadowRoots.reduce((sum, root) => sum + root.fullContent.length, 0);
+            const totalCleanedSize = mainHtmlCleaningResult.cleanedSize + cleanedShadowRoots.reduce((sum, root) => sum + root.content.length, 0);
+            const totalSavedBytes = totalOriginalSize - totalCleanedSize;
+            const totalReductionPercentage = totalOriginalSize > 0 ? (totalSavedBytes / totalOriginalSize) * 100 : 0;
+            
+            if (shadowRoots.length > 0) {
+              console.log('📊 [Background] Total Cleaning Results (Main HTML + Shadow DOM):', {
+                totalOriginalSize: `${(totalOriginalSize / 1024).toFixed(2)} KB`,
+                totalCleanedSize: `${(totalCleanedSize / 1024).toFixed(2)} KB`,
+                totalReductionPercentage: `${totalReductionPercentage.toFixed(2)}%`,
+                totalSavedBytes: `${(totalSavedBytes / 1024).toFixed(2)} KB`
               });
-            } else {
-              console.log('🔍 [Shadow DOM Detection] No shadow roots detected');
             }
             
             return {
@@ -419,17 +634,11 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
               
               // ONLY extract what the AI agent actually uses:
               allDOMContent: {
-                // 1. Full HTML (for CSS selector extraction)
-                  fullHTML: document.documentElement.outerHTML,
+                // 1. Full HTML (CLEANED - for CSS selector extraction)
+                  fullHTML: mainHtmlCleaningResult.cleanedHtml,
                   
-                // 2. Shadow DOM content (for content not visible in main DOM)
-                  shadowContent: shadowRoots.map(root => ({
-                    hostElement: root.hostElement,
-                    hostId: root.hostId,
-                    hostClass: root.hostClass,
-                    content: root.fullContent,
-                    textContent: root.textContent
-                  })),
+                // 2. Shadow DOM content (CLEANED - for content not visible in main DOM)
+                  shadowContent: cleanedShadowRoots,
                   
                 // 2. Form data (for form filling actions) - Enhanced to handle custom dropdowns
                   allFormData: (() => {
@@ -811,13 +1020,23 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
       });
 
       if (results && results[0] && results[0].result) {
-        log('[Background] Content extracted successfully for:', results[0].result.title);
+        const extractedContent = results[0].result;
+        log('[Background] Content extracted successfully for:', extractedContent.title);
+        
+        // Log extracted content size immediately after extraction
+        const extractedString = JSON.stringify(extractedContent);
+        const extractedSizeKB = (extractedString.length / 1024).toFixed(2);
+        const extractedSizeMB = (extractedString.length / (1024 * 1024)).toFixed(2);
+        
+        log('📦 [Background] Extracted content size:');
+        log(`   Total size: ${extractedSizeKB} KB (${extractedSizeMB} MB)`);
+        log(`   URL: ${extractedContent.url}`);
         
         // Store the extracted content
         // Skip broadcast if this is an on-demand fetch (has sendResponse) to prevent duplicate processing
-        await handlePageContentUpdate(results[0].result, tabId, !!sendResponse);
+        await handlePageContentUpdate(extractedContent, tabId, !!sendResponse);
         
-        sendResponse?.({ success: true, content: results[0].result });
+        sendResponse?.({ success: true, content: extractedContent });
         return;
       } else {
         log('[Background] Failed to extract content - no results returned');

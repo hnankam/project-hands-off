@@ -155,6 +155,65 @@ export const useContentManager = ({
 
       if (response?.success && response?.content) {
         debug.log('[ContentManager] Content loaded:', response.content);
+        
+        // Log content size and samples (on-demand fetch)
+        const contentString = JSON.stringify(response.content);
+        const totalSizeKB = (contentString.length / 1024).toFixed(2);
+        const totalSizeMB = (contentString.length / (1024 * 1024)).toFixed(2);
+        
+        debug.log('📊 [ContentManager] Received content size (on-demand):');
+        debug.log(`   Total size: ${totalSizeKB} KB (${totalSizeMB} MB)`);
+        debug.log(`   URL: ${response.content.url}`);
+        debug.log(`   Title: ${response.content.title}`);
+        
+        // Log sizes of individual content sections
+        if (response.content.allDOMContent) {
+          if (response.content.allDOMContent.fullHTML) {
+            const htmlSizeKB = (response.content.allDOMContent.fullHTML.length / 1024).toFixed(2);
+            debug.log(`   - fullHTML: ${htmlSizeKB} KB`);
+            debug.log('     Sample:', response.content.allDOMContent.fullHTML.substring(0, 200));
+          }
+          if (response.content.textContent) {
+            const textSizeKB = (response.content.textContent.length / 1024).toFixed(2);
+            debug.log(`   - textContent: ${textSizeKB} KB`);
+            debug.log('     Sample:', response.content.textContent.substring(0, 200));
+          }
+          if (response.content.allDOMContent.allFormData) {
+            const formDataSize = (JSON.stringify(response.content.allDOMContent.allFormData).length / 1024).toFixed(2);
+            debug.log(`   - allFormData: ${formDataSize} KB (${response.content.allDOMContent.allFormData.length} elements)`);
+            if (response.content.allDOMContent.allFormData.length > 0) {
+              debug.log('     First 3 elements:', response.content.allDOMContent.allFormData.slice(0, 3).map((f: any) => ({
+                type: f.type,
+                name: f.name,
+                label: f.label,
+                selector: f.bestSelector
+              })));
+            }
+          }
+          if (response.content.allDOMContent.clickableElements) {
+            const clickableSize = (JSON.stringify(response.content.allDOMContent.clickableElements).length / 1024).toFixed(2);
+            debug.log(`   - clickableElements: ${clickableSize} KB (${response.content.allDOMContent.clickableElements.length} elements)`);
+            if (response.content.allDOMContent.clickableElements.length > 0) {
+              debug.log('     First 3 elements:', response.content.allDOMContent.clickableElements.slice(0, 3).map((c: any) => ({
+                tagName: c.tagName,
+                text: c.text?.substring(0, 50),
+                selector: c.selector
+              })));
+            }
+          }
+          if (response.content.allDOMContent.shadowContent && response.content.allDOMContent.shadowContent.length > 0) {
+            const shadowSize = (JSON.stringify(response.content.allDOMContent.shadowContent).length / 1024).toFixed(2);
+            debug.log(`   - shadowContent: ${shadowSize} KB (${response.content.allDOMContent.shadowContent.length} shadow roots)`);
+            // response.content.allDOMContent.shadowContent.forEach((shadow: any, index: number) => {
+            //   debug.log(`     Shadow Root ${index + 1}:`, {
+            //     host: `${shadow.hostElement}${shadow.hostId ? '#' + shadow.hostId : ''}`,
+            //     contentSize: (shadow.content?.length || 0) + ' chars',
+            //     textPreview: shadow.textContent?.substring(0, 100)
+            //   });
+            // });
+          }
+        }
+        
         const timestamp = response.content.timestamp || Date.now();
         
         // Track this timestamp to avoid duplicate processing from broadcast
@@ -217,7 +276,7 @@ export const useContentManager = ({
           
         // Capture the incremental DOM update if available
         if (message.domUpdate) {
-          debug.log('[ContentManager] Received incremental DOM update:', message.domUpdate.summary);
+          debug.log('[ContentManager] Received incremental DOM update:', message.domUpdate);
           setLatestDOMUpdate(message.domUpdate);
         }
       } else if (message.type === 'pageContentUpdated') {
@@ -228,6 +287,64 @@ export const useContentManager = ({
           if (lastDirectResponseTimestampRef.current === message.data.timestamp) {
             debug.log('[ContentManager] Skipping broadcast - already processed via direct response');
             return;
+          }
+          
+          // Log content size and samples (broadcast)
+          const contentString = JSON.stringify(message.data);
+          const totalSizeKB = (contentString.length / 1024).toFixed(2);
+          const totalSizeMB = (contentString.length / (1024 * 1024)).toFixed(2);
+          
+          debug.log('📊 [ContentManager] Received content size (broadcast):');
+          debug.log(`   Total size: ${totalSizeKB} KB (${totalSizeMB} MB)`);
+          debug.log(`   URL: ${message.data.url}`);
+          debug.log(`   Title: ${message.data.title}`);
+          
+          // Log sizes of individual content sections
+          if (message.data.allDOMContent) {
+            if (message.data.allDOMContent.fullHTML) {
+              const htmlSizeKB = (message.data.allDOMContent.fullHTML.length / 1024).toFixed(2);
+              debug.log(`   - fullHTML: ${htmlSizeKB} KB`);
+              debug.log('     Sample:', message.data.allDOMContent.fullHTML.substring(0, 200));
+            }
+            if (message.data.textContent) {
+              const textSizeKB = (message.data.textContent.length / 1024).toFixed(2);
+              debug.log(`   - textContent: ${textSizeKB} KB`);
+              debug.log('     Sample:', message.data.textContent.substring(0, 200));
+            }
+            if (message.data.allDOMContent.allFormData) {
+              const formDataSize = (JSON.stringify(message.data.allDOMContent.allFormData).length / 1024).toFixed(2);
+              debug.log(`   - allFormData: ${formDataSize} KB (${message.data.allDOMContent.allFormData.length} elements)`);
+              if (message.data.allDOMContent.allFormData.length > 0) {
+                debug.log('     First 3 elements:', message.data.allDOMContent.allFormData.slice(0, 3).map((f: any) => ({
+                  type: f.type,
+                  name: f.name,
+                  label: f.label,
+                  selector: f.bestSelector
+                })));
+              }
+            }
+            if (message.data.allDOMContent.clickableElements) {
+              const clickableSize = (JSON.stringify(message.data.allDOMContent.clickableElements).length / 1024).toFixed(2);
+              debug.log(`   - clickableElements: ${clickableSize} KB (${message.data.allDOMContent.clickableElements.length} elements)`);
+              if (message.data.allDOMContent.clickableElements.length > 0) {
+                debug.log('     First 3 elements:', message.data.allDOMContent.clickableElements.slice(0, 3).map((c: any) => ({
+                  tagName: c.tagName,
+                  text: c.text?.substring(0, 50),
+                  selector: c.selector
+                })));
+              }
+            }
+            if (message.data.allDOMContent.shadowContent && message.data.allDOMContent.shadowContent.length > 0) {
+              const shadowSize = (JSON.stringify(message.data.allDOMContent.shadowContent).length / 1024).toFixed(2);
+              debug.log(`   - shadowContent: ${shadowSize} KB (${message.data.allDOMContent.shadowContent.length} shadow roots)`);
+              // message.data.allDOMContent.shadowContent.forEach((shadow: any, index: number) => {
+              //   debug.log(`     Shadow Root ${index + 1}:`, {
+              //     host: `${shadow.hostElement}${shadow.hostId ? '#' + shadow.hostId : ''}`,
+              //     contentSize: (shadow.content?.length || 0) + ' chars',
+              //     textPreview: shadow.textContent?.substring(0, 100)
+              //   });
+              // });
+            }
           }
           
           const timestamp = Date.now();

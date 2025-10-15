@@ -124,7 +124,7 @@ export const useMessagePersistence = ({
 
   // Manual load function using CopilotKit API
   const handleLoadMessages = useCallback(async () => {
-    debug.log('[useMessagePersistence] handleLoadMessages called, restoreMessagesRef.current:', restoreMessagesRef.current);
+    // debug.log('[useMessagePersistence] handleLoadMessages called, restoreMessagesRef.current:', restoreMessagesRef.current);
     
     if (!restoreMessagesRef.current) {
       debug.log('[useMessagePersistence] restoreMessagesRef.current is null, returning');

@@ -217,7 +217,7 @@ export const useTabManager = ({
                 debug.log('[TabManager] useEffect: Skipping fetch - already loading or fetching');
               }
             } else {
-              debug.log('[TabManager] useEffect: Cache is fresh, no fetch needed');
+              //debug.log('[TabManager] useEffect: Cache is fresh, no fetch needed');
             }
           } else {
             debug.log('No active tab found');
