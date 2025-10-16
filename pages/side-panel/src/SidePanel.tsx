@@ -1,5 +1,6 @@
 import '@src/SidePanel.css';
 import '@copilotkit/react-ui/styles.css';
+import React, { useEffect, useState } from 'react';
 import { t } from '@extension/i18n';
 import { PROJECT_URL_OBJECT, useStorage, withErrorBoundary, withSuspense, generateSessionName } from '@extension/shared';
 import { exampleThemeStorage, sessionStorage } from '@extension/storage';
@@ -7,10 +8,21 @@ import { cn, ErrorDisplay, LoadingSpinner, Button, DropdownMenu, DropdownMenuIte
 import { ChatSessionContainer } from './components/ChatSessionContainer';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ChatSkeleton } from './components/LoadingStates';
-import { useEffect, useState } from 'react';
 import { CopilotKit } from '@copilotkit/react-core';
 
 const SidePanel = () => {
+  // Defensive check for React
+  if (typeof React === 'undefined' || !React || !React.useState) {
+    console.error('[SidePanel] React is not properly loaded!', { React, hasUseState: !!(React as any)?.useState });
+    return (
+      <div style={{ padding: '20px', color: 'red' }}>
+        <h3>Critical Error: React not loaded</h3>
+        <p>Please reload the extension.</p>
+        <button onClick={() => window.location.reload()}>Reload</button>
+      </div>
+    );
+  }
+
   const { isLight, theme } = useStorage(exampleThemeStorage);
   const { sessions, currentSessionId } = useStorage(sessionStorage);
 

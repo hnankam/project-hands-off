@@ -2,10 +2,11 @@ import type { FC } from 'react';
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { useCopilotChat, useCoAgent, useCoAgentStateRender, useCopilotAction, useCopilotReadable, useCopilotChatHeadless_c, useFrontendTool, useHumanInTheLoop, useRenderToolCall, useCopilotContext} from "@copilotkit/react-core";
 import { CopilotChat, useCopilotChatSuggestions } from "@copilotkit/react-ui";
-import { debug, useStorage } from '@extension/shared';
+import { debug, useStorage, cosineSimilarity, embeddingService } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 import { WeatherCard } from './WeatherCard';
 import { AgentState } from '../lib/types';
+import { SemanticSearchManager } from '../lib/SemanticSearchManager';
 import { ProverbsCard } from './Proverbs';
 import { MoonCard } from './Moon';
 import { TaskProgressCard, AgentStepState } from './TaskProgressCard';
@@ -36,6 +37,11 @@ export interface ChatInnerProps {
   sessionId: string;
   sessionTitle: string | undefined;
   currentPageContent: any;
+  pageContentEmbedding?: {
+    fullEmbedding: number[];
+    chunks?: Array<{ text: string; html: string; embedding: number[] }>;
+    timestamp: number;
+  } | null;
   latestDOMUpdate: any;
   themeColor: string;
   setThemeColor: (color: string) => void;
@@ -63,6 +69,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   sessionId,
   sessionTitle,
   currentPageContent,
+  pageContentEmbedding,
   latestDOMUpdate,
   themeColor,
   setThemeColor,
@@ -81,6 +88,21 @@ export const ChatInner: FC<ChatInnerProps> = ({
   const { isLight } = useStorage(exampleThemeStorage);
   const theme = isLight ? 'light' : 'dark';
 
+  // Store embeddings and content for semantic search (not sent to agent)
+  const pageDataRef = useRef<{
+    embeddings: {
+      fullEmbedding: number[];
+      chunks?: Array<{ text: string; html: string; embedding: number[] }>;
+      timestamp: number;
+    } | null;
+    pageContent: any;
+  }>({
+    embeddings: null,
+    pageContent: null,
+  });
+
+  // Create semantic search manager
+  const searchManager = useMemo(() => new SemanticSearchManager(pageDataRef), []);
 
   const { threadId, setThreadId, chatInstructions, setChatInstructions, additionalInstructions, setAdditionalInstructions, runtimeClient } = useCopilotContext(); 
   
@@ -170,96 +192,75 @@ export const ChatInner: FC<ChatInnerProps> = ({
     }
   }, [filteredMessages, setHeadlessMessagesCount]);
 
-  // 🪁 Page Content State: Provide current page content to the agent
-  const pageContentForAgent = useMemo(() => {
+  // Update pageDataRef when embeddings or content changes (store locally, not sent to agent)
+  useEffect(() => {
+    pageDataRef.current.embeddings = pageContentEmbedding || null;
+    pageDataRef.current.pageContent = currentPageContent;
+  }, [pageContentEmbedding, currentPageContent]);
+
+  // 🪁 Page Metadata for Agent: Minimal metadata only (no large HTML/form data)
+  const pageMetadataForAgent = useMemo(() => {
     if (!currentPageContent) {
       debug.log('📭 [ChatSession] No currentPageContent available');
       return {
-        pageHTML: '',
         pageTitle: 'No page loaded',
         pageURL: '',
+        hasContent: false,
+        hasEmbeddings: false,
         timestamp: 0,
         dataSource: 'no-content'
       };
     }
 
-    // HTML is already cleaned in the content script, so just extract it
-    const pageHTML = currentPageContent.allDOMContent?.fullHTML || '';
-    const shadowContent = currentPageContent.allDOMContent?.shadowContent || [];
     const pageTitle = currentPageContent.title || 'Untitled Page';
     const pageURL = currentPageContent.url || '';
     const documentInfo = currentPageContent.allDOMContent?.documentInfo || null;
     const windowInfo = currentPageContent.allDOMContent?.windowInfo || null;
-    const allFormData = currentPageContent.allDOMContent?.allFormData || [];
-    const clickableElements = currentPageContent.allDOMContent?.clickableElements || [];
     
-    debug.log('📦 [ChatSession] Processing currentPageContent (already cleaned in content script):', {
+    debug.log('📦 [ChatSession] Page metadata prepared for agent:', {
       pageTitle,
       pageURL,
-      hasHTML: !!pageHTML,
-      htmlLength: pageHTML.length,
-      shadowContentCount: shadowContent.length,
-      hasDocumentInfo: !!documentInfo,
-      hasWindowInfo: !!windowInfo,
-      formElementsCount: allFormData.length,
-      clickableElementsCount: clickableElements.length,
+      hasEmbeddings: !!pageContentEmbedding,
+      embeddingChunksCount: pageContentEmbedding?.chunks?.length || 0,
       timestamp: currentPageContent.timestamp
     });
     
     return {
-      pageHTML: pageHTML,
-      shadowContent: shadowContent,
-      pageTitle: pageTitle,
-      pageURL: pageURL,
-      documentInfo: documentInfo,
-      windowInfo: windowInfo,
-      allFormData: allFormData,
-      clickableElements: clickableElements,
+      pageTitle,
+      pageURL,
+      hasContent: true,
+      hasEmbeddings: !!pageContentEmbedding,
+      embeddingChunksCount: pageContentEmbedding?.chunks?.length || 0,
+      documentInfo,
+      windowInfo,
       timestamp: currentPageContent.timestamp || Date.now(),
-      dataSource: 'chrome-extension-live-extraction'
+      dataSource: 'chrome-extension-live-extraction',
     };
-  }, [currentPageContent]);
+  }, [currentPageContent, pageContentEmbedding]);
 
-  // Log the page content for debugging
+  // Log the page metadata for debugging
   useEffect(() => {
-    if (pageContentForAgent && pageContentForAgent.dataSource !== 'no-content') {
-      debug.log('📄 [ChatSession] Page Content for Agent:', {
-        pageTitle: pageContentForAgent.pageTitle,
-        pageURL: pageContentForAgent.pageURL,
-        htmlLength: pageContentForAgent.pageHTML?.length || 0,
-        htmlPreview: pageContentForAgent.pageHTML?.substring(0, 700) || '',
-        shadowContentCount: pageContentForAgent.shadowContent?.length || 0,
-        shadowContentPreview: pageContentForAgent.shadowContent?.slice(0, 2).map((sc: any) => ({
-          host: `${sc.hostElement}${sc.hostId ? '#' + sc.hostId : ''}`,
-          contentLength: sc.content?.length || 0,
-          contentPreview: sc.content?.substring(0, 500) || ''
-        })) || [],
-        documentInfo: pageContentForAgent.documentInfo,
-        windowInfo: pageContentForAgent.windowInfo,
-        formElementsCount: pageContentForAgent.allFormData?.length || 0,
-        formElementsSample: pageContentForAgent.allFormData?.slice(0, 25) || [],
-        clickableElementsCount: pageContentForAgent.clickableElements?.length || 0,
-        clickableElementsSample: pageContentForAgent.clickableElements?.slice(0, 25) || [],
-        timestamp: new Date(pageContentForAgent.timestamp).toISOString()
+    if (pageMetadataForAgent && pageMetadataForAgent.dataSource !== 'no-content') {
+      debug.log('📄 [ChatSession] Page Metadata for Agent:', {
+        pageTitle: pageMetadataForAgent.pageTitle,
+        pageURL: pageMetadataForAgent.pageURL,
+        hasContent: pageMetadataForAgent.hasContent,
+        hasEmbeddings: pageMetadataForAgent.hasEmbeddings,
+        embeddingChunksCount: pageMetadataForAgent.embeddingChunksCount,
+        documentInfo: pageMetadataForAgent.documentInfo,
+        windowInfo: pageMetadataForAgent.windowInfo,
+        timestamp: new Date(pageMetadataForAgent.timestamp).toISOString(),
       });
-
-      // debug.log('[ChatSession] Clickable Elements (JSON):', JSON.stringify(pageContentForAgent.clickableElements, null, 2));
-      
-      // Warn if critical data is missing
-      if (!pageContentForAgent.pageHTML || pageContentForAgent.pageHTML.length === 0) {
-        debug.warn('⚠️ [ChatSession] WARNING: pageHTML is empty!');
-        debug.log('🔍 [ChatSession] Current page content object:', currentPageContent);
-      }
     }
-  }, [pageContentForAgent, currentPageContent]);
+  }, [pageMetadataForAgent, currentPageContent]);
 
   // 🪁 Trigger suggestion generation when page content is refreshed
   useEffect(() => {
-    if (showSuggestions && pageContentForAgent && pageContentForAgent.dataSource !== 'no-content' && generateSuggestions) {
+    if (showSuggestions && pageMetadataForAgent && pageMetadataForAgent.dataSource !== 'no-content' && generateSuggestions) {
       debug.log('🔄 [ChatInner] Page content refreshed, generating new suggestions');
       generateSuggestions();
     }
-  }, [pageContentForAgent, generateSuggestions, showSuggestions]);
+  }, [pageMetadataForAgent, generateSuggestions, showSuggestions]);
 
   // 🪁 Also trigger when DOM updates occur
   useEffect(() => {
@@ -270,8 +271,8 @@ export const ChatInner: FC<ChatInnerProps> = ({
   }, [latestDOMUpdate, generateSuggestions, showSuggestions]);
 
   useCopilotReadable({
-    description: "The current web page content including: pageHTML (full HTML structure, cleaned and optimized), shadowContent (array of Shadow DOM content with hostElement, hostId, hostClass, and cleaned HTML content for elements not visible in main DOM), documentInfo (title, URL, referrer, domain, lastModified, readyState, characterSet, contentType), windowInfo (viewport dimensions, scroll position, detailed location object, userAgent, language, platform), and allFormData (array of all form inputs, selects, and textareas with their tagName, type, name, id, value, placeholder, checked, selected, and textContent). Analyze the pageHTML to understand the page structure, find elements, and determine CSS selectors for interaction. Check shadowContent if you can't find elements in the main pageHTML. Use allFormData to understand form fields and their current values without parsing HTML. Use documentInfo and windowInfo for additional context about the page state and environment.",
-    value: pageContentForAgent,
+    description: "Current web page metadata including: pageTitle (page title), pageURL (current URL), hasContent (whether page content is loaded), hasEmbeddings (whether semantic search is available), embeddingChunksCount (number of searchable content chunks), documentInfo (page info like domain, referrer, characterSet), windowInfo (viewport dimensions, scroll position, userAgent, language, platform), and timestamp. Use the searchPageContent action to semantically search the page content when you need to find specific information or understand page structure.",
+    value: pageMetadataForAgent,
   });
 
   // 🪁 Readable 2: Latest Incremental DOM Update
@@ -299,21 +300,134 @@ export const ChatInner: FC<ChatInnerProps> = ({
     },
   });
 
+  // 🪁 Action: Search Page Content Semantically
+  useCopilotAction({
+    name: "searchPageContent",
+    description: `Semantically search the current page content to find relevant information. This uses AI embeddings to find content that matches the meaning of your query, not just keyword matching.
+    
+    Use this action to:
+    - Find specific information on the page
+    - Understand page structure and content
+    - Locate forms, buttons, or interactive elements
+    - Extract relevant data from the page
+    - Answer questions about the page content
+    
+    IMPORTANT: Transform the user's request into an effective search query. Extract the key concepts and entities.
+    Examples:
+    - User: "What is the main purpose of this page?" → Query: "main content purpose overview description"
+    - User: "Find pricing information" → Query: "pricing plans cost subscription price"
+    - User: "Show me the contact form" → Query: "contact form email message submit"
+    
+    Returns the most relevant HTML sections from the page that match your query.`,
+    parameters: [
+      {
+        name: "query",
+        type: "string",
+        description: "A semantically rich search query with key concepts and entities. Transform the user's natural language request into focused search terms (nouns, adjectives, domain terms). DO NOT use full sentences or action verbs like 'find', 'show', 'get'.",
+        required: true,
+      },
+      {
+        name: "topK",
+        type: "number",
+        description: "Number of results to return (default: 3, max: 10)",
+        required: false,
+      }
+    ],
+    handler: async ({ query, topK = 3 }) => {
+      return await searchManager.searchPageContent(query, topK);
+    },
+  });
+
+  // 🪁 Action: Search Form Data
+  useCopilotAction({
+    name: "searchFormData",
+    description: `Search through all form fields on the page to find inputs, textareas, selects, checkboxes, and radio buttons.
+    
+    Use this action to:
+    - Find form fields by purpose (email, password, username, etc.)
+    - Locate inputs by their labels or placeholders
+    - Discover form structure
+    - Get field selectors for filling forms
+    
+    IMPORTANT: Transform the user's request into a field-focused search query. Extract the field type and purpose.
+    Examples:
+    - User: "Fill in my email address" → Query: "email address input field"
+    - User: "Enter password" → Query: "password input field"
+    - User: "Select my country" → Query: "country select dropdown"
+    - User: "What's my username field?" → Query: "username login input"
+    - User: "Find the search box" → Query: "search query input text"
+    
+    Returns form field information including selectors, types, names, IDs, values, and placeholders.`,
+    parameters: [
+      {
+        name: "query",
+        type: "string",
+        description: "A field-focused search query describing the form field's purpose and type. Focus on: field purpose (email, password, name, etc.), field type (input, select, textarea, checkbox), and context (login, registration, search, etc.). Use descriptive nouns, not action verbs.",
+        required: true,
+      },
+      {
+        name: "topK",
+        type: "number",
+        description: "Number of results to return (default: 5, max: 20)",
+        required: false,
+      }
+    ],
+    handler: async ({ query, topK = 5 }) => {
+      return await searchManager.searchFormData(query, topK);
+    },
+  });
+
+  // 🪁 Action: Search Clickable Elements
+  useCopilotAction({
+    name: "searchClickableElements",
+    description: `Search through all clickable elements on the page including buttons, links, and interactive elements.
+    
+    Use this action to:
+    - Find buttons by their text or purpose
+    - Locate links by their text or destination
+    - Discover navigation elements
+    - Get selectors for clicking elements
+    
+    IMPORTANT: Transform the user's request into an element-focused search query. Extract the element type and purpose.
+    Examples:
+    - User: "Click the login button" → Query: "login sign in button"
+    - User: "Find the submit button" → Query: "submit button"
+    - User: "Navigate to pricing page" → Query: "pricing plans link navigation"
+    - User: "Click sign up" → Query: "sign up register button link"
+    - User: "Open the menu" → Query: "menu navigation toggle button"
+    
+    Returns clickable element information including selectors, text, aria labels, and hrefs.`,
+    parameters: [
+      {
+        name: "query",
+        type: "string",
+        description: "An element-focused search query describing the clickable element's purpose and type. Focus on: element text/label, action purpose (login, submit, navigate, etc.), element type (button, link, etc.), and context. Use descriptive nouns and key terms, not action verbs like 'click', 'find', 'open'.",
+        required: true,
+      },
+      {
+        name: "topK",
+        type: "number",
+        description: "Number of results to return (default: 5, max: 20)",
+        required: false,
+      }
+    ],
+    handler: async ({ query, topK = 5 }) => {
+      return await searchManager.searchClickableElements(query, topK);
+    },
+  });
+
   // 🪁 Action 1: Move Cursor to Element
   useCopilotAction({
     name: "moveCursorToElement",
     description: `Move the cursor to a specific element on the current web page. The cursor will stay visible for 5 minutes and auto-hide afterwards.
     
-      CRITICAL: You MUST use ONLY CSS selectors from the clickableElements list provided in pageContentForAgent.
-      DO NOT create your own selectors or parse HTML manually.
+      To find elements:
+      1. Use searchPageContent() FIRST to find relevant content and understand page structure
+      2. Search results will help you identify element types and locations
+      3. Based on search results, construct appropriate CSS selectors
+      4. If you're unsure about selector validity, use verifySelector() FIRST to test it
       
-      Steps to use this action:
-      1. CHECK if pageContentForAgent.clickableElements has content
-      2. If clickableElements is empty, call refreshPageContent() FIRST
-      3. Search through clickableElements array to find the target element
-      4. Use the EXACT selector from the clickableElements item
-      5. If you're unsure about selector validity, use verifySelector() FIRST to test it
-      6. Each clickableElements item contains:
+      Best practices for selectors:
         - selector: The CSS selector to use (REQUIRED)
         - text: Visible text content
         - ariaLabel: Accessibility label
@@ -352,7 +466,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
     parameters: [{
       name: "cssSelector",
       type: "string",
-      description: "A CSS selector from the clickableElements list in pageContentForAgent (e.g., '#create-account-btn', '.card.manual-setup').",
+      description: "A CSS selector to identify the element (e.g., '#create-account-btn', '.card.manual-setup'). Use searchPageContent() to find appropriate selectors.",
       required: true,
     }],
     handler: async ({ cssSelector }) => {
@@ -367,8 +481,8 @@ export const ChatInner: FC<ChatInnerProps> = ({
     name: "refreshPageContent",
     description: `Force refresh the page HTML content. Use this when you need the most up-to-date page content, especially when:
       - The page has dynamic content that may have changed
-      - You need fresh clickableElements or form data
-      - The current pageContentForAgent seems outdated
+      - You need fresh page content for semantic search
+      - The current page content seems outdated
       - You're having trouble finding elements that should be present
       
       RETURN FORMAT: This action returns an object with:
@@ -377,7 +491,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
       - pageInfo?: object (when successful, contains title, url, htmlLength)`,
     parameters: [],
     handler: async () => {
-      const result = await handleRefreshPageContent(pageContentForAgent);
+      const result = await handleRefreshPageContent(pageDataRef.current.pageContent);
       debug.log('[Agent Response] refreshPageContent:', result);
       return result;
     },
@@ -412,16 +526,11 @@ export const ChatInner: FC<ChatInnerProps> = ({
     name: "clickElement",
     description: `Click on a specific element on the current web page.
 
-      CRITICAL: You MUST use ONLY CSS selectors from the clickableElements list provided in pageContentForAgent.
-      DO NOT create your own selectors or parse HTML manually.
-  
       Steps to use this action:
-      1. CHECK if pageContentForAgent.clickableElements has content
-      2. If clickableElements is empty, call refreshPageContent() FIRST
-      3. Search through clickableElements array to find the target element
-      4. Use the EXACT selector from the clickableElements item
-      5. If you're unsure about selector validity, use verifySelector() FIRST to test it
-      6. If verifySelector shows the element exists, proceed with clickElement
+      1. Use searchPageContent() FIRST to find the button and understand its location
+      2. Based on search results, construct an appropriate CSS selector
+      3. If you're unsure about selector validity, use verifySelector() FIRST to test it
+      4. If verifySelector shows the element exists, proceed with clickElement
       7. Each clickableElements item contains:
         - selector: The CSS selector to use (REQUIRED)
         - text: Visible text content
@@ -460,7 +569,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
     parameters: [{
       name: "cssSelector",
       type: "string",
-      description: "A CSS selector from the clickableElements list in pageContentForAgent (e.g., '#create-account-btn', '.card.manual-setup').",
+      description: "A CSS selector to identify the element (e.g., '#create-account-btn', '.card.manual-setup'). Use searchPageContent() to find appropriate selectors.",
       required: true,
     }, {
       name: "autoMoveCursor",
@@ -528,7 +637,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
       CRITICAL: You MUST provide a valid CSS selector from the pageHTML, NOT a description.
       
       Steps to use this action:
-      1. CHECK if pageContentForAgent.pageHTML has content or use pageContentForAgent.allFormData
+      1. Use searchPageContent() FIRST to find form fields and their properties
       2. If pageHTML is empty, call refreshPageContent() FIRST
       3. Analyze the pageHTML or allFormData to find the input field in the HTML
       4. For allFormData: Use the provided selectors or bestSelector field (RECOMMENDED)
@@ -748,7 +857,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
       - Also dispatches mouse events for compatibility
       
       Steps to use this action:
-      1. CHECK if pageContentForAgent.pageHTML has content
+      1. Use searchPageContent() to verify page content is available
       2. If pageHTML is empty, call refreshPageContent() FIRST
       3. Analyze the pageHTML to find BOTH the source element to drag AND the target drop zone
       4. Extract CSS selectors for both elements using their IDs, classes, or attributes
@@ -1021,27 +1130,34 @@ export const ChatInner: FC<ChatInnerProps> = ({
 
   // 🪁 Chat Suggestions: Smart suggestions based on context
   // Suggestions automatically regenerate when useCopilotReadable values change
-  // (pageContentForAgent and latestDOMUpdate are already provided via useCopilotReadable)
+  // (pageMetadataForAgent and latestDOMUpdate are already provided via useCopilotReadable)
   // Hide suggestions by setting maxSuggestions to 0 when showSuggestions is false
   useCopilotChatSuggestions({
     instructions: `Generate helpful suggestions for the user based on the current chat session and page content. 
         
-    The agent has access to full page content (pageHTML, allFormData, etc.) and can interact with the page.
+    The agent can semantically search page content and interact with the page.
     
-    Available actions:
-    - Analyze page content and structure
+    Available search actions:
+    - searchPageContent(query, topK) - Search page content, returns HTML chunks with text
+    - searchFormData(query, topK) - Search form fields (inputs, textareas, selects), returns field info with selectors
+    - searchClickableElements(query, topK) - Search buttons and links, returns element info with selectors
+    
+    Available interaction actions:
     - Set theme colors
-    - Move cursor to elements (use selectors from clickableElements list)
-    - Click elements (use selectors from clickableElements list)
-    - Input data into form fields (text, textarea, select, checkbox, radio, contenteditable)
+    - Move cursor to elements (use selectors from search results)
+    - Click elements (use selectors from search results)
+    - Input data into form fields (use selectors from searchFormData)
     - Scroll the page or specific elements (up, down, left, right, top, bottom)
     - Drag and drop elements (with animated visual feedback)
     - Open new tabs with URLs
     - Remove cursor indicator
     
-    IMPORTANT: Analyze the pageContentForAgent readable context to understand what's on the page before suggesting interactions.
-    Use clickableElements to see available clickable elements with their selectors, text, and properties.
-    Use allFormData to see available form fields with their names, IDs, types, and current values.
+    IMPORTANT: Always use search actions FIRST:
+    - Use searchPageContent() to understand page structure and content
+    - Use searchFormData() to find form fields before filling them
+    - Use searchClickableElements() to find buttons/links before clicking them
+    
+    Search results provide ready-to-use selectors and HTML snippets.
     
     Examples:
     - "What is this page about?"

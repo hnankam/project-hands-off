@@ -2,12 +2,37 @@
 
 ## Overview
 
-Successfully integrated **browser-compatible** vector embeddings using `@huggingface/transformers`. This replaces `fastembed` which only works in Node.js environments.
+Successfully integrated **browser-compatible** vector embeddings using `@huggingface/transformers` v3.7.5 running in an **offscreen document**. This architecture provides full DOM API access while keeping the UI responsive.
 
-## Why the Change?
+## Why Offscreen Document?
 
-❌ **fastembed** - Requires Node.js native bindings, cannot run in browser  
-✅ **@huggingface/transformers** - Pure JavaScript/WebAssembly, perfect for Chrome extensions
+❌ **Web Worker** - Can't access `chrome-extension://` URLs, limited DOM APIs  
+❌ **Service Worker** - No XMLHttpRequest, no Cache API, no WebGPU  
+✅ **Offscreen Document** - Full DOM APIs, separate process, transformers.js compatible
+
+## Architecture (v0.1.1)
+
+```
+┌─────────────────────────────────────────────────┐
+│ Side Panel (UI)                                 │
+│  • Triggers embedding when content changes      │
+│  • Stores results in SurrealDB                  │
+└─────────────────────────────────────────────────┘
+         ↓ chrome.runtime.sendMessage
+┌─────────────────────────────────────────────────┐
+│ Background Script (Message Broker)              │
+│  • Coordinates between components               │
+│  • Manages offscreen document lifecycle         │
+└─────────────────────────────────────────────────┘
+         ↓ chrome.runtime.sendMessage
+┌─────────────────────────────────────────────────┐
+│ Offscreen Document (Embeddings Engine)          │
+│  • Runs transformers.js pipeline                │
+│  • Has full DOM APIs (XMLHttpRequest, etc.)     │
+│  • Isolated process (won't freeze UI)           │
+│  • Model: Xenova/all-MiniLM-L6-v2 (384 dims)   │
+└─────────────────────────────────────────────────┘
+```
 
 ## What Was Added
 

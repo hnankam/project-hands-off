@@ -111,7 +111,8 @@ export const useTabManager = ({
       return;
     }
     
-    debug.log(`[TabManager] Tab change tracking enabled (interactive: ${isPanelInteractive}, visible: ${isPanelVisible})`);
+    // Only log on initial setup, not on every state change
+    // debug.log(`[TabManager] Tab change tracking enabled (interactive: ${isPanelInteractive}, visible: ${isPanelVisible})`);
     
     const handleTabActivated = (activeInfo: chrome.tabs.TabActiveInfo) => {
       const previousTabId = currentTabId;
@@ -186,15 +187,12 @@ export const useTabManager = ({
     const justBecameInteractive = wasNotInteractive && isNowInteractive;
     const justBecameNotInteractive = previousIsPanelInteractiveRef.current && !isNowInteractive;
     
-    // Debug: Log ALL interactive state changes
+    // ONLY log when state actually changes (not on every render)
     if (justBecameInteractive) {
       debug.log(`[TabManager] ✅ Panel became interactive (pending: ${pendingRefreshRef.current}, tabId: ${currentTabId}, active: ${isActive})`);
     } else if (justBecameNotInteractive) {
       debug.log(`[TabManager] ❌ Panel became NOT interactive (pending: ${pendingRefreshRef.current})`);
     }
-    
-    // Log current state on every change
-    debug.log(`[TabManager] Interactive state: was=${previousIsPanelInteractiveRef.current}, now=${isPanelInteractive}, changed=${justBecameInteractive}`);
     
     // When panel becomes interactive, check for pending refresh
     if (justBecameInteractive && isActive && currentTabId && pendingRefreshRef.current) {

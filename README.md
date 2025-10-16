@@ -61,17 +61,35 @@ the build speed and development experience by using Vite and Turborepo.
 
 ## Features
 
-- [React](https://reactjs.org/)
+### Core Stack
+- [React](https://reactjs.org/) 19.1.0
 - [TypeScript](https://www.typescriptlang.org/)
 - [Tailwindcss](https://tailwindcss.com/)
-- [Vite](https://vitejs.dev/) with [Rollup](https://rollupjs.org/)
-- [Turborepo](https://turbo.build/repo)
+- [Vite](https://vitejs.dev/) 6.3.6 with [Rollup](https://rollupjs.org/)
+- [Turborepo](https://turbo.build/repo) with 16-thread concurrency
 - [Prettier](https://prettier.io/)
 - [ESLint](https://eslint.org/)
 - [Chrome Extensions Manifest Version 3](https://developer.chrome.com/docs/extensions/mv3/intro/)
+
+### AI & Embeddings (v0.1.1)
+- [Transformers.js](https://huggingface.co/docs/transformers.js) 3.7.5 - Browser-compatible ML inference
+- [Offscreen Document](https://developer.chrome.com/docs/extensions/reference/api/offscreen) - Isolated embedding engine
+- **Xenova/all-MiniLM-L6-v2** - 384-dimensional embeddings (~30MB model)
+- **Semantic Search** - Vector similarity search for page content, forms, and elements
+- **Auto-Embedding** - Automatic embedding when page content changes
+
+### Database & Storage
+- [SurrealDB WASM](https://surrealdb.com/) 1.4.1 - Embedded database with in-memory support
+- **SCHEMAFULL** tables with proper datetime handling
+- **IndexedDB** persistence for messages and embeddings
+- **Type-safe** interfaces for all data operations
+
+### Developer Experience
 - [Custom i18n package](/packages/i18n/)
 - [Custom HMR (Hot Module Rebuild) plugin](/packages/hmr)
 - [End-to-end testing with WebdriverIO](https://webdriver.io/)
+- **Fast builds** - 25% faster with optimized Turbo configuration
+- **Hot reload** - Instant updates during development
 
 ## Installation
 

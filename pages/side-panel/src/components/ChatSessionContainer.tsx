@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
 import type { FC, CSSProperties } from 'react';
 import { CopilotKit } from '@copilotkit/react-core';
-import { useStorage, debug } from '@extension/shared';
+import { useStorage, debug, embeddingsStorage } from '@extension/shared';
 import { sessionStorage, preferencesStorage } from '@extension/storage';
 import { StatusBar } from './StatusBar';
 import { ChatInner } from './ChatInner';
@@ -14,6 +14,7 @@ import { useMessagePersistence } from '../hooks/useMessagePersistence';
 import { usePanelVisibility } from '../hooks/usePanelVisibility';
 import { useContentRefresh } from '../hooks/useContentRefresh';
 import { useUsageStream } from '../hooks/useUsageStream';
+import { useEmbeddingWorker } from '../hooks/useEmbeddingWorker';
 import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG } from '../constants';
 
 interface ChatSessionContainerProps {
@@ -50,6 +51,32 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
   const [hasProgressBar, setHasProgressBar] = useState(false);
   const [showProgressBar, setShowProgressBar] = useState(true);
   const [toggleProgressBar, setToggleProgressBar] = useState<(() => void) | undefined>(undefined);
+  
+  // Embedding state
+  const [pageContentEmbedding, setPageContentEmbedding] = useState<{
+    fullEmbedding: number[];
+    chunks?: Array<{ text: string; html: string; embedding: number[] }>;
+    formFieldEmbeddings?: Array<{ 
+      selector: string; 
+      tagName: string; 
+      type: string; 
+      name: string; 
+      id: string; 
+      placeholder?: string; 
+      embedding: number[]; 
+      index: number;
+    }>;
+    clickableElementEmbeddings?: Array<{ 
+      selector: string; 
+      tagName: string; 
+      text: string; 
+      ariaLabel?: string; 
+      href?: string; 
+      embedding: number[]; 
+      index: number;
+    }>;
+    timestamp: number;
+  } | null>(null);
   
   // Stable callback for progress bar state changes
   const handleProgressBarStateChange = useCallback((has: boolean, show: boolean, toggle: () => void) => {
@@ -275,6 +302,19 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
     resetCumulative
   } = useUsageStream(sessionId, isActive, 'ws://localhost:8001', initialUsage);
   
+  // Embedding worker for page content
+  const {
+    isInitialized: isEmbeddingInitialized,
+    isInitializing: isEmbeddingInitializing,
+    isProcessing: isEmbeddingProcessing,
+    error: embeddingError,
+    progress: embeddingProgress,
+    embedPageContent,
+  } = useEmbeddingWorker({
+    autoInitialize: true, // Auto-initialize on mount
+    // Progress is logged by the hook itself, no need to log here
+  });
+  
   // Save cumulative usage to storage whenever it changes
   useEffect(() => {
     if (cumulativeUsage) {
@@ -295,6 +335,217 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
       console.warn('Usage streaming error:', usageError);
     }
   }, [usageError]);
+  
+  // Log embedding errors if any
+  useEffect(() => {
+    if (embeddingError) {
+      console.warn('Embedding error:', embeddingError);
+    }
+  }, [embeddingError]);
+  
+  // Log embedding worker state changes (only major state changes, not every progress update)
+  useEffect(() => {
+    // Always log initialization state for debugging
+    console.log('[ChatSessionContainer] 📊 Embedding worker state:', {
+      isInitialized: isEmbeddingInitialized,
+      isInitializing: isEmbeddingInitializing,
+      hasError: !!embeddingError,
+    });
+
+    // Only log when initialization state changes or errors occur
+    if (embeddingError) {
+      console.error('❌ [ChatSessionContainer] Embedding Error:', embeddingError.message);
+    } else if (isEmbeddingInitialized && !isEmbeddingInitializing) {
+      console.log('[ChatSessionContainer] ✅ Embedding worker ready and initialized');
+    } else if (isEmbeddingInitializing) {
+      console.log('[ChatSessionContainer] ⏳ Embedding worker initializing...');
+    }
+  }, [isEmbeddingInitialized, isEmbeddingInitializing, embeddingError]);
+  
+  // Derived state for backward compatibility (moved here to avoid "use before declaration" error)
+  const currentPageContent = contentState.current || contentState.previous;
+  const isContentFetching = contentState.status === 'loading' || contentState.status === 'refreshing';
+  
+  // Ref to track if we're currently embedding (prevent infinite loop)
+  const isEmbeddingRef = useRef(false);
+  const lastEmbeddedKeyRef = useRef<string>('');
+  
+  // Embed page content when it changes
+  useEffect(() => {
+    const embedContent = async () => {
+      // DEBUG: Log state for diagnosis
+      console.log('[ChatSessionContainer] 🔍 Embedding check:', {
+        hasContent: !!currentPageContent,
+        isInitialized: isEmbeddingInitialized,
+        isProcessing: isEmbeddingProcessing,
+        contentURL: currentPageContent?.url,
+        contentTimestamp: currentPageContent?.timestamp,
+      });
+
+      // Only embed if we have content and the embedding worker is ready
+      if (!currentPageContent || !isEmbeddingInitialized || isEmbeddingProcessing) {
+        // Always log the reason for skipping (critical for debugging)
+        if (!currentPageContent) {
+          console.log('[ChatSessionContainer] ⏸️  No page content yet, skipping embedding');
+        } else if (!isEmbeddingInitialized) {
+          console.log('[ChatSessionContainer] ⏸️  Embedding worker NOT initialized yet, waiting...');
+        } else if (isEmbeddingProcessing) {
+          console.log('[ChatSessionContainer] ⏸️  Embedding already in progress, waiting...');
+        }
+        return;
+      }
+      
+      // Prevent infinite loop - check if already embedding
+      if (isEmbeddingRef.current) {
+        console.log('[ChatSessionContainer] ⏸️  Already embedding, skipping to prevent loop');
+        return;
+      }
+      
+      // Create a unique key for this content (URL + content timestamp, not lastFetch)
+      // Use only currentPageContent.timestamp to avoid issues with contentState.lastFetch changing
+      const contentTimestamp = currentPageContent.timestamp;
+      const contentKey = `${currentPageContent.url}_${contentTimestamp}`;
+      
+      // Check if we've already embedded this exact content
+      if (lastEmbeddedKeyRef.current === contentKey) {
+        console.log('[ChatSessionContainer] ⏸️  Content already embedded (same URL + timestamp), skipping');
+        return;
+      }
+      
+      console.log('[ChatSessionContainer] 📝 Content key:', contentKey);
+      console.log('[ChatSessionContainer] 📝 Last embedded key:', lastEmbeddedKeyRef.current);
+      
+      // Also check if content has changed since last embedding (legacy check)
+      if (pageContentEmbedding && pageContentEmbedding.timestamp >= contentTimestamp) {
+        // Content already embedded, no need to log
+        return;
+      }
+      
+      // IMPORTANT: Check if we have actual content data (not just stale/empty content)
+      // If allDOMContent exists but has no meaningful data, wait for fresh content
+      if (currentPageContent.allDOMContent) {
+        const hasFormData = currentPageContent.allDOMContent.allFormData && currentPageContent.allDOMContent.allFormData.length > 0;
+        const hasClickableElements = currentPageContent.allDOMContent.clickableElements && currentPageContent.allDOMContent.clickableElements.length > 0;
+        const hasHTML = currentPageContent.allDOMContent.fullHTML && currentPageContent.allDOMContent.fullHTML.length > 0;
+        
+        if (!hasHTML && !hasFormData && !hasClickableElements) {
+          console.log('[ChatSessionContainer] ⏸️  Skipping embedding - waiting for fresh content with actual data');
+          return;
+        }
+      }
+      
+      // All checks passed - set flag NOW to prevent race conditions
+      isEmbeddingRef.current = true;
+      
+      try {
+        
+        console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('[ChatSessionContainer] 🚀 AUTO-EMBEDDING TRIGGERED');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('[ChatSessionContainer]    Trigger: Page content changed');
+        console.log('[ChatSessionContainer]    Page URL:', currentPageContent.url || 'unknown');
+        console.log('[ChatSessionContainer]    Page title:', currentPageContent.title || 'untitled');
+        console.log('[ChatSessionContainer]    Session ID:', sessionId);
+        console.log('[ChatSessionContainer]    Content timestamp:', contentTimestamp);
+        console.log('[ChatSessionContainer]    Current time:', new Date().toISOString());
+        console.log('[ChatSessionContainer] DEBUG - currentPageContent.allDOMContent?.allFormData:', currentPageContent.allDOMContent?.allFormData?.length || 0, 'items');
+        console.log('[ChatSessionContainer] DEBUG - currentPageContent.allDOMContent?.clickableElements:', currentPageContent.allDOMContent?.clickableElements?.length || 0, 'items');
+        
+        const result = await embedPageContent(currentPageContent);
+        
+        if (result) {
+          const timestamp = Date.now();
+          
+          setPageContentEmbedding({
+            fullEmbedding: result.fullEmbedding,
+            chunks: result.chunks as Array<{ text: string; html: string; embedding: number[] }>,
+            formFieldEmbeddings: result.formFieldEmbeddings,
+            clickableElementEmbeddings: result.clickableElementEmbeddings,
+            timestamp,
+          });
+          
+          console.log('[ChatSessionContainer] ✅ AUTO-EMBEDDING COMPLETE');
+          console.log('[ChatSessionContainer]    Full embedding dimensions:', result.fullEmbedding.length);
+          console.log('[ChatSessionContainer]    Full embedding sample:', result.fullEmbedding.slice(0, 5).map((v: number) => v.toFixed(4)).join(', ') + '...');
+          console.log('[ChatSessionContainer]    Chunks generated:', result.chunks?.length || 0);
+          if (result.chunks && result.chunks.length > 0) {
+            const firstChunk = result.chunks[0] as { text: string; html: string; embedding: number[] };
+            console.log('[ChatSessionContainer]    First chunk text length:', firstChunk.text.length, 'chars');
+            console.log('[ChatSessionContainer]    First chunk HTML length:', firstChunk.html.length, 'chars');
+            console.log('[ChatSessionContainer]    First chunk embedding sample:', firstChunk.embedding.slice(0, 5).map((v: number) => v.toFixed(4)).join(', ') + '...');
+          }
+
+          // Store in SurrealDB (in-memory) - Using NEW native vector search tables with HNSW indexes
+          try {
+            console.log('[ChatSessionContainer]    Storing in SurrealDB with HNSW indexes...');
+            const pageURL = currentPageContent.url || window.location.href;
+            const pageTitle = currentPageContent.title || document.title;
+            
+            // 1. Store HTML chunks in new table with HNSW index
+            if (result.chunks && result.chunks.length > 0) {
+              console.log('[ChatSessionContainer]    → Storing HTML chunks with HNSW index...');
+              await embeddingsStorage.storeHTMLChunks({
+                pageURL,
+                pageTitle,
+                chunks: result.chunks.map((chunk: any, index: number) => ({
+                  text: chunk.text,
+                  html: chunk.html || '',
+                  embedding: chunk.embedding,
+                  index,
+                })),
+                sessionId,
+              });
+              console.log('[ChatSessionContainer]    ✅ HTML chunks stored with HNSW index');
+            }
+            
+            // 2. Store form field GROUPS in new table with HNSW index (from JSON strings)
+            if (result.formFieldGroupEmbeddings && result.formFieldGroupEmbeddings.length > 0) {
+              console.log('[ChatSessionContainer]    → Storing form field groups with HNSW index...');
+              await embeddingsStorage.storeFormFields({
+                pageURL,
+                groups: result.formFieldGroupEmbeddings,
+                sessionId,
+              });
+              console.log('[ChatSessionContainer]    ✅ Form field groups stored with HNSW index');
+            }
+            
+            // 3. Store clickable element GROUPS in new table with HNSW index (from JSON strings)
+            if (result.clickableElementGroupEmbeddings && result.clickableElementGroupEmbeddings.length > 0) {
+              console.log('[ChatSessionContainer]    → Storing clickable element groups with HNSW index...');
+              await embeddingsStorage.storeClickableElements({
+                pageURL,
+                groups: result.clickableElementGroupEmbeddings,
+                sessionId,
+              });
+              console.log('[ChatSessionContainer]    ✅ Clickable element groups stored with HNSW index');
+            }
+            
+            console.log('[ChatSessionContainer] ✅ ALL EMBEDDINGS STORED in SurrealDB with HNSW indexes');
+            console.log('[ChatSessionContainer]    Storage type: In-memory with native vector search');
+            console.log('[ChatSessionContainer]    HTML chunks:', result.chunks?.length || 0, '(HNSW indexed)');
+            console.log('[ChatSessionContainer]    Form field groups:', result.formFieldGroupEmbeddings?.length || 0, '(HNSW indexed)');
+            console.log('[ChatSessionContainer]    Clickable element groups:', result.clickableElementGroupEmbeddings?.length || 0, '(HNSW indexed)');
+            console.log('[ChatSessionContainer]    Session ID:', sessionId);
+          } catch (storageError) {
+            console.warn('[ChatSessionContainer] ⚠️  Failed to store in SurrealDB:', storageError);
+            // Don't fail the embedding process if storage fails
+          }
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+        }
+      } catch (error) {
+        console.error('[ChatSessionContainer] ❌ Failed to embed page content:', error);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+      } finally {
+        // Always clear the flag when done (success or error)
+        isEmbeddingRef.current = false;
+        // CRITICAL: Mark this content as attempted (success or failure) to prevent retry loops
+        lastEmbeddedKeyRef.current = contentKey;
+      }
+    };
+    
+    embedContent();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPageContent?.url, currentPageContent?.timestamp, isEmbeddingInitialized, isEmbeddingProcessing, sessionId]);
   
   // Save agent/model selection to storage whenever they change
   useEffect(() => {
@@ -438,10 +689,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
   
   // Get the current session
   const sessionTitle = currentSession?.title || 'New Session';
-  
-  // Derived state for backward compatibility
-  const currentPageContent = contentState.current || contentState.previous;
-  const isContentFetching = contentState.status === 'loading' || contentState.status === 'refreshing';
   
   // Initialize loading state
   useEffect(() => {
@@ -710,6 +957,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
               sessionId={sessionId}
               sessionTitle={sessionTitle}
               currentPageContent={currentPageContent}
+              pageContentEmbedding={pageContentEmbedding}
               latestDOMUpdate={latestDOMUpdate}
               themeColor={themeColor}
               setThemeColor={setThemeColor}

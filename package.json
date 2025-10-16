@@ -1,6 +1,6 @@
 {
   "name": "chrome-extension-boilerplate-react-vite",
-  "version": "0.5.0",
+  "version": "0.1.2",
   "description": "chrome extension boilerplate",
   "license": "MIT",
   "private": true,
@@ -17,14 +17,17 @@
     "clean": "pnpm clean:bundle && pnpm clean:turbo && pnpm clean:node_modules",
     "clean:install": "pnpm clean:node_modules && pnpm install --frozen-lockfile",
     "type-check": "turbo type-check",
-    "base-build": "pnpm clean:bundle && turbo build",
+    "base-build": "NODE_OPTIONS='--max-old-space-size=8192' pnpm clean:bundle && NODE_OPTIONS='--max-old-space-size=8192' turbo build --concurrency=16 && node pages/offscreen/fix-html-paths.js",
     "build": "pnpm set-global-env && pnpm base-build",
     "build:firefox": "pnpm set-global-env CLI_CEB_FIREFOX=true && pnpm base-build",
-    "build:cached": "pnpm set-global-env && turbo build",
-    "build:cached:firefox": "pnpm set-global-env CLI_CEB_FIREFOX=true && turbo build",
-    "base-dev": "pnpm clean:bundle && turbo ready && turbo watch dev",
+    "build:cached": "pnpm set-global-env && NODE_OPTIONS='--max-old-space-size=8192' turbo build --concurrency=16 && node pages/offscreen/fix-html-paths.js",
+    "build:cached:firefox": "pnpm set-global-env CLI_CEB_FIREFOX=true && NODE_OPTIONS='--max-old-space-size=8192' turbo build --concurrency=16 && node pages/offscreen/fix-html-paths.js",
+    "base-dev": "turbo watch dev --concurrency=16",
+    "base-dev:clean": "pnpm clean:bundle && turbo ready --concurrency=16 && turbo watch dev --concurrency=16",
     "dev": "pnpm set-global-env CLI_CEB_DEV=true && pnpm base-dev",
+    "dev:clean": "pnpm set-global-env CLI_CEB_DEV=true && pnpm base-dev:clean",
     "dev:firefox": "pnpm set-global-env CLI_CEB_DEV=true CLI_CEB_FIREFOX=true && pnpm base-dev",
+    "dev:firefox:clean": "pnpm set-global-env CLI_CEB_DEV=true CLI_CEB_FIREFOX=true && pnpm base-dev:clean",
     "zip": "pnpm build && pnpm -F zipper zip",
     "zip:firefox": "pnpm build:firefox && pnpm -F zipper zip",
     "e2e": "pnpm zip && turbo e2e",
@@ -37,12 +40,14 @@
     "copy-env": "bash bash-scripts/copy_env.sh",
     "set-global-env": "bash bash-scripts/set_global_env.sh",
     "module-manager": "pnpm -F module-manager start",
-    "postinstall": "pnpm copy-env"
+    "download-onnx-wasm": "node scripts/download-onnx-wasm.js",
+    "postinstall": "pnpm copy-env && pnpm download-onnx-wasm"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.7.5",
     "@surrealdb/wasm": "^1.4.1",
     "@themaximalist/vectordb.js": "^0.1.2",
+    "onnxruntime-web": "^1.23.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "surrealdb": "^1.3.2"
@@ -102,6 +107,6 @@
   },
   "packageManager": "pnpm@10.11.0",
   "engines": {
-    "node": ">=22.15.1"
+    "node": ">=22.11.0"
   }
 }

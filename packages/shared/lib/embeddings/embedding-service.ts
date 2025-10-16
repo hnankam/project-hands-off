@@ -1,11 +1,8 @@
 /**
- * Browser-compatible embedding service using @huggingface/transformers
- * This replaces fastembed which only works in Node.js
+ * Browser-compatible embedding service
+ * Delegates to background script which uses offscreen document for embeddings
+ * This avoids CSP issues and keeps transformers.js isolated
  */
-
-// Dynamic import to avoid build issues
-type Pipeline = any;
-type FeatureExtractionPipeline = any;
 
 /**
  * Supported embedding models
@@ -43,64 +40,48 @@ export interface EmbeddingOptions {
 
 /**
  * Browser-compatible embedding service
+ * Delegates to background script -> offscreen document for actual embeddings
  */
 class EmbeddingService {
-  private pipeline: FeatureExtractionPipeline | null = null;
-  private currentModel: EmbeddingModel | null = null;
+  private initialized = false;
   private isLoading = false;
   private loadPromise: Promise<void> | null = null;
 
   /**
-   * Initialize the embedding pipeline with a specific model
+   * Initialize the embedding service (signals background to prepare offscreen)
    */
   async initialize(options: EmbeddingOptions = {}): Promise<void> {
-    const {
-      model = EmbeddingModel.ALL_MINILM_L6_V2,
-      normalize = true,
-      pooling = 'mean',
-      onProgress,
-    } = options;
-
-    // If already loading the same model, wait for it
-    if (this.isLoading && this.currentModel === model && this.loadPromise) {
+    // If already loading, wait for it
+    if (this.isLoading && this.loadPromise) {
       return this.loadPromise;
     }
 
-    // If model is already loaded, skip
-    if (this.pipeline && this.currentModel === model) {
-      console.log('Model already loaded:', model);
+    // If already initialized, skip
+    if (this.initialized) {
+      console.log('[EmbeddingService] Already initialized');
       return;
     }
 
     this.isLoading = true;
-    this.currentModel = model;
 
     this.loadPromise = (async () => {
       try {
-        // Dynamic import to avoid build-time issues
-        const { pipeline } = await import('@huggingface/transformers');
-
-        onProgress?.({ status: 'Loading model...', progress: 0 });
-
-        // Initialize the feature extraction pipeline
-        this.pipeline = await pipeline('feature-extraction', model, {
-          progress_callback: (progress: any) => {
-            onProgress?.({
-              status: progress.status || 'Loading',
-              progress: progress.progress || undefined,
-            });
-          },
+        console.log('[EmbeddingService] Initializing via background script...');
+        
+        // Signal background script to initialize offscreen document
+        const response = await chrome.runtime.sendMessage({
+          type: 'initializeEmbedding'
         });
 
-        // Store options for embedding generation
-        (this.pipeline as any).__options = { normalize, pooling };
+        if (!response.success) {
+          throw new Error(response.error || 'Failed to initialize embedding service');
+        }
 
-        onProgress?.({ status: 'Model loaded', progress: 100 });
-        console.log('Embedding model loaded:', model);
+        this.initialized = true;
+        console.log('[EmbeddingService] ✅ Initialized successfully');
       } catch (error) {
-        console.error('Failed to load embedding model:', error);
-        this.pipeline = null;
-        this.currentModel = null;
+        console.error('[EmbeddingService] Failed to initialize:', error);
+        this.initialized = false;
         throw error;
       } finally {
         this.isLoading = false;
@@ -112,42 +93,45 @@ class EmbeddingService {
   }
 
   /**
-   * Generate embeddings for a single text
+   * Generate embeddings for a single text (delegates to background script)
    */
   async embed(text: string): Promise<number[]> {
-    if (!this.pipeline) {
-      throw new Error('Embedding model not initialized. Call initialize() first.');
+    if (!this.initialized) {
+      console.log('[EmbeddingService] Not initialized, initializing now...');
+      await this.initialize();
     }
 
-    const options = (this.pipeline as any).__options || { normalize: true, pooling: 'mean' };
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'generateEmbedding',
+        text
+      });
 
-    const output = await this.pipeline(text, {
-      pooling: options.pooling,
-      normalize: options.normalize,
-    });
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to generate embedding');
+      }
 
-    // Convert to regular array
-    return Array.from(output.data);
+      return response.embedding;
+    } catch (error) {
+      console.error('[EmbeddingService] Failed to generate embedding:', error);
+      throw error;
+    }
   }
 
   /**
-   * Generate embeddings for multiple texts in batch
+   * Generate embeddings for multiple texts in batch (delegates to background script)
    */
   async embedBatch(texts: string[], batchSize = 32): Promise<number[][]> {
-    if (!this.pipeline) {
-      throw new Error('Embedding model not initialized. Call initialize() first.');
+    if (!this.initialized) {
+      await this.initialize();
     }
 
+    // Just delegate to background script - it handles batching efficiently
     const results: number[][] = [];
-
-    // Process in batches to avoid memory issues
-    for (let i = 0; i < texts.length; i += batchSize) {
-      const batch = texts.slice(i, i + batchSize);
-      const batchPromises = batch.map(text => this.embed(text));
-      const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults);
+    for (const text of texts) {
+      const embedding = await this.embed(text);
+      results.push(embedding);
     }
-
     return results;
   }
 
@@ -156,14 +140,17 @@ class EmbeddingService {
    * This is a generator function that yields embeddings as they're computed
    */
   async *embedStream(texts: string[], batchSize = 32): AsyncGenerator<number[][], void, unknown> {
-    if (!this.pipeline) {
-      throw new Error('Embedding model not initialized. Call initialize() first.');
+    if (!this.initialized) {
+      await this.initialize();
     }
 
     for (let i = 0; i < texts.length; i += batchSize) {
       const batch = texts.slice(i, i + batchSize);
-      const batchPromises = batch.map(text => this.embed(text));
-      const batchResults = await Promise.all(batchPromises);
+      const batchResults: number[][] = [];
+      for (const text of batch) {
+        const embedding = await this.embed(text);
+        batchResults.push(embedding);
+      }
       yield batchResults;
     }
   }
@@ -172,7 +159,7 @@ class EmbeddingService {
    * Get the current model being used
    */
   getCurrentModel(): EmbeddingModel | null {
-    return this.currentModel;
+    return EmbeddingModel.ALL_MINILM_L6_V2; // Default model
   }
 
   /**
@@ -186,22 +173,15 @@ class EmbeddingService {
    * Check if a model is loaded and ready
    */
   isReady(): boolean {
-    return this.pipeline !== null && !this.isLoading;
+    return this.initialized && !this.isLoading;
   }
 
   /**
    * Dispose of the current model to free memory
    */
   async dispose(): Promise<void> {
-    if (this.pipeline) {
-      // The pipeline has a dispose method
-      if (typeof (this.pipeline as any).dispose === 'function') {
-        await (this.pipeline as any).dispose();
-      }
-      this.pipeline = null;
-      this.currentModel = null;
-      console.log('Embedding model disposed');
-    }
+    this.initialized = false;
+    console.log('[EmbeddingService] Disposed');
   }
 }
 

@@ -10,6 +10,12 @@ declare global {
   }
 }
 
+// Offscreen document constants
+const OFFSCREEN_DOCUMENT_PATH = 'offscreen/src/index.html';
+let creatingOffscreen: Promise<void> | null = null;
+let offscreenReadyPromise: Promise<void> | null = null;
+let offscreenReadyResolve: (() => void) | null = null;
+
 exampleThemeStorage.get().then(theme => {
   // console.log('theme', theme);
 });
@@ -21,6 +27,329 @@ const logError = (...args: any[]) => console.error(...args); // Always log error
 
 log('Background loaded');
 // log("Edit 'chrome-extension/src/background/index.ts' and save to reload.");
+
+// Create offscreen document for embeddings
+async function setupOffscreenDocument() {
+  if (await chrome.offscreen.hasDocument()) {
+    // Document exists, wait for ready signal if not already ready
+    if (offscreenReadyPromise) {
+      await offscreenReadyPromise;
+    }
+    return;
+  }
+  
+  if (creatingOffscreen) {
+    await creatingOffscreen;
+    return;
+  }
+  
+  // Create promise that will be resolved when offscreen sends ready signal
+  offscreenReadyPromise = new Promise(resolve => {
+    offscreenReadyResolve = resolve;
+  });
+  
+  creatingOffscreen = chrome.offscreen.createDocument({
+    url: OFFSCREEN_DOCUMENT_PATH,
+    reasons: [chrome.offscreen.Reason.WORKERS],
+    justification: 'Run transformers.js for text embeddings',
+  });
+  
+  await creatingOffscreen;
+  creatingOffscreen = null;
+  
+  log('[Background] ✅ Offscreen document created, waiting for ready signal...');
+  
+  // Wait for offscreen to signal it's ready (or timeout after 30s)
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Offscreen ready timeout')), 30000)
+  );
+  
+  try {
+    await Promise.race([offscreenReadyPromise, timeoutPromise]);
+    log('[Background] ✅ Offscreen ready signal received');
+  } catch (error) {
+    logError('[Background] ❌ Offscreen ready timeout');
+    throw error;
+  }
+}
+
+// Send message to offscreen document
+async function sendToOffscreen(message: any): Promise<any> {
+  await setupOffscreenDocument();
+  
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ ...message, target: 'offscreen' }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else if (response?.success) {
+        resolve(response);
+      } else {
+        reject(new Error(response?.error || 'Unknown error'));
+      }
+    });
+  });
+}
+
+// Initialize embeddings service
+async function initializeEmbeddingService() {
+  log('[Background] Initializing embedding service via offscreen...');
+  await sendToOffscreen({ type: 'initialize' });
+  log('[Background] ✅ Embedding service initialized');
+}
+
+// Generate embedding for text
+async function generateEmbedding(text: string): Promise<number[]> {
+  const response = await sendToOffscreen({ type: 'embedText', text });
+  return response.embedding;
+}
+
+/**
+ * Chunk HTML by complete elements to maintain tag balance
+ * This ensures each chunk has valid HTML with balanced opening/closing tags
+ */
+function chunkHTML(html: string, textContent: string, textChunkSize: number): Array<{ text: string; html: string }> {
+  const chunks: Array<{ text: string; html: string }> = [];
+  
+  // Simple text chunking
+  for (let i = 0; i < textContent.length; i += textChunkSize) {
+    const chunkText = textContent.slice(i, i + textChunkSize);
+    
+    // For HTML, try to find a corresponding section that doesn't split tags
+    let chunkHTML = '';
+    if (html) {
+      // Calculate proportional position in HTML
+      const startRatio = i / textContent.length;
+      const endRatio = Math.min((i + textChunkSize) / textContent.length, 1);
+      
+      let startPos = Math.floor(startRatio * html.length);
+      let endPos = Math.floor(endRatio * html.length);
+      
+      // Adjust start to not split a tag - find previous '>' or start of string
+      while (startPos > 0 && html[startPos - 1] !== '>') {
+        startPos--;
+      }
+      
+      // Adjust end to not split a tag - find next '>' or end of string
+      while (endPos < html.length && html[endPos] !== '>') {
+        endPos++;
+      }
+      if (endPos < html.length) endPos++; // Include the '>'
+      
+      chunkHTML = html.slice(startPos, endPos).trim();
+    }
+    
+    chunks.push({ text: chunkText, html: chunkHTML });
+  }
+  
+  return chunks;
+}
+
+/**
+ * Intelligently chunk an array into smaller valid JSON array strings.
+ * Ensures chunks don't split in the middle of objects (similar to HTML tag splitting).
+ * 
+ * @param items - The array of items to chunk
+ * @param targetChunkSize - Target size in characters for each chunk
+ * @returns Array of JSON string chunks, each a valid JSON array
+ */
+function chunkJSONArray(items: any[], targetChunkSize: number = 10000): string[] {
+  if (!Array.isArray(items) || items.length === 0) {
+    return [];
+  }
+  
+  const chunks: string[] = [];
+  let currentChunk: any[] = [];
+  let currentSize = 2; // Account for opening and closing brackets "[]"
+  
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const itemJSON = JSON.stringify(item);
+    const itemSize = itemJSON.length + (currentChunk.length > 0 ? 1 : 0); // +1 for comma if not first
+    
+    // If adding this item would exceed target size and we already have items, finalize current chunk
+    if (currentSize + itemSize > targetChunkSize && currentChunk.length > 0) {
+      chunks.push(JSON.stringify(currentChunk));
+      currentChunk = [];
+      currentSize = 2; // Reset for new chunk
+    }
+    
+    // Add item to current chunk
+    currentChunk.push(item);
+    currentSize += itemSize;
+  }
+  
+  // Add final chunk if not empty
+  if (currentChunk.length > 0) {
+    chunks.push(JSON.stringify(currentChunk));
+  }
+  
+  return chunks;
+}
+
+// Generate embeddings with chunks for page content (GROUPED for form fields and clickable elements)
+async function embedPageContent(content: any): Promise<{ 
+  fullEmbedding: number[]; 
+  chunks: Array<{ text: string; html: string; embedding: number[] }>;
+  formFieldGroupEmbeddings?: Array<{ groupIndex: number; fieldsJSON: string; embedding: number[] }>;
+  clickableElementGroupEmbeddings?: Array<{ groupIndex: number; elementsJSON: string; embedding: number[] }>;
+}> {
+  // Debug: Log what we received
+  log('[Background] 🔍 DEBUG - Received content object:');
+  log('[Background]    - content.allDOMContent?:', !!content.allDOMContent);
+  log('[Background]    - content.allDOMContent?.allFormData:', content.allDOMContent?.allFormData?.length || 0, 'items');
+  log('[Background]    - content.allDOMContent?.clickableElements:', content.allDOMContent?.clickableElements?.length || 0, 'items');
+  
+  const textContent = content.textContent || JSON.stringify(content);
+  const fullHTML = content.allDOMContent?.fullHTML || '';
+
+  // ========================================
+  // OPTIMIZED: Batch all embeddings into ONE request
+  // ========================================
+  
+  const allTextsToEmbed: string[] = [];
+  const textIndexMap: { type: string; index: number; dataIndex: number }[] = [];
+  
+  // 1. Add full page text
+  allTextsToEmbed.push(textContent);
+  textIndexMap.push({ type: 'fullPage', index: 0, dataIndex: 0 });
+  
+  // 2. Prepare chunks with balanced HTML tags (no split tags)
+  const chunkSize = 1000;
+  const chunkData = chunkHTML(fullHTML, textContent, chunkSize);
+  
+  // Add chunks to embedding queue
+  for (const chunk of chunkData) {
+    allTextsToEmbed.push(chunk.text);
+    textIndexMap.push({ type: 'chunk', index: allTextsToEmbed.length - 1, dataIndex: chunkData.indexOf(chunk) });
+  }
+  
+  // 3. Prepare form field GROUPS - convert to clean format, then intelligently chunk
+  const formFieldGroups: Array<{ groupIndex: number; jsonString: string }> = [];
+  const allFormData = content.allDOMContent?.allFormData;
+  
+  if (allFormData && Array.isArray(allFormData) && allFormData.length > 0) {
+    // Convert all form fields to clean format
+    const cleanedFormFields = allFormData.map((field: any) => ({
+      selector: field.bestSelector || field.selector || 'unknown',
+      tagName: field.tagName || 'unknown',
+      fieldType: field.type || 'unknown',
+      fieldName: field.name || '',
+      fieldId: field.id || '',
+      placeholder: field.placeholder,
+      fieldValue: field.value,
+    }));
+    
+    // Intelligently chunk the array directly (target ~10KB per chunk)
+    const formFieldChunks = chunkJSONArray(cleanedFormFields, 10000);
+    
+    log('[Background] 📊 Form field chunking:', cleanedFormFields.length, 'fields →', formFieldChunks.length, 'chunks');
+    
+    // Add each chunk to embedding queue
+    formFieldChunks.forEach((jsonChunk, index) => {
+      formFieldGroups.push({
+        groupIndex: index,
+        jsonString: jsonChunk,
+      });
+      
+      allTextsToEmbed.push(jsonChunk);
+      textIndexMap.push({ type: 'formFieldGroup', index: allTextsToEmbed.length - 1, dataIndex: index });
+    });
+  }
+  
+  // 4. Prepare clickable element GROUPS - convert to clean format, then intelligently chunk
+  const clickableElementGroups: Array<{ groupIndex: number; jsonString: string }> = [];
+  const clickableElements = content.allDOMContent?.clickableElements;
+  
+  if (clickableElements && Array.isArray(clickableElements) && clickableElements.length > 0) {
+    // Convert all clickable elements to clean format
+    const cleanedClickableElements = clickableElements.map((element: any) => ({
+      selector: element.bestSelector || element.selector || 'unknown',
+      tagName: element.tagName || 'unknown',
+      text: element.text || '',
+      ariaLabel: element.ariaLabel,
+      href: element.href,
+    }));
+    
+    // Intelligently chunk the array directly (target ~10KB per chunk)
+    const clickableElementChunks = chunkJSONArray(cleanedClickableElements, 10000);
+    
+    log('[Background] 📊 Clickable element chunking:', cleanedClickableElements.length, 'elements →', clickableElementChunks.length, 'chunks');
+    
+    // Add each chunk to embedding queue
+    clickableElementChunks.forEach((jsonChunk, index) => {
+      clickableElementGroups.push({
+        groupIndex: index,
+        jsonString: jsonChunk,
+      });
+      
+      allTextsToEmbed.push(jsonChunk);
+      textIndexMap.push({ type: 'clickableGroup', index: allTextsToEmbed.length - 1, dataIndex: index });
+    });
+  }
+  
+  // Debug: Log prepared data BEFORE batch embedding
+  log('[Background] 🔍 DEBUG - Prepared data arrays:');
+  log('[Background]    - formFieldGroups.length:', formFieldGroups.length);
+  log('[Background]    - clickableElementGroups.length:', clickableElementGroups.length);
+  
+  // 5. Generate ALL embeddings in ONE batch request
+  log('[Background] 🚀 Batch embedding:', allTextsToEmbed.length, 'items in one request');
+  log('[Background]    - Full page: 1');
+  log('[Background]    - HTML chunks:', chunkData.length);
+  log('[Background]    - Form field GROUPS:', formFieldGroups.length, '(intelligently chunked)');
+  log('[Background]    - Clickable element GROUPS:', clickableElementGroups.length, '(intelligently chunked)');
+  
+  // Send ONE batch request to offscreen document for ALL texts
+  const response = await chrome.runtime.sendMessage({
+    target: 'offscreen',
+    type: 'generateEmbeddings',
+    texts: allTextsToEmbed
+  });
+  
+  if (!response.success) {
+    throw new Error(response.error || 'Batch embedding failed');
+  }
+  
+  const allEmbeddings = response.embeddings as number[][];
+  
+  log('[Background] ✅ Batch embedding complete:', allEmbeddings.length, 'embeddings generated');
+  
+  // 6. Map embeddings back to their respective items
+  const fullEmbedding = allEmbeddings[0];
+  
+  const chunks: Array<{ text: string; html: string; embedding: number[] }> = chunkData.map((chunk, i) => ({
+    text: chunk.text,
+    html: chunk.html,
+    embedding: allEmbeddings[textIndexMap.find(m => m.type === 'chunk' && m.dataIndex === i)!.index]
+  }));
+  
+  // Map form field groups with their embeddings (from JSON strings)
+  const formFieldGroupEmbeddings = formFieldGroups.map((group, i) => ({
+    groupIndex: group.groupIndex,
+    fieldsJSON: group.jsonString,
+    embedding: allEmbeddings[textIndexMap.find(m => m.type === 'formFieldGroup' && m.dataIndex === i)!.index]
+  }));
+  
+  // Map clickable element groups with their embeddings (from JSON strings)
+  const clickableElementGroupEmbeddings = clickableElementGroups.map((group, i) => ({
+    groupIndex: group.groupIndex,
+    elementsJSON: group.jsonString,
+    embedding: allEmbeddings[textIndexMap.find(m => m.type === 'clickableGroup' && m.dataIndex === i)!.index]
+  }));
+
+  // Debug: Log what we're returning
+  log('[Background] 📊 Final results:');
+  log('[Background]    - chunks:', chunks.length);
+  log('[Background]    - formFieldGroupEmbeddings:', formFieldGroupEmbeddings.length, 'groups');
+  log('[Background]    - clickableElementGroupEmbeddings:', clickableElementGroupEmbeddings.length, 'groups');
+  
+  return { 
+    fullEmbedding, 
+    chunks,
+    formFieldGroupEmbeddings: formFieldGroupEmbeddings.length > 0 ? formFieldGroupEmbeddings : undefined,
+    clickableElementGroupEmbeddings: clickableElementGroupEmbeddings.length > 0 ? clickableElementGroupEmbeddings : undefined
+  };
+}
 
 // Interface for page content data (memory-only, not persisted to storage for small pages, use indexedDB for large pages)
 interface PageContentData {
@@ -50,7 +379,41 @@ chrome.runtime.onStartup.addListener(() => {
 
 // Handle messages from content scripts and side panel
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'pageContentUpdate') {
+  // Handle offscreen ready signal
+  if (message.type === 'offscreenReady') {
+    log('[Background] Received offscreen ready signal');
+    if (offscreenReadyResolve) {
+      offscreenReadyResolve();
+      offscreenReadyResolve = null;
+    }
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  // Handle embedding requests
+  if (message.type === 'initializeEmbedding') {
+    initializeEmbeddingService()
+      .then(() => sendResponse({ success: true }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep channel open for async response
+  } else if (message.type === 'embedPageContent') {
+    embedPageContent(message.content)
+      .then(result => sendResponse({ success: true, result }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep channel open for async response
+  } else if (message.type === 'generateEmbedding') {
+    generateEmbedding(message.text)
+      .then(embedding => sendResponse({ success: true, embedding }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep channel open for async response
+  } else if (message.type === 'generateEmbeddings') {
+    // Batch embedding generation
+    const texts = message.texts as string[];
+    Promise.all(texts.map(text => generateEmbedding(text)))
+      .then(embeddings => sendResponse({ success: true, embeddings }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep channel open for async response
+  } else if (message.type === 'pageContentUpdate') {
     handlePageContentUpdate(message.data, sender.tab?.id);
     sendResponse({ success: true });
   } else if (message.type === 'getPageContent') {

@@ -1,0 +1,20 @@
+{
+  "name": "@extension/offscreen",
+  "version": "0.5.0",
+  "description": "Offscreen document for embeddings",
+  "private": true,
+  "sideEffects": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build && node fix-html-paths.js",
+    "ready": "echo 'Offscreen has no ready step'",
+    "dev": "vite build --watch"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.7.5"
+  },
+  "devDependencies": {
+    "vite": "^6.2.1"
+  }
+}
+

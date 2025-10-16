@@ -36,14 +36,16 @@ Created `packages/shared/lib/db/surreal-db.ts`:
 Created comprehensive documentation:
 - `packages/shared/lib/db/README.md` - Complete usage guide with examples
 
-## Key Features
+## Key Features (v0.1.1)
 
 ✅ **Embedded Database**: Runs entirely in the browser, no server required  
 ✅ **IndexedDB Persistence**: Data persists across browser sessions  
-✅ **In-Memory Option**: Fast temporary storage for session data  
+✅ **In-Memory Option**: Fast temporary storage for session data (used for embeddings)  
 ✅ **Type-Safe**: Full TypeScript support  
-✅ **Pre-configured Schemas**: Ready-to-use tables for messages and downloads  
+✅ **SCHEMAFULL Tables**: Enforced schemas with proper datetime type handling  
+✅ **Embeddings Storage**: Dedicated `page_embeddings` table for vector search  
 ✅ **Real-time Capabilities**: Support for live queries and subscriptions  
+✅ **Datetime Support**: Proper datetime handling per [SurrealDB v2.0.0+ requirements](https://surrealdb.com/docs/surrealql/datamodel/datetimes)  
 
 ## Quick Start
 
@@ -291,7 +293,49 @@ If you encounter any issues:
 
 ---
 
-**Status**: ✅ Ready to use  
+**Status**: ✅ Production Ready (v0.1.1)  
 **Integration Date**: October 15, 2025  
+**Last Updated**: October 16, 2025  
 **Packages Version**: surrealdb@1.3.2, @surrealdb/wasm@1.4.1
+
+## Latest Updates (v0.1.1)
+
+### Datetime Handling
+- **BREAKING**: Tables now use `SCHEMAFULL` instead of `SCHEMALESS`
+- **Required**: Pass `Date` objects, not ISO strings to SurrealDB
+- **Reference**: https://surrealdb.com/docs/surrealql/datamodel/datetimes
+
+**Correct usage:**
+```typescript
+await surrealDB.create('page_embeddings', {
+  pageURL: 'https://example.com',
+  timestamp: new Date(), // ✅ Pass Date object
+});
+```
+
+**Incorrect usage:**
+```typescript
+await surrealDB.create('page_embeddings', {
+  pageURL: 'https://example.com',
+  timestamp: new Date().toISOString(), // ❌ Will fail with SCHEMAFULL
+});
+```
+
+### Embeddings Storage Schema
+```typescript
+// New SCHEMAFULL table for embeddings
+DEFINE TABLE page_embeddings SCHEMAFULL;
+DEFINE FIELD pageURL ON page_embeddings TYPE string;
+DEFINE FIELD pageTitle ON page_embeddings TYPE string;
+DEFINE FIELD sessionId ON page_embeddings TYPE option<string>;
+DEFINE FIELD fullEmbedding ON page_embeddings TYPE array;
+DEFINE FIELD chunks ON page_embeddings TYPE option<array>;
+DEFINE FIELD timestamp ON page_embeddings TYPE datetime;  // Enforced type!
+DEFINE FIELD contentHash ON page_embeddings TYPE option<string>;
+
+// Indexes for fast lookups
+DEFINE INDEX page_embeddings_url ON page_embeddings FIELDS pageURL;
+DEFINE INDEX page_embeddings_session ON page_embeddings FIELDS sessionId;
+DEFINE INDEX page_embeddings_timestamp ON page_embeddings FIELDS timestamp;
+```
 

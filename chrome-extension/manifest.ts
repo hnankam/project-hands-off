@@ -31,7 +31,7 @@ const manifest = {
   version: packageJson.version,
   description: '__MSG_extensionDescription__',
   host_permissions: ['<all_urls>'],
-  permissions: ['storage', 'unlimitedStorage', 'scripting', 'tabs', 'notifications', 'sidePanel'],
+  permissions: ['storage', 'unlimitedStorage', 'scripting', 'tabs', 'notifications', 'sidePanel', 'offscreen'],
   options_page: 'options/index.html',
   background: {
     service_worker: 'background.js',
@@ -72,12 +72,24 @@ const manifest = {
   devtools_page: 'devtools/index.html',
   web_accessible_resources: [
     {
-      resources: ['*.js', '*.css', '*.svg', 'icon-128.png', 'icon-34.png'],
-      matches: ['*://*/*'],
+      resources: [
+        '*.js',
+        '*.css',
+        '*.svg',
+        'icon-128.png',
+        'icon-34.png',
+        // ONNX runtime WASM files (required for embeddings)
+        '*.wasm',
+        '*.mjs',
+      ],
+      matches: ['<all_urls>'],
     },
   ],
   side_panel: {
     default_path: 'side-panel/index.html',
+  },
+  content_security_policy: {
+    extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* https://*.huggingface.co https://huggingface.co https://cdn-lfs.huggingface.co https://*.hf.co https://xethub.hf.co https://cas-bridge.xethub.hf.co https://*.jsdelivr.net https://cdn.jsdelivr.net https://api.cloud.copilotkit.ai wss://*;",
   },
 } satisfies ManifestType;
 
