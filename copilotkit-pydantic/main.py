@@ -6,6 +6,13 @@ from collections import defaultdict
 from typing import Dict, Set
 import json
 import asyncio
+import random
+from anthropic import APIError, RateLimitError, APIConnectionError, APITimeoutError
+try:
+    from pydantic_ai.exceptions import ModelHTTPError
+except Exception:  # fallback if version differs
+    ModelHTTPError = Exception
+import AnthropicWithCache
 
 # Create a single FastAPI app
 app = FastAPI()
@@ -175,12 +182,45 @@ for agent_type in agent_types:
                 
                 # Handle AG-UI request with on_complete callback
                 # handle_ag_ui_request returns a Response object directly
-                return await handle_ag_ui_request(
-                    agent=agent_ref,
-                    request=request,
-                    deps=state_deps,
-                    on_complete=usage_callback,
-                )
+                
+                # Retry around model/transient errors with exponential backoff
+                max_retries = 3
+                base_delay = 0.5
+                cap_delay = 5.0
+                response = None
+                for attempt in range(max_retries + 1):
+                    try:
+                        response = await handle_ag_ui_request(
+                            agent=agent_ref,
+                            request=request,
+                            deps=state_deps,
+                            on_complete=usage_callback,
+                        )
+                        break
+                    except (RateLimitError, APIConnectionError, APITimeoutError) as e:
+                        if attempt == max_retries:
+                            raise
+                        jitter = 1 + 0.2 * random.random()
+                        sleep_s = min(cap_delay, base_delay * (2 ** attempt)) * jitter
+                        print(f"⏳ Transient Anthropic error: {e}. Retrying in {sleep_s:.2f}s (attempt {attempt+1}/{max_retries})")
+                        await asyncio.sleep(sleep_s)
+                    except ModelHTTPError as e:
+                        status = getattr(e, "status_code", getattr(e, "status", None))
+                        if status in (429,) or (status is not None and 500 <= status < 600):
+                            if attempt == max_retries:
+                                raise
+                            jitter = 1 + 0.2 * random.random()
+                            sleep_s = min(cap_delay, base_delay * (2 ** attempt)) * jitter
+                            print(f"⏳ ModelHTTPError {status}: retrying in {sleep_s:.2f}s (attempt {attempt+1}/{max_retries})")
+                            await asyncio.sleep(sleep_s)
+                        else:
+                            raise
+                    except APIError as e:
+                        # Non-retryable Anthropic API error (e.g., most 4xx)
+                        raise
+                print(f"🔧 Request: {request}")
+                print(f"🔧 Response: {response}")
+                return response
             return handler
         
         # Register the route with agent type and model captured

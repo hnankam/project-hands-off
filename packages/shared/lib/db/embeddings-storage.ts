@@ -98,6 +98,32 @@ export async function initializeEmbeddingsSchema(): Promise<void> {
     DEFINE INDEX IF NOT EXISTS clickable_elements_url ON clickable_elements FIELDS pageURL;
     DEFINE INDEX IF NOT EXISTS clickable_elements_session ON clickable_elements FIELDS sessionId;
     DEFINE INDEX IF NOT EXISTS clickable_elements_timestamp ON clickable_elements FIELDS timestamp;
+    
+    -- DOM updates table with HNSW vector index (stores incremental DOM changes)
+    DEFINE TABLE IF NOT EXISTS dom_updates SCHEMAFULL;
+    DEFINE FIELD IF NOT EXISTS pageURL ON dom_updates TYPE string;
+    DEFINE FIELD IF NOT EXISTS pageTitle ON dom_updates TYPE string;
+    DEFINE FIELD IF NOT EXISTS updateJSON ON dom_updates TYPE string;
+    DEFINE FIELD IF NOT EXISTS summary ON dom_updates TYPE string;
+    DEFINE FIELD IF NOT EXISTS embedding ON dom_updates TYPE array<float>;
+    DEFINE FIELD IF NOT EXISTS sessionId ON dom_updates TYPE option<string>;
+    DEFINE FIELD IF NOT EXISTS timestamp ON dom_updates TYPE datetime;
+    DEFINE FIELD IF NOT EXISTS recencyScore ON dom_updates TYPE float DEFAULT 1.0;
+    
+    -- HNSW vector index for DOM updates
+    DEFINE INDEX IF NOT EXISTS hnsw_dom_idx ON dom_updates 
+      FIELDS embedding 
+      HNSW DIMENSION 384 
+      DIST COSINE 
+      TYPE F64 
+      EFC 150 
+      M 12;
+    
+    -- Regular indexes for filtering
+    DEFINE INDEX IF NOT EXISTS dom_updates_url ON dom_updates FIELDS pageURL;
+    DEFINE INDEX IF NOT EXISTS dom_updates_session ON dom_updates FIELDS sessionId;
+    DEFINE INDEX IF NOT EXISTS dom_updates_timestamp ON dom_updates FIELDS timestamp;
+    DEFINE INDEX IF NOT EXISTS dom_updates_recency ON dom_updates FIELDS recencyScore;
   `);
 
   console.log('[EmbeddingsStorage] ✅ Schema initialized with HNSW vector indexes (native vector search enabled)');
@@ -155,6 +181,7 @@ class EmbeddingsStorageManager {
 
   /**
    * Store HTML chunks with embeddings in separate table (with HNSW index)
+   * OPTIMIZED: Uses batching with yielding to prevent UI freeze
    */
   async storeHTMLChunks(data: {
     pageURL: string;
@@ -173,15 +200,20 @@ class EmbeddingsStorageManager {
 
     try {
       const timestamp = new Date();
+      const BATCH_SIZE = 200; // Large bulk insert batches for maximum performance
 
       // Delete old chunks for this page URL first
       await surrealDB.query(`
         DELETE FROM html_chunks WHERE pageURL = $url
       `, { url: data.pageURL });
 
-      // OPTIMIZED: Batch insert all HTML chunks in one query (much faster!)
-      if (data.chunks.length > 0) {
-        const records = data.chunks.map(chunk => ({
+      console.log(`[EmbeddingsStorage] 📦 Storing ${data.chunks.length} HTML chunks in batches of ${BATCH_SIZE}...`);
+
+      // Insert in batches
+      for (let i = 0; i < data.chunks.length; i += BATCH_SIZE) {
+        const batchChunks = data.chunks.slice(i, i + BATCH_SIZE);
+        
+        const records = batchChunks.map(chunk => ({
           pageURL: data.pageURL,
           pageTitle: data.pageTitle,
           chunkIndex: chunk.index,
@@ -192,11 +224,42 @@ class EmbeddingsStorageManager {
           timestamp,
         }));
         
-        // Single batch insert instead of loop (prevents UI freeze!)
-        await surrealDB.query(`INSERT INTO html_chunks $records`, { records });
+        // Bulk insert using multiple CREATE statements in a single query
+        // Build query with LET statements for each embedding
+        const letStatements = records.map((_, idx) => `LET $emb${idx} = $embedding${idx};`).join('\n          ');
+        const createStatements = records.map((record, idx) => `
+          CREATE html_chunks SET
+            pageURL = $pageURL${idx},
+            pageTitle = $pageTitle${idx},
+            chunkIndex = $chunkIndex${idx},
+            text = $text${idx},
+            html = $html${idx},
+            embedding = $emb${idx},
+            sessionId = $sessionId${idx},
+            timestamp = $timestamp${idx};
+        `).join('');
+        
+        // Build parameters object
+        const params: Record<string, any> = {};
+        records.forEach((record, idx) => {
+          params[`pageURL${idx}`] = record.pageURL;
+          params[`pageTitle${idx}`] = record.pageTitle;
+          params[`chunkIndex${idx}`] = record.chunkIndex;
+          params[`text${idx}`] = record.text;
+          params[`html${idx}`] = record.html;
+          params[`embedding${idx}`] = record.embedding;
+          params[`sessionId${idx}`] = record.sessionId;
+          params[`timestamp${idx}`] = record.timestamp;
+        });
+        
+        // Execute bulk insert
+        await surrealDB.query(`
+          ${letStatements}
+          ${createStatements}
+        `, params);
       }
 
-      console.log(`[EmbeddingsStorage] ✅ Stored ${data.chunks.length} HTML chunks with HNSW indexes (batch insert)`);
+      console.log(`[EmbeddingsStorage] ✅ Stored ${data.chunks.length} HTML chunks with HNSW indexes`);
     } catch (error) {
       console.error('[EmbeddingsStorage] Failed to store HTML chunks:', error);
       throw error;
@@ -238,7 +301,29 @@ class EmbeddingsStorageManager {
           timestamp,
         }));
         
-        await surrealDB.query(`INSERT INTO form_fields $records`, { records });
+        // Bulk insert using multiple CREATE statements
+        const letStatements = records.map((_, idx) => `LET $emb${idx} = $embedding${idx};`).join('\n          ');
+        const createStatements = records.map((_, idx) => `
+          CREATE form_fields SET
+            pageURL = $pageURL${idx},
+            groupIndex = $groupIndex${idx},
+            fieldsJSON = $fieldsJSON${idx},
+            embedding = $emb${idx},
+            sessionId = $sessionId${idx},
+            timestamp = $timestamp${idx};
+        `).join('');
+        
+        const params: Record<string, any> = {};
+        records.forEach((record, idx) => {
+          params[`pageURL${idx}`] = record.pageURL;
+          params[`groupIndex${idx}`] = record.groupIndex;
+          params[`fieldsJSON${idx}`] = record.fieldsJSON;
+          params[`embedding${idx}`] = record.embedding;
+          params[`sessionId${idx}`] = record.sessionId;
+          params[`timestamp${idx}`] = record.timestamp;
+        });
+        
+        await surrealDB.query(`${letStatements}${createStatements}`, params);
       }
 
       console.log(`[EmbeddingsStorage] ✅ Stored ${data.groups.length} form field groups with HNSW indexes (JSON string embeddings)`);
@@ -283,13 +368,180 @@ class EmbeddingsStorageManager {
           timestamp,
         }));
         
-        await surrealDB.query(`INSERT INTO clickable_elements $records`, { records });
+        // Bulk insert using multiple CREATE statements
+        const letStatements = records.map((_, idx) => `LET $emb${idx} = $embedding${idx};`).join('\n          ');
+        const createStatements = records.map((_, idx) => `
+          CREATE clickable_elements SET
+            pageURL = $pageURL${idx},
+            groupIndex = $groupIndex${idx},
+            elementsJSON = $elementsJSON${idx},
+            embedding = $emb${idx},
+            sessionId = $sessionId${idx},
+            timestamp = $timestamp${idx};
+        `).join('');
+        
+        const params: Record<string, any> = {};
+        records.forEach((record, idx) => {
+          params[`pageURL${idx}`] = record.pageURL;
+          params[`groupIndex${idx}`] = record.groupIndex;
+          params[`elementsJSON${idx}`] = record.elementsJSON;
+          params[`embedding${idx}`] = record.embedding;
+          params[`sessionId${idx}`] = record.sessionId;
+          params[`timestamp${idx}`] = record.timestamp;
+        });
+        
+        await surrealDB.query(`${letStatements}${createStatements}`, params);
       }
 
       console.log(`[EmbeddingsStorage] ✅ Stored ${data.groups.length} clickable element groups with HNSW indexes (JSON string embeddings)`);
     } catch (error) {
       console.error('[EmbeddingsStorage] Failed to store clickable elements:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Store DOM update with embedding and recency score
+   */
+  async storeDOMUpdate(data: {
+    pageURL: string;
+    pageTitle: string;
+    domUpdate: any;
+    embedding: number[];
+    sessionId?: string;
+  }): Promise<void> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    if (!data.domUpdate || !data.embedding || data.embedding.length === 0) {
+      console.warn('[EmbeddingsStorage] Skipping DOM update storage - invalid data');
+      return;
+    }
+
+    try {
+      const timestamp = new Date();
+      const recencyScore = 1.0; // Most recent changes get highest score
+      
+      // Create a summary of the DOM update for better searchability
+      const summary = this.createDOMUpdateSummary(data.domUpdate);
+      
+      // Store as JSON string
+      const updateJSON = JSON.stringify(data.domUpdate);
+
+      await surrealDB.query(`
+        CREATE dom_updates SET
+          pageURL = $pageURL,
+          pageTitle = $pageTitle,
+          updateJSON = $updateJSON,
+          summary = $summary,
+          embedding = $embedding,
+          sessionId = $sessionId,
+          timestamp = $timestamp,
+          recencyScore = $recencyScore;
+      `, {
+        pageURL: data.pageURL,
+        pageTitle: data.pageTitle,
+        updateJSON,
+        summary,
+        embedding: data.embedding,
+        sessionId: data.sessionId || undefined,
+        timestamp,
+        recencyScore,
+      });
+
+      // Decay recency scores of older updates for this page
+      await this.decayOlderDOMUpdates(data.pageURL, timestamp);
+
+      console.log('[EmbeddingsStorage] ✅ Stored DOM update with HNSW index and recency score');
+    } catch (error) {
+      console.error('[EmbeddingsStorage] Failed to store DOM update:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a human-readable summary of DOM update for better semantic search
+   */
+  private createDOMUpdateSummary(domUpdate: any): string {
+    const parts: string[] = [];
+    
+    if (domUpdate.addedElements && domUpdate.addedElements.length > 0) {
+      const elements = domUpdate.addedElements
+        .map((el: any) => {
+          const tag = el.tagName || 'element';
+          const text = el.textContent ? `: "${el.textContent.substring(0, 50)}"` : '';
+          return `${tag}${text}`;
+        })
+        .join(', ');
+      parts.push(`Added ${domUpdate.addedElements.length} element(s): ${elements}`);
+    }
+    
+    if (domUpdate.removedElements && domUpdate.removedElements.length > 0) {
+      const elements = domUpdate.removedElements
+        .map((el: any) => {
+          const tag = el.tagName || 'element';
+          const text = el.textContent ? `: "${el.textContent.substring(0, 50)}"` : '';
+          return `${tag}${text}`;
+        })
+        .join(', ');
+      parts.push(`Removed ${domUpdate.removedElements.length} element(s): ${elements}`);
+    }
+    
+    if (domUpdate.textChanges && domUpdate.textChanges.length > 0) {
+      const changes = domUpdate.textChanges
+        .map((change: any) => `${change.type}: "${change.text?.substring(0, 50) || ''}"`)
+        .join(', ');
+      parts.push(`Text changes (${domUpdate.textChanges.length}): ${changes}`);
+    }
+    
+    if (domUpdate.summary) {
+      parts.push(`Summary: ${JSON.stringify(domUpdate.summary)}`);
+    }
+    
+    return parts.join('. ') || 'DOM update with no details';
+  }
+
+  /**
+   * Decay recency scores of older DOM updates (exponential decay)
+   */
+  private async decayOlderDOMUpdates(pageURL: string, currentTimestamp: Date): Promise<void> {
+    try {
+      // Get all older updates for this page
+      const results = await surrealDB.query<any[]>(`
+        SELECT id, timestamp, recencyScore
+        FROM dom_updates
+        WHERE pageURL = $url AND timestamp < $currentTime
+        ORDER BY timestamp DESC;
+      `, {
+        url: pageURL,
+        currentTime: currentTimestamp,
+      });
+
+      const updates = results[0] || [];
+      
+      if (updates.length === 0) {
+        return;
+      }
+
+      // Apply exponential decay: each older update gets multiplied by 0.7
+      // Recent update = 1.0, previous = 0.7, before that = 0.49, etc.
+      for (let i = 0; i < updates.length; i++) {
+        const decayFactor = Math.pow(0.7, i + 1);
+        const newScore = decayFactor;
+        
+        await surrealDB.query(`
+          UPDATE $id SET recencyScore = $score;
+        `, {
+          id: updates[i].id,
+          score: newScore,
+        });
+      }
+
+      console.log(`[EmbeddingsStorage] ⏰ Decayed recency scores for ${updates.length} older DOM updates`);
+    } catch (error) {
+      console.warn('[EmbeddingsStorage] Failed to decay older DOM updates:', error);
+      // Don't throw - this is not critical
     }
   }
 
@@ -514,6 +766,104 @@ class EmbeddingsStorageManager {
       return allElements.slice(0, topK); // Return top K individual elements
     } catch (error) {
       console.error('[EmbeddingsStorage] Failed to search clickable elements:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Native vector search for DOM updates using HNSW index with recency weighting
+   */
+  async searchDOMUpdates(
+    pageURL: string,
+    queryEmbedding: number[],
+    topK: number = 5
+  ): Promise<Array<{
+    id: string;
+    pageURL: string;
+    pageTitle: string;
+    domUpdate: any;
+    summary: string;
+    timestamp: Date;
+    recencyScore: number;
+    similarity: number;
+    combinedScore: number;
+  }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    try {
+      console.log('[EmbeddingsStorage] 🔍 HNSW search - DOM updates (with recency):', { pageURL, topK });
+
+      // Get more results than needed so we can apply recency weighting
+      const searchK = Math.min(topK * 3, 20);
+      const efSearch = Math.max(searchK * 3, 100);
+      
+      const results = await surrealDB.query<any[]>(`
+        LET $q = $embedding;
+        SELECT 
+          id,
+          pageURL,
+          pageTitle,
+          updateJSON,
+          summary,
+          timestamp,
+          recencyScore,
+          vector::distance::knn() AS distance
+        FROM dom_updates
+        WHERE 
+          pageURL = $url
+          AND embedding <|${searchK},${efSearch}|> $q
+        ORDER BY timestamp DESC;
+      `, {
+        url: pageURL,
+        embedding: queryEmbedding,
+      });
+
+      // Results are in index 1 (because of LET statement)
+      if (!results || results.length < 2 || !results[1] || results[1].length === 0) {
+        console.log('[EmbeddingsStorage] ⚠️  No DOM updates found');
+        return [];
+      }
+
+      // Parse and combine semantic similarity with recency score
+      const domUpdates = results[1].map((record: any) => {
+        const similarity = 1 - record.distance;
+        const recencyScore = record.recencyScore || 0.5;
+        
+        // Combined score: 60% semantic similarity + 40% recency
+        // This ensures recent changes are prioritized while still being relevant
+        const combinedScore = (similarity * 0.6) + (recencyScore * 0.4);
+        
+        let domUpdate = null;
+        try {
+          domUpdate = JSON.parse(record.updateJSON);
+        } catch (e) {
+          console.error('[EmbeddingsStorage] Failed to parse updateJSON:', e);
+          domUpdate = { error: 'Failed to parse update' };
+        }
+
+        return {
+          id: record.id,
+          pageURL: record.pageURL,
+          pageTitle: record.pageTitle,
+          domUpdate,
+          summary: record.summary,
+          timestamp: new Date(record.timestamp),
+          recencyScore,
+          similarity,
+          combinedScore,
+        };
+      });
+
+      // Sort by combined score (semantic + recency) and return top K
+      domUpdates.sort((a: any, b: any) => b.combinedScore - a.combinedScore);
+      const topResults = domUpdates.slice(0, topK);
+
+      console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${topResults.length} DOM updates (semantic + recency weighted)`);
+      return topResults;
+    } catch (error) {
+      console.error('[EmbeddingsStorage] Failed to search DOM updates:', error);
       return [];
     }
   }

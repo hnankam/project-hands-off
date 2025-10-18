@@ -1,7 +1,7 @@
 import type { FC } from 'react';
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { useCopilotChat, useCoAgent, useCoAgentStateRender, useCopilotAction, useCopilotReadable, useCopilotChatHeadless_c, useFrontendTool, useHumanInTheLoop, useRenderToolCall, useCopilotContext} from "@copilotkit/react-core";
-import { CopilotChat, useCopilotChatSuggestions } from "@copilotkit/react-ui";
+import { ComponentsMap, CopilotChat, useCopilotChatSuggestions } from "@copilotkit/react-ui";
 import { debug, useStorage, cosineSimilarity, embeddingService } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 import { WeatherCard } from './WeatherCard';
@@ -137,6 +137,68 @@ export const ChatInner: FC<ChatInnerProps> = ({
     };
   }, [showSuggestions]);
 
+  // Sanitize messages to prevent errors and clean up invalid data
+  // Only sanitize messages except the last 5 to preserve recent context
+  useEffect(() => {
+    if (!messages || messages.length === 0) return;
+
+    let needsSanitization = false;
+
+    // retain only the last 500 messages
+    const retainedMessages = messages;
+    if (messages.length > 500) {
+      const retainedMessages = messages.slice(-500);
+    }
+
+    const sanitizedMessages = retainedMessages.map((message, index) => {
+      // Skip sanitization for the last 5 messages
+      // if (index >= messages.length - 5) {
+      //   return message;
+      // }
+
+      const sanitized = { ...message };
+      if (sanitized.role == 'tool' && sanitized.id.includes('result') && sanitized.content.length > 100) {
+        const tool_name = sanitized.toolName || '';
+        if(['searchPageContent', 'searchFormData', 'searchDOMUpdates', 'searchClickableElements', 'takeScreenshot'].includes(tool_name)) {
+          console.log('[ChatInner] Cleaning content for tool call: ', tool_name, sanitized);
+          sanitized.content = sanitized.content.substring(0, 90) + '...';
+          needsSanitization = true;
+        }
+        
+      }
+      return sanitized;
+      
+    });
+
+    // Remove duplicate tool messages by id, retain only the last one
+    const seenToolIds = new Map<string, number>();
+    const finalMessages = sanitizedMessages.filter((message, index) => {
+      if (message.role === 'tool' && message.id) {
+        const lastIndex = seenToolIds.get(message.id);
+        seenToolIds.set(message.id, index);
+        // If we've seen this id before, mark the previous occurrence for removal
+        if (lastIndex !== undefined) {
+          needsSanitization = true;
+          return false; // Remove this duplicate (keep the later one)
+        }
+      }
+      return true;
+    }).filter((message, index, arr) => {
+      // Second pass: remove duplicates that appeared before the last occurrence
+      if (message.role === 'tool' && message.id) {
+        const lastIndex = seenToolIds.get(message.id);
+        return index === arr.findIndex(m => m.id === message.id && m.role === 'tool');
+      }
+      return true;
+    });
+
+    // Only update if something changed
+    if (needsSanitization) {
+      setMessages(finalMessages);
+    }
+
+  }, [messages, setMessages]);
+
   // PERFORMANCE OPTIMIZATION: Memoize filtered messages to avoid duplicate filtering
   // This runs only once per message change instead of twice
   const filteredMessages = useMemo(() => {
@@ -149,8 +211,13 @@ export const ChatInner: FC<ChatInnerProps> = ({
       if (typeof message.content === 'string') {
         return !message.content.startsWith('**') && message.content.trim() !== '';
       } else if (typeof message.content === 'object' && message.content !== null) {
-        const contentStr = JSON.stringify(message.content);
-        return !contentStr.includes('"**');
+        try {
+          const contentStr = JSON.stringify(message.content);
+          return !contentStr.includes('"**');
+        } catch (e) {
+          // If can't stringify, filter it out
+          return false;
+        }
       } else if (message.content === undefined || message.content === null) {
         return false;
       }
@@ -262,13 +329,8 @@ export const ChatInner: FC<ChatInnerProps> = ({
     }
   }, [pageMetadataForAgent, generateSuggestions, showSuggestions]);
 
-  // 🪁 Also trigger when DOM updates occur
-  useEffect(() => {
-    if (showSuggestions && latestDOMUpdate && generateSuggestions) {
-      debug.log('🔄 [ChatInner] DOM update detected, generating new suggestions');
-      generateSuggestions();
-    }
-  }, [latestDOMUpdate, generateSuggestions, showSuggestions]);
+  // DOM updates are now stored in database and don't trigger suggestion regeneration
+  // Suggestions will regenerate when agent actions complete
 
   useCopilotReadable({
     description: "Current web page metadata including: pageTitle (page title), pageURL (current URL), hasContent (whether page content is loaded), hasEmbeddings (whether semantic search is available), embeddingChunksCount (number of searchable content chunks), documentInfo (page info like domain, referrer, characterSet), windowInfo (viewport dimensions, scroll position, userAgent, language, platform), and timestamp. Use the searchPageContent action to semantically search the page content when you need to find specific information or understand page structure.",
@@ -277,11 +339,8 @@ export const ChatInner: FC<ChatInnerProps> = ({
 
   // 🪁 Readable 2: Latest Incremental DOM Update
   // This contains ONLY the recent DOM changes (added/removed elements, text changes)
-  // Perfect for tracking multi-step action results without waiting for full page refresh
-  useCopilotReadable({
-    description: "The latest incremental DOM update detected on the page. Contains only the most recent changes since your last action: addedElements (new elements with tagName, id, className, textContent, innerHTML, and attributes like href/src/alt/title/value), removedElements (deleted elements with tagName, id, className, textContent), textChanges (modified text content with type 'added'/'removed'/'modified', text, and parentTag), and summary (counts of changes). This updates in REAL-TIME during multi-step actions without waiting for full page refresh. Use this to verify action results, track form submissions, modal appearances, notification messages, dynamic content loading, etc. If null, no recent DOM changes detected.",
-    value: latestDOMUpdate,
-  });
+  // DOM updates are now stored in the database with embeddings and can be searched via searchDOMUpdates action
+  // No longer passed directly to avoid bloating context
 
 
   /*** Define CopilotKit Actions ***/
@@ -374,6 +433,45 @@ export const ChatInner: FC<ChatInnerProps> = ({
     ],
     handler: async ({ query, topK = 5 }) => {
       return await searchManager.searchFormData(query, topK);
+    },
+  });
+
+  // 🪁 Action: Search DOM Updates (Recent Page Changes)
+  useCopilotAction({
+    name: "searchDOMUpdates",
+    description: `Search through recent DOM changes on the page to find what was added, removed, or modified. This is useful for tracking dynamic page updates, form submissions, error messages, notifications, modal appearances, etc.
+    
+    Use this action to:
+    - Check what happened after performing an action (clicking, submitting, etc.)
+    - Find error messages or success notifications
+    - Track dynamic content loading
+    - Verify action results without full page refresh
+    - Discover modal dialogs or popups that appeared
+    
+    IMPORTANT: Recent changes are prioritized automatically via recency scoring. Focus your query on WHAT you're looking for.
+    Examples:
+    - User: "Did the form submit successfully?" → Query: "success confirmation message submitted"
+    - User: "Are there any errors?" → Query: "error message alert warning"
+    - User: "What changed after I clicked?" → Query: "new elements added changed"
+    - User: "Did a modal appear?" → Query: "modal dialog popup window"
+    
+    Returns recent DOM changes with their summaries, timestamps, and recency scores.`,
+    parameters: [
+      {
+        name: "query",
+        type: "string",
+        description: "A search query describing what type of change you're looking for. Focus on: change type (added/removed/modified), element types, content keywords, purpose. Use descriptive nouns, not action verbs.",
+        required: true,
+      },
+      {
+        name: "topK",
+        type: "number",
+        description: "Number of results to return (default: 5, max: 10)",
+        required: false,
+      }
+    ],
+    handler: async ({ query, topK = 5 }) => {
+      return await searchManager.searchDOMUpdates(query, topK);
     },
   });
 
@@ -939,9 +1037,10 @@ export const ChatInner: FC<ChatInnerProps> = ({
       including any visual feedback from extension actions (highlights, indicators, etc.).
       
       Examples:
-      - Quick screenshot: No parameters needed (captures full page as PNG by default)
+      - Quick screenshot: No parameters needed (captures full page as JPEG quality 25 by default)
       - High quality: format="png"
-      - Smaller file: format="jpeg", quality=80
+      - Better compression: format="jpeg", quality=15
+      - Higher quality: format="jpeg", quality=50
       - Visible area only: captureFullPage=false
       
       RETURN FORMAT: This action returns an object with:
@@ -958,17 +1057,17 @@ export const ChatInner: FC<ChatInnerProps> = ({
       {
         name: "format",
         type: "string",
-        description: "Image format: 'png' for lossless quality or 'jpeg' for smaller file size (default: 'png').",
+        description: "Image format: 'png' for lossless quality or 'jpeg' for smaller file size (default: 'jpeg' for optimal compression).",
         required: false,
       },
       {
         name: "quality",
         type: "number",
-        description: "JPEG quality from 0-100, only applies when format is 'jpeg' (default: 90). Higher = better quality but larger file.",
+        description: "JPEG quality from 0-100, only applies when format is 'jpeg' (default: 25 for optimal compression). Higher = better quality but larger file. Typical values: 15 (high compression), 25 (balanced), 50 (higher quality).",
         required: false,
       }
     ],
-    handler: async ({ captureFullPage = false, format = 'png', quality = 90 }) => {
+    handler: async ({ captureFullPage = false, format = 'jpeg', quality = 25 }) => {
       const result = await handleTakeScreenshot(captureFullPage, format as 'png' | 'jpeg', quality);
       debug.log('[Agent Response] takeScreenshot:', result);
       return result;
@@ -1130,7 +1229,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
 
   // 🪁 Chat Suggestions: Smart suggestions based on context
   // Suggestions automatically regenerate when useCopilotReadable values change
-  // (pageMetadataForAgent and latestDOMUpdate are already provided via useCopilotReadable)
+  // (pageMetadataForAgent is already provided via useCopilotReadable)
   // Hide suggestions by setting maxSuggestions to 0 when showSuggestions is false
   useCopilotChatSuggestions({
     instructions: `Generate helpful suggestions for the user based on the current chat session and page content. 
@@ -1141,6 +1240,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
     - searchPageContent(query, topK) - Search page content, returns HTML chunks with text
     - searchFormData(query, topK) - Search form fields (inputs, textareas, selects), returns field info with selectors
     - searchClickableElements(query, topK) - Search buttons and links, returns element info with selectors
+    - searchDOMUpdates(query, topK) - Search recent page changes, returns summaries of added/removed/modified elements with timestamps and recency scores
     
     Available interaction actions:
     - Set theme colors

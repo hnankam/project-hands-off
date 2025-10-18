@@ -53,8 +53,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             : 'text-gray-200'
         )}
       >
-        <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <path d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
         </svg>
         <span className="font-medium truncate flex-1 min-w-0 relative overflow-hidden">
           <span className="block truncate">{selectedModelData.label}</span>
@@ -69,14 +69,19 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         </span>
         <svg
           className={cn(
-            'w-3 h-3 transition-transform flex-shrink-0',
+            'transition-transform flex-shrink-0',
             isOpen ? 'rotate-180' : ''
           )}
+          width="12"
+          height="12"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          <path d="M19 9l-7 7-7-7" />
         </svg>
       </button>
 
@@ -85,8 +90,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
           className={cn(
             'absolute bottom-full left-0 mb-1 w-full min-w-[200px] rounded-md border shadow-lg z-[9999] max-h-64 overflow-y-auto',
             isLight
-              ? 'bg-white border-gray-200'
-              : 'bg-gray-800 border-gray-700'
+              ? 'bg-gray-50 border-gray-200'
+              : 'bg-[#151C24] border-gray-700'
           )}
         >
           {models.map(model => (
@@ -115,7 +120,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                 </span>
                 {selectedModel === model.id && (
                   <svg
-                    className="w-3 h-3"
+                    width="12"
+                    height="12"
                     fill="currentColor"
                     viewBox="0 0 20 20"
                   >

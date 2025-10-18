@@ -64,30 +64,47 @@ class EmbeddingService {
 
     this.isLoading = true;
 
-    this.loadPromise = (async () => {
-      try {
-        console.log('[EmbeddingService] Initializing via background script...');
-        
-        // Signal background script to initialize offscreen document
-        const response = await chrome.runtime.sendMessage({
-          type: 'initializeEmbedding'
-        });
-
-        if (!response.success) {
-          throw new Error(response.error || 'Failed to initialize embedding service');
+    this.loadPromise = new Promise((resolve, reject) => {
+      const requestId = `init_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Set up listener for the response
+      const responseListener = (message: any) => {
+        if (message.type === 'initializeEmbeddingResponse' && message.requestId === requestId) {
+          chrome.runtime.onMessage.removeListener(responseListener);
+          
+          if (message.success) {
+            this.initialized = true;
+            console.log('[EmbeddingService] ✅ Initialized successfully');
+            this.isLoading = false;
+            this.loadPromise = null;
+            resolve();
+          } else {
+            const error = new Error(message.error || 'Failed to initialize embedding service');
+            console.error('[EmbeddingService] Failed to initialize:', error);
+            this.initialized = false;
+            this.isLoading = false;
+            this.loadPromise = null;
+            reject(error);
+          }
         }
-
-        this.initialized = true;
-        console.log('[EmbeddingService] ✅ Initialized successfully');
-      } catch (error) {
-        console.error('[EmbeddingService] Failed to initialize:', error);
+      };
+      
+      chrome.runtime.onMessage.addListener(responseListener);
+      
+      // Send the initialization request
+      console.log('[EmbeddingService] Initializing via background script...');
+      chrome.runtime.sendMessage({
+        type: 'initializeEmbedding',
+        requestId
+      }).catch(err => {
+        console.error('[EmbeddingService] Failed to send initialization request:', err);
+        chrome.runtime.onMessage.removeListener(responseListener);
         this.initialized = false;
-        throw error;
-      } finally {
         this.isLoading = false;
         this.loadPromise = null;
-      }
-    })();
+        reject(err);
+      });
+    });
 
     return this.loadPromise;
   }
@@ -101,21 +118,37 @@ class EmbeddingService {
       await this.initialize();
     }
 
-    try {
-      const response = await chrome.runtime.sendMessage({
+    return new Promise((resolve, reject) => {
+      const requestId = `embed_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Set up listener for the response
+      const responseListener = (message: any) => {
+        if (message.type === 'generateEmbeddingResponse' && message.requestId === requestId) {
+          chrome.runtime.onMessage.removeListener(responseListener);
+          
+          if (message.success) {
+            resolve(message.embedding);
+          } else {
+            const error = new Error(message.error || 'Failed to generate embedding');
+            console.error('[EmbeddingService] Failed to generate embedding:', error);
+            reject(error);
+          }
+        }
+      };
+      
+      chrome.runtime.onMessage.addListener(responseListener);
+      
+      // Send the request
+      chrome.runtime.sendMessage({
         type: 'generateEmbedding',
-        text
+        text,
+        requestId
+      }).catch(err => {
+        console.error('[EmbeddingService] Failed to send embedding request:', err);
+        chrome.runtime.onMessage.removeListener(responseListener);
+        reject(err);
       });
-
-      if (!response.success) {
-        throw new Error(response.error || 'Failed to generate embedding');
-      }
-
-      return response.embedding;
-    } catch (error) {
-      console.error('[EmbeddingService] Failed to generate embedding:', error);
-      throw error;
-    }
+    });
   }
 
   /**

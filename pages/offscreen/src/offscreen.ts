@@ -6,7 +6,24 @@
 
 import { pipeline, env } from '@huggingface/transformers';
 
-console.log('[Offscreen] Starting offscreen document for embeddings...');
+// WebGPU type declaration
+declare global {
+  interface Navigator {
+    gpu?: GPU;
+  }
+  interface GPU {
+    requestAdapter(): Promise<GPUAdapter | null>;
+  }
+  interface GPUAdapter {}
+}
+
+// Timestamp helper (defined early for use in initialization)
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+
+console.log(ts(), '[Offscreen] Starting offscreen document for embeddings...');
+
+// Runtime preference: default to WebGPU when available, else worker fallback.
+const EMBEDDING_RUNTIME_PREFERENCE: 'worker' | 'auto' = 'auto';
 
 // Configure transformers.js environment
 env.allowRemoteModels = true;
@@ -20,145 +37,312 @@ if (env.backends?.onnx?.wasm) {
 }
 
 let embeddingPipeline: any = null;
+let pipelineDevice: 'webgpu' | 'wasm' | null = null;
+let embeddingWorker: Worker | null = null;
 
 // Initialize the pipeline
 async function initializePipeline() {
-  if (embeddingPipeline) return;
-  
-  console.log('[Offscreen] Initializing pipeline...');
-  embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-    device: 'wasm',
-    dtype: 'q8',
-  });
-  console.log('[Offscreen] ✅ Pipeline initialized');
-}
-
-// Generate embedding for a single text
-async function generateEmbedding(text: string): Promise<number[]> {
-  if (!embeddingPipeline) {
-    await initializePipeline();
+  if (embeddingPipeline) {
+    console.log(ts(), '[Offscreen] ✅ Pipeline already initialized');
+    return;
   }
-  
-  const output = await embeddingPipeline(text, { pooling: 'mean', normalize: true });
-  return Array.from(output.data) as number[];
-}
 
-// Generate embeddings for multiple texts with OPTIMIZED parallel processing
-async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-  if (!embeddingPipeline) {
-    await initializePipeline();
-  }
-  
-  const BATCH_SIZE = 16; // Smaller batches for better parallelization
-  const MAX_CONCURRENT = 4; // Process 4 batches in parallel
-  
-  const totalBatches = Math.ceil(texts.length / BATCH_SIZE);
-  
-  console.log('[Offscreen] 🚀 PARALLEL BATCH PROCESSING:', texts.length, 'texts in', totalBatches, 'batches (', BATCH_SIZE, 'each,', MAX_CONCURRENT, 'concurrent)');
+  console.log(ts(), '[Offscreen] 🔄 Initializing pipeline (this will take a few seconds)...');
   const startTime = performance.now();
-  
-  // Create batch processing function
-  const processBatch = async (batchIndex: number): Promise<{ index: number; embeddings: number[][] }> => {
-    const batchStart = batchIndex * BATCH_SIZE;
-    const batchEnd = Math.min(batchStart + BATCH_SIZE, texts.length);
-    const batchTexts = texts.slice(batchStart, batchEnd);
-    
-    // Process this batch
-    const output = await embeddingPipeline(batchTexts, { pooling: 'mean', normalize: true });
-    
-    // Convert output to array of embeddings
-    const embeddingSize = 384;
-    const batchEmbeddings: number[][] = [];
-    
-    for (let i = 0; i < batchTexts.length; i++) {
-      const start = i * embeddingSize;
-      const end = start + embeddingSize;
-      batchEmbeddings.push(Array.from(output.data.slice(start, end)));
+
+  // Try WebGPU first (GPU-accelerated), fallback to WASM
+  let device: 'webgpu' | 'wasm' = 'webgpu';
+
+  try {
+    // Check if WebGPU is available
+    if (!navigator.gpu) {
+      console.log(ts(), '[Offscreen] ⚠️  WebGPU not available (navigator.gpu is undefined), falling back to WASM');
+      device = 'wasm';
+    } else {
+      console.log(ts(), '[Offscreen] ✅ WebGPU API detected (navigator.gpu exists), attempting GPU acceleration...');
     }
     
-    console.log('[Offscreen]    Batch', batchIndex + 1, '/', totalBatches, 'complete');
-    return { index: batchIndex, embeddings: batchEmbeddings };
-  };
-  
-  // Process batches with concurrency limit
-  const results: { index: number; embeddings: number[][] }[] = [];
-  
-  for (let i = 0; i < totalBatches; i += MAX_CONCURRENT) {
-    const batchPromises = [];
-    for (let j = 0; j < MAX_CONCURRENT && i + j < totalBatches; j++) {
-      batchPromises.push(processBatch(i + j));
+    console.log(ts(), `[Offscreen] 🎯 Attempting to initialize with device: ${device.toUpperCase()}`);
+    
+    embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+      device: device,
+      dtype: device === 'webgpu' ? 'fp32' : 'q8', // WebGPU requires fp32
+    });
+    pipelineDevice = device;
+    
+    const duration = performance.now() - startTime;
+    console.log(ts(), `[Offscreen] ✅ Pipeline initialized in ${duration.toFixed(2)}ms`);
+    console.log(ts(), `[Offscreen] 🚀 FINAL DEVICE: ${device.toUpperCase()} ${device === 'webgpu' ? '(GPU-accelerated, should not block UI)' : '(CPU-based, may block UI)'}`);
+    console.log(ts(), '[Offscreen] ℹ️  Model is now loaded in memory and ready for fast embeddings');
+  } catch (error) {
+    console.error(ts(), '[Offscreen] ❌ Failed to initialize with', device, ':', error);
+    console.error(ts(), '[Offscreen] ❌ Error details:', error instanceof Error ? error.message : String(error));
+    console.error(ts(), '[Offscreen] ❌ Stack:', error instanceof Error ? error.stack : 'No stack trace');
+
+    // Fallback to WASM if WebGPU fails
+    if (device === 'webgpu') {
+      console.log(ts(), '[Offscreen] 🔄 Falling back to WASM...');
+      try {
+        embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+          device: 'wasm',
+          dtype: 'q8',
+        });
+        pipelineDevice = 'wasm';
+        const duration = performance.now() - startTime;
+        console.log(ts(), `[Offscreen] ✅ Pipeline initialized with WASM fallback in ${duration.toFixed(2)}ms`);
+        console.log(ts(), `[Offscreen] 🚀 FINAL DEVICE: WASM (CPU-based, may block UI)`);
+      } catch (wasmError) {
+        console.error(ts(), '[Offscreen] ❌ WASM fallback also failed:', wasmError);
+        throw wasmError;
+      }
+    } else {
+      throw error;
     }
-    const batchResults = await Promise.all(batchPromises);
-    results.push(...batchResults);
   }
-  
-  // Sort by index and flatten to get all embeddings in order
-  results.sort((a, b) => a.index - b.index);
-  const allEmbeddings = results.flatMap(r => r.embeddings);
-  
-  const duration = performance.now() - startTime;
-  console.log('[Offscreen] ⚡ All batches completed in', duration.toFixed(2), 'ms');
-  console.log('[Offscreen]    Speed:', (texts.length / (duration / 1000)).toFixed(1), 'embeddings/second');
-  
-  return allEmbeddings;
 }
 
-// Listen for messages from background script
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+// Generate embedding for a single text (prefer worker by default; WebGPU when preference is 'auto')
+async function generateEmbedding(text: string): Promise<number[]> {
+  // Prefer WebGPU only when explicitly allowed
+  if (EMBEDDING_RUNTIME_PREFERENCE === 'auto' && pipelineDevice === 'webgpu' && embeddingPipeline) {
+    const output = await embeddingPipeline(text, { pooling: 'mean', normalize: true });
+    // Small (384) – conversion here is fine; avoid worker hop for single item
+    const embedding = Array.from(output.data as Iterable<number>).map((v: number) => Number(v));
+    
+    // Validate: replace NULL/undefined with zero array
+    if (!embedding || embedding.length === 0 || embedding.some(v => v === null || v === undefined || isNaN(v))) {
+      console.warn(ts(), '[Offscreen] ⚠️  Invalid embedding detected, replacing with zeros');
+      return new Array(384).fill(0);
+    }
+    
+    return embedding;
+  }
+
+  // Otherwise, initialize worker lazily
+  if (!embeddingWorker) {
+    console.log(ts(), '[Offscreen] Spawning embedding worker...');
+    embeddingWorker = new Worker(new URL('./embedding-worker.ts', import.meta.url), { type: 'module' });
+    await new Promise<void>((resolve, reject) => {
+      const requestId = `init_${Date.now()}`;
+      const onMessage = (ev: MessageEvent) => {
+        if (ev.data?.type === 'workerResponse' && ev.data.requestId === requestId) {
+          (embeddingWorker as Worker).removeEventListener('message', onMessage);
+          ev.data.success ? resolve() : reject(new Error(ev.data.error));
+        }
+      };
+      (embeddingWorker as Worker).addEventListener('message', onMessage);
+      (embeddingWorker as Worker).postMessage({ type: 'initialize', requestId });
+    });
+    console.log(ts(), '[Offscreen] Embedding worker ready');
+  }
+
+  // Delegate to worker so WASM compute is off the offscreen main thread
+  const embedding = await new Promise<number[]>((resolve, reject) => {
+    const requestId = `single_${Date.now()}`;
+    const onMessage = (ev: MessageEvent) => {
+      if (ev.data?.type === 'workerResponse' && ev.data.requestId === requestId) {
+        (embeddingWorker as Worker).removeEventListener('message', onMessage);
+        ev.data.success ? resolve(ev.data.embedding as number[]) : reject(new Error(ev.data.error));
+      }
+    };
+    (embeddingWorker as Worker).addEventListener('message', onMessage);
+    (embeddingWorker as Worker).postMessage({ type: 'embedText', text, requestId });
+  });
+  
+  // Validate: replace NULL/undefined with zero array
+  if (!embedding || embedding.length === 0 || embedding.some(v => v === null || v === undefined || isNaN(v))) {
+    console.warn(ts(), '[Offscreen] ⚠️  Invalid embedding from worker, replacing with zeros');
+    return new Array(384).fill(0);
+  }
+  
+  return embedding;
+}
+
+// Generate embeddings for multiple texts (prefer worker by default; WebGPU when preference is 'auto')
+async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
+  if (EMBEDDING_RUNTIME_PREFERENCE === 'auto' && pipelineDevice === 'webgpu' && embeddingPipeline) {
+    const BATCH_SIZE = 32;
+  const totalBatches = Math.ceil(texts.length / BATCH_SIZE);
+    const results: number[][] = [];
+    for (let i = 0; i < totalBatches; i++) {
+      const startIdx = i * BATCH_SIZE;
+      const batch = texts.slice(startIdx, Math.min(startIdx + BATCH_SIZE, texts.length));
+      const output = await embeddingPipeline(batch, { pooling: 'mean', normalize: true });
+      const size = 384;
+      // Offload heavy conversion to worker: pack view buffer and transfer
+      // Ensure worker is ready
+      if (!embeddingWorker) {
+        console.log(ts(), '[Offscreen] Spawning embedding worker...');
+        embeddingWorker = new Worker(new URL('./embedding-worker.ts', import.meta.url), { type: 'module' });
+        await new Promise<void>((resolve, reject) => {
+          const requestId = `init_${Date.now()}`;
+          const onMessage = (ev: MessageEvent) => {
+            if (ev.data?.type === 'workerResponse' && ev.data.requestId === requestId) {
+              (embeddingWorker as Worker).removeEventListener('message', onMessage);
+              ev.data.success ? resolve() : reject(new Error(ev.data.error));
+            }
+          };
+          (embeddingWorker as Worker).addEventListener('message', onMessage);
+          (embeddingWorker as Worker).postMessage({ type: 'initialize', requestId });
+        });
+        console.log(ts(), '[Offscreen] Embedding worker ready');
+      }
+
+      const typed = output.data as Float32Array;
+      const viewBuffer = typed.buffer.slice(typed.byteOffset, typed.byteOffset + typed.byteLength);
+
+      const embeddingsFromWorker: number[][] = await new Promise((resolve, reject) => {
+        const requestId = `post_${Date.now()}_${i}`;
+        const onMessage = (ev: MessageEvent) => {
+          if (ev.data?.type === 'workerResponse' && ev.data.requestId === requestId) {
+            (embeddingWorker as Worker).removeEventListener('message', onMessage);
+            ev.data.success ? resolve(ev.data.embeddings as number[][]) : reject(new Error(ev.data.error));
+          }
+        };
+        (embeddingWorker as Worker).addEventListener('message', onMessage);
+        // Transfer buffer for zero-copy move off offscreen main thread
+        (embeddingWorker as Worker).postMessage({
+          type: 'postprocessEmbeddings',
+          requestId,
+          buffer: viewBuffer,
+          count: batch.length,
+          embeddingSize: size,
+        }, [viewBuffer]);
+      });
+
+      results.push(...embeddingsFromWorker);
+    }
+    
+    // Validate all embeddings: replace NULL/undefined with zero arrays
+    const validatedResults = results.map((embedding, index) => {
+      if (!embedding || embedding.length === 0 || embedding.some(v => v === null || v === undefined || isNaN(v))) {
+        console.warn(ts(), `[Offscreen] ⚠️  Invalid embedding at index ${index}, replacing with zeros`);
+        return new Array(384).fill(0);
+      }
+      return embedding;
+    });
+    
+    return validatedResults;
+  }
+
+  if (!embeddingWorker) {
+    console.log(ts(), '[Offscreen] Spawning embedding worker...');
+    embeddingWorker = new Worker(new URL('./embedding-worker.ts', import.meta.url), { type: 'module' });
+    await new Promise<void>((resolve, reject) => {
+      const requestId = `init_${Date.now()}`;
+      const onMessage = (ev: MessageEvent) => {
+        if (ev.data?.type === 'workerResponse' && ev.data.requestId === requestId) {
+          (embeddingWorker as Worker).removeEventListener('message', onMessage);
+          ev.data.success ? resolve() : reject(new Error(ev.data.error));
+        }
+      };
+      (embeddingWorker as Worker).addEventListener('message', onMessage);
+      (embeddingWorker as Worker).postMessage({ type: 'initialize', requestId });
+    });
+    console.log(ts(), '[Offscreen] Embedding worker ready');
+  }
+
+  const embeddings = await new Promise<number[][]>((resolve, reject) => {
+    const requestId = `batch_${Date.now()}`;
+    const onMessage = (ev: MessageEvent) => {
+      if (ev.data?.type === 'workerResponse' && ev.data.requestId === requestId) {
+        (embeddingWorker as Worker).removeEventListener('message', onMessage);
+        ev.data.success ? resolve(ev.data.embeddings as number[][]) : reject(new Error(ev.data.error));
+      }
+    };
+    (embeddingWorker as Worker).addEventListener('message', onMessage);
+    (embeddingWorker as Worker).postMessage({ type: 'generateEmbeddings', texts, requestId });
+  });
+  
+  // Validate all embeddings: replace NULL/undefined with zero arrays
+  const validatedEmbeddings = embeddings.map((embedding, index) => {
+    if (!embedding || embedding.length === 0 || embedding.some(v => v === null || v === undefined || isNaN(v))) {
+      console.warn(ts(), `[Offscreen] ⚠️  Invalid embedding from worker at index ${index}, replacing with zeros`);
+      return new Array(384).fill(0);
+    }
+    return embedding;
+  });
+  
+  return validatedEmbeddings;
+}
+
+// Listen for messages from background script - using onMessage pattern only
+chrome.runtime.onMessage.addListener((message) => {
   if (message.target !== 'offscreen') return false;
   
-  console.log('[Offscreen] Received message:', message.type);
+  console.log(ts(), '[Offscreen] Received message:', message.type);
+  const requestId = message.requestId;
   
-  // Handle synchronously to avoid port closing
-  const handleMessage = async () => {
+  // Handle asynchronously and send response via sendMessage
+  (async () => {
     try {
+      let result: any;
+      
       switch (message.type) {
-        case 'initialize':
-          await initializePipeline();
-          return { success: true };
+        case 'initialize': {
+          // Initialize both main-thread pipeline (for WebGPU fallback) and worker warmup
+          try { await initializePipeline(); } catch {}
+          result = { success: true };
+          break; }
           
         case 'embedText':
           const embedding = await generateEmbedding(message.text);
-          return { success: true, embedding };
+          result = { success: true, embedding };
+          break;
           
         case 'generateEmbeddings':
           // TRUE batch embedding - process all texts in one transformer call
-          console.log('[Offscreen] Batch embedding request:', message.texts.length, 'texts');
+          console.log(ts(), '[Offscreen] Batch embedding request:', message.texts.length, 'texts');
           const embeddings = await generateEmbeddingsBatch(message.texts);
-          console.log('[Offscreen] ✅ Batch embedding complete:', embeddings.length, 'embeddings');
-          return { success: true, embeddings };
+          console.log(ts(), '[Offscreen] ✅ Batch embedding complete:', embeddings.length, 'embeddings');
+          result = { success: true, embeddings };
+          break;
           
         default:
-          return { success: false, error: 'Unknown message type' };
+          result = { success: false, error: 'Unknown message type' };
       }
-    } catch (error) {
-      console.error('[Offscreen] Error:', error);
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+      
+      // Send response back via sendMessage
+      const responseMsg = {
+        type: 'offscreenResponse',
+        requestId,
+        ...result
       };
+      console.log(ts(), '[Offscreen] 📤 Sending response:', JSON.stringify({ 
+        type: responseMsg.type, 
+        requestId: responseMsg.requestId, 
+        success: responseMsg.success,
+        embeddingsCount: (responseMsg as any).embeddings?.length 
+      }));
+      
+      chrome.runtime.sendMessage(responseMsg).then(() => {
+        console.log(ts(), '[Offscreen] ✅ Response sent successfully');
+      }).catch(err => {
+        console.error(ts(), '[Offscreen] ❌ Failed to send response:', err);
+      });
+    } catch (error) {
+      console.error(ts(), '[Offscreen] Error:', error);
+      chrome.runtime.sendMessage({
+        type: 'offscreenResponse',
+        requestId,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }).catch(() => {});
     }
-  };
+  })();
   
-  // Execute async handler and send response
-  handleMessage().then(sendResponse).catch(err => {
-    console.error('[Offscreen] Handler error:', err);
-    sendResponse({ success: false, error: err.message });
-  });
-  
-  return true; // Keep channel open for async response
+  return false; // Don't keep channel open
 });
 
-console.log('[Offscreen] Ready to receive messages');
+console.log(ts(), '[Offscreen] Ready to receive messages');
 
 // Notify background script that offscreen is ready
 // Slight delay to ensure message listener is fully registered
 setTimeout(() => {
-  console.log('[Offscreen] Sending ready signal to background...');
+  console.log(ts(), '[Offscreen] Sending ready signal to background...');
   chrome.runtime.sendMessage({ type: 'offscreenReady' }).then(() => {
-    console.log('[Offscreen] ✅ Ready signal sent successfully');
+    console.log(ts(), '[Offscreen] ✅ Ready signal sent successfully');
   }).catch((err) => {
-    console.warn('[Offscreen] Failed to send ready signal:', err);
+    console.warn(ts(), '[Offscreen] Failed to send ready signal:', err);
   });
 }, 100);
-

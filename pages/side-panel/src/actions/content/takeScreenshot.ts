@@ -23,14 +23,14 @@ interface TakeScreenshotResult {
 /**
  * Take a screenshot of the current tab (visible area or full page)
  * @param captureFullPage - If true, captures the entire scrollable page. If false, captures only visible viewport (default: true)
- * @param format - Image format: 'png' or 'jpeg' (default: 'png')
- * @param quality - JPEG quality 0-100, only applies if format is 'jpeg' (default: 90)
+ * @param format - Image format: 'png' or 'jpeg' (default: 'jpeg' for smaller file size)
+ * @param quality - JPEG quality 0-100, only applies if format is 'jpeg' (default: 25 for optimal compression)
  * @returns Promise with status and message object
  */
 export async function handleTakeScreenshot(
   captureFullPage: boolean = true,
-  format: 'png' | 'jpeg' = 'png',
-  quality: number = 90
+  format: 'png' | 'jpeg' = 'jpeg',
+  quality: number = 25
 ): Promise<TakeScreenshotResult> {
   try {
     debug.log('[Screenshot] Taking screenshot:', { captureFullPage, format, quality });

@@ -35,79 +35,231 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
     progress: null,
   });
 
-  // Initialize embedding service in background
-  const initialize = useCallback(async () => {
+  // Initialize embedding service in background - using onMessage pattern
+  const initialize = useCallback(() => {
     if (state.isInitialized || state.isInitializing) {
       console.log('[useEmbeddingWorker] Already initialized or initializing');
-      return;
+      return Promise.resolve();
     }
 
     console.log('[useEmbeddingWorker] 🚀 Initializing embedding service in background...');
     setState(prev => ({ ...prev, isInitializing: true, error: null }));
 
-    try {
-      const response = await chrome.runtime.sendMessage({ 
-        type: 'initializeEmbedding',
-        model 
-      });
-
-      if (response.success) {
-        console.log('[useEmbeddingWorker] ✅ Embedding service initialized');
+    return new Promise<void>((resolve, reject) => {
+      const requestId = `init_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Set up listener for response with timeout
+      const responseListener = (message: any, sender: any) => {
+        console.log('[useEmbeddingWorker] 📬 Received message:', message.type, 'requestId:', message.requestId, 'looking for:', requestId);
+        
+        if (message.type === 'initializeEmbeddingResponse' && message.requestId === requestId) {
+          console.log('[useEmbeddingWorker] ✅ Message matched! Full message:', JSON.stringify(message));
+          clearTimeout(timeoutHandle);
+          chrome.runtime.onMessage.removeListener(responseListener);
+          
+          if (message.success) {
+            console.log('[useEmbeddingWorker] ✅ Embedding service initialized');
+            setState(prev => ({ 
+              ...prev, 
+              isInitialized: true, 
+              isInitializing: false,
+              progress: { status: 'Ready', progress: 100 }
+            }));
+            onProgress?.({ status: 'Ready', progress: 100 });
+            resolve();
+          } else {
+            const err = new Error(message.error || 'Failed to initialize');
+            console.error('[useEmbeddingWorker] ❌ Initialization failed:', err);
+            setState(prev => ({ 
+              ...prev, 
+              isInitializing: false, 
+              error: err 
+            }));
+            reject(err);
+          }
+        }
+      };
+      
+      chrome.runtime.onMessage.addListener(responseListener);
+      
+      // Timeout after 30 seconds
+      const timeoutHandle = setTimeout(() => {
+        chrome.runtime.onMessage.removeListener(responseListener);
+        const err = new Error('Initialization timeout - no response from background');
+        console.error('[useEmbeddingWorker] ❌ Initialization timeout');
         setState(prev => ({ 
           ...prev, 
-          isInitialized: true, 
-          isInitializing: false,
-          progress: { status: 'Ready', progress: 100 }
+          isInitializing: false, 
+          error: err 
         }));
-        onProgress?.({ status: 'Ready', progress: 100 });
-      } else {
-        throw new Error(response.error || 'Failed to initialize');
-      }
-    } catch (error) {
-      console.error('[useEmbeddingWorker] ❌ Initialization failed:', error);
-      const err = error instanceof Error ? error : new Error('Unknown error');
-      setState(prev => ({ 
-        ...prev, 
-        isInitializing: false, 
-        error: err 
-      }));
-    }
+        reject(err);
+      }, 30000);
+      
+      // Send initialization request
+      console.log('[useEmbeddingWorker] 📤 Sending init request with ID:', requestId);
+      chrome.runtime.sendMessage({ 
+        type: 'initializeEmbedding',
+        model,
+        requestId
+      }).then(() => {
+        console.log('[useEmbeddingWorker] ✅ Init request sent successfully');
+      }).catch(err => {
+        clearTimeout(timeoutHandle);
+        chrome.runtime.onMessage.removeListener(responseListener);
+        console.error('[useEmbeddingWorker] ❌ Failed to send init request:', err);
+        setState(prev => ({ 
+          ...prev, 
+          isInitializing: false, 
+          error: err 
+        }));
+        reject(err);
+      });
+    });
   }, [model, onProgress, state.isInitialized, state.isInitializing]);
 
-  // Generate embedding for page content
-  const embedPageContent = useCallback(async (content: any) => {
+  // Generate embedding for page content - Direct message passing (no storage)
+  const embedPageContent = useCallback(async (content: any): Promise<any> => {
     if (!state.isInitialized) {
       throw new Error('Embedding service not initialized');
     }
 
-    console.log('[useEmbeddingWorker] 📤 Sending page content embedding request to background...');
-    console.log('[useEmbeddingWorker] DEBUG - content.allDOMContent?.allFormData:', content.allDOMContent?.allFormData?.length || 0, 'items');
-    console.log('[useEmbeddingWorker] DEBUG - content.allDOMContent?.clickableElements:', content.allDOMContent?.clickableElements?.length || 0, 'items');
+    const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+    
+    // Avoid heavy stringify in the panel thread: only log an approximate size
+    let sizeKB = '0.00';
+    let sizeMB = '0.00';
+    try {
+      const approxHtml = content?.allDOMContent?.fullHTML?.length || 0;
+      const approxText = content?.textContent?.length || 0;
+      const approxForms = (content?.allDOMContent?.allFormData?.length || 0) * 200;
+      const approxClickable = (content?.allDOMContent?.clickableElements?.length || 0) * 140;
+      const approxTotal = approxHtml + approxText + approxForms + approxClickable;
+      sizeKB = (approxTotal / 1024).toFixed(2);
+      sizeMB = (approxTotal / (1024 * 1024)).toFixed(2);
+    } catch {}
+
+    console.log(ts(), '[useEmbeddingWorker] 📤 Sending page content embedding request...');
+    console.log(ts(), '[useEmbeddingWorker] 📦 Approx content size:', sizeKB, 'KB (', sizeMB, 'MB)');
+    console.log(ts(), '[useEmbeddingWorker] DEBUG - content.allDOMContent?.allFormData:', content.allDOMContent?.allFormData?.length || 0, 'items');
+    console.log(ts(), '[useEmbeddingWorker] DEBUG - content.allDOMContent?.clickableElements:', content.allDOMContent?.clickableElements?.length || 0, 'items');
+    console.log(ts(), '[useEmbeddingWorker] ⚠️  About to serialize and send - this may freeze UI temporarily...');
     setState(prev => ({ ...prev, isProcessing: true, error: null }));
 
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'embedPageContent',
-        content
-      });
+    return new Promise((resolve, reject) => {
+      let requestId: string;
 
-      if (response.success) {
-        console.log('[useEmbeddingWorker] ✅ Page content embedded:', response.result.fullEmbedding.length, 'dimensions,', response.result.chunks.length, 'chunks');
-        setState(prev => ({ ...prev, isProcessing: false }));
-        return response.result;
-      } else {
-        throw new Error(response.error || 'Failed to embed page content');
-      }
-    } catch (error) {
-      console.error('[useEmbeddingWorker] ❌ Page content embedding failed:', error);
-      const err = error instanceof Error ? error : new Error('Unknown error');
-      setState(prev => ({ ...prev, isProcessing: false, error: err }));
-      throw err;
-    }
+      // Set up listener for the result
+      const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+      const resultListener = (message: any) => {
+        console.log(ts(), '[useEmbeddingWorker] 📬 Received message type:', message.type, 'requestId:', message.requestId, 'expectedId:', requestId);
+        
+        if (message.type === 'embeddingComplete' && message.requestId === requestId) {
+          const receiveTime = performance.now();
+          console.log(ts(), '[useEmbeddingWorker] 🎯 embeddingComplete matched, processing response...');
+          chrome.runtime.onMessage.removeListener(resultListener);
+
+          if (message.error) {
+            const err = new Error(message.error);
+            console.error(ts(), '[useEmbeddingWorker] ❌ Page content embedding failed:', err);
+            setState(prev => ({ ...prev, isProcessing: false, error: err }));
+            reject(err);
+          } else {
+            console.log(ts(), '[useEmbeddingWorker] 📦 Response size - embeddings:', message.result.fullEmbedding.length, 'dimensions,', message.result.chunks.length, 'chunks');
+            
+            // DEBUG: Check embeddings RIGHT AFTER receiving from background
+            console.log(ts(), '[useEmbeddingWorker] 🔍 DEBUG - First chunk AFTER receiving:', {
+              hasEmbedding: !!message.result.chunks?.[0]?.embedding,
+              isArray: Array.isArray(message.result.chunks?.[0]?.embedding),
+              length: message.result.chunks?.[0]?.embedding?.length,
+              firstValue: message.result.chunks?.[0]?.embedding?.[0],
+              first5: message.result.chunks?.[0]?.embedding?.slice(0, 5),
+              typeOfFirst: typeof message.result.chunks?.[0]?.embedding?.[0]
+            });
+            
+            console.log(ts(), '[useEmbeddingWorker] ✅ Page content embedded (processing took', (performance.now() - receiveTime).toFixed(0), 'ms)');
+            setState(prev => ({ ...prev, isProcessing: false }));
+            resolve(message.result);
+          }
+        }
+      };
+
+      chrome.runtime.onMessage.addListener(resultListener);
+
+      // Generate request ID
+      requestId = `embed_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Send content directly in message
+      const sendStartTime = performance.now();
+      console.log(ts(), '[useEmbeddingWorker] 🔄 Starting sendMessage (serialization begins now)...');
+      
+      chrome.runtime.sendMessage({
+        type: 'embedPageContent',
+        content,
+        requestId
+      }).then(() => {
+        const sendDuration = (performance.now() - sendStartTime).toFixed(0);
+        console.log(ts(), '[useEmbeddingWorker] ✅ Request sent, waiting for result... (serialization took', sendDuration, 'ms)');
+      }).catch(err => {
+        console.error(ts(), '[useEmbeddingWorker] ❌ Failed to send request:', err);
+        chrome.runtime.onMessage.removeListener(resultListener);
+        setState(prev => ({ ...prev, isProcessing: false, error: err }));
+        reject(err);
+      });
+    });
   }, [state.isInitialized]);
 
-  // Generate embeddings for multiple texts
-  const embedTexts = useCallback(async (texts: string[]) => {
+  // NEW: Generate embeddings for the current tab WITHOUT sending large payloads.
+  // This avoids main-thread freeze from structured cloning in the side panel.
+  const embedPageContentForTab = useCallback(async (tabId: number, contentTimestamp?: number): Promise<any> => {
+    if (!state.isInitialized) {
+      throw new Error('Embedding service not initialized');
+    }
+
+    const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+
+    console.log(ts(), '[useEmbeddingWorker] 📤 Requesting embedding for TAB (no payload):', { tabId, contentTimestamp });
+    setState(prev => ({ ...prev, isProcessing: true, error: null }));
+
+    return new Promise((resolve, reject) => {
+      const requestId = `embed_tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      const resultListener = (message: any) => {
+        console.log(ts(), '[useEmbeddingWorker TAB] 📬 Received message type:', message.type, 'requestId:', message.requestId, 'expectedId:', requestId);
+        
+        if (message.type === 'embeddingComplete' && message.requestId === requestId) {
+          console.log(ts(), '[useEmbeddingWorker TAB] 🎯 embeddingComplete matched!');
+          chrome.runtime.onMessage.removeListener(resultListener);
+
+          if (message.error) {
+            const err = new Error(message.error);
+            console.error(ts(), '[useEmbeddingWorker TAB] ❌ Tab embedding failed:', err);
+            setState(prev => ({ ...prev, isProcessing: false, error: err }));
+            reject(err);
+          } else {
+            console.log(ts(), '[useEmbeddingWorker TAB] ✅ Tab embedding complete');
+            setState(prev => ({ ...prev, isProcessing: false }));
+            resolve(message.result);
+          }
+        }
+      };
+
+      chrome.runtime.onMessage.addListener(resultListener);
+
+      chrome.runtime.sendMessage({
+        type: 'embedPageContentForTab',
+        tabId,
+        timestamp: contentTimestamp,
+        requestId
+      }).catch(err => {
+        chrome.runtime.onMessage.removeListener(resultListener);
+        setState(prev => ({ ...prev, isProcessing: false, error: err }));
+        reject(err);
+      });
+    });
+  }, [state.isInitialized]);
+
+  // Generate embeddings for multiple texts - using onMessage pattern
+  const embedTexts = useCallback((texts: string[]): Promise<number[][]> => {
     if (!state.isInitialized) {
       throw new Error('Embedding service not initialized');
     }
@@ -115,25 +267,40 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
     console.log('[useEmbeddingWorker] 📤 Sending batch embedding request to background...');
     setState(prev => ({ ...prev, isProcessing: true, error: null }));
 
-    try {
-      const response = await chrome.runtime.sendMessage({
+    return new Promise((resolve, reject) => {
+      const requestId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Set up listener for response
+      const responseListener = (message: any) => {
+        if (message.type === 'generateEmbeddingsResponse' && message.requestId === requestId) {
+          chrome.runtime.onMessage.removeListener(responseListener);
+          
+          if (message.success) {
+            console.log('[useEmbeddingWorker] ✅ Batch embeddings generated:', message.embeddings.length, 'embeddings');
+            setState(prev => ({ ...prev, isProcessing: false }));
+            resolve(message.embeddings as number[][]);
+          } else {
+            const err = new Error(message.error || 'Failed to generate embeddings');
+            console.error('[useEmbeddingWorker] ❌ Batch embedding generation failed:', err);
+            setState(prev => ({ ...prev, isProcessing: false, error: err }));
+            reject(err);
+          }
+        }
+      };
+      
+      chrome.runtime.onMessage.addListener(responseListener);
+      
+      // Send request
+      chrome.runtime.sendMessage({
         type: 'generateEmbeddings',
-        texts
+        texts,
+        requestId
+      }).catch(err => {
+        chrome.runtime.onMessage.removeListener(responseListener);
+        setState(prev => ({ ...prev, isProcessing: false, error: err }));
+        reject(err);
       });
-
-      if (response.success) {
-        console.log('[useEmbeddingWorker] ✅ Batch embeddings generated:', response.embeddings.length, 'embeddings');
-        setState(prev => ({ ...prev, isProcessing: false }));
-        return response.embeddings as number[][];
-      } else {
-        throw new Error(response.error || 'Failed to generate embeddings');
-      }
-    } catch (error) {
-      console.error('[useEmbeddingWorker] ❌ Batch embedding generation failed:', error);
-      const err = error instanceof Error ? error : new Error('Unknown error');
-      setState(prev => ({ ...prev, isProcessing: false, error: err }));
-      throw err;
-    }
+    });
   }, [state.isInitialized]);
 
   // Auto-initialize on mount if requested
@@ -152,6 +319,7 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
     progress: state.progress,
     initialize,
     embedPageContent,
+    embedPageContentForTab,
     embedTexts,
   };
 }

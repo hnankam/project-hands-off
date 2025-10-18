@@ -1,8 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
-import { CopilotRuntime, GoogleGenerativeAIAdapter, copilotRuntimeNodeExpressEndpoint} from "@copilotkit/runtime";
+import { CopilotRuntime, GoogleGenerativeAIAdapter, AnthropicAdapter, copilotRuntimeNodeExpressEndpoint} from "@copilotkit/runtime";
 import { HttpAgent } from "@ag-ui/client";
+import AnthropicBedrock from "@anthropic-ai/bedrock-sdk";
+
 
 // Load environment variables from .env file
 config(); 
@@ -22,9 +24,29 @@ app.use(cors({
 app.use(express.json());
 
 // Use Google Generative AI adapter for non-agent components like useCopilotChatSuggestions
-const serviceAdapter = new GoogleGenerativeAIAdapter({
+const geminiAdapter = new GoogleGenerativeAIAdapter({
   model: "gemini-2.5-flash-lite",
   apiKey: process.env.GOOGLE_API_KEY,
+    promptCaching: {
+    enabled: true,
+    debug: true
+  }
+});
+
+// Create Anthropic adapter for Anthropic models
+const anthropic = new AnthropicBedrock({
+  awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  awsRegion: process.env.AWS_REGION,
+});
+
+const anthropicAdapter = new AnthropicAdapter({
+  anthropic: anthropic,
+  model: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+  promptCaching: {
+    enabled: true,
+    debug: true
+  }
 });
 
 // Function to create a dynamic agent URL based on agent type and model
@@ -60,12 +82,10 @@ const runtime = new CopilotRuntime({
     },
   });
 
-// Set up the CopilotKit endpoint
-const copilotKitEndpoint = copilotRuntimeNodeExpressEndpoint({
-  endpoint: '/api/copilotkit',
-  serviceAdapter: serviceAdapter,
-  runtime,
-});
+// Helper function to determine if a model is Claude-based
+function isClaudeModel(model) {
+  return model.startsWith('claude-');
+}
 
 // Middleware to log and route dynamic_agent requests based on headers
 app.use('/api/copilotkit', (req, res, next) => {
@@ -110,6 +130,13 @@ app.use('/api/copilotkit', (req, res, next) => {
   console.log('✅ HttpAgent updated successfully');
   
   next();
+});
+
+// Set up the CopilotKit endpoint with dynamic adapter selection
+const copilotKitEndpoint = copilotRuntimeNodeExpressEndpoint({
+  endpoint: '/api/copilotkit',
+  serviceAdapter: geminiAdapter,
+  runtime,
 });
 
 // Mount the CopilotKit endpoint

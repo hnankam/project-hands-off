@@ -1,20 +1,30 @@
 from __future__ import annotations
 
+from anthropic import AsyncAnthropicBedrock
+from pydantic_ai.models.bedrock import BedrockConverseModel
+
 from textwrap import dedent
 from typing import Any, Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelSettings, RunContext
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, SystemPromptPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.run import AgentRunResult
+
 
 from pydantic_ai.ag_ui import StateDeps
 from ag_ui.core import EventType, StateDeltaEvent, StateSnapshotEvent
 from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.models.google import GoogleModelSettings
 from pydantic_ai.models.anthropic import AnthropicModelSettings
-import os
+from pydantic_ai.models.bedrock import BedrockModelSettings
+import os, json
+from AnthropicWithCache import AnthropicModelWithCache
+from history_processor.compactor import (CompactContext, CompactorProcessor)
+
 
 # import logfire
 # logfire.configure()
@@ -32,7 +42,7 @@ class Step(BaseModel):
     description: str = Field(description='The description of the step')
     status: StepStatus = Field(
         default='pending',
-        description='The status of the step: pending (not started), running (in progress), completed (successfully finished), or failed (encountered an error)',
+        description='The status of the step (e.g. pending, running, completed, failed, deleted)',
     )
 
 class Plan(BaseModel):
@@ -44,7 +54,7 @@ class JSONPatchOp(BaseModel):
     """A class representing a JSON Patch operation (RFC 6902)."""
 
     op: Literal['add', 'remove', 'replace', 'move', 'copy', 'test'] = Field(
-        description='The operation to perform: add, remove, replace, move, copy, or test',
+        description='The operation to perform (e.g. add, remove, replace, move, copy, test)',
     )
     path: str = Field(description='JSON Pointer (RFC 6901) to the target location')
     value: Any = Field(
@@ -61,26 +71,27 @@ class JSONPatchOp(BaseModel):
 model_settings = ModelSettings(
     temperature=0.0,
     max_tokens=2048,
-    frequency_penalty=0,
-    presence_penalty=0,
 )
 
 google_model_settings = GoogleModelSettings(
-    google_thinking_config={'include_thoughts': True},
+    google_thinking_config={'include_thoughts': True, 'thinking_budget': 1024}, # -1 for dynamic thinking
     temperature=0.0,
     max_tokens=2048,
-    frequency_penalty=0,
-    presence_penalty=0,
 )
 
-anthropic_model_settings = AnthropicModelSettings(
-    anthropic_thinking={'type': 'enabled', 'budget_tokens': 1024},
-    temperature=0.0,
-    max_tokens=2048,
-    frequency_penalty=0,
-    presence_penalty=0,
-)
+anthropic_model_settings=AnthropicModelSettings(
+    extra_headers={"anthropic-beta": "fine-grained-tool-streaming-2025-05-14"},
+   # anthropic_thinking={'type': 'enabled', 'budget_tokens': 1024}, # Not supported on 3.5 sonnet and CopilotChat doesn't return thinking parts
+    # temperature=1,
+    # max_tokens=2048,
+    )
 
+bedrock_model_settings = BedrockModelSettings(
+        bedrock_additional_model_requests_fields={
+            "thinking": {"type": "enabled", "budget_tokens": 1024},
+            "max_tokens": 2048,
+        },
+    )
 
 # =====
 # State
@@ -101,11 +112,18 @@ class AgentState(BaseModel):
 # =====
 
 general_instruction = """
-        # GENERAL INSTRUCTIONS
-         - When you get an inquiry, ALWAYS build a plan to answer the user's inquiry. DO NOT answer the inquiry directly unless it can be answered in a single step.
-         - ONLY use the tools available to you. Do not use tools that are not available to you.
-         - Unless otherwise specified, ONLY call a tool after obtaining the response of the previous tool call.
-         - Return all reasoning/thinking response in <thinking>...</thinking> tags.
+        You are a James Bond-style assistant that helps users with their UI/UX tasks. Your code name is "Raven Red".
+
+        When given a task, ALWAYS create a plan to complete the task unless the task can be completed in a single step. When planning use tools only, without any other messages.
+        IMPORTANT:
+        - Use the `create_plan` tool to set the initial state of the steps
+        - Use the `update_plan_step` tool to update the status of each step
+        - Do NOT repeat the plan or summarise it in a message
+        - Do NOT confirm the creation or updates in a message
+        - Do NOT rerun a tool until you have the response from the previous tool call
+
+        Only one plan can be active at a time, so do not call the `create_plan` tool
+        again until all the steps in current plan are completed and the plan has been reset.
         """.strip()
 
 planning_instruction = """
@@ -126,13 +144,6 @@ planning_instruction = """
 
 AGENT_PROMPTS = {
     "general": dedent("""
-        You are a helpful general-purpose AI assistant.
-        You can help with a wide variety of tasks and questions.
-        Be concise, accurate, and helpful in your responses.
-
-        - ALWAYS CREATE A DETAILED PLAN TO ANSWER THE USER'S INQUIRY. DO NOT ANSWER THE INQUIRY WITHOUT A PLAN.
-        - Return all reasoning/thinking response in <thinking>...</thinking> tags.
-
         {general_instruction}
         {planning_instruction}
     """.format(general_instruction=general_instruction, planning_instruction=planning_instruction)).strip(),
@@ -223,39 +234,122 @@ AGENT_PROMPTS = {
 # =====
 
 # Google Models
-provider = GoogleProvider(api_key=os.getenv('GOOGLE_API_KEY'))
+google_provider = GoogleProvider(api_key=os.getenv('GOOGLE_API_KEY'))
+
+anthropic_provider = AnthropicProvider(anthropic_client=AsyncAnthropicBedrock())
+
 MODELS = {
-    'gemini-2.5-flash-lite': {'model': GoogleModel('gemini-2.5-flash-lite', provider=provider), 'model_settings': google_model_settings},
-    'gemini-2.5-flash': {'model': GoogleModel('gemini-2.5-flash', provider=provider), 'model_settings': google_model_settings},
-    'gemini-2.5-pro': {'model': GoogleModel('gemini-2.5-pro', provider=provider), 'model_settings': google_model_settings},
-    'claude-3.5-sonnet': {'model': 'bedrock:us.anthropic.claude-3-5-sonnet-20241022-v2:0', 'model_settings': anthropic_model_settings},
-    'claude-3.7-sonnet': {'model': 'bedrock:us.anthropic.claude-3-7-sonnet-20250219-v1:0', 'model_settings': anthropic_model_settings},
-    'claude-4.1-opus': {'model': 'bedrock:us.anthropic.claude-opus-4-1-20250805-v1:0', 'model_settings': anthropic_model_settings},
-    'claude-4.5-sonnet': {'model': 'bedrock:us.anthropic.claude-sonnet-4-5-20250929-v1:0', 'model_settings': anthropic_model_settings},
+    'gemini-2.5-flash-lite': {'model': GoogleModel('gemini-2.5-flash-lite', provider=google_provider), 'model_settings': google_model_settings},
+    'gemini-2.5-flash': {'model': GoogleModel('gemini-2.5-flash', provider=google_provider), 'model_settings': google_model_settings},
+    'gemini-2.5-pro': {'model': GoogleModel('gemini-2.5-pro', provider=google_provider), 'model_settings': google_model_settings},
+    'claude-3.5-sonnet': {'model': AnthropicModelWithCache('us.anthropic.claude-3-5-sonnet-20241022-v2:0', provider=anthropic_provider), 'model_settings': anthropic_model_settings},
+    'claude-3.7-sonnet': {'model': AnthropicModelWithCache('us.anthropic.claude-3-7-sonnet-20250219-v1:0', provider=anthropic_provider), 'model_settings': anthropic_model_settings},
+    'claude-4.1-opus': {'model': AnthropicModelWithCache('us.anthropic.claude-opus-4-1-20250805-v1:0', provider=anthropic_provider), 'model_settings': anthropic_model_settings},
+    'claude-4.5-sonnet': {'model': AnthropicModelWithCache('us.anthropic.claude-sonnet-4-5-20250929-v1:0', provider=anthropic_provider), 'model_settings': anthropic_model_settings},
+#     'claude-3.5-sonnet': {'model': BedrockConverseModel('us.anthropic.claude-3-5-sonnet-20241022-v2:0'), 'model_settings': bedrock_model_settings},
+#     'claude-3.7-sonnet': {'model': BedrockConverseModel('us.anthropic.claude-3-7-sonnet-20250219-v1:0'), 'model_settings': bedrock_model_settings},
+#     'claude-4.1-opus': {'model': BedrockConverseModel('us.anthropic.claude-opus-4-1-20250805-v1:0'), 'model_settings': bedrock_model_settings},
+#     'claude-4.5-sonnet': {'model': BedrockConverseModel('us.anthropic.claude-sonnet-4-5-20250929-v1:0'), 'model_settings': bedrock_model_settings},
 }
 
 # =====
 # Agent Factory Function
 # =====
 
-# Use a cheaper model to summarize old messages.
-def create_summarize_agent():
-    summarize_agent = Agent(MODELS['gemini-2.5-flash-lite'],
-    instructions="""
-        Summarize this conversation, omitting small talk and unrelated topics.
-        Focus on the technical discussion and next steps.
-        """,
-    )
-    return summarize_agent
+# async def message_at_index_contains_tool_return_parts(messages: list[ModelMessage], index: int) -> bool:
+#     return any(isinstance(part, ToolReturnPart) for part in messages[index].parts)
+    
+# async def keep_recent_messages(ctx: RunContext[StateDeps[AgentState]], messages: list[ModelMessage]) -> list[ModelMessage]:
+#     number_of_messages = len(messages)
 
-async def summarize_old_messages(ctx: RunContext[StateDeps[AgentState]], messages: list[ModelMessage]) -> list[ModelMessage]:
-    # Summarize if we've used more than 150000 tokens
-    if ctx.usage.total_tokens > 150000:
-        oldest_messages = messages[:10]
-        summary = await summarize_agent.run(message_history=oldest_messages)
-        # Return the last message and the summary
-        return summary.new_messages() + messages[-1:]
 
+#     for index, message in enumerate(messages):
+#         print(f"====================Message {index}============================")
+#         print(f"Message: {message}")
+#         print(f"Message parts: {message.parts}")
+#         print(f"================================================")
+
+#     number_of_messages_to_keep = 15
+#     if number_of_messages <= number_of_messages_to_keep:
+#         print(f"Skipping delete of recent messages as there are less than {number_of_messages_to_keep} messages")
+#         return messages
+    
+#     if (await message_at_index_contains_tool_return_parts(messages, number_of_messages - number_of_messages_to_keep)):
+#         print(f"Skipping deleting messages as there are tool return parts at index {number_of_messages - number_of_messages_to_keep}")
+#         return messages
+#     print(f"Keeping {number_of_messages_to_keep} messages")
+#     return messages[-number_of_messages_to_keep:]
+
+
+async def keep_recent_messages(ctx: RunContext[StateDeps[AgentState]], messages: list[ModelMessage]) -> list[ModelMessage]:
+    """
+    Keep only recent messages while preserving AI model message ordering rules.
+
+    Most AI models require proper sequencing of:
+    - Tool/function calls and their corresponding returns
+    - User messages and model responses
+    - Multi-turn conversations with proper context
+
+    This means we cannot cut conversation history in a way that:
+    - Leaves tool calls without their corresponding returns
+    - Separates paired messages inappropriately
+    - Breaks the logical flow of multi-turn interactions
+
+    Reference: https://github.com/pydantic/pydantic-ai/issues/2050
+    """
+
+    for index, message in enumerate(messages):
+        print(f"====================Message {index}============================")
+        print(f"Message: {message}")
+        print(f"Message parts: {message.parts}")
+        print(f"===============================================================")
+
+    message_window = 15
+
+    if len(messages) <= message_window:
+        print(f"Returning {len(messages)} messages as there are less than {message_window} messages")
+        return messages
+
+    print(f"Performing history compaction... with message window {message_window}")
+
+    # Find system prompt if it exists
+    system_prompt = None
+    system_prompt_index = None
+    for i, msg in enumerate(messages):
+        if isinstance(msg, ModelRequest) and any(isinstance(part, SystemPromptPart) for part in msg.parts):
+            system_prompt = msg
+            system_prompt_index = i
+            break
+    
+    # Start at target cut point and search backward (upstream) for a safe cut
+    target_cut = len(messages) - message_window
+
+    for cut_index in range(target_cut, -1, -1):
+        first_message = messages[cut_index]
+
+        # Skip if first message has tool returns (orphaned without calls)
+        if any(isinstance(part, ToolReturnPart) for part in first_message.parts):
+            continue
+
+        # Skip if first message has tool calls (violates AI model ordering rules)
+        if isinstance(first_message, ModelResponse) and any(
+            isinstance(part, ToolCallPart) for part in first_message.parts
+        ):
+            continue
+
+        # Found a safe cut point
+        print(f"Found a safe cut point at {cut_index}")
+        result = messages[cut_index:]
+
+        # If we cut off the system prompt, prepend it back
+        if system_prompt is not None and system_prompt_index is not None and cut_index > system_prompt_index:
+            result = [system_prompt] + result
+
+        print(f"Returning {len(result)} messages after cut")
+        return result
+
+    # No safe cut point found, keep all messages
+    print(f"Returning {len(messages)} messages")
     return messages
 
 def create_usage_tracking_callback(session_id: str, agent_type: str, model: str, broadcast_func):
@@ -300,22 +394,25 @@ def create_usage_tracking_callback(session_id: str, agent_type: str, model: str,
 
 def create_agent(agent_type: str, model_name: str):
     """Create an agent with the specified type and model."""
-    system_prompt = AGENT_PROMPTS.get(agent_type, AGENT_PROMPTS["general"])
-    # print(f"{system_prompt}")
+    instructions = AGENT_PROMPTS.get(agent_type, AGENT_PROMPTS["general"])
+    # if agent_type == 'general':
+    #     print(f"🔧 General System Prompt: {system_prompt}")
     model = MODELS.get(model_name, MODELS['gemini-2.5-flash-lite'])['model']
     model_settings = MODELS.get(model_name, MODELS['gemini-2.5-flash-lite'])['model_settings']
     
     agent = Agent(
         model,
+        instructions=instructions,
         deps_type=StateDeps[AgentState],
-        system_prompt=system_prompt,
         model_settings=model_settings,
+        history_processors=[keep_recent_messages],
+        retries=3,
     )
+
+    agent.sequential_tool_calls()
     
-    # Add tools to the agent
-    
-    @agent.tool
-    async def create_plan(ctx: RunContext[StateDeps[AgentState]], steps: list[str]) -> StateSnapshotEvent:
+    @agent.tool(sequential=True, retries=0)
+    async def tool_plain(ctx: RunContext[StateDeps[AgentState]], steps: list[str]) -> StateSnapshotEvent:
         """Create a plan with multiple steps.
         
         After calling this tool, you MUST provide a text response to the user confirming the plan was created and what you'll do next.
@@ -344,7 +441,7 @@ def create_agent(agent_type: str, model_name: str):
             snapshot=state_dict,
         )
 
-    @agent.tool
+    @agent.tool(sequential=True, retries=0)
     async def update_plan_step(
         ctx: RunContext[StateDeps[AgentState]],
         index: int, 
@@ -389,13 +486,13 @@ def create_agent(agent_type: str, model_name: str):
             snapshot=state_dict,
         )
 
-    @agent.tool
+    @agent.tool(sequential=True, retries=0)
     def get_proverbs(ctx: RunContext[StateDeps[AgentState]]) -> list[str]:
         """Get the current list of proverbs."""
         print(f"📖 Getting proverbs: {ctx.deps.state.proverbs}")
         return ctx.deps.state.proverbs
 
-    @agent.tool
+    @agent.tool(sequential=True, retries=0)
     async def add_proverbs(ctx: RunContext[StateDeps[AgentState]], proverbs: list[str]) -> StateSnapshotEvent:
         ctx.deps.state.proverbs.extend(proverbs)
         return StateSnapshotEvent(
@@ -403,7 +500,7 @@ def create_agent(agent_type: str, model_name: str):
             snapshot=ctx.deps.state,
         )
 
-    @agent.tool
+    @agent.tool(sequential=True, retries=0)
     async def set_proverbs(ctx: RunContext[StateDeps[AgentState]], proverbs: list[str]) -> StateSnapshotEvent:
         ctx.deps.state.proverbs = proverbs
         return StateSnapshotEvent(
@@ -411,7 +508,7 @@ def create_agent(agent_type: str, model_name: str):
             snapshot=ctx.deps.state,
         )
 
-    @agent.tool
+    @agent.tool(sequential=True, retries=0)
     def get_weather(_: RunContext[StateDeps[AgentState]], location: str) -> str:
         """Get the weather for a given location. Ensure location is fully spelled out."""
         return f"The weather in {location} is sunny."
