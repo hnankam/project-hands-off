@@ -36,6 +36,12 @@ export class CheckboxRadioHandler implements InputHandler {
         moveCursorToElement(element);
       }
       
+      // Ensure element is visible and scrolled into view for realistic interaction
+      if (!isElementVisible(inputElement)) {
+        await scrollIntoView(inputElement);
+      }
+      await focusAndHighlight(inputElement);
+      
       // Parse the value to determine if it should be checked
       const shouldCheck = this.parseCheckValue(value, options);
       
@@ -59,34 +65,66 @@ export class CheckboxRadioHandler implements InputHandler {
     options: CheckboxRadioOptions
   ): Promise<InputDataResult> {
     const modernDetection = detectModernInput(inputElement);
-    
-    // Set the checked state
-    inputElement.checked = shouldCheck;
-    
-    // Trigger events for modern frameworks
-    const events = ['input', 'change'];
-    
-    // For React components, also trigger focus/blur events
-    if (modernDetection.isReactComponent) {
-      events.push('focus', 'blur');
+
+    // Early exit when no change is needed
+    if (inputElement.checked === shouldCheck && !inputElement.indeterminate) {
+      return {
+        status: 'success',
+        message: `Checkbox already ${shouldCheck ? 'checked' : 'unchecked'}`,
+        elementInfo: {
+          tag: inputElement.tagName,
+          type: inputElement.type,
+          id: inputElement.id,
+          name: inputElement.name || '',
+          value: shouldCheck ? 'checked' : 'unchecked'
+        }
+      };
     }
-    
-    triggerInputEvents(inputElement, events);
-    
-    // Show success feedback
-    if (options.showSuccessFeedback !== false) {
+
+    // Some checkboxes can be tri-state; clear indeterminate before setting
+    if (inputElement.indeterminate) {
+      inputElement.indeterminate = false;
+    }
+
+    // Primary approach: set property then dispatch a realistic event sequence
+    inputElement.checked = shouldCheck;
+    const baseEvents = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
+    if (modernDetection.isReactComponent) {
+      baseEvents.unshift('focus');
+      baseEvents.push('blur');
+    }
+    triggerInputEvents(inputElement, baseEvents);
+
+    // Verify the state; if not applied (some frameworks intercept), try label click/click fallback
+    const verified = await this.verifyCheckedState(inputElement, shouldCheck, 600);
+    if (!verified) {
+      // Try clicking associated <label for="id">
+      const label = inputElement.id ? document.querySelector(`label[for="${CSS.escape(inputElement.id)}"]`) as HTMLLabelElement | null : null;
+      if (label) {
+        label.click();
+      } else {
+        inputElement.click();
+      }
+    }
+
+    // Final verification
+    const finalStateOk = await this.verifyCheckedState(inputElement, shouldCheck, 600);
+
+    if (options.showSuccessFeedback !== false && finalStateOk) {
       showSuccessFeedback(inputElement);
     }
-    
+
     return {
-      status: 'success',
-      message: `Checkbox ${shouldCheck ? 'checked' : 'unchecked'} successfully`,
+      status: finalStateOk ? 'success' : 'error',
+      message: finalStateOk
+        ? `Checkbox ${shouldCheck ? 'checked' : 'unchecked'} successfully`
+        : 'Failed to set checkbox state',
       elementInfo: {
         tag: inputElement.tagName,
         type: inputElement.type,
         id: inputElement.id,
         name: inputElement.name || '',
-        value: shouldCheck ? 'checked' : 'unchecked'
+        value: inputElement.checked ? 'checked' : 'unchecked'
       }
     };
   }
@@ -99,6 +137,19 @@ export class CheckboxRadioHandler implements InputHandler {
     const modernDetection = detectModernInput(inputElement);
     
     if (shouldCheck) {
+      if (inputElement.checked) {
+        return {
+          status: 'success',
+          message: 'Radio button already selected',
+          elementInfo: {
+            tag: inputElement.tagName,
+            type: inputElement.type,
+            id: inputElement.id,
+            name: inputElement.name || '',
+            value: 'selected'
+          }
+        };
+      }
       // For radio buttons, we need to uncheck other radio buttons in the same group
       this.uncheckRadioGroup(inputElement);
       
@@ -106,7 +157,7 @@ export class CheckboxRadioHandler implements InputHandler {
       inputElement.checked = true;
       
       // Trigger events for the checked radio button
-      const events = ['input', 'change'];
+      const events = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
       
       // For React components, also trigger focus/blur events
       if (modernDetection.isReactComponent) {
@@ -142,6 +193,11 @@ export class CheckboxRadioHandler implements InputHandler {
   }
 
   private parseCheckValue(value: string, options: CheckboxRadioOptions): boolean {
+    // If explicit boolean provided via options, honor it first
+    if (typeof options.value === 'boolean') {
+      return options.value;
+    }
+
     const interpretAs = options.interpretAs || 'boolean';
     
     switch (interpretAs) {
@@ -193,6 +249,18 @@ export class CheckboxRadioHandler implements InputHandler {
         }
       }
     });
+  }
+
+  /**
+   * Verify a checkbox/radio checked state with small retries to allow framework state updates
+   */
+  private async verifyCheckedState(element: HTMLInputElement, expected: boolean, timeoutMs: number): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (element.checked === expected) return true;
+      await new Promise(r => setTimeout(r, 50));
+    }
+    return element.checked === expected;
   }
 
   /**

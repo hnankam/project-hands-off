@@ -30,6 +30,10 @@ export class TextareaHandler implements InputHandler {
   ): Promise<InputDataResult> {
     try {
       const textareaElement = element as HTMLTextAreaElement;
+      if (!isElementVisible(textareaElement)) {
+        scrollIntoView(textareaElement);
+      }
+      await focusAndHighlight(textareaElement);
       
       // Move cursor to element if requested
       if (options.moveCursor) {
@@ -238,16 +242,13 @@ export class TextareaHandler implements InputHandler {
 
   private triggerTextareaEvents(textareaElement: HTMLTextAreaElement, options: TextInputOptions): void {
     const modernDetection = detectModernInput(textareaElement);
-    const events = ['input', 'change'];
-    
+    const events = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
     if (modernDetection.isReactComponent) {
-      events.push('focus', 'blur', 'keyup', 'keydown');
+      events.push('focus', 'blur', 'keyup');
     }
-    
     if (modernDetection.isVueComponent) {
-      events.push('keyup', 'keydown');
+      events.push('keyup');
     }
-    
     triggerInputEvents(textareaElement, events);
   }
 

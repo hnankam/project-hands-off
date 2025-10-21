@@ -1,4 +1,12 @@
-import { debug } from '@extension/shared';
+import { debug as baseDebug } from '@extension/shared';
+
+// Timestamped debug wrappers
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: any[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: any[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: any[]) => baseDebug.error(ts(), ...args),
+} as const;
 
 // Timing constants for drag and drop animation
 const TIMING = {
@@ -40,7 +48,21 @@ interface DragAndDropResult {
       foundInShadowDOM?: boolean;
       shadowHost?: string | null;
     };
+    usedDropPoint?: { x: number; y: number; mode: string };
   };
+}
+
+// Extra options to support dragging from component lists to canvases
+export interface DragAndDropOptions {
+  dropPoint?:
+    | { mode: 'offset'; x: number; y: number }            // from target top-left in px
+    | { mode: 'percent'; x: number; y: number }           // 0..1 relative to target size
+    | { mode: 'absolute'; x: number; y: number }          // viewport client coords
+    | { mode: 'center'; x?: number; y?: number };         // center, optional offsets
+  dataTransfer?: Record<string, string>;                   // additional payload
+  effectAllowed?: DataTransfer['effectAllowed'];
+  dropEffect?: DataTransfer['dropEffect'];
+  dragImageSelector?: string;                              // element to use as drag image
 }
 
 /**
@@ -55,10 +77,18 @@ export async function handleDragAndDrop(
   sourceCssSelector: string,
   targetCssSelector: string,
   offsetX: number = 0,
-  offsetY: number = 0
+  offsetY: number = 0,
+  options?: DragAndDropOptions
 ): Promise<DragAndDropResult> {
   try {
-    debug.log('[DragAndDrop] Drag and drop:', { sourceCssSelector, targetCssSelector, offsetX, offsetY });
+    debug.log('[DragAndDrop] Drag and drop:', { sourceCssSelector, targetCssSelector, offsetX, offsetY, options });
+
+    if (!sourceCssSelector || !sourceCssSelector.trim()) {
+      return { status: 'error', message: 'Source selector is empty' };
+    }
+    if (!targetCssSelector || !targetCssSelector.trim()) {
+      return { status: 'error', message: 'Target selector is empty' };
+    }
     
     // Get the current active tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -70,15 +100,15 @@ export async function handleDragAndDrop(
     }
 
     // Execute script in content page to perform drag and drop
-    const results = await chrome.scripting.executeScript({
+    const execPromise = chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
-      func: (sourceSelector: string, targetSelector: string, xOffset: number, yOffset: number, timing: any, visualStyles: any): any => {
+      world: 'MAIN',
+      func: (sourceSelector: string, targetSelector: string, xOffset: number, yOffset: number, timing: any, visualStyles: any, extraOpts?: any): any => {
         // Helper function to check if element is visible
         const isVisible = (el: Element): boolean => {
           const style = window.getComputedStyle(el);
-          return style.display !== 'none' && 
-                 style.visibility !== 'hidden' && 
-                 style.opacity !== '0';
+          const hasBox = (el as HTMLElement).offsetWidth > 0 || (el as HTMLElement).offsetHeight > 0 || el.getClientRects().length > 0;
+          return hasBox && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
         };
 
         // Helper function for delays
@@ -179,8 +209,30 @@ export async function handleDragAndDrop(
 
               const sourceX = sourceRect.left + sourceRect.width / 2;
               const sourceY = sourceRect.top + sourceRect.height / 2;
-              const targetX = targetRect.left + targetRect.width / 2 + xOffset;
-              const targetY = targetRect.top + targetRect.height / 2 + yOffset;
+            // Resolve drop coordinates according to options
+            let targetX = targetRect.left + targetRect.width / 2 + xOffset;
+            let targetY = targetRect.top + targetRect.height / 2 + yOffset;
+            let usedMode = 'center+offset';
+            if (extraOpts && extraOpts.dropPoint) {
+              const dp = extraOpts.dropPoint as any;
+              if (dp.mode === 'offset') {
+                targetX = targetRect.left + dp.x;
+                targetY = targetRect.top + dp.y;
+                usedMode = 'offset';
+              } else if (dp.mode === 'percent') {
+                targetX = targetRect.left + Math.max(0, Math.min(1, dp.x)) * targetRect.width;
+                targetY = targetRect.top + Math.max(0, Math.min(1, dp.y)) * targetRect.height;
+                usedMode = 'percent';
+              } else if (dp.mode === 'absolute') {
+                targetX = dp.x;
+                targetY = dp.y;
+                usedMode = 'absolute';
+              } else if (dp.mode === 'center') {
+                targetX = targetRect.left + targetRect.width / 2 + (dp.x || 0);
+                targetY = targetRect.top + targetRect.height / 2 + (dp.y || 0);
+                usedMode = 'center';
+              }
+            }
 
               // Save original styles for cleanup
               sourceOriginalStyle = (sourceElement as HTMLElement).style.cssText;
@@ -253,7 +305,7 @@ export async function handleDragAndDrop(
               // Wait before starting animation
               await delay(timing.ANIMATION_SETUP_DELAY);
 
-              // Animate drag movement
+              // Animate drag movement & emit pointer/dragover moves for builder canvases
               const animateDrag = async (): Promise<void> => {
                 const steps = 60;
                 const stepDuration = timing.ANIMATION_DURATION / steps;
@@ -276,6 +328,24 @@ export async function handleDragAndDrop(
 
                   // Update path
                   path.setAttribute('d', `M ${sourceX} ${sourceY} Q ${(sourceX + currentX) / 2} ${Math.min(sourceY, currentY) - 50} ${currentX} ${currentY}`);
+
+                  // Emit pointer move along the path
+                  const moveEvt = new PointerEvent('pointermove', {
+                    bubbles: true,
+                    clientX: currentX,
+                    clientY: currentY,
+                    pointerType: 'mouse'
+                  });
+                  document.dispatchEvent(moveEvt);
+
+                  // Feed continuous dragover coordinates to the canvas/target
+                  targetElement.dispatchEvent(new DragEvent('dragover', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: currentX,
+                    clientY: currentY,
+                    dataTransfer,
+                  }));
 
                   await delay(stepDuration);
                 }
@@ -318,12 +388,34 @@ export async function handleDragAndDrop(
 
               document.body.appendChild(dropEffect);
 
-              // Dispatch drag and drop events with data
+            // Dispatch drag and drop events with data
               const dataTransfer = new DataTransfer();
               // Add drag data for better compatibility
               dataTransfer.setData('text/html', sourceElement.outerHTML);
               dataTransfer.setData('text/plain', (sourceElement.textContent || '').trim());
               dataTransfer.effectAllowed = 'move';
+            if (extraOpts && extraOpts.effectAllowed) dataTransfer.effectAllowed = extraOpts.effectAllowed;
+            if (extraOpts && extraOpts.dropEffect) dataTransfer.dropEffect = extraOpts.dropEffect;
+            if (extraOpts && extraOpts.dataTransfer) {
+              try {
+                for (const [k, v] of Object.entries(extraOpts.dataTransfer)) {
+                  dataTransfer.setData(k, String(v));
+                }
+              } catch {}
+            }
+              // Ensure draggable attribute for HTML5 DnD sources
+              if (!(sourceElement as HTMLElement).draggable) {
+                (sourceElement as HTMLElement).setAttribute('draggable', 'true');
+              }
+
+            // Optional custom drag image
+            if (extraOpts && extraOpts.dragImageSelector) {
+              const imgEl = document.querySelector(extraOpts.dragImageSelector) as Element | null;
+              if (imgEl) {
+                const r = (imgEl as HTMLElement).getBoundingClientRect();
+                dataTransfer.setDragImage(imgEl as any, r.width / 2, r.height / 2);
+              }
+            }
               
               // Dragstart on source
               sourceElement.dispatchEvent(new DragEvent('dragstart', {
@@ -333,6 +425,9 @@ export async function handleDragAndDrop(
                 clientX: sourceX,
                 clientY: sourceY
               }));
+
+              // Suggest drop allowance via preventing default on synthetic dragover if no handlers
+              targetElement.addEventListener('dragover', (e) => e.preventDefault(), { once: true });
 
               // Dragenter on target
               targetElement.dispatchEvent(new DragEvent('dragenter', {
@@ -352,6 +447,18 @@ export async function handleDragAndDrop(
                 clientY: targetY
               }));
 
+              // Also emit a few extra dragover events to mimic real dragging
+              for (let i = 0; i < 3; i++) {
+                await delay(20);
+                targetElement.dispatchEvent(new DragEvent('dragover', {
+                  bubbles: true,
+                  cancelable: true,
+                  dataTransfer: dataTransfer,
+                  clientX: targetX,
+                  clientY: targetY
+                }));
+              }
+
               // Drop on target
               targetElement.dispatchEvent(new DragEvent('drop', {
                 bubbles: true,
@@ -370,13 +477,19 @@ export async function handleDragAndDrop(
                 clientY: targetY
               }));
 
-              // Also dispatch mouse events for compatibility
+              // Also dispatch mouse/pointer events for compatibility
               sourceElement.dispatchEvent(new MouseEvent('mousedown', {
                 bubbles: true,
                 cancelable: true,
                 clientX: sourceX,
                 clientY: sourceY,
                 button: 0
+              }));
+              sourceElement.dispatchEvent(new PointerEvent('pointerdown', {
+                bubbles: true,
+                clientX: sourceX,
+                clientY: sourceY,
+                pointerType: 'mouse'
               }));
 
               targetElement.dispatchEvent(new MouseEvent('mouseup', {
@@ -385,6 +498,12 @@ export async function handleDragAndDrop(
                 clientX: targetX,
                 clientY: targetY,
                 button: 0
+              }));
+              targetElement.dispatchEvent(new PointerEvent('pointerup', {
+                bubbles: true,
+                clientX: targetX,
+                clientY: targetY,
+                pointerType: 'mouse'
               }));
 
               // Wait before cleanup
@@ -415,7 +534,8 @@ export async function handleDragAndDrop(
                     position: { x: Math.round(targetX), y: Math.round(targetY) },
                     foundInShadowDOM: targetResult.foundInShadowDOM,
                     shadowHost: targetResult.foundInShadowDOM ? targetResult.shadowHostInfo : null
-                  }
+                  },
+                  usedDropPoint: { x: Math.round(targetX), y: Math.round(targetY), mode: usedMode }
                 }
               };
             } finally {
@@ -443,8 +563,14 @@ export async function handleDragAndDrop(
       args: [sourceCssSelector, targetCssSelector, offsetX, offsetY, TIMING, VISUAL_STYLES] as [string, string, number, number, typeof TIMING, typeof VISUAL_STYLES]
     });
 
+    const results = await Promise.race([
+      execPromise,
+      new Promise<any>((resolve) => setTimeout(() => resolve([{ result: { success: false, message: 'Timeout during drag and drop' } }]), 15000))
+    ]);
+
     if (results && results[0]?.result) {
       const result = results[0].result;
+      debug.log('[DragAndDrop] Script result:', result);
       if (result.success && result.dragInfo) {
         return {
           status: 'success',

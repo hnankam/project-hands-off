@@ -33,6 +33,10 @@ export class TextInputHandler implements InputHandler {
     try {
       const inputElement = element as HTMLInputElement | HTMLTextAreaElement;
       const inputType = (element as HTMLInputElement).type || 'text';
+      if (!isElementVisible(inputElement)) {
+        scrollIntoView(inputElement);
+      }
+      await focusAndHighlight(inputElement);
       
       // Validate input value
       const validation = validateInputValue(element, value);
@@ -95,13 +99,20 @@ export class TextInputHandler implements InputHandler {
       value = value.substring(0, options.maxLength);
     }
 
-    // Stream text with typing effect
-    await streamText(inputElement, value, {
-      speed: options.typingSpeed || 20,
-      triggerInputEvents: options.triggerEvents !== false,
-      triggerChangeEvents: options.triggerEvents !== false,
-      triggerKeyboardEvents: modernDetection.isReactComponent || modernDetection.isVueComponent
-    });
+    // Stream or set directly based on typingSpeed
+    if (options.typingSpeed && options.typingSpeed > 0) {
+      await streamText(inputElement, value, {
+        speed: options.typingSpeed || 20,
+        triggerInputEvents: options.triggerEvents !== false,
+        triggerChangeEvents: options.triggerEvents !== false,
+        triggerKeyboardEvents: modernDetection.isReactComponent || modernDetection.isVueComponent
+      });
+    } else {
+      inputElement.value = value;
+      const events = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
+      if (modernDetection.isReactComponent) events.push('focus', 'blur');
+      triggerInputEvents(inputElement, events);
+    }
 
     // Show success feedback
     if (options.showSuccessFeedback !== false) {
@@ -138,7 +149,7 @@ export class TextInputHandler implements InputHandler {
       triggerKeyboardEvents: modernDetection.isReactComponent
     });
 
-    // Trigger email-specific events for modern frameworks
+    // Blur for validation
     if (modernDetection.isReactComponent) {
       inputElement.dispatchEvent(new Event('blur', { bubbles: true }));
     }

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
+import { ImageRenderer, type UserMessageProps } from '@copilotkit/react-ui';
 
 /**
  * Custom UserMessage Component for CopilotChat
@@ -16,8 +17,9 @@ import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
  * - Undo last edit (keeps edit history)
  * - Maintains the simplistic design of the default component
  * - Shows controls on hover
+ * - Supports image rendering with the CopilotKit ImageRenderer
  */
-export const CustomUserMessage: React.FC<{ message?: any }> = ({ message }) => {
+export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRenderer: ImageRendererComponent = ImageRenderer }) => {
   const { isLight } = useStorage(exampleThemeStorage);
   const { messages, setMessages } = useCopilotChatHeadless_c();
   
@@ -45,9 +47,10 @@ export const CustomUserMessage: React.FC<{ message?: any }> = ({ message }) => {
   // Get message content (handle both string and array content)
   const getMessageContent = (): string => {
     if (!message?.content) return '';
-    if (typeof message.content === 'string') return message.content;
-    if (Array.isArray(message.content)) {
-      return message.content
+    const content = message.content as any; // Type assertion for flexible content handling
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      return content
         .map((item: any) => {
           if (typeof item === 'string') return item;
           if (item?.text) return item.text;
@@ -56,13 +59,16 @@ export const CustomUserMessage: React.FC<{ message?: any }> = ({ message }) => {
         })
         .join(' ');
     }
-    if (typeof message.content === 'object' && message.content !== null) {
-      return JSON.stringify(message.content);
+    if (typeof content === 'object' && content !== null) {
+      return JSON.stringify(content);
     }
     return '';
   };
 
   const content = getMessageContent();
+  
+  // Check if this is an image message
+  const isImageMessage = message && "image" in message && message.image;
 
   // Auto-resize textarea
   useEffect(() => {
@@ -304,16 +310,29 @@ export const CustomUserMessage: React.FC<{ message?: any }> = ({ message }) => {
           </div>
         </div>
       ) : (
-        <div
-          style={{
-            fontSize: '13px',
-            lineHeight: '1.4',
-            color: isLight ? '#0C1117' : '#f9fafb',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-          }}
-        >
-          {content}
+        <div>
+          {/* Render image if present */}
+          {isImageMessage && (
+            <ImageRendererComponent 
+              image={message.image!} 
+              content={message.content}
+            />
+          )}
+          
+          {/* Render text content for non-image messages or alongside images */}
+          {!isImageMessage && (
+            <div
+              style={{
+                fontSize: '13px',
+                lineHeight: '1.4',
+                color: isLight ? '#0C1117' : '#f9fafb',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {content}
+            </div>
+          )}
         </div>
       )}
 

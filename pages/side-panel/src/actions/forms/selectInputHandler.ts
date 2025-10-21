@@ -29,6 +29,10 @@ export class SelectInputHandler implements InputHandler {
   ): Promise<InputDataResult> {
     try {
       const selectElement = element as HTMLSelectElement;
+      if (!isElementVisible(selectElement)) {
+        scrollIntoView(selectElement);
+      }
+      await focusAndHighlight(selectElement);
       
       // Move cursor to element if requested
       if (options.moveCursor) {
@@ -45,7 +49,7 @@ export class SelectInputHandler implements InputHandler {
         };
       }
       
-      // Simulate click on dropdown trigger first
+      // Simulate click on dropdown trigger first (best-effort)
       await this.simulateDropdownClick(selectElement);
       
       // Set the selection
@@ -56,7 +60,7 @@ export class SelectInputHandler implements InputHandler {
       
       // Trigger events for modern frameworks
       const modernDetection = detectModernInput(selectElement);
-      const events = ['input', 'change'];
+      const events = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
       
       if (modernDetection.isReactComponent) {
         events.push('focus', 'blur');
@@ -96,6 +100,7 @@ export class SelectInputHandler implements InputHandler {
     const matchBy = options.matchBy || 'both';
     const caseSensitive = options.caseSensitive || false;
     const partialMatch = options.partialMatch || false;
+    const preferValueOverText = options.preferValueOverText ?? true;
     
     const searchValue = caseSensitive ? value : value.toLowerCase();
     
@@ -108,8 +113,8 @@ export class SelectInputHandler implements InputHandler {
       let optionValue = caseSensitive ? option.value : option.value.toLowerCase();
       let optionText = caseSensitive ? option.text : option.text.toLowerCase();
       
-      // Check for exact match first
-      if (matchBy === 'value' || matchBy === 'both') {
+      // Check for exact match first (prefer value matching before text)
+      if (preferValueOverText && (matchBy === 'value' || matchBy === 'both')) {
         if (partialMatch) {
           if (optionValue.includes(searchValue)) {
             return { option, index: i };
@@ -121,7 +126,7 @@ export class SelectInputHandler implements InputHandler {
         }
       }
       
-      if (matchBy === 'text' || matchBy === 'both') {
+      if ((matchBy === 'text' || matchBy === 'both')) {
         if (partialMatch) {
           if (optionText.includes(searchValue)) {
             return { option, index: i };

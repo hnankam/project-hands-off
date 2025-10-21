@@ -29,6 +29,11 @@ export class ContentEditableHandler implements InputHandler {
     options: ContentEditableOptions = {}
   ): Promise<InputDataResult> {
     try {
+      // Ensure interactable state
+      if (!isElementVisible(element)) {
+        await scrollIntoView(element);
+      }
+      await focusAndHighlight(element);
       const insertMode = options.insertMode || 'replace';
       const htmlContent = options.htmlContent || false;
       const preserveFormatting = options.preserveFormatting || false;
@@ -62,6 +67,7 @@ export class ContentEditableHandler implements InputHandler {
     value: string,
     options: ContentEditableOptions
   ): Promise<InputDataResult> {
+    const modern = detectModernInput(element);
     const insertMode = options.insertMode || 'replace';
     const preserveFormatting = options.preserveFormatting || false;
     
@@ -114,6 +120,7 @@ export class ContentEditableHandler implements InputHandler {
     options: ContentEditableOptions
   ): Promise<InputDataResult> {
     const insertMode = options.insertMode || 'replace';
+    const modern = detectModernInput(element);
     
     // Prepare HTML content based on insert mode
     let contentToInsert = value;
@@ -161,30 +168,28 @@ export class ContentEditableHandler implements InputHandler {
     for (let i = 0; i < chars.length; i++) {
       const currentContent = content.substring(0, i + 1);
       element.textContent = currentContent;
-      
-      // Trigger input event for each character
-      element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+      // Fire a richer set of events during streaming for framework bindings
+      this.triggerContentEditableEvents(element, options, i === chars.length - 1);
       
       // Small delay between characters
       await new Promise(resolve => setTimeout(resolve, typingSpeed));
     }
-    
-    // Final events
-    this.triggerContentEditableEvents(element, options);
+    // Final events ensured by last iteration
   }
 
-  private triggerContentEditableEvents(element: HTMLElement, options: ContentEditableOptions): void {
+  private triggerContentEditableEvents(element: HTMLElement, options: ContentEditableOptions, isFinal: boolean = true): void {
     const modernDetection = detectModernInput(element);
-    const events = ['input', 'change'];
-    
+    const events = ['input'];
     if (modernDetection.isReactComponent) {
-      events.push('focus', 'blur', 'keyup', 'keydown');
+      events.unshift('focus');
+      events.push('keyup');
+      if (isFinal) events.push('blur');
     }
-    
     if (modernDetection.isVueComponent) {
-      events.push('keyup', 'keydown');
+      events.push('keyup');
     }
-    
+    // Some editors rely on selection changes
+    document.dispatchEvent(new Event('selectionchange'));
     triggerInputEvents(element, events);
   }
 
@@ -192,6 +197,7 @@ export class ContentEditableHandler implements InputHandler {
     // Clear both text and HTML content
     element.textContent = '';
     element.innerHTML = '';
+    this.triggerContentEditableEvents(element, {}, false);
   }
 
   private preserveTextFormatting(element: HTMLElement, content: string): string {

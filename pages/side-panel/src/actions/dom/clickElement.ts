@@ -1,4 +1,12 @@
-import { debug } from '@extension/shared';
+import { debug as baseDebug } from '@extension/shared';
+
+// Timestamped debug wrappers
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: any[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: any[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: any[]) => baseDebug.error(ts(), ...args),
+} as const;
 
 /**
  * Result type for click element operation
@@ -25,6 +33,9 @@ interface ClickElementResult {
 export async function handleClickElement(cssSelector: string, autoMoveCursor: boolean = true): Promise<ClickElementResult> {
   try {
     debug.log('[ClickElement] Clicking element with selector:', cssSelector, 'autoMoveCursor:', autoMoveCursor);
+    if (!cssSelector || cssSelector.trim().length === 0) {
+      return { status: 'error', message: 'Empty CSS selector provided' };
+    }
     
     // Get the current active tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -35,9 +46,10 @@ export async function handleClickElement(cssSelector: string, autoMoveCursor: bo
       };
     }
 
-    // Execute script in content page to find and click the element
-    const results = await chrome.scripting.executeScript({
+    // Execute script in content page to find and click the element (with timeout)
+    const execPromise = chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
+      world: 'MAIN',
       func: (selector: string, moveCursor: boolean): any => {
         try {
           // First, check if selector is syntactically valid by trying to use it
@@ -369,6 +381,11 @@ export async function handleClickElement(cssSelector: string, autoMoveCursor: bo
       },
       args: [cssSelector, autoMoveCursor] as [string, boolean]
     });
+
+    const results = await Promise.race([
+      execPromise,
+      new Promise<any>((resolve) => setTimeout(() => resolve([{ result: { success: false, message: 'Timeout while clicking element' } }]), 8000))
+    ]);
 
     if (results && results[0]?.result) {
       const result = results[0].result;

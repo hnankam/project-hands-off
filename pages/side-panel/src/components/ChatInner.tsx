@@ -3,14 +3,16 @@ import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { useCopilotChat, useCoAgent, useCoAgentStateRender, useCopilotAction, useCopilotReadable, useCopilotChatHeadless_c, useFrontendTool, useHumanInTheLoop, useRenderToolCall, useCopilotContext} from "@copilotkit/react-core";
 import { ComponentsMap, CopilotChat, useCopilotChatSuggestions } from "@copilotkit/react-ui";
 import { debug, useStorage, cosineSimilarity, embeddingService } from '@extension/shared';
+import { embeddingsStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 import { WeatherCard } from './WeatherCard';
+import { ActionStatus } from './ActionStatus';
+import { WaitCountdown } from './WaitCountdown';
 import { AgentState } from '../lib/types';
 import { SemanticSearchManager } from '../lib/SemanticSearchManager';
-import { ProverbsCard } from './Proverbs';
-import { MoonCard } from './Moon';
 import { TaskProgressCard, AgentStepState } from './TaskProgressCard';
 import { CustomUserMessage } from './CustomUserMessage';
+import { CustomInput } from './CustomInput';
 import { z } from "zod";
 
 import { 
@@ -23,7 +25,9 @@ import {
   handleDragAndDrop,
   handleRefreshPageContent,
   handleTakeScreenshot,
-  handleVerifySelector
+  handleVerifySelector,
+  handleGetSelectorAtPoint,
+  handleGetSelectorsAtPoints
 } from '../actions';
 
 // Message data structure returned by saveMessagesRef
@@ -37,6 +41,7 @@ export interface ChatInnerProps {
   sessionId: string;
   sessionTitle: string | undefined;
   currentPageContent: any;
+  dbTotals?: { html: number; form: number; click: number };
   pageContentEmbedding?: {
     fullEmbedding: number[];
     chunks?: Array<{ text: string; html: string; embedding: number[] }>;
@@ -57,6 +62,8 @@ export interface ChatInnerProps {
   // Agent step state management
   initialAgentStepState?: AgentStepState;
   onAgentStepStateChange?: (state: AgentStepState) => void;
+  // Context menu message to send
+  contextMenuMessage?: string | null;
 }
 
 /**
@@ -82,7 +89,9 @@ export const ChatInner: FC<ChatInnerProps> = ({
   showSuggestions,
   onProgressBarStateChange,
   initialAgentStepState,
-  onAgentStepStateChange
+  onAgentStepStateChange,
+  contextMenuMessage,
+  dbTotals
 }) => {
   // 🎨 Theme
   const { isLight } = useStorage(exampleThemeStorage);
@@ -124,6 +133,54 @@ export const ChatInner: FC<ChatInnerProps> = ({
     setIsAgentLoading(isLoading);
   }, [isLoading, setIsAgentLoading]);
 
+  // Totals for DB-backed counts
+  const [totals, setTotals] = useState<{ html: number; form: number; click: number }>({ html: 0, form: 0, click: 0 });
+
+  // If container provided totals from embed time, prefer those immediately
+  useEffect(() => {
+    if (dbTotals && (dbTotals.html || dbTotals.form || dbTotals.click)) {
+      setTotals(dbTotals);
+      debug.log('[ChatInner] Adopted embed-time totals from container:', dbTotals);
+    }
+  }, [dbTotals?.html, dbTotals?.form, dbTotals?.click]);
+
+  // Track context menu message to populate input field
+  // Use a ref that CustomInput can access directly instead of prop drilling
+  const inputPrefillRef = useRef<{ text: string; timestamp: number } | null>(null);
+  const contextMenuUsedRef = useRef<string | null>(null);
+  const pendingAnimationFrameRef = useRef<number | null>(null);
+  
+  // Handle context menu messages - populate input field instead of sending directly
+  useEffect(() => {
+    if (!contextMenuMessage || !contextMenuMessage.trim()) return;
+    if (contextMenuMessage === contextMenuUsedRef.current) return;
+    
+    // Cancel any pending animation frame to prevent duplicate dispatches
+    if (pendingAnimationFrameRef.current !== null) {
+      cancelAnimationFrame(pendingAnimationFrameRef.current);
+      pendingAnimationFrameRef.current = null;
+    }
+    
+    debug.log('[ChatInner] Received context menu message, setting prefill ref:', contextMenuMessage.substring(0, 100));
+    const timestamp = Date.now();
+    inputPrefillRef.current = { text: contextMenuMessage, timestamp };
+    
+    // Mark as used IMMEDIATELY to prevent duplicate processing
+    contextMenuUsedRef.current = contextMenuMessage;
+    
+    // Use requestAnimationFrame to defer the event dispatch to avoid triggering during render
+    pendingAnimationFrameRef.current = requestAnimationFrame(() => {
+      pendingAnimationFrameRef.current = null;
+      const event = new CustomEvent('copilot-prefill-text', { 
+        detail: { text: contextMenuMessage, timestamp, sessionId },
+        bubbles: false, // Don't bubble
+        cancelable: false // Can't be cancelled
+      });
+      window.dispatchEvent(event);
+      debug.log('[ChatInner] Dispatched copilot-prefill-text event');
+    });
+  }, [contextMenuMessage]);
+
   // Add/remove class to body to hide suggestions via CSS
   useEffect(() => {
     if (!showSuggestions) {
@@ -137,67 +194,63 @@ export const ChatInner: FC<ChatInnerProps> = ({
     };
   }, [showSuggestions]);
 
-  // Sanitize messages to prevent errors and clean up invalid data
-  // Only sanitize messages except the last 5 to preserve recent context
-  useEffect(() => {
-    if (!messages || messages.length === 0) return;
+  // Track last sanitized signature and time to prevent loops/thrashing
+  const lastSanitizedRef = useRef<string>('');
+  const lastSanitizeAtRef = useRef<number>(0);
+  const cachedSanitizedRef = useRef<{ signature: string; result: { messages: any[]; hasChanges: boolean } } | null>(null);
 
-    let needsSanitization = false;
-
-    // retain only the last 500 messages
-    const retainedMessages = messages;
-    if (messages.length > 500) {
-      const retainedMessages = messages.slice(-500);
+  // Compute a compact signature representing the relevant message content
+  const computeMessagesSignature = (list: any[]) => {
+    try {
+      return JSON.stringify(
+        list.map((m: any) => ({ id: m.id, role: m.role, len: typeof m.content === 'string' ? m.content.length : 0 }))
+      );
+    } catch {
+      return String(list?.length || 0);
     }
+  };
+  
+  // To  move to send message callback
+  // // Auto-sanitize and deduplicate messages in the UI
+  // // Note: This runs continuously to clean up any duplicates or large content
+  // // The actual sanitization happens in sanitizeMessages helper
+  // useEffect(() => {
+  //   if (!messages || messages.length === 0) return;
 
-    const sanitizedMessages = retainedMessages.map((message, index) => {
-      // Skip sanitization for the last 5 messages
-      // if (index >= messages.length - 5) {
-      //   return message;
-      // }
+  //   // Compute a lightweight signature for messages (ids + content length)
+  //   const signature = computeMessagesSignature(messages);
 
-      const sanitized = { ...message };
-      if (sanitized.role == 'tool' && sanitized.id.includes('result') && sanitized.content.length > 100) {
-        const tool_name = sanitized.toolName || '';
-        if(['searchPageContent', 'searchFormData', 'searchDOMUpdates', 'searchClickableElements', 'takeScreenshot'].includes(tool_name)) {
-          console.log('[ChatInner] Cleaning content for tool call: ', tool_name, sanitized);
-          sanitized.content = sanitized.content.substring(0, 90) + '...';
-          needsSanitization = true;
-        }
-        
-      }
-      return sanitized;
-      
-    });
+  //   if (signature === lastSanitizedRef.current) {
+  //     return;
+  //   }
 
-    // Remove duplicate tool messages by id, retain only the last one
-    const seenToolIds = new Map<string, number>();
-    const finalMessages = sanitizedMessages.filter((message, index) => {
-      if (message.role === 'tool' && message.id) {
-        const lastIndex = seenToolIds.get(message.id);
-        seenToolIds.set(message.id, index);
-        // If we've seen this id before, mark the previous occurrence for removal
-        if (lastIndex !== undefined) {
-          needsSanitization = true;
-          return false; // Remove this duplicate (keep the later one)
-        }
-      }
-      return true;
-    }).filter((message, index, arr) => {
-      // Second pass: remove duplicates that appeared before the last occurrence
-      if (message.role === 'tool' && message.id) {
-        const lastIndex = seenToolIds.get(message.id);
-        return index === arr.findIndex(m => m.id === message.id && m.role === 'tool');
-      }
-      return true;
-    });
+  //   // Throttle sanitization to at most once every 200ms
+  //   const now = Date.now();
+  //   if (now - lastSanitizeAtRef.current < 200) {
+  //     return;
+  //   }
 
-    // Only update if something changed
-    if (needsSanitization) {
-      setMessages(finalMessages);
-    }
-
-  }, [messages, setMessages]);
+  //   const result = sanitizeAndDeduplicateMessages(messages);
+    
+  //   // Only update if something actually changed
+  //   if (result.hasChanges) {
+  //     const resultSignature = computeMessagesSignature(result.messages);
+  //     if (resultSignature !== signature) {
+  //       console.log('[ChatInner] Auto-sanitization: updating messages from', messages.length, 'to', result.messages.length);
+  //       lastSanitizedRef.current = resultSignature;
+  //       lastSanitizeAtRef.current = now;
+  //       setMessages(result.messages);
+  //     } else {
+  //       // No effective change in signature
+  //       lastSanitizedRef.current = signature;
+  //       lastSanitizeAtRef.current = now;
+  //     }
+  //   } else {
+  //     // No changes; store current signature to prevent reprocessing
+  //     lastSanitizedRef.current = signature;
+  //     lastSanitizeAtRef.current = now;
+  //   }
+  // }, [messages, setMessages]);
 
   // PERFORMANCE OPTIMIZATION: Memoize filtered messages to avoid duplicate filtering
   // This runs only once per message change instead of twice
@@ -225,28 +278,89 @@ export const ChatInner: FC<ChatInnerProps> = ({
     });
   }, [messages]);
 
-  // Expose save functionality through ref - returns both ALL messages and filtered messages
-  // ALL messages will be stored, filtered messages will be used for the counter
-  useEffect(() => {
-    saveMessagesRef.current = () => ({
-      allMessages: messages || [],
-      filteredMessages: filteredMessages
-    });
-  }, [messages, filteredMessages, saveMessagesRef]);
+  // Helper function to sanitize and deduplicate messages
+  // Use useCallback to avoid recreating on every render
+  // Returns { messages, hasChanges } to track if actual modifications were made
+  const sanitizeMessages = React.useCallback((messagesToProcess: any[]) => {
+    console.log('[ChatInner] Sanitizing and deduplicating messages...');
+    
+    let hasChanges = false;
+    
+    // Retain only the last 500 messages
+    let retainedMessages = messagesToProcess;
+    if (messagesToProcess.length > 500) {
+      retainedMessages = messagesToProcess.slice(-500);
+      hasChanges = true;
+      console.log('[ChatInner] Retained last 500 messages from', messagesToProcess.length);
+    }
 
-  // Expose restore functionality through ref
+    // Sanitize large tool call content - only create new objects if we modify something
+    const sanitizedMessages = retainedMessages.map((message, index) => {
+      if (message.role === 'tool' && message.id?.includes('result') && message.content?.length > 100) {
+        const tool_name = message.toolName || '';
+        if (['searchPageContent', 'searchFormData', 'searchDOMUpdates', 'searchClickableElements', 'takeScreenshot'].includes(tool_name)) {
+          // Check if content needs truncation
+          if (!message.content.endsWith('...')) {
+            console.log('[ChatInner] Truncating content for tool call:', tool_name, message.id);
+            hasChanges = true;
+            return { ...message, content: message.content.substring(0, 90) + '...' };
+          }
+        }
+      }
+      // Return original object if no changes needed
+      return message;
+    });
+
+    // Client-side deduplication disabled: keep all sanitized messages as-is
+    const finalMessages = sanitizedMessages;
+
+    console.log('[ChatInner] Sanitization complete:', {
+      original: messagesToProcess.length,
+      retained: retainedMessages.length,
+      sanitized: sanitizedMessages.length,
+      final: finalMessages.length,
+      removed: messagesToProcess.length - finalMessages.length,
+      hasChanges
+    });
+
+    return { messages: finalMessages, hasChanges };
+  }, []);
+
+  // Expose save functionality through ref - returns both ALL messages and filtered messages
+  // ALL messages will be sanitized, deduplicated, filtered messages will be used for the counter
+  useEffect(() => {
+    saveMessagesRef.current = () => {
+      const signature = computeMessagesSignature(messages || []);
+      let result: { messages: any[]; hasChanges: boolean };
+      if (cachedSanitizedRef.current && cachedSanitizedRef.current.signature === signature) {
+        result = cachedSanitizedRef.current.result;
+      } else {
+        result = sanitizeMessages(messages || []);
+        cachedSanitizedRef.current = { signature, result };
+      }
+      return {
+        allMessages: result.messages,
+      filteredMessages: filteredMessages
+      };
+    };
+  }, [messages, filteredMessages, saveMessagesRef, sanitizeMessages]);
+
+  // Expose restore functionality through ref - sanitize and deduplicate on restore
   useEffect(() => {
     restoreMessagesRef.current = (messagesToRestore: any[]) => {
       if (messagesToRestore && messagesToRestore.length > 0) {
-        debug.log(`[ChatInner] Restoring ${messagesToRestore.length} messages`);
-        setMessages(messagesToRestore);
-        // Log current messages after a short delay to verify they were set
-        setTimeout(() => {
-          debug.log(`[ChatInner] Messages after restore: ${messages.length}`);
-        }, 100);
+        const result = sanitizeMessages(messagesToRestore);
+        // Guard: only update if content actually changed compared to current state
+        const currentSig = computeMessagesSignature(messages || []);
+        const nextSig = computeMessagesSignature(result.messages || []);
+        if (result.hasChanges || currentSig !== nextSig) {
+          setMessages(result.messages);
+        } else {
+          // No-op when nothing changed
+        }
       }
     };
-  }, [setMessages, restoreMessagesRef, messages.length]);
+  }, [setMessages, restoreMessagesRef, messages.length, sanitizeMessages]);
 
   // Update message count whenever filtered messages change
   // PERFORMANCE: Only updates if count actually changed
@@ -288,7 +402,6 @@ export const ChatInner: FC<ChatInnerProps> = ({
       pageTitle,
       pageURL,
       hasEmbeddings: !!pageContentEmbedding,
-      embeddingChunksCount: pageContentEmbedding?.chunks?.length || 0,
       timestamp: currentPageContent.timestamp
     });
     
@@ -297,13 +410,16 @@ export const ChatInner: FC<ChatInnerProps> = ({
       pageURL,
       hasContent: true,
       hasEmbeddings: !!pageContentEmbedding,
-      embeddingChunksCount: pageContentEmbedding?.chunks?.length || 0,
+      // DB-backed totals
+      totalHtmlChunks: totals.html,
+      totalClickableChunks: totals.click,
+      totalFormChunks: totals.form,
       documentInfo,
       windowInfo,
       timestamp: currentPageContent.timestamp || Date.now(),
       dataSource: 'chrome-extension-live-extraction',
     };
-  }, [currentPageContent, pageContentEmbedding]);
+  }, [currentPageContent, pageContentEmbedding, totals]);
 
   // Log the page metadata for debugging
   useEffect(() => {
@@ -313,13 +429,17 @@ export const ChatInner: FC<ChatInnerProps> = ({
         pageURL: pageMetadataForAgent.pageURL,
         hasContent: pageMetadataForAgent.hasContent,
         hasEmbeddings: pageMetadataForAgent.hasEmbeddings,
-        embeddingChunksCount: pageMetadataForAgent.embeddingChunksCount,
+        totalHtmlChunks: (pageMetadataForAgent as any).totalHtmlChunks,
+        totalClickableChunks: (pageMetadataForAgent as any).totalClickableChunks,
+        totalFormChunks: (pageMetadataForAgent as any).totalFormChunks,
         documentInfo: pageMetadataForAgent.documentInfo,
         windowInfo: pageMetadataForAgent.windowInfo,
         timestamp: new Date(pageMetadataForAgent.timestamp).toISOString(),
       });
     }
   }, [pageMetadataForAgent, currentPageContent]);
+
+  // No DB queries for totals here; ChatSessionContainer provides authoritative totals after insert
 
   // 🪁 Trigger suggestion generation when page content is refreshed
   useEffect(() => {
@@ -333,14 +453,9 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // Suggestions will regenerate when agent actions complete
 
   useCopilotReadable({
-    description: "Current web page metadata including: pageTitle (page title), pageURL (current URL), hasContent (whether page content is loaded), hasEmbeddings (whether semantic search is available), embeddingChunksCount (number of searchable content chunks), documentInfo (page info like domain, referrer, characterSet), windowInfo (viewport dimensions, scroll position, userAgent, language, platform), and timestamp. Use the searchPageContent action to semantically search the page content when you need to find specific information or understand page structure.",
+    description: "Current web page metadata including: pageTitle, pageURL, hasContent, hasEmbeddings, totalHtmlChunks, totalFormChunks, totalClickableChunks, documentInfo, windowInfo, and timestamp. Use searchPageContent to semantically search page content when needed.",
     value: pageMetadataForAgent,
   });
-
-  // 🪁 Readable 2: Latest Incremental DOM Update
-  // This contains ONLY the recent DOM changes (added/removed elements, text changes)
-  // DOM updates are now stored in the database with embeddings and can be searched via searchDOMUpdates action
-  // No longer passed directly to avoid bloating context
 
 
   /*** Define CopilotKit Actions ***/
@@ -362,22 +477,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // 🪁 Action: Search Page Content Semantically
   useCopilotAction({
     name: "searchPageContent",
-    description: `Semantically search the current page content to find relevant information. This uses AI embeddings to find content that matches the meaning of your query, not just keyword matching.
-    
-    Use this action to:
-    - Find specific information on the page
-    - Understand page structure and content
-    - Locate forms, buttons, or interactive elements
-    - Extract relevant data from the page
-    - Answer questions about the page content
-    
-    IMPORTANT: Transform the user's request into an effective search query. Extract the key concepts and entities.
-    Examples:
-    - User: "What is the main purpose of this page?" → Query: "main content purpose overview description"
-    - User: "Find pricing information" → Query: "pricing plans cost subscription price"
-    - User: "Show me the contact form" → Query: "contact form email message submit"
-    
-    Returns the most relevant HTML sections from the page that match your query.`,
+    description: "Semantic search over current page content. Returns top‑K relevant HTML chunks.",
     parameters: [
       {
         name: "query",
@@ -397,26 +497,85 @@ export const ChatInner: FC<ChatInnerProps> = ({
     },
   });
 
+  // 🪁 Action: Get HTML chunks by index range
+  useCopilotAction({
+    name: "getHtmlChunksByRange",
+    description: "Fetch HTML chunks by chunk index range (inclusive).",
+    parameters: [
+      { name: "start", type: "number", description: "Start chunk index (>=0)", required: true },
+      { name: "end", type: "number", description: "End chunk index (>=start)", required: true },
+    ],
+    handler: async ({ start, end }) => {
+      const url = currentPageContent?.url || '';
+      if (!url) return { status: 'error', message: 'No page URL' };
+      const s = Math.max(0, Number(start));
+      const e = Math.max(s, Number(end));
+      try {
+        debug.log('[AgentAction] getHtmlChunksByRange → querying DB:', { url: url.substring(0, 80), start: s, end: e });
+        const rows = await embeddingsStorage.fetchHTMLChunksByRange(url, s, e);
+        debug.log('[AgentAction] getHtmlChunksByRange → fetched:', rows.length);
+        return { status: 'success', message: `Fetched ${rows.length} chunk(s)`, chunks: rows };
+      } catch (err) {
+        debug.error('[AgentAction] getHtmlChunksByRange error:', err);
+        return { status: 'error', message: 'DB query failed' };
+      }
+    },
+  });
+
+  // 🪁 Action: Get Form chunks (groups) by range
+  useCopilotAction({
+    name: "getFormChunksByRange",
+    description: "Fetch form chunks (groups) by group index range (inclusive).",
+    parameters: [
+      { name: "start", type: "number", description: "Start group index (>=0)", required: true },
+      { name: "end", type: "number", description: "End group index (>=start)", required: true },
+    ],
+    handler: async ({ start, end }) => {
+      const url = currentPageContent?.url || '';
+      if (!url) return { status: 'error', message: 'No page URL' };
+      const s = Math.max(0, Number(start));
+      const e = Math.max(s, Number(end));
+      try {
+        debug.log('[AgentAction] getFormChunksByRange → querying DB:', { url: url.substring(0, 80), start: s, end: e });
+        const rows = await embeddingsStorage.fetchFormChunksByRange(url, s, e);
+        debug.log('[AgentAction] getFormChunksByRange → fetched:', rows.length);
+        return { status: 'success', message: `Fetched ${rows.length} chunk(s)`, chunks: rows };
+      } catch (err) {
+        debug.error('[AgentAction] getFormChunksByRange error:', err);
+        return { status: 'error', message: 'DB query failed' };
+      }
+    },
+  });
+
+  // 🪁 Action: Get Clickable chunks (groups) by range
+  useCopilotAction({
+    name: "getClickableChunksByRange",
+    description: "Fetch clickable chunks (groups) by group index range (inclusive).",
+    parameters: [
+      { name: "start", type: "number", description: "Start group index (>=0)", required: true },
+      { name: "end", type: "number", description: "End group index (>=start)", required: true },
+    ],
+    handler: async ({ start, end }) => {
+      const url = currentPageContent?.url || '';
+      if (!url) return { status: 'error', message: 'No page URL' };
+      const s = Math.max(0, Number(start));
+      const e = Math.max(s, Number(end));
+      try {
+        debug.log('[AgentAction] getClickableChunksByRange → querying DB:', { url: url.substring(0, 80), start: s, end: e });
+        const rows = await embeddingsStorage.fetchClickableChunksByRange(url, s, e);
+        debug.log('[AgentAction] getClickableChunksByRange → fetched:', rows.length);
+        return { status: 'success', message: `Fetched ${rows.length} chunk(s)`, chunks: rows };
+      } catch (err) {
+        debug.error('[AgentAction] getClickableChunksByRange error:', err);
+        return { status: 'error', message: 'DB query failed' };
+      }
+    },
+  });
+
   // 🪁 Action: Search Form Data
   useCopilotAction({
     name: "searchFormData",
-    description: `Search through all form fields on the page to find inputs, textareas, selects, checkboxes, and radio buttons.
-    
-    Use this action to:
-    - Find form fields by purpose (email, password, username, etc.)
-    - Locate inputs by their labels or placeholders
-    - Discover form structure
-    - Get field selectors for filling forms
-    
-    IMPORTANT: Transform the user's request into a field-focused search query. Extract the field type and purpose.
-    Examples:
-    - User: "Fill in my email address" → Query: "email address input field"
-    - User: "Enter password" → Query: "password input field"
-    - User: "Select my country" → Query: "country select dropdown"
-    - User: "What's my username field?" → Query: "username login input"
-    - User: "Find the search box" → Query: "search query input text"
-    
-    Returns form field information including selectors, types, names, IDs, values, and placeholders.`,
+    description: "Search form fields (inputs, textareas, selects, checkboxes/radios). Returns fields with selectors.",
     parameters: [
       {
         name: "query",
@@ -439,23 +598,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // 🪁 Action: Search DOM Updates (Recent Page Changes)
   useCopilotAction({
     name: "searchDOMUpdates",
-    description: `Search through recent DOM changes on the page to find what was added, removed, or modified. This is useful for tracking dynamic page updates, form submissions, error messages, notifications, modal appearances, etc.
-    
-    Use this action to:
-    - Check what happened after performing an action (clicking, submitting, etc.)
-    - Find error messages or success notifications
-    - Track dynamic content loading
-    - Verify action results without full page refresh
-    - Discover modal dialogs or popups that appeared
-    
-    IMPORTANT: Recent changes are prioritized automatically via recency scoring. Focus your query on WHAT you're looking for.
-    Examples:
-    - User: "Did the form submit successfully?" → Query: "success confirmation message submitted"
-    - User: "Are there any errors?" → Query: "error message alert warning"
-    - User: "What changed after I clicked?" → Query: "new elements added changed"
-    - User: "Did a modal appear?" → Query: "modal dialog popup window"
-    
-    Returns recent DOM changes with their summaries, timestamps, and recency scores.`,
+    description: "Search recent DOM changes (added/removed/modified). Returns summaries with timestamps.",
     parameters: [
       {
         name: "query",
@@ -478,23 +621,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // 🪁 Action: Search Clickable Elements
   useCopilotAction({
     name: "searchClickableElements",
-    description: `Search through all clickable elements on the page including buttons, links, and interactive elements.
-    
-    Use this action to:
-    - Find buttons by their text or purpose
-    - Locate links by their text or destination
-    - Discover navigation elements
-    - Get selectors for clicking elements
-    
-    IMPORTANT: Transform the user's request into an element-focused search query. Extract the element type and purpose.
-    Examples:
-    - User: "Click the login button" → Query: "login sign in button"
-    - User: "Find the submit button" → Query: "submit button"
-    - User: "Navigate to pricing page" → Query: "pricing plans link navigation"
-    - User: "Click sign up" → Query: "sign up register button link"
-    - User: "Open the menu" → Query: "menu navigation toggle button"
-    
-    Returns clickable element information including selectors, text, aria labels, and hrefs.`,
+    description: "Search clickable elements (buttons/links/etc.). Returns items with reliable selectors.",
     parameters: [
       {
         name: "query",
@@ -517,50 +644,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // 🪁 Action 1: Move Cursor to Element
   useCopilotAction({
     name: "moveCursorToElement",
-    description: `Move the cursor to a specific element on the current web page. The cursor will stay visible for 5 minutes and auto-hide afterwards.
-    
-      To find elements:
-      1. Use searchPageContent() FIRST to find relevant content and understand page structure
-      2. Search results will help you identify element types and locations
-      3. Based on search results, construct appropriate CSS selectors
-      4. If you're unsure about selector validity, use verifySelector() FIRST to test it
-      
-      Best practices for selectors:
-        - selector: The CSS selector to use (REQUIRED)
-        - text: Visible text content
-        - ariaLabel: Accessibility label
-        - title: Tooltip text
-        - href: Link URL (for links)
-        - tagName: HTML tag name
-        - role: ARIA role
-        
-      ALWAYS use the exact selector from clickableElements - never create your own!
-      
-      Example clickableElements data:
-      [
-        {
-          "selector": "#create-account-btn",
-          "text": "Create Account",
-          "tagName": "button",
-          "role": "button"
-        },
-        {
-          "selector": ".card.manual-setup",
-          "text": "Manual Setup",
-          "tagName": "div",
-          "role": "button"
-        }
-      ]
-      
-      To move cursor to "Create Account" button, use selector: "#create-account-btn"
-      To move cursor to "Manual Setup" card, use selector: ".card.manual-setup"
-      
-      NOTE: The cursor will automatically hide after 5 minutes. Do NOT call removeCursorIndicator() unless the user explicitly asks.
-      
-      RETURN FORMAT: This action returns an object with:
-      - status: 'success' | 'error'
-      - message: string (descriptive message about the result)
-      - elementInfo?: object (when successful, contains tag, text, id, className, foundInShadowDOM, shadowHost)`,
+    description: "Show/move cursor to the element matching the selector. Auto-hides after 5 minutes.",
     parameters: [{
       name: "cssSelector",
       type: "string",
@@ -577,16 +661,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // 🪁 Action 1c: Get Fresh Page Content
   useCopilotAction({
     name: "refreshPageContent",
-    description: `Force refresh the page HTML content. Use this when you need the most up-to-date page content, especially when:
-      - The page has dynamic content that may have changed
-      - You need fresh page content for semantic search
-      - The current page content seems outdated
-      - You're having trouble finding elements that should be present
-      
-      RETURN FORMAT: This action returns an object with:
-      - status: 'success' | 'error'
-      - message: string (descriptive message about the result)
-      - pageInfo?: object (when successful, contains title, url, htmlLength)`,
+    description: "Refresh current page HTML (for latest content/embeddings).",
     parameters: [],
     handler: async () => {
       const result = await handleRefreshPageContent(pageDataRef.current.pageContent);
@@ -598,19 +673,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // 🪁 Action 2: Clean Up Extension UI
   useCopilotAction({
     name: "cleanupExtensionUI",
-    description: `Remove all extension UI elements from the page including cursor indicator, click ripple animations, drag & drop effects, and their styles. Use this to clean up visual feedback elements or when the user asks to remove/hide the cursor. Note: The cursor auto-hides after 5 minutes, so you don't need to call this automatically.
-
-      This action cleans up:
-      - Cursor indicator and styles
-      - Click ripple animation styles
-      - Drag & drop animation styles
-      - Global cursor state and auto-hide timers
-      - Any orphaned visual feedback elements
-      
-      RETURN FORMAT: This action returns an object with:
-      - status: 'success' | 'error'
-      - message: string (descriptive message about the result)
-      - cleanupInfo?: object (when successful, contains elementsRemoved, stateCleared, totalElementsRemoved)`,
+    description: "Remove all extension UI elements and styles from the page.",
     parameters: [],
     handler: async () => {
       const result = await handleCleanupExtensionUI();
@@ -622,48 +685,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // 🪁 Action 3: Click Element
   useCopilotAction({
     name: "clickElement",
-    description: `Click on a specific element on the current web page.
-
-      Steps to use this action:
-      1. Use searchPageContent() FIRST to find the button and understand its location
-      2. Based on search results, construct an appropriate CSS selector
-      3. If you're unsure about selector validity, use verifySelector() FIRST to test it
-      4. If verifySelector shows the element exists, proceed with clickElement
-      7. Each clickableElements item contains:
-        - selector: The CSS selector to use (REQUIRED)
-        - text: Visible text content
-        - ariaLabel: Accessibility label
-        - title: Tooltip text
-        - href: Link URL (for links)
-        - tagName: HTML tag name
-        - role: ARIA role
-        
-      Example clickableElements data:
-      [
-        {
-          "selector": "#create-account-btn",
-          "text": "Create Account",
-          "tagName": "button",
-          "role": "button"
-        },
-        {
-          "selector": ".card.manual-setup",
-          "text": "Manual Setup",
-          "tagName": "div",
-          "role": "button"
-        }
-      ]
-      
-      To click "Create Account" button, use selector: "#create-account-btn"
-      To click "Manual Setup" card, use selector: ".card.manual-setup"
-      
-      ALWAYS use the exact selector from clickableElements - never create your own!
-      If you're uncertain about a selector's validity, use verifySelector() to test it first.
-
-      RETURN FORMAT: This action returns an object with:
-      - status: 'success' | 'error'
-      - message: string (descriptive message about the result)
-      - elementInfo?: object (when successful, contains tag, text, id, href, foundInShadowDOM, shadowHost)`,
+    description: "Click the element matching the provided CSS selector.",
     parameters: [{
       name: "cssSelector",
       type: "string",
@@ -685,33 +707,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // 🪁 Action 3b: Verify Selector
   useCopilotAction({
     name: "verifySelector",
-    description: `Verify if a CSS selector is valid and can find elements in the current page's DOM or Shadow DOM.
-    
-      This action helps validate selectors before using them in other actions like clickElement or inputData.
-      It provides detailed information about:
-      - Whether the selector syntax is valid
-      - How many elements match the selector
-      - Whether elements are found in main DOM or Shadow DOM
-      - Details about the found elements (tag, text, id, class)
-      - Information about shadow hosts if elements are in Shadow DOM
-      
-      Use cases:
-      - Test selectors before using them in other actions
-      - Debug why a selector isn't working
-      - Find out if elements exist in Shadow DOM
-      - Get element details for better understanding
-      - Validate selector syntax
-      
-      Examples:
-      - verifySelector("#submit-button") - Check if submit button exists
-      - verifySelector(".menu-item") - Check all menu items
-      - verifySelector("input[type='email']") - Check email input fields
-      - verifySelector("button:contains('Save')") - Check for Save buttons
-      
-      RETURN FORMAT: This action returns an object with:
-      - status: 'success' | 'error'
-      - message: string (descriptive message about the result)
-      - selectorInfo?: object (when successful, contains validation details and element information)`,
+    description: "Validate a CSS selector (syntax, match count, shadow DOM info, element details).",
     parameters: [
       {
         name: "cssSelector",
@@ -727,60 +723,40 @@ export const ChatInner: FC<ChatInnerProps> = ({
     },
   });
 
+  // 🪁 Action: Get Selector At Point
+  useCopilotAction({
+    name: "getSelectorAtPoint",
+    description: `Return a unique CSS selector for the element at the given viewport coordinates (x, y). Coordinates are in CSS pixels relative to the viewport (0,0 is top-left).` ,
+    parameters: [
+      { name: "x", type: "number", description: "Viewport X coordinate in CSS px", required: true },
+      { name: "y", type: "number", description: "Viewport Y coordinate in CSS px", required: true },
+    ],
+    handler: async ({ x, y }) => {
+      const result = await handleGetSelectorAtPoint(Number(x), Number(y));
+      debug.log('[Agent Response] getSelectorAtPoint:', result);
+      return result;
+    },
+  });
+
+  // 🪁 Action: Get Selectors At Points (batch)
+  useCopilotAction({
+    name: "getSelectorsAtPoints",
+    description: `Return unique CSS selectors for elements at the provided list of viewport coordinates. Each item is { x, y } in CSS pixels relative to the viewport.` ,
+    parameters: [
+      { name: "points", type: "object[]", description: "Array of points {x:number,y:number}", required: true },
+    ],
+    handler: async ({ points }) => {
+      const safe = Array.isArray(points) ? points.map((p: any) => ({ x: Number(p.x), y: Number(p.y) })) : [];
+      const result = await handleGetSelectorsAtPoints(safe);
+      debug.log('[Agent Response] getSelectorsAtPoints:', result);
+      return result;
+    },
+  });
+
   // 🪁 Action 4: Input Data into Form Field
   useCopilotAction({
     name: "inputData",
-    description: `Input data into a form field on the current web page. Supports input, textarea, select, and contenteditable elements. Automatically searches both main DOM and Shadow DOM for elements.
-
-      CRITICAL: You MUST provide a valid CSS selector from the pageHTML, NOT a description.
-      
-      Steps to use this action:
-      1. Use searchPageContent() FIRST to find form fields and their properties
-      2. If pageHTML is empty, call refreshPageContent() FIRST
-      3. Analyze the pageHTML or allFormData to find the input field in the HTML
-      4. For allFormData: Use the provided selectors or bestSelector field (RECOMMENDED)
-        - Each form element now includes a 'selectors' array with valid CSS selectors
-        - Use the 'bestSelector' field for the most reliable selector
-        - If ID contains special characters (like colons), use the attribute selector from 'selectors'
-        - If multiple elements have the same bestSelector, use placeholder or nth-of-type selectors from 'selectors'
-        - Check the 'isUnique' field to see if the selector uniquely identifies the element
-      5. For pageHTML: Build a CSS selector using EXACT attribute values:
-        - If field has ID: use '#fieldId' (only if ID contains no special characters)
-        - If field has ID with special characters: use '[id="fieldId"]' (attribute selector)
-        - If field has name: use 'input[name="exact-name"]'
-        - If field has classes: use complete class names
-      6. If you're unsure about selector validity, use verifySelector() FIRST to test it
-      
-      Supported field types:
-      - Text inputs: input[type="text"], input[type="email"], input[type="password"], etc.
-      - Textareas: textarea elements
-      - Select dropdowns: select elements (provide option value or text)
-      - Custom dropdowns: button[data-slot="select-trigger"] or button[role="combobox"] (provide option value or text)
-      - Checkboxes/Radio: input[type="checkbox"], input[type="radio"] (use "true"/"false" as value)
-      - ContentEditable: elements with contenteditable attribute
-      
-      IMPORTANT: For dropdowns (both traditional select and custom dropdowns), use inputData with the desired option value, NOT clickElement. The inputData action will handle opening the dropdown and selecting the option automatically.
-      
-      Examples:
-      - Text field: <input id="username" type="text"> → use '#username' or from allFormData: use bestSelector
-      - Email field: <input name="email" type="email"> → use 'input[name="email"]' or from allFormData: use bestSelector
-      - Textarea: <textarea id="message" class="form-control"> → use '#message' or from allFormData: use bestSelector
-      - Select: <select name="country"> → use 'select[name="country"]' with value like "USA" or from allFormData: use bestSelector
-      - Custom dropdown: <button data-slot="select-trigger">2025</button> → use 'button[data-slot="select-trigger"]:nth-of-type(1)' with value "2026" or from allFormData: use bestSelector
-      - Checkbox: <input type="checkbox" id="agree"> → use '#agree' with value "true" or "false" or from allFormData: use bestSelector
-      - Special characters: <input id=":rbg:-form-item"> → use '[id=":rbg:-form-item"]' (attribute selector) or from allFormData: use bestSelector
-      - Non-unique selectors: If multiple elements have same bestSelector, use placeholder or nth-of-type from selectors array
-      
-      The clearFirst parameter (default: true) determines whether to clear the field before inputting.
-      Set to false if you want to append to existing content.
-      
-      The moveCursor parameter (default: true) determines whether to move the mouse cursor to the input element.
-      Set to false if you don't want the cursor to move.
-      
-      RETURN FORMAT: This action returns an object with:
-      - status: 'success' | 'error'
-      - message: string (descriptive message about the result)
-      - elementInfo?: object (when successful, contains tag, type, id, name, value, foundInShadowDOM, shadowHost)`,
+    description: "Fill a form field matched by selector (inputs, textareas, selects, checkboxes, contenteditable).",
     parameters: [
       {
         name: "cssSelector",
@@ -817,29 +793,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // 🪁 Action 5: Open New Tab
   useCopilotAction({
     name: "openNewTab",
-    description: `Open a new browser tab with the specified URL.
-    
-      Use this action to navigate to a different website or open a link in a new tab.
-      The URL will be automatically validated, formatted, and checked for security.
-      
-      Security Features:
-      - Only HTTP/HTTPS URLs are allowed (blocks javascript:, data:, vbscript:, file:)
-      - Domain format validation for better security
-      - Automatic https:// protocol addition if missing
-      
-      Examples:
-      - Open Google: url="https://google.com"
-      - Open GitHub: url="github.com" (https:// will be added automatically)
-      - Open specific page: url="https://example.com/page"
-      - Background tab: url="https://example.com", active=false
-      
-      The active parameter (default: true) determines whether the new tab becomes the active tab.
-      Set to false to open the tab in the background.
-      
-      RETURN FORMAT: This action returns an object with:
-      - status: 'success' | 'error'
-      - message: string (descriptive message about the result)
-      - tabInfo?: object (when successful, contains tabId, url, domain, path, isActive)`,
+    description: "Open a new tab with the given URL (validated and normalized).",
     parameters: [
       {
         name: "url",
@@ -864,45 +818,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // 🪁 Action 6: Scroll Page or Element
   useCopilotAction({
     name: "scroll",
-    description: `Scroll the page, within a specific element, or TO a specific element.
-    
-      This action supports three scroll modes:
-      1. Page scrolling: Scroll the entire page (leave cssSelector empty)
-      2. Element scrolling: Scroll within a scrollable element (cssSelector + scrollTo=false)
-      3. Scroll TO element: Scroll the page to bring a specific element into view (cssSelector + scrollTo=true or direction="to")
-      
-      Direction options:
-      - "up": Scroll up by specified amount (default: 300px)
-      - "down": Scroll down by specified amount (default: 300px)
-      - "left": Scroll left by specified amount (default: 300px)
-      - "right": Scroll right by specified amount (default: 300px)
-      - "top": Scroll to the very top (amount is ignored)
-      - "bottom": Scroll to the very bottom (amount is ignored)
-      - "to": Scroll to bring the specified element into view (amount is ignored)
-      
-      CSS Selector (optional):
-      - Leave empty to scroll the entire page
-      - Provide a CSS selector to scroll within a specific element (scrollTo=false)
-      - Provide a CSS selector to scroll TO a specific element (scrollTo=true or direction="to")
-      - If element is not scrollable, automatically scrolls TO the element instead
-      - Supports Shadow DOM elements (searches both main DOM and Shadow DOM)
-      - If you're unsure about selector validity, use verifySelector() FIRST to test it
-      
-      Examples:
-      - Scroll page down: direction="down", amount=500
-      - Scroll to top of page: direction="top"
-      - Scroll within table: cssSelector="table.data-table", direction="down", scrollTo=false
-      - Scroll to element: cssSelector="#important-section", scrollTo=true
-      - Scroll to element (alternative): cssSelector="#important-section", direction="to"
-      - Scroll div right: cssSelector="#content-area", direction="right", amount=200, scrollTo=false
-      - Auto-scroll to non-scrollable element: cssSelector="#button", direction="down" (automatically scrolls TO the button)
-      
-      The action provides visual feedback with an arrow indicator showing the scroll direction.
-      
-      RETURN FORMAT: This action returns an object with:
-      - status: 'success' | 'error'
-      - message: string (descriptive message about the result)
-      - scrollInfo?: object (when successful, contains target, direction, before, after, scrolled, max)`,
+    description: "Scroll the page or an element, or scroll the page to an element.",
     parameters: [
       {
         name: "cssSelector",
@@ -944,43 +860,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // 🪁 Action 7: Drag and Drop
   useCopilotAction({
     name: "dragAndDrop",
-    description: `Drag an element from a source location and drop it onto a target element. Automatically searches both main DOM and Shadow DOM for elements.
-    
-      CRITICAL: You MUST provide valid CSS selectors from the pageHTML for BOTH source and target.
-      
-      This action simulates a complete drag and drop operation with visual feedback:
-      - Highlights both source (orange) and target (green) elements
-      - Shows animated drag path with a moving indicator
-      - Dispatches all necessary drag events (dragstart, dragenter, dragover, drop, dragend)
-      - Also dispatches mouse events for compatibility
-      
-      Steps to use this action:
-      1. Use searchPageContent() to verify page content is available
-      2. If pageHTML is empty, call refreshPageContent() FIRST
-      3. Analyze the pageHTML to find BOTH the source element to drag AND the target drop zone
-      4. Extract CSS selectors for both elements using their IDs, classes, or attributes
-      5. If you're unsure about selector validity, use verifySelector() FIRST to test both selectors
-      6. Optionally provide offset values to adjust the drop position relative to target center
-      
-      Use cases:
-      - Drag and drop files into upload zones
-      - Reorder list items in sortable lists
-      - Move cards between columns in kanban boards
-      - Drag elements into containers or drop zones
-      - Rearrange dashboard widgets
-      
-      Examples:
-      - Drag file to upload: sourceCssSelector="#file-item-1", targetCssSelector=".upload-zone"
-      - Reorder list item: sourceCssSelector="li[data-id='3']", targetCssSelector="li[data-id='1']"
-      - Move card: sourceCssSelector=".card.task-1", targetCssSelector=".column.in-progress"
-      - Drag with offset: sourceCssSelector="#item", targetCssSelector="#container", offsetX=20, offsetY=-10
-      
-      The action provides rich visual feedback with animated drag path and drop ripple effect.
-      
-      RETURN FORMAT: This action returns an object with:
-      - status: 'success' | 'error'
-      - message: string (descriptive message about the result)
-      - dragInfo?: object (when successful, contains source and target info with selectors, tags, text, positions, foundInShadowDOM, shadowHost)`,
+    description: "Drag from source selector and drop on target selector (supports offsets and canvas cases).",
     parameters: [
       {
         name: "sourceCssSelector",
@@ -1017,36 +897,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
   // 🪁 Action 8: Take Screenshot
   useCopilotAction({
     name: "takeScreenshot",
-    description: `Capture a screenshot of the current browser tab.
-    
-      This action captures the visual state of the current page:
-      - Captures the visible viewport area by default
-      - Can optionally capture the full scrollable page (coming soon)
-      - Supports PNG (lossless) and JPEG (lossy, smaller file size) formats
-      - Returns image as data URL for analysis
-      
-      Use cases:
-      - Document the current state of the UI
-      - Capture visual confirmation of completed actions
-      - Compare before/after states of page changes
-      - Record visual bugs or issues
-      - Save important information displayed on screen
-      - Create visual documentation of workflows
-      
-      The screenshot includes everything visible in the browser viewport,
-      including any visual feedback from extension actions (highlights, indicators, etc.).
-      
-      Examples:
-      - Quick screenshot: No parameters needed (captures full page as JPEG quality 25 by default)
-      - High quality: format="png"
-      - Better compression: format="jpeg", quality=15
-      - Higher quality: format="jpeg", quality=50
-      - Visible area only: captureFullPage=false
-      
-      RETURN FORMAT: This action returns an object with:
-      - status: 'success' | 'error'
-      - message: string (descriptive message about the result)
-      - screenshotInfo?: object (when successful, contains format, dimensions, sizeKB, quality, isFullPage, dataUrl)`,
+    description: "Capture screenshot of the current tab (viewport by default; JPEG/PNG).",
     parameters: [
       {
         name: "captureFullPage",
@@ -1087,25 +938,36 @@ export const ChatInner: FC<ChatInnerProps> = ({
     },
   }, [themeColor]);
 
+  // moved WaitCountdown to ./WaitCountdown
+
+  // 🪁 Utility: Wait for a given number of seconds (agent-controlled pause)
+  useCopilotAction({
+    name: "wait",
+    description: "Pause execution for N seconds (use for page loads/embedding).",
+    parameters: [
+      { name: "seconds", type: "number", description: "Seconds to wait (0-30)", required: true },
+    ],
+    render: ({ args, status }) => {
+      const raw = Number((args as any)?.seconds ?? 0);
+      const s = Math.max(0, Math.min(30, Math.floor(isNaN(raw) ? 0 : raw)));
+      return (
+        <WaitCountdown
+          seconds={s}
+          isLight={isLight}
+          status={status as any}
+        />
+      );
+    },
+    handler: async ({ seconds }) => {
+      const s = Math.max(0, Math.min(30, Math.floor(Number(seconds) || 0)));
+      debug.log('[Agent Action] wait called:', s, 'seconds');
+      await new Promise((resolve) => setTimeout(resolve, s * 1000));
+      debug.log('[Agent Response] wait complete:', s, 'seconds');
+      return { status: 'success', waitedSeconds: s } as const;
+    },
+  });
+
   // 🪁 Human In the Loop: https://docs.copilotkit.ai/pydantic-ai/human-in-the-loop
-  useCopilotAction({
-    name: "go_to_moon",
-    description: "Go to the moon on request.",
-    renderAndWaitForResponse: ({ respond, status}) => {
-      return <MoonCard themeColor={themeColor} status={status} respond={respond} />
-    },
-  }, [themeColor]);
-
-  useCopilotAction({
-    name: "go_to_moon",
-    description: "Go to the moon on request.",
-    render: ({ args }) => {
-      return <div style={{ backgroundColor: themeColor }} className="h-screen flex justify-center items-center flex-col transition-colors duration-300">
-        <ProverbsCard state={state} setState={setState} />
-      </div>
-    },
-  }, [themeColor]);
-
   // 🪁 Shared State for dynamic_agent: https://docs.copilotkit.ai/reference/hooks/useCoAgent
   // State is automatically synced to backend on next agent interaction
   const { state: dynamicAgentState, setState: setDynamicAgentState } = useCoAgent<AgentStepState>({
@@ -1328,6 +1190,17 @@ export const ChatInner: FC<ChatInnerProps> = ({
     "thinking": ThinkingBlock,
   }
 
+  // Create a stable, session-scoped Input component to avoid remounts
+  const ScopedInput = useMemo(() => {
+    const Comp = (props: any) => (
+      <CustomInput
+        {...props}
+        listenSessionId={sessionId}
+      />
+    );
+    return Comp;
+  }, [sessionId]);
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* CopilotChat with inline historical cards and floating progress card */}
@@ -1358,6 +1231,28 @@ export const ChatInner: FC<ChatInnerProps> = ({
           imageUploadsEnabled={true}
           onSubmitMessage={(message: string) => {
             debug.log('[ChatInner] User submitted message:', message);
+            try {
+              // Sanitize current messages immediately after user submits a prompt
+              const current = messages || [];
+              const signature = computeMessagesSignature(current);
+              // Use cached result when possible to avoid redundant work
+              let result: { messages: any[]; hasChanges: boolean };
+              if (cachedSanitizedRef.current && cachedSanitizedRef.current.signature === signature) {
+                result = cachedSanitizedRef.current.result;
+              } else {
+                result = sanitizeMessages(current);
+                cachedSanitizedRef.current = { signature, result };
+              }
+              if (result.hasChanges) {
+                const resultSignature = computeMessagesSignature(result.messages);
+                if (resultSignature !== signature) {
+                  setMessages(result.messages);
+                  debug.log('[ChatInner] onSubmit sanitization applied. Count:', result.messages.length);
+                }
+              }
+            } catch (e) {
+              debug.warn?.('[ChatInner] onSubmit sanitization skipped due to error:', e);
+            }
           }}
           onError={(errorEvent) => {
             console.log('[ChatInner] Error:', errorEvent);
@@ -1385,6 +1280,7 @@ export const ChatInner: FC<ChatInnerProps> = ({
           // }}
           markdownTagRenderers={customMarkdownTagRenderers}
           UserMessage={CustomUserMessage}
+          Input={ScopedInput}
         />
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { debug } from '@extension/shared';
+import { debug as baseDebug } from '@extension/shared';
 import type { CopilotMessage } from '@extension/storage';
 import { STORAGE_CONSTANTS, TIMING_CONSTANTS } from '../constants';
 
@@ -46,6 +46,13 @@ export const useMessagePersistence = ({
   saveMessagesRef,
   restoreMessagesRef
 }: UseMessagePersistenceProps): UseMessagePersistenceReturn => {
+  // Timestamped debug wrappers
+  const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+  const debug = {
+    log: (...args: any[]) => baseDebug.log(ts(), ...args),
+    warn: (...args: any[]) => baseDebug.warn(ts(), ...args),
+    error: (...args: any[]) => baseDebug.error(ts(), ...args),
+  } as const;
   
   const [storedMessages, setStoredMessages] = useState<CopilotMessage[]>([]);
   const [storedFilteredMessagesCount, setStoredFilteredMessagesCount] = useState<number>(0);
@@ -137,7 +144,7 @@ export const useMessagePersistence = ({
 
   // Manual save function using CopilotKit API
   const handleSaveMessages = useCallback(async () => {
-    debug.log('[useMessagePersistence] handleSaveMessages called, saveMessagesRef.current:', saveMessagesRef.current);
+    // minimal log
     
     if (!saveMessagesRef.current) {
       debug.log('[useMessagePersistence] saveMessagesRef.current is null, returning');
@@ -219,6 +226,9 @@ export const useMessagePersistence = ({
   }, [sessionId, saveMessagesRef]);
 
   // Manual load function using CopilotKit API
+  const restoreAttemptsRef = useRef(0);
+  const MAX_RESTORE_ATTEMPTS = 2; // initial + one retry
+
   const handleLoadMessages = useCallback(async () => {
     // debug.log('[useMessagePersistence] handleLoadMessages called, restoreMessagesRef.current:', restoreMessagesRef.current);
     
@@ -240,7 +250,12 @@ export const useMessagePersistence = ({
       }
       
       // Restore ALL messages (including thinking messages) using ChatInner's setMessages
-      restoreMessagesRef.current(messages);
+      if (restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS) {
+        restoreAttemptsRef.current += 1;
+        restoreMessagesRef.current(messages);
+      } else {
+        debug.log('[useMessagePersistence] Skipping restore - max attempts reached');
+      }
       setStoredMessages(messages);
       setStoredFilteredMessagesCount(countFilteredMessages(messages));
       debug.log('✅ [useMessagePersistence] Messages loaded successfully');
@@ -252,10 +267,15 @@ export const useMessagePersistence = ({
         if (saveMessagesRef.current) {
           const currentMessageData = saveMessagesRef.current();
           if (currentMessageData.allMessages.length === 0 && messages.length > 0) {
-            debug.log('[useMessagePersistence] Messages were cleared after restore, retrying...');
-            if (restoreMessagesRef.current) {
-              restoreMessagesRef.current(messages);
-              debug.log('[useMessagePersistence] Messages re-restored successfully');
+            if (restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS) {
+              debug.log('[useMessagePersistence] Messages cleared after restore, retrying once...');
+              restoreAttemptsRef.current += 1;
+              if (restoreMessagesRef.current) {
+                restoreMessagesRef.current(messages);
+                debug.log('[useMessagePersistence] Messages re-restored successfully');
+              }
+            } else {
+              debug.log('[useMessagePersistence] Not retrying restore - max attempts reached');
             }
           }
         }
@@ -314,18 +334,23 @@ export const useMessagePersistence = ({
     
     const timeSincePanelOpen = Date.now() - panelOpenTimeRef.current;
     // Only monitor for the first 2 seconds after panel opens
-    if (timeSincePanelOpen > 2000) return;
+    if (timeSincePanelOpen > 1500) return;
     
+    let watchdogRestoreDone = false;
     const intervalId = setInterval(() => {
       if (saveMessagesRef.current && restoreMessagesRef.current && storedMessages.length > 0) {
         const currentMessageData = saveMessagesRef.current();
         // If messages were unexpectedly cleared, restore them
-        if (currentMessageData.allMessages.length === 0) {
-          debug.log('[useMessagePersistence] Messages unexpectedly cleared, auto-restoring...');
-          restoreMessagesRef.current(storedMessages);
+        if (!watchdogRestoreDone && currentMessageData.allMessages.length === 0) {
+          if (restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS) {
+            debug.log('[useMessagePersistence] Watchdog: messages cleared, auto-restoring once...');
+            restoreAttemptsRef.current += 1;
+            restoreMessagesRef.current(storedMessages);
+          }
+          watchdogRestoreDone = true; // do it at most once
         }
       }
-    }, 300); // Check every 300ms
+    }, 400); // Check at a slower interval
     
     // Stop monitoring after 2 seconds
     const stopTimeoutId = setTimeout(() => {

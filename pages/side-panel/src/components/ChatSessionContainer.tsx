@@ -22,6 +22,8 @@ interface ChatSessionContainerProps {
   isLight: boolean;
   publicApiKey: string;
   isActive?: boolean;
+  contextMenuMessage?: string | null;
+  onMessagesCountChange?: (sessionId: string, count: number) => void;
 }
 
 /**
@@ -35,7 +37,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
   sessionId, 
   isLight, 
   publicApiKey, 
-  isActive = true 
+  isActive = true,
+  contextMenuMessage = null,
+  onMessagesCountChange
 }) => {
   const { sessions } = useStorage(sessionStorage);
   const { showAgentCursor, showSuggestions } = useStorage(preferencesStorage);
@@ -82,6 +86,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
   // Embedding progress state
   const [isEmbedding, setIsEmbedding] = useState(false);
   const [embeddingStatus, setEmbeddingStatus] = useState('');
+  // Totals derived at embed time (avoid extra DB reads)
+  const [dbTotals, setDbTotals] = useState<{ html: number; form: number; click: number }>({ html: 0, form: 0, click: 0 });
   
   // Stable callback for progress bar state changes
   const handleProgressBarStateChange = useCallback((has: boolean, show: boolean, toggle: () => void) => {
@@ -94,14 +100,14 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
   const currentSession = sessions.find(s => s.id === sessionId);
   
   const [selectedAgent, setSelectedAgent] = useState(currentSession?.selectedAgent || 'general');
-  const [selectedModel, setSelectedModel] = useState(currentSession?.selectedModel || 'gemini-2.5-flash-lite');
+  const [selectedModel, setSelectedModel] = useState(currentSession?.selectedModel || 'claude-4.5-haiku');
   const [isSwitchingAgent, setIsSwitchingAgent] = useState(false);
   const [switchingStep, setSwitchingStep] = useState<1 | 2 | 3>(1);
   const [shouldLoadMessagesAfterSwitch, setShouldLoadMessagesAfterSwitch] = useState(false);
   
   // Track the actual agent/model being used by CopilotKit (lags behind selection during switch)
   const [activeAgent, setActiveAgent] = useState(currentSession?.selectedAgent || 'general');
-  const [activeModel, setActiveModel] = useState(currentSession?.selectedModel || 'gemini-2.5-flash-lite');
+  const [activeModel, setActiveModel] = useState(currentSession?.selectedModel || 'claude-4.5-haiku');
   
   // Message data structure returned by saveMessagesRef
   interface MessageData {
@@ -314,11 +320,12 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
     isProcessing: isEmbeddingProcessing,
     error: embeddingError,
     progress: embeddingProgress,
+    initialize,
     embedPageContent,
     embedPageContentForTab,
     embedTexts,
   } = useEmbeddingWorker({
-    autoInitialize: true, // Auto-initialize on mount
+    autoInitialize: false,
     // Progress is logged by the hook itself, no need to log here
   });
 
@@ -402,6 +409,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
           console.log('[ChatSessionContainer] ⏸️  No page content yet, skipping embedding');
         } else if (!isEmbeddingInitialized) {
           console.log('[ChatSessionContainer] ⏸️  Embedding worker NOT initialized yet, waiting...');
+          // Trigger on-demand initialization (debounced by hook guards)
+          // Only fire when we have content to avoid unnecessary startup
+          initialize().catch(() => {});
         } else if (isEmbeddingProcessingRef.current) {
           console.log('[ChatSessionContainer] ⏸️  Embedding already in progress, waiting...');
         }
@@ -574,6 +584,12 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
               console.log('[ChatSessionContainer]    Form field groups:', result.formFieldGroupEmbeddings?.length || 0, '(HNSW indexed)');
               console.log('[ChatSessionContainer]    Clickable element groups:', result.clickableElementGroupEmbeddings?.length || 0, '(HNSW indexed)');
               console.log('[ChatSessionContainer]    Session ID:', sessionId);
+              // Set totals based on rows just inserted (matches DB row counts)
+              const htmlTotal = Array.isArray(result.chunks) ? result.chunks.length : 0;
+              const formTotal = Array.isArray(result.formFieldGroupEmbeddings) ? result.formFieldGroupEmbeddings.length : 0;
+              const clickTotal = Array.isArray(result.clickableElementGroupEmbeddings) ? result.clickableElementGroupEmbeddings.length : 0;
+              setDbTotals({ html: htmlTotal, form: formTotal, click: clickTotal });
+              console.log('[ChatSessionContainer] 📊 Totals (from insert rows):', { htmlTotal, formTotal, clickTotal });
             } catch (storageError) {
               console.warn('[ChatSessionContainer] ⚠️  Failed to store in SurrealDB:', storageError);
               // Don't fail the embedding process if storage fails
@@ -946,6 +962,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
     toggleProgressBar
   ]);
 
+  // Notify parent whenever headlessMessagesCount changes
+  useEffect(() => {
+    if (onMessagesCountChange) {
+      onMessagesCountChange(sessionId, headlessMessagesCount);
+    }
+  }, [onMessagesCountChange, sessionId, headlessMessagesCount]);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Save/Load buttons and Page Status - Fixed at top */}
@@ -1109,6 +1132,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
               currentPageContent={currentPageContent}
               pageContentEmbedding={pageContentEmbeddingRef.current}
               latestDOMUpdate={latestDOMUpdate}
+              dbTotals={dbTotals}
               themeColor={themeColor}
               setThemeColor={setThemeColor}
               setCurrentMessages={setCurrentMessages}
@@ -1121,6 +1145,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
               onProgressBarStateChange={handleProgressBarStateChange}
               initialAgentStepState={initialAgentStepState}
               onAgentStepStateChange={setCurrentAgentStepState}
+              contextMenuMessage={contextMenuMessage}
             />
           </CopilotKit>
         </div>
@@ -1169,6 +1194,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(({
           <div data-session-id={sessionId} data-message-count={storedMessages.length} />
         </div>
       )}
+
     </div>
   );
 });

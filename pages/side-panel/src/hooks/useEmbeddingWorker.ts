@@ -4,6 +4,12 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+
+// Debug toggle (set false in production)
+const DEBUG = false;
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const log = (...args: any[]) => DEBUG && console.log(ts(), ...args);
+const elog = (...args: any[]) => console.error(ts(), ...args);
 import { EmbeddingModel } from '@extension/shared';
 
 interface UseEmbeddingWorkerOptions {
@@ -38,11 +44,11 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
   // Initialize embedding service in background - using onMessage pattern
   const initialize = useCallback(() => {
     if (state.isInitialized || state.isInitializing) {
-      console.log('[useEmbeddingWorker] Already initialized or initializing');
+      log('[useEmbeddingWorker] Already initialized or initializing');
       return Promise.resolve();
     }
 
-    console.log('[useEmbeddingWorker] 🚀 Initializing embedding service in background...');
+    log('[useEmbeddingWorker] 🚀 Initializing embedding service in background...');
     setState(prev => ({ ...prev, isInitializing: true, error: null }));
 
     return new Promise<void>((resolve, reject) => {
@@ -50,15 +56,15 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
       
       // Set up listener for response with timeout
       const responseListener = (message: any, sender: any) => {
-        console.log('[useEmbeddingWorker] 📬 Received message:', message.type, 'requestId:', message.requestId, 'looking for:', requestId);
+        log('[useEmbeddingWorker] 📬 Received message:', message.type, 'requestId:', message.requestId, 'looking for:', requestId);
         
         if (message.type === 'initializeEmbeddingResponse' && message.requestId === requestId) {
-          console.log('[useEmbeddingWorker] ✅ Message matched! Full message:', JSON.stringify(message));
+          log('[useEmbeddingWorker] ✅ Message matched! Full message:', JSON.stringify(message));
           clearTimeout(timeoutHandle);
           chrome.runtime.onMessage.removeListener(responseListener);
           
           if (message.success) {
-            console.log('[useEmbeddingWorker] ✅ Embedding service initialized');
+            log('[useEmbeddingWorker] ✅ Embedding service initialized');
             setState(prev => ({ 
               ...prev, 
               isInitialized: true, 
@@ -68,14 +74,14 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
             onProgress?.({ status: 'Ready', progress: 100 });
             resolve();
           } else {
-            const err = new Error(message.error || 'Failed to initialize');
-            console.error('[useEmbeddingWorker] ❌ Initialization failed:', err);
+            const e = new Error(message.error || 'Failed to initialize');
+            elog('[useEmbeddingWorker] ❌ Initialization failed:', e);
             setState(prev => ({ 
               ...prev, 
               isInitializing: false, 
-              error: err 
+              error: e 
             }));
-            reject(err);
+            reject(e);
           }
         }
       };
@@ -96,23 +102,23 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
       }, 30000);
       
       // Send initialization request
-      console.log('[useEmbeddingWorker] 📤 Sending init request with ID:', requestId);
+      log('[useEmbeddingWorker] 📤 Sending init request with ID:', requestId);
       chrome.runtime.sendMessage({ 
         type: 'initializeEmbedding',
         model,
         requestId
       }).then(() => {
-        console.log('[useEmbeddingWorker] ✅ Init request sent successfully');
-      }).catch(err => {
+        log('[useEmbeddingWorker] ✅ Init request sent successfully');
+      }).catch(e => {
         clearTimeout(timeoutHandle);
         chrome.runtime.onMessage.removeListener(responseListener);
-        console.error('[useEmbeddingWorker] ❌ Failed to send init request:', err);
+        elog('[useEmbeddingWorker] ❌ Failed to send init request:', e);
         setState(prev => ({ 
           ...prev, 
           isInitializing: false, 
-          error: err 
+          error: e 
         }));
-        reject(err);
+        reject(e);
       });
     });
   }, [model, onProgress, state.isInitialized, state.isInitializing]);
@@ -138,11 +144,11 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
       sizeMB = (approxTotal / (1024 * 1024)).toFixed(2);
     } catch {}
 
-    console.log(ts(), '[useEmbeddingWorker] 📤 Sending page content embedding request...');
-    console.log(ts(), '[useEmbeddingWorker] 📦 Approx content size:', sizeKB, 'KB (', sizeMB, 'MB)');
-    console.log(ts(), '[useEmbeddingWorker] DEBUG - content.allDOMContent?.allFormData:', content.allDOMContent?.allFormData?.length || 0, 'items');
-    console.log(ts(), '[useEmbeddingWorker] DEBUG - content.allDOMContent?.clickableElements:', content.allDOMContent?.clickableElements?.length || 0, 'items');
-    console.log(ts(), '[useEmbeddingWorker] ⚠️  About to serialize and send - this may freeze UI temporarily...');
+    log('[useEmbeddingWorker] 📤 Sending page content embedding request...');
+    log('[useEmbeddingWorker] 📦 Approx content size:', sizeKB, 'KB (', sizeMB, 'MB)');
+    log('[useEmbeddingWorker] DEBUG - content.allDOMContent?.allFormData:', content.allDOMContent?.allFormData?.length || 0, 'items');
+    log('[useEmbeddingWorker] DEBUG - content.allDOMContent?.clickableElements:', content.allDOMContent?.clickableElements?.length || 0, 'items');
+    log('[useEmbeddingWorker] ⚠️  About to serialize and send - this may freeze UI temporarily...');
     setState(prev => ({ ...prev, isProcessing: true, error: null }));
 
     return new Promise((resolve, reject) => {
@@ -151,23 +157,23 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
       // Set up listener for the result
       const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
       const resultListener = (message: any) => {
-        console.log(ts(), '[useEmbeddingWorker] 📬 Received message type:', message.type, 'requestId:', message.requestId, 'expectedId:', requestId);
+        log('[useEmbeddingWorker] 📬 Received message type:', message.type, 'requestId:', message.requestId, 'expectedId:', requestId);
         
         if (message.type === 'embeddingComplete' && message.requestId === requestId) {
           const receiveTime = performance.now();
-          console.log(ts(), '[useEmbeddingWorker] 🎯 embeddingComplete matched, processing response...');
+          log('[useEmbeddingWorker] 🎯 embeddingComplete matched, processing response...');
           chrome.runtime.onMessage.removeListener(resultListener);
 
           if (message.error) {
-            const err = new Error(message.error);
-            console.error(ts(), '[useEmbeddingWorker] ❌ Page content embedding failed:', err);
-            setState(prev => ({ ...prev, isProcessing: false, error: err }));
-            reject(err);
+            const e = new Error(message.error);
+            elog('[useEmbeddingWorker] ❌ Page content embedding failed:', e);
+            setState(prev => ({ ...prev, isProcessing: false, error: e }));
+            reject(e);
           } else {
-            console.log(ts(), '[useEmbeddingWorker] 📦 Response size - embeddings:', message.result.fullEmbedding.length, 'dimensions,', message.result.chunks.length, 'chunks');
+            log('[useEmbeddingWorker] 📦 Response size - embeddings:', message.result.fullEmbedding.length, 'dimensions,', message.result.chunks.length, 'chunks');
             
             // DEBUG: Check embeddings RIGHT AFTER receiving from background
-            console.log(ts(), '[useEmbeddingWorker] 🔍 DEBUG - First chunk AFTER receiving:', {
+            log('[useEmbeddingWorker] 🔍 DEBUG - First chunk AFTER receiving:', {
               hasEmbedding: !!message.result.chunks?.[0]?.embedding,
               isArray: Array.isArray(message.result.chunks?.[0]?.embedding),
               length: message.result.chunks?.[0]?.embedding?.length,
@@ -176,7 +182,7 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
               typeOfFirst: typeof message.result.chunks?.[0]?.embedding?.[0]
             });
             
-            console.log(ts(), '[useEmbeddingWorker] ✅ Page content embedded (processing took', (performance.now() - receiveTime).toFixed(0), 'ms)');
+            log('[useEmbeddingWorker] ✅ Page content embedded (processing took', (performance.now() - receiveTime).toFixed(0), 'ms)');
             setState(prev => ({ ...prev, isProcessing: false }));
             resolve(message.result);
           }
@@ -190,7 +196,7 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
 
       // Send content directly in message
       const sendStartTime = performance.now();
-      console.log(ts(), '[useEmbeddingWorker] 🔄 Starting sendMessage (serialization begins now)...');
+      log('[useEmbeddingWorker] 🔄 Starting sendMessage (serialization begins now)...');
       
       chrome.runtime.sendMessage({
         type: 'embedPageContent',
@@ -198,12 +204,12 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
         requestId
       }).then(() => {
         const sendDuration = (performance.now() - sendStartTime).toFixed(0);
-        console.log(ts(), '[useEmbeddingWorker] ✅ Request sent, waiting for result... (serialization took', sendDuration, 'ms)');
-      }).catch(err => {
-        console.error(ts(), '[useEmbeddingWorker] ❌ Failed to send request:', err);
+        log('[useEmbeddingWorker] ✅ Request sent, waiting for result... (serialization took', sendDuration, 'ms)');
+      }).catch(e => {
+        elog('[useEmbeddingWorker] ❌ Failed to send request:', e);
         chrome.runtime.onMessage.removeListener(resultListener);
-        setState(prev => ({ ...prev, isProcessing: false, error: err }));
-        reject(err);
+        setState(prev => ({ ...prev, isProcessing: false, error: e }));
+        reject(e);
       });
     });
   }, [state.isInitialized]);
@@ -217,26 +223,26 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
 
     const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
 
-    console.log(ts(), '[useEmbeddingWorker] 📤 Requesting embedding for TAB (no payload):', { tabId, contentTimestamp });
+    log('[useEmbeddingWorker] 📤 Requesting embedding for TAB (no payload):', { tabId, contentTimestamp });
     setState(prev => ({ ...prev, isProcessing: true, error: null }));
 
     return new Promise((resolve, reject) => {
       const requestId = `embed_tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
       const resultListener = (message: any) => {
-        console.log(ts(), '[useEmbeddingWorker TAB] 📬 Received message type:', message.type, 'requestId:', message.requestId, 'expectedId:', requestId);
+        log('[useEmbeddingWorker TAB] 📬 Received message type:', message.type, 'requestId:', message.requestId, 'expectedId:', requestId);
         
         if (message.type === 'embeddingComplete' && message.requestId === requestId) {
-          console.log(ts(), '[useEmbeddingWorker TAB] 🎯 embeddingComplete matched!');
+          log('[useEmbeddingWorker TAB] 🎯 embeddingComplete matched!');
           chrome.runtime.onMessage.removeListener(resultListener);
 
           if (message.error) {
-            const err = new Error(message.error);
-            console.error(ts(), '[useEmbeddingWorker TAB] ❌ Tab embedding failed:', err);
-            setState(prev => ({ ...prev, isProcessing: false, error: err }));
-            reject(err);
+            const e = new Error(message.error);
+            elog('[useEmbeddingWorker TAB] ❌ Tab embedding failed:', e);
+            setState(prev => ({ ...prev, isProcessing: false, error: e }));
+            reject(e);
           } else {
-            console.log(ts(), '[useEmbeddingWorker TAB] ✅ Tab embedding complete');
+            log('[useEmbeddingWorker TAB] ✅ Tab embedding complete');
             setState(prev => ({ ...prev, isProcessing: false }));
             resolve(message.result);
           }
@@ -250,10 +256,10 @@ export function useEmbeddingWorker(options: UseEmbeddingWorkerOptions = {}) {
         tabId,
         timestamp: contentTimestamp,
         requestId
-      }).catch(err => {
+      }).catch(e => {
         chrome.runtime.onMessage.removeListener(resultListener);
-        setState(prev => ({ ...prev, isProcessing: false, error: err }));
-        reject(err);
+        setState(prev => ({ ...prev, isProcessing: false, error: e }));
+        reject(e);
       });
     });
   }, [state.isInitialized]);

@@ -8,4 +8,5 @@ export { handleCleanupExtensionUI } from './cleanupUI';
 export { handleVerifySelector } from './verifySelector';
 export { handleClickElement } from './clickElement';
 export { handleScroll } from './scroll';
+export { handleGetSelectorAtPoint, handleGetSelectorsAtPoints } from './selectorAtPoints';
 

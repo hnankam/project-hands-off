@@ -1,3 +1,8 @@
+/* ==========================================================
+   RESET & BASE
+   Note: Keep base resets minimal to avoid fighting Tailwind
+   and CopilotKit component styles
+   ========================================================== */
 Reset and base styles
 * {
   box-sizing: border-box;
@@ -11,6 +16,10 @@ html, body {
   background-color: #f9fafb; /* Light theme background - prevents gray flash */
 }
 
+/* ==========================================================
+   THEME BACKGROUNDS
+   Light/Dark body and container backgrounds
+   ========================================================== */
 /* Dark theme background */
 .dark body {
   background-color: #0C1117; /* Dark theme background */
@@ -39,6 +48,9 @@ html, body {
   background-color: #0C1117; /* Dark theme background */
 }
 
+/* ==========================================================
+   SIDE PANEL LAYOUT
+   ========================================================== */
 /* Side panel specific styles */
 .side-panel {
   height: 100vh;
@@ -52,6 +64,10 @@ input:focus {
   outline: none;
 }
 
+/* ==========================================================
+   GLOBAL SCROLLBARS
+   Keep subtle and theme-aware
+   ========================================================== */
 /* Scrollbar styles for dark theme */
 ::-webkit-scrollbar {
   width: 6px;
@@ -79,6 +95,10 @@ input:focus {
   background: rgba(75, 85, 99, 0.5);
 }
 
+/* ==========================================================
+   SESSION TABS SCROLLBAR (HORIZONTAL)
+   Ultra-minimal; hidden by default, 1px on hover
+   ========================================================== */
 /* Session tabs scrollbar - ultra-minimal horizontal scrollbar */
 .session-tabs-scroll {
   scrollbar-width: 1px !important; /* Hide scrollbar in Firefox */
@@ -118,6 +138,10 @@ input:focus {
   background: rgba(75, 85, 99, 0.5) !important;
 }
 
+/* ==========================================================
+   DROPDOWN
+   Ensure stacked above content
+   ========================================================== */
 /* Dropdown menu styles to ensure proper display */
 .dropdown-menu {
   position: relative;
@@ -130,6 +154,10 @@ input:focus {
   overflow: visible;
 }
 
+/* ==========================================================
+   COPILOTKIT CSS VARIABLES
+   Important: Do not reorder below dark overrides
+   ========================================================== */
 /* CopilotKit Dark Mode Support */
 :root {
   /* Light mode CopilotKit variables */
@@ -166,6 +194,10 @@ input:focus {
   --copilot-kit-secondary-contrast-color: #ffffff !important; /* gray-800 */
 }
 
+/* ==========================================================
+   COPILOTCHAT LAYOUT & SIZING
+   Ensure chat stretches and scrolls as intended
+   ========================================================== */
 /* CopilotChat - Ensure proper scrolling and layout */
 .copilot-chat-container {
   height: 100%;
@@ -221,6 +253,10 @@ input:focus {
   padding-right: 0.75rem !important;
 }
 
+/* ==========================================================
+   TYPOGRAPHY (CHAT)
+   Keep overall sizes compact for dense UI
+   ========================================================== */
 /* Reduce font sizes throughout CopilotChat */
 .copilot-chat-container {
   font-size: 14px !important;
@@ -241,6 +277,9 @@ input:focus {
   width: 100% !important; /* Force full width */
 }
 
+/* ==========================================================
+   MESSAGES & CONTROLS
+   ========================================================== */
 /* Move message controls to the right side */
 .copilotKitMessage.copilotKitAssistantMessage .copilotKitMessageControls {
   left: auto !important; /* Remove left positioning */
@@ -365,6 +404,10 @@ footer div[class*="suggestions"] button {
   overflow-wrap: normal !important;
 }
 
+/* ==========================================================
+   CHAT AREA SCROLLBARS
+   Subtle, theme-aware
+   ========================================================== */
 /* Ensure scrollbar is visible */
 .copilot-chat-container .overflow-y-auto::-webkit-scrollbar {
   width: 6px;
@@ -392,6 +435,11 @@ footer div[class*="suggestions"] button {
   background: rgba(75, 85, 99, 0.5);
 }
 
+/* ==========================================================
+   LEGACY ICON SIZE OVERRIDE (Kept for compatibility)
+   Note: Overridden by "Custom Input Button Styles" later;
+   retained to avoid regressions if custom styles are not loaded.
+   ========================================================== */
 /* Make only the SVG icon smaller, keep button size */
 .copilot-chat-container .copilotKitInputControls svg {
   width: 14px !important;
@@ -599,18 +647,6 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   pointer-events: none !important;
 }
 
-.copilotKitInputControlButton {
-  color: black !important;
-  width: 25px !important;
-  height: 25px !important;
-}
-
-.dark .copilotKitInputControlButton {
-  color: #ffffff !important;
-  width: 25px !important;
-  height: 25px !important;
-}
-
 .copilotKitUserMessage > .copilotKitMessageControls > .copilotKitMessageControlButton {
   margin-bottom: 0rem !important;
 }
@@ -632,3 +668,173 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   max-width: 14px !important;
   max-height: 14px !important;
 }
+
+/* ==========================================================
+   CUSTOM INPUT BUTTON STYLES
+   Order matters: keep this block AFTER the legacy override above
+   so sizing here wins for the current custom input.
+   ========================================================== */
+/* Custom Input Button Styles */
+/* Override the default SVG size */
+.copilot-chat-container .copilotKitInputControls svg {
+  width: auto !important;
+  height: auto !important;
+}
+
+/* Base button styles */
+.copilotKitInputControlButton {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+  border: none !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+}
+
+/* Secondary buttons (upload, microphone) */
+.copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) {
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  margin-top: 5px !important;
+}
+
+.copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) > svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+/* Primary button (send/stop - last button) */
+.copilotKitInputControls > .copilotKitInputControlButton:last-child {
+  width: 25px !important;
+  height: 25px !important;
+  min-width: 25px !important;
+  min-height: 25px !important;
+  margin-left: 5px !important;
+}
+
+.copilotKitInputControls > .copilotKitInputControlButton:last-child > svg {
+  width: 24px !important;
+  height: 24px !important;
+}
+
+/* Light mode colors for secondary buttons */
+.copilotKitInputControlButton {
+  background-color: transparent !important;
+}
+
+.copilotKitInputControlButton:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Light mode - secondary button icon colors */
+.copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) svg {
+  color: #374151 !important;
+}
+
+/* Light mode - primary button (send/stop) colors */
+.copilotKitInputControls > .copilotKitInputControlButton:last-child svg {
+  color: #2563eb !important;
+}
+
+.copilotKitInputControls > .copilotKitInputControlButton:last-child:disabled svg {
+  color: #9ca3af !important;
+}
+
+/* Dark mode colors */
+.dark .copilotKitInputControlButton:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Dark mode - secondary button icon colors */
+.dark .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) svg {
+  color: #d1d5db !important;
+}
+
+/* Dark mode - primary button (send/stop) colors */
+.dark .copilotKitInputControls > .copilotKitInputControlButton:last-child svg {
+  color: #60a5fa !important;
+}
+
+/* Dark mode - send/stop button arrow/square color matches message panel background */
+.dark .copilotKitInputControls > .copilotKitInputControlButton:last-child svg path,
+.dark .copilotKitInputControls > .copilotKitInputControlButton:last-child svg rect {
+  stroke: #151C24 !important;
+  fill: #151C24 !important;
+}
+
+.dark .copilotKitInputControls > .copilotKitInputControlButton:last-child:disabled svg {
+  color: #4b5563 !important;
+}
+
+/* Hover effects for primary button */
+.copilotKitInputControls > .copilotKitInputControlButton:last-child:not(:disabled):hover {
+  background-color: rgba(37, 99, 235, 0.1) !important;
+}
+
+.dark .copilotKitInputControls > .copilotKitInputControlButton:last-child:not(:disabled):hover {
+  background-color: rgba(96, 165, 250, 0.15) !important;
+}
+
+/* Active/pressed state */
+.copilotKitInputControlButton:active:not(:disabled) {
+  transform: scale(0.95) !important;
+}
+
+/* Recording state for microphone */
+.copilotKitPushToTalkRecording {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}
+
+.copilotKitPushToTalkRecording svg {
+  color: #ef4444 !important;
+}
+
+.dark .copilotKitPushToTalkRecording {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+}
+
+.dark .copilotKitPushToTalkRecording svg {
+  color: #f87171 !important;
+}
+
+/* ---------------------------------------- */
+/* Wait Action Sparkle Effect               */
+/* ---------------------------------------- */
+/* Generic action sparkle that acts on glyphs (text) */
+/* Wrapper + overlay approach so base text is always readable */
+.copilot-action-sparkle-text { position: relative; display: inline-block; }
+.copilot-action-sparkle-text > .sparkle-base { color: inherit; }
+.copilot-action-sparkle-text > .sparkle-overlay {
+  position: absolute; inset: 0;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important; /* show gradient only through glyphs */
+  -webkit-background-clip: text !important; background-clip: text !important;
+  background: linear-gradient(120deg,
+    rgba(255,255,255,0) 0%,
+    rgba(255,255,255,0) 38%,
+    rgba(255,255,255,0.85) 50%, /* clearly visible highlight */
+    rgba(255,255,255,0) 62%,
+    rgba(255,255,255,0) 100%) no-repeat;
+  background-size: 220% 100%;
+  opacity: 1;
+  pointer-events: none;
+  animation: copilot-sparkle-sweep 2.5s ease-in-out infinite;
+}
+@keyframes copilot-sparkle-sweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Dark mode: make base text slightly grayer for contrast while shimmering */
+.dark .copilot-action-sparkle-text > .sparkle-base {
+  color: #919598 !important; /* slate-300 */
+}
+@keyframes copilot-action-sparkle {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+

@@ -1,4 +1,12 @@
-import { debug } from '@extension/shared';
+import { debug as baseDebug } from '@extension/shared';
+
+// Timestamped debug wrappers
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: any[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: any[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: any[]) => baseDebug.error(ts(), ...args),
+} as const;
 
 /**
  * Result type for refresh page content operation
@@ -31,24 +39,33 @@ export async function handleRefreshPageContent(pageContentForAgent: any): Promis
       };
     }
 
-    // Force fetch fresh content
+    // Force fetch fresh content (promisified with timeout)
     await new Promise<void>((resolve) => {
-      chrome.runtime.sendMessage({
-        type: 'getPageContentOnDemand',
-        tabId: tabs[0].id
-      }, (response) => {
-        if (response?.success && response?.content) {
-          debug.log('✅ [RefreshContent] Fresh content received');
+      let done = false;
+      const timeout = setTimeout(() => {
+        if (!done) {
+          debug.warn('⏱️  [RefreshContent] getPageContentOnDemand timed out');
+          done = true;
           resolve();
-        } else {
-          debug.error('❌ [RefreshContent] Failed to get fresh content');
+        }
+      }, 5000);
+
+      chrome.runtime.sendMessage({ type: 'getPageContentOnDemand', tabId: tabs[0].id }, (response) => {
+        if (!done) {
+          clearTimeout(timeout);
+          done = true;
+          if (response?.success && response?.content) {
+            debug.log('✅ [RefreshContent] Fresh content received');
+          } else {
+            debug.error('❌ [RefreshContent] Failed to get fresh content');
+          }
           resolve();
         }
       });
     });
 
-    // Wait a bit for state to update
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Small delay to allow state propagation; avoid long sleeps
+    await new Promise(resolve => setTimeout(resolve, 300));
 
     // Return summary
     const htmlLength = pageContentForAgent.pageHTML?.length || 0;

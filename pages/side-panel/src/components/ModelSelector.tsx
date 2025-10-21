@@ -8,6 +8,7 @@ interface ModelSelectorProps {
 }
 
 const models = [
+  { id: 'claude-4.5-haiku', label: 'Claude 4.5 Haiku', provider: 'Anthropic' },
   { id: 'claude-4.5-sonnet', label: 'Claude 4.5 Sonnet', provider: 'Anthropic' },
   { id: 'claude-4.1-opus', label: 'Claude 4.1 Opus', provider: 'Anthropic' },
   { id: 'claude-3.7-sonnet', label: 'Claude 3.7 Sonnet', provider: 'Anthropic' },

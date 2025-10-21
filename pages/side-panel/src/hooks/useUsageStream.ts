@@ -1,5 +1,11 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 
+// Debug toggle (set false in production)
+const DEBUG = true;
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const log = (...args: any[]) => DEBUG && console.log(ts(), ...args);
+const err = (...args: any[]) => console.error(ts(), ...args);
+
 export interface UsageData {
   session_id: string;
   agent_type: string;
@@ -68,6 +74,18 @@ export function useUsageStream(
       return;
     }
 
+    // If an existing socket is for a different session, close it to force reconnect
+    if (wsRef.current && (wsRef.current as any)._sessionId && (wsRef.current as any)._sessionId !== sessionId) {
+      try { wsRef.current.close(); } catch {}
+      wsRef.current = null;
+    }
+
+    // Prevent duplicate connections for the same session
+    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+      log('useUsageStream: WebSocket already open or connecting for session', (wsRef.current as any)._sessionId);
+      return;
+    }
+
     // Clear any existing reconnect timeout
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
@@ -81,12 +99,13 @@ export function useUsageStream(
     }
 
     try {
-      console.log(`🔌 Connecting to usage WebSocket for session: ${sessionId}`);
+      log(`🔌 Connecting to usage WebSocket for session: ${sessionId}`);
       const ws = new WebSocket(`${wsUrl}/ws/usage/${sessionId}`);
       wsRef.current = ws;
+      (ws as any)._sessionId = sessionId;
 
       ws.onopen = () => {
-        console.log('✅ WebSocket connected');
+        log('✅ WebSocket connected');
         setIsConnected(true);
         setError(null);
         reconnectAttemptsRef.current = 0;
@@ -112,31 +131,37 @@ export function useUsageStream(
             requestCount: prev.requestCount + 1,
           }));
 
-          console.log('📊 Usage update:', {
+          log('📊 Usage update:', {
             request: data.request_tokens,
             response: data.response_tokens,
             total: data.total_tokens,
           });
-        } catch (err) {
-          console.error('❌ Error parsing WebSocket message:', err);
+        } catch (e) {
+          err('❌ Error parsing WebSocket message:', e);
         }
       };
 
       ws.onerror = (event) => {
-        console.error('❌ WebSocket error:', event);
+        err('❌ WebSocket error:', event);
         setError('WebSocket connection error');
+        // Close to trigger onclose reconnection path
+        try { ws.close(); } catch {}
       };
 
       ws.onclose = () => {
-        console.log('🔌 WebSocket disconnected');
+        log('🔌 WebSocket disconnected');
         setIsConnected(false);
+        // Clear ping interval immediately on close
+        if ((ws as any)._pingInterval) {
+          clearInterval((ws as any)._pingInterval);
+        }
         wsRef.current = null;
 
         // Attempt to reconnect if enabled and haven't exceeded max attempts
         if (enabled && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
           const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
-          console.log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
+          log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
           
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
@@ -156,9 +181,9 @@ export function useUsageStream(
       // Store interval ID for cleanup
       (ws as any)._pingInterval = pingInterval;
 
-    } catch (err) {
-      console.error('❌ Error creating WebSocket:', err);
-      setError(err instanceof Error ? err.message : 'Connection failed');
+    } catch (error) {
+      err('❌ Error creating WebSocket:', error);
+      setError(error instanceof Error ? error.message : 'Connection failed');
     }
   }, [sessionId, enabled, wsUrl]);
 

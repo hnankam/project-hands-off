@@ -30,6 +30,12 @@ export class ModernInputHandler implements InputHandler {
     options: InputHandlerOptions = {}
   ): Promise<InputDataResult> {
     try {
+      // Ensure interactable
+      if (!isElementVisible(element)) {
+        scrollIntoView(element);
+      }
+      focusAndHighlight(element);
+
       const detection = detectModernInput(element);
       
       // Route to appropriate framework-specific handler
@@ -184,13 +190,13 @@ export class ModernInputHandler implements InputHandler {
     try {
       // Debug: Log element details
       const rect = element.getBoundingClientRect();
-      console.log('[ModernInputHandler] Moving cursor to element:', {
-        tagName: element.tagName,
-        id: element.id,
-        className: element.className,
-        position: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
-        center: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-      });
+      // console.log('[ModernInputHandler] Moving cursor to element:', {
+        // tagName: element.tagName,
+        // id: element.id,
+        // className: element.className,
+        // position: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+        // center: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      // });
       
       // Use the moveCursorToElement function from the content script context if available
       if (typeof (window as any).moveCursorToElement === 'function') {
@@ -215,9 +221,9 @@ export class ModernInputHandler implements InputHandler {
       // Dispatch the event on the element
       element.dispatchEvent(mouseMoveEvent);
       
-      console.log('[ModernInputHandler] Cursor moved to element:', element.tagName, element.id || element.className);
+      // console.log('[ModernInputHandler] Cursor moved to element:', element.tagName, element.id || element.className);
     } catch (error) {
-      console.error('[ModernInputHandler] Error moving cursor to element:', error);
+      // Swallow - cursor move is best-effort
     }
   }
 
@@ -257,7 +263,7 @@ export class ModernInputHandler implements InputHandler {
           }
         }
       } catch (error) {
-        console.log(`[ModernInputHandler] ${framework} approach failed:`, error);
+        // console.debug(`[ModernInputHandler] ${framework} approach failed:`, error);
         continue;
       }
     }
@@ -275,7 +281,7 @@ export class ModernInputHandler implements InputHandler {
     inputElement.value = value;
     
     // Trigger basic events
-    const events = ['input', 'change', 'blur'];
+    const events = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
     triggerInputEvents(inputElement, events);
     
     return { success: true };
@@ -298,7 +304,7 @@ export class ModernInputHandler implements InputHandler {
       inputElement.dispatchEvent(inputEvent);
       
       // Small delay to simulate typing
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 12));
     }
     
     // Final change event
