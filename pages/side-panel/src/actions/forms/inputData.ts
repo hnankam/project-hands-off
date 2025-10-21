@@ -7,7 +7,7 @@ import { InputDataResult, InputHandlerOptions } from './types';
 export async function handleInputData(
   cssSelector: string,
   value: string,
-  options?: InputHandlerOptions
+  options?: InputHandlerOptions,
 ): Promise<InputDataResult>;
 
 // Legacy usage signature: handleInputData(selector, value, clearFirst?, moveCursor?)
@@ -15,14 +15,14 @@ export async function handleInputData(
   cssSelector: string,
   value: string,
   clearFirst?: boolean,
-  moveCursor?: boolean
+  moveCursor?: boolean,
 ): Promise<InputDataResult>;
 
 export async function handleInputData(
   cssSelector: string,
   value: string,
   third?: boolean | InputHandlerOptions,
-  fourth?: boolean
+  fourth?: boolean,
 ): Promise<InputDataResult> {
   try {
     // Normalize arguments
@@ -46,4 +46,3 @@ export async function handleInputData(
     };
   }
 }
-

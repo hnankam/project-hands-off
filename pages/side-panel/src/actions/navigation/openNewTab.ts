@@ -26,13 +26,13 @@ interface OpenNewTabResult {
 }
 
 interface OpenNewTabOptions {
-  active?: boolean;                // default true
-  pinned?: boolean;                // default false
-  adjacent?: boolean;              // place next to current tab (default true)
-  reuseExisting?: boolean;         // focus existing tab with same URL if present
-  bringWindowToFront?: boolean;    // focus window when activating (default true)
-  index?: number;                  // explicit index overrides adjacent
-  waitForCompleteMs?: number;      // wait until tab completes loading
+  active?: boolean; // default true
+  pinned?: boolean; // default false
+  adjacent?: boolean; // place next to current tab (default true)
+  reuseExisting?: boolean; // focus existing tab with same URL if present
+  bringWindowToFront?: boolean; // focus window when activating (default true)
+  index?: number; // explicit index overrides adjacent
+  waitForCompleteMs?: number; // wait until tab completes loading
 }
 
 /**
@@ -44,7 +44,7 @@ interface OpenNewTabOptions {
 export async function handleOpenNewTab(
   url: string,
   active: boolean = true,
-  options?: OpenNewTabOptions
+  options?: OpenNewTabOptions,
 ): Promise<OpenNewTabResult> {
   try {
     const opts: OpenNewTabOptions = {
@@ -56,22 +56,17 @@ export async function handleOpenNewTab(
       ...options,
     };
     debug.log('[OpenNewTab] Opening new tab with URL:', url, 'options:', opts);
-    
+
     // Validate URL format and security
     let validUrl: string;
     try {
       // Block potentially dangerous URL schemes
-      const dangerousPatterns = [
-        /^javascript:/i,
-        /^data:/i,
-        /^vbscript:/i,
-        /^file:/i
-      ];
+      const dangerousPatterns = [/^javascript:/i, /^data:/i, /^vbscript:/i, /^file:/i];
 
       if (dangerousPatterns.some(pattern => pattern.test(url))) {
         return {
           status: 'error',
-          message: 'Security: Blocked potentially dangerous URL scheme. Only HTTP/HTTPS URLs are allowed.'
+          message: 'Security: Blocked potentially dangerous URL scheme. Only HTTP/HTTPS URLs are allowed.',
         };
       }
 
@@ -81,15 +76,15 @@ export async function handleOpenNewTab(
       } else {
         validUrl = url;
       }
-      
+
       // Validate URL and check supported protocols
       const urlObj = new URL(validUrl);
       const supportedProtocols = ['http:', 'https:'];
-      
+
       if (!supportedProtocols.includes(urlObj.protocol)) {
         return {
           status: 'error',
-          message: `Unsupported protocol "${urlObj.protocol}". Only HTTP/HTTPS URLs are allowed.`
+          message: `Unsupported protocol "${urlObj.protocol}". Only HTTP/HTTPS URLs are allowed.`,
         };
       }
 
@@ -102,14 +97,13 @@ export async function handleOpenNewTab(
       if (!(isLocalhost || isIPv4 || isIPv6 || domainPattern.test(hostname))) {
         return {
           status: 'error',
-          message: `Invalid domain format: "${urlObj.hostname}". Please provide a valid domain or localhost/IP.`
+          message: `Invalid domain format: "${urlObj.hostname}". Please provide a valid domain or localhost/IP.`,
         };
       }
-      
     } catch (urlError) {
       return {
         status: 'error',
-        message: `Invalid URL format: "${url}". Please provide a valid URL (e.g., "https://example.com" or "example.com")`
+        message: `Invalid URL format: "${url}". Please provide a valid URL (e.g., "https://example.com" or "example.com")`,
       };
     }
 
@@ -150,7 +144,7 @@ export async function handleOpenNewTab(
             isActive: !!opts.active,
             pinned: !!opts.pinned,
             windowId: found.windowId,
-          }
+          },
         };
       }
     }
@@ -161,13 +155,13 @@ export async function handleOpenNewTab(
     if (!newTab || !newTab.id) {
       return {
         status: 'error',
-        message: 'Failed to create new tab'
+        message: 'Failed to create new tab',
       };
     }
 
     // Optionally wait for tab to complete loading
     if (opts.waitForCompleteMs && opts.waitForCompleteMs > 0) {
-      await new Promise<void>((resolve) => {
+      await new Promise<void>(resolve => {
         let done = false;
         const timeout = setTimeout(() => {
           if (!done) {
@@ -193,7 +187,7 @@ export async function handleOpenNewTab(
     const urlObj = new URL(validUrl);
     const domain = urlObj.hostname;
     const path = urlObj.pathname + urlObj.search + urlObj.hash;
-    
+
     if (opts.active && opts.bringWindowToFront && newTab.windowId) {
       await chrome.windows.update(newTab.windowId, { focused: true });
     }
@@ -208,15 +202,14 @@ export async function handleOpenNewTab(
         path: path || '/',
         isActive: !!opts.active,
         pinned: !!opts.pinned,
-        windowId: newTab.windowId
-      }
+        windowId: newTab.windowId,
+      },
     };
   } catch (error) {
     debug.error('[OpenNewTab] Error opening new tab:', error);
     return {
       status: 'error',
-      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }
-

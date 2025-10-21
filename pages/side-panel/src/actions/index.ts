@@ -1,6 +1,6 @@
 /**
  * CopilotKit Actions
- * 
+ *
  * All action handlers for web page interactions through the Chrome extension.
  * Organized by category for better maintainability.
  */
@@ -25,4 +25,3 @@ export { handleDragAndDrop } from './interactions/dragAndDrop';
 // Content Actions
 export { handleRefreshPageContent } from './content/refreshPageContent';
 export { handleTakeScreenshot } from './content/takeScreenshot';
-

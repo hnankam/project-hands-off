@@ -7,9 +7,7 @@ export interface WaitCountdownProps {
 }
 
 export const WaitCountdown: React.FC<WaitCountdownProps> = ({ seconds, status, isLight }) => {
-  const [remaining, setRemaining] = React.useState(
-    Math.max(0, Math.min(30, Math.floor(Number(seconds) || 0)))
-  );
+  const [remaining, setRemaining] = React.useState(Math.max(0, Math.min(30, Math.floor(Number(seconds) || 0))));
 
   React.useEffect(() => {
     const total = Math.max(0, Math.min(30, Math.floor(Number(seconds) || 0)));
@@ -32,7 +30,10 @@ export const WaitCountdown: React.FC<WaitCountdownProps> = ({ seconds, status, i
     : `Waiting ${remaining}s…`;
 
   return (
-    <div className={isLight ? 'text-gray-600' : 'text-gray-500'} style={{ padding: 6, fontSize: 12 }} aria-live="polite">
+    <div
+      className={isLight ? 'text-gray-600' : 'text-gray-500'}
+      style={{ padding: 6, fontSize: 12 }}
+      aria-live="polite">
       {done ? (
         <span>{text}</span>
       ) : (
@@ -48,5 +49,3 @@ export const WaitCountdown: React.FC<WaitCountdownProps> = ({ seconds, status, i
 };
 
 export default WaitCountdown;
-
-

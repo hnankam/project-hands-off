@@ -1,15 +1,15 @@
 import { InputHandler, InputDataResult, InputHandlerOptions, DateInputOptions, InputType } from './types';
-import { 
-  findElement, 
-  isElementVisible, 
-  scrollIntoView, 
-  focusAndHighlight, 
-  streamText, 
-  showSuccessFeedback, 
+import {
+  findElement,
+  isElementVisible,
+  scrollIntoView,
+  focusAndHighlight,
+  streamText,
+  showSuccessFeedback,
   getElementValue,
   triggerInputEvents,
   detectModernInput,
-  moveCursorToElement
+  moveCursorToElement,
 } from './utils';
 
 /**
@@ -23,15 +23,11 @@ export class DateInputHandler implements InputHandler {
     return this.supportedTypes.includes(inputType) && element.tagName === 'INPUT';
   }
 
-  async handle(
-    element: HTMLElement, 
-    value: string, 
-    options: DateInputOptions = {}
-  ): Promise<InputDataResult> {
+  async handle(element: HTMLElement, value: string, options: DateInputOptions = {}): Promise<InputDataResult> {
     try {
       const inputElement = element as HTMLInputElement;
       const inputType = inputElement.type;
-      
+
       // Move cursor to element if requested
       if (options.moveCursor) {
         moveCursorToElement(element);
@@ -41,14 +37,14 @@ export class DateInputHandler implements InputHandler {
         await scrollIntoView(inputElement);
       }
       await focusAndHighlight(inputElement);
-      
+
       // Parse and format the date value
       const formattedValue = this.formatDateValue(value, inputType as InputType, options);
-      
+
       if (!formattedValue) {
         return {
           status: 'error',
-          message: `Invalid date format for ${inputType} input. Expected format: ${this.getExpectedFormat(inputType as InputType)}`
+          message: `Invalid date format for ${inputType} input. Expected format: ${this.getExpectedFormat(inputType as InputType)}`,
         };
       }
 
@@ -67,29 +63,29 @@ export class DateInputHandler implements InputHandler {
             type: inputType,
             id: inputElement.id,
             name: inputElement.name || '',
-            value: formattedValue
-          }
+            value: formattedValue,
+          },
         };
       }
 
       // Set the formatted value
       inputElement.value = formattedValue;
-      
+
       // Trigger events for modern frameworks
       const modernDetection = detectModernInput(inputElement);
       const events = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
-      
+
       if (modernDetection.isReactComponent) {
         events.push('focus', 'blur');
       }
-      
+
       triggerInputEvents(inputElement, events);
-      
+
       // Show success feedback
       if (options.showSuccessFeedback !== false) {
         showSuccessFeedback(inputElement);
       }
-      
+
       return {
         status: 'success',
         message: `${inputType} input successful`,
@@ -98,13 +94,13 @@ export class DateInputHandler implements InputHandler {
           type: inputType,
           id: inputElement.id,
           name: inputElement.name || '',
-          value: formattedValue
-        }
+          value: formattedValue,
+        },
       };
     } catch (error) {
       return {
         status: 'error',
-        message: `Error handling ${(element as HTMLInputElement).type} input: ${error instanceof Error ? error.message : 'Unknown error'}`
+        message: `Error handling ${(element as HTMLInputElement).type} input: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   }
@@ -112,11 +108,11 @@ export class DateInputHandler implements InputHandler {
   private formatDateValue(value: string, inputType: InputType, options: DateInputOptions): string | null {
     try {
       const date = this.parseDate(value, options);
-      
+
       if (!date || isNaN(date.getTime())) {
         return null;
       }
-      
+
       switch (inputType) {
         case 'date':
           return this.formatDate(date, options);
@@ -144,84 +140,84 @@ export class DateInputHandler implements InputHandler {
       /^\d{4}-\d{2}-\d{2}$/, // YYYY-MM-DD
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/, // ISO datetime
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/, // ISO datetime without seconds
-      
+
       // US formats
       /^\d{1,2}\/\d{1,2}\/\d{4}$/, // MM/DD/YYYY
       /^\d{1,2}-\d{1,2}-\d{4}$/, // MM-DD-YYYY
-      
+
       // EU formats
       /^\d{1,2}\.\d{1,2}\.\d{4}$/, // DD.MM.YYYY
       /^\d{1,2}\/\d{1,2}\/\d{4}$/, // DD/MM/YYYY
-      
+
       // Time formats
       /^\d{1,2}:\d{2}$/, // HH:MM
       /^\d{1,2}:\d{2}:\d{2}$/, // HH:MM:SS
-      
+
       // Relative dates
       /^(today|now)$/i,
       /^(tomorrow|next day)$/i,
       /^(yesterday|previous day)$/i,
-      /^(\d+)\s*(days?|weeks?|months?|years?)\s*(ago|from now)$/i
+      /^(\d+)\s*(days?|weeks?|months?|years?)\s*(ago|from now)$/i,
     ];
-    
+
     // Try native Date parsing first
     let date = new Date(value);
     if (!isNaN(date.getTime())) {
       return date;
     }
-    
+
     // Handle relative dates
     if (/^(today|now)$/i.test(value)) {
       return new Date();
     }
-    
+
     if (/^(tomorrow|next day)$/i.test(value)) {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       return tomorrow;
     }
-    
+
     if (/^(yesterday|previous day)$/i.test(value)) {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
       return yesterday;
     }
-    
+
     // Handle relative time expressions
     const relativeMatch = value.match(/^(\d+)\s*(days?|weeks?|months?|years?)\s*(ago|from now)$/i);
     if (relativeMatch) {
       const amount = parseInt(relativeMatch[1]);
       const unit = relativeMatch[2].toLowerCase();
       const direction = relativeMatch[3].toLowerCase();
-      
+
       const date = new Date();
       const multiplier = direction === 'ago' ? -1 : 1;
-      
+
       switch (unit) {
         case 'day':
         case 'days':
-          date.setDate(date.getDate() + (amount * multiplier));
+          date.setDate(date.getDate() + amount * multiplier);
           break;
         case 'week':
         case 'weeks':
-          date.setDate(date.getDate() + (amount * 7 * multiplier));
+          date.setDate(date.getDate() + amount * 7 * multiplier);
           break;
         case 'month':
         case 'months':
-          date.setMonth(date.getMonth() + (amount * multiplier));
+          date.setMonth(date.getMonth() + amount * multiplier);
           break;
         case 'year':
         case 'years':
-          date.setFullYear(date.getFullYear() + (amount * multiplier));
+          date.setFullYear(date.getFullYear() + amount * multiplier);
           break;
       }
-      
+
       return date;
     }
-    
+
     // Try parsing with different formats
     const format = options.format || 'ISO';
-    
+
     switch (format) {
       case 'US':
         return this.parseUSDate(value);
@@ -245,7 +241,7 @@ export class DateInputHandler implements InputHandler {
         parseInt(day),
         parseInt(hour),
         parseInt(minute),
-        parseInt(second)
+        parseInt(second),
       );
     }
     return null;
@@ -274,7 +270,7 @@ export class DateInputHandler implements InputHandler {
   private parseCustomDate(value: string, format?: string): Date | null {
     // Basic custom format parsing - can be extended
     if (!format) return null;
-    
+
     // This is a simplified implementation
     // In a real-world scenario, you might want to use a library like date-fns or moment.js
     return new Date(value);
@@ -324,7 +320,7 @@ export class DateInputHandler implements InputHandler {
     const firstThursday = target.valueOf();
     target.setMonth(0, 1);
     if (target.getDay() !== 4) {
-      target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+      target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
     }
     return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
   }
@@ -354,7 +350,7 @@ export class DateInputHandler implements InputHandler {
     toSelector: string,
     fromValue: string,
     toValue: string,
-    options: DateInputOptions = {}
+    options: DateInputOptions = {},
   ): Promise<InputDataResult> {
     try {
       // Handle from date
@@ -362,13 +358,13 @@ export class DateInputHandler implements InputHandler {
       if (fromResult.status === 'error') {
         return fromResult;
       }
-      
+
       // Handle to date
       const toResult = await this.handleDateBySelector(toSelector, toValue, options);
       if (toResult.status === 'error') {
         return toResult;
       }
-      
+
       return {
         status: 'success',
         message: `Date range set successfully: ${fromValue} to ${toValue}`,
@@ -377,13 +373,13 @@ export class DateInputHandler implements InputHandler {
           type: 'date',
           id: `${fromSelector} to ${toSelector}`,
           name: 'date-range',
-          value: `${fromValue} to ${toValue}`
-        }
+          value: `${fromValue} to ${toValue}`,
+        },
       };
     } catch (error) {
       return {
         status: 'error',
-        message: `Error handling date range: ${error instanceof Error ? error.message : 'Unknown error'}`
+        message: `Error handling date range: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   }
@@ -391,26 +387,26 @@ export class DateInputHandler implements InputHandler {
   private async handleDateBySelector(
     selector: string,
     value: string,
-    options: DateInputOptions
+    options: DateInputOptions,
   ): Promise<InputDataResult> {
     const elementInfo = findElement(selector);
     if (!elementInfo) {
       return {
         status: 'error',
-        message: `Element not found with selector: ${selector}`
+        message: `Element not found with selector: ${selector}`,
       };
     }
-    
+
     if (!isElementVisible(elementInfo.element)) {
       return {
         status: 'error',
-        message: `Element is not visible: ${selector}`
+        message: `Element is not visible: ${selector}`,
       };
     }
-    
+
     scrollIntoView(elementInfo.element);
     focusAndHighlight(elementInfo.element);
-    
+
     return await this.handle(elementInfo.element, value, options);
   }
 }

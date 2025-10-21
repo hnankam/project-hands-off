@@ -39,8 +39,8 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
     status === 'complete'
       ? (messages?.complete ?? defaultMessages.complete)
       : isWorking
-      ? (messages?.inProgress ?? messages?.executing ?? defaultMessages.inProgress)
-      : (messages?.pending ?? defaultMessages.pending);
+        ? (messages?.inProgress ?? messages?.executing ?? defaultMessages.inProgress)
+        : (messages?.pending ?? defaultMessages.pending);
 
   return (
     <div className={isLight ? 'text-gray-700' : 'text-gray-300'} style={{ padding: 6, fontSize: 12 }}>
@@ -51,5 +51,3 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
 };
 
 export default ActionStatus;
-
-

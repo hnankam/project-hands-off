@@ -10,8 +10,8 @@ const debug = {
 
 // Constants for timing and scroll behavior
 const SCROLL_COMPLETION_DELAY = 800; // Wait for smooth scroll animation to complete
-const INDICATOR_DURATION = 1000;      // Show scroll indicator for 1 second
-const DEFAULT_SCROLL_AMOUNT = 300;    // Default scroll distance in pixels
+const INDICATOR_DURATION = 1000; // Show scroll indicator for 1 second
+const DEFAULT_SCROLL_AMOUNT = 300; // Default scroll distance in pixels
 
 /**
  * Internal result type for scroll operation (used by script)
@@ -51,10 +51,10 @@ interface ScrollOperationResult {
 function calculateScrollPosition(
   direction: string,
   current: { x: number; y: number; maxX: number; maxY: number },
-  scrollAmount: number
+  scrollAmount: number,
 ): ScrollToOptions {
   const options: ScrollToOptions = { behavior: 'smooth' };
-  
+
   switch (direction) {
     case 'up':
       options.top = Math.max(0, current.y - scrollAmount);
@@ -75,7 +75,7 @@ function calculateScrollPosition(
       options.top = current.maxY;
       break;
   }
-  
+
   return options;
 }
 
@@ -91,17 +91,17 @@ export async function handleScroll(
   cssSelector: string = '',
   direction: 'up' | 'down' | 'left' | 'right' | 'top' | 'bottom' | 'to' = 'down',
   amount: number = DEFAULT_SCROLL_AMOUNT,
-  scrollTo: boolean = false
+  scrollTo: boolean = false,
 ): Promise<ScrollOperationResult> {
   try {
     debug.log('[Scroll] Scrolling:', { cssSelector, direction, amount });
-    
+
     // Get the current active tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tabs[0]?.id) {
       return {
         status: 'error',
-        message: 'Unable to access current tab'
+        message: 'Unable to access current tab',
       };
     }
 
@@ -109,11 +109,23 @@ export async function handleScroll(
     const execPromise = chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
       world: 'MAIN',
-      func: (selector: string, scrollDirection: string, scrollAmount: number, shouldScrollTo: boolean, scrollCompletionDelay: number, indicatorDuration: number): Promise<ScrollResult> => {
-        console.log('[Scroll] Internal script started with params:', { selector, scrollDirection, scrollAmount, shouldScrollTo });
-        
+      func: (
+        selector: string,
+        scrollDirection: string,
+        scrollAmount: number,
+        shouldScrollTo: boolean,
+        scrollCompletionDelay: number,
+        indicatorDuration: number,
+      ): Promise<ScrollResult> => {
+        console.log('[Scroll] Internal script started with params:', {
+          selector,
+          scrollDirection,
+          scrollAmount,
+          shouldScrollTo,
+        });
+
         console.log('[Scroll] Creating Promise for scroll operation');
-        return new Promise<ScrollResult>((resolve) => {
+        return new Promise<ScrollResult>(resolve => {
           console.log('[Scroll] Promise created, starting scroll logic');
           try {
             let targetElement: Element | Window = window;
@@ -125,11 +137,11 @@ export async function handleScroll(
               let element = document.querySelector(selector);
               let foundInShadowDOM = false;
               let shadowHostInfo = '';
-              
+
               // If not found in main DOM, search in Shadow DOM
               if (!element) {
                 console.log('[Scroll] Element not found in main DOM, searching Shadow DOM...');
-                
+
                 // Search through all shadow roots with early exit
                 for (const hostElement of Array.from(document.querySelectorAll('*'))) {
                   if (hostElement.shadowRoot && !element) {
@@ -149,11 +161,11 @@ export async function handleScroll(
                   }
                 }
               }
-              
+
               if (!element) {
-                resolve({ 
-                  success: false, 
-                  message: `No element found with selector: "${selector}" in main DOM or Shadow DOM. Please analyze the HTML and provide a valid CSS selector, or leave empty to scroll the page.` 
+                resolve({
+                  success: false,
+                  message: `No element found with selector: "${selector}" in main DOM or Shadow DOM. Please analyze the HTML and provide a valid CSS selector, or leave empty to scroll the page.`,
                 });
                 return;
               }
@@ -166,15 +178,19 @@ export async function handleScroll(
               } else {
                 // Scroll WITHIN the element (element must be scrollable)
                 const style = window.getComputedStyle(element);
-                const isScrollable = 
-                  style.overflow === 'auto' || 
-                  style.overflow === 'scroll' || 
-                  style.overflowY === 'auto' || 
+                const isScrollable =
+                  style.overflow === 'auto' ||
+                  style.overflow === 'scroll' ||
+                  style.overflowY === 'auto' ||
                   style.overflowY === 'scroll' ||
-                  style.overflowX === 'auto' || 
+                  style.overflowX === 'auto' ||
                   style.overflowX === 'scroll';
 
-                if (!isScrollable && element.scrollHeight <= element.clientHeight && element.scrollWidth <= element.clientWidth) {
+                if (
+                  !isScrollable &&
+                  element.scrollHeight <= element.clientHeight &&
+                  element.scrollWidth <= element.clientWidth
+                ) {
                   // Element is not scrollable, automatically fall back to scrolling TO the element
                   console.log('[Scroll] Element is not scrollable, automatically scrolling TO the element instead');
                   targetElement = window; // Scroll the page to bring element into view
@@ -194,20 +210,26 @@ export async function handleScroll(
                 const curX = window.scrollX || window.pageXOffset || doc.scrollLeft || body.scrollLeft || 0;
                 const curY = window.scrollY || window.pageYOffset || doc.scrollTop || body.scrollTop || 0;
                 const scrollWidth = Math.max(
-                  body.scrollWidth, doc.scrollWidth,
-                  body.offsetWidth, doc.offsetWidth,
-                  body.clientWidth, doc.clientWidth
+                  body.scrollWidth,
+                  doc.scrollWidth,
+                  body.offsetWidth,
+                  doc.offsetWidth,
+                  body.clientWidth,
+                  doc.clientWidth,
                 );
                 const scrollHeight = Math.max(
-                  body.scrollHeight, doc.scrollHeight,
-                  body.offsetHeight, doc.offsetHeight,
-                  body.clientHeight, doc.clientHeight
+                  body.scrollHeight,
+                  doc.scrollHeight,
+                  body.offsetHeight,
+                  doc.offsetHeight,
+                  body.clientHeight,
+                  doc.clientHeight,
                 );
                 return {
                   x: curX,
                   y: curY,
                   maxX: Math.max(0, scrollWidth - window.innerWidth),
-                  maxY: Math.max(0, scrollHeight - window.innerHeight)
+                  maxY: Math.max(0, scrollHeight - window.innerHeight),
                 };
               } else {
                 const element = el as Element;
@@ -215,7 +237,7 @@ export async function handleScroll(
                   x: element.scrollLeft,
                   y: element.scrollTop,
                   maxX: Math.max(0, element.scrollWidth - element.clientWidth),
-                  maxY: Math.max(0, element.scrollHeight - element.clientHeight)
+                  maxY: Math.max(0, element.scrollHeight - element.clientHeight),
                 };
               }
             };
@@ -236,7 +258,7 @@ export async function handleScroll(
               const duration = estimateDurationMs(distance);
               const start = performance.now();
               const isWindowTarget = el === window;
-              const startX = isWindowTarget ? (window.scrollX || window.pageXOffset || 0) : (el as Element).scrollLeft;
+              const startX = isWindowTarget ? window.scrollX || window.pageXOffset || 0 : (el as Element).scrollLeft;
               const frame = (now: number) => {
                 const t = Math.min(1, (now - start) / duration);
                 const eased = easeInOutCubic(t);
@@ -257,10 +279,10 @@ export async function handleScroll(
               dir: string,
               curr: { x: number; y: number; maxX: number; maxY: number },
               amt: number,
-              targetEl?: Element
+              targetEl?: Element,
             ): ScrollToOptions => {
               const opts: ScrollToOptions = { behavior: 'smooth' };
-              
+
               switch (dir) {
                 case 'up':
                   opts.top = Math.max(0, curr.y - amt);
@@ -286,30 +308,43 @@ export async function handleScroll(
                     const rect = targetEl.getBoundingClientRect();
                     const currentScrollY = window.scrollY || window.pageYOffset;
                     const currentScrollX = window.scrollX || window.pageXOffset;
-                    
+
                     // Calculate position to center the element in viewport
-                    const targetY = currentScrollY + rect.top - (window.innerHeight / 2) + (rect.height / 2);
-                    const targetX = currentScrollX + rect.left - (window.innerWidth / 2) + (rect.width / 2);
-                    
-                    opts.top = Math.max(0, Math.min(document.documentElement.scrollHeight - window.innerHeight, targetY));
-                    opts.left = Math.max(0, Math.min(document.documentElement.scrollWidth - window.innerWidth, targetX));
+                    const targetY = currentScrollY + rect.top - window.innerHeight / 2 + rect.height / 2;
+                    const targetX = currentScrollX + rect.left - window.innerWidth / 2 + rect.width / 2;
+
+                    opts.top = Math.max(
+                      0,
+                      Math.min(document.documentElement.scrollHeight - window.innerHeight, targetY),
+                    );
+                    opts.left = Math.max(
+                      0,
+                      Math.min(document.documentElement.scrollWidth - window.innerWidth, targetX),
+                    );
                   }
                   break;
               }
-              
+
               return opts;
             };
-            
+
             // Get the target element for scroll-to functionality
             // Include automatic fallback case when element is not scrollable
             const isAutoScrollTo = targetElement === window && !shouldScrollTo && scrollDirection !== 'to';
-            const targetElForScrollTo = (shouldScrollTo || scrollDirection === 'to' || isAutoScrollTo) && selector ? 
-              (document.querySelector(selector) || undefined) : undefined;
-            
+            const targetElForScrollTo =
+              (shouldScrollTo || scrollDirection === 'to' || isAutoScrollTo) && selector
+                ? document.querySelector(selector) || undefined
+                : undefined;
+
             // Use "to" direction for automatic fallback case
             const effectiveDirection = isAutoScrollTo ? 'to' : scrollDirection;
-            const scrollOptions = calculatePosition(effectiveDirection, beforeScroll, scrollAmount, targetElForScrollTo);
-            
+            const scrollOptions = calculatePosition(
+              effectiveDirection,
+              beforeScroll,
+              scrollAmount,
+              targetElForScrollTo,
+            );
+
             // Perform scroll on appropriate target (humanized)
             let effectiveDelay = scrollCompletionDelay;
             if (typeof scrollOptions.top === 'number') {
@@ -327,8 +362,11 @@ export async function handleScroll(
             }
 
             // Wait for scroll to complete and get new position
-            console.log('[Scroll] Starting scroll animation with targetElement:', targetElement === window ? 'window' : (targetElement as Element).tagName);
-            
+            console.log(
+              '[Scroll] Starting scroll animation with targetElement:',
+              targetElement === window ? 'window' : (targetElement as Element).tagName,
+            );
+
             // Add a timeout to ensure the Promise always resolves
             const timeoutId = setTimeout(() => {
               console.log('[Scroll] Timeout reached, resolving with fallback result');
@@ -341,32 +379,39 @@ export async function handleScroll(
                   before: { x: 0, y: 0 },
                   after: { x: 0, y: 0 },
                   scrolled: { x: 0, y: 0 },
-                  max: { x: 0, y: 0 }
-                }
+                  max: { x: 0, y: 0 },
+                },
               });
             }, scrollCompletionDelay + 2000); // 2 seconds after expected completion
-            
+
             setTimeout(() => {
               try {
                 let afterScroll = getCurrentScroll(targetElement);
-              
-              // Visual feedback for scroll (singleton pattern)
-              // Remove any existing scroll indicator first to prevent buildup
-              const existingIndicator = document.getElementById('__copilot_scroll_indicator__');
-              if (existingIndicator) {
-                existingIndicator.remove();
-              }
-              
-              const scrollIndicator = document.createElement('div');
-              scrollIndicator.id = '__copilot_scroll_indicator__';
-              const arrowSymbol = scrollDirection === 'up' ? '↑' : 
-                                 scrollDirection === 'down' ? '↓' : 
-                                 scrollDirection === 'left' ? '←' : 
-                                 scrollDirection === 'right' ? '→' :
-                                 scrollDirection === 'top' ? '⇈' : '⇊';
-              
-              scrollIndicator.textContent = arrowSymbol;
-              scrollIndicator.style.cssText = `
+
+                // Visual feedback for scroll (singleton pattern)
+                // Remove any existing scroll indicator first to prevent buildup
+                const existingIndicator = document.getElementById('__copilot_scroll_indicator__');
+                if (existingIndicator) {
+                  existingIndicator.remove();
+                }
+
+                const scrollIndicator = document.createElement('div');
+                scrollIndicator.id = '__copilot_scroll_indicator__';
+                const arrowSymbol =
+                  scrollDirection === 'up'
+                    ? '↑'
+                    : scrollDirection === 'down'
+                      ? '↓'
+                      : scrollDirection === 'left'
+                        ? '←'
+                        : scrollDirection === 'right'
+                          ? '→'
+                          : scrollDirection === 'top'
+                            ? '⇈'
+                            : '⇊';
+
+                scrollIndicator.textContent = arrowSymbol;
+                scrollIndicator.style.cssText = `
                 position: fixed;
                 ${scrollDirection === 'up' || scrollDirection === 'top' ? 'top: 20px;' : ''}
                 ${scrollDirection === 'down' || scrollDirection === 'bottom' ? 'bottom: 20px;' : ''}
@@ -382,185 +427,223 @@ export async function handleScroll(
                 animation: scrollFade 1s ease-out forwards;
               `;
 
-              // Add animation style
-              let styleEl = document.getElementById('__copilot_scroll_style__');
-              if (!styleEl) {
-                styleEl = document.createElement('style');
-                styleEl.id = '__copilot_scroll_style__';
-                styleEl.textContent = `
+                // Add animation style
+                let styleEl = document.getElementById('__copilot_scroll_style__');
+                if (!styleEl) {
+                  styleEl = document.createElement('style');
+                  styleEl.id = '__copilot_scroll_style__';
+                  styleEl.textContent = `
                   @keyframes scrollFade {
                     0% { opacity: 1; transform: translate(-50%, -50%) scale(0.5); }
                     50% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
                     100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
                   }
                 `;
-                document.head.appendChild(styleEl);
-              }
-
-              document.body.appendChild(scrollIndicator);
-
-              setTimeout(() => {
-                scrollIndicator.remove();
-              }, indicatorDuration);
-
-              // Check if scroll actually happened
-              let scrolledX = Math.abs(afterScroll.x - beforeScroll.x);
-              let scrolledY = Math.abs(afterScroll.y - beforeScroll.y);
-              
-              let message = '';
-              // If the window did not scroll, try a smart fallback to a scrollable container
-              if (scrolledX === 0 && scrolledY === 0 && targetElement === window && (scrollDirection === 'down' || scrollDirection === 'up' || scrollDirection === 'top' || scrollDirection === 'bottom')) {
-                // Force-scroll fallback: try extreme positions if computed max was inaccurate
-                if (scrollDirection === 'down' || scrollDirection === 'bottom') {
-                  window.scrollTo({ top: Number.MAX_SAFE_INTEGER });
-                } else if (scrollDirection === 'up' || scrollDirection === 'top') {
-                  window.scrollTo({ top: 0 });
+                  document.head.appendChild(styleEl);
                 }
-                // Re-measure quickly
-                afterScroll = getCurrentScroll(window);
-                scrolledX = Math.abs(afterScroll.x - beforeScroll.x);
-                scrolledY = Math.abs(afterScroll.y - beforeScroll.y);
-              }
 
-              if (scrolledX === 0 && scrolledY === 0 && targetElement === window && (scrollDirection === 'down' || scrollDirection === 'up' || scrollDirection === 'top' || scrollDirection === 'bottom')) {
-                const candidates = Array.from(document.querySelectorAll('*'))
-                  .filter(el => {
-                    const s = getComputedStyle(el as Element);
-                    const scrollable = s.overflowY === 'auto' || s.overflowY === 'scroll' || s.overflow === 'auto' || s.overflow === 'scroll';
-                    return scrollable && (el as Element).scrollHeight > (el as Element).clientHeight && (el as HTMLElement).offsetParent !== null;
-                  }) as Element[];
-                if (candidates.length > 0) {
-                  // Choose the tallest scrollable container as the most likely main scroller
-                  candidates.sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight));
-                  const mainScroller = candidates[0];
-                  const beforeInner = getCurrentScroll(mainScroller);
-                  const innerOpts: ScrollToOptions = { behavior: 'smooth' };
+                document.body.appendChild(scrollIndicator);
+
+                setTimeout(() => {
+                  scrollIndicator.remove();
+                }, indicatorDuration);
+
+                // Check if scroll actually happened
+                let scrolledX = Math.abs(afterScroll.x - beforeScroll.x);
+                let scrolledY = Math.abs(afterScroll.y - beforeScroll.y);
+
+                let message = '';
+                // If the window did not scroll, try a smart fallback to a scrollable container
+                if (
+                  scrolledX === 0 &&
+                  scrolledY === 0 &&
+                  targetElement === window &&
+                  (scrollDirection === 'down' ||
+                    scrollDirection === 'up' ||
+                    scrollDirection === 'top' ||
+                    scrollDirection === 'bottom')
+                ) {
+                  // Force-scroll fallback: try extreme positions if computed max was inaccurate
                   if (scrollDirection === 'down' || scrollDirection === 'bottom') {
-                    innerOpts.top = beforeInner.maxY;
+                    window.scrollTo({ top: Number.MAX_SAFE_INTEGER });
                   } else if (scrollDirection === 'up' || scrollDirection === 'top') {
-                    innerOpts.top = 0;
+                    window.scrollTo({ top: 0 });
                   }
-                  // Humanized inner scroll
-                  const innerTarget = typeof innerOpts.top === 'number' ? innerOpts.top : beforeInner.y;
-                  const innerDuration = animateScrollY(mainScroller, beforeInner.y, innerTarget) + 120;
-                  // Re-measure after a short delay
-                  setTimeout(() => {
-                    const afterInner = getCurrentScroll(mainScroller);
-                    const innerScrolledY = Math.abs(afterInner.y - beforeInner.y);
-                    const innerScrolledX = Math.abs(afterInner.x - beforeInner.x);
-                    const usedName = `${mainScroller.tagName}${(mainScroller as HTMLElement).id ? `#${(mainScroller as HTMLElement).id}` : ''}`;
-                    const fallbackResult = {
-                      success: true,
-                      message: innerScrolledY > 0 || innerScrolledX > 0 ? `Scrolled ${scrollDirection} within main container ${usedName}` : 'No scroll occurred in main container (maybe already at bounds)'.trim(),
-                      scrollInfo: {
-                        target: usedName,
-                        direction: scrollDirection,
-                        before: { x: Math.round(beforeInner.x), y: Math.round(beforeInner.y) },
-                        after: { x: Math.round(afterInner.x), y: Math.round(afterInner.y) },
-                        scrolled: { x: Math.round(innerScrolledX), y: Math.round(innerScrolledY) },
-                        max: { x: Math.round(beforeInner.maxX), y: Math.round(beforeInner.maxY) }
-                      }
-                    } as ScrollResult;
-                    clearTimeout(timeoutId);
-                    resolve(fallbackResult);
-                  }, Math.max(400, scrollCompletionDelay, innerDuration));
-                  return; // Defer resolution to inner fallback
+                  // Re-measure quickly
+                  afterScroll = getCurrentScroll(window);
+                  scrolledX = Math.abs(afterScroll.x - beforeScroll.x);
+                  scrolledY = Math.abs(afterScroll.y - beforeScroll.y);
                 }
 
-                // Second fallback: walk ancestors from the viewport center element
-                const center = document.elementFromPoint(Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2));
-                let walker: Element | null = (center as Element) || null;
-                while (walker) {
-                  const s = getComputedStyle(walker);
-                  const scrollable = (s.overflowY === 'auto' || s.overflowY === 'scroll') && walker.scrollHeight > walker.clientHeight;
-                  if (scrollable) {
-                    const beforeAnc = getCurrentScroll(walker as Element);
-                    const ancOpts: ScrollToOptions = { behavior: 'smooth' };
-                    if (scrollDirection === 'down' || scrollDirection === 'bottom') ancOpts.top = beforeAnc.maxY;
-                    if (scrollDirection === 'up' || scrollDirection === 'top') ancOpts.top = 0;
-                    const ancTarget = typeof ancOpts.top === 'number' ? ancOpts.top : beforeAnc.y;
-                    const ancDuration = animateScrollY(walker as Element, beforeAnc.y, ancTarget) + 120;
-                    setTimeout(() => {
-                      if (!walker) {
+                if (
+                  scrolledX === 0 &&
+                  scrolledY === 0 &&
+                  targetElement === window &&
+                  (scrollDirection === 'down' ||
+                    scrollDirection === 'up' ||
+                    scrollDirection === 'top' ||
+                    scrollDirection === 'bottom')
+                ) {
+                  const candidates = Array.from(document.querySelectorAll('*')).filter(el => {
+                    const s = getComputedStyle(el as Element);
+                    const scrollable =
+                      s.overflowY === 'auto' ||
+                      s.overflowY === 'scroll' ||
+                      s.overflow === 'auto' ||
+                      s.overflow === 'scroll';
+                    return (
+                      scrollable &&
+                      (el as Element).scrollHeight > (el as Element).clientHeight &&
+                      (el as HTMLElement).offsetParent !== null
+                    );
+                  }) as Element[];
+                  if (candidates.length > 0) {
+                    // Choose the tallest scrollable container as the most likely main scroller
+                    candidates.sort((a, b) => b.scrollHeight - b.clientHeight - (a.scrollHeight - a.clientHeight));
+                    const mainScroller = candidates[0];
+                    const beforeInner = getCurrentScroll(mainScroller);
+                    const innerOpts: ScrollToOptions = { behavior: 'smooth' };
+                    if (scrollDirection === 'down' || scrollDirection === 'bottom') {
+                      innerOpts.top = beforeInner.maxY;
+                    } else if (scrollDirection === 'up' || scrollDirection === 'top') {
+                      innerOpts.top = 0;
+                    }
+                    // Humanized inner scroll
+                    const innerTarget = typeof innerOpts.top === 'number' ? innerOpts.top : beforeInner.y;
+                    const innerDuration = animateScrollY(mainScroller, beforeInner.y, innerTarget) + 120;
+                    // Re-measure after a short delay
+                    setTimeout(
+                      () => {
+                        const afterInner = getCurrentScroll(mainScroller);
+                        const innerScrolledY = Math.abs(afterInner.y - beforeInner.y);
+                        const innerScrolledX = Math.abs(afterInner.x - beforeInner.x);
+                        const usedName = `${mainScroller.tagName}${(mainScroller as HTMLElement).id ? `#${(mainScroller as HTMLElement).id}` : ''}`;
+                        const fallbackResult = {
+                          success: true,
+                          message:
+                            innerScrolledY > 0 || innerScrolledX > 0
+                              ? `Scrolled ${scrollDirection} within main container ${usedName}`
+                              : 'No scroll occurred in main container (maybe already at bounds)'.trim(),
+                          scrollInfo: {
+                            target: usedName,
+                            direction: scrollDirection,
+                            before: { x: Math.round(beforeInner.x), y: Math.round(beforeInner.y) },
+                            after: { x: Math.round(afterInner.x), y: Math.round(afterInner.y) },
+                            scrolled: { x: Math.round(innerScrolledX), y: Math.round(innerScrolledY) },
+                            max: { x: Math.round(beforeInner.maxX), y: Math.round(beforeInner.maxY) },
+                          },
+                        } as ScrollResult;
                         clearTimeout(timeoutId);
-                        resolve({ success: false, message: 'Scrollable container disappeared during scroll' });
-                        return;
-                      }
-                      const afterAnc = getCurrentScroll(walker as Element);
-                      const dY = Math.abs(afterAnc.y - beforeAnc.y);
-                      const usedName = `${walker.tagName}${(walker as HTMLElement).id ? `#${(walker as HTMLElement).id}` : ''}`;
-                      const fallbackResult2 = {
-                        success: true,
-                        message: dY > 0 ? `Scrolled ${scrollDirection} within container ${usedName}` : 'No scroll occurred in container (maybe already at bounds)',
-                        scrollInfo: {
-                          target: usedName,
-                          direction: scrollDirection,
-                          before: { x: Math.round(beforeAnc.x), y: Math.round(beforeAnc.y) },
-                          after: { x: Math.round(afterAnc.x), y: Math.round(afterAnc.y) },
-                          scrolled: { x: Math.round(Math.abs(afterAnc.x - beforeAnc.x)), y: Math.round(dY) },
-                          max: { x: Math.round(beforeAnc.maxX), y: Math.round(beforeAnc.maxY) }
-                        }
-                      } as ScrollResult;
-                      clearTimeout(timeoutId);
-                      resolve(fallbackResult2);
-                    }, Math.max(400, scrollCompletionDelay, ancDuration));
-                    return;
+                        resolve(fallbackResult);
+                      },
+                      Math.max(400, scrollCompletionDelay, innerDuration),
+                    );
+                    return; // Defer resolution to inner fallback
                   }
-                  walker = walker.parentElement;
-                }
-              }
 
-              if (scrolledX === 0 && scrolledY === 0) {
-                // Special-case: page not scrollable
-                if (targetElement === window && beforeScroll.maxY === 0 && beforeScroll.maxX === 0) {
-                  message = 'Page is not scrollable (already at bounds)';
-                } else if (targetElement !== window && beforeScroll.maxY === 0 && beforeScroll.maxX === 0) {
-                  message = 'Element is not scrollable (already at bounds)';
-                } else
-                if (scrollDirection === 'top' && beforeScroll.y === 0) {
-                  message = 'Already at the top';
-                } else if (scrollDirection === 'bottom' && beforeScroll.y === beforeScroll.maxY) {
-                  message = 'Already at the bottom';
-                } else if (scrollDirection === 'left' && beforeScroll.x === 0) {
-                  message = 'Already at the left edge';
-                } else if (scrollDirection === 'right' && beforeScroll.x === beforeScroll.maxX) {
-                  message = 'Already at the right edge';
-                } else if (scrollDirection === 'up' && beforeScroll.y === 0) {
-                  message = 'Already at the top';
-                } else if (scrollDirection === 'down' && beforeScroll.y === beforeScroll.maxY) {
-                  message = 'Already at the bottom';
-                } else {
-                  message = 'No scroll occurred (element may not be scrollable)';
+                  // Second fallback: walk ancestors from the viewport center element
+                  const center = document.elementFromPoint(
+                    Math.floor(window.innerWidth / 2),
+                    Math.floor(window.innerHeight / 2),
+                  );
+                  let walker: Element | null = (center as Element) || null;
+                  while (walker) {
+                    const s = getComputedStyle(walker);
+                    const scrollable =
+                      (s.overflowY === 'auto' || s.overflowY === 'scroll') && walker.scrollHeight > walker.clientHeight;
+                    if (scrollable) {
+                      const beforeAnc = getCurrentScroll(walker as Element);
+                      const ancOpts: ScrollToOptions = { behavior: 'smooth' };
+                      if (scrollDirection === 'down' || scrollDirection === 'bottom') ancOpts.top = beforeAnc.maxY;
+                      if (scrollDirection === 'up' || scrollDirection === 'top') ancOpts.top = 0;
+                      const ancTarget = typeof ancOpts.top === 'number' ? ancOpts.top : beforeAnc.y;
+                      const ancDuration = animateScrollY(walker as Element, beforeAnc.y, ancTarget) + 120;
+                      setTimeout(
+                        () => {
+                          if (!walker) {
+                            clearTimeout(timeoutId);
+                            resolve({ success: false, message: 'Scrollable container disappeared during scroll' });
+                            return;
+                          }
+                          const afterAnc = getCurrentScroll(walker as Element);
+                          const dY = Math.abs(afterAnc.y - beforeAnc.y);
+                          const usedName = `${walker.tagName}${(walker as HTMLElement).id ? `#${(walker as HTMLElement).id}` : ''}`;
+                          const fallbackResult2 = {
+                            success: true,
+                            message:
+                              dY > 0
+                                ? `Scrolled ${scrollDirection} within container ${usedName}`
+                                : 'No scroll occurred in container (maybe already at bounds)',
+                            scrollInfo: {
+                              target: usedName,
+                              direction: scrollDirection,
+                              before: { x: Math.round(beforeAnc.x), y: Math.round(beforeAnc.y) },
+                              after: { x: Math.round(afterAnc.x), y: Math.round(afterAnc.y) },
+                              scrolled: { x: Math.round(Math.abs(afterAnc.x - beforeAnc.x)), y: Math.round(dY) },
+                              max: { x: Math.round(beforeAnc.maxX), y: Math.round(beforeAnc.maxY) },
+                            },
+                          } as ScrollResult;
+                          clearTimeout(timeoutId);
+                          resolve(fallbackResult2);
+                        },
+                        Math.max(400, scrollCompletionDelay, ancDuration),
+                      );
+                      return;
+                    }
+                    walker = walker.parentElement;
+                  }
                 }
-              } else {
-                if (scrollDirection === 'to' || shouldScrollTo || isAutoScrollTo) {
-                  if (isAutoScrollTo) {
-                    message = `Auto-scrolled to element (element was not scrollable)`;
+
+                if (scrolledX === 0 && scrolledY === 0) {
+                  // Special-case: page not scrollable
+                  if (targetElement === window && beforeScroll.maxY === 0 && beforeScroll.maxX === 0) {
+                    message = 'Page is not scrollable (already at bounds)';
+                  } else if (targetElement !== window && beforeScroll.maxY === 0 && beforeScroll.maxX === 0) {
+                    message = 'Element is not scrollable (already at bounds)';
+                  } else if (scrollDirection === 'top' && beforeScroll.y === 0) {
+                    message = 'Already at the top';
+                  } else if (scrollDirection === 'bottom' && beforeScroll.y === beforeScroll.maxY) {
+                    message = 'Already at the bottom';
+                  } else if (scrollDirection === 'left' && beforeScroll.x === 0) {
+                    message = 'Already at the left edge';
+                  } else if (scrollDirection === 'right' && beforeScroll.x === beforeScroll.maxX) {
+                    message = 'Already at the right edge';
+                  } else if (scrollDirection === 'up' && beforeScroll.y === 0) {
+                    message = 'Already at the top';
+                  } else if (scrollDirection === 'down' && beforeScroll.y === beforeScroll.maxY) {
+                    message = 'Already at the bottom';
                   } else {
-                    message = `Scrolled to element`;
+                    message = 'No scroll occurred (element may not be scrollable)';
                   }
-                  if (scrolledY > 0) message += ` ${Math.round(scrolledY)}px vertically`;
-                  if (scrolledX > 0) message += ` ${Math.round(scrolledX)}px horizontally`;
                 } else {
-                  message = `Scrolled ${scrollDirection}`;
-                  if (scrolledY > 0) message += ` ${Math.round(scrolledY)}px vertically`;
-                  if (scrolledX > 0) message += ` ${Math.round(scrolledX)}px horizontally`;
+                  if (scrollDirection === 'to' || shouldScrollTo || isAutoScrollTo) {
+                    if (isAutoScrollTo) {
+                      message = `Auto-scrolled to element (element was not scrollable)`;
+                    } else {
+                      message = `Scrolled to element`;
+                    }
+                    if (scrolledY > 0) message += ` ${Math.round(scrolledY)}px vertically`;
+                    if (scrolledX > 0) message += ` ${Math.round(scrolledX)}px horizontally`;
+                  } else {
+                    message = `Scrolled ${scrollDirection}`;
+                    if (scrolledY > 0) message += ` ${Math.round(scrolledY)}px vertically`;
+                    if (scrolledX > 0) message += ` ${Math.round(scrolledX)}px horizontally`;
+                  }
                 }
-              }
 
-              const result = {
-                success: true,
-                message: message,
-                scrollInfo: {
-                  target: targetName,
-                  direction: scrollDirection,
-                  before: { x: Math.round(beforeScroll.x), y: Math.round(beforeScroll.y) },
-                  after: { x: Math.round(afterScroll.x), y: Math.round(afterScroll.y) },
-                  scrolled: { x: Math.round(scrolledX), y: Math.round(scrolledY) },
-                  max: { x: Math.round(beforeScroll.maxX), y: Math.round(beforeScroll.maxY) }
-                }
-              };
-              
+                const result = {
+                  success: true,
+                  message: message,
+                  scrollInfo: {
+                    target: targetName,
+                    direction: scrollDirection,
+                    before: { x: Math.round(beforeScroll.x), y: Math.round(beforeScroll.y) },
+                    after: { x: Math.round(afterScroll.x), y: Math.round(afterScroll.y) },
+                    scrolled: { x: Math.round(scrolledX), y: Math.round(scrolledY) },
+                    max: { x: Math.round(beforeScroll.maxX), y: Math.round(beforeScroll.maxY) },
+                  },
+                };
+
                 console.log('[Scroll] Resolving with result:', result);
                 clearTimeout(timeoutId); // Clear the timeout since we're resolving successfully
                 resolve(result);
@@ -569,33 +652,42 @@ export async function handleScroll(
                 clearTimeout(timeoutId); // Clear the timeout
                 resolve({
                   success: false,
-                  message: `Error during scroll completion: ${(innerError as Error).message || 'Unknown error'}`
+                  message: `Error during scroll completion: ${(innerError as Error).message || 'Unknown error'}`,
                 });
               }
             }, effectiveDelay); // Wait for animation to complete
           } catch (error) {
             console.error('[Scroll] Error in script execution:', error);
-            resolve({ 
-              success: false, 
-              message: `Error scrolling: ${(error as Error).message || 'Unknown error'}` 
+            resolve({
+              success: false,
+              message: `Error scrolling: ${(error as Error).message || 'Unknown error'}`,
             });
           }
         });
       },
-      args: [cssSelector, direction, amount, scrollTo, SCROLL_COMPLETION_DELAY, INDICATOR_DURATION] as [string, string, number, boolean, number, number]
+      args: [cssSelector, direction, amount, scrollTo, SCROLL_COMPLETION_DELAY, INDICATOR_DURATION] as [
+        string,
+        string,
+        number,
+        boolean,
+        number,
+        number,
+      ],
     });
 
     const results = await Promise.race([
       execPromise,
-      new Promise<any>((resolve) => setTimeout(() => resolve([{ result: { success: false, message: 'Timeout while scrolling' } }]), 10000))
+      new Promise<any>(resolve =>
+        setTimeout(() => resolve([{ result: { success: false, message: 'Timeout while scrolling' } }]), 10000),
+      ),
     ]);
 
     debug.log('[Scroll] Script execution results:', results);
-    
+
     if (results && results[0]?.result) {
       const result = results[0].result;
       debug.log('[Scroll] Script result:', result);
-      
+
       if (result.success) {
         return {
           status: 'success',
@@ -606,13 +698,13 @@ export async function handleScroll(
             before: { x: 0, y: 0 },
             after: { x: 0, y: 0 },
             scrolled: { x: 0, y: 0 },
-            max: { x: 0, y: 0 }
-          }
+            max: { x: 0, y: 0 },
+          },
         };
       } else {
         return {
           status: 'error',
-          message: result.message
+          message: result.message,
         };
       }
     }
@@ -620,13 +712,13 @@ export async function handleScroll(
     debug.error('[Scroll] No results from script execution or invalid result structure');
     return {
       status: 'error',
-      message: 'Unable to scroll - no results from script execution'
+      message: 'Unable to scroll - no results from script execution',
     };
   } catch (error) {
     debug.error('[Scroll] Error scrolling:', error);
     return {
       status: 'error',
-      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }

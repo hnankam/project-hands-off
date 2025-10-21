@@ -1,12 +1,6 @@
 import { debug } from '@extension/shared';
 import { InputDataResult, InputHandlerOptions, InputType } from './types';
-import { 
-  findElement, 
-  isElementVisible, 
-  scrollIntoView, 
-  focusAndHighlight, 
-  detectModernInput 
-} from './utils';
+import { findElement, isElementVisible, scrollIntoView, focusAndHighlight, detectModernInput } from './utils';
 
 // Import all specialized handlers
 import { TextInputHandler } from './textInputHandler';
@@ -42,7 +36,7 @@ export class InputDispatcher {
       { handler: new NumberInputHandler(), priority: 60, name: 'NumberInput' },
       { handler: new SelectInputHandler(), priority: 50, name: 'SelectInput' },
       { handler: new ContentEditableHandler(), priority: 40, name: 'ContentEditable' },
-      { handler: new TextareaHandler(), priority: 30, name: 'Textarea' }
+      { handler: new TextareaHandler(), priority: 30, name: 'Textarea' },
     ];
 
     // Sort handlers by priority (highest first)
@@ -58,10 +52,10 @@ export class InputDispatcher {
    * @returns Promise with result
    */
   async handleInputData(
-    cssSelector: string, 
-    value: string, 
+    cssSelector: string,
+    value: string,
     clearFirst: boolean = true,
-    moveCursor: boolean = true
+    moveCursor: boolean = true,
   ): Promise<InputDataResult> {
     try {
       // debug.log('[InputDispatcher] Inputting data into field with selector:', cssSelector, 'value:', value);
@@ -73,20 +67,25 @@ export class InputDispatcher {
 
       const results = await chrome.scripting.executeScript({
         target: { tabId: activeTab.id },
-        func: async (selector: string, inputValue: string, shouldClear: boolean, shouldMoveCursor: boolean): Promise<any> => {
+        func: async (
+          selector: string,
+          inputValue: string,
+          shouldClear: boolean,
+          shouldMoveCursor: boolean,
+        ): Promise<any> => {
           // Define content script functions inline
           function findElement(selector: string): any {
             // console.log('[InputDispatcher] Finding element with selector:', selector);
-            
+
             // First try to find element in main DOM
             let element = document.querySelector(selector) as HTMLElement;
             let foundInShadowDOM = false;
             let shadowHostInfo = '';
-            
+
             // If not found in main DOM, search in Shadow DOM
             if (!element) {
               // console.log('[InputDispatcher] Element not found in main DOM, searching Shadow DOM...');
-              
+
               // Search through all shadow roots with early exit
               for (const hostElement of Array.from(document.querySelectorAll('*'))) {
                 if (hostElement.shadowRoot && !element) {
@@ -105,7 +104,7 @@ export class InputDispatcher {
                 }
               }
             }
-            
+
             if (!element) {
               // console.log('[InputDispatcher] Element not found with selector:', selector);
               return null;
@@ -122,7 +121,8 @@ export class InputDispatcher {
             //   dataSlot: element.getAttribute('data-slot')
             // });
 
-            const inputType = (element as HTMLInputElement).type || (element.hasAttribute('contenteditable') ? 'contenteditable' : '');
+            const inputType =
+              (element as HTMLInputElement).type || (element.hasAttribute('contenteditable') ? 'contenteditable' : '');
             const tagName = element.tagName.toLowerCase();
 
             return {
@@ -130,15 +130,15 @@ export class InputDispatcher {
               foundInShadowDOM,
               shadowHostInfo,
               inputType,
-              tagName
+              tagName,
             };
           }
 
           function isElementVisible(element: HTMLElement): boolean {
             const style = window.getComputedStyle(element);
             return !(
-              style.display === 'none' || 
-              style.visibility === 'hidden' || 
+              style.display === 'none' ||
+              style.visibility === 'hidden' ||
               style.opacity === '0' ||
               element.offsetWidth === 0 ||
               element.offsetHeight === 0
@@ -158,15 +158,15 @@ export class InputDispatcher {
               const rect = element.getBoundingClientRect();
               const centerX = rect.left + rect.width / 2;
               const centerY = rect.top + rect.height / 2;
-              
+
               // console.log('[InputDispatcher] moveCursorToElement called - target position:', { x: centerX, y: centerY });
-              
+
               // Get or create cursor tracking object in window (preserve existing state)
               if (!(window as any).__copilotCursorState__) {
                 (window as any).__copilotCursorState__ = {
                   lastX: window.innerWidth / 2,
                   lastY: window.innerHeight / 2,
-                  hideTimeout: null
+                  hideTimeout: null,
                 };
               }
               const cursorState = (window as any).__copilotCursorState__;
@@ -180,7 +180,7 @@ export class InputDispatcher {
               // Get or create cursor element
               let cursor = document.getElementById('__copilot_cursor_indicator__') as HTMLDivElement | null;
               let isNewCursor = false;
-              
+
               if (!cursor) {
                 cursor = document.createElement('div');
                 cursor.id = '__copilot_cursor_indicator__';
@@ -223,8 +223,8 @@ export class InputDispatcher {
                     const randomX = (Math.random() - 0.5) * 2;
                     const randomY = (Math.random() - 0.5) * 2;
 
-                    cursor!.style.left = (cursorState.lastX + randomX) + 'px';
-                    cursor!.style.top = (cursorState.lastY + randomY) + 'px';
+                    cursor!.style.left = cursorState.lastX + randomX + 'px';
+                    cursor!.style.top = cursorState.lastY + randomY + 'px';
                     cursor!.style.opacity = '1';
                     cursor!.style.animation = 'none';
 
@@ -237,19 +237,20 @@ export class InputDispatcher {
                     cursor!.style.left = centerX + 'px';
                     cursor!.style.top = centerY + 'px';
                     cursor!.style.animation = 'copilotPulse 1.2s ease-in-out infinite';
-                    
+
                     // console.log('[InputDispatcher] Cursor animation COMPLETED - final position:', { x: centerX, y: centerY });
 
                     // Try to set the cursor position if it's a text input that supports selection
                     if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
                       const inputElement = element as HTMLInputElement | HTMLTextAreaElement;
-                      
+
                       // Check if the input type supports text selection
                       const inputType = (inputElement as HTMLInputElement).type || 'text';
-                      const supportsSelection = ['text', 'search', 'url', 'tel'].includes(inputType) || 
-                                              element.tagName === 'TEXTAREA' ||
-                                              element.hasAttribute('contenteditable');
-                      
+                      const supportsSelection =
+                        ['text', 'search', 'url', 'tel'].includes(inputType) ||
+                        element.tagName === 'TEXTAREA' ||
+                        element.hasAttribute('contenteditable');
+
                       if (supportsSelection && inputElement.setSelectionRange) {
                         try {
                           const length = inputElement.value.length;
@@ -262,7 +263,7 @@ export class InputDispatcher {
                     }
 
                     // console.log('[InputUtils] Cursor moved to element:', element.tagName, element.id || element.className);
-                    
+
                     // Call the input callback after a brief delay to ensure cursor is fully positioned
                     if ((window as any).__copilotInputCallback__) {
                       setTimeout(() => {
@@ -288,21 +289,21 @@ export class InputDispatcher {
             const originalOutline = element.style.outline;
             const originalOutlineOffset = element.style.outlineOffset;
             const originalBackground = element.style.backgroundColor;
-            
+
             // Focus the element
             element.focus();
-            
+
             // Move cursor to element if requested
             if (moveCursor) {
               moveCursorToElement(element);
             }
-            
+
             // Highlight the element
             element.style.outline = '3px solid #2196F3';
             element.style.outlineOffset = '4px';
             element.style.backgroundColor = 'rgba(33, 150, 243, 0.1)';
             element.style.transition = 'all 0.3s ease';
-            
+
             // Remove highlight after 2 seconds
             setTimeout(() => {
               element.style.outline = originalOutline;
@@ -316,34 +317,37 @@ export class InputDispatcher {
             if (element.tagName === 'INPUT') {
               const inputElement = element as HTMLInputElement;
               const type = inputElement.type;
-              
+
               if (type === 'checkbox' || type === 'radio') {
                 return inputElement.checked ? 'checked' : 'unchecked';
               }
-              
+
               return inputElement.value;
             }
-            
+
             if (element.tagName === 'TEXTAREA') {
               return (element as HTMLTextAreaElement).value;
             }
-            
+
             if (element.tagName === 'SELECT') {
               return (element as HTMLSelectElement).value;
             }
-            
+
             if (element.hasAttribute('contenteditable')) {
               return element.textContent || '';
             }
-            
+
             return '';
           }
 
           // Keyboard navigation function for custom dropdowns
-          async function tryKeyboardNavigation(dropdownElement: HTMLElement, value: string): Promise<{ success: boolean; message?: string }> {
+          async function tryKeyboardNavigation(
+            dropdownElement: HTMLElement,
+            value: string,
+          ): Promise<{ success: boolean; message?: string }> {
             try {
               // console.log('[InputDispatcher] Starting keyboard navigation to find option:', value);
-              
+
               // Helper function to determine if an option is selectable
               const isSelectableOption = (text: string): boolean => {
                 if (!text || text.length === 0) return false;
@@ -351,27 +355,31 @@ export class InputDispatcher {
                 // Skip options that are too long (likely descriptions) or contain question marks
                 return text.length < 50 && !text.includes('?') && !text.includes('*');
               };
-              
+
               // First, click the dropdown button to open it
               // console.log('[InputDispatcher] Clicking dropdown button to open it');
               dropdownElement.click();
-              
+
               // Wait for dropdown to open and render
               await new Promise(resolve => setTimeout(resolve, 600));
-              
+
               // Check if the element is in a hidden container before focusing
               const isInHiddenContainer = (element: HTMLElement): boolean => {
                 let current = element.parentElement;
                 while (current) {
                   const style = window.getComputedStyle(current);
-                  if (style.display === 'none' || style.visibility === 'hidden' || current.getAttribute('aria-hidden') === 'true') {
+                  if (
+                    style.display === 'none' ||
+                    style.visibility === 'hidden' ||
+                    current.getAttribute('aria-hidden') === 'true'
+                  ) {
                     return true;
                   }
                   current = current.parentElement;
                 }
                 return false;
               };
-              
+
               // Only focus if not in a hidden container to avoid aria-hidden warnings
               if (!isInHiddenContainer(dropdownElement)) {
                 dropdownElement.focus();
@@ -379,71 +387,112 @@ export class InputDispatcher {
               } else {
                 // console.log('[InputDispatcher] Skipping focus to avoid aria-hidden warning');
               }
-              
+
               // Wait for focus to take effect
               await new Promise(resolve => setTimeout(resolve, 200));
-              
+
               // Find the container (parent of dropdown)
-              const container = dropdownElement.closest('[data-slot="form-item"], .dropdown, .select, [role="listbox"], [role="menu"]') || dropdownElement.parentElement;
-              
+              const container =
+                dropdownElement.closest(
+                  '[data-slot="form-item"], .dropdown, .select, [role="listbox"], [role="menu"]',
+                ) || dropdownElement.parentElement;
+
               // Get all available options to determine navigation path
               const allOptions: Array<{ element: Element; text: string }> = [];
-              
+
               // Prioritize visual elements over hidden native elements
               const visualElementSelectors = [
                 // ARIA-based (most reliable for visual elements)
                 '[role="option"]:not(option)', // Exclude native option elements
                 '[role="menuitem"]:not(option)',
                 '[role="listitem"]:not(option)',
-                
+
                 // Framework-specific selectors (visual elements only)
                 // Radix UI
-                '[data-radix-select-item]', '[data-radix-collection-item]',
+                '[data-radix-select-item]',
+                '[data-radix-collection-item]',
                 // Headless UI
-                '.headlessui-listbox-option', '.headlessui-menu-item',
+                '.headlessui-listbox-option',
+                '.headlessui-menu-item',
                 // Ant Design
-                '.ant-select-item', '.ant-select-item-option', '.ant-dropdown-menu-item',
+                '.ant-select-item',
+                '.ant-select-item-option',
+                '.ant-dropdown-menu-item',
                 // Material UI
-                '.MuiMenuItem-root', '.MuiListItem-root', '.MuiSelect-select',
+                '.MuiMenuItem-root',
+                '.MuiListItem-root',
+                '.MuiSelect-select',
                 // Chakra UI
-                '.chakra-select__option', '.chakra-menu__menuitem',
+                '.chakra-select__option',
+                '.chakra-menu__menuitem',
                 // Bootstrap
-                '.dropdown-item', '.list-group-item',
+                '.dropdown-item',
+                '.list-group-item',
                 // Semantic UI
-                '.item', '.menu .item',
+                '.item',
+                '.menu .item',
                 // Element UI
-                '.el-select-dropdown__item', '.el-option',
+                '.el-select-dropdown__item',
+                '.el-option',
                 // Vuetify
-                '.v-list-item', '.v-select-list .v-list-item',
+                '.v-list-item',
+                '.v-select-list .v-list-item',
                 // Quasar
-                '.q-item', '.q-option',
+                '.q-item',
+                '.q-option',
                 // PrimeNG
-                '.p-dropdown-item', '.p-selectable-row',
+                '.p-dropdown-item',
+                '.p-selectable-row',
                 // Kendo UI
-                '.k-item', '.k-list-item',
+                '.k-item',
+                '.k-list-item',
                 // DevExtreme
-                '.dx-item', '.dx-list-item',
-                
+                '.dx-item',
+                '.dx-list-item',
+
                 // Generic component patterns (visual elements)
-                '[data-slot="select-item"]', '[data-slot="select-option"]', '[data-slot="menu-item"]',
-                '[data-testid*="option"]', '[data-testid*="item"]', '[data-testid*="select"]',
-                '[data-cy*="option"]', '[data-cy*="item"]', '[data-cy*="select"]',
-                
+                '[data-slot="select-item"]',
+                '[data-slot="select-option"]',
+                '[data-slot="menu-item"]',
+                '[data-testid*="option"]',
+                '[data-testid*="item"]',
+                '[data-testid*="select"]',
+                '[data-cy*="option"]',
+                '[data-cy*="item"]',
+                '[data-cy*="select"]',
+
                 // Class-based patterns (framework-agnostic, visual elements)
-                '.select-item', '.select-option', '.dropdown-item', '.menu-item',
-                '.option-item', '.list-item', '.choice-item', '.pick-item',
-                '[class*="select-item"]', '[class*="select-option"]', '[class*="dropdown-item"]',
-                '[class*="menu-item"]', '[class*="option-item"]', '[class*="list-item"]',
-                '[class*="choice"]', '[class*="pick"]', '[class*="item"]',
-                
+                '.select-item',
+                '.select-option',
+                '.dropdown-item',
+                '.menu-item',
+                '.option-item',
+                '.list-item',
+                '.choice-item',
+                '.pick-item',
+                '[class*="select-item"]',
+                '[class*="select-option"]',
+                '[class*="dropdown-item"]',
+                '[class*="menu-item"]',
+                '[class*="option-item"]',
+                '[class*="list-item"]',
+                '[class*="choice"]',
+                '[class*="pick"]',
+                '[class*="item"]',
+
                 // Data attribute patterns (visual elements)
-                'div[data-value]', 'span[data-value]', 'button[data-value]', 'li[data-value]',
-                '[data-option]:not(option)', '[data-item]:not(option)', '[data-choice]:not(option)'
+                'div[data-value]',
+                'span[data-value]',
+                'button[data-value]',
+                'li[data-value]',
+                '[data-option]:not(option)',
+                '[data-item]:not(option)',
+                '[data-choice]:not(option)',
               ];
-              
+
               // Try each selector and collect unique elements, excluding native options
               const foundElements = new Set<Element>();
-              
+
               // Search in multiple areas: container, document body, and any dropdown portals
               const searchAreas = [
                 container,
@@ -451,9 +500,9 @@ export class InputDispatcher {
                 document.querySelector('[data-radix-portal]'),
                 document.querySelector('[data-radix-select-content]'),
                 document.querySelector('[role="listbox"]'),
-                document.querySelector('[role="menu"]')
+                document.querySelector('[role="menu"]'),
               ].filter(Boolean);
-              
+
               for (const selector of visualElementSelectors) {
                 try {
                   searchAreas.forEach(area => {
@@ -473,33 +522,53 @@ export class InputDispatcher {
                   // Skip invalid selectors
                 }
               }
-              
+
               // Also do the original comprehensive search that was working
               // console.log('[InputDispatcher] Doing comprehensive search for visual elements...');
-              
+
               // Common selectors for visual dropdown components (original search)
               const originalVisualSelectors = [
                 // Radix UI Select
-                '[data-radix-select-content]', '[data-radix-select-viewport]', '[data-radix-select-item]',
+                '[data-radix-select-content]',
+                '[data-radix-select-viewport]',
+                '[data-radix-select-item]',
                 // Headless UI
-                '[role="listbox"]', '[role="option"]', '.headlessui-listbox-option',
+                '[role="listbox"]',
+                '[role="option"]',
+                '.headlessui-listbox-option',
                 // Ant Design
-                '.ant-select-dropdown', '.ant-select-item', '.ant-select-item-option',
+                '.ant-select-dropdown',
+                '.ant-select-item',
+                '.ant-select-item-option',
                 // Material UI
-                '.MuiSelect-select', '.MuiMenuItem-root', '.MuiList-root',
+                '.MuiSelect-select',
+                '.MuiMenuItem-root',
+                '.MuiList-root',
                 // Chakra UI
-                '[data-chakra-select]', '.chakra-select__menu', '.chakra-select__option',
+                '[data-chakra-select]',
+                '.chakra-select__menu',
+                '.chakra-select__option',
                 // Custom components
-                '.dropdown-menu', '.dropdown-content', '.select-menu', '.select-content',
-                '.option-list', '.menu-list', '.dropdown-list', '.select-list',
+                '.dropdown-menu',
+                '.dropdown-content',
+                '.select-menu',
+                '.select-content',
+                '.option-list',
+                '.menu-list',
+                '.dropdown-list',
+                '.select-list',
                 // Generic patterns
-                '[class*="dropdown"]', '[class*="select-menu"]', '[class*="option"]',
-                '[class*="menu-item"]', '[class*="list-item"]', '[class*="select-item"]'
+                '[class*="dropdown"]',
+                '[class*="select-menu"]',
+                '[class*="option"]',
+                '[class*="menu-item"]',
+                '[class*="list-item"]',
+                '[class*="select-item"]',
               ];
-              
+
               // Search in the container and its children (original approach)
               const originalSearchAreas = [container, dropdownElement.parentElement, document.body].filter(Boolean);
-              
+
               originalVisualSelectors.forEach(selector => {
                 originalSearchAreas.forEach(area => {
                   if (area) {
@@ -515,12 +584,12 @@ export class InputDispatcher {
                   }
                 });
               });
-              
+
               // Also search for elements that contain the option text values (original approach)
               // First, get option texts from the hidden select to know what to search for
               const hiddenSelectForTexts = container?.querySelector('select[aria-hidden="true"]') as HTMLSelectElement;
               const optionTexts: string[] = [];
-              
+
               if (hiddenSelectForTexts) {
                 for (let i = 0; i < hiddenSelectForTexts.options.length; i++) {
                   const option = hiddenSelectForTexts.options[i];
@@ -530,18 +599,19 @@ export class InputDispatcher {
                   }
                 }
               }
-              
+
               // console.log('[InputDispatcher] Searching for elements containing option texts:', optionTexts);
-              
+
               optionTexts.forEach(text => {
                 // Search for elements containing this text
                 const textElements = document.querySelectorAll('*');
-                const matchingElements = Array.from(textElements).filter(el => 
-                  el.textContent?.trim() === text && 
-                  el.tagName !== 'OPTION' && // Exclude the hidden option elements
-                  el !== dropdownElement // Exclude the main dropdown button
+                const matchingElements = Array.from(textElements).filter(
+                  el =>
+                    el.textContent?.trim() === text &&
+                    el.tagName !== 'OPTION' && // Exclude the hidden option elements
+                    el !== dropdownElement, // Exclude the main dropdown button
                 );
-                
+
                 if (matchingElements.length > 0) {
                   matchingElements.forEach(el => {
                     // Only add visual elements, not native options
@@ -551,34 +621,36 @@ export class InputDispatcher {
                   });
                 }
               });
-              
+
               // Convert to array and filter for selectable options
               const candidateElements = Array.from(foundElements);
-              
+
               // Process each candidate element, prioritizing visual elements
               candidateElements.forEach((element, index) => {
                 const text = element.textContent?.trim();
                 if (text && text.length > 0 && isSelectableOption(text)) {
                   // Skip the dropdown button itself - we want the option elements within the dropdown
-                  if (element === dropdownElement || 
-                      element.getAttribute('role') === 'combobox' || 
-                      element.getAttribute('data-slot') === 'select-trigger') {
+                  if (
+                    element === dropdownElement ||
+                    element.getAttribute('role') === 'combobox' ||
+                    element.getAttribute('data-slot') === 'select-trigger'
+                  ) {
                     // console.log(`[InputDispatcher] Skipping dropdown button: ${text}`);
                     return;
                   }
-                  
+
                   // Check if we already have this text (avoid duplicates)
                   const existingOption = allOptions.find(opt => opt.text === text);
                   if (!existingOption) {
                     allOptions.push({
                       element: element,
-                      text: text
+                      text: text,
                     });
                     // console.log(`[InputDispatcher] Added visual element: ${text} (${element.tagName})`);
                   }
                 }
               });
-              
+
               // If no visual elements found, fallback to hidden select options
               if (allOptions.length === 0) {
                 console.log('[InputDispatcher] No visual elements found, falling back to hidden select options');
@@ -590,13 +662,13 @@ export class InputDispatcher {
                     if (text && text.length > 0) {
                       allOptions.push({
                         element: option,
-                        text: text
+                        text: text,
                       });
                     }
                   }
                 }
               }
-              
+
               // Log the full HTML of the options found
               // console.log('[InputDispatcher] Found visual options:', allOptions.length);
               allOptions.forEach((option, index) => {
@@ -616,29 +688,29 @@ export class InputDispatcher {
                 //   }
                 // });
               });
-              
+
               // console.log('[InputDispatcher] Available options:', allOptions.map(opt => opt.text));
-              
+
               // Find the target option index
               const targetIndex = allOptions.findIndex(opt => opt.text === value);
               if (targetIndex === -1) {
                 // console.log('[InputDispatcher] Target option not found in available options, cannot use keyboard navigation');
                 return { success: false, message: 'Target option not found' };
               }
-              
+
               // console.log('[InputDispatcher] Target option found at index:', targetIndex);
               // console.log('[InputDispatcher] Available options:', allOptions);
-              
+
               // Calculate how many ArrowDown presses we need
               // If we're at index 0 (first option) and want index 2 (third option), we need 2 presses
               const arrowDownCount = targetIndex;
               // console.log('[InputDispatcher] Need to press ArrowDown', arrowDownCount, 'times to reach target option');
-              
+
               // Navigate to the target option using arrow down keys with human-like delays
               // Also hover over each option as we navigate through them
               for (let i = 0; i < arrowDownCount; i++) {
                 // console.log('[InputDispatcher] Pressing ArrowDown key (step', i + 1, 'of', arrowDownCount, ')');
-                
+
                 const keyDownEvent = new KeyboardEvent('keydown', {
                   key: 'ArrowDown',
                   code: 'ArrowDown',
@@ -646,11 +718,11 @@ export class InputDispatcher {
                   which: 40,
                   bubbles: true,
                   cancelable: true,
-                  view: window
+                  view: window,
                 });
-                
+
                 dropdownElement.dispatchEvent(keyDownEvent);
-                
+
                 // Also dispatch keyup
                 const keyUpEvent = new KeyboardEvent('keyup', {
                   key: 'ArrowDown',
@@ -659,58 +731,60 @@ export class InputDispatcher {
                   which: 40,
                   bubbles: true,
                   cancelable: true,
-                  view: window
+                  view: window,
                 });
-                
+
                 dropdownElement.dispatchEvent(keyUpEvent);
-                
+
                 // Simulate hover over the current option (i+1 because we're moving to the next option)
                 if (i + 1 < allOptions.length) {
                   const currentOptionElement = allOptions[i + 1].element as HTMLElement;
                   console.log(`[InputDispatcher] Simulating hover over option: ${allOptions[i + 1].text}`);
-                  
+
                   // Move the actual cursor to the visual option element
                   console.log(`[InputDispatcher] Moving cursor to option: ${allOptions[i + 1].text}`);
-                  
+
                   // Use the existing moveCursorToElement function
                   if (typeof (window as any).moveCursorToElement === 'function') {
                     (window as any).moveCursorToElement(currentOptionElement);
-                    
+
                     // Wait for cursor movement to complete
                     await new Promise(resolve => setTimeout(resolve, 300));
                   }
                 }
-                
+
                 // Human-like delay between key presses (600-1000ms for more realistic timing)
                 const delay = 600 + Math.random() * 400;
                 await new Promise(resolve => setTimeout(resolve, delay));
               }
-              
+
               // Simulate final hover over the target option before selecting
               if (targetIndex < allOptions.length) {
                 const targetOptionElement = allOptions[targetIndex].element as HTMLElement;
-                console.log(`[InputDispatcher] Final hover simulation over target option: ${allOptions[targetIndex].text}`);
-                
+                console.log(
+                  `[InputDispatcher] Final hover simulation over target option: ${allOptions[targetIndex].text}`,
+                );
+
                 // Move the actual cursor to the target option element
                 console.log(`[InputDispatcher] Moving cursor to final target option: ${allOptions[targetIndex].text}`);
-                
+
                 // Use the existing moveCursorToElement function
                 if (typeof (window as any).moveCursorToElement === 'function') {
                   (window as any).moveCursorToElement(targetOptionElement);
-                  
+
                   // Wait for cursor movement to complete
                   await new Promise(resolve => setTimeout(resolve, 300));
                 }
               }
-              
+
               // Brief pause before selecting to make it feel more natural
               await new Promise(resolve => setTimeout(resolve, 400 + Math.random() * 200));
-              
+
               console.log('[InputDispatcher] Reached target option, pressing Enter to select');
-              
+
               // Human-like delay before pressing Enter
               await new Promise(resolve => setTimeout(resolve, 400 + Math.random() * 200));
-              
+
               // Press Enter to select the option
               const enterDownEvent = new KeyboardEvent('keydown', {
                 key: 'Enter',
@@ -719,11 +793,11 @@ export class InputDispatcher {
                 which: 13,
                 bubbles: true,
                 cancelable: true,
-                view: window
+                view: window,
               });
-              
+
               dropdownElement.dispatchEvent(enterDownEvent);
-              
+
               const enterUpEvent = new KeyboardEvent('keyup', {
                 key: 'Enter',
                 code: 'Enter',
@@ -731,11 +805,11 @@ export class InputDispatcher {
                 which: 13,
                 bubbles: true,
                 cancelable: true,
-                view: window
+                view: window,
               });
-              
+
               dropdownElement.dispatchEvent(enterUpEvent);
-              
+
               // Also try Space key as alternative
               const spaceDownEvent = new KeyboardEvent('keydown', {
                 key: ' ',
@@ -744,11 +818,11 @@ export class InputDispatcher {
                 which: 32,
                 bubbles: true,
                 cancelable: true,
-                view: window
+                view: window,
               });
-              
+
               dropdownElement.dispatchEvent(spaceDownEvent);
-              
+
               const spaceUpEvent = new KeyboardEvent('keyup', {
                 key: ' ',
                 code: 'Space',
@@ -756,11 +830,11 @@ export class InputDispatcher {
                 which: 32,
                 bubbles: true,
                 cancelable: true,
-                view: window
+                view: window,
               });
-              
+
               dropdownElement.dispatchEvent(spaceUpEvent);
-              
+
               // Trigger change event on any hidden select element
               const hiddenSelect = container?.querySelector('select[aria-hidden="true"]') as HTMLSelectElement;
               if (hiddenSelect) {
@@ -775,17 +849,17 @@ export class InputDispatcher {
                 hiddenSelect.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
                 hiddenSelect.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
               }
-              
+
               // Also trigger events on the dropdown element itself
               dropdownElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
               dropdownElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-              
+
               // Wait a bit for the selection to process
               await new Promise(resolve => setTimeout(resolve, 200));
-              
+
               // Close the dropdown by pressing Escape or clicking outside
               console.log('[InputDispatcher] Closing dropdown after selection');
-              
+
               // Try pressing Escape to close dropdown
               const escapeDownEvent = new KeyboardEvent('keydown', {
                 key: 'Escape',
@@ -794,11 +868,11 @@ export class InputDispatcher {
                 which: 27,
                 bubbles: true,
                 cancelable: true,
-                view: window
+                view: window,
               });
-              
+
               dropdownElement.dispatchEvent(escapeDownEvent);
-              
+
               const escapeUpEvent = new KeyboardEvent('keyup', {
                 key: 'Escape',
                 code: 'Escape',
@@ -806,11 +880,11 @@ export class InputDispatcher {
                 which: 27,
                 bubbles: true,
                 cancelable: true,
-                view: window
+                view: window,
               });
-              
+
               dropdownElement.dispatchEvent(escapeUpEvent);
-              
+
               // Also try clicking outside the dropdown to close it
               setTimeout(() => {
                 const clickOutsideEvent = new MouseEvent('click', {
@@ -818,18 +892,17 @@ export class InputDispatcher {
                   cancelable: true,
                   view: window,
                   clientX: 0,
-                  clientY: 0
+                  clientY: 0,
                 });
                 document.body.dispatchEvent(clickOutsideEvent);
               }, 100);
-              
+
               console.log('[InputDispatcher] Keyboard navigation completed successfully');
-              
+
               return {
                 success: true,
-                message: `Custom dropdown option "${value}" selected successfully via keyboard navigation`
+                message: `Custom dropdown option "${value}" selected successfully via keyboard navigation`,
               };
-              
             } catch (keyboardError) {
               console.log('[InputDispatcher] Keyboard navigation failed:', keyboardError);
               return { success: false, message: 'Keyboard navigation failed' };
@@ -838,7 +911,7 @@ export class InputDispatcher {
 
           function showSuccessFeedback(element: HTMLElement): void {
             const rect = element.getBoundingClientRect();
-            
+
             // Ensure animation style exists (only add once)
             let styleEl = document.getElementById('__copilot_input_success_style__');
             if (!styleEl) {
@@ -862,7 +935,7 @@ export class InputDispatcher {
               `;
               document.head.appendChild(styleEl);
             }
-            
+
             // Create feedback element
             const inputFeedback = document.createElement('div');
             inputFeedback.className = '__copilot_input_feedback__';
@@ -885,7 +958,7 @@ export class InputDispatcher {
               z-index: 999999;
               animation: copilotInputSuccess 0.8s ease-out;
             `;
-            
+
             document.body.appendChild(inputFeedback);
 
             // Remove after animation completes
@@ -895,72 +968,83 @@ export class InputDispatcher {
           }
 
           // Optimized formatter approaches
-          async function approach0_ClickAndType(inputElement: HTMLInputElement, value: string): Promise<{ success: boolean; message: string }> {
+          async function approach0_ClickAndType(
+            inputElement: HTMLInputElement,
+            value: string,
+          ): Promise<{ success: boolean; message: string }> {
             console.log('[InputDispatcher] Attempting click and type approach');
-            
+
             try {
               // Click to focus
               const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
               inputElement.dispatchEvent(clickEvent);
               inputElement.focus();
-              
+
               // Wait for focus
               await new Promise(resolve => setTimeout(resolve, 50));
-              
+
               // Type each character with optimized events
               for (let i = 0; i < value.length; i++) {
                 const char = value[i];
-                
+
                 // Keydown event
                 const keydownEvent = new KeyboardEvent('keydown', {
-                  bubbles: true, cancelable: true, key: char, code: `Key${char.toUpperCase()}`,
-                  charCode: char.charCodeAt(0), keyCode: char.charCodeAt(0), which: char.charCodeAt(0)
+                  bubbles: true,
+                  cancelable: true,
+                  key: char,
+                  code: `Key${char.toUpperCase()}`,
+                  charCode: char.charCodeAt(0),
+                  keyCode: char.charCodeAt(0),
+                  which: char.charCodeAt(0),
                 });
                 inputElement.dispatchEvent(keydownEvent);
-                
+
                 // Input event (formatters listen to this)
                 const inputEvent = new Event('input', { bubbles: true, cancelable: true });
                 (inputEvent as any).target = inputElement;
                 (inputEvent as any).data = char;
                 inputElement.dispatchEvent(inputEvent);
-                
+
                 // Keyup event
                 const keyupEvent = new KeyboardEvent('keyup', {
-                  bubbles: true, cancelable: true, key: char, code: `Key${char.toUpperCase()}`,
-                  charCode: char.charCodeAt(0), keyCode: char.charCodeAt(0), which: char.charCodeAt(0)
+                  bubbles: true,
+                  cancelable: true,
+                  key: char,
+                  code: `Key${char.toUpperCase()}`,
+                  charCode: char.charCodeAt(0),
+                  keyCode: char.charCodeAt(0),
+                  which: char.charCodeAt(0),
                 });
                 inputElement.dispatchEvent(keyupEvent);
-                
+
                 // Optimized delay
                 await new Promise(resolve => setTimeout(resolve, 5));
               }
-              
+
               // Final events
               const changeEvent = new Event('change', { bubbles: true, cancelable: true });
               inputElement.dispatchEvent(changeEvent);
-              
+
               // Wait for processing
               await new Promise(resolve => setTimeout(resolve, 100));
-              
+
               return { success: true, message: 'Click and type completed' };
-              
             } catch (error) {
               console.log('[InputDispatcher] Click and type approach failed:', error);
               return { success: false, message: 'Click and type failed' };
             }
           }
 
-
-
-
-
-          async function approach1_DirectValueSetting(inputElement: HTMLInputElement, value: string): Promise<{ success: boolean; message: string }> {
+          async function approach1_DirectValueSetting(
+            inputElement: HTMLInputElement,
+            value: string,
+          ): Promise<{ success: boolean; message: string }> {
             // Check if input is readonly
             const wasReadonly = inputElement.hasAttribute('readonly');
             if (wasReadonly) {
               inputElement.removeAttribute('readonly');
             }
-            
+
             inputElement.value = value;
             const events = ['input', 'change', 'blur'];
             for (const eventType of events) {
@@ -968,22 +1052,25 @@ export class InputDispatcher {
               (event as any).target = inputElement;
               inputElement.dispatchEvent(event);
             }
-            
+
             // Restore readonly if it was there
             if (wasReadonly) {
               inputElement.setAttribute('readonly', '');
             }
-            
+
             return { success: true, message: 'Direct value setting completed' };
           }
 
-          async function approach2_SimulateTyping(inputElement: HTMLInputElement, value: string): Promise<{ success: boolean; message: string }> {
+          async function approach2_SimulateTyping(
+            inputElement: HTMLInputElement,
+            value: string,
+          ): Promise<{ success: boolean; message: string }> {
             // Check if input is readonly
             const wasReadonly = inputElement.hasAttribute('readonly');
             if (wasReadonly) {
               inputElement.removeAttribute('readonly');
             }
-            
+
             inputElement.focus();
             for (let i = 0; i < value.length; i++) {
               const char = value[i];
@@ -997,23 +1084,26 @@ export class InputDispatcher {
             const changeEvent = new Event('change', { bubbles: true, cancelable: true });
             (changeEvent as any).target = inputElement;
             inputElement.dispatchEvent(changeEvent);
-            
+
             // Restore readonly if it was there
             if (wasReadonly) {
               inputElement.setAttribute('readonly', '');
             }
-            
+
             return { success: true, message: 'Simulated typing completed' };
           }
 
-          async function approach3_ModernWebAPI(inputElement: HTMLInputElement, value: string): Promise<{ success: boolean; message: string }> {
+          async function approach3_ModernWebAPI(
+            inputElement: HTMLInputElement,
+            value: string,
+          ): Promise<{ success: boolean; message: string }> {
             try {
               // Check if input is readonly
               const wasReadonly = inputElement.hasAttribute('readonly');
               if (wasReadonly) {
                 inputElement.removeAttribute('readonly');
               }
-              
+
               if (inputElement.setRangeText) {
                 inputElement.setRangeText(value, 0, inputElement.value.length, 'select');
               } else {
@@ -1027,29 +1117,39 @@ export class InputDispatcher {
                 (event as any).value = value;
                 inputElement.dispatchEvent(event);
               }
-              
+
               // Restore readonly if it was there
               if (wasReadonly) {
                 inputElement.setAttribute('readonly', '');
               }
-              
+
               return { success: true, message: 'Modern Web API approach completed' };
             } catch (error) {
               return { success: false, message: 'Modern Web API approach failed' };
             }
           }
 
-          async function approach4_FormatterSpecific(inputElement: HTMLInputElement, value: string): Promise<{ success: boolean; message: string }> {
+          async function approach4_FormatterSpecific(
+            inputElement: HTMLInputElement,
+            value: string,
+          ): Promise<{ success: boolean; message: string }> {
             // Check if input is readonly
             const wasReadonly = inputElement.hasAttribute('readonly');
             if (wasReadonly) {
               inputElement.removeAttribute('readonly');
             }
-            
+
             inputElement.value = value;
             const formatterEvents = [
-              'beforeinput', 'input', 'afterinput', 'change', 'format', 'valuechange',
-              'compositionstart', 'compositionupdate', 'compositionend'
+              'beforeinput',
+              'input',
+              'afterinput',
+              'change',
+              'format',
+              'valuechange',
+              'compositionstart',
+              'compositionupdate',
+              'compositionend',
             ];
             for (const eventType of formatterEvents) {
               try {
@@ -1062,26 +1162,27 @@ export class InputDispatcher {
                 continue;
               }
             }
-            
+
             // Restore readonly if it was there
             if (wasReadonly) {
               inputElement.setAttribute('readonly', '');
             }
-            
+
             return { success: true, message: 'Formatter-specific events completed' };
           }
 
-          async function approach5_ComprehensiveEvents(inputElement: HTMLInputElement, value: string): Promise<{ success: boolean; message: string }> {
+          async function approach5_ComprehensiveEvents(
+            inputElement: HTMLInputElement,
+            value: string,
+          ): Promise<{ success: boolean; message: string }> {
             // Check if input is readonly
             const wasReadonly = inputElement.hasAttribute('readonly');
             if (wasReadonly) {
               inputElement.removeAttribute('readonly');
             }
-            
+
             inputElement.value = value;
-            const events = [
-              'focus', 'keydown', 'keypress', 'input', 'keyup', 'change', 'blur'
-            ];
+            const events = ['focus', 'keydown', 'keypress', 'input', 'keyup', 'change', 'blur'];
             for (const eventType of events) {
               const event = new Event(eventType, { bubbles: true, cancelable: true });
               (event as any).target = inputElement;
@@ -1092,12 +1193,12 @@ export class InputDispatcher {
               }
               inputElement.dispatchEvent(event);
             }
-            
+
             // Restore readonly if it was there
             if (wasReadonly) {
               inputElement.setAttribute('readonly', '');
             }
-            
+
             return { success: true, message: 'Comprehensive events completed' };
           }
 
@@ -1106,32 +1207,32 @@ export class InputDispatcher {
             // Find element using the dispatcher logic
             const elementInfo = findElement(selector);
             if (!elementInfo) {
-              return { 
-                success: false, 
-                message: `No element found with selector: "${selector}" in main DOM or Shadow DOM. Please analyze the HTML and provide a valid CSS selector.` 
+              return {
+                success: false,
+                message: `No element found with selector: "${selector}" in main DOM or Shadow DOM. Please analyze the HTML and provide a valid CSS selector.`,
               };
             }
 
             // Check if element is visible
             if (!isElementVisible(elementInfo.element)) {
-              return { 
-                success: false, 
-                message: `Element found but is hidden: "${selector}"` 
+              return {
+                success: false,
+                message: `Element found but is hidden: "${selector}"`,
               };
             }
 
             // Scroll into view and focus
             scrollIntoView(elementInfo.element);
-            
+
             // Function to perform the actual input
             const performInput = async () => {
               // Handle different input types
               const { element, inputType, tagName } = elementInfo;
-              
+
               if (element.tagName === 'INPUT') {
                 const inputElement = element as HTMLInputElement;
                 const type = inputElement.type || 'text';
-                
+
                 if (type === 'checkbox' || type === 'radio') {
                   const shouldCheck = inputValue.toLowerCase() === 'true' || inputValue === '1';
                   inputElement.checked = shouldCheck;
@@ -1139,53 +1240,60 @@ export class InputDispatcher {
                 } else if (type === 'file') {
                   return {
                     success: false,
-                    message: `File input fields cannot be programmatically set for security reasons`
+                    message: `File input fields cannot be programmatically set for security reasons`,
                   };
                 } else {
                   // Text input - use advanced formatter handling
                   // Always clear the field for formatters to work properly
                   console.log('[InputDispatcher] Clearing field for formatter - Current value:', inputElement.value);
-                    inputElement.value = '';
-                  
+                  inputElement.value = '';
+
                   // Don't remove readonly at top level - let individual approaches handle it
                   // This ensures the formatter component's internal logic works correctly
-                  
+
                   // Try optimized formatter approaches (SimulateTyping works consistently)
                   const tryFormatterApproaches = async () => {
                     const approaches = [
                       { name: 'SimulateTyping', fn: () => approach2_SimulateTyping(inputElement, inputValue) },
                       { name: 'DirectValueSetting', fn: () => approach1_DirectValueSetting(inputElement, inputValue) },
-                      { name: 'ClickAndType', fn: () => approach0_ClickAndType(inputElement, inputValue) }
+                      { name: 'ClickAndType', fn: () => approach0_ClickAndType(inputElement, inputValue) },
                     ];
-                    
+
                     for (const approach of approaches) {
                       try {
                         // Log the initial value before the approach
                         const initialValue = inputElement.value;
                         console.log(`[InputDispatcher] 🔄 Trying ${approach.name} - Initial value:`, initialValue);
-                        
+
                         const result = await approach.fn();
-                        
+
                         // Log the value after the approach
                         const afterValue = inputElement.value;
-                        console.log(`[InputDispatcher] 📊 ${approach.name} result - Value:`, afterValue, 'Success:', result.success);
-                        
+                        console.log(
+                          `[InputDispatcher] 📊 ${approach.name} result - Value:`,
+                          afterValue,
+                          'Success:',
+                          result.success,
+                        );
+
                         if (result.success) {
                           // Verify the value was actually set
                           const currentValue = inputElement.value;
                           if (currentValue && currentValue !== '') {
                             console.log(`[InputDispatcher] ✅ ${approach.name} SUCCEEDED:`, result.message);
-                            console.log(`[InputDispatcher] ✅ Value changed from "${initialValue}" to "${currentValue}"`);
-                            
+                            console.log(
+                              `[InputDispatcher] ✅ Value changed from "${initialValue}" to "${currentValue}"`,
+                            );
+
                             // Force UI update with optimized event sequence
                             console.log('[InputDispatcher] Forcing UI update...');
                             const updateEvent = new Event('change', { bubbles: true, cancelable: true });
                             (updateEvent as any).target = inputElement;
                             inputElement.dispatchEvent(updateEvent);
-                            
+
                             // Try to trigger React re-render if it's a React component
-                            const reactKey = Object.keys(inputElement).find(key => 
-                              key.startsWith('__reactInternalInstance') || key.startsWith('_reactInternalFiber')
+                            const reactKey = Object.keys(inputElement).find(
+                              key => key.startsWith('__reactInternalInstance') || key.startsWith('_reactInternalFiber'),
                             );
                             if (reactKey) {
                               try {
@@ -1199,7 +1307,7 @@ export class InputDispatcher {
                                 console.log('[InputDispatcher] React forceUpdate failed:', e);
                               }
                             }
-                            
+
                             return;
                           }
                         }
@@ -1208,65 +1316,81 @@ export class InputDispatcher {
                         continue;
                       }
                     }
-                    
+
                     // Fallback: basic streaming if all approaches fail
                     console.log('[InputDispatcher] All formatter approaches failed, using basic streaming');
                     const chars = inputValue.split('');
                     const typingSpeed = Math.max(10, Math.min(30, 500 / chars.length));
-                    
+
                     for (let i = 0; i < chars.length; i++) {
                       inputElement.value = inputValue.substring(0, i + 1);
                       inputElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
                       await new Promise(resolve => setTimeout(resolve, typingSpeed));
                     }
-                    
+
                     inputElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
                   };
-                  
+
                   // Start formatter approaches (non-blocking)
                   tryFormatterApproaches();
                 }
               } else if (element.tagName === 'TEXTAREA') {
                 const textareaElement = element as HTMLTextAreaElement;
                 // Always clear the field for formatters to work properly
-                console.log('[InputDispatcher] Clearing textarea for formatter - Current value:', textareaElement.value);
-                  textareaElement.value = '';
-                
+                console.log(
+                  '[InputDispatcher] Clearing textarea for formatter - Current value:',
+                  textareaElement.value,
+                );
+                textareaElement.value = '';
+
                 // Don't remove readonly at top level - let individual approaches handle it
                 // This ensures the formatter component's internal logic works correctly
-                
+
                 // Use optimized formatter handling for textarea as well
                 const tryFormatterApproaches = async () => {
                   const approaches = [
                     { name: 'SimulateTyping', fn: () => approach2_SimulateTyping(textareaElement as any, inputValue) },
-                    { name: 'DirectValueSetting', fn: () => approach1_DirectValueSetting(textareaElement as any, inputValue) },
-                    { name: 'ClickAndType', fn: () => approach0_ClickAndType(textareaElement as any, inputValue) }
+                    {
+                      name: 'DirectValueSetting',
+                      fn: () => approach1_DirectValueSetting(textareaElement as any, inputValue),
+                    },
+                    { name: 'ClickAndType', fn: () => approach0_ClickAndType(textareaElement as any, inputValue) },
                   ];
-                  
+
                   for (const approach of approaches) {
                     try {
                       // Log the initial value before the approach
                       const initialValue = textareaElement.value;
-                      console.log(`[InputDispatcher] 🔄 Trying textarea ${approach.name} - Initial value:`, initialValue);
-                      
+                      console.log(
+                        `[InputDispatcher] 🔄 Trying textarea ${approach.name} - Initial value:`,
+                        initialValue,
+                      );
+
                       const result = await approach.fn();
-                      
+
                       // Log the value after the approach
                       const afterValue = textareaElement.value;
-                      console.log(`[InputDispatcher] 📊 Textarea ${approach.name} result - Value:`, afterValue, 'Success:', result.success);
-                      
+                      console.log(
+                        `[InputDispatcher] 📊 Textarea ${approach.name} result - Value:`,
+                        afterValue,
+                        'Success:',
+                        result.success,
+                      );
+
                       if (result.success) {
                         const currentValue = textareaElement.value;
                         if (currentValue && currentValue !== '') {
                           console.log(`[InputDispatcher] ✅ Textarea ${approach.name} SUCCEEDED:`, result.message);
-                          console.log(`[InputDispatcher] ✅ Textarea value changed from "${initialValue}" to "${currentValue}"`);
-                          
+                          console.log(
+                            `[InputDispatcher] ✅ Textarea value changed from "${initialValue}" to "${currentValue}"`,
+                          );
+
                           // Force UI update with optimized event sequence
                           console.log('[InputDispatcher] Forcing textarea UI update...');
                           const updateEvent = new Event('change', { bubbles: true, cancelable: true });
                           (updateEvent as any).target = textareaElement;
                           textareaElement.dispatchEvent(updateEvent);
-                          
+
                           return;
                         }
                       }
@@ -1275,26 +1399,26 @@ export class InputDispatcher {
                       continue;
                     }
                   }
-                  
+
                   // Fallback: basic streaming
                   console.log('[InputDispatcher] All textarea formatter approaches failed, using basic streaming');
                   const chars = inputValue.split('');
                   const typingSpeed = Math.max(10, Math.min(30, 500 / chars.length));
-                  
+
                   for (let i = 0; i < chars.length; i++) {
                     textareaElement.value = inputValue.substring(0, i + 1);
                     textareaElement.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
                     await new Promise(resolve => setTimeout(resolve, typingSpeed));
                   }
-                  
+
                   textareaElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
                 };
-                
+
                 tryFormatterApproaches();
               } else if (element.tagName === 'SELECT') {
                 // Handle regular select elements
                 console.log('[InputDispatcher] Handling SELECT element');
-                
+
                 const selectElement = element as HTMLSelectElement;
                 let optionFound = false;
                 for (let i = 0; i < selectElement.options.length; i++) {
@@ -1308,20 +1432,25 @@ export class InputDispatcher {
                 if (!optionFound) {
                   return {
                     success: false,
-                    message: `No option found with value or text: "${inputValue}"`
+                    message: `No option found with value or text: "${inputValue}"`,
                   };
                 }
                 selectElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-              } else if (element.tagName === 'BUTTON' && (element.getAttribute('data-slot') === 'select-trigger' || element.getAttribute('role') === 'combobox')) {
+              } else if (
+                element.tagName === 'BUTTON' &&
+                (element.getAttribute('data-slot') === 'select-trigger' || element.getAttribute('role') === 'combobox')
+              ) {
                 // Handle custom dropdown buttons with keyboard navigation
                 console.log('[InputDispatcher] Handling custom dropdown button with keyboard navigation');
-                
+
                 // Try keyboard navigation approach
                 const keyboardResult = await tryKeyboardNavigation(element, inputValue);
                 if (keyboardResult.success) {
                   return {
                     success: true,
-                    message: keyboardResult.message || `Custom dropdown option "${inputValue}" selected successfully via keyboard navigation`,
+                    message:
+                      keyboardResult.message ||
+                      `Custom dropdown option "${inputValue}" selected successfully via keyboard navigation`,
                     elementInfo: {
                       tag: element.tagName,
                       type: 'select',
@@ -1329,37 +1458,37 @@ export class InputDispatcher {
                       name: (element as HTMLInputElement).name || '',
                       value: inputValue,
                       foundInShadowDOM: elementInfo.foundInShadowDOM,
-                      shadowHost: elementInfo.shadowHostInfo
-                    }
+                      shadowHost: elementInfo.shadowHostInfo,
+                    },
                   };
                 } else {
                   return {
                     success: false,
-                    message: keyboardResult.message || 'Keyboard navigation failed for custom dropdown'
+                    message: keyboardResult.message || 'Keyboard navigation failed for custom dropdown',
                   };
                 }
               } else if (element.hasAttribute('contenteditable')) {
                 if (shouldClear) {
                   element.textContent = '';
                 }
-                
+
                 // Stream text for contenteditable as well
                 const streamText = async () => {
                   const chars = inputValue.split('');
                   const typingSpeed = Math.max(10, Math.min(30, 500 / chars.length));
-                  
+
                   for (let i = 0; i < chars.length; i++) {
                     element.textContent = inputValue.substring(0, i + 1);
                     element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
                     await new Promise(resolve => setTimeout(resolve, typingSpeed));
                   }
                 };
-                
+
                 streamText();
               } else {
                 return {
                   success: false,
-                  message: `Element is not an input field: ${element.tagName}`
+                  message: `Element is not an input field: ${element.tagName}`,
                 };
               }
 
@@ -1376,18 +1505,18 @@ export class InputDispatcher {
                   name: (element as HTMLInputElement).name || '',
                   value: getElementValue(element),
                   foundInShadowDOM: elementInfo.foundInShadowDOM,
-                  shadowHost: elementInfo.shadowHostInfo
-                }
+                  shadowHost: elementInfo.shadowHostInfo,
+                },
               };
             };
 
             // If cursor movement is enabled, wait for cursor animation to complete
             if (shouldMoveCursor) {
               focusAndHighlight(elementInfo.element, shouldMoveCursor);
-              
+
               // The input will be triggered from within the cursor animation completion
               // We need to modify the cursor animation to call performInput when done
-              return new Promise((resolve) => {
+              return new Promise(resolve => {
                 // Store the resolve function so cursor animation can call it
                 (window as any).__copilotInputCallback__ = async () => {
                   const result = await performInput();
@@ -1402,11 +1531,11 @@ export class InputDispatcher {
           } catch (error) {
             return {
               success: false,
-              message: `Error inputting data: ${error instanceof Error ? error.message : 'Unknown error'}`
+              message: `Error inputting data: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
           }
         },
-        args: [cssSelector, value, clearFirst, moveCursor] as [string, string, boolean, boolean]
+        args: [cssSelector, value, clearFirst, moveCursor] as [string, string, boolean, boolean],
       });
 
       if (results && results[0]?.result) {
@@ -1422,26 +1551,26 @@ export class InputDispatcher {
               name: result.elementInfo.name || '',
               value: result.elementInfo.value || '',
               foundInShadowDOM: result.elementInfo.foundInShadowDOM || false,
-              shadowHost: result.elementInfo.shadowHost || null
-            }
+              shadowHost: result.elementInfo.shadowHost || null,
+            },
           };
         } else {
           return {
             status: 'error',
-            message: result.message
+            message: result.message,
           };
         }
       }
 
       return {
         status: 'error',
-        message: 'Unable to input data into field'
+        message: 'Unable to input data into field',
       };
     } catch (error) {
       debug.error('[InputDispatcher] Error inputting data:', error);
       return {
         status: 'error',
-        message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+        message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   }
@@ -1451,23 +1580,23 @@ export class InputDispatcher {
    */
   private routeToHandler(elementInfo: any, value: string, clearFirst: boolean, moveCursor: boolean): any {
     const { element, inputType, tagName } = elementInfo;
-    
+
     // Debug: Log element details
     console.log('[InputDispatcher] Routing to handler for element:', {
       tagName: element.tagName,
       inputType,
       id: element.id,
       className: element.className,
-      name: element.name
+      name: element.name,
     });
-    
+
     // Create options object
     const options: InputHandlerOptions = {
       clearFirst,
       triggerEvents: true,
       highlightElement: true,
       showSuccessFeedback: true,
-      moveCursor
+      moveCursor,
     };
 
     // Try each handler in priority order
@@ -1476,17 +1605,17 @@ export class InputDispatcher {
         if (handler.canHandle(inputType as InputType, element)) {
           console.log(`[InputDispatcher] Using ${name} handler for ${inputType} input`);
           debug.log(`[InputDispatcher] Using ${name} handler for ${inputType} input`);
-          
+
           // Execute the handler
           const result = handler.handle(element, value, options);
-          
+
           // If it's a promise, we need to handle it differently in the content script
           if (result && typeof result.then === 'function') {
             // For async handlers, we'll need to handle this differently
             // For now, we'll use a synchronous approach
             return this.handleAsyncResult(result, elementInfo);
           }
-          
+
           return result;
         }
       } catch (error) {
@@ -1498,7 +1627,7 @@ export class InputDispatcher {
     // If no handler can handle the element, return error
     return {
       success: false,
-      message: `No suitable handler found for element type: ${inputType || tagName}`
+      message: `No suitable handler found for element type: ${inputType || tagName}`,
     };
   }
 
@@ -1518,8 +1647,8 @@ export class InputDispatcher {
         name: (elementInfo.element as HTMLInputElement).name || '',
         value: this.getElementValue(elementInfo.element),
         foundInShadowDOM: elementInfo.foundInShadowDOM,
-        shadowHost: elementInfo.shadowHostInfo
-      }
+        shadowHost: elementInfo.shadowHostInfo,
+      },
     };
   }
 
@@ -1531,11 +1660,11 @@ export class InputDispatcher {
     let element = document.querySelector(selector) as HTMLElement;
     let foundInShadowDOM = false;
     let shadowHostInfo = '';
-    
+
     // If not found in main DOM, search in Shadow DOM
     if (!element) {
       console.log('[InputDispatcher] Element not found in main DOM, searching Shadow DOM...');
-      
+
       // Search through all shadow roots with early exit
       for (const hostElement of Array.from(document.querySelectorAll('*'))) {
         if (hostElement.shadowRoot && !element) {
@@ -1554,7 +1683,7 @@ export class InputDispatcher {
         }
       }
     }
-    
+
     if (!element) {
       return null;
     }
@@ -1567,7 +1696,7 @@ export class InputDispatcher {
       foundInShadowDOM,
       shadowHostInfo,
       inputType,
-      tagName
+      tagName,
     };
   }
 
@@ -1577,8 +1706,8 @@ export class InputDispatcher {
   private isElementVisible(element: HTMLElement): boolean {
     const style = window.getComputedStyle(element);
     return !(
-      style.display === 'none' || 
-      style.visibility === 'hidden' || 
+      style.display === 'none' ||
+      style.visibility === 'hidden' ||
       style.opacity === '0' ||
       element.offsetWidth === 0 ||
       element.offsetHeight === 0
@@ -1589,10 +1718,10 @@ export class InputDispatcher {
    * Scroll element into view (content script version)
    */
   private scrollIntoView(element: HTMLElement): void {
-    element.scrollIntoView({ 
-      behavior: 'smooth', 
-      block: 'nearest', 
-      inline: 'nearest' 
+    element.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'nearest',
     });
   }
 
@@ -1605,16 +1734,16 @@ export class InputDispatcher {
     const originalOutline = element.style.outline;
     const originalOutlineOffset = element.style.outlineOffset;
     const originalBackground = element.style.backgroundColor;
-    
+
     // Focus the element
     element.focus();
-    
+
     // Highlight the element
     element.style.outline = '3px solid #2196F3';
     element.style.outlineOffset = '4px';
     element.style.backgroundColor = 'rgba(33, 150, 243, 0.1)';
     element.style.transition = 'all 0.3s ease';
-    
+
     // Remove highlight after 2 seconds
     setTimeout(() => {
       element.style.outline = originalOutline;
@@ -1631,26 +1760,26 @@ export class InputDispatcher {
     if (element.tagName === 'INPUT') {
       const inputElement = element as HTMLInputElement;
       const type = inputElement.type;
-      
+
       if (type === 'checkbox' || type === 'radio') {
         return inputElement.checked ? 'checked' : 'unchecked';
       }
-      
+
       return inputElement.value;
     }
-    
+
     if (element.tagName === 'TEXTAREA') {
       return (element as HTMLTextAreaElement).value;
     }
-    
+
     if (element.tagName === 'SELECT') {
       return (element as HTMLSelectElement).value;
     }
-    
+
     if (element.hasAttribute('contenteditable')) {
       return element.textContent || '';
     }
-    
+
     return '';
   }
 
@@ -1661,7 +1790,7 @@ export class InputDispatcher {
     return this.handlers.map(({ handler, priority, name }) => ({
       name,
       priority,
-      supportedTypes: handler.supportedTypes || []
+      supportedTypes: handler.supportedTypes || [],
     }));
   }
 
@@ -1689,13 +1818,12 @@ export class InputDispatcher {
 // Create and export a singleton instance
 export const inputDispatcher = new InputDispatcher();
 
-
 // Export the main function for backward compatibility
 export async function handleInputData(
-  cssSelector: string, 
-  value: string, 
+  cssSelector: string,
+  value: string,
   clearFirst: boolean = true,
-  moveCursor: boolean = true
+  moveCursor: boolean = true,
 ): Promise<InputDataResult> {
   return inputDispatcher.handleInputData(cssSelector, value, clearFirst, moveCursor);
 }

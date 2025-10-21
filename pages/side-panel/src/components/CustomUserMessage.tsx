@@ -6,7 +6,7 @@ import { ImageRenderer, type UserMessageProps } from '@copilotkit/react-ui';
 
 /**
  * Custom UserMessage Component for CopilotChat
- * 
+ *
  * Features:
  * - Edit message content
  * - Delete message with options:
@@ -19,31 +19,34 @@ import { ImageRenderer, type UserMessageProps } from '@copilotkit/react-ui';
  * - Shows controls on hover
  * - Supports image rendering with the CopilotKit ImageRenderer
  */
-export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRenderer: ImageRendererComponent = ImageRenderer }) => {
+export const CustomUserMessage: React.FC<UserMessageProps> = ({
+  message,
+  ImageRenderer: ImageRendererComponent = ImageRenderer,
+}) => {
   const { isLight } = useStorage(exampleThemeStorage);
   const { messages, setMessages } = useCopilotChatHeadless_c();
-  
+
   // Find the index of the current message
   const index = useMemo(() => {
     if (!messages || !message) return -1;
-    return messages.findIndex((msg) => msg.id === message.id);
+    return messages.findIndex(msg => msg.id === message.id);
   }, [messages, message]);
-  
+
   const isLast = useMemo(() => {
     if (!messages || index === -1) return false;
     return index === messages.length - 1;
   }, [messages, index]);
-  
+
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState('');
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [editHistory, setEditHistory] = useState<string[]>([]);
   const [showCopyFeedback, setShowCopyFeedback] = useState(false);
-  
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const deleteMenuRef = useRef<HTMLDivElement>(null);
-  
+
   // Get message content (handle both string and array content)
   const getMessageContent = (): string => {
     if (!message?.content) return '';
@@ -66,9 +69,9 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
   };
 
   const content = getMessageContent();
-  
+
   // Check if this is an image message
-  const isImageMessage = message && "image" in message && message.image;
+  const isImageMessage = message && 'image' in message && message.image;
 
   // Auto-resize textarea
   useEffect(() => {
@@ -104,10 +107,10 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
 
   const handleSaveEdit = () => {
     if (!messages) return;
-    
+
     // Save current content to edit history before editing
     setEditHistory(prev => [...prev, content]);
-    
+
     const updatedMessages = [...messages];
     updatedMessages[index] = {
       ...updatedMessages[index],
@@ -125,7 +128,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
   // Handle undo last edit
   const handleUndoEdit = () => {
     if (!messages || editHistory.length === 0) return;
-    
+
     const previousContent = editHistory[editHistory.length - 1];
     const updatedMessages = [...messages];
     updatedMessages[index] = {
@@ -133,7 +136,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
       content: previousContent,
     };
     setMessages(updatedMessages);
-    
+
     // Remove the last item from history
     setEditHistory(prev => prev.slice(0, -1));
   };
@@ -152,7 +155,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
   // Handle delete operations
   const handleDeleteMessage = () => {
     if (!messages || index === -1) return;
-    
+
     const updatedMessages = messages.filter((_, i) => i !== index);
     setMessages(updatedMessages);
     setShowDeleteMenu(false);
@@ -160,7 +163,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
 
   const handleDeleteAbove = () => {
     if (!messages || index === -1) return;
-    
+
     // Delete all messages from index 0 to current index (inclusive)
     const updatedMessages = messages.filter((_, i) => i > index);
     setMessages(updatedMessages);
@@ -169,7 +172,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
 
   const handleDeleteBelow = () => {
     if (!messages || index === -1) return;
-    
+
     // Delete all messages from current index to end (inclusive)
     const updatedMessages = messages.filter((_, i) => i < index);
     setMessages(updatedMessages);
@@ -202,15 +205,14 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
         padding: '0.5rem 0.75rem 0.75rem 0.75rem',
         transition: 'all 0.2s ease-in-out',
         overflow: 'visible',
-      }}
-    >
+      }}>
       {/* Message Content or Edit Mode */}
       {isEditing ? (
         <div className="edit-mode" style={{ width: '100%' }}>
           <textarea
             ref={textareaRef}
             value={editedContent}
-            onChange={(e) => setEditedContent(e.target.value)}
+            onChange={e => setEditedContent(e.target.value)}
             onKeyDown={handleKeyDown}
             style={{
               width: '100%',
@@ -234,8 +236,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
               marginTop: '0.25rem',
               marginBottom: '-0.55rem',
               justifyContent: 'flex-end',
-            }}
-          >
+            }}>
             <button
               onClick={handleCancelEdit}
               title="Cancel (Esc)"
@@ -253,21 +254,19 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
-              onMouseEnter={(e) => {
+              onMouseEnter={e => {
                 e.currentTarget.style.transform = 'scale(1.15)';
               }}
-              onMouseLeave={(e) => {
+              onMouseLeave={e => {
                 e.currentTarget.style.transform = 'scale(1)';
-              }}
-            >
+              }}>
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+                strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -289,21 +288,19 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
-              onMouseEnter={(e) => {
+              onMouseEnter={e => {
                 e.currentTarget.style.transform = 'scale(1.15)';
               }}
-              onMouseLeave={(e) => {
+              onMouseLeave={e => {
                 e.currentTarget.style.transform = 'scale(1)';
-              }}
-            >
+              }}>
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+                strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </button>
@@ -312,13 +309,8 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
       ) : (
         <div>
           {/* Render image if present */}
-          {isImageMessage && (
-            <ImageRendererComponent 
-              image={message.image!} 
-              content={message.content}
-            />
-          )}
-          
+          {isImageMessage && <ImageRendererComponent image={message.image!} content={message.content} />}
+
           {/* Render text content for non-image messages or alongside images */}
           {!isImageMessage && (
             <div
@@ -328,8 +320,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
                 color: isLight ? '#0C1117' : '#f9fafb',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
-              }}
-            >
+              }}>
               {content}
             </div>
           )}
@@ -352,7 +343,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
             transition: 'opacity 0.2s ease-in-out, visibility 0.2s ease-in-out',
             zIndex: 10000,
             // Add background with left-side fade
-            background: isLight 
+            background: isLight
               ? 'linear-gradient(to right, rgba(229, 231, 235, 0) 0%, rgba(229, 231, 235, 0.8) 20%, rgba(229, 231, 235, 0.95) 40%, rgb(229, 231, 235) 60%)'
               : 'linear-gradient(to right, rgba(21, 28, 36, 0) 0%, rgba(21, 28, 36, 0.8) 20%, rgba(21, 28, 36, 0.95) 40%, rgb(21, 28, 36) 60%)',
             paddingLeft: '3rem',
@@ -361,36 +352,36 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
             // paddingBottom: '-0.25rem',
             borderRadius: '6px',
             marginRight: '-0.5rem',
-          }}
-        >
+          }}>
           {/* Copy Button */}
           <button
             onClick={handleCopy}
             className="copilotKitMessageControlButton"
             title="Copy message"
             style={{
-              width:"28px",
-              height:"28px",
+              width: '28px',
+              height: '28px',
               padding: '0.5rem',
               borderRadius: '6px',
               border: 'none',
-              backgroundColor: showCopyFeedback 
-                ? (isLight ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.25)')
+              backgroundColor: showCopyFeedback
+                ? isLight
+                  ? 'rgba(34, 197, 94, 0.15)'
+                  : 'rgba(34, 197, 94, 0.25)'
                 : 'transparent',
-              color: showCopyFeedback ? '#22c55e' : (isLight ? '#0C1117' : '#ffffff'),
+              color: showCopyFeedback ? '#22c55e' : isLight ? '#0C1117' : '#ffffff',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               transition: 'all 0.2s ease',
             }}
-            onMouseEnter={(e) => {
+            onMouseEnter={e => {
               e.currentTarget.style.transform = 'scale(1.15)';
             }}
-            onMouseLeave={(e) => {
+            onMouseLeave={e => {
               e.currentTarget.style.transform = 'scale(1)';
-            }}
-          >
+            }}>
             {showCopyFeedback ? (
               <svg
                 viewBox="0 0 24 24"
@@ -398,8 +389,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+                strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             ) : (
@@ -409,8 +399,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+                strokeLinejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
@@ -424,8 +413,8 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
               className="copilotKitMessageControlButton"
               title="Undo last edit"
               style={{
-                width:"28px",
-                height:"28px",
+                width: '28px',
+                height: '28px',
                 padding: '0.5rem',
                 borderRadius: '6px',
                 border: 'none',
@@ -437,21 +426,19 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
                 justifyContent: 'center',
                 transition: 'all 0.2s ease',
               }}
-              onMouseEnter={(e) => {
+              onMouseEnter={e => {
                 e.currentTarget.style.transform = 'scale(1.15)';
               }}
-              onMouseLeave={(e) => {
+              onMouseLeave={e => {
                 e.currentTarget.style.transform = 'scale(1)';
-              }}
-            >
+              }}>
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+                strokeLinejoin="round">
                 <path d="M3 7v6h6" />
                 <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
               </svg>
@@ -464,8 +451,8 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
             className="copilotKitMessageControlButton"
             title="Edit message"
             style={{
-              width:"28px",
-              height:"28px",
+              width: '28px',
+              height: '28px',
               padding: '0.5rem',
               borderRadius: '6px',
               border: 'none',
@@ -477,21 +464,19 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
               justifyContent: 'center',
               transition: 'all 0.2s ease',
             }}
-            onMouseEnter={(e) => {
+            onMouseEnter={e => {
               e.currentTarget.style.transform = 'scale(1.15)';
             }}
-            onMouseLeave={(e) => {
+            onMouseLeave={e => {
               e.currentTarget.style.transform = 'scale(1)';
-            }}
-          >
+            }}>
             <svg
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
               strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+              strokeLinejoin="round">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
             </svg>
@@ -503,9 +488,9 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
               onClick={() => setShowDeleteMenu(!showDeleteMenu)}
               className="copilotKitMessageControlButton"
               title="Delete options"
-              style={{  
-                width:"28px",
-                height:"28px",
+              style={{
+                width: '28px',
+                height: '28px',
                 padding: '0.5rem',
                 borderRadius: '6px',
                 border: 'none',
@@ -518,21 +503,19 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
                 transition: 'all 0.2s ease',
                 margin: '0px',
               }}
-              onMouseEnter={(e) => {
+              onMouseEnter={e => {
                 e.currentTarget.style.transform = 'scale(1.15)';
               }}
-              onMouseLeave={(e) => {
+              onMouseLeave={e => {
                 e.currentTarget.style.transform = 'scale(1)';
-              }}
-            >
+              }}>
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+                strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6" />
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                 <line x1="10" y1="11" x2="10" y2="17" />
@@ -555,8 +538,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
                   zIndex: 99999,
                   minWidth: '160px',
                   overflow: 'visible',
-                }}
-              >
+                }}>
                 <button
                   onClick={handleDeleteMessage}
                   style={{
@@ -571,13 +553,12 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
                     transition: 'all 0.2s ease',
                     borderBottom: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
                   }}
-                  onMouseEnter={(e) => {
+                  onMouseEnter={e => {
                     e.currentTarget.style.backgroundColor = isLight ? '#f3f4f6' : '#1f2937';
                   }}
-                  onMouseLeave={(e) => {
+                  onMouseLeave={e => {
                     e.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                >
+                  }}>
                   Delete this message
                 </button>
                 <button
@@ -595,15 +576,14 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
                     transition: 'all 0.2s ease',
                     borderBottom: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
                   }}
-                  onMouseEnter={(e) => {
+                  onMouseEnter={e => {
                     if (index !== 0) {
                       e.currentTarget.style.backgroundColor = isLight ? '#f3f4f6' : '#1f2937';
                     }
                   }}
-                  onMouseLeave={(e) => {
+                  onMouseLeave={e => {
                     e.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                >
+                  }}>
                   Delete all above
                 </button>
                 <button
@@ -620,15 +600,14 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
                     cursor: isLast ? 'not-allowed' : 'pointer',
                     transition: 'all 0.2s ease',
                   }}
-                  onMouseEnter={(e) => {
+                  onMouseEnter={e => {
                     if (!isLast) {
                       e.currentTarget.style.backgroundColor = isLight ? '#f3f4f6' : '#1f2937';
                     }
                   }}
-                  onMouseLeave={(e) => {
+                  onMouseLeave={e => {
                     e.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                >
+                  }}>
                   Delete all below
                 </button>
               </div>
@@ -639,4 +618,3 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({ message, ImageRe
     </div>
   );
 };
-

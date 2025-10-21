@@ -28,19 +28,19 @@ interface RefreshPageContentResult {
  */
 export async function handleRefreshPageContent(pageContentForAgent: any): Promise<RefreshPageContentResult> {
   debug.log('🔄 [RefreshContent] AI requested fresh page content');
-  
+
   try {
     // Get the current active tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tabs[0]?.id) {
       return {
         status: 'error',
-        message: 'Unable to access current tab'
+        message: 'Unable to access current tab',
       };
     }
 
     // Force fetch fresh content (promisified with timeout)
-    await new Promise<void>((resolve) => {
+    await new Promise<void>(resolve => {
       let done = false;
       const timeout = setTimeout(() => {
         if (!done) {
@@ -50,7 +50,7 @@ export async function handleRefreshPageContent(pageContentForAgent: any): Promis
         }
       }, 5000);
 
-      chrome.runtime.sendMessage({ type: 'getPageContentOnDemand', tabId: tabs[0].id }, (response) => {
+      chrome.runtime.sendMessage({ type: 'getPageContentOnDemand', tabId: tabs[0].id }, response => {
         if (!done) {
           clearTimeout(timeout);
           done = true;
@@ -69,22 +69,22 @@ export async function handleRefreshPageContent(pageContentForAgent: any): Promis
 
     // Return summary
     const htmlLength = pageContentForAgent.pageHTML?.length || 0;
-    
+
     return {
       status: 'success',
-      message: 'Page content refreshed successfully! You can now analyze the pageHTML to find elements and extract CSS selectors.',
+      message:
+        'Page content refreshed successfully! You can now analyze the pageHTML to find elements and extract CSS selectors.',
       pageInfo: {
         title: pageContentForAgent.pageTitle || 'Unknown',
         url: pageContentForAgent.pageURL || 'Unknown',
-        htmlLength: htmlLength
-      }
+        htmlLength: htmlLength,
+      },
     };
   } catch (error) {
     debug.error('[RefreshContent] Error refreshing content:', error);
     return {
       status: 'error',
-      message: `Error refreshing content: ${error instanceof Error ? error.message : 'Unknown error'}`
+      message: `Error refreshing content: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }
-
