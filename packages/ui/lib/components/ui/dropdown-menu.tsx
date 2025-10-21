@@ -87,10 +87,10 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', isL
         <div 
           ref={dropdownRef}
           className={cn(
-            "dropdown-menu-content w-40 rounded border shadow-lg",
+            "dropdown-menu-content w-48 rounded-md border shadow-lg overflow-hidden",
             isLight
-              ? "border-gray-200 bg-white"
-              : "border-gray-700 bg-gray-800"
+              ? "border-gray-200 bg-gray-50"
+              : "border-gray-700 bg-[#151C24]"
           )}
           style={{
             position: 'absolute',
@@ -99,12 +99,14 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', isL
             pointerEvents: 'auto'
           }}
         >
-          {React.Children.map(children, child => {
-            if (React.isValidElement(child)) {
-              return React.cloneElement(child, { isLight } as any)
-            }
-            return child
-          })}
+          <div className="py-1">
+            {React.Children.map(children, child => {
+              if (React.isValidElement(child)) {
+                return React.cloneElement(child, { isLight } as any)
+              }
+              return child
+            })}
+          </div>
         </div>,
         portalContainer
       )}
@@ -124,10 +126,10 @@ export const DropdownMenuItem = ({ children, onClick, className, shortcut, isLig
   return (
     <button
       className={cn(
-        "flex w-full items-center justify-between px-1.5 py-0.5 text-xs",
+        "flex w-full items-center justify-between px-3 py-2 text-xs font-medium transition-colors text-left",
         isLight
           ? "text-gray-700 hover:bg-gray-100"
-          : "text-gray-300 hover:bg-gray-700",
+          : "text-gray-200 hover:bg-gray-700/50",
         className
       )}
       onClick={onClick}
@@ -135,7 +137,7 @@ export const DropdownMenuItem = ({ children, onClick, className, shortcut, isLig
       <span>{children}</span>
       {shortcut && (
         <span className={cn(
-          "text-xs",
+          "text-[10px] ml-4 font-medium opacity-75",
           isLight ? "text-gray-500" : "text-gray-400"
         )}>{shortcut}</span>
       )}
@@ -151,7 +153,7 @@ interface DropdownMenuSeparatorProps {
 export const DropdownMenuSeparator = ({ className, isLight = true }: DropdownMenuSeparatorProps) => {
   return (
     <div className={cn(
-      "border-t",
+      "border-t my-1",
       isLight ? "border-gray-200" : "border-gray-700",
       className
     )} />

@@ -5,35 +5,55 @@ import { ElementInfo, ModernInputDetection, StreamingOptions } from './types';
  */
 
 /**
- * Find element in DOM or Shadow DOM
+ * Find element in DOM or Shadow DOM (with recursive traversal for nested shadow roots)
  */
 export function findElement(selector: string): ElementInfo | null {
   // First try to find element in main DOM
   let element = document.querySelector(selector) as HTMLElement;
   let foundInShadowDOM = false;
   let shadowHostInfo = '';
+  let depth = 0;
   
-  // If not found in main DOM, search in Shadow DOM
+  // If not found in main DOM, search in Shadow DOM recursively
   if (!element) {
-    console.log('[InputUtils] Element not found in main DOM, searching Shadow DOM...');
+    console.log('[InputUtils] Element not found in main DOM, searching Shadow DOM recursively...');
     
-    // Search through all shadow roots with early exit
-    for (const hostElement of Array.from(document.querySelectorAll('*'))) {
-      if (hostElement.shadowRoot && !element) {
-        try {
-          const shadowElement = hostElement.shadowRoot.querySelector(selector) as HTMLElement;
-          if (shadowElement) {
-            element = shadowElement;
-            foundInShadowDOM = true;
-            shadowHostInfo = `${hostElement.tagName}${hostElement.id ? '#' + hostElement.id : ''}${hostElement.className ? '.' + hostElement.className.split(' ')[0] : ''}`;
-            console.log('[InputUtils] Found element in Shadow DOM:', shadowHostInfo);
-            break; // Early exit - stop searching once element is found
+    // Recursive function to search through all shadow roots (including nested ones)
+    const searchShadowRoots = (root: Document | ShadowRoot | Element, currentDepth: number = 0): HTMLElement | null => {
+      const elements = root.querySelectorAll('*');
+      
+      for (const hostElement of Array.from(elements)) {
+        if (hostElement.shadowRoot) {
+          try {
+            // Try to find element in this shadow root
+            const shadowElement = hostElement.shadowRoot.querySelector(selector) as HTMLElement;
+            if (shadowElement) {
+              foundInShadowDOM = true;
+              depth = currentDepth;
+              shadowHostInfo = `${hostElement.tagName}${hostElement.id ? '#' + hostElement.id : ''}${hostElement.className && typeof hostElement.className === 'string' ? '.' + hostElement.className.split(' ')[0] : ''} (depth: ${currentDepth})`;
+              console.log('[InputUtils] Found element in Shadow DOM:', shadowHostInfo);
+              return shadowElement;
+            }
+            
+            // If not found, recursively search nested shadow roots
+            const nestedResult = searchShadowRoots(hostElement.shadowRoot, currentDepth + 1);
+            if (nestedResult) {
+              return nestedResult;
+            }
+          } catch (shadowError) {
+            // Ignore shadow DOM query errors (invalid selectors, etc.)
+            console.log('[InputUtils] Shadow DOM query error:', shadowError);
           }
-        } catch (shadowError) {
-          // Ignore shadow DOM query errors (invalid selectors, etc.)
-          console.log('[InputUtils] Shadow DOM query error:', shadowError);
         }
       }
+      
+      return null;
+    };
+    
+    // Start recursive search from document root
+    const foundElement = searchShadowRoots(document, 1);
+    if (foundElement) {
+      element = foundElement;
     }
   }
   
@@ -121,7 +141,8 @@ export async function streamText(
     speed: 20,
     triggerInputEvents: true,
     triggerChangeEvents: true,
-    triggerKeyboardEvents: false
+    triggerKeyboardEvents: false,
+    triggerSelectionChange: false
   }
 ): Promise<void> {
   const chars = value.split('');
@@ -145,6 +166,9 @@ export async function streamText(
     if (options.triggerKeyboardEvents) {
       element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true }));
       element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true }));
+    }
+    if (options.triggerSelectionChange) {
+      document.dispatchEvent(new Event('selectionchange'));
     }
     
     // Small delay between characters

@@ -11,6 +11,7 @@
   "dependencies": {
     "@ag-ui/client": "^0.0.39",
     "@ag-ui/langgraph": "^0.0.2",
+    "@anthropic-ai/bedrock-sdk": "^0.25.0",
     "@aws-crypto/sha256-js": "^5.2.0",
     "@aws-sdk/client-bedrock-runtime": "^3.907.0",
     "@aws-sdk/credential-provider-node": "^3.907.0",

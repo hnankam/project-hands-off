@@ -1,4 +1,12 @@
-import { debug } from '@extension/shared';
+import { debug as baseDebug } from '@extension/shared';
+
+// Timestamped debug wrappers
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: any[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: any[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: any[]) => baseDebug.error(ts(), ...args),
+} as const;
 
 /**
  * Internal result type for cleanup operation (used by script)
@@ -45,139 +53,78 @@ export async function handleCleanupExtensionUI(): Promise<CleanupUIResult> {
       };
     }
 
-    // Execute script to remove all extension UI elements and clean up state
-    const results = await chrome.scripting.executeScript({
+    // Execute script to remove all extension UI elements and clean up state (with try/catch inside page)
+    const execPromise = chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
       func: (): CleanupResult => {
-        const elementsRemoved: string[] = [];
-        let stateCleared = false;
-        
-        // 1. Remove cursor indicator
-        const cursor = document.getElementById('__copilot_cursor_indicator__');
-        if (cursor) {
-          cursor.remove();
-          elementsRemoved.push('cursor indicator');
-        }
-        
-        // 2. Remove cursor animation styles
-        const cursorStyle = document.getElementById('__copilot_cursor_style__');
-        if (cursorStyle) {
-          cursorStyle.remove();
-          elementsRemoved.push('cursor styles');
-        }
-        
-        // 3. Remove click ripple animation styles
-        const clickRippleStyle = document.getElementById('__copilot_click_ripple_style__');
-        if (clickRippleStyle) {
-          clickRippleStyle.remove();
-          elementsRemoved.push('click ripple styles');
-        }
-        
-        // 4. Remove drag & drop visual elements
-        const dragIndicator = document.getElementById('__copilot_drag_indicator__');
-        if (dragIndicator) {
-          dragIndicator.remove();
-          elementsRemoved.push('drag indicator');
-        }
-        
-        const dragPath = document.getElementById('__copilot_drag_path__');
-        if (dragPath) {
-          dragPath.remove();
-          elementsRemoved.push('drag path');
-        }
-        
-        const dropEffect = document.getElementById('__copilot_drop_effect__');
-        if (dropEffect) {
-          dropEffect.remove();
-          elementsRemoved.push('drop effect');
-        }
-        
-        // Remove drag & drop animation styles
-        const dragDropStyle = document.getElementById('__copilot_drag_drop_style__');
-        if (dragDropStyle) {
-          dragDropStyle.remove();
-          elementsRemoved.push('drag & drop styles');
-        }
-        
-        // Remove drag & drop element styling
-        const dragSources = document.querySelectorAll('[data-copilot-drag-source="true"]');
-        if (dragSources.length > 0) {
-          dragSources.forEach(el => {
-            (el as HTMLElement).style.outline = '';
-            (el as HTMLElement).style.outlineOffset = '';
-            (el as HTMLElement).style.backgroundColor = '';
-            (el as HTMLElement).style.cursor = '';
-            el.removeAttribute('data-copilot-drag-source');
-          });
-          elementsRemoved.push(`${dragSources.length} drag source element(s)`);
-        }
-        
-        const dragTargets = document.querySelectorAll('[data-copilot-drag-target="true"]');
-        if (dragTargets.length > 0) {
-          dragTargets.forEach(el => {
-            (el as HTMLElement).style.outline = '';
-            (el as HTMLElement).style.outlineOffset = '';
-            (el as HTMLElement).style.backgroundColor = '';
-            el.removeAttribute('data-copilot-drag-target');
-          });
-          elementsRemoved.push(`${dragTargets.length} drag target element(s)`);
-        }
-        
-        // 5. Remove scroll animation styles
-        const scrollStyle = document.getElementById('__copilot_scroll_style__');
-        if (scrollStyle) {
-          scrollStyle.remove();
-          elementsRemoved.push('scroll styles');
-        }
-        
-        // 6. Remove any orphaned scroll indicators
-        const scrollIndicators = document.querySelectorAll('div[style*="scrollFade"]');
-        if (scrollIndicators.length > 0) {
-          scrollIndicators.forEach(el => el.remove());
-          elementsRemoved.push(`${scrollIndicators.length} scroll indicator(s)`);
-        }
-        
-        // 7. Remove any orphaned click feedback elements (in case they didn't auto-cleanup)
-        const clickFeedbacks = document.querySelectorAll('div[style*="clickRipple"]');
-        if (clickFeedbacks.length > 0) {
-          clickFeedbacks.forEach(el => el.remove());
-          elementsRemoved.push(`${clickFeedbacks.length} click feedback element(s)`);
-        }
-        
-        // 8. Remove any orphaned drop effect elements
-        const dropEffects = document.querySelectorAll('div[style*="dropRipple"]');
-        if (dropEffects.length > 0) {
-          dropEffects.forEach(el => el.remove());
-          elementsRemoved.push(`${dropEffects.length} drop effect element(s)`);
-        }
-        
-        // 9. CRITICAL: Clear global cursor state to prevent timer leaks
-        if ((window as any).__copilotCursorState__) {
-          const state = (window as any).__copilotCursorState__;
+        try {
+          const elementsRemoved: string[] = [];
+          let stateCleared = false;
           
-          // Clear auto-hide timer to prevent memory leak
-          if (state.hideTimeout) {
-            clearTimeout(state.hideTimeout);
+          const byIdRemove = (id: string, label: string) => {
+            const el = document.getElementById(id);
+            if (el) { el.remove(); elementsRemoved.push(label); }
+          };
+          
+          // 1-3: Indicators and styles
+          byIdRemove('__copilot_cursor_indicator__', 'cursor indicator');
+          byIdRemove('__copilot_cursor_style__', 'cursor styles');
+          byIdRemove('__copilot_click_ripple_style__', 'click ripple styles');
+          
+          // 4: Drag & drop visuals
+          byIdRemove('__copilot_drag_indicator__', 'drag indicator');
+          byIdRemove('__copilot_drag_path__', 'drag path');
+          byIdRemove('__copilot_drop_effect__', 'drop effect');
+          byIdRemove('__copilot_drag_drop_style__', 'drag & drop styles');
+          
+          const resetEls = (selector: string, label: string, attrs: string[]) => {
+            const nodes = document.querySelectorAll(selector);
+            if (nodes.length > 0) {
+              nodes.forEach(el => {
+                const he = el as HTMLElement;
+                he.style.outline = '';
+                he.style.outlineOffset = '';
+                he.style.backgroundColor = '';
+                he.style.cursor = '';
+                attrs.forEach(a => he.removeAttribute(a));
+              });
+              elementsRemoved.push(`${nodes.length} ${label}`);
+            }
+          };
+          resetEls('[data-copilot-drag-source="true"]', 'drag source element(s)', ['data-copilot-drag-source']);
+          resetEls('[data-copilot-drag-target="true"]', 'drag target element(s)', ['data-copilot-drag-target']);
+          
+          // 5-8: Scroll & feedback artifacts
+          byIdRemove('__copilot_scroll_style__', 'scroll styles');
+          document.querySelectorAll('div[style*="scrollFade"]').forEach(el => el.remove());
+          document.querySelectorAll('div[style*="clickRipple"]').forEach(el => el.remove());
+          document.querySelectorAll('div[style*="dropRipple"]').forEach(el => el.remove());
+          
+          // 9: Clear global state
+          if ((window as any).__copilotCursorState__) {
+            const state = (window as any).__copilotCursorState__;
+            if (state.hideTimeout) clearTimeout(state.hideTimeout);
+            delete (window as any).__copilotCursorState__;
+            stateCleared = true;
+            elementsRemoved.push('cursor state');
           }
           
-          // Delete the global state object
-          delete (window as any).__copilotCursorState__;
-          stateCleared = true;
-          elementsRemoved.push('cursor state');
+          const message = elementsRemoved.length > 0 
+            ? `Cleaned up ${elementsRemoved.length} extension UI element(s)`
+            : 'No extension UI elements found';
+          
+          return { success: true, message, elementsRemoved, stateCleared };
+        } catch (e) {
+          return { success: false, message: (e as Error).message || 'Cleanup failed', elementsRemoved: [], stateCleared: false };
         }
-        
-        const message = elementsRemoved.length > 0 
-          ? `Cleaned up ${elementsRemoved.length} extension UI element(s)`
-          : 'No extension UI elements found';
-        
-        return {
-          success: true,
-          message,
-          elementsRemoved,
-          stateCleared
-        };
       }
     });
+
+    // Add a safety timeout to avoid hanging
+    const results = await Promise.race([
+      execPromise,
+      new Promise<any>((resolve) => setTimeout(() => resolve([{ result: { success: false, message: 'Timeout', elementsRemoved: [], stateCleared: false } }]), 5000))
+    ]);
 
     // Handle the actual result from the script execution
     const result = results[0]?.result;

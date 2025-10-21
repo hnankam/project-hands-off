@@ -36,14 +36,19 @@ export class DateInputHandler implements InputHandler {
       if (options.moveCursor) {
         moveCursorToElement(element);
       }
+      // Ensure visible and focused for realistic interaction
+      if (!isElementVisible(inputElement)) {
+        await scrollIntoView(inputElement);
+      }
+      await focusAndHighlight(inputElement);
       
       // Parse and format the date value
-      const formattedValue = this.formatDateValue(value, inputType, options);
+      const formattedValue = this.formatDateValue(value, inputType as InputType, options);
       
       if (!formattedValue) {
         return {
           status: 'error',
-          message: `Invalid date format for ${inputType} input. Expected format: ${this.getExpectedFormat(inputType)}`
+          message: `Invalid date format for ${inputType} input. Expected format: ${this.getExpectedFormat(inputType as InputType)}`
         };
       }
 
@@ -52,12 +57,27 @@ export class DateInputHandler implements InputHandler {
         inputElement.value = '';
       }
 
+      // Early exit if value already matches
+      if (inputElement.value === formattedValue) {
+        return {
+          status: 'success',
+          message: `${inputType} already set`,
+          elementInfo: {
+            tag: inputElement.tagName,
+            type: inputType,
+            id: inputElement.id,
+            name: inputElement.name || '',
+            value: formattedValue
+          }
+        };
+      }
+
       // Set the formatted value
       inputElement.value = formattedValue;
       
       // Trigger events for modern frameworks
       const modernDetection = detectModernInput(inputElement);
-      const events = ['input', 'change'];
+      const events = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
       
       if (modernDetection.isReactComponent) {
         events.push('focus', 'blur');

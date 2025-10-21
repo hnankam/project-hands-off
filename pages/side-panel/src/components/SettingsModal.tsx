@@ -84,17 +84,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               )}
             >
               <svg
-                className="w-4 h-4"
+                width="14"
+                height="14"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
+                <path d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>

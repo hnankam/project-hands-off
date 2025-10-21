@@ -22,8 +22,9 @@ exampleThemeStorage.get().then(theme => {
 
 // Conditional logging (set to false in production)
 const DEBUG = true;
-const log = (...args: any[]) => DEBUG && console.log(...args);
-const logError = (...args: any[]) => console.error(...args); // Always log errors
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const log = (...args: any[]) => DEBUG && console.log(ts(), ...args);
+const logError = (...args: any[]) => console.error(ts(), ...args); // Always log errors
 
 log('Background loaded');
 // log("Edit 'chrome-extension/src/background/index.ts' and save to reload.");
@@ -73,19 +74,41 @@ async function setupOffscreenDocument() {
   }
 }
 
-// Send message to offscreen document
+// Send message to offscreen document using onMessage listener pattern
 async function sendToOffscreen(message: any): Promise<any> {
   await setupOffscreenDocument();
   
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ ...message, target: 'offscreen' }, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-      } else if (response?.success) {
-        resolve(response);
+    const requestId = `offscreen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Set up listener for response from offscreen
+    const responseListener = (msg: any) => {
+      log('[Background] 📬 sendToOffscreen received message:', msg.type, 'requestId:', msg.requestId, 'looking for:', requestId);
+      
+      if (msg.type === 'offscreenResponse' && msg.requestId === requestId) {
+        log('[Background] ✅ Message matched! success:', msg.success, 'embeddingsCount:', msg.embeddings?.length);
+        chrome.runtime.onMessage.removeListener(responseListener);
+        
+        if (msg.success) {
+          log('[Background] ✅ Resolving with response');
+          resolve(msg);
       } else {
-        reject(new Error(response?.error || 'Unknown error'));
+          log('[Background] ❌ Rejecting with error:', msg.error);
+          reject(new Error(msg.error || 'Unknown error'));
+        }
       }
+    };
+    
+    chrome.runtime.onMessage.addListener(responseListener);
+    
+    // Send message without callback - response comes via listener
+    chrome.runtime.sendMessage({ 
+      ...message, 
+      target: 'offscreen',
+      requestId 
+    }).catch(err => {
+      chrome.runtime.onMessage.removeListener(responseListener);
+      reject(err);
     });
   });
 }
@@ -299,12 +322,15 @@ async function embedPageContent(content: any): Promise<{
   log('[Background]    - Form field GROUPS:', formFieldGroups.length, '(intelligently chunked)');
   log('[Background]    - Clickable element GROUPS:', clickableElementGroups.length, '(intelligently chunked)');
   
-  // Send ONE batch request to offscreen document for ALL texts
-  const response = await chrome.runtime.sendMessage({
-    target: 'offscreen',
+  // Send ONE batch request to offscreen document using onMessage pattern
+  log('[Background] ⏳ About to call sendToOffscreen (awaiting WASM work)...');
+  const sendStartTime = performance.now();
+  const response = await sendToOffscreen({
     type: 'generateEmbeddings',
     texts: allTextsToEmbed
   });
+  const sendDuration = (performance.now() - sendStartTime).toFixed(0);
+  log('[Background] ✅ sendToOffscreen completed (took', sendDuration, 'ms)');
   
   if (!response.success) {
     throw new Error(response.error || 'Batch embedding failed');
@@ -317,11 +343,25 @@ async function embedPageContent(content: any): Promise<{
   // 6. Map embeddings back to their respective items
   const fullEmbedding = allEmbeddings[0];
   
+  log('[Background] 🔍 DEBUG - First embedding from offscreen:', {
+    isArray: Array.isArray(allEmbeddings[0]),
+    length: allEmbeddings[0]?.length,
+    firstValue: allEmbeddings[0]?.[0],
+    type: typeof allEmbeddings[0]?.[0]
+  });
+  
   const chunks: Array<{ text: string; html: string; embedding: number[] }> = chunkData.map((chunk, i) => ({
     text: chunk.text,
     html: chunk.html,
     embedding: allEmbeddings[textIndexMap.find(m => m.type === 'chunk' && m.dataIndex === i)!.index]
   }));
+  
+  log('[Background] 🔍 DEBUG - First chunk after mapping:', {
+    hasEmbedding: !!chunks[0].embedding,
+    isArray: Array.isArray(chunks[0].embedding),
+    length: chunks[0].embedding?.length,
+    firstValue: chunks[0].embedding?.[0]
+  });
   
   // Map form field groups with their embeddings (from JSON strings)
   const formFieldGroupEmbeddings = formFieldGroups.map((group, i) => ({
@@ -369,51 +409,212 @@ chrome.runtime.onInstalled.addListener(() => {
   // Enable auto-opening side panel when extension icon is clicked
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
   // log('Extension installed - side panel auto-open enabled');
+  
+  // PRE-LOAD the embedding model on installation to prevent UI freeze on first use
+  log('[Background] Pre-loading embedding model on install...');
+  initializeEmbeddingService().catch(err => {
+    logError('[Background] Failed to pre-load model:', err);
+  });
 });
 
 // Also set on startup to ensure side panel auto-open works
 chrome.runtime.onStartup.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
   // log('Extension startup - side panel auto-open enabled');
+  
+  // PRE-LOAD the embedding model to prevent UI freeze on first use
+  log('[Background] Pre-loading embedding model...');
+  initializeEmbeddingService().catch(err => {
+    logError('[Background] Failed to pre-load model:', err);
+  });
 });
 
-// Handle messages from content scripts and side panel
+// Handle messages from content scripts, side panel, and offscreen
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Handle offscreen ready signal
   if (message.type === 'offscreenReady') {
-    log('[Background] Received offscreen ready signal');
+    log('[Background] ✅ Offscreen document ready');
     if (offscreenReadyResolve) {
       offscreenReadyResolve();
       offscreenReadyResolve = null;
     }
-    sendResponse({ success: true });
-    return true;
+    return false;
   }
   
-  // Handle embedding requests
+  // Handle offscreen responses
+  if (message.type === 'offscreenResponse') {
+    // These are handled by listeners in sendToOffscreen
+    return false;
+  }
+  
+  // ============ EMBEDDING MESSAGES (onMessage pattern only) ============
   if (message.type === 'initializeEmbedding') {
-    initializeEmbeddingService()
-      .then(() => sendResponse({ success: true }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    return true; // Keep channel open for async response
+    const requestId = message.requestId || `init_${Date.now()}`;
+    log('[Background] 📥 Received initializeEmbedding request:', requestId);
+    
+    // Respond immediately to avoid panel timeout; warm up offscreen asynchronously.
+    chrome.runtime.sendMessage({
+      type: 'initializeEmbeddingResponse',
+      requestId,
+      success: true
+    }).then(() => {
+      log('[Background] ✅ initializeEmbeddingResponse sent (optimistic)');
+    }).catch(err => {
+      logError('[Background] ❌ Failed to send initializeEmbeddingResponse:', err);
+    });
+
+    // Ensure offscreen exists, then fire-and-forget warmup
+    (async () => {
+      try {
+        await setupOffscreenDocument();
+        const warmId = `warm_${Date.now()}`;
+        chrome.runtime.sendMessage({ type: 'initialize', target: 'offscreen', requestId: warmId }).catch(() => {});
+      } catch (err) {
+        logError('[Background] ❌ Offscreen setup failed:', err);
+      }
+    })();
+    
+    return false;
   } else if (message.type === 'embedPageContent') {
-    embedPageContent(message.content)
-      .then(result => sendResponse({ success: true, result }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    return true; // Keep channel open for async response
+    // Process content directly from message (no storage)
+    const requestId = message.requestId || `embed_${Date.now()}`;
+    log('[Background] 📥 Received embedPageContent request:', requestId);
+    
+    (async () => {
+      try {
+        log('[Background] 🔄 DEBUG - Received content object:');
+        log('[Background]    - content.allDOMContent?:', !!message.content.allDOMContent);
+        const result = await embedPageContent(message.content);
+        
+        // DEBUG: Check embeddings RIGHT BEFORE sending to side panel
+        log('[Background] 🔍 DEBUG - Result BEFORE sending to side panel:', {
+          hasChunks: !!result.chunks,
+          chunksLength: result.chunks?.length,
+          firstChunkEmbedding: {
+            exists: !!result.chunks?.[0]?.embedding,
+            isArray: Array.isArray(result.chunks?.[0]?.embedding),
+            length: result.chunks?.[0]?.embedding?.length,
+            firstValue: result.chunks?.[0]?.embedding?.[0],
+            first5: result.chunks?.[0]?.embedding?.slice(0, 5)
+          }
+        });
+        
+        log('[Background] 📤 Sending embeddingComplete (success):', requestId);
+        chrome.runtime.sendMessage({
+          type: 'embeddingComplete',
+          requestId,
+          result
+        }).then(() => {
+          log('[Background] ✅ embeddingComplete sent successfully');
+        }).catch(err => {
+          logError('[Background] ❌ Failed to send embeddingComplete:', err);
+        });
+      } catch (error) {
+        logError('[Background] ❌ Embedding failed:', error);
+        chrome.runtime.sendMessage({
+          type: 'embeddingComplete',
+          requestId,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }).catch(() => {});
+      }
+    })();
+    
+    return false;
+  } else if (message.type === 'embedPageContentForTab') {
+    // NEW: Avoid large payload serialization from side panel by embedding using cached/on-demand content
+    const requestId = message.requestId || `embed_tab_${Date.now()}`;
+    const tabId: number | undefined = message.tabId || sender.tab?.id;
+    log('[Background] 📥 Received embedPageContentForTab request:', requestId, 'tabId:', tabId);
+    
+    (async () => {
+      try {
+        if (!tabId) {
+          throw new Error('No tabId provided');
+        }
+
+        // Try cached content first
+        const cached = currentPageContent[tabId.toString()];
+        let content = cached?.content;
+
+        if (!content) {
+          log('[Background] ⚠️ No cached content for tab. Fetching on-demand...');
+          const response = await new Promise<any>((resolve) => {
+            // Reuse existing on-demand path; it responds via callback
+            chrome.runtime.sendMessage({ type: 'getPageContentOnDemand', tabId }, (resp) => resolve(resp));
+          });
+          if (!response?.success || !response?.content) {
+            throw new Error(response?.error || 'Failed to fetch page content');
+          }
+          content = response.content;
+        }
+
+        const result = await embedPageContent(content);
+
+        chrome.runtime.sendMessage({
+          type: 'embeddingComplete',
+          requestId,
+          result
+        }).catch(() => {});
+      } catch (error) {
+        logError('[Background] ❌ embedPageContentForTab failed:', error);
+        chrome.runtime.sendMessage({
+          type: 'embeddingComplete',
+          requestId,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }).catch(() => {});
+      }
+    })();
+    
+    return false;
   } else if (message.type === 'generateEmbedding') {
+    const requestId = message.requestId || `single_${Date.now()}`;
+    
     generateEmbedding(message.text)
-      .then(embedding => sendResponse({ success: true, embedding }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    return true; // Keep channel open for async response
+      .then(embedding => {
+        chrome.runtime.sendMessage({
+          type: 'generateEmbeddingResponse',
+          requestId,
+          success: true,
+          embedding
+        }).catch(() => {});
+      })
+      .catch(error => {
+        chrome.runtime.sendMessage({
+          type: 'generateEmbeddingResponse',
+          requestId,
+          success: false,
+          error: error.message
+        }).catch(() => {});
+      });
+    
+    return false;
   } else if (message.type === 'generateEmbeddings') {
-    // Batch embedding generation
+    const requestId = message.requestId || `batch_${Date.now()}`;
     const texts = message.texts as string[];
+    
     Promise.all(texts.map(text => generateEmbedding(text)))
-      .then(embeddings => sendResponse({ success: true, embeddings }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    return true; // Keep channel open for async response
-  } else if (message.type === 'pageContentUpdate') {
+      .then(embeddings => {
+        chrome.runtime.sendMessage({
+          type: 'generateEmbeddingsResponse',
+          requestId,
+          success: true,
+          embeddings
+        }).catch(() => {});
+      })
+      .catch(error => {
+        chrome.runtime.sendMessage({
+          type: 'generateEmbeddingsResponse',
+          requestId,
+          success: false,
+          error: error.message
+        }).catch(() => {});
+      });
+    
+    return false;
+  }
+  
+  // ============ NON-EMBEDDING MESSAGES (sendResponse pattern) ============
+  if (message.type === 'pageContentUpdate') {
     handlePageContentUpdate(message.data, sender.tab?.id);
     sendResponse({ success: true });
   } else if (message.type === 'getPageContent') {
@@ -424,7 +625,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     extractPageContent(message.tabId || sender.tab?.id);
     sendResponse({ success: true });
   } else if (message.type === 'getCurrentTab') {
-    // Handle request for current tab info
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const activeTab = tabs[0];
       if (activeTab) {
@@ -433,55 +633,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           url: activeTab.url, 
           title: activeTab.title 
         });
-        
-        // Don't automatically broadcast or extract content here
-        // Let the side panel decide when to fetch content via getPageContentOnDemand
-        // This prevents unnecessary broadcasts and duplicate processing
       } else {
         sendResponse({ tabId: null, url: null, title: null });
       }
     });
+    return true; // Async response via sendResponse
   } else if (message.type === 'urlChanged') {
-    // Clear cached content when URL changes
     const tabId = sender.tab?.id;
     if (tabId) {
       log('URL changed, clearing cached content for tab:', tabId);
       delete currentPageContent[tabId.toString()];
       
-      // Notify side panel about URL change
       chrome.runtime.sendMessage({
         type: 'urlChanged',
         tabId: tabId,
         url: message.url
-      }).catch(() => {
-        // Side panel might not be open, ignore error
-      });
+      }).catch(() => {});
     }
     sendResponse({ success: true });
   } else if (message.type === 'getPageContentOnDemand') {
-    // Get fresh page content on demand
     extractPageContent(message.tabId || sender.tab?.id, sendResponse);
-    return true; // Keep the message channel open for async response
+    return true;
   } else if (message.type === 'domContentChanged') {
-    // Handle DOM change notification from content script
     const tabId = sender.tab?.id;
     if (tabId) {
       log('[Background] DOM changes detected on tab:', tabId);
       
-      // Notify side panel with both stale notification AND incremental DOM update
       chrome.runtime.sendMessage({
         type: 'contentBecameStale',
         tabId: tabId,
         url: message.url,
         timestamp: message.timestamp,
-        domUpdate: message.domUpdate // Forward the incremental update
-      }).catch(() => {
-        // Side panel might not be open, ignore error
-      });
+        domUpdate: message.domUpdate
+      }).catch(() => {});
     }
     sendResponse({ success: true });
   }
-  return true;
+  // Only return true for messages that use sendResponse pattern
+  // Messages that use chrome.runtime.sendMessage for responses should return false
+  return false;
 });
 
 // Handle page content updates from content scripts

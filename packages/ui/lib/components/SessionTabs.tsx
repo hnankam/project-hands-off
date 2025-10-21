@@ -207,8 +207,8 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
                   : "text-gray-500 hover:text-red-400 hover:bg-red-900"
               )}
             >
-              <svg className="h-2 w-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg width="8" height="8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>

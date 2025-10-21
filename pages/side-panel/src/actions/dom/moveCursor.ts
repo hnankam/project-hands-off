@@ -1,4 +1,12 @@
-import { debug } from '@extension/shared';
+import { debug as baseDebug } from '@extension/shared';
+
+// Timestamped debug wrappers
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: any[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: any[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: any[]) => baseDebug.error(ts(), ...args),
+} as const;
 
 /**
  * Result type for move cursor operation
@@ -24,6 +32,9 @@ interface MoveCursorResult {
 export async function handleMoveCursorToElement(cssSelector: string): Promise<MoveCursorResult> {
   try {
     debug.log('[MoveCursor] Moving cursor to element with selector:', cssSelector);
+    if (!cssSelector || cssSelector.trim().length === 0) {
+      return { status: 'error', message: 'Empty CSS selector provided' };
+    }
     
     // Get the current active tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -34,9 +45,10 @@ export async function handleMoveCursorToElement(cssSelector: string): Promise<Mo
       };
     }
 
-    // Execute script in content page to find and highlight the element
-    const results = await chrome.scripting.executeScript({
+    // Execute script in content page to find and highlight the element (with timeout)
+    const execPromise = chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
+      world: 'MAIN',
       func: (selector: string): any => {
         try {
           // First try to find element in main DOM
@@ -275,6 +287,11 @@ export async function handleMoveCursorToElement(cssSelector: string): Promise<Mo
       },
       args: [cssSelector] as [string]
     });
+
+    const results = await Promise.race([
+      execPromise,
+      new Promise<any>((resolve) => setTimeout(() => resolve([{ result: { success: false, message: 'Timeout while moving cursor' } }]), 8000))
+    ]);
 
     if (results && results[0]?.result) {
       const result = results[0].result as any;

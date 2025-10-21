@@ -65,19 +65,14 @@ export class InputDispatcher {
   ): Promise<InputDataResult> {
     try {
       // debug.log('[InputDispatcher] Inputting data into field with selector:', cssSelector, 'value:', value);
-      
-      // Get the current active tab
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tabs[0]?.id) {
-        return {
-          status: 'error',
-          message: 'Unable to access current tab'
-        };
+      // Execute directly in the current page context using scripting API
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!activeTab?.id) {
+        return { status: 'error', message: 'Unable to access current tab' };
       }
 
-      // Execute script in content page
       const results = await chrome.scripting.executeScript({
-        target: { tabId: tabs[0].id },
+        target: { tabId: activeTab.id },
         func: async (selector: string, inputValue: string, shouldClear: boolean, shouldMoveCursor: boolean): Promise<any> => {
           // Define content script functions inline
           function findElement(selector: string): any {
@@ -127,7 +122,7 @@ export class InputDispatcher {
             //   dataSlot: element.getAttribute('data-slot')
             // });
 
-            const inputType = (element as HTMLInputElement).type || '';
+            const inputType = (element as HTMLInputElement).type || (element.hasAttribute('contenteditable') ? 'contenteditable' : '');
             const tagName = element.tagName.toLowerCase();
 
             return {
@@ -151,11 +146,9 @@ export class InputDispatcher {
           }
 
           function scrollIntoView(element: HTMLElement): void {
-            element.scrollIntoView({ 
-              behavior: 'smooth', 
-              block: 'nearest', 
-              inline: 'nearest' 
-            });
+            try {
+              element.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+            } catch {}
           }
 
           function moveCursorToElement(element: HTMLElement): void {
@@ -210,8 +203,8 @@ export class InputDispatcher {
               }
 
               // Animation constants
-              const ANIMATION_STEPS = 20;
-              const STEP_DURATION = 15;
+              const ANIMATION_STEPS = 16;
+              const STEP_DURATION = 16;
               const CURSOR_DELAY_NEW = 100;
               const CURSOR_DELAY_EXISTING = 0;
 

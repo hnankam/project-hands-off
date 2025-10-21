@@ -11,6 +11,7 @@ export { handleCleanupExtensionUI } from './dom/cleanupUI';
 export { handleClickElement } from './dom/clickElement';
 export { handleScroll } from './dom/scroll';
 export { handleVerifySelector } from './dom/verifySelector';
+export { handleGetSelectorAtPoint, handleGetSelectorsAtPoints } from './dom/selectorAtPoints';
 
 // Form Actions
 export { handleInputData } from './forms/inputData';

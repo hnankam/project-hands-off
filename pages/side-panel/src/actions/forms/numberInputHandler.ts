@@ -36,6 +36,10 @@ export class NumberInputHandler implements InputHandler {
       if (options.moveCursor) {
         moveCursorToElement(element);
       }
+      if (!isElementVisible(inputElement)) {
+        await scrollIntoView(inputElement);
+      }
+      await focusAndHighlight(inputElement);
       
       // Parse and validate the number
       const numberValue = this.parseNumber(value, options);
@@ -100,7 +104,7 @@ export class NumberInputHandler implements InputHandler {
       inputElement.value = formattedValue;
       
       // Trigger events
-      const events = ['input', 'change'];
+      const events = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
       if (modernDetection.isReactComponent) {
         events.push('focus', 'blur');
       }
@@ -137,7 +141,7 @@ export class NumberInputHandler implements InputHandler {
     inputElement.value = formattedValue;
     
     // Trigger events for range inputs
-    const events = ['input', 'change'];
+    const events = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
     if (modernDetection.isReactComponent) {
       events.push('focus', 'blur');
     }
@@ -162,8 +166,14 @@ export class NumberInputHandler implements InputHandler {
   }
 
   private parseNumber(value: string, options: NumberInputOptions): number | null {
-    // Remove any non-numeric characters except decimal point and minus sign
-    const cleanValue = value.replace(/[^\d.-]/g, '');
+    // Remove thousands separators and normalize decimal delimiter
+    const normalized = value
+      .trim()
+      .replace(/\s/g, '')
+      .replace(/,(?=\d{3}(\D|$))/g, '') // drop grouping commas
+      .replace(/(?<=\d),(?=\d)/g, ',');
+    // Allow only digits, minus, and dot
+    const cleanValue = normalized.replace(/[^\d.-]/g, '');
     
     // Handle empty string
     if (cleanValue === '' || cleanValue === '-') {

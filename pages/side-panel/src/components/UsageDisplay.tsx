@@ -44,8 +44,8 @@ export const UsageDisplay: FC<UsageDisplayProps> = ({
           }`}
           title={isConnected ? 'Usage tracking active' : 'Usage tracking disconnected'}
         />
-        <span className="font-mono" title="Total tokens used in this session">
-          {formatNumber(cumulativeUsage.total)}
+        <span className="font-mono" title={lastUsage ? 'Tokens used in last request' : 'Total tokens used in this session'}>
+          {lastUsage ? formatNumber(lastUsage.total_tokens) : formatNumber(cumulativeUsage.total)}
         </span>
         <span className="opacity-60">tokens</span>
       </div>
