@@ -98,25 +98,34 @@ export interface TextInputOptions extends InputHandlerOptions {
   enforcePattern?: RegExp;
 }
 
-export type InputType = 
-  | 'text' | 'email' | 'password' | 'search' | 'tel' | 'url'
-  | 'checkbox' | 'radio'
-  | 'date' | 'datetime-local' | 'time' | 'month' | 'week'
-  | 'number' | 'range'
+export type InputType =
+  | 'text'
+  | 'email'
+  | 'password'
+  | 'search'
+  | 'tel'
+  | 'url'
+  | 'checkbox'
+  | 'radio'
+  | 'date'
+  | 'datetime-local'
+  | 'time'
+  | 'month'
+  | 'week'
+  | 'number'
+  | 'range'
   | 'select'
   | 'textarea'
   | 'contenteditable'
   | 'file'
   | 'hidden'
-  | 'button' | 'submit' | 'reset'
+  | 'button'
+  | 'submit'
+  | 'reset'
   | 'color'
   | 'image';
 
 export interface InputHandler {
   canHandle(inputType: InputType, element: HTMLElement): boolean;
-  handle(
-    element: HTMLElement, 
-    value: string, 
-    options: InputHandlerOptions
-  ): Promise<InputDataResult>;
+  handle(element: HTMLElement, value: string, options: InputHandlerOptions): Promise<InputDataResult>;
 }

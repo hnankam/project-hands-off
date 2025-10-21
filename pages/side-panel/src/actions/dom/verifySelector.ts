@@ -45,13 +45,13 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
         message: 'Empty CSS selector provided',
       };
     }
-    
+
     // Get the current active tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tabs[0]?.id) {
       return {
         status: 'error',
-        message: 'Unable to access current tab'
+        message: 'Unable to access current tab',
       };
     }
 
@@ -81,8 +81,8 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
                 foundInShadowDOM: false,
                 elementCount: 0,
                 shadowHosts: [],
-                elementDetails: []
-              }
+                elementDetails: [],
+              },
             };
           }
 
@@ -91,7 +91,7 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
           if (mainDOMElements.length > 0) {
             foundInMainDOM = true;
             totalElementCount += mainDOMElements.length;
-            
+
             // Collect details for first few elements (limit to avoid overwhelming response)
             const elementsToProcess = Math.min(mainDOMElements.length, 5);
             for (let i = 0; i < elementsToProcess; i++) {
@@ -102,29 +102,25 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
                 id: element.id || '',
                 className: element.className || '',
                 foundInShadowDOM: false,
-                shadowHost: null
+                shadowHost: null,
               });
             }
           }
 
           // Search in Shadow DOM
           const shadowRoots: ShadowRoot[] = [];
-          
+
           // Find all shadow roots
-          const walker = document.createTreeWalker(
-            document.body,
-            NodeFilter.SHOW_ELEMENT,
-            {
-              acceptNode: (node) => {
-                const element = node as Element;
-                if (element.shadowRoot) {
-                  shadowRoots.push(element.shadowRoot);
-                }
-                return NodeFilter.FILTER_ACCEPT;
+          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
+            acceptNode: node => {
+              const element = node as Element;
+              if (element.shadowRoot) {
+                shadowRoots.push(element.shadowRoot);
               }
-            }
-          );
-          
+              return NodeFilter.FILTER_ACCEPT;
+            },
+          });
+
           // Walk the tree to find all shadow roots
           while (walker.nextNode()) {}
 
@@ -135,15 +131,15 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
               if (shadowElements.length > 0) {
                 foundInShadowDOM = true;
                 totalElementCount += shadowElements.length;
-                
+
                 // Get shadow host info
                 const shadowHost = shadowRoot.host;
                 const hostInfo = `${shadowHost.tagName}${shadowHost.id ? '#' + shadowHost.id : ''}${shadowHost.className ? '.' + shadowHost.className.split(' ')[0] : ''}`;
-                
+
                 if (!shadowHosts.includes(hostInfo)) {
                   shadowHosts.push(hostInfo);
                 }
-                
+
                 // Collect details for first few shadow elements
                 const elementsToProcess = Math.min(shadowElements.length, 3);
                 for (let i = 0; i < elementsToProcess; i++) {
@@ -154,7 +150,7 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
                     id: element.id || '',
                     className: element.className || '',
                     foundInShadowDOM: true,
-                    shadowHost: hostInfo
+                    shadowHost: hostInfo,
                   });
                 }
               }
@@ -165,7 +161,7 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
           }
 
           const isValid = foundInMainDOM || foundInShadowDOM;
-          
+
           let message = '';
           if (isValid) {
             const parts = [];
@@ -191,8 +187,8 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
               foundInShadowDOM,
               elementCount: totalElementCount,
               shadowHosts,
-              elementDetails
-            }
+              elementDetails,
+            },
           };
         } catch (error) {
           return {
@@ -204,17 +200,19 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
               foundInShadowDOM: false,
               elementCount: 0,
               shadowHosts: [],
-              elementDetails: []
-            }
+              elementDetails: [],
+            },
           };
         }
       },
-      args: [cssSelector] as [string]
+      args: [cssSelector] as [string],
     });
 
     const results = await Promise.race([
       execPromise,
-      new Promise<any>((resolve) => setTimeout(() => resolve([{ result: { success: false, message: 'Timeout while verifying selector' } }]), 8000))
+      new Promise<any>(resolve =>
+        setTimeout(() => resolve([{ result: { success: false, message: 'Timeout while verifying selector' } }]), 8000),
+      ),
     ]);
 
     if (results && results[0]?.result) {
@@ -223,26 +221,26 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
         return {
           status: 'success',
           message: result.message,
-          selectorInfo: result.selectorInfo
+          selectorInfo: result.selectorInfo,
         };
       } else {
         return {
           status: 'error',
           message: result.message,
-          selectorInfo: result.selectorInfo
+          selectorInfo: result.selectorInfo,
         };
       }
     }
 
     return {
       status: 'error',
-      message: 'Unable to verify selector'
+      message: 'Unable to verify selector',
     };
   } catch (error) {
     debug.error('[VerifySelector] Error verifying selector:', error);
     return {
       status: 'error',
-      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }

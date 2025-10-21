@@ -1,15 +1,15 @@
 import { InputHandler, InputDataResult, InputHandlerOptions, ContentEditableOptions, InputType } from './types';
-import { 
-  findElement, 
-  isElementVisible, 
-  scrollIntoView, 
-  focusAndHighlight, 
-  streamText, 
-  showSuccessFeedback, 
+import {
+  findElement,
+  isElementVisible,
+  scrollIntoView,
+  focusAndHighlight,
+  streamText,
+  showSuccessFeedback,
   getElementValue,
   triggerInputEvents,
   detectModernInput,
-  moveCursorToElement
+  moveCursorToElement,
 } from './utils';
 
 /**
@@ -23,11 +23,7 @@ export class ContentEditableHandler implements InputHandler {
     return this.supportedTypes.includes(inputType) && element.hasAttribute('contenteditable');
   }
 
-  async handle(
-    element: HTMLElement, 
-    value: string, 
-    options: ContentEditableOptions = {}
-  ): Promise<InputDataResult> {
+  async handle(element: HTMLElement, value: string, options: ContentEditableOptions = {}): Promise<InputDataResult> {
     try {
       // Ensure interactable state
       if (!isElementVisible(element)) {
@@ -37,17 +33,17 @@ export class ContentEditableHandler implements InputHandler {
       const insertMode = options.insertMode || 'replace';
       const htmlContent = options.htmlContent || false;
       const preserveFormatting = options.preserveFormatting || false;
-      
+
       // Move cursor to element if requested
       if (options.moveCursor) {
         moveCursorToElement(element);
       }
-      
+
       // Clear content if replacing
       if (insertMode === 'replace' && options.clearFirst !== false) {
         this.clearContent(element);
       }
-      
+
       // Handle different content types
       if (htmlContent) {
         return await this.handleHtmlContent(element, value, options);
@@ -57,7 +53,7 @@ export class ContentEditableHandler implements InputHandler {
     } catch (error) {
       return {
         status: 'error',
-        message: `Error handling contenteditable: ${error instanceof Error ? error.message : 'Unknown error'}`
+        message: `Error handling contenteditable: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   }
@@ -65,15 +61,15 @@ export class ContentEditableHandler implements InputHandler {
   private async handleTextContent(
     element: HTMLElement,
     value: string,
-    options: ContentEditableOptions
+    options: ContentEditableOptions,
   ): Promise<InputDataResult> {
     const modern = detectModernInput(element);
     const insertMode = options.insertMode || 'replace';
     const preserveFormatting = options.preserveFormatting || false;
-    
+
     // Prepare content based on insert mode
     let contentToInsert = value;
-    
+
     if (insertMode === 'append') {
       const existingContent = element.textContent || '';
       contentToInsert = existingContent + value;
@@ -81,12 +77,12 @@ export class ContentEditableHandler implements InputHandler {
       const existingContent = element.textContent || '';
       contentToInsert = value + existingContent;
     }
-    
+
     // Handle formatting preservation
     if (preserveFormatting) {
       contentToInsert = this.preserveTextFormatting(element, contentToInsert);
     }
-    
+
     // Use streaming for text content
     if (options.typingSpeed && options.typingSpeed > 0) {
       await this.streamTextContent(element, contentToInsert, options);
@@ -95,12 +91,12 @@ export class ContentEditableHandler implements InputHandler {
       element.textContent = contentToInsert;
       this.triggerContentEditableEvents(element, options);
     }
-    
+
     // Show success feedback
     if (options.showSuccessFeedback !== false) {
       showSuccessFeedback(element);
     }
-    
+
     return {
       status: 'success',
       message: 'Contenteditable text content updated successfully',
@@ -109,22 +105,22 @@ export class ContentEditableHandler implements InputHandler {
         type: 'contenteditable',
         id: element.id,
         name: element.getAttribute('name') || '',
-        value: element.textContent || ''
-      }
+        value: element.textContent || '',
+      },
     };
   }
 
   private async handleHtmlContent(
     element: HTMLElement,
     value: string,
-    options: ContentEditableOptions
+    options: ContentEditableOptions,
   ): Promise<InputDataResult> {
     const insertMode = options.insertMode || 'replace';
     const modern = detectModernInput(element);
-    
+
     // Prepare HTML content based on insert mode
     let contentToInsert = value;
-    
+
     if (insertMode === 'append') {
       const existingContent = element.innerHTML || '';
       contentToInsert = existingContent + value;
@@ -132,18 +128,18 @@ export class ContentEditableHandler implements InputHandler {
       const existingContent = element.innerHTML || '';
       contentToInsert = value + existingContent;
     }
-    
+
     // Set HTML content directly
     element.innerHTML = contentToInsert;
-    
+
     // Trigger events
     this.triggerContentEditableEvents(element, options);
-    
+
     // Show success feedback
     if (options.showSuccessFeedback !== false) {
       showSuccessFeedback(element);
     }
-    
+
     return {
       status: 'success',
       message: 'Contenteditable HTML content updated successfully',
@@ -152,32 +148,36 @@ export class ContentEditableHandler implements InputHandler {
         type: 'contenteditable',
         id: element.id,
         name: element.getAttribute('name') || '',
-        value: element.textContent || ''
-      }
+        value: element.textContent || '',
+      },
     };
   }
 
   private async streamTextContent(
     element: HTMLElement,
     content: string,
-    options: ContentEditableOptions
+    options: ContentEditableOptions,
   ): Promise<void> {
     const chars = content.split('');
     const typingSpeed = Math.max(10, Math.min(50, options.typingSpeed || 20));
-    
+
     for (let i = 0; i < chars.length; i++) {
       const currentContent = content.substring(0, i + 1);
       element.textContent = currentContent;
       // Fire a richer set of events during streaming for framework bindings
       this.triggerContentEditableEvents(element, options, i === chars.length - 1);
-      
+
       // Small delay between characters
       await new Promise(resolve => setTimeout(resolve, typingSpeed));
     }
     // Final events ensured by last iteration
   }
 
-  private triggerContentEditableEvents(element: HTMLElement, options: ContentEditableOptions, isFinal: boolean = true): void {
+  private triggerContentEditableEvents(
+    element: HTMLElement,
+    options: ContentEditableOptions,
+    isFinal: boolean = true,
+  ): void {
     const modernDetection = detectModernInput(element);
     const events = ['input'];
     if (modernDetection.isReactComponent) {
@@ -203,22 +203,22 @@ export class ContentEditableHandler implements InputHandler {
   private preserveTextFormatting(element: HTMLElement, content: string): string {
     // Get current formatting from the element
     const currentFormatting = this.getCurrentFormatting(element);
-    
+
     // Apply formatting to the new content
     let formattedContent = content;
-    
+
     if (currentFormatting.bold) {
       formattedContent = `<strong>${formattedContent}</strong>`;
     }
-    
+
     if (currentFormatting.italic) {
       formattedContent = `<em>${formattedContent}</em>`;
     }
-    
+
     if (currentFormatting.underline) {
       formattedContent = `<u>${formattedContent}</u>`;
     }
-    
+
     return formattedContent;
   }
 
@@ -232,7 +232,7 @@ export class ContentEditableHandler implements InputHandler {
   } {
     const selection = window.getSelection();
     const range = selection?.getRangeAt(0);
-    
+
     if (!range || range.collapsed) {
       return {
         bold: false,
@@ -240,22 +240,22 @@ export class ContentEditableHandler implements InputHandler {
         underline: false,
         fontSize: '',
         fontFamily: '',
-        color: ''
+        color: '',
       };
     }
-    
+
     // Get formatting from the current selection
     const isBold = document.queryCommandState('bold');
     const isItalic = document.queryCommandState('italic');
     const isUnderline = document.queryCommandState('underline');
-    
+
     return {
       bold: isBold,
       italic: isItalic,
       underline: isUnderline,
       fontSize: '',
       fontFamily: '',
-      color: ''
+      color: '',
     };
   }
 
@@ -272,57 +272,57 @@ export class ContentEditableHandler implements InputHandler {
       fontFamily?: string;
       color?: string;
     },
-    options: ContentEditableOptions = {}
+    options: ContentEditableOptions = {},
   ): Promise<InputDataResult> {
     try {
       const elementInfo = findElement(selector);
       if (!elementInfo) {
         return {
           status: 'error',
-          message: `Element not found with selector: ${selector}`
+          message: `Element not found with selector: ${selector}`,
         };
       }
-      
+
       const element = elementInfo.element;
-      
+
       if (!element.hasAttribute('contenteditable')) {
         return {
           status: 'error',
-          message: 'Element is not contenteditable'
+          message: 'Element is not contenteditable',
         };
       }
-      
+
       // Focus the element
       element.focus();
-      
+
       // Apply formatting commands
       if (formatting.bold !== undefined) {
         document.execCommand('bold', false, undefined);
       }
-      
+
       if (formatting.italic !== undefined) {
         document.execCommand('italic', false, undefined);
       }
-      
+
       if (formatting.underline !== undefined) {
         document.execCommand('underline', false, undefined);
       }
-      
+
       if (formatting.fontSize) {
         document.execCommand('fontSize', false, '3'); // This is a basic implementation
       }
-      
+
       if (formatting.color) {
         document.execCommand('foreColor', false, formatting.color);
       }
-      
+
       // Trigger events
       this.triggerContentEditableEvents(element, options);
-      
+
       if (options.showSuccessFeedback !== false) {
         showSuccessFeedback(element);
       }
-      
+
       return {
         status: 'success',
         message: 'Formatting applied successfully',
@@ -331,13 +331,13 @@ export class ContentEditableHandler implements InputHandler {
           type: 'contenteditable',
           id: element.id,
           name: element.getAttribute('name') || '',
-          value: element.textContent || ''
-        }
+          value: element.textContent || '',
+        },
       };
     } catch (error) {
       return {
         status: 'error',
-        message: `Error applying formatting: ${error instanceof Error ? error.message : 'Unknown error'}`
+        message: `Error applying formatting: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   }
@@ -349,37 +349,37 @@ export class ContentEditableHandler implements InputHandler {
     selector: string,
     value: string,
     placeholder: string,
-    options: ContentEditableOptions = {}
+    options: ContentEditableOptions = {},
   ): Promise<InputDataResult> {
     try {
       const elementInfo = findElement(selector);
       if (!elementInfo) {
         return {
           status: 'error',
-          message: `Element not found with selector: ${selector}`
+          message: `Element not found with selector: ${selector}`,
         };
       }
-      
+
       const element = elementInfo.element;
-      
+
       // Check if element is empty or contains only placeholder
       const currentContent = element.textContent || '';
       const isEmpty = currentContent === '' || currentContent === placeholder;
-      
+
       if (isEmpty && options.clearFirst !== false) {
         element.textContent = '';
       }
-      
+
       // Insert the value
       const insertMode = options.insertMode || 'replace';
       let contentToInsert = value;
-      
+
       if (insertMode === 'append') {
         contentToInsert = currentContent + value;
       } else if (insertMode === 'prepend') {
         contentToInsert = value + currentContent;
       }
-      
+
       // Set content
       if (options.typingSpeed && options.typingSpeed > 0) {
         await this.streamTextContent(element, contentToInsert, options);
@@ -387,11 +387,11 @@ export class ContentEditableHandler implements InputHandler {
         element.textContent = contentToInsert;
         this.triggerContentEditableEvents(element, options);
       }
-      
+
       if (options.showSuccessFeedback !== false) {
         showSuccessFeedback(element);
       }
-      
+
       return {
         status: 'success',
         message: 'Contenteditable with placeholder updated successfully',
@@ -400,13 +400,13 @@ export class ContentEditableHandler implements InputHandler {
           type: 'contenteditable',
           id: element.id,
           name: element.getAttribute('name') || '',
-          value: element.textContent || ''
-        }
+          value: element.textContent || '',
+        },
       };
     } catch (error) {
       return {
         status: 'error',
-        message: `Error handling contenteditable with placeholder: ${error instanceof Error ? error.message : 'Unknown error'}`
+        message: `Error handling contenteditable with placeholder: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   }
@@ -418,32 +418,32 @@ export class ContentEditableHandler implements InputHandler {
     selector: string,
     value: string,
     saveCallback?: (content: string) => void,
-    options: ContentEditableOptions = {}
+    options: ContentEditableOptions = {},
   ): Promise<InputDataResult> {
     try {
       const elementInfo = findElement(selector);
       if (!elementInfo) {
         return {
           status: 'error',
-          message: `Element not found with selector: ${selector}`
+          message: `Element not found with selector: ${selector}`,
         };
       }
-      
+
       const element = elementInfo.element;
-      
+
       // Set content
       const result = await this.handle(element, value, options);
-      
+
       if (result.status === 'success' && saveCallback) {
         // Trigger auto-save
         saveCallback(element.textContent || '');
       }
-      
+
       return result;
     } catch (error) {
       return {
         status: 'error',
-        message: `Error handling contenteditable with auto-save: ${error instanceof Error ? error.message : 'Unknown error'}`
+        message: `Error handling contenteditable with auto-save: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   }
@@ -455,39 +455,39 @@ export class ContentEditableHandler implements InputHandler {
     selector: string,
     value: string,
     maxLength: number,
-    options: ContentEditableOptions = {}
+    options: ContentEditableOptions = {},
   ): Promise<InputDataResult> {
     try {
       if (value.length > maxLength) {
         return {
           status: 'error',
-          message: `Content exceeds character limit of ${maxLength}. Content length: ${value.length}`
+          message: `Content exceeds character limit of ${maxLength}. Content length: ${value.length}`,
         };
       }
-      
+
       const elementInfo = findElement(selector);
       if (!elementInfo) {
         return {
           status: 'error',
-          message: `Element not found with selector: ${selector}`
+          message: `Element not found with selector: ${selector}`,
         };
       }
-      
+
       const element = elementInfo.element;
-      
+
       // Set content with character limit validation
       const result = await this.handle(element, value, options);
-      
+
       if (result.status === 'success') {
         // Add character count display if not already present
         this.addCharacterCountDisplay(element, maxLength);
       }
-      
+
       return result;
     } catch (error) {
       return {
         status: 'error',
-        message: `Error handling contenteditable with character limit: ${error instanceof Error ? error.message : 'Unknown error'}`
+        message: `Error handling contenteditable with character limit: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   }
@@ -498,7 +498,7 @@ export class ContentEditableHandler implements InputHandler {
     if (existingCounter) {
       return;
     }
-    
+
     // Create character counter
     const counter = document.createElement('div');
     counter.className = 'character-counter';
@@ -508,11 +508,11 @@ export class ContentEditableHandler implements InputHandler {
       text-align: right;
       margin-top: 5px;
     `;
-    
+
     const updateCounter = () => {
       const currentLength = element.textContent?.length || 0;
       counter.textContent = `${currentLength}/${maxLength}`;
-      
+
       if (currentLength > maxLength * 0.9) {
         counter.style.color = '#ff9800';
       } else if (currentLength > maxLength) {
@@ -521,10 +521,10 @@ export class ContentEditableHandler implements InputHandler {
         counter.style.color = '#666';
       }
     };
-    
+
     // Insert counter after the element
     element.parentElement?.insertBefore(counter, element.nextSibling);
-    
+
     // Update counter initially and on input
     updateCounter();
     element.addEventListener('input', updateCounter);

@@ -38,17 +38,17 @@ interface TakeScreenshotResult {
 export async function handleTakeScreenshot(
   captureFullPage: boolean = true,
   format: 'png' | 'jpeg' = 'jpeg',
-  quality: number = 25
+  quality: number = 25,
 ): Promise<TakeScreenshotResult> {
   try {
     debug.log('[Screenshot] Taking screenshot:', { captureFullPage, format, quality });
-    
+
     // Get the current active tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tabs[0]?.id || !tabs[0]?.windowId) {
       return {
         status: 'error',
-        message: 'Unable to access current tab'
+        message: 'Unable to access current tab',
       };
     }
 
@@ -64,21 +64,21 @@ export async function handleTakeScreenshot(
             // Get page dimensions
             const body = document.body;
             const html = document.documentElement;
-            
+
             const pageWidth = Math.max(
               body.scrollWidth,
               body.offsetWidth,
               html.clientWidth,
               html.scrollWidth,
-              html.offsetWidth
+              html.offsetWidth,
             );
-            
+
             const pageHeight = Math.max(
               body.scrollHeight,
               body.offsetHeight,
               html.clientHeight,
               html.scrollHeight,
-              html.offsetHeight
+              html.offsetHeight,
             );
 
             const viewportWidth = window.innerWidth;
@@ -135,7 +135,7 @@ export async function handleTakeScreenshot(
 
                 // Scroll to position
                 window.scrollTo(x, y);
-                
+
                 // Wait for scroll and render
                 await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -156,16 +156,16 @@ export async function handleTakeScreenshot(
               success: true,
               fullPage: true,
               dimensions: { width: pageWidth, height: pageHeight, tiles: totalTiles },
-              message: `Full page screenshot prepared (${pageWidth}x${pageHeight}px, ${totalTiles} tiles)`
+              message: `Full page screenshot prepared (${pageWidth}x${pageHeight}px, ${totalTiles} tiles)`,
             };
           } catch (error) {
             return {
               success: false,
-              message: `Error preparing full page screenshot: ${(error as Error).message}`
+              message: `Error preparing full page screenshot: ${(error as Error).message}`,
             };
           }
         },
-        args: [format, quality]
+        args: [format, quality],
       });
 
       if (result && result[0]?.result?.success) {
@@ -173,36 +173,37 @@ export async function handleTakeScreenshot(
         // For now, let's capture visible area and inform user
         const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
           format: format,
-          quality: format === 'jpeg' ? quality : undefined
+          quality: format === 'jpeg' ? quality : undefined,
         });
 
         const dims = result[0].result.dimensions;
         return {
           status: 'success',
-          message: 'Screenshot captured (visible area). Note: Full page screenshots require multiple captures. Current implementation captures the visible viewport.',
+          message:
+            'Screenshot captured (visible area). Note: Full page screenshots require multiple captures. Current implementation captures the visible viewport.',
           screenshotInfo: {
             format: format,
             dimensions: {
               width: dims?.width || 0,
-              height: dims?.height || 0
+              height: dims?.height || 0,
             },
             sizeKB: Math.round(dataUrl.length / 1024),
             quality: format === 'jpeg' ? quality : undefined,
             isFullPage: false,
-            dataUrl: dataUrl
-          }
+            dataUrl: dataUrl,
+          },
         };
       }
 
       return {
         status: 'error',
-        message: 'Failed to prepare full page screenshot'
+        message: 'Failed to prepare full page screenshot',
       };
     } else {
       // Simple viewport screenshot
       const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
         format: format,
-        quality: format === 'jpeg' ? quality : undefined
+        quality: format === 'jpeg' ? quality : undefined,
       });
 
       // Get viewport dimensions
@@ -211,8 +212,8 @@ export async function handleTakeScreenshot(
         func: () => ({
           width: window.innerWidth,
           height: window.innerHeight,
-          devicePixelRatio: window.devicePixelRatio
-        })
+          devicePixelRatio: window.devicePixelRatio,
+        }),
       });
 
       const dims = dimensions[0]?.result;
@@ -220,27 +221,27 @@ export async function handleTakeScreenshot(
 
       return {
         status: 'success',
-        message: 'Screenshot captured successfully. The screenshot has been captured and is available as a data URL. You can use it for analysis or comparison purposes.',
+        message:
+          'Screenshot captured successfully. The screenshot has been captured and is available as a data URL. You can use it for analysis or comparison purposes.',
         screenshotInfo: {
           format: format,
           dimensions: {
             width: dims?.width || 0,
             height: dims?.height || 0,
-            devicePixelRatio: dims?.devicePixelRatio || 1
+            devicePixelRatio: dims?.devicePixelRatio || 1,
           },
           sizeKB: sizeKB,
           quality: format === 'jpeg' ? quality : undefined,
           isFullPage: false,
-          dataUrl: dataUrl
-        }
+          dataUrl: dataUrl,
+        },
       };
     }
   } catch (error) {
     debug.error('[Screenshot] Error taking screenshot:', error);
     return {
       status: 'error',
-      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }
-

@@ -20,7 +20,10 @@ interface SelectorAtPointResult {
   };
 }
 
-interface Point { x: number; y: number }
+interface Point {
+  x: number;
+  y: number;
+}
 
 interface BatchSelectorResultItem extends SelectorAtPointResult {
   point: Point;
@@ -92,7 +95,10 @@ export async function handleGetSelectorAtPoint(x: number, y: number): Promise<Se
           const tag = node.tagName.toLowerCase();
           const classList = Array.from(node.classList);
           if (classList.length) {
-            const classSel = `${tag}.${classList.map(c => CSS.escape(c)).slice(0, 3).join('.')}`;
+            const classSel = `${tag}.${classList
+              .map(c => CSS.escape(c))
+              .slice(0, 3)
+              .join('.')}`;
             candidates.push(classSel);
           }
           // Attribute hints
@@ -121,7 +127,9 @@ export async function handleGetSelectorAtPoint(x: number, y: number): Promise<Se
               parts.push(part);
               break;
             }
-            const sibs = Array.from(cur.parentElement?.children || []).filter(c => (c as Element).tagName === cur!.tagName);
+            const sibs = Array.from(cur.parentElement?.children || []).filter(
+              c => (c as Element).tagName === cur!.tagName,
+            );
             const idx = sibs.indexOf(cur) + 1;
             part += `:nth-of-type(${idx})`;
             parts.push(part);
@@ -153,16 +161,18 @@ export async function handleGetSelectorAtPoint(x: number, y: number): Promise<Se
           tag: el.tagName,
           id: (el as HTMLElement).id || null,
           classes: Array.from(el.classList || []),
-          textSnippet: ((el.textContent || '').trim()).slice(0, 60)
+          textSnippet: (el.textContent || '').trim().slice(0, 60),
         };
         return { success: true, message: 'Selector generated', selector, elementInfo: info };
       },
-      args: [x, y] as [number, number]
+      args: [x, y] as [number, number],
     });
 
     const results = await Promise.race([
       execPromise,
-      new Promise<any>((resolve) => setTimeout(() => resolve([{ result: { success: false, message: 'Timeout generating selector' } }]), 8000))
+      new Promise<any>(resolve =>
+        setTimeout(() => resolve([{ result: { success: false, message: 'Timeout generating selector' } }]), 8000),
+      ),
     ]);
 
     debug.log('[SelectorAtPoint] Script execution results:', results);
@@ -233,13 +243,18 @@ export async function handleGetSelectorsAtPoints(points: Point[]): Promise<Batch
           } catch {}
           if ((node as HTMLElement).id) {
             const idSel = `#${CSS.escape((node as HTMLElement).id)}`;
-            try { if (document.querySelectorAll(idSel).length === 1) return idSel; } catch {}
+            try {
+              if (document.querySelectorAll(idSel).length === 1) return idSel;
+            } catch {}
           }
           const candidates: string[] = [];
           const tag = node.tagName.toLowerCase();
           const classList = Array.from(node.classList);
           if (classList.length) {
-            const classSel = `${tag}.${classList.map(c => CSS.escape(c)).slice(0, 3).join('.')}`;
+            const classSel = `${tag}.${classList
+              .map(c => CSS.escape(c))
+              .slice(0, 3)
+              .join('.')}`;
             candidates.push(classSel);
           }
           const attrs = ['name', 'role', 'type', 'aria-label', 'data-testid', 'data-test'];
@@ -249,7 +264,9 @@ export async function handleGetSelectorsAtPoints(points: Point[]): Promise<Batch
           }
           candidates.push(tag);
           for (const sel of candidates) {
-            try { if (document.querySelectorAll(sel).length === 1) return sel; } catch {}
+            try {
+              if (document.querySelectorAll(sel).length === 1) return sel;
+            } catch {}
           }
           const parts: string[] = [];
           let cur: Element | null = node;
@@ -260,7 +277,9 @@ export async function handleGetSelectorsAtPoints(points: Point[]): Promise<Batch
               parts.push(part);
               break;
             }
-            const sibs = Array.from(cur.parentElement?.children || []).filter(c => (c as Element).tagName === cur!.tagName);
+            const sibs = Array.from(cur.parentElement?.children || []).filter(
+              c => (c as Element).tagName === cur!.tagName,
+            );
             const idx = sibs.indexOf(cur) + 1;
             part += `:nth-of-type(${idx})`;
             parts.push(part);
@@ -268,7 +287,10 @@ export async function handleGetSelectorsAtPoints(points: Point[]): Promise<Batch
           }
           parts.push('html');
           const full = parts.reverse().join(' > ');
-          try { const hits = document.querySelectorAll(full); if (hits.length === 1 && hits[0] === node) return full; } catch {}
+          try {
+            const hits = document.querySelectorAll(full);
+            if (hits.length === 1 && hits[0] === node) return full;
+          } catch {}
           const path: string[] = [];
           let current: Element | null = node;
           while (current && current !== document.body) {
@@ -282,7 +304,7 @@ export async function handleGetSelectorsAtPoints(points: Point[]): Promise<Batch
           return path.length > 0 ? `body > ${path.join(' > ')}` : node.tagName.toLowerCase();
         };
 
-        const results = pts.map((p) => {
+        const results = pts.map(p => {
           const vx = clamp(p.x, 0, window.innerWidth - 1);
           const vy = clamp(p.y, 0, window.innerHeight - 1);
           const el = document.elementFromPoint(vx, vy) as Element | null;
@@ -294,19 +316,25 @@ export async function handleGetSelectorsAtPoints(points: Point[]): Promise<Batch
             tag: el.tagName,
             id: (el as HTMLElement).id || null,
             classes: Array.from(el.classList || []),
-            textSnippet: ((el.textContent || '').trim()).slice(0, 60)
+            textSnippet: (el.textContent || '').trim().slice(0, 60),
           };
-          return { success: true, message: 'Selector generated', selector, elementInfo: info, point: { x: p.x, y: p.y } };
+          return {
+            success: true,
+            message: 'Selector generated',
+            selector,
+            elementInfo: info,
+            point: { x: p.x, y: p.y },
+          };
         });
 
         return results;
       },
-      args: [points] as [{ x: number; y: number }[]]
+      args: [points] as [{ x: number; y: number }[]],
     });
 
     const results = await Promise.race([
       execPromise,
-      new Promise<any>((resolve) => setTimeout(() => resolve([{ result: [] }]), 8000))
+      new Promise<any>(resolve => setTimeout(() => resolve([{ result: [] }]), 8000)),
     ]);
 
     const payload = (results && results[0]?.result) || [];
@@ -330,8 +358,10 @@ export async function handleGetSelectorsAtPoints(points: Point[]): Promise<Batch
     return { status: 'success', message: 'Processed points', results: mapped };
   } catch (error) {
     debug.error('[SelectorAtPoints] Error:', error);
-    return { status: 'error', message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`, results: [] };
+    return {
+      status: 'error',
+      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      results: [],
+    };
   }
 }
-
-

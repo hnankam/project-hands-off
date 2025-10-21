@@ -13,15 +13,15 @@ export function findElement(selector: string): ElementInfo | null {
   let foundInShadowDOM = false;
   let shadowHostInfo = '';
   let depth = 0;
-  
+
   // If not found in main DOM, search in Shadow DOM recursively
   if (!element) {
     console.log('[InputUtils] Element not found in main DOM, searching Shadow DOM recursively...');
-    
+
     // Recursive function to search through all shadow roots (including nested ones)
     const searchShadowRoots = (root: Document | ShadowRoot | Element, currentDepth: number = 0): HTMLElement | null => {
       const elements = root.querySelectorAll('*');
-      
+
       for (const hostElement of Array.from(elements)) {
         if (hostElement.shadowRoot) {
           try {
@@ -34,7 +34,7 @@ export function findElement(selector: string): ElementInfo | null {
               console.log('[InputUtils] Found element in Shadow DOM:', shadowHostInfo);
               return shadowElement;
             }
-            
+
             // If not found, recursively search nested shadow roots
             const nestedResult = searchShadowRoots(hostElement.shadowRoot, currentDepth + 1);
             if (nestedResult) {
@@ -46,17 +46,17 @@ export function findElement(selector: string): ElementInfo | null {
           }
         }
       }
-      
+
       return null;
     };
-    
+
     // Start recursive search from document root
     const foundElement = searchShadowRoots(document, 1);
     if (foundElement) {
       element = foundElement;
     }
   }
-  
+
   if (!element) {
     return null;
   }
@@ -69,7 +69,7 @@ export function findElement(selector: string): ElementInfo | null {
     foundInShadowDOM,
     shadowHostInfo,
     inputType,
-    tagName
+    tagName,
   };
 }
 
@@ -79,8 +79,8 @@ export function findElement(selector: string): ElementInfo | null {
 export function isElementVisible(element: HTMLElement): boolean {
   const style = window.getComputedStyle(element);
   return !(
-    style.display === 'none' || 
-    style.visibility === 'hidden' || 
+    style.display === 'none' ||
+    style.visibility === 'hidden' ||
     style.opacity === '0' ||
     element.offsetWidth === 0 ||
     element.offsetHeight === 0
@@ -91,10 +91,10 @@ export function isElementVisible(element: HTMLElement): boolean {
  * Scroll element into view with optimal positioning
  */
 export function scrollIntoView(element: HTMLElement): void {
-  element.scrollIntoView({ 
-    behavior: 'smooth', 
-    block: 'nearest', 
-    inline: 'nearest' 
+  element.scrollIntoView({
+    behavior: 'smooth',
+    block: 'nearest',
+    inline: 'nearest',
   });
 }
 
@@ -107,21 +107,21 @@ export function focusAndHighlight(element: HTMLElement, duration: number = 2000,
   const originalOutline = element.style.outline;
   const originalOutlineOffset = element.style.outlineOffset;
   const originalBackground = element.style.backgroundColor;
-  
+
   // Focus the element
   element.focus();
-  
+
   // Move cursor to element if requested
   if (moveCursor) {
     moveCursorToElement(element);
   }
-  
+
   // Highlight the element
   element.style.outline = '3px solid #2196F3';
   element.style.outlineOffset = '4px';
   element.style.backgroundColor = 'rgba(33, 150, 243, 0.1)';
   element.style.transition = 'all 0.3s ease';
-  
+
   // Remove highlight after duration
   setTimeout(() => {
     element.style.outline = originalOutline;
@@ -142,27 +142,27 @@ export async function streamText(
     triggerInputEvents: true,
     triggerChangeEvents: true,
     triggerKeyboardEvents: false,
-    triggerSelectionChange: false
-  }
+    triggerSelectionChange: false,
+  },
 ): Promise<void> {
   const chars = value.split('');
   const typingSpeed = Math.max(10, Math.min(50, options.speed));
-  
+
   for (let i = 0; i < chars.length; i++) {
     const currentValue = value.substring(0, i + 1);
-    
+
     // Set value based on element type
     if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
       (element as HTMLInputElement | HTMLTextAreaElement).value = currentValue;
     } else if (element.hasAttribute('contenteditable')) {
       element.textContent = currentValue;
     }
-    
+
     // Trigger events
     if (options.triggerInputEvents) {
       element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
     }
-    
+
     if (options.triggerKeyboardEvents) {
       element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true }));
       element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true }));
@@ -170,11 +170,11 @@ export async function streamText(
     if (options.triggerSelectionChange) {
       document.dispatchEvent(new Event('selectionchange'));
     }
-    
+
     // Small delay between characters
     await new Promise(resolve => setTimeout(resolve, typingSpeed));
   }
-  
+
   // Final events after streaming completes
   if (options.triggerChangeEvents) {
     element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
@@ -186,7 +186,7 @@ export async function streamText(
  */
 export function showSuccessFeedback(element: HTMLElement): void {
   const rect = element.getBoundingClientRect();
-  
+
   // Ensure animation style exists (only add once)
   let styleEl = document.getElementById('__copilot_input_success_style__');
   if (!styleEl) {
@@ -210,7 +210,7 @@ export function showSuccessFeedback(element: HTMLElement): void {
     `;
     document.head.appendChild(styleEl);
   }
-  
+
   // Create feedback element
   const inputFeedback = document.createElement('div');
   inputFeedback.className = '__copilot_input_feedback__';
@@ -233,7 +233,7 @@ export function showSuccessFeedback(element: HTMLElement): void {
     z-index: 999999;
     animation: copilotInputSuccess 0.8s ease-out;
   `;
-  
+
   document.body.appendChild(inputFeedback);
 
   // Remove after animation completes
@@ -250,15 +250,17 @@ export function detectModernInput(element: HTMLElement): ModernInputDetection {
     isReactComponent: false,
     isVueComponent: false,
     isCustomInput: false,
-    framework: 'vanilla'
+    framework: 'vanilla',
   };
 
   // Check for React
-  const reactKey = Object.keys(element).find(key => key.startsWith('__reactInternalInstance') || key.startsWith('_reactInternalFiber'));
+  const reactKey = Object.keys(element).find(
+    key => key.startsWith('__reactInternalInstance') || key.startsWith('_reactInternalFiber'),
+  );
   if (reactKey) {
     detection.isReactComponent = true;
     detection.framework = 'react';
-    
+
     // Try to get component name
     const reactInstance = (element as any)[reactKey];
     if (reactInstance?.type?.displayName) {
@@ -273,7 +275,7 @@ export function detectModernInput(element: HTMLElement): ModernInputDetection {
   if (vueKey) {
     detection.isVueComponent = true;
     detection.framework = 'vue';
-    
+
     const vueInstance = (element as any)[vueKey];
     if (vueInstance?.$options?.name) {
       detection.componentName = vueInstance.$options.name;
@@ -291,11 +293,12 @@ export function detectModernInput(element: HTMLElement): ModernInputDetection {
   }
 
   // Check for custom input patterns
-  const hasCustomClasses = element.className.includes('input') || 
-                          element.className.includes('field') ||
-                          element.className.includes('form-control');
-  const hasDataAttributes = Array.from(element.attributes).some(attr => 
-    attr.name.startsWith('data-') && (attr.name.includes('input') || attr.name.includes('field'))
+  const hasCustomClasses =
+    element.className.includes('input') ||
+    element.className.includes('field') ||
+    element.className.includes('form-control');
+  const hasDataAttributes = Array.from(element.attributes).some(
+    attr => attr.name.startsWith('data-') && (attr.name.includes('input') || attr.name.includes('field')),
   );
 
   if (hasCustomClasses || hasDataAttributes) {
@@ -312,26 +315,26 @@ export function getElementValue(element: HTMLElement): string {
   if (element.tagName === 'INPUT') {
     const inputElement = element as HTMLInputElement;
     const type = inputElement.type;
-    
+
     if (type === 'checkbox' || type === 'radio') {
       return inputElement.checked ? 'checked' : 'unchecked';
     }
-    
+
     return inputElement.value;
   }
-  
+
   if (element.tagName === 'TEXTAREA') {
     return (element as HTMLTextAreaElement).value;
   }
-  
+
   if (element.tagName === 'SELECT') {
     return (element as HTMLSelectElement).value;
   }
-  
+
   if (element.hasAttribute('contenteditable')) {
     return element.textContent || '';
   }
-  
+
   return '';
 }
 
@@ -352,7 +355,7 @@ export function moveCursorToElement(element: HTMLElement): void {
     const rect = element.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
-    
+
     // Create and dispatch a mouse move event
     const mouseMoveEvent = new MouseEvent('mousemove', {
       bubbles: true,
@@ -360,12 +363,12 @@ export function moveCursorToElement(element: HTMLElement): void {
       clientX: centerX,
       clientY: centerY,
       screenX: centerX + window.screenX,
-      screenY: centerY + window.screenY
+      screenY: centerY + window.screenY,
     });
-    
+
     // Dispatch the event on the element
     element.dispatchEvent(mouseMoveEvent);
-    
+
     // Also try to set the cursor position if it's a text input
     if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
       const inputElement = element as HTMLInputElement | HTMLTextAreaElement;
@@ -374,7 +377,7 @@ export function moveCursorToElement(element: HTMLElement): void {
         inputElement.setSelectionRange(length, length);
       }
     }
-    
+
     console.log('[InputUtils] Cursor moved to element:', element.tagName, element.id || element.className);
   } catch (error) {
     console.error('[InputUtils] Error moving cursor to element:', error);
@@ -388,26 +391,26 @@ export function validateInputValue(element: HTMLElement, value: string): { valid
   if (element.tagName === 'INPUT') {
     const inputElement = element as HTMLInputElement;
     const type = inputElement.type;
-    
+
     // Number validation
     if (type === 'number' || type === 'range') {
       const numValue = parseFloat(value);
       if (isNaN(numValue)) {
         return { valid: false, error: 'Value must be a valid number' };
       }
-      
+
       const min = parseFloat(inputElement.min);
       const max = parseFloat(inputElement.max);
-      
+
       if (!isNaN(min) && numValue < min) {
         return { valid: false, error: `Value must be at least ${min}` };
       }
-      
+
       if (!isNaN(max) && numValue > max) {
         return { valid: false, error: `Value must be at most ${max}` };
       }
     }
-    
+
     // Email validation
     if (type === 'email') {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -415,7 +418,7 @@ export function validateInputValue(element: HTMLElement, value: string): { valid
         return { valid: false, error: 'Value must be a valid email address' };
       }
     }
-    
+
     // URL validation
     if (type === 'url') {
       try {
@@ -424,13 +427,13 @@ export function validateInputValue(element: HTMLElement, value: string): { valid
         return { valid: false, error: 'Value must be a valid URL' };
       }
     }
-    
+
     // Max length validation
     const maxLength = inputElement.maxLength;
     if (maxLength > 0 && value.length > maxLength) {
       return { valid: false, error: `Value must be at most ${maxLength} characters` };
     }
   }
-  
+
   return { valid: true };
 }

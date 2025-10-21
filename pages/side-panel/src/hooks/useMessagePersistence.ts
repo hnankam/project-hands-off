@@ -33,7 +33,7 @@ export interface UseMessagePersistenceReturn {
 
 /**
  * useMessagePersistence Hook
- * 
+ *
  * Manages chat message persistence to Chrome storage
  * - Save messages manually or automatically
  * - Load messages from storage
@@ -44,7 +44,7 @@ export const useMessagePersistence = ({
   isActive,
   isPanelVisible = true,
   saveMessagesRef,
-  restoreMessagesRef
+  restoreMessagesRef,
 }: UseMessagePersistenceProps): UseMessagePersistenceReturn => {
   // Timestamped debug wrappers
   const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
@@ -53,15 +53,15 @@ export const useMessagePersistence = ({
     warn: (...args: any[]) => baseDebug.warn(ts(), ...args),
     error: (...args: any[]) => baseDebug.error(ts(), ...args),
   } as const;
-  
+
   const [storedMessages, setStoredMessages] = useState<CopilotMessage[]>([]);
   const [storedFilteredMessagesCount, setStoredFilteredMessagesCount] = useState<number>(0);
 
   // Helper function to count filtered messages
   const countFilteredMessages = useCallback((messages: any[]): number => {
     if (!messages || messages.length === 0) return 0;
-    
-    return messages.filter((message) => {
+
+    return messages.filter(message => {
       if (typeof message.content === 'string') {
         return !message.content.startsWith('**') && message.content.trim() !== '';
       } else if (typeof message.content === 'object' && message.content !== null) {
@@ -76,122 +76,139 @@ export const useMessagePersistence = ({
 
   // PERFORMANCE OPTIMIZATION: Consolidated save function to avoid code duplication
   // Now stores ALL messages (including thinking messages)
-  const saveMessagesToStorage = useCallback(async (messagesToSave: CopilotMessage[]) => {
-    if (!messagesToSave || messagesToSave.length === 0) {
-      return;
-    }
-    
-    try {
-      // 📝 LOG FULL RAW MESSAGES BEING SAVED
-      debug.log('========== SAVING MESSAGES TO STORAGE ==========');
-      debug.log(`Session ID: ${sessionId}`);
-      debug.log(`Total messages to save: ${messagesToSave.length}`);
-      debug.log(`Filtered messages count: ${countFilteredMessages(messagesToSave)}`);
-      debug.log(`Timestamp: ${new Date().toISOString()}`);
-      
-      messagesToSave.forEach((msg, index) => {
-        // Guard against undefined/null messages
-        if (!msg) {
-          debug.warn(`⚠️ Message ${index + 1} is undefined or null, skipping`);
-          return;
-        }
-        
-        debug.log(`\n--- Message ${index + 1} to Save ---`);
-        
-        try {
-          debug.log('Full raw message (JSON):', JSON.stringify(msg, null, 2));
-        } catch (e) {
-          debug.warn('Failed to stringify message:', e);
-        }
-        
-        debug.log('Message summary:', {
-          role: msg.role || 'unknown',
-          content: typeof msg.content === 'string' ? msg.content : (msg.content ? JSON.stringify(msg.content) : '[no content]'),
-          id: msg.id || 'no-id',
-          hasToolCalls: !!(msg as any).toolCalls,
-          contentLength: typeof msg.content === 'string' ? msg.content.length : (msg.content ? JSON.stringify(msg.content).length : 0)
-        });
-        
-        // Highlight message type
-        if (msg.role === 'assistant') {
-          debug.log('💾 Saving AGENT message');
-        } else if (msg.role === 'user') {
-          debug.log('💾 Saving USER message');
-        } else {
-          debug.log(`💾 Saving ${msg.role || 'unknown'} message`);
-        }
-      });
-      debug.log('==============================================\n');
-      
-      // Filter out any undefined/null messages before saving
-      const validMessages = messagesToSave.filter(msg => msg !== null && msg !== undefined);
-      
-      if (validMessages.length !== messagesToSave.length) {
-        debug.warn(`⚠️ Filtered out ${messagesToSave.length - validMessages.length} undefined/null messages`);
+  const saveMessagesToStorage = useCallback(
+    async (messagesToSave: CopilotMessage[]) => {
+      if (!messagesToSave || messagesToSave.length === 0) {
+        return;
       }
-      
-      const result = await chrome.storage.local.get([STORAGE_CONSTANTS.CHAT_STORAGE_KEY]);
-      const storedData: StoredChatData = result[STORAGE_CONSTANTS.CHAT_STORAGE_KEY] || {};
-      storedData[sessionId] = validMessages;
-      await chrome.storage.local.set({ [STORAGE_CONSTANTS.CHAT_STORAGE_KEY]: storedData });
-      setStoredMessages(validMessages);
-      setStoredFilteredMessagesCount(countFilteredMessages(validMessages));
-      debug.log(`✅ [useMessagePersistence] Successfully saved ${validMessages.length} messages (${countFilteredMessages(validMessages)} filtered) for session ${sessionId}`);
-    } catch (error) {
-      debug.error('❌ [useMessagePersistence] Failed to save messages to storage:', error);
-    }
-  }, [sessionId, countFilteredMessages]);
+
+      try {
+        // 📝 LOG FULL RAW MESSAGES BEING SAVED
+        debug.log('========== SAVING MESSAGES TO STORAGE ==========');
+        debug.log(`Session ID: ${sessionId}`);
+        debug.log(`Total messages to save: ${messagesToSave.length}`);
+        debug.log(`Filtered messages count: ${countFilteredMessages(messagesToSave)}`);
+        debug.log(`Timestamp: ${new Date().toISOString()}`);
+
+        messagesToSave.forEach((msg, index) => {
+          // Guard against undefined/null messages
+          if (!msg) {
+            debug.warn(`⚠️ Message ${index + 1} is undefined or null, skipping`);
+            return;
+          }
+
+          debug.log(`\n--- Message ${index + 1} to Save ---`);
+
+          try {
+            debug.log('Full raw message (JSON):', JSON.stringify(msg, null, 2));
+          } catch (e) {
+            debug.warn('Failed to stringify message:', e);
+          }
+
+          debug.log('Message summary:', {
+            role: msg.role || 'unknown',
+            content:
+              typeof msg.content === 'string'
+                ? msg.content
+                : msg.content
+                  ? JSON.stringify(msg.content)
+                  : '[no content]',
+            id: msg.id || 'no-id',
+            hasToolCalls: !!(msg as any).toolCalls,
+            contentLength:
+              typeof msg.content === 'string'
+                ? msg.content.length
+                : msg.content
+                  ? JSON.stringify(msg.content).length
+                  : 0,
+          });
+
+          // Highlight message type
+          if (msg.role === 'assistant') {
+            debug.log('💾 Saving AGENT message');
+          } else if (msg.role === 'user') {
+            debug.log('💾 Saving USER message');
+          } else {
+            debug.log(`💾 Saving ${msg.role || 'unknown'} message`);
+          }
+        });
+        debug.log('==============================================\n');
+
+        // Filter out any undefined/null messages before saving
+        const validMessages = messagesToSave.filter(msg => msg !== null && msg !== undefined);
+
+        if (validMessages.length !== messagesToSave.length) {
+          debug.warn(`⚠️ Filtered out ${messagesToSave.length - validMessages.length} undefined/null messages`);
+        }
+
+        const result = await chrome.storage.local.get([STORAGE_CONSTANTS.CHAT_STORAGE_KEY]);
+        const storedData: StoredChatData = result[STORAGE_CONSTANTS.CHAT_STORAGE_KEY] || {};
+        storedData[sessionId] = validMessages;
+        await chrome.storage.local.set({ [STORAGE_CONSTANTS.CHAT_STORAGE_KEY]: storedData });
+        setStoredMessages(validMessages);
+        setStoredFilteredMessagesCount(countFilteredMessages(validMessages));
+        debug.log(
+          `✅ [useMessagePersistence] Successfully saved ${validMessages.length} messages (${countFilteredMessages(validMessages)} filtered) for session ${sessionId}`,
+        );
+      } catch (error) {
+        debug.error('❌ [useMessagePersistence] Failed to save messages to storage:', error);
+      }
+    },
+    [sessionId, countFilteredMessages],
+  );
 
   // Manual save function using CopilotKit API
   const handleSaveMessages = useCallback(async () => {
     // minimal log
-    
+
     if (!saveMessagesRef.current) {
       debug.log('[useMessagePersistence] saveMessagesRef.current is null, returning');
       return;
     }
-    
+
     try {
       // Get both all messages and filtered messages from ChatInner
       const messageData = saveMessagesRef.current();
       const allMessages = messageData.allMessages || [];
       const filteredMessages = messageData.filteredMessages || [];
-      
+
       debug.log('[useMessagePersistence] Messages to save:', {
         total: allMessages.length,
-        filtered: filteredMessages.length
+        filtered: filteredMessages.length,
       });
-      
+
       // 📝 LOG FULL RAW MESSAGES BEING MANUALLY SAVED
       debug.log('========== MANUAL SAVE TO STORAGE ==========');
       debug.log(`Session ID: ${sessionId}`);
       debug.log(`Total messages: ${allMessages.length}`);
       debug.log(`Filtered messages: ${filteredMessages.length}`);
       debug.log(`Timestamp: ${new Date().toISOString()}`);
-      
+
       allMessages.forEach((msg: any, index: number) => {
         // Guard against undefined/null messages
         if (!msg) {
           debug.warn(`⚠️ Message ${index + 1} (Manual Save) is undefined or null, skipping`);
           return;
         }
-        
+
         debug.log(`\n--- Message ${index + 1} (Manual Save) ---`);
-        
+
         try {
           debug.log('Full raw message (JSON):', JSON.stringify(msg, null, 2));
         } catch (e) {
           debug.warn('Failed to stringify message:', e);
         }
-        
+
         debug.log('Message summary:', {
           role: msg.role || 'unknown',
-          content: typeof msg.content === 'string' ? msg.content : (msg.content ? JSON.stringify(msg.content) : '[no content]'),
+          content:
+            typeof msg.content === 'string' ? msg.content : msg.content ? JSON.stringify(msg.content) : '[no content]',
           id: msg.id || 'no-id',
           hasToolCalls: !!msg.toolCalls,
-          contentLength: typeof msg.content === 'string' ? msg.content.length : (msg.content ? JSON.stringify(msg.content).length : 0)
+          contentLength:
+            typeof msg.content === 'string' ? msg.content.length : msg.content ? JSON.stringify(msg.content).length : 0,
         });
-        
+
         // Highlight message type
         if (msg.role === 'assistant') {
           debug.log('💾 Manually saving AGENT message');
@@ -202,20 +219,22 @@ export const useMessagePersistence = ({
         }
       });
       debug.log('===========================================\n');
-      
+
       // Filter out any undefined/null messages before saving
       const validMessages = allMessages.filter((msg: any) => msg !== null && msg !== undefined);
-      
+
       if (validMessages.length !== allMessages.length) {
-        debug.warn(`⚠️ Filtered out ${allMessages.length - validMessages.length} undefined/null messages (Manual Save)`);
+        debug.warn(
+          `⚠️ Filtered out ${allMessages.length - validMessages.length} undefined/null messages (Manual Save)`,
+        );
       }
-      
+
       // Save ALL messages to Chrome storage (not just filtered ones)
       const result = await chrome.storage.local.get([STORAGE_CONSTANTS.CHAT_STORAGE_KEY]);
       const storedData: StoredChatData = result[STORAGE_CONSTANTS.CHAT_STORAGE_KEY] || {};
       storedData[sessionId] = validMessages;
       await chrome.storage.local.set({ [STORAGE_CONSTANTS.CHAT_STORAGE_KEY]: storedData });
-      
+
       // Update local state
       setStoredMessages(validMessages);
       setStoredFilteredMessagesCount(filteredMessages.length);
@@ -231,24 +250,24 @@ export const useMessagePersistence = ({
 
   const handleLoadMessages = useCallback(async () => {
     // debug.log('[useMessagePersistence] handleLoadMessages called, restoreMessagesRef.current:', restoreMessagesRef.current);
-    
+
     if (!restoreMessagesRef.current) {
       debug.log('[useMessagePersistence] restoreMessagesRef.current is null, returning');
       return;
     }
-    
+
     try {
       const result = await chrome.storage.local.get([STORAGE_CONSTANTS.CHAT_STORAGE_KEY]);
       const storedData: StoredChatData = result[STORAGE_CONSTANTS.CHAT_STORAGE_KEY] || {};
       const messages = storedData[sessionId] || [];
-      
+
       debug.log('[useMessagePersistence] Messages to load:', messages.length);
-      
+
       if (messages.length === 0) {
         debug.log('[useMessagePersistence] No messages to load');
         return;
       }
-      
+
       // Restore ALL messages (including thinking messages) using ChatInner's setMessages
       if (restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS) {
         restoreAttemptsRef.current += 1;
@@ -259,7 +278,7 @@ export const useMessagePersistence = ({
       setStoredMessages(messages);
       setStoredFilteredMessagesCount(countFilteredMessages(messages));
       debug.log('✅ [useMessagePersistence] Messages loaded successfully');
-      
+
       // Verify messages were actually set after a short delay
       // If they were cleared, try restoring again (handles CopilotKit initialization race)
       setTimeout(() => {
@@ -288,23 +307,23 @@ export const useMessagePersistence = ({
   // Auto-restore messages when session becomes active or panel is reopened
   const hasAutoRestoredRef = useRef(false);
   const panelOpenTimeRef = useRef<number>(0);
-  
+
   // Track when panel becomes visible
   useEffect(() => {
     if (isPanelVisible && isActive) {
       panelOpenTimeRef.current = Date.now();
     }
   }, [isPanelVisible, isActive]);
-  
+
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | undefined;
-    
+
     // Auto-restore when:
     // 1. Session becomes active and hasn't been restored yet
     // 2. Panel becomes visible again (reopened) for an active session
     if (isActive && isPanelVisible && !hasAutoRestoredRef.current) {
       hasAutoRestoredRef.current = true;
-      
+
       // Wait longer to ensure CopilotKit has fully initialized before restoring
       // This prevents CopilotKit from overriding restored messages with empty thread state
       timeoutId = setTimeout(() => {
@@ -312,30 +331,30 @@ export const useMessagePersistence = ({
         handleLoadMessages();
       }, 500); // Increased from 50ms to 500ms to allow CopilotKit to initialize
     }
-    
+
     // Reset flag when session becomes inactive OR panel becomes hidden
     // This allows auto-restore to trigger again when reactivated or panel reopens
     if (!isActive || !isPanelVisible) {
       hasAutoRestoredRef.current = false;
     }
-    
+
     return () => {
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
     };
   }, [isActive, isPanelVisible, handleLoadMessages]);
-  
+
   // Monitor for unexpected message clearing shortly after panel opens
   // and auto-restore if it happens (handles CopilotKit race conditions)
   useEffect(() => {
     if (!saveMessagesRef.current || !restoreMessagesRef.current) return;
     if (!isActive || !isPanelVisible) return;
-    
+
     const timeSincePanelOpen = Date.now() - panelOpenTimeRef.current;
     // Only monitor for the first 2 seconds after panel opens
     if (timeSincePanelOpen > 1500) return;
-    
+
     let watchdogRestoreDone = false;
     const intervalId = setInterval(() => {
       if (saveMessagesRef.current && restoreMessagesRef.current && storedMessages.length > 0) {
@@ -351,12 +370,12 @@ export const useMessagePersistence = ({
         }
       }
     }, 400); // Check at a slower interval
-    
+
     // Stop monitoring after 2 seconds
     const stopTimeoutId = setTimeout(() => {
       clearInterval(intervalId);
     }, 2000);
-    
+
     return () => {
       clearInterval(intervalId);
       clearTimeout(stopTimeoutId);
@@ -369,7 +388,6 @@ export const useMessagePersistence = ({
     setStoredMessages,
     handleSaveMessages,
     handleLoadMessages,
-    saveMessagesToStorage
+    saveMessagesToStorage,
   };
 };
-

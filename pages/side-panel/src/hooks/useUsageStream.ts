@@ -40,7 +40,7 @@ export function useUsageStream(
   sessionId: string | null,
   enabled: boolean = true,
   wsUrl: string = 'ws://localhost:8001',
-  initialCumulative?: CumulativeUsage
+  initialCumulative?: CumulativeUsage,
 ): UseUsageStreamReturn {
   const [lastUsage, setLastUsage] = useState<UsageData | null>(null);
   const [cumulativeUsage, setCumulativeUsage] = useState<CumulativeUsage>(
@@ -49,11 +49,11 @@ export function useUsageStream(
       response: 0,
       total: 0,
       requestCount: 0,
-    }
+    },
   );
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -76,12 +76,17 @@ export function useUsageStream(
 
     // If an existing socket is for a different session, close it to force reconnect
     if (wsRef.current && (wsRef.current as any)._sessionId && (wsRef.current as any)._sessionId !== sessionId) {
-      try { wsRef.current.close(); } catch {}
+      try {
+        wsRef.current.close();
+      } catch {}
       wsRef.current = null;
     }
 
     // Prevent duplicate connections for the same session
-    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+    if (
+      wsRef.current &&
+      (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)
+    ) {
       log('useUsageStream: WebSocket already open or connecting for session', (wsRef.current as any)._sessionId);
       return;
     }
@@ -111,10 +116,10 @@ export function useUsageStream(
         reconnectAttemptsRef.current = 0;
       };
 
-      ws.onmessage = (event) => {
+      ws.onmessage = event => {
         try {
           const data = JSON.parse(event.data);
-          
+
           // Ignore pong messages
           if (data.type === 'pong') {
             return;
@@ -141,11 +146,13 @@ export function useUsageStream(
         }
       };
 
-      ws.onerror = (event) => {
+      ws.onerror = event => {
         err('❌ WebSocket error:', event);
         setError('WebSocket connection error');
         // Close to trigger onclose reconnection path
-        try { ws.close(); } catch {}
+        try {
+          ws.close();
+        } catch {}
       };
 
       ws.onclose = () => {
@@ -162,7 +169,7 @@ export function useUsageStream(
           reconnectAttemptsRef.current++;
           const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
           log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
-          
+
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
           }, delay);
@@ -180,7 +187,6 @@ export function useUsageStream(
 
       // Store interval ID for cleanup
       (ws as any)._pingInterval = pingInterval;
-
     } catch (error) {
       err('❌ Error creating WebSocket:', error);
       setError(error instanceof Error ? error.message : 'Connection failed');
@@ -202,7 +208,7 @@ export function useUsageStream(
 
       if (wsRef.current) {
         const ws = wsRef.current;
-        
+
         // Clear ping interval
         if ((ws as any)._pingInterval) {
           clearInterval((ws as any)._pingInterval);
@@ -223,4 +229,3 @@ export function useUsageStream(
     setCumulative: setCumulativeUsage,
   };
 }
-
