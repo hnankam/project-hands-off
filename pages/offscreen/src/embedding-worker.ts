@@ -7,6 +7,10 @@ import { pipeline, env } from '@huggingface/transformers';
 
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
 
+// Debug toggle (set to false in production)
+const DEBUG = true;
+const log = (...args: any[]) => DEBUG && console.log(...args);
+
 // Configure environment for worker context
 env.allowRemoteModels = true;
 env.allowLocalModels = true;
@@ -24,17 +28,16 @@ let pipelineInitPromise: Promise<void> | null = null;
 
 async function ensurePipeline() {
   if (embeddingPipeline) return;
-  if (embeddingPipeline) return;
   if (!pipelineInitPromise) {
     pipelineInitPromise = (async () => {
-      console.log(ts(), '[EmbeddingWorker] Initializing transformers pipeline (WASM, single-threaded in worker)...');
+      log(ts(), '[EmbeddingWorker] Initializing transformers pipeline (WASM, single-threaded in worker)...');
       const start = performance.now();
       // WebGPU is not available in workers; use WASM
       embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
         device: 'wasm',
         dtype: 'q8',
       });
-      console.log(ts(), '[EmbeddingWorker] Pipeline ready in', (performance.now() - start).toFixed(0), 'ms');
+      log(ts(), '[EmbeddingWorker] Pipeline ready in', (performance.now() - start).toFixed(0), 'ms');
     })();
   }
   await pipelineInitPromise;
@@ -42,6 +45,10 @@ async function ensurePipeline() {
 
 async function embedText(text: string): Promise<number[]> {
   await ensurePipeline();
+  // Fast-path: empty/whitespace text → zero vector
+  if (!text || (typeof text === 'string' && text.trim().length === 0)) {
+    return new Array(384).fill(0);
+  }
   const output = await embeddingPipeline(text, { pooling: 'mean', normalize: true });
   const arr: number[] = Array.from(output.data as Iterable<number>).map((v: number) => Number(v));
   return arr;
@@ -49,10 +56,14 @@ async function embedText(text: string): Promise<number[]> {
 
 async function embedBatch(texts: string[]): Promise<number[][]> {
   await ensurePipeline();
+  // Fast-path: no inputs
+  if (!texts || texts.length === 0) return [];
   const BATCH_SIZE = 32;
-  const MAX_CONCURRENT = 8; // Reinstate limited concurrency inside worker
+  // Clamp concurrency by available cores
+  const hc = (self as any)?.navigator?.hardwareConcurrency || 4;
+  const MAX_CONCURRENT = Math.max(2, Math.min(8, (hc as number) - 1));
   const totalBatches = Math.ceil(texts.length / BATCH_SIZE);
-  console.log(ts(), '[EmbeddingWorker] PARALLEL BATCH PROCESSING:', texts.length, 'texts in', totalBatches, 'batches (', BATCH_SIZE, 'each,', MAX_CONCURRENT, 'concurrent)');
+  log(ts(), '[EmbeddingWorker] PARALLEL BATCH PROCESSING:', texts.length, 'texts in', totalBatches, 'batches (', BATCH_SIZE, 'each,', MAX_CONCURRENT, 'concurrent)');
 
   // Single-batch runner
   const processBatch = async (batchIndex: number): Promise<{ index: number; embeddings: number[][] }> => {

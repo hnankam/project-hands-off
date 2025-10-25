@@ -24,62 +24,40 @@ interface RefreshPageContentResult {
 /**
  * Force refresh the page HTML content
  * @param pageContentForAgent - Current page content object (for stats)
+ * @param triggerManualRefresh - Optional manual refresh callback from UI
  * @returns Promise with status and message object
  */
-export async function handleRefreshPageContent(pageContentForAgent: any): Promise<RefreshPageContentResult> {
+export async function handleRefreshPageContent(
+  pageContentForAgent: any,
+  triggerManualRefresh?: () => void
+): Promise<RefreshPageContentResult> {
   debug.log('🔄 [RefreshContent] AI requested fresh page content');
 
   try {
-    // Get the current active tab
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs[0]?.id) {
+    // Call the manual refresh callback directly to trigger the same UI refresh pathway
+    if (triggerManualRefresh) {
+      debug.log('[RefreshContent] Triggering manual refresh via callback');
+      triggerManualRefresh();
+      // Brief delay to allow the fetch to start
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      return {
+        status: 'success',
+        message:
+          'Page content refreshed successfully! You can now analyze the pageHTML to find elements and extract CSS selectors.',
+        pageInfo: {
+          title: pageContentForAgent?.pageTitle || 'Unknown',
+          url: pageContentForAgent?.pageURL || 'Unknown',
+          htmlLength: pageContentForAgent?.pageHTML?.length || 0,
+        },
+      };
+    } else {
+      debug.error('[RefreshContent] No triggerManualRefresh callback available');
       return {
         status: 'error',
-        message: 'Unable to access current tab',
+        message: 'Unable to refresh: no refresh callback provided',
       };
     }
-
-    // Force fetch fresh content (promisified with timeout)
-    await new Promise<void>(resolve => {
-      let done = false;
-      const timeout = setTimeout(() => {
-        if (!done) {
-          debug.warn('⏱️  [RefreshContent] getPageContentOnDemand timed out');
-          done = true;
-          resolve();
-        }
-      }, 5000);
-
-      chrome.runtime.sendMessage({ type: 'getPageContentOnDemand', tabId: tabs[0].id }, response => {
-        if (!done) {
-          clearTimeout(timeout);
-          done = true;
-          if (response?.success && response?.content) {
-            debug.log('✅ [RefreshContent] Fresh content received');
-          } else {
-            debug.error('❌ [RefreshContent] Failed to get fresh content');
-          }
-          resolve();
-        }
-      });
-    });
-
-    // Small delay to allow state propagation; avoid long sleeps
-    await new Promise(resolve => setTimeout(resolve, 300));
-
-    // Return summary
-    const htmlLength = pageContentForAgent.pageHTML?.length || 0;
-
-    return {
-      status: 'success',
-      message:
-        'Page content refreshed successfully! You can now analyze the pageHTML to find elements and extract CSS selectors.',
-      pageInfo: {
-        title: pageContentForAgent.pageTitle || 'Unknown',
-        url: pageContentForAgent.pageURL || 'Unknown',
-        htmlLength: htmlLength,
-      },
-    };
   } catch (error) {
     debug.error('[RefreshContent] Error refreshing content:', error);
     return {

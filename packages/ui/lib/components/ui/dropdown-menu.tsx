@@ -10,6 +10,8 @@ interface DropdownMenuProps {
   isLight?: boolean
 }
 
+const DropdownMenuContext = React.createContext<{ isLight: boolean; portalContainer: HTMLElement | null; closeMenu: () => void }>({ isLight: true, portalContainer: null, closeMenu: () => {} })
+
 export const DropdownMenu = ({ children, trigger, className, align = 'left', isLight = true }: DropdownMenuProps) => {
   const [isOpen, setIsOpen] = React.useState(false)
   const [position, setPosition] = React.useState({ top: 0, left: 0, right: 0 })
@@ -99,14 +101,16 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', isL
             pointerEvents: 'auto'
           }}
         >
-          <div className="py-1">
-            {React.Children.map(children, child => {
-              if (React.isValidElement(child)) {
-                return React.cloneElement(child, { isLight } as any)
-              }
-              return child
-            })}
-          </div>
+          <DropdownMenuContext.Provider value={{ isLight, portalContainer, closeMenu: () => setIsOpen(false) }}>
+            <div className="py-1" onClick={() => setIsOpen(false)}>
+              {React.Children.map(children, child => {
+                if (React.isValidElement(child)) {
+                  return React.cloneElement(child, { isLight } as any)
+                }
+                return child
+              })}
+            </div>
+          </DropdownMenuContext.Provider>
         </div>,
         portalContainer
       )}
@@ -116,23 +120,29 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', isL
 
 interface DropdownMenuItemProps {
   children: React.ReactNode
-  onClick?: () => void
+  onClick?: (e: React.MouseEvent) => void
   className?: string
   shortcut?: string
   isLight?: boolean
+  disabled?: boolean
 }
 
-export const DropdownMenuItem = ({ children, onClick, className, shortcut, isLight = true }: DropdownMenuItemProps) => {
+export const DropdownMenuItem = ({ children, onClick, className, shortcut, isLight = true, disabled = false }: DropdownMenuItemProps) => {
   return (
     <button
       className={cn(
         "flex w-full items-center justify-between px-3 py-2 text-xs font-medium transition-colors text-left",
-        isLight
-          ? "text-gray-700 hover:bg-gray-100"
-          : "text-gray-200 hover:bg-gray-700/50",
+        disabled
+          ? isLight
+            ? "cursor-not-allowed text-gray-400 opacity-50"
+            : "cursor-not-allowed text-gray-500 opacity-50"
+          : isLight
+            ? "text-gray-700 hover:bg-gray-100"
+            : "text-gray-200 hover:bg-gray-700/50",
         className
       )}
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
     >
       <span>{children}</span>
       {shortcut && (
@@ -157,5 +167,72 @@ export const DropdownMenuSeparator = ({ className, isLight = true }: DropdownMen
       isLight ? "border-gray-200" : "border-gray-700",
       className
     )} />
+  )
+}
+
+interface DropdownSubmenuProps {
+  label: string
+  children: React.ReactNode
+  align?: 'left' | 'right'
+  isLight?: boolean
+}
+
+export const DropdownSubmenu = ({ label, children, align = 'right', isLight = true }: DropdownSubmenuProps) => {
+  const { isLight: ctxLight, portalContainer, closeMenu } = React.useContext(DropdownMenuContext)
+  const effectiveLight = isLight ?? ctxLight
+  const [open, setOpen] = React.useState(false)
+  const [pos, setPos] = React.useState<{ top: number; right: number }>({ top: 0, right: 0 })
+  const itemRef = React.useRef<HTMLDivElement>(null)
+
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!open && itemRef.current) {
+      const r = itemRef.current.getBoundingClientRect()
+      // Always open to the LEFT of the parent menu item
+      const top = Math.max(4, Math.min(r.top, window.innerHeight - 4))
+      const right = window.innerWidth - r.left + 4
+      setPos({ top, right })
+    }
+    setOpen(prev => !prev)
+  }
+
+  const handleItemClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    closeMenu()
+  }
+
+  return (
+    <div ref={itemRef} className="relative">
+      <button
+        className={cn(
+          "flex w-full items-center justify-between px-3 py-2 text-xs font-medium transition-colors text-left",
+          effectiveLight ? "text-gray-700 hover:bg-gray-100" : "text-gray-200 hover:bg-gray-700/50"
+        )}
+        onClick={toggle}
+      >
+        <span>{label}</span>
+        <span className={cn("ml-2", effectiveLight ? "text-gray-500" : "text-gray-400")}>◀</span>
+      </button>
+      {open && portalContainer && createPortal(
+        <div
+          className={cn(
+            "dropdown-submenu-content w-44 rounded-md border shadow-lg overflow-hidden",
+            effectiveLight ? "border-gray-200 bg-gray-50" : "border-gray-700 bg-[#151C24]"
+          )}
+          style={{ position: 'absolute', top: `${pos.top}px`, right: `${pos.right}px`, pointerEvents: 'auto' }}
+          onClick={handleItemClick}
+        >
+          <div className="py-1">
+            {React.Children.map(children, child => {
+              if (React.isValidElement(child)) {
+                return React.cloneElement(child, { isLight: effectiveLight } as any)
+              }
+              return child
+            })}
+          </div>
+        </div>,
+        portalContainer
+      )}
+    </div>
   )
 }

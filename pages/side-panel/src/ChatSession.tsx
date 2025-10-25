@@ -36,6 +36,7 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
   // Refs to access CopilotKit's setMessages from ChatInner
   const saveMessagesRef = useRef<(() => MessageData) | null>(null);
   const restoreMessagesRef = useRef<((messages: any[]) => void) | null>(null);
+  const resetChatRef = useRef<(() => void) | null>(null);
   
   // OPTIMIZATION: Use tab management hook to consolidate tab tracking logic
   const {
@@ -144,53 +145,43 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
   const autoRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   // Monitor for actual DOM changes on the current tab
-  // TEMPORARILY DISABLED: Auto-refresh on DOM changes
   useEffect(() => {
     if (!isActive) return;
     
     const handleMessage = (message: any) => {
       if (message.type === 'contentBecameStale' && message.tabId === currentTabId) {
         // Show indicator immediately
-        debug.log('[ChatSession] Content became stale (auto-refresh DISABLED)');
-          setShowStaleIndicator(true);
-          
+        debug.log('[ChatSession] Content became stale (auto-refresh SCHEDULED)');
+        setShowStaleIndicator(true);
+
         // Capture the incremental DOM update if available
         if (message.domUpdate) {
           debug.log('[ChatSession] Received incremental DOM update:', message.domUpdate.summary);
           setLatestDOMUpdate(message.domUpdate);
         }
-          
-        // TEMPORARILY DISABLED: Auto-refresh logic commented out
-        /*
-          // Clear any existing timer
+
+        // Always invalidate cache for this tab so the next fetch is fresh
+        const cacheKey = `${message.tabId}`;
+        contentCacheRef.current.delete(cacheKey);
+
+        // If panel is active OR assistant is streaming, refresh immediately
+        if (isPanelActive || isAgentLoading) {
+          debug.log('[ChatSession] Immediate auto-refresh (panel active or assistant streaming)');
+          fetchFreshPageContent(true, message.tabId);
+          setShowStaleIndicator(false);
+          // Clear any pending timer
           if (autoRefreshTimerRef.current) {
             clearTimeout(autoRefreshTimerRef.current);
+            autoRefreshTimerRef.current = null;
           }
-          
-        // Function to attempt refresh (checks if agent is loading)
-        const attemptRefresh = () => {
-          if (isAgentLoading) {
-            // Agent is still loading, wait and check again
-            debug.log('[ChatSession] Agent is loading, will check again in 1 second...');
-            autoRefreshTimerRef.current = setTimeout(attemptRefresh, 1000); // Check again in 1 second
-          } else {
-            // Agent is done, safe to refresh
-            debug.log('[ChatSession] Agent finished, auto-refreshing now');
-            const cacheKey = `${message.tabId}`;
-            contentCacheRef.current.delete(cacheKey);
-            fetchFreshPageContent(true, message.tabId);
-            setShowStaleIndicator(false); // Clear banner after auto-refresh
-          }
-        };
-        
-        // Determine initial delay based on panel state
-        // Active panel: 500ms (quick check since user is watching)
-        // Inactive panel: 8 seconds (longer delay since user isn't actively using it)
-        const initialDelay = isPanelActive ? 500 : 8000;
-        debug.log(`[ChatSession] Scheduling refresh check in ${initialDelay}ms (panel ${isPanelActive ? 'active' : 'inactive'})`);
-        
-        autoRefreshTimerRef.current = setTimeout(attemptRefresh, initialDelay);
-        */
+          return;
+        }
+
+        // Panel inactive: wait for user interaction; do not schedule background refresh
+        if (autoRefreshTimerRef.current) {
+          clearTimeout(autoRefreshTimerRef.current);
+          autoRefreshTimerRef.current = null;
+        }
       }
     };
     
@@ -938,6 +929,7 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
             setHeadlessMessagesCount={setHeadlessMessagesCount}
             saveMessagesRef={saveMessagesRef}
             restoreMessagesRef={restoreMessagesRef}
+            resetChatRef={resetChatRef}
             setIsAgentLoading={setIsAgentLoading}
             showSuggestions={showSuggestions}
             initialAgentStepState={initialAgentStepState}

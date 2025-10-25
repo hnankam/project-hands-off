@@ -360,10 +360,10 @@ async function ragQuery(userQuestion: string): Promise<string> {
 
 #### Methods
 
-- `initialize(options?)` - Load and initialize the embedding model
-- `embed(text)` - Generate embedding for a single text
-- `embedBatch(texts, batchSize?)` - Generate embeddings for multiple texts
-- `embedStream(texts, batchSize?)` - Generator function for processing with progress
+- `initialize(options?, opts?)` - Load and initialize the embedding model
+- `embed(text, opts?)` - Generate embedding for a single text
+- `embedBatch(texts, batchSize?, opts?)` - Generate embeddings for multiple texts
+- `embedStream(texts, batchSize?, opts?)` - Generator function for processing with progress
 - `getCurrentModel()` - Get the currently loaded model
 - `isModelLoading()` - Check if model is currently loading
 - `isReady()` - Check if model is loaded and ready
@@ -399,6 +399,20 @@ enum EmbeddingModel {
 ```
 
 ## Performance Tips
+## Timeouts and cancellation
+
+All embedding requests are sent via `chrome.runtime.sendMessage` and support optional timeouts and cancellation:
+
+- `initialize(options?, { timeoutMs?, signal? })`
+- `embed(text, { timeoutMs?, signal? })`
+- `embedBatch(texts, batchSize?, { timeoutMsPerItem?, signal? })`
+- `embedStream(texts, batchSize?, { timeoutMsPerItem?, signal? })`
+
+Notes:
+- Default timeout is 30s per request/item if not provided.
+- Pass an `AbortSignal` to cancel long-running work (e.g., user navigates away).
+- Errors from timeouts/aborts will reject the promise as regular errors; handle with try/catch.
+
 
 1. **Initialize Once**: Call `initialize()` once at extension startup, not for each embedding
 2. **Batch Processing**: Use `embedBatch()` for multiple texts instead of calling `embed()` repeatedly

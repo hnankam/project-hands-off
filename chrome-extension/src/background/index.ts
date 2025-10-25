@@ -80,6 +80,8 @@ async function sendToOffscreen(message: any): Promise<any> {
   
   return new Promise((resolve, reject) => {
     const requestId = `offscreen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const timeoutMs = 30000;
+    let timeoutHandle: number | undefined;
     
     // Set up listener for response from offscreen
     const responseListener = (msg: any) => {
@@ -110,14 +112,35 @@ async function sendToOffscreen(message: any): Promise<any> {
       chrome.runtime.onMessage.removeListener(responseListener);
       reject(err);
     });
+    // Enforce per-request timeout
+    timeoutHandle = setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(responseListener);
+      reject(new Error('Offscreen response timeout'));
+    }, timeoutMs) as unknown as number;
   });
 }
 
-// Initialize embeddings service
+// Initialize embeddings service (deduplicated)
+let embeddingInitialized = false;
+let embeddingInitPromise: Promise<void> | null = null;
 async function initializeEmbeddingService() {
-  log('[Background] Initializing embedding service via offscreen...');
-  await sendToOffscreen({ type: 'initialize' });
-  log('[Background] ✅ Embedding service initialized');
+  if (embeddingInitialized) {
+    log('[Background] Embedding service already initialized (dedup)');
+    return;
+  }
+  if (embeddingInitPromise) {
+    log('[Background] Embedding service init in-flight (dedup)');
+    return embeddingInitPromise;
+  }
+  embeddingInitPromise = (async () => {
+    log('[Background] Initializing embedding service via offscreen...');
+    await sendToOffscreen({ type: 'initialize' });
+    embeddingInitialized = true;
+    log('[Background] ✅ Embedding service initialized');
+  })().finally(() => {
+    embeddingInitPromise = null;
+  });
+  return embeddingInitPromise;
 }
 
 // Generate embedding for text
@@ -415,6 +438,403 @@ chrome.runtime.onInstalled.addListener(() => {
   initializeEmbeddingService().catch(err => {
     logError('[Background] Failed to pre-load model:', err);
   });
+  
+  // Create context menu items
+  setupContextMenus();
+});
+
+// Context menu setup
+function setupContextMenus() {
+  // Remove all existing context menus first
+  chrome.contextMenus.removeAll(() => {
+    // Parent menu item
+    chrome.contextMenus.create({
+      id: 'copilot-parent',
+      title: 'Copilot Assistant',
+      contexts: ['page', 'selection', 'link', 'image']
+    });
+    
+    // Selection context menus
+    chrome.contextMenus.create({
+      id: 'copilot-explain',
+      parentId: 'copilot-parent',
+      title: 'Explain "%s"',
+      contexts: ['selection']
+    });
+    
+    chrome.contextMenus.create({
+      id: 'copilot-summarize',
+      parentId: 'copilot-parent',
+      title: 'Summarize "%s"',
+      contexts: ['selection']
+    });
+    
+    chrome.contextMenus.create({
+      id: 'copilot-translate',
+      parentId: 'copilot-parent',
+      title: 'Translate "%s"',
+      contexts: ['selection']
+    });
+    
+    // Separator
+    chrome.contextMenus.create({
+      id: 'copilot-separator-1',
+      parentId: 'copilot-parent',
+      type: 'separator',
+      contexts: ['selection']
+    });
+    
+    // Ask about selection
+    chrome.contextMenus.create({
+      id: 'copilot-ask',
+      parentId: 'copilot-parent',
+      title: 'Ask about "%s"',
+      contexts: ['selection']
+    });
+    
+    // Page context menus
+    chrome.contextMenus.create({
+      id: 'copilot-analyze-page',
+      parentId: 'copilot-parent',
+      title: 'Analyze this page',
+      contexts: ['page']
+    });
+    
+    chrome.contextMenus.create({
+      id: 'copilot-summarize-page',
+      parentId: 'copilot-parent',
+      title: 'Summarize this page',
+      contexts: ['page']
+    });
+    
+    // Link context menu
+    chrome.contextMenus.create({
+      id: 'copilot-analyze-link',
+      parentId: 'copilot-parent',
+      title: 'Analyze this link',
+      contexts: ['link']
+    });
+    
+    // Image context menu
+    chrome.contextMenus.create({
+      id: 'copilot-analyze-image',
+      parentId: 'copilot-parent',
+      title: 'Analyze this image',
+      contexts: ['image']
+    });
+    
+    // Separator
+    chrome.contextMenus.create({
+      id: 'copilot-separator-2',
+      parentId: 'copilot-parent',
+      type: 'separator',
+      contexts: ['page', 'selection', 'link', 'image']
+    });
+    
+    // Analyze element (captures outerHTML of clicked element)
+    chrome.contextMenus.create({
+      id: 'copilot-analyze-element',
+      parentId: 'copilot-parent',
+      title: 'Analyze Element (Deep Dive)',
+      contexts: ['page', 'selection']
+    });
+    
+    // Open side panel
+    chrome.contextMenus.create({
+      id: 'copilot-open-panel',
+      parentId: 'copilot-parent',
+      title: 'Open Copilot Panel',
+      contexts: ['page', 'selection', 'link', 'image']
+    });
+    
+    log('[Background] Context menus created successfully');
+  });
+}
+
+// Store the last context menu click position
+let lastContextMenuClickPosition: { x: number; y: number } | null = null;
+
+// Listen for context menu being opened to capture click position
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'CONTEXT_MENU_CLICK_POSITION') {
+    lastContextMenuClickPosition = message.position;
+    log('[Background] Context menu click position captured:', lastContextMenuClickPosition);
+  }
+});
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (!tab?.id) return;
+  
+  log('[Background] Context menu clicked:', info.menuItemId);
+  
+  // Ensure side panel is open
+  try {
+    await chrome.sidePanel.open({ windowId: tab.windowId });
+  } catch (err) {
+    logError('[Background] Failed to open side panel:', err);
+  }
+  
+  // Wait a bit for side panel to initialize
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
+  // Prepare message based on context
+  let message = '';
+  let additionalData: any = null;
+  
+  switch (info.menuItemId) {
+    case 'copilot-explain':
+      message = `Explain this: "${info.selectionText}"`;
+      break;
+      
+    case 'copilot-summarize':
+      message = `Summarize this: "${info.selectionText}"`;
+      break;
+      
+    case 'copilot-translate':
+      message = `Translate this to English: "${info.selectionText}"`;
+      break;
+      
+    case 'copilot-ask':
+      message = `Tell me about: "${info.selectionText}"`;
+      break;
+      
+    case 'copilot-analyze-page':
+      message = `Analyze the content and structure of this page: ${info.pageUrl}`;
+      break;
+      
+    case 'copilot-summarize-page':
+      message = `Summarize the main points of this page: ${info.pageUrl}`;
+      break;
+      
+    case 'copilot-analyze-link':
+      message = `What can you tell me about this link: ${info.linkUrl}`;
+      break;
+      
+    case 'copilot-analyze-image':
+      message = `Analyze this image: ${info.srcUrl}`;
+      break;
+      
+    case 'copilot-analyze-element':
+      // Inject script to get element at click position
+      try {
+        const result = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: (clickX: number, clickY: number) => {
+            // Get element at the click position
+            const element = document.elementFromPoint(clickX, clickY);
+            if (!element) {
+              return { success: false, error: 'No element found at click position' };
+            }
+            
+            // HTML Cleaning Function (same as used for page content)
+            const cleanHtmlForElement = (html: string) => {
+              if (!html || html.length === 0) {
+                return { cleanedHtml: '', originalSize: 0, cleanedSize: 0 };
+              }
+
+              const originalSize = html.length;
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(html, 'text/html');
+
+              // Remove unnecessary elements
+              const selectorsToRemove = ['script', 'style', 'link', 'meta', 'noscript'];
+
+              selectorsToRemove.forEach(selector => {
+                const elements = doc.querySelectorAll(selector);
+                elements.forEach(el => el.remove());
+              });
+
+              // Remove inline styles from all elements
+              doc.querySelectorAll('*').forEach(el => {
+                el.removeAttribute('style');
+              });
+
+              // Remove inline event handler attributes (onclick, onload, ...)
+              doc.querySelectorAll('*').forEach(el => {
+                // Clone attributes list because we'll mutate during iteration
+                const attrs = Array.from(el.attributes);
+                for (const attr of attrs) {
+                  if (attr.name && attr.name.toLowerCase().startsWith('on')) {
+                    el.removeAttribute(attr.name);
+                  }
+                }
+              });
+
+              // Neutralize javascript: URLs in href/src/action attributes
+              doc.querySelectorAll('[href], [src], form[action]').forEach(el => {
+                const attrs = ['href', 'src', 'action'];
+                for (const name of attrs) {
+                  if (el.hasAttribute(name)) {
+                    const val = (el.getAttribute(name) || '').trim();
+                    if (/^javascript:/i.test(val)) {
+                      // Remove dangerous URL; keep element structure
+                      el.removeAttribute(name);
+                    }
+                  }
+                }
+              });
+
+              // Remove data URLs from images (keep src but remove base64 data)
+              doc.querySelectorAll('img').forEach(img => {
+                const src = img.getAttribute('src');
+                if (src && src.startsWith('data:')) {
+                  img.setAttribute('data-original-src', 'data:image/...[removed]');
+                  img.removeAttribute('src');
+                }
+                img.removeAttribute('srcset');
+              });
+
+              // Remove comments
+              const removeComments = (node: Node) => {
+                const childNodes = Array.from(node.childNodes);
+                childNodes.forEach(child => {
+                  if (child.nodeType === Node.COMMENT_NODE) {
+                    child.remove();
+                  } else if (child.nodeType === Node.ELEMENT_NODE) {
+                    removeComments(child);
+                  }
+                });
+              };
+              
+              // Get the first element in the body (our parsed element)
+              const parsedElement = doc.body.firstElementChild;
+              if (parsedElement) {
+                removeComments(parsedElement);
+              }
+
+              let cleanedHtml = parsedElement?.outerHTML || '';
+              
+              // Normalize whitespace: remove multiple newlines and excessive spaces
+              cleanedHtml = cleanedHtml
+                .replace(/>\s+</g, '><')           // Remove whitespace between tags
+                .replace(/\n\s*\n+/g, '\n')        // Replace multiple newlines with single newline
+                .replace(/^\s+|\s+$/g, '');        // Trim leading/trailing whitespace
+              
+              const cleanedSize = cleanedHtml.length;
+
+              return {
+                cleanedHtml,
+                originalSize,
+                cleanedSize
+              };
+            };
+            
+            // Get raw outerHTML first
+            const rawOuterHTML = element.outerHTML;
+            
+            // Clean the HTML
+            const cleaningResult = cleanHtmlForElement(rawOuterHTML);
+            
+            // Get metadata
+            const tagName = element.tagName.toLowerCase();
+            const classes = element.className ? Array.from(element.classList).join(' ') : '';
+            const id = element.id || '';
+            
+            // Get computed styles for context
+            const computedStyle = window.getComputedStyle(element);
+            const display = computedStyle.display;
+            const position = computedStyle.position;
+            
+            // Get text content (truncated if too long)
+            const textContent = element.textContent?.trim().substring(0, 200) || '';
+            
+            // Get element dimensions
+            const rect = element.getBoundingClientRect();
+            
+            return {
+              success: true,
+              outerHTML: cleaningResult.cleanedHtml.substring(0, 50000), // Limit to 50KB after cleaning
+              originalSize: cleaningResult.originalSize,
+              cleanedSize: cleaningResult.cleanedSize,
+              metadata: {
+                tagName,
+                id,
+                classes,
+                textContent,
+                display,
+                position,
+                dimensions: {
+                  width: Math.round(rect.width),
+                  height: Math.round(rect.height),
+                  top: Math.round(rect.top),
+                  left: Math.round(rect.left)
+                }
+              }
+            };
+          },
+          args: [lastContextMenuClickPosition?.x || 0, lastContextMenuClickPosition?.y || 0]
+        });
+        
+        if (result && result[0]?.result?.success) {
+          const elementData = result[0].result;
+          const meta = elementData?.metadata;
+          
+          if (meta) {
+            // Calculate size reduction
+            const sizeReduction = elementData.originalSize > 0 
+              ? Math.round(((elementData.originalSize - elementData.cleanedSize) / elementData.originalSize) * 100)
+              : 0;
+            
+            // Create a descriptive message
+            message = `Analyze this element:\n\n`;
+            message += `**Element Type:** ${meta.tagName}\n`;
+            if (meta.id) message += `**ID:** ${meta.id}\n`;
+            if (meta.classes) message += `**Classes:** ${meta.classes}\n`;
+            if (meta.textContent) message += `**Text Preview:** ${meta.textContent}\n`;
+            message += `**Dimensions:** ${meta.dimensions.width}x${meta.dimensions.height}px\n`;
+            message += `**Display:** ${meta.display}\n`;
+            message += `**HTML Size:** ${elementData.cleanedSize} bytes (cleaned from ${elementData.originalSize} bytes, ${sizeReduction}% reduction)\n\n`;
+            message += `**HTML Content (Cleaned):**\n\`\`\`html\n${elementData.outerHTML}\n\`\`\`\n\n`;
+            message += `*Note: Scripts, styles, and inline CSS have been removed for clarity. Data URLs in images have been stripped.*\n\n`;
+            message += `Please provide a deep analysis of this element, including its structure, purpose, any data it contains, and potential issues or insights.`;
+            
+            additionalData = {
+              elementHTML: elementData.outerHTML,
+              elementMetadata: meta,
+              htmlStats: {
+                originalSize: elementData.originalSize,
+                cleanedSize: elementData.cleanedSize,
+                reductionPercentage: sizeReduction
+              }
+            };
+          } else {
+            message = `Failed to capture element metadata.`;
+          }
+        } else {
+          message = `Failed to capture element. Error: ${result?.[0]?.result?.error || 'Unknown error'}`;
+        }
+      } catch (error) {
+        logError('[Background] Failed to capture element:', error);
+        message = `Failed to capture element: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      }
+      break;
+      
+    case 'copilot-open-panel':
+      // Just open panel, already done above
+      return;
+      
+    default:
+      return;
+  }
+  
+  // Send message to side panel to initiate chat
+  if (message) {
+    chrome.runtime.sendMessage({
+      type: 'CONTEXT_MENU_ACTION',
+      message: message,
+      context: {
+        selectionText: info.selectionText,
+        pageUrl: info.pageUrl,
+        linkUrl: info.linkUrl,
+        srcUrl: info.srcUrl,
+        frameUrl: info.frameUrl,
+        ...additionalData
+      }
+    }).catch(err => {
+      logError('[Background] Failed to send message to side panel:', err);
+    });
+  }
 });
 
 // Also set on startup to ensure side panel auto-open works
@@ -462,17 +882,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }).catch(err => {
       logError('[Background] ❌ Failed to send initializeEmbeddingResponse:', err);
     });
-
-    // Ensure offscreen exists, then fire-and-forget warmup
-    (async () => {
-      try {
-        await setupOffscreenDocument();
-        const warmId = `warm_${Date.now()}`;
-        chrome.runtime.sendMessage({ type: 'initialize', target: 'offscreen', requestId: warmId }).catch(() => {});
-      } catch (err) {
-        logError('[Background] ❌ Offscreen setup failed:', err);
-      }
-    })();
+    // Deduplicated initialization
+    initializeEmbeddingService().catch(err => {
+      logError('[Background] ❌ Embedding initialization failed:', err);
+    });
     
     return false;
   } else if (message.type === 'embedPageContent') {
@@ -899,6 +1312,29 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
               element.removeAttribute('style');
             });
 
+            // Remove inline event handler attributes (onclick, onload, ...)
+            doc.querySelectorAll('*').forEach(el => {
+              const attrs = Array.from(el.attributes);
+              for (const attr of attrs) {
+                if (attr.name && attr.name.toLowerCase().startsWith('on')) {
+                  el.removeAttribute(attr.name);
+                }
+              }
+            });
+
+            // Neutralize javascript: URLs in href/src/action attributes
+            doc.querySelectorAll('[href], [src], form[action]').forEach(el => {
+              const attrs = ['href', 'src', 'action'];
+              for (const name of attrs) {
+                if (el.hasAttribute(name)) {
+                  const val = (el.getAttribute(name) || '').trim();
+                  if (/^javascript:/i.test(val)) {
+                    el.removeAttribute(name);
+                  }
+                }
+              }
+            });
+
             // Remove data URLs from images (keep src but remove base64 data)
             doc.querySelectorAll('img').forEach(img => {
               const src = img.getAttribute('src');
@@ -1076,7 +1512,277 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
           // Extract only the minimal data needed by the AI agent
           const extractPageContent = () => {
             
-            // Check for Shadow DOM
+            // PERFORMANCE OPTIMIZATION: Build shadow root map once, reuse for all queries
+            const shadowRootMap = new Map<ShadowRoot, { host: Element; depth: number; path: string }>();
+            
+            // Single-pass: Build complete shadow root map with metadata (runs once)
+            const buildShadowRootMap = (root: Document | ShadowRoot | Element, depth: number = 0, parentPath: string = 'document') => {
+              const elements = root.querySelectorAll('*');
+              
+              for (const element of Array.from(elements)) {
+                if (element.shadowRoot && !shadowRootMap.has(element.shadowRoot)) {
+                  const hostIdentifier = `${element.tagName.toLowerCase()}${element.id ? '#' + element.id : ''}${element.className && typeof element.className === 'string' && element.classList.length > 0 ? '.' + Array.from(element.classList).slice(0, 2).join('.') : ''}`;
+                  const currentPath = `${parentPath} > ${hostIdentifier}`;
+                  
+                  shadowRootMap.set(element.shadowRoot, {
+                    host: element,
+                    depth: depth,
+                    path: currentPath
+                  });
+                  
+                  // Recursively map nested shadow roots
+                  buildShadowRootMap(element.shadowRoot, depth + 1, currentPath);
+                }
+              }
+            };
+            
+            // Build the map once (O(n) where n = total DOM nodes)
+            buildShadowRootMap(document, 0, 'document');
+            
+            // Optimized: Collect elements using cached shadow root map (O(m*s) where m = selectors, s = shadow roots)
+            const collectElementsRecursively = (selector: string, root: Document | ShadowRoot | Element = document): Element[] => {
+              const elements: Element[] = [];
+              
+              // Collect from current root
+              try {
+                elements.push(...Array.from(root.querySelectorAll(selector)));
+              } catch (e) {
+                // Skip invalid selectors
+              }
+              
+              // Use cached map for shadow roots (fast lookup)
+              if (root === document) {
+                // Only traverse shadow roots if querying from document root
+                for (const shadowRoot of shadowRootMap.keys()) {
+                  try {
+                    elements.push(...Array.from(shadowRoot.querySelectorAll(selector)));
+                  } catch (e) {
+                    // Skip invalid selectors
+                  }
+                }
+              }
+              
+              return elements;
+            };
+            
+            // Optimized: Find shadow root context using cached map (O(h) where h = tree height)
+            const getShadowContext = (el: Element): { foundInShadowDOM: boolean; shadowPath: string; shadowDepth: number; shadowHostSelector: string; shadowRoot: ShadowRoot | null } => {
+              let currentNode: Node | null = el.parentNode;
+              
+              // Walk up the tree until we find a shadow root
+              while (currentNode && currentNode !== document) {
+                if (currentNode instanceof ShadowRoot) {
+                  // Use cached metadata (O(1) lookup)
+                  const metadata = shadowRootMap.get(currentNode);
+                  if (metadata) {
+                    const hostIdentifier = `${metadata.host.tagName.toLowerCase()}${metadata.host.id ? '#' + metadata.host.id : ''}`;
+                    return {
+                      foundInShadowDOM: true,
+                      shadowPath: metadata.path,
+                      shadowDepth: metadata.depth,
+                      shadowHostSelector: hostIdentifier,
+                      shadowRoot: currentNode
+                    };
+                  }
+                }
+                currentNode = currentNode.parentNode;
+              }
+              
+              return {
+                foundInShadowDOM: false,
+                shadowPath: '',
+                shadowDepth: 0,
+                shadowHostSelector: '',
+                shadowRoot: null
+              };
+            };
+            
+            // Context-aware uniqueness verification (works for both main DOM and shadow DOM)
+            const verifySelectorUniqueness = (el: Element, selector: string, shadowRoot: ShadowRoot | null): boolean => {
+              if (!selector || !el) return false;
+              
+              try {
+                if (shadowRoot) {
+                  // Element is in shadow DOM - check uniqueness within that shadow root only
+                  const matches = shadowRoot.querySelectorAll(selector);
+                  return matches.length === 1 && matches[0] === el;
+                } else {
+                  // Element is in main DOM - check uniqueness in main DOM only
+                  const matches = document.querySelectorAll(selector);
+                  return matches.length === 1 && matches[0] === el;
+                }
+              } catch (e) {
+                return false;
+              }
+            };
+            
+            // Enhanced selector uniqueness enforcer with context-aware strategies
+            const ensureUniqueSelector = (el: Element, initialSelector: string, shadowRoot: ShadowRoot | null): { selector: string; isUnique: boolean } => {
+              if (!el || !initialSelector) {
+                return { selector: initialSelector || el.tagName.toLowerCase(), isUnique: false };
+              }
+              
+              // Test if initial selector is already unique
+              if (verifySelectorUniqueness(el, initialSelector, shadowRoot)) {
+                return { selector: initialSelector, isUnique: true };
+              }
+              
+              const tagName = el.tagName.toLowerCase();
+              
+              // Strategy 1: Try rich attributes that are likely unique
+              const uniqueAttrs = [
+                'data-testid', 'data-cy', 'data-test', 'data-id',
+                'aria-label', 'aria-describedby', 'slot', 'name', 'id'
+              ];
+              
+              for (const attr of uniqueAttrs) {
+                const value = el.getAttribute(attr);
+                if (value) {
+                  const attrSelector = `${tagName}[${attr}="${CSS.escape(value)}"]`;
+                  if (verifySelectorUniqueness(el, attrSelector, shadowRoot)) {
+                    return { selector: attrSelector, isUnique: true };
+                  }
+                }
+              }
+              
+              // Strategy 2: Combine class with unique attribute (for elements with shared classes)
+              if (el.className && typeof el.className === 'string' && el.classList.length > 0) {
+                const firstClass = Array.from(el.classList)[0];
+                const combineAttrs = ['aria-label', 'slot', 'aria-describedby', 'title'];
+                
+                for (const attr of combineAttrs) {
+                  const value = el.getAttribute(attr);
+                  if (value) {
+                    const combinedSelector = `${tagName}.${CSS.escape(firstClass)}[${attr}="${CSS.escape(value)}"]`;
+                    if (verifySelectorUniqueness(el, combinedSelector, shadowRoot)) {
+                      return { selector: combinedSelector, isUnique: true };
+                    }
+                  }
+                }
+              }
+              
+              // Strategy 3: Try multiple attributes together
+              const multiAttrCombos = [
+                ['aria-label', 'slot'],
+                ['aria-label', 'aria-describedby'],
+                ['slot', 'aria-describedby'],
+                ['type', 'aria-label'],
+                ['class', 'slot']
+              ];
+              
+              for (const combo of multiAttrCombos) {
+                const values = combo.map(attr => {
+                  if (attr === 'class' && el.className && typeof el.className === 'string' && el.classList.length > 0) {
+                    return { attr: 'class', value: Array.from(el.classList)[0] };
+                  }
+                  const value = el.getAttribute(attr);
+                  return value ? { attr, value } : null;
+                }).filter(v => v !== null);
+                
+                if (values.length === combo.length) {
+                  let multiSelector = tagName;
+                  for (const { attr, value } of values) {
+                    if (attr === 'class') {
+                      multiSelector += `.${CSS.escape(value)}`;
+                    } else {
+                      multiSelector += `[${attr}="${CSS.escape(value)}"]`;
+                    }
+                  }
+                  
+                  if (verifySelectorUniqueness(el, multiSelector, shadowRoot)) {
+                    return { selector: multiSelector, isUnique: true };
+                  }
+                }
+              }
+              
+              // Strategy 4: Add nth-of-type() to initial selector
+              const root = shadowRoot || document;
+              const allOfType = Array.from(root.querySelectorAll(tagName));
+              const typeIndex = allOfType.indexOf(el);
+              if (typeIndex >= 0) {
+                const nthSelector = `${tagName}:nth-of-type(${typeIndex + 1})`;
+                if (verifySelectorUniqueness(el, nthSelector, shadowRoot)) {
+                  return { selector: nthSelector, isUnique: true };
+                }
+              }
+              
+              // Strategy 5: Add parent context (direct parent)
+              if (el.parentElement) {
+                const parent = el.parentElement;
+                let parentPart = parent.tagName.toLowerCase();
+                
+                if (parent.id) {
+                  parentPart = `#${CSS.escape(parent.id)}`;
+                } else if (parent.className && typeof parent.className === 'string' && parent.classList.length > 0) {
+                  const firstClass = Array.from(parent.classList)[0];
+                  if (firstClass) {
+                    parentPart = `${parent.tagName.toLowerCase()}.${CSS.escape(firstClass)}`;
+                  }
+                }
+                
+                const contextSelector = `${parentPart} > ${tagName}`;
+                if (verifySelectorUniqueness(el, contextSelector, shadowRoot)) {
+                  return { selector: contextSelector, isUnique: true };
+                }
+                
+                // Try with nth-of-type in parent context
+                const parentChildren = Array.from(parent.children).filter(child => child.tagName === el.tagName);
+                const parentIndex = parentChildren.indexOf(el);
+                if (parentIndex >= 0) {
+                  const parentNthSelector = `${parentPart} > ${tagName}:nth-of-type(${parentIndex + 1})`;
+                  if (verifySelectorUniqueness(el, parentNthSelector, shadowRoot)) {
+                    return { selector: parentNthSelector, isUnique: true };
+                  }
+                }
+              }
+              
+              // Strategy 6: Build hierarchical path (2 levels up)
+              if (el.parentElement?.parentElement) {
+                const parent = el.parentElement;
+                const grandparent = el.parentElement.parentElement;
+                
+                let parentPart = parent.tagName.toLowerCase();
+                if (parent.id) parentPart = `#${CSS.escape(parent.id)}`;
+                else if (parent.className && typeof parent.className === 'string' && parent.classList.length > 0) {
+                  parentPart += `.${CSS.escape(Array.from(parent.classList)[0])}`;
+                }
+                
+                let grandparentPart = grandparent.tagName.toLowerCase();
+                if (grandparent.id) grandparentPart = `#${CSS.escape(grandparent.id)}`;
+                
+                const hierarchicalSelector = `${grandparentPart} > ${parentPart} > ${tagName}`;
+                if (verifySelectorUniqueness(el, hierarchicalSelector, shadowRoot)) {
+                  return { selector: hierarchicalSelector, isUnique: true };
+                }
+              }
+              
+              // Strategy 7: Use nth-child as last resort
+              if (el.parentElement) {
+                const siblings = Array.from(el.parentElement.children);
+                const childIndex = siblings.indexOf(el);
+                if (childIndex >= 0) {
+                  const nthChildSelector = `${tagName}:nth-child(${childIndex + 1})`;
+                  if (verifySelectorUniqueness(el, nthChildSelector, shadowRoot)) {
+                    return { selector: nthChildSelector, isUnique: true };
+                  }
+                  
+                  // Try with parent context + nth-child
+                  if (el.parentElement.tagName) {
+                    const parentTag = el.parentElement.tagName.toLowerCase();
+                    const parentNthChild = `${parentTag} > ${tagName}:nth-child(${childIndex + 1})`;
+                    if (verifySelectorUniqueness(el, parentNthChild, shadowRoot)) {
+                      return { selector: parentNthChild, isUnique: true };
+                    }
+                  }
+                }
+              }
+              
+              // If all strategies fail, return initial selector marked as non-unique
+              console.warn('[Selector Uniqueness] Failed to generate unique selector for element:', el, 'Selector:', initialSelector);
+              return { selector: initialSelector, isUnique: false };
+            };
+            
+            // Optimized: Use cached shadow root map to build shadow roots array (no re-traversal)
             const shadowRoots: Array<{
               hostElement: string;
               hostId: string;
@@ -1085,42 +1791,81 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
               shadowHTML: string;
               fullContent: string;
               textContent: string;
+              depth: number;
+              path: string;
+              hasNestedShadowRoots: boolean;
             }> = [];
             let totalShadowContentSize = 0;
             
-            // Find all elements with shadow roots
-            document.querySelectorAll('*').forEach(element => {
-              if (element.shadowRoot) {
-                const shadowHTML = element.shadowRoot.innerHTML;
-                const shadowSize = shadowHTML.length;
-                totalShadowContentSize += shadowSize;
-                
-                shadowRoots.push({
-                  hostElement: element.tagName,
-                  hostId: element.id || 'no-id',
-                  hostClass: element.className || 'no-class',
-                  shadowContentSize: shadowSize,
-                  shadowHTML: shadowHTML, // Full shadow content
-                  fullContent: shadowHTML,
-                  textContent: element.shadowRoot.textContent || ''
-                });
+            // Build shadow roots array from cached map (O(s) where s = number of shadow roots)
+            for (const [shadowRoot, metadata] of shadowRootMap.entries()) {
+              const host = metadata.host;
+              const shadowHTML = shadowRoot.innerHTML;
+              const shadowSize = shadowHTML.length;
+              totalShadowContentSize += shadowSize;
+              
+              // Check if this shadow root contains other shadow roots
+              let hasNested = false;
+              for (const [otherShadowRoot, otherMetadata] of shadowRootMap.entries()) {
+                if (otherShadowRoot !== shadowRoot && otherMetadata.depth > metadata.depth) {
+                  // Check if this shadow root is a parent of the other
+                  let parent: Node | null = otherMetadata.host.parentNode;
+                  while (parent) {
+                    if (parent === shadowRoot) {
+                      hasNested = true;
+                      break;
+                    }
+                    parent = parent.parentNode;
+                  }
+                  if (hasNested) break;
+                }
               }
-            });
+              
+              shadowRoots.push({
+                hostElement: host.tagName,
+                hostId: host.id || 'no-id',
+                hostClass: (host.className && typeof host.className === 'string') ? host.className : 'no-class',
+                shadowContentSize: shadowSize,
+                shadowHTML: shadowHTML,
+                fullContent: shadowHTML,
+                textContent: shadowRoot.textContent || '',
+                depth: metadata.depth,
+                path: metadata.path,
+                hasNestedShadowRoots: hasNested
+              });
+            }
             
-            // Log Shadow DOM detection results
+            // Log Shadow DOM detection results with hierarchy info
             // Shadow DOM detection logging disabled to reduce console noise
-            // if (shadowRoots.length > 0) {
-            //   console.log(`🔍 [Shadow DOM Detection] Found ${shadowRoots.length} shadow root(s) with total content size: ${totalShadowContentSize} characters`);
-            //   // shadowRoots.forEach((root, index) => {
-            //   //   console.log(`   Shadow Root ${index + 1}:`, {
-            //   //     host: `${root.hostElement}${root.hostId ? '#' + root.hostId : ''}${root.hostClass ? '.' + root.hostClass.split(' ')[0] : ''}`,
-            //   //     size: `${root.shadowContentSize} chars`,
-            //   //     preview: root.shadowHTML
-            //   //   });
-            //   // });
-            // } else {
-            //   console.log('🔍 [Shadow DOM Detection] No shadow roots detected');
-            // }
+            if (shadowRoots.length > 0) {
+              const maxDepth = Math.max(...shadowRoots.map(r => r.depth));
+              const nestedCount = shadowRoots.filter(r => r.depth > 0).length;
+              
+              console.log(`🔍 [Shadow DOM Detection] Found ${shadowRoots.length} shadow root(s) (${nestedCount} nested) with max depth: ${maxDepth}, total content size: ${totalShadowContentSize} characters`);
+              
+              // Group by depth for better visualization
+              const byDepth = shadowRoots.reduce((acc, root) => {
+                acc[root.depth] = acc[root.depth] || [];
+                acc[root.depth].push(root);
+                return acc;
+              }, {} as Record<number, typeof shadowRoots>);
+              
+              Object.entries(byDepth).forEach(([depth, roots]) => {
+                console.log(`   Depth ${depth} (${roots.length} shadow root${roots.length > 1 ? 's' : ''}):`);
+                roots.slice(0, 3).forEach((root, index) => {
+                  console.log(`      ${index + 1}. ${root.path}`, {
+                    size: `${root.shadowContentSize} chars`,
+                    hasNested: root.hasNestedShadowRoots,
+                    preview: root.shadowHTML.substring(0, 100) + '...'
+                  });
+                });
+                if (roots.length > 3) {
+                  console.log(`      ... and ${roots.length - 3} more at this depth`);
+                }
+              });
+            } else {
+              console.log('🔍 [Shadow DOM Detection] No shadow roots detected');
+            }
             
             // Extract and clean HTML before sending
             const rawFullHTML = document.documentElement.outerHTML;
@@ -1141,26 +1886,37 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
             const cleanedShadowRoots = shadowRoots.map((root, index) => {
               const shadowCleaningResult = cleanHtmlForAgent(root.fullContent);
               
-              // Log shadow content cleaning results for the first shadow root
-              if (index === 0 && shadowCleaningResult.originalSize > 0) {
-                console.log(`🧹 [Background] Shadow DOM Cleaning Results (${shadowRoots.length} shadow root${shadowRoots.length > 1 ? 's' : ''}):`, {
-                  shadowRootIndex: index + 1,
-                  hostElement: root.hostElement,
-                  hostId: root.hostId,
-                  originalSize: `${(shadowCleaningResult.originalSize / 1024).toFixed(2)} KB`,
-                  cleanedSize: `${(shadowCleaningResult.cleanedSize / 1024).toFixed(2)} KB`,
-                  reductionPercentage: `${shadowCleaningResult.reductionPercentage.toFixed(2)}%`,
-                  savedBytes: `${((shadowCleaningResult.originalSize - shadowCleaningResult.cleanedSize) / 1024).toFixed(2)} KB`
-                });
-                console.log('📄 [Background] Original Shadow Content Sample:', shadowCleaningResult.originalSample);
-                console.log('✨ [Background] Cleaned Shadow Content Sample:', shadowCleaningResult.cleanedSample);
+              // Log shadow content cleaning results for the first shadow root at each depth level
+              if (shadowCleaningResult.originalSize > 0) {
+                const isFirstAtDepth = shadowRoots.findIndex(r => r.depth === root.depth) === index;
+                if (index === 0) {
+                  console.log(`🧹 [Background] Shadow DOM Cleaning Results (${shadowRoots.length} shadow root${shadowRoots.length > 1 ? 's' : ''}):`);
+                }
+                if (isFirstAtDepth) {
+                  console.log(`   Depth ${root.depth} - ${root.path}:`, {
+                    shadowRootIndex: index + 1,
+                    hostElement: root.hostElement,
+                    hostId: root.hostId,
+                    originalSize: `${(shadowCleaningResult.originalSize / 1024).toFixed(2)} KB`,
+                    cleanedSize: `${(shadowCleaningResult.cleanedSize / 1024).toFixed(2)} KB`,
+                    reductionPercentage: `${shadowCleaningResult.reductionPercentage.toFixed(2)}%`,
+                    savedBytes: `${((shadowCleaningResult.originalSize - shadowCleaningResult.cleanedSize) / 1024).toFixed(2)} KB`
+                  });
+                  if (index === 0) {
+                    console.log('📄 [Background] Original Shadow Content Sample:', shadowCleaningResult.originalSample);
+                    console.log('✨ [Background] Cleaned Shadow Content Sample:', shadowCleaningResult.cleanedSample);
+                  }
+                }
               }
               
               return {
                 hostElement: root.hostElement,
                 hostId: root.hostId,
                 hostClass: root.hostClass,
-                content: shadowCleaningResult.cleanedHtml
+                content: shadowCleaningResult.cleanedHtml,
+                depth: root.depth,
+                path: root.path,
+                hasNestedShadowRoots: root.hasNestedShadowRoots
                 // textContent removed - it's huge (251KB) and redundant since agent can parse HTML
               };
             });
@@ -1197,11 +1953,11 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                   allFormData: (() => {
                     const formElements: Array<{ element: Element; isCustom: boolean; index: number }> = [];
                     
-                    // First, collect traditional form elements
-                    const traditionalElements = Array.from(document.querySelectorAll('input, select, textarea'));
+                    // First, collect traditional form elements (including from shadow DOM)
+                    const traditionalElements = collectElementsRecursively('input, select, textarea');
                     
                     // Then, collect custom dropdown components (button with role="combobox" or data-slot="select-trigger")
-                    const customDropdowns = Array.from(document.querySelectorAll('button[role="combobox"], button[data-slot="select-trigger"], [role="combobox"]'));
+                    const customDropdowns = collectElementsRecursively('button[role="combobox"], button[data-slot="select-trigger"], [role="combobox"]');
                     
                     // Process traditional elements
                     traditionalElements.forEach((input, index) => {
@@ -1340,10 +2096,17 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                       return window.utils.generateFastSelector(el);
                     };
 
-                    // Generate the best selector using finder
+                    // Get shadow DOM context first (needed for uniqueness check)
+                    const shadowContext = getShadowContext(input);
+                    
+                    // Generate initial selector using finder
                     const selectorResult = generateFormSelector(input);
-                    const bestSelector = selectorResult.selector;
-                    const isSelectorUnique = selectorResult.isUnique;
+                    const initialSelector = selectorResult.selector;
+                    
+                    // ENFORCE UNIQUENESS: Context-aware uniqueness check (main DOM or shadow DOM)
+                    const uniqueResult = ensureUniqueSelector(input, initialSelector, shadowContext.shadowRoot);
+                    const bestSelector = uniqueResult.selector;
+                    const isSelectorUnique = uniqueResult.isUnique;
                     
                     // Get value from appropriate source
                     let value = '';
@@ -1378,78 +2141,30 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                       bestSelector: bestSelector,
                       elementIndex: index,
                       isUnique: isSelectorUnique, // Use actual uniqueness verification
-                      isCustomDropdown: isCustom
+                      isCustomDropdown: isCustom,
+                      foundInShadowDOM: shadowContext.foundInShadowDOM,
+                      shadowPath: shadowContext.shadowPath || undefined,
+                      shadowDepth: shadowContext.shadowDepth || undefined,
+                      shadowHostSelector: shadowContext.shadowHostSelector || undefined
                     };
                   }),
                   
                 // 3. Clickable elements (for clicking actions) - OPTIMIZED MODERN WEB APP SUPPORT
                   clickableElements: (() => {
                     try {
-                      // Use finder library for CSS selector generation with robust fallback
-                      const generateSelector = (el: Element): string => {
+                      // Use SAME approach as form data - simple and proven
+                      const generateClickableSelector = (el: Element): { selector: string; isUnique: boolean } => {
                         if (!el || el.nodeType !== Node.ELEMENT_NODE) {
-                          return '';
+                          return { selector: el.tagName.toLowerCase(), isUnique: false };
                         }
 
-                        const tagName = el.tagName.toLowerCase();
-
-                        // Strategy 1: Use ID selector if available (most reliable, skip finder)
-                        if (el.id) {
-                          const idSelector = `#${CSS.escape(el.id)}`;
-                          const matches = document.querySelectorAll(idSelector);
-                          if (matches.length === 1 && matches[0] === el) {
-                            return idSelector;
-                          }
-                        }
-
-                        // Strategy 2: Data attributes (testing-friendly)
-                        const testId = el.getAttribute('data-testid');
-                        if (testId) {
-                          const dataSelector = `[data-testid="${CSS.escape(testId)}"]`;
-                          const matches = document.querySelectorAll(dataSelector);
-                          if (matches.length === 1 && matches[0] === el) {
-                            return dataSelector;
-                          }
-                        }
-
-                        const dataCy = el.getAttribute('data-cy');
-                        if (dataCy) {
-                          const dataSelector = `[data-cy="${CSS.escape(dataCy)}"]`;
-                          const matches = document.querySelectorAll(dataSelector);
-                          if (matches.length === 1 && matches[0] === el) {
-                            return dataSelector;
-                          }
-                        }
-
-                        // Strategy 3: Name attribute
-                        const name = el.getAttribute('name');
-                        if (name) {
-                          const nameSelector = `${tagName}[name="${CSS.escape(name)}"]`;
-                          const matches = document.querySelectorAll(nameSelector);
-                          if (matches.length === 1 && matches[0] === el) {
-                            return nameSelector;
-                          }
-                        }
-
-                        // Strategy 4: Type + name combination
-                        const type = el.getAttribute('type');
-                        if (type && name) {
-                          const typeNameSelector = `${tagName}[type="${CSS.escape(type)}"][name="${CSS.escape(name)}"]`;
-                          const matches = document.querySelectorAll(typeNameSelector);
-                          if (matches.length === 1 && matches[0] === el) {
-                            return typeNameSelector;
-                          }
-                        }
-
-                        // Check if utils is available
+                        // Check if utils is available (same as form data)
                         if (typeof window.utils !== 'object' || typeof window.utils.generateFastSelector !== 'function') {
-                          const fallback = generateRobustFallbackSelector(el);
-                          return fallback.selector;
+                          return generateRobustFallbackSelector(el);
                         }
 
-                        // Use our optimized fast selector generator from utils
-                        const result = window.utils.generateFastSelector(el);
-                        return result.selector;
+                        // Using fast selector generator - tested and confirmed as best performer
+                        return window.utils.generateFastSelector(el);
                       };
                       
                       // Optimized element collection
@@ -1472,26 +2187,18 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                         '[class*="dropdown"]', '[class*="modal"]', '[class*="dialog"]', '[class*="popup"]', '[class*="tooltip"]'
                       ];
                       
-                      // Batch element collection
+                      // Batch element collection (including shadow DOM)
                       selectors.forEach(selector => {
-                        try {
-                          document.querySelectorAll(selector).forEach(el => elements.add(el));
-                        } catch (e) {
-                          // Skip invalid selectors
-                        }
+                        collectElementsRecursively(selector).forEach(el => elements.add(el));
                       });
                       
                       // Add cursor pointer elements (optimized - only check elements with common interactive classes)
                       const cursorSelectors = ['[style*="cursor: pointer"]', '[style*="cursor:grab"]', '.cursor-pointer', '.cursor-grab'];
                       cursorSelectors.forEach(selector => {
-                        try {
-                          document.querySelectorAll(selector).forEach(el => elements.add(el));
-                        } catch (e) {
-                          // Skip invalid selectors
-                        }
+                        collectElementsRecursively(selector).forEach(el => elements.add(el));
                       });
                       
-                      // Process elements in single pipeline
+                      // Process elements in single pipeline (SAME as form data approach)
                       return Array.from(elements)
                         .filter(el => {
                           const rect = el.getBoundingClientRect();
@@ -1501,13 +2208,30 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                           const rect = el.getBoundingClientRect();
                           const text = el.textContent?.trim() || '';
                           
+                          // Get shadow DOM context first (needed for uniqueness check) - SAME as form data
+                          const shadowContext = getShadowContext(el);
+                          
+                          // Generate initial selector using trusted utility - SAME as form data
+                          const selectorResult = generateClickableSelector(el);
+                          const initialSelector = selectorResult.selector;
+                          
+                          // ENFORCE UNIQUENESS: Context-aware uniqueness check - SAME as form data
+                          const uniqueResult = ensureUniqueSelector(el, initialSelector, shadowContext.shadowRoot);
+                          const bestSelector = uniqueResult.selector;
+                          const isSelectorUnique = uniqueResult.isUnique;
+                          
                           return {
-                            selector: generateSelector(el),
+                            selector: bestSelector,
+                            isUnique: isSelectorUnique,
                             tagName: el.tagName.toLowerCase(),
                             text: text.substring(0, 100),
                             href: (el as HTMLAnchorElement).href || '',
                             title: el.getAttribute('title')?.substring(0, 100) || '',
-                            type: el.getAttribute('type') || ''
+                            type: el.getAttribute('type') || '',
+                            foundInShadowDOM: shadowContext.foundInShadowDOM,
+                            shadowPath: shadowContext.shadowPath || undefined,
+                            shadowDepth: shadowContext.shadowDepth || undefined,
+                            shadowHostSelector: shadowContext.shadowHostSelector || undefined
                           };
                         })
                         .filter(item => 

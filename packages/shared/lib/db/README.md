@@ -10,6 +10,8 @@ This module provides a ready-to-use SurrealDB integration using WebAssembly for 
 - 🔒 **Type-Safe**: Full TypeScript support with typed interfaces
 - 🚀 **Easy to Use**: Simple API for common database operations
 
+Additionally, this module includes a non-blocking Web Worker client for high-throughput embeddings storage and native vector search with SurrealDB HNSW indexes.
+
 ## Installation
 
 Both packages are already installed:
@@ -28,6 +30,37 @@ await surrealDB.connect('my_extension_db');
 
 // Initialize schema for messages and downloads
 await initializeSchema();
+```
+
+### Embeddings via Web Worker (recommended for UI responsiveness)
+
+```typescript
+import { DBWorkerClient } from '@extension/shared';
+
+// Provide a concrete worker URL or a Worker instance
+const dbWorker = new DBWorkerClient({
+  workerUrl: new URL('../../../pages/side-panel/src/workers/db-worker.ts', import.meta.url),
+  debug: false, // set true for development logs
+});
+
+// Initialize (useMemory defaults to true in our embedding pipeline)
+await dbWorker.initialize(true /* useMemory */, 'embeddings_db');
+
+// Store HTML chunks (batched in worker)
+await dbWorker.storeHTMLChunks({
+  pageURL: 'https://example.com',
+  pageTitle: 'Example',
+  chunks: [{ text: '...', html: '<div>...</div>', embedding: [/* 384 */], index: 0 }],
+  sessionId: 'session-123',
+}, { maxBatchSize: 100 });
+
+// Search (native HNSW vector search in worker)
+const results = await dbWorker.searchHTMLChunks(
+  'https://example.com',
+  /* queryEmbedding: number[] */
+  [/* 384 */],
+  3
+);
 ```
 
 ### Using In-Memory Storage
@@ -118,6 +151,31 @@ const result = await surrealDB.query(`
 
 console.log('Query result:', result);
 ```
+
+## DB Worker Client API (embeddings)
+
+- Constructor:
+  - `new DBWorkerClient({ workerUrl?: string | URL, worker?: Worker, debug?: boolean, defaultDbName?: string })`
+  - Backward-compatible: `new DBWorkerClient(workerUrl)`
+- Initialization:
+  - `initialize(useMemory?: boolean, dbName?: string)`
+- Store APIs (optional opts: `{ maxBatchSize?, timeoutMs?, signal? }`):
+  - `storeHTMLChunks({ pageURL, pageTitle, chunks, sessionId? }, opts?)`
+  - `storeFormFields({ pageURL, groups, sessionId? }, opts?)`
+  - `storeClickableElements({ pageURL, groups, sessionId? }, opts?)`
+- Search APIs:
+  - `searchHTMLChunks(pageURL, queryEmbedding, topK?)`
+  - `searchFormFields(pageURL, queryEmbedding, topK?)`
+  - `searchClickableElements(pageURL, queryEmbedding, topK?)`
+- Query:
+  - `query<T>(sql, vars?, opts?)`
+- Errors:
+  - Operations may throw `DBWorkerError` with a `.code` for aborts (`'ABORTED'`) or timeouts.
+
+Notes:
+- All DB worker operations are non-blocking and run off the main thread.
+- Batching can be enabled on client side via `maxBatchSize`; the worker also batches inserts internally.
+- You can cancel requests using `AbortSignal` and control request timeouts with `timeoutMs`.
 
 ## Integration in Chrome Extension
 

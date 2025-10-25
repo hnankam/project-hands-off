@@ -83,56 +83,56 @@ export const useMessagePersistence = ({
       }
 
       try {
-        // 📝 LOG FULL RAW MESSAGES BEING SAVED
-        debug.log('========== SAVING MESSAGES TO STORAGE ==========');
-        debug.log(`Session ID: ${sessionId}`);
-        debug.log(`Total messages to save: ${messagesToSave.length}`);
-        debug.log(`Filtered messages count: ${countFilteredMessages(messagesToSave)}`);
-        debug.log(`Timestamp: ${new Date().toISOString()}`);
+        // // 📝 LOG FULL RAW MESSAGES BEING SAVED
+        // debug.log('========== SAVING MESSAGES TO STORAGE ==========');
+        // debug.log(`Session ID: ${sessionId}`);
+        // debug.log(`Total messages to save: ${messagesToSave.length}`);
+        // debug.log(`Filtered messages count: ${countFilteredMessages(messagesToSave)}`);
+        // debug.log(`Timestamp: ${new Date().toISOString()}`);
 
-        messagesToSave.forEach((msg, index) => {
-          // Guard against undefined/null messages
-          if (!msg) {
-            debug.warn(`⚠️ Message ${index + 1} is undefined or null, skipping`);
-            return;
-          }
+        // messagesToSave.forEach((msg, index) => {
+        //   // Guard against undefined/null messages
+        //   if (!msg) {
+        //     debug.warn(`⚠️ Message ${index + 1} is undefined or null, skipping`);
+        //     return;
+        //   }
 
-          debug.log(`\n--- Message ${index + 1} to Save ---`);
+        //   debug.log(`\n--- Message ${index + 1} to Save ---`);
 
-          try {
-            debug.log('Full raw message (JSON):', JSON.stringify(msg, null, 2));
-          } catch (e) {
-            debug.warn('Failed to stringify message:', e);
-          }
+        //   try {
+        //     debug.log('Full raw message (JSON):', JSON.stringify(msg, null, 2));
+        //   } catch (e) {
+        //     debug.warn('Failed to stringify message:', e);
+        //   }
 
-          debug.log('Message summary:', {
-            role: msg.role || 'unknown',
-            content:
-              typeof msg.content === 'string'
-                ? msg.content
-                : msg.content
-                  ? JSON.stringify(msg.content)
-                  : '[no content]',
-            id: msg.id || 'no-id',
-            hasToolCalls: !!(msg as any).toolCalls,
-            contentLength:
-              typeof msg.content === 'string'
-                ? msg.content.length
-                : msg.content
-                  ? JSON.stringify(msg.content).length
-                  : 0,
-          });
+        //   debug.log('Message summary:', {
+        //     role: msg.role || 'unknown',
+        //     content:
+        //       typeof msg.content === 'string'
+        //         ? msg.content
+        //         : msg.content
+        //           ? JSON.stringify(msg.content)
+        //           : '[no content]',
+        //     id: msg.id || 'no-id',
+        //     hasToolCalls: !!(msg as any).toolCalls,
+        //     contentLength:
+        //       typeof msg.content === 'string'
+        //         ? msg.content.length
+        //         : msg.content
+        //           ? JSON.stringify(msg.content).length
+        //           : 0,
+        //   });
 
-          // Highlight message type
-          if (msg.role === 'assistant') {
-            debug.log('💾 Saving AGENT message');
-          } else if (msg.role === 'user') {
-            debug.log('💾 Saving USER message');
-          } else {
-            debug.log(`💾 Saving ${msg.role || 'unknown'} message`);
-          }
-        });
-        debug.log('==============================================\n');
+        //   // Highlight message type
+        //   if (msg.role === 'assistant') {
+        //     debug.log('💾 Saving AGENT message');
+        //   } else if (msg.role === 'user') {
+        //     debug.log('💾 Saving USER message');
+        //   } else {
+        //     debug.log(`💾 Saving ${msg.role || 'unknown'} message`);
+        //   }
+        // });
+        // debug.log('==============================================\n');
 
         // Filter out any undefined/null messages before saving
         const validMessages = messagesToSave.filter(msg => msg !== null && msg !== undefined);

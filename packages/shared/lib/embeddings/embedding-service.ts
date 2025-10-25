@@ -4,6 +4,9 @@
  * This avoids CSP issues and keeps transformers.js isolated
  */
 
+// Debug logging toggle (development only)
+const DEBUG = true;
+
 /**
  * Supported embedding models
  */
@@ -47,10 +50,80 @@ class EmbeddingService {
   private isLoading = false;
   private loadPromise: Promise<void> | null = null;
 
+  private sendMessage<T = any>(
+    reqType: string,
+    respType: string,
+    payload?: Record<string, unknown>,
+    opts?: { timeoutMs?: number; signal?: AbortSignal }
+  ): Promise<T> {
+    const requestId = `${reqType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    return new Promise<T>((resolve, reject) => {
+      const responseListener = (message: any) => {
+        if (message && message.type === respType && message.requestId === requestId) {
+          chrome.runtime.onMessage.removeListener(responseListener);
+          if (message.success) {
+            resolve(message as T);
+          } else {
+            reject(new Error(message.error || `Failed ${reqType}`));
+          }
+        }
+      };
+
+      chrome.runtime.onMessage.addListener(responseListener);
+
+      const timeoutMs = opts?.timeoutMs ?? 30000;
+      const timeoutId = window.setTimeout(() => {
+        chrome.runtime.onMessage.removeListener(responseListener);
+        reject(new Error(`${reqType} timed out`));
+      }, timeoutMs);
+
+      const cleanupOnResolveReject = () => {
+        window.clearTimeout(timeoutId);
+      };
+
+      // Ensure timeout cleared when promise settles
+      const originalResolve = resolve;
+      const originalReject = reject;
+      // Wrap resolve/reject to clear timeout
+      (resolve as any) = (value: any) => {
+        cleanupOnResolveReject();
+        originalResolve(value);
+      };
+      (reject as any) = (err: any) => {
+        cleanupOnResolveReject();
+        originalReject(err);
+      };
+
+      if (opts?.signal) {
+        const onAbort = () => {
+          chrome.runtime.onMessage.removeListener(responseListener);
+          cleanupOnResolveReject();
+          originalReject(new Error('Embedding request aborted'));
+        };
+        if (opts.signal.aborted) onAbort();
+        else opts.signal.addEventListener('abort', onAbort, { once: true });
+      }
+
+      // Send request
+      chrome.runtime
+        .sendMessage({
+          type: reqType,
+          requestId,
+          ...(payload || {}),
+        })
+        .catch(err => {
+          chrome.runtime.onMessage.removeListener(responseListener);
+          cleanupOnResolveReject();
+          originalReject(err);
+        });
+    });
+  }
+
   /**
    * Initialize the embedding service (signals background to prepare offscreen)
    */
-  async initialize(options: EmbeddingOptions = {}): Promise<void> {
+  async initialize(options: EmbeddingOptions = {}, opts?: { timeoutMs?: number; signal?: AbortSignal }): Promise<void> {
     // If already loading, wait for it
     if (this.isLoading && this.loadPromise) {
       return this.loadPromise;
@@ -58,53 +131,32 @@ class EmbeddingService {
 
     // If already initialized, skip
     if (this.initialized) {
-      console.log('[EmbeddingService] Already initialized');
+      DEBUG && console.log('[EmbeddingService] Already initialized');
       return;
     }
 
     this.isLoading = true;
 
-    this.loadPromise = new Promise((resolve, reject) => {
-      const requestId = `init_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      // Set up listener for the response
-      const responseListener = (message: any) => {
-        if (message.type === 'initializeEmbeddingResponse' && message.requestId === requestId) {
-          chrome.runtime.onMessage.removeListener(responseListener);
-          
-          if (message.success) {
-            this.initialized = true;
-            console.log('[EmbeddingService] ✅ Initialized successfully');
-            this.isLoading = false;
-            this.loadPromise = null;
-            resolve();
-          } else {
-            const error = new Error(message.error || 'Failed to initialize embedding service');
-            console.error('[EmbeddingService] Failed to initialize:', error);
-            this.initialized = false;
-            this.isLoading = false;
-            this.loadPromise = null;
-            reject(error);
-          }
-        }
-      };
-      
-      chrome.runtime.onMessage.addListener(responseListener);
-      
-      // Send the initialization request
-      console.log('[EmbeddingService] Initializing via background script...');
-      chrome.runtime.sendMessage({
-        type: 'initializeEmbedding',
-        requestId
-      }).catch(err => {
-        console.error('[EmbeddingService] Failed to send initialization request:', err);
-        chrome.runtime.onMessage.removeListener(responseListener);
+    this.loadPromise = (async () => {
+      DEBUG && console.log('[EmbeddingService] Initializing via background script...');
+      const response = await this.sendMessage<{ success: boolean }>(
+        'initializeEmbedding',
+        'initializeEmbeddingResponse',
+        { options },
+        opts
+      );
+      if (response && (response as any).success) {
+        this.initialized = true;
+        DEBUG && console.log('[EmbeddingService] ✅ Initialized successfully');
+        this.isLoading = false;
+        this.loadPromise = null;
+      } else {
         this.initialized = false;
         this.isLoading = false;
         this.loadPromise = null;
-        reject(err);
-      });
-    });
+        throw new Error('Failed to initialize embedding service');
+      }
+    })();
 
     return this.loadPromise;
   }
@@ -112,57 +164,33 @@ class EmbeddingService {
   /**
    * Generate embeddings for a single text (delegates to background script)
    */
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, opts?: { timeoutMs?: number; signal?: AbortSignal }): Promise<number[]> {
     if (!this.initialized) {
-      console.log('[EmbeddingService] Not initialized, initializing now...');
-      await this.initialize();
+      DEBUG && console.log('[EmbeddingService] Not initialized, initializing now...');
+      await this.initialize({}, opts);
     }
 
-    return new Promise((resolve, reject) => {
-      const requestId = `embed_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      // Set up listener for the response
-      const responseListener = (message: any) => {
-        if (message.type === 'generateEmbeddingResponse' && message.requestId === requestId) {
-          chrome.runtime.onMessage.removeListener(responseListener);
-          
-          if (message.success) {
-            resolve(message.embedding);
-          } else {
-            const error = new Error(message.error || 'Failed to generate embedding');
-            console.error('[EmbeddingService] Failed to generate embedding:', error);
-            reject(error);
-          }
-        }
-      };
-      
-      chrome.runtime.onMessage.addListener(responseListener);
-      
-      // Send the request
-      chrome.runtime.sendMessage({
-        type: 'generateEmbedding',
-        text,
-        requestId
-      }).catch(err => {
-        console.error('[EmbeddingService] Failed to send embedding request:', err);
-        chrome.runtime.onMessage.removeListener(responseListener);
-        reject(err);
-      });
-    });
+    const res = await this.sendMessage<{ success: boolean; embedding: number[] }>(
+      'generateEmbedding',
+      'generateEmbeddingResponse',
+      { text },
+      opts
+    );
+    return (res as any).embedding as number[];
   }
 
   /**
    * Generate embeddings for multiple texts in batch (delegates to background script)
    */
-  async embedBatch(texts: string[], batchSize = 32): Promise<number[][]> {
+  async embedBatch(texts: string[], batchSize = 32, opts?: { timeoutMsPerItem?: number; signal?: AbortSignal }): Promise<number[][]> {
     if (!this.initialized) {
-      await this.initialize();
+      await this.initialize({}, { signal: opts?.signal });
     }
 
     // Just delegate to background script - it handles batching efficiently
     const results: number[][] = [];
     for (const text of texts) {
-      const embedding = await this.embed(text);
+      const embedding = await this.embed(text, { timeoutMs: opts?.timeoutMsPerItem, signal: opts?.signal });
       results.push(embedding);
     }
     return results;
@@ -172,16 +200,16 @@ class EmbeddingService {
    * Generate embeddings with progress reporting
    * This is a generator function that yields embeddings as they're computed
    */
-  async *embedStream(texts: string[], batchSize = 32): AsyncGenerator<number[][], void, unknown> {
+  async *embedStream(texts: string[], batchSize = 32, opts?: { timeoutMsPerItem?: number; signal?: AbortSignal }): AsyncGenerator<number[][], void, unknown> {
     if (!this.initialized) {
-      await this.initialize();
+      await this.initialize({}, { signal: opts?.signal });
     }
 
     for (let i = 0; i < texts.length; i += batchSize) {
       const batch = texts.slice(i, i + batchSize);
       const batchResults: number[][] = [];
       for (const text of batch) {
-        const embedding = await this.embed(text);
+        const embedding = await this.embed(text, { timeoutMs: opts?.timeoutMsPerItem, signal: opts?.signal });
         batchResults.push(embedding);
       }
       yield batchResults;
@@ -214,7 +242,7 @@ class EmbeddingService {
    */
   async dispose(): Promise<void> {
     this.initialized = false;
-    console.log('[EmbeddingService] Disposed');
+    DEBUG && console.log('[EmbeddingService] Disposed');
   }
 }
 

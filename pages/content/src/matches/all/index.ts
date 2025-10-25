@@ -1,6 +1,21 @@
 import { sampleFunction } from '@src/sample-function';
 
-console.log('[CEB] All content script loaded');
+// Debug toggle for this content script (production-safe: set to false)
+const DEBUG = true;
+const log = (...args: any[]) => DEBUG && console.log(...args);
+const warn = (...args: any[]) => DEBUG && console.warn(...args);
+// Schedule heavy work during idle time when possible
+const scheduleIdle = (fn: () => void) => {
+  // @ts-ignore
+  const ric: any = (window as any).requestIdleCallback;
+  if (typeof ric === 'function') {
+    // @ts-ignore
+    return ric(fn, { timeout: 500 });
+  }
+  return setTimeout(fn, 0);
+};
+
+log('[CEB] All content script loaded');
 
 // Add a global indicator that the content script is loaded
 (window as any).__CEB_CONTENT_SCRIPT_LOADED__ = true;
@@ -17,18 +32,18 @@ class PageAnalyzer {
   private rapidChangeTimer: NodeJS.Timeout | null = null;
 
   constructor() {
-    console.log('[CEB] PageAnalyzer constructor called');
+    log('[CEB] PageAnalyzer constructor called');
     try {
       this.initializePageAnalysis();
       this.setupMessageListener();
-      console.log('[CEB] PageAnalyzer initialized successfully');
+      log('[CEB] PageAnalyzer initialized successfully');
     } catch (error) {
       console.error('[CEB] Failed to initialize PageAnalyzer:', error);
     }
   }
 
   private initializePageAnalysis() {
-    console.log('[CEB] Page analyzer initialized in on-demand mode');
+    log('[CEB] Page analyzer initialized in on-demand mode');
     
     // Only perform initial analysis when explicitly requested
     // No automatic DOM monitoring to prevent unnecessary updates
@@ -41,17 +56,17 @@ class PageAnalyzer {
   }
 
   private setupMessageListener() {
-    console.log('[CEB] Setting up message listener');
+    log('[CEB] Setting up message listener');
     // Listen for messages from background script
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      console.log('[CEB] Received message:', message.type);
+      log('[CEB] Received message:', message.type);
       
       try {
         if (message.type === 'ping') {
-          console.log('[CEB] Ping received');
+          log('[CEB] Ping received');
           sendResponse({ success: true, ready: true });
         } else if (message.type === 'analyzePage') {
-          console.log('[CEB] Analyzing page on request');
+          log('[CEB] Analyzing page on request');
           this.analyzePageContent();
           sendResponse({ success: true });
         }
@@ -334,37 +349,49 @@ class PageAnalyzer {
     const MAX_RETRY_ATTEMPTS = 3;
     let capturedMutations: MutationRecord[] = []; // Store mutations for incremental update
 
-    // Monitor Shadow DOM changes
+    // Monitor Shadow DOM changes (with recursive traversal for nested shadow roots)
     const setupShadowDOMMonitoring = () => {
-      // Find all existing shadow roots
-      document.querySelectorAll('*').forEach(element => {
-        if (element.shadowRoot && !shadowObservers.has(element)) {
-          const shadowObserver = new MutationObserver((mutations) => {
-            console.log('[CEB] Shadow DOM change detected in', element.tagName, element.id || 'no-id');
-            capturedMutations.push(...mutations);
-            changeDetected = true;
-            notifyContentChanged();
-          });
-          
-          shadowObserver.observe(element.shadowRoot, {
-            childList: true,
-            subtree: true,
-            attributes: false,
-            characterData: true,
-            characterDataOldValue: false
-          });
-          
-          shadowObservers.set(element, shadowObserver);
-          console.log('[CEB] Shadow DOM monitoring started for', element.tagName, element.id || 'no-id');
-        }
-      });
+      // Recursive function to find and monitor all shadow roots (including nested ones)
+          const monitorShadowRoots = (root: Document | ShadowRoot | Element, depth: number = 0) => {
+        // Use querySelectorAll lazily in idle time to avoid blocking
+        const elements = root.querySelectorAll('*');
+        
+        elements.forEach((element) => {
+          if (element.shadowRoot && !shadowObservers.has(element)) {
+            const shadowObserver = new MutationObserver((mutations) => {
+              const hostIdentifier = `${element.tagName}${element.id ? '#' + element.id : ''}`;
+              log(`[CEB] Shadow DOM change detected in ${hostIdentifier} (depth: ${depth})`);
+              capturedMutations.push(...mutations);
+              changeDetected = true;
+              notifyContentChanged();
+            });
+            
+            shadowObserver.observe(element.shadowRoot, {
+              childList: true,
+              subtree: true,
+              attributes: false,
+              characterData: true,
+              characterDataOldValue: false
+            });
+            
+            shadowObservers.set(element, shadowObserver);
+            log(`[CEB] Shadow DOM monitoring started for ${element.tagName} ${element.id || 'no-id'} (depth: ${depth})`);
+            
+            // Recursively monitor nested shadow roots within this shadow root
+            monitorShadowRoots(element.shadowRoot, depth + 1);
+          }
+        });
+      };
+      
+      // Start recursive monitoring from document root
+      monitorShadowRoots(document, 0);
     };
 
     // Clean up shadow observers
     const cleanupShadowObservers = () => {
       shadowObservers.forEach((observer, element) => {
         observer.disconnect();
-        console.log('[CEB] Shadow DOM monitoring stopped for', element.tagName, element.id || 'no-id');
+        log('[CEB] Shadow DOM monitoring stopped for', element.tagName, element.id || 'no-id');
       });
       shadowObservers.clear();
     };
@@ -386,7 +413,7 @@ class PageAnalyzer {
         // Extract incremental DOM update details
         const domUpdate = this.extractDOMUpdate(capturedMutations);
         
-        console.log('[CEB] Page content changed, notifying extension with incremental update');
+        log('[CEB] Page content changed, notifying extension with incremental update');
         chrome.runtime.sendMessage({
           type: 'domContentChanged',
           tabId: chrome.runtime.id, // Will be set by background script
@@ -399,7 +426,7 @@ class PageAnalyzer {
         }).catch((error) => {
           // Failed - retry with backoff
           if (retryAttempts < MAX_RETRY_ATTEMPTS && error.message?.includes('Extension context invalidated')) {
-            console.log(`[CEB] Send failed, will retry (attempt ${retryAttempts + 1}/${MAX_RETRY_ATTEMPTS})`);
+            log(`[CEB] Send failed, will retry (attempt ${retryAttempts + 1}/${MAX_RETRY_ATTEMPTS})`);
             retryAttempts++;
             setTimeout(() => {
               if (Date.now() - lastChangeTimestamp < 30000) {
@@ -425,13 +452,13 @@ class PageAnalyzer {
               const element = node as Element;
               // Check if the new element has a shadow root
               if (element.shadowRoot && !shadowObservers.has(element)) {
-                console.log('[CEB] New shadow root detected, setting up monitoring');
+                log('[CEB] New shadow root detected, setting up monitoring');
                 setupShadowDOMMonitoring();
               }
               // Check if any descendant has a shadow root
               element.querySelectorAll('*').forEach(descendant => {
                 if (descendant.shadowRoot && !shadowObservers.has(descendant)) {
-                  console.log('[CEB] New shadow root detected in descendant, setting up monitoring');
+                  log('[CEB] New shadow root detected in descendant, setting up monitoring');
                   setupShadowDOMMonitoring();
                 }
               });
@@ -528,18 +555,21 @@ class PageAnalyzer {
       cleanupShadowObservers();
 
       try {
-        observer.observe(document.body, {
-          childList: true,        // Track node additions/removals
-          subtree: true,          // Monitor entire tree
-          attributes: false,      // Don't track attribute changes (reduces noise)
-          characterData: true,    // Track text content changes
-          characterDataOldValue: false
+        // Defer observer start to an idle period to avoid blocking page load
+        scheduleIdle(() => {
+          observer!.observe(document.body, {
+            childList: true,        // Track node additions/removals
+            subtree: true,          // Monitor entire tree
+            attributes: false,      // Don't track attribute changes (reduces noise)
+            characterData: true,    // Track text content changes
+            characterDataOldValue: false
+          });
+
+          // Set up initial shadow DOM monitoring in idle time
+          scheduleIdle(() => setupShadowDOMMonitoring());
+
+          log('[CEB] DOM change monitoring active (including Shadow DOM)');
         });
-
-        // Set up initial shadow DOM monitoring
-        setupShadowDOMMonitoring();
-
-        console.log('[CEB] DOM change monitoring active (including Shadow DOM)');
       } catch (error) {
         console.error('[CEB] Failed to start DOM monitoring:', error);
       }
@@ -784,3 +814,23 @@ if (document.readyState === 'loading') {
 } else {
   initializePageAnalyzer();
 }
+
+// Capture context menu click position for "Analyze Element" feature
+// This allows us to get the exact element that was right-clicked on
+document.addEventListener('contextmenu', (event) => {
+  // Store the click position
+  const position = {
+    x: event.clientX,
+    y: event.clientY
+  };
+  
+  // Send position to background script
+  chrome.runtime.sendMessage({
+    type: 'CONTEXT_MENU_CLICK_POSITION',
+    position: position
+  }).catch(() => {
+    // Silently fail if extension context is invalid
+  });
+  
+  log('[CEB] Context menu click position captured:', position);
+}, { passive: true });

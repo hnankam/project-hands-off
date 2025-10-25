@@ -5,6 +5,9 @@
 
 import { surrealDB } from './surreal-db.js';
 
+// Debug logging toggle (development only)
+const DEBUG = true;
+
 // ========================================
 // LEGACY INTERFACE REMOVED
 // ========================================
@@ -126,7 +129,7 @@ export async function initializeEmbeddingsSchema(): Promise<void> {
     DEFINE INDEX IF NOT EXISTS dom_updates_recency ON dom_updates FIELDS recencyScore;
   `);
 
-  console.log('[EmbeddingsStorage] ✅ Schema initialized with HNSW vector indexes (native vector search enabled)');
+  DEBUG && console.log('[EmbeddingsStorage] ✅ Schema initialized with HNSW vector indexes (native vector search enabled)');
 }
 
 /**
@@ -140,7 +143,7 @@ class EmbeddingsStorageManager {
    */
   async initialize(useMemory = true): Promise<void> {
     if (this.isInitialized) {
-      console.log('[EmbeddingsStorage] Already initialized');
+      DEBUG && console.log('[EmbeddingsStorage] Already initialized');
       return;
     }
 
@@ -154,7 +157,7 @@ class EmbeddingsStorageManager {
       await initializeEmbeddingsSchema();
 
       this.isInitialized = true;
-      console.log('[EmbeddingsStorage] Initialized successfully');
+      DEBUG && console.log('[EmbeddingsStorage] Initialized successfully');
     } catch (error) {
       console.error('[EmbeddingsStorage] Failed to initialize:', error);
       throw error;
@@ -178,6 +181,163 @@ class EmbeddingsStorageManager {
   // ========================================
   // NEW: Native Vector Search Methods
   // ========================================
+
+  /**
+   * Count helpers for pagination/non-semantic access
+   */
+  async countHTMLChunks(pageURL: string): Promise<number> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    try {
+      const res = await surrealDB.query<any[]>(
+        `SELECT count() AS c FROM html_chunks WHERE pageURL = $url;`,
+        { url: pageURL }
+      );
+      const row = res?.[0]?.[0];
+      return typeof row?.c === 'number' ? row.c : 0;
+    } catch (error) {
+      console.error('[EmbeddingsStorage] Failed to count HTML chunks:', error);
+      return 0;
+    }
+  }
+
+  async countFormFields(pageURL: string): Promise<number> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    try {
+      const res = await surrealDB.query<any[]>(
+        `SELECT count() AS c FROM form_fields WHERE pageURL = $url;`,
+        { url: pageURL }
+      );
+      const row = res?.[0]?.[0];
+      return typeof row?.c === 'number' ? row.c : 0;
+    } catch (error) {
+      console.error('[EmbeddingsStorage] Failed to count form fields:', error);
+      return 0;
+    }
+  }
+
+  async countClickableElements(pageURL: string): Promise<number> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    try {
+      const res = await surrealDB.query<any[]>(
+        `SELECT count() AS c FROM clickable_elements WHERE pageURL = $url;`,
+        { url: pageURL }
+      );
+      const row = res?.[0]?.[0];
+      return typeof row?.c === 'number' ? row.c : 0;
+    } catch (error) {
+      console.error('[EmbeddingsStorage] Failed to count clickable elements:', error);
+      return 0;
+    }
+  }
+
+  // ========================================
+  // New: Pagination (range) fetchers for agent use
+  // ========================================
+
+  /**
+   * Fetch HTML chunks by chunkIndex range (inclusive)
+   */
+  async fetchHTMLChunksByRange(
+    pageURL: string,
+    startIndex: number,
+    endIndex: number
+  ): Promise<Array<{ chunkIndex: number; text: string; html: string }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    const s = Math.max(0, Math.min(startIndex, endIndex));
+    const e = Math.max(startIndex, endIndex);
+    try {
+      const res = await surrealDB.query<any[]>(
+        `SELECT chunkIndex, text, html
+         FROM html_chunks
+         WHERE pageURL = $url AND chunkIndex >= $s AND chunkIndex <= $e
+         ORDER BY chunkIndex ASC;`,
+        { url: pageURL, s, e }
+      );
+      const rows = res?.[0] || [];
+      return rows.map((r: any) => ({
+        chunkIndex: r.chunkIndex,
+        text: r.text || '',
+        html: r.html || ''
+      }));
+    } catch (error) {
+      console.error('[EmbeddingsStorage] Failed to fetch HTML chunks range:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Fetch form field chunks (groups) by groupIndex range (inclusive)
+   */
+  async fetchFormChunksByRange(
+    pageURL: string,
+    startGroup: number,
+    endGroup: number
+  ): Promise<Array<{ groupIndex: number; fields: any[] }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    const s = Math.max(0, Math.min(startGroup, endGroup));
+    const e = Math.max(startGroup, endGroup);
+    try {
+      const res = await surrealDB.query<any[]>(
+        `SELECT groupIndex, fieldsJSON
+         FROM form_fields
+         WHERE pageURL = $url AND groupIndex >= $s AND groupIndex <= $e
+         ORDER BY groupIndex ASC;`,
+        { url: pageURL, s, e }
+      );
+      const rows = res?.[0] || [];
+      return rows.map((r: any) => {
+        let fields: any[] = [];
+        try { fields = JSON.parse(r.fieldsJSON); } catch {}
+        return { groupIndex: r.groupIndex, fields: Array.isArray(fields) ? fields : [] };
+      });
+    } catch (error) {
+      console.error('[EmbeddingsStorage] Failed to fetch form chunks range:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Fetch clickable element chunks (groups) by groupIndex range (inclusive)
+   */
+  async fetchClickableChunksByRange(
+    pageURL: string,
+    startGroup: number,
+    endGroup: number
+  ): Promise<Array<{ groupIndex: number; elements: any[] }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    const s = Math.max(0, Math.min(startGroup, endGroup));
+    const e = Math.max(startGroup, endGroup);
+    try {
+      const res = await surrealDB.query<any[]>(
+        `SELECT groupIndex, elementsJSON
+         FROM clickable_elements
+         WHERE pageURL = $url AND groupIndex >= $s AND groupIndex <= $e
+         ORDER BY groupIndex ASC;`,
+        { url: pageURL, s, e }
+      );
+      const rows = res?.[0] || [];
+      return rows.map((r: any) => {
+        let elements: any[] = [];
+        try { elements = JSON.parse(r.elementsJSON); } catch {}
+        return { groupIndex: r.groupIndex, elements: Array.isArray(elements) ? elements : [] };
+      });
+    } catch (error) {
+      console.error('[EmbeddingsStorage] Failed to fetch clickable chunks range:', error);
+      return [];
+    }
+  }
 
   /**
    * Store HTML chunks with embeddings in separate table (with HNSW index)
@@ -207,7 +367,7 @@ class EmbeddingsStorageManager {
         DELETE FROM html_chunks WHERE pageURL = $url
       `, { url: data.pageURL });
 
-      console.log(`[EmbeddingsStorage] 📦 Storing ${data.chunks.length} HTML chunks in batches of ${BATCH_SIZE}...`);
+      DEBUG && console.log(`[EmbeddingsStorage] 📦 Storing ${data.chunks.length} HTML chunks in batches of ${BATCH_SIZE}...`);
 
       // Insert in batches
       for (let i = 0; i < data.chunks.length; i += BATCH_SIZE) {
@@ -259,7 +419,7 @@ class EmbeddingsStorageManager {
         `, params);
       }
 
-      console.log(`[EmbeddingsStorage] ✅ Stored ${data.chunks.length} HTML chunks with HNSW indexes`);
+      DEBUG && console.log(`[EmbeddingsStorage] ✅ Stored ${data.chunks.length} HTML chunks with HNSW indexes`);
     } catch (error) {
       console.error('[EmbeddingsStorage] Failed to store HTML chunks:', error);
       throw error;
@@ -326,7 +486,7 @@ class EmbeddingsStorageManager {
         await surrealDB.query(`${letStatements}${createStatements}`, params);
       }
 
-      console.log(`[EmbeddingsStorage] ✅ Stored ${data.groups.length} form field groups with HNSW indexes (JSON string embeddings)`);
+      DEBUG && console.log(`[EmbeddingsStorage] ✅ Stored ${data.groups.length} form field groups with HNSW indexes (JSON string embeddings)`);
     } catch (error) {
       console.error('[EmbeddingsStorage] Failed to store form fields:', error);
       throw error;
@@ -393,7 +553,7 @@ class EmbeddingsStorageManager {
         await surrealDB.query(`${letStatements}${createStatements}`, params);
       }
 
-      console.log(`[EmbeddingsStorage] ✅ Stored ${data.groups.length} clickable element groups with HNSW indexes (JSON string embeddings)`);
+      DEBUG && console.log(`[EmbeddingsStorage] ✅ Stored ${data.groups.length} clickable element groups with HNSW indexes (JSON string embeddings)`);
     } catch (error) {
       console.error('[EmbeddingsStorage] Failed to store clickable elements:', error);
       throw error;
@@ -415,7 +575,7 @@ class EmbeddingsStorageManager {
     }
 
     if (!data.domUpdate || !data.embedding || data.embedding.length === 0) {
-      console.warn('[EmbeddingsStorage] Skipping DOM update storage - invalid data');
+      DEBUG && console.warn('[EmbeddingsStorage] Skipping DOM update storage - invalid data');
       return;
     }
 
@@ -453,7 +613,7 @@ class EmbeddingsStorageManager {
       // Decay recency scores of older updates for this page
       await this.decayOlderDOMUpdates(data.pageURL, timestamp);
 
-      console.log('[EmbeddingsStorage] ✅ Stored DOM update with HNSW index and recency score');
+      DEBUG && console.log('[EmbeddingsStorage] ✅ Stored DOM update with HNSW index and recency score');
     } catch (error) {
       console.error('[EmbeddingsStorage] Failed to store DOM update:', error);
       throw error;
@@ -538,7 +698,7 @@ class EmbeddingsStorageManager {
         });
       }
 
-      console.log(`[EmbeddingsStorage] ⏰ Decayed recency scores for ${updates.length} older DOM updates`);
+      DEBUG && console.log(`[EmbeddingsStorage] ⏰ Decayed recency scores for ${updates.length} older DOM updates`);
     } catch (error) {
       console.warn('[EmbeddingsStorage] Failed to decay older DOM updates:', error);
       // Don't throw - this is not critical
@@ -566,7 +726,7 @@ class EmbeddingsStorageManager {
     }
 
     try {
-      console.log('[EmbeddingsStorage] 🔍 HNSW search - HTML chunks:', { pageURL, topK });
+      DEBUG && console.log('[EmbeddingsStorage] 🔍 HNSW search - HTML chunks:', { pageURL, topK });
 
       // HNSW operator requires TWO parameters: <|K,EF|>
       // K = number of neighbors, EF = efSearch (search width, typically 2-4x K for better recall)
@@ -593,7 +753,7 @@ class EmbeddingsStorageManager {
 
       // Results are in index 1 (because of LET statement)
       if (results && results.length > 1 && results[1] && results[1].length > 0) {
-        console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${results[1].length} HTML chunks`);
+        DEBUG && console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${results[1].length} HTML chunks`);
         
         // Convert distance to similarity (similarity = 1 - distance) for consistency
         const resultsWithSimilarity = results[1].map((r: any) => ({
@@ -604,7 +764,7 @@ class EmbeddingsStorageManager {
         return resultsWithSimilarity;
       }
 
-      console.log('[EmbeddingsStorage] ⚠️  No HTML chunks found');
+      DEBUG && console.log('[EmbeddingsStorage] ⚠️  No HTML chunks found');
       return [];
     } catch (error) {
       console.error('[EmbeddingsStorage] Failed to search HTML chunks:', error);
@@ -636,7 +796,7 @@ class EmbeddingsStorageManager {
     }
 
     try {
-      console.log('[EmbeddingsStorage] 🔍 HNSW search - Form fields:', { pageURL, topK });
+      DEBUG && console.log('[EmbeddingsStorage] 🔍 HNSW search - Form fields:', { pageURL, topK });
 
       // HNSW search for form field groups (each group contains ~100 fields as JSON string)
       const groupTopK = Math.ceil(topK / 10); // Fewer groups needed since each has multiple fields
@@ -661,7 +821,7 @@ class EmbeddingsStorageManager {
 
       // Results are in index 1 (because of LET statement)
       if (!groupResults || groupResults.length < 2 || !groupResults[1] || groupResults[1].length === 0) {
-        console.log('[EmbeddingsStorage] ⚠️  No form field groups found');
+        DEBUG && console.log('[EmbeddingsStorage] ⚠️  No form field groups found');
         return [];
       }
 
@@ -684,7 +844,7 @@ class EmbeddingsStorageManager {
         }
       }
 
-      console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${allFields.length} form fields`);
+      DEBUG && console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${allFields.length} form fields`);
       return allFields.slice(0, topK); // Return top K individual fields
     } catch (error) {
       console.error('[EmbeddingsStorage] Failed to search form fields:', error);
@@ -714,7 +874,7 @@ class EmbeddingsStorageManager {
     }
 
     try {
-      console.log('[EmbeddingsStorage] 🔍 HNSW search - Clickable elements:', { pageURL, topK });
+      DEBUG && console.log('[EmbeddingsStorage] 🔍 HNSW search - Clickable elements:', { pageURL, topK });
 
       // HNSW search for clickable element groups (each group contains ~100 elements as JSON string)
       const groupTopK = Math.ceil(topK / 10); // Fewer groups needed since each has multiple elements
@@ -739,7 +899,7 @@ class EmbeddingsStorageManager {
 
       // Results are in index 1 (because of LET statement)
       if (!groupResults || groupResults.length < 2 || !groupResults[1] || groupResults[1].length === 0) {
-        console.log('[EmbeddingsStorage] ⚠️  No clickable element groups found');
+        DEBUG && console.log('[EmbeddingsStorage] ⚠️  No clickable element groups found');
         return [];
       }
 
@@ -762,7 +922,7 @@ class EmbeddingsStorageManager {
         }
       }
 
-      console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${allElements.length} clickable elements`);
+      DEBUG && console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${allElements.length} clickable elements`);
       return allElements.slice(0, topK); // Return top K individual elements
     } catch (error) {
       console.error('[EmbeddingsStorage] Failed to search clickable elements:', error);
@@ -793,7 +953,7 @@ class EmbeddingsStorageManager {
     }
 
     try {
-      console.log('[EmbeddingsStorage] 🔍 HNSW search - DOM updates (with recency):', { pageURL, topK });
+      DEBUG && console.log('[EmbeddingsStorage] 🔍 HNSW search - DOM updates (with recency):', { pageURL, topK });
 
       // Get more results than needed so we can apply recency weighting
       const searchK = Math.min(topK * 3, 20);
@@ -822,7 +982,7 @@ class EmbeddingsStorageManager {
 
       // Results are in index 1 (because of LET statement)
       if (!results || results.length < 2 || !results[1] || results[1].length === 0) {
-        console.log('[EmbeddingsStorage] ⚠️  No DOM updates found');
+        DEBUG && console.log('[EmbeddingsStorage] ⚠️  No DOM updates found');
         return [];
       }
 
@@ -860,7 +1020,7 @@ class EmbeddingsStorageManager {
       domUpdates.sort((a: any, b: any) => b.combinedScore - a.combinedScore);
       const topResults = domUpdates.slice(0, topK);
 
-      console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${topResults.length} DOM updates (semantic + recency weighted)`);
+      DEBUG && console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${topResults.length} DOM updates (semantic + recency weighted)`);
       return topResults;
     } catch (error) {
       console.error('[EmbeddingsStorage] Failed to search DOM updates:', error);

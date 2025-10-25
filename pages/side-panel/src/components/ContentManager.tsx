@@ -1,6 +1,11 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { debug } from '@extension/shared';
 import { TIMING_CONSTANTS, ERROR_MESSAGES } from '../constants';
+import { ts } from '../utils/logging';
+
+// ================================================================================
+// TYPES & INTERFACES
+// ================================================================================
 
 export interface ContentState {
   current: any;
@@ -15,6 +20,8 @@ export interface ContentManagerProps {
   isActive: boolean;
   isPanelInteractive: boolean;
   isPanelVisible: boolean;
+  isPanelActive?: boolean;
+  isAgentLoading?: boolean;
   onContentStateChange: (state: ContentState) => void;
   onStaleIndicatorChange: (show: boolean) => void;
   onDOMUpdate: (update: any) => void;
@@ -28,6 +35,108 @@ export interface ContentManagerReturn {
   clearCache: () => void;
 }
 
+interface CacheEntry {
+  content: any;
+  timestamp: number;
+  tabId: number;
+}
+
+// ================================================================================
+// HELPER FUNCTIONS
+// ================================================================================
+
+/**
+ * Log detailed content size and structure information
+ */
+const logContentDetails = (content: any, source: 'on-demand' | 'broadcast') => {
+  const contentString = JSON.stringify(content);
+  const totalSizeKB = (contentString.length / 1024).toFixed(2);
+  const totalSizeMB = (contentString.length / (1024 * 1024)).toFixed(2);
+  
+  debug.log(ts(), `📊 [ContentManager] Received content size (${source}):`);
+  debug.log(ts(), `   Total size: ${totalSizeKB} KB (${totalSizeMB} MB)`);
+  debug.log(ts(), `   URL: ${content.url}`);
+  debug.log(ts(), `   Title: ${content.title}`);
+  
+  // Log sizes of individual content sections
+  if (content.allDOMContent) {
+    // Full HTML content
+    if (content.allDOMContent.fullHTML) {
+      const htmlSizeKB = (content.allDOMContent.fullHTML.length / 1024).toFixed(2);
+      debug.log(ts(), `   - fullHTML: ${htmlSizeKB} KB`);
+      debug.log(ts(), '     Sample:', content.allDOMContent.fullHTML.substring(0, 200));
+    }
+    
+    // Text content
+    if (content.textContent) {
+      const textSizeKB = (content.textContent.length / 1024).toFixed(2);
+      debug.log(ts(), `   - textContent: ${textSizeKB} KB`);
+      debug.log(ts(), '     Sample:', content.textContent.substring(0, 200));
+    }
+    
+    // Form data
+    if (content.allDOMContent.allFormData) {
+      const formDataSize = (JSON.stringify(content.allDOMContent.allFormData).length / 1024).toFixed(2);
+      debug.log(ts(), `   - allFormData: ${formDataSize} KB (${content.allDOMContent.allFormData.length} elements)`);
+      if (content.allDOMContent.allFormData.length > 0) {
+        debug.log(ts(), '     First 3 elements:', content.allDOMContent.allFormData.slice(0, 3).map((f: any) => ({
+          type: f.type,
+          name: f.name,
+          label: f.label,
+          selector: f.bestSelector
+        })));
+      }
+    }
+    
+    // Clickable elements
+    if (content.allDOMContent.clickableElements) {
+      const clickableSize = (JSON.stringify(content.allDOMContent.clickableElements).length / 1024).toFixed(2);
+      debug.log(ts(), `   - clickableElements: ${clickableSize} KB (${content.allDOMContent.clickableElements.length} elements)`);
+      if (content.allDOMContent.clickableElements.length > 0) {
+        debug.log(ts(), '     First 3 elements:', content.allDOMContent.clickableElements.slice(0, 3).map((c: any) => ({
+          tagName: c.tagName,
+          text: c.text?.substring(0, 50),
+          selector: c.selector
+        })));
+      }
+    }
+    
+    // Shadow DOM content
+    if (content.allDOMContent.shadowContent && content.allDOMContent.shadowContent.length > 0) {
+      const shadowSize = (JSON.stringify(content.allDOMContent.shadowContent).length / 1024).toFixed(2);
+      debug.log(ts(), `   - shadowContent: ${shadowSize} KB (${content.allDOMContent.shadowContent.length} shadow roots)`);
+    }
+  }
+};
+
+/**
+ * Update cache with new content and clean old entries
+ */
+const updateCache = (
+  cache: Map<string, CacheEntry>,
+  key: string,
+  content: any,
+  timestamp: number,
+  tabId: number
+) => {
+  // Update cache
+  cache.set(key, { content, timestamp, tabId });
+  
+  // Clean old cache entries (keep only last MAX_CACHE_SIZE)
+  if (cache.size > TIMING_CONSTANTS.MAX_CACHE_SIZE) {
+    const entries = Array.from(cache.entries());
+    entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
+    cache.clear();
+    entries.slice(0, TIMING_CONSTANTS.MAX_CACHE_SIZE).forEach(([k, v]) => {
+      cache.set(k, v);
+    });
+  }
+};
+
+// ================================================================================
+// MAIN HOOK
+// ================================================================================
+
 /**
  * ContentManager Hook
  * 
@@ -39,10 +148,16 @@ export const useContentManager = ({
   isActive,
   isPanelInteractive,
   isPanelVisible,
+  isPanelActive = false,
+  isAgentLoading = false,
   onContentStateChange,
   onStaleIndicatorChange,
   onDOMUpdate
 }: ContentManagerProps): ContentManagerReturn => {
+  
+  // ================================================================================
+  // STATE
+  // ================================================================================
   
   const [contentState, setContentState] = useState<ContentState>({
     current: null,
@@ -55,19 +170,54 @@ export const useContentManager = ({
   const [showStaleIndicator, setShowStaleIndicator] = useState(false);
   const [latestDOMUpdate, setLatestDOMUpdate] = useState<any>(null);
   
+  // ================================================================================
+  // REFS
+  // ================================================================================
+  
+  // Refs for stable access to latest state without triggering re-renders
+  const contentStateRef = useRef<ContentState>(contentState);
+  const currentTabIdRef = useRef<number | null>(currentTabId);
+  
+  // Update refs when state changes (no re-render trigger)
+  useEffect(() => {
+    contentStateRef.current = contentState;
+  }, [contentState]);
+  
+  useEffect(() => {
+    currentTabIdRef.current = currentTabId;
+  }, [currentTabId]);
+  
   // Content cache to prevent unnecessary refetches
-  const contentCacheRef = useRef<Map<string, { content: any; timestamp: number; tabId: number }>>(new Map());
+  const contentCacheRef = useRef<Map<string, CacheEntry>>(new Map());
   
   // Track last content timestamp received via direct response
   const lastDirectResponseTimestampRef = useRef<number | null>(null);
   
-  // Auto-refresh timer for inactive panel
+  // Auto-refresh timer for inactive panel (currently unused but kept for future)
   const autoRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Helper function to check if content is fresh
+  // ================================================================================
+  // HELPER FUNCTIONS
+  // ================================================================================
+  
+  /**
+   * Check if content is fresh based on CACHE_TTL
+   */
   const isContentFresh = useCallback((timestamp: number) => {
     return Date.now() - timestamp < TIMING_CONSTANTS.CACHE_TTL;
   }, []);
+  
+  /**
+   * Clear all cached content
+   */
+  const clearCache = useCallback(() => {
+    contentCacheRef.current.clear();
+    debug.log(ts(), '[ContentManager] Cache cleared');
+  }, []);
+  
+  // ================================================================================
+  // EFFECTS - PARENT COMPONENT UPDATES
+  // ================================================================================
   
   // Update parent component when content state changes
   useEffect(() => {
@@ -84,18 +234,20 @@ export const useContentManager = ({
     onDOMUpdate(latestDOMUpdate);
   }, [latestDOMUpdate, onDOMUpdate]);
   
-  // Clear cache function
-  const clearCache = useCallback(() => {
-    contentCacheRef.current.clear();
-    debug.log('[ContentManager] Cache cleared');
-  }, []);
+  // ================================================================================
+  // CONTENT FETCHING
+  // ================================================================================
   
-  // Function to fetch fresh page content with intelligent caching
+  /**
+   * Fetch fresh page content with intelligent caching
+   * @param force - Force refresh bypassing cache
+   * @param tabIdOverride - Override current tab ID
+   */
   const fetchFreshPageContent = useCallback(async (force = false, tabIdOverride?: number) => {
     const tabId = tabIdOverride || currentTabId;
     
     if (!tabId) {
-      debug.log('[ContentManager] No tab ID available');
+      debug.log(ts(), '[ContentManager] No tab ID available');
       return;
     }
     
@@ -105,7 +257,7 @@ export const useContentManager = ({
       const cached = contentCacheRef.current.get(cacheKey);
       
       if (cached && isContentFresh(cached.timestamp)) {
-        debug.log('[ContentManager] Using fresh cached content');
+        debug.log(ts(), '[ContentManager] Using fresh cached content');
         setContentState(prev => ({
           current: cached.content,
           previous: prev.current,
@@ -116,17 +268,18 @@ export const useContentManager = ({
         return;
       }
       
-      // Skip if already fetching (only when not forced)
-      if (contentState.status === 'loading' || contentState.status === 'refreshing') {
-        debug.log('[ContentManager] Already fetching content');
+      // Skip if already fetching (only when not forced) - use ref for stable check
+      const currentStatus = contentStateRef.current.status;
+      if (currentStatus === 'loading' || currentStatus === 'refreshing') {
+        debug.log(ts(), '[ContentManager] Already fetching content');
         return;
       }
     } else {
-      debug.log('[ContentManager] Force refresh requested - bypassing cache and fetching checks');
+      debug.log(ts(), '[ContentManager] Force refresh requested - bypassing cache and fetching checks');
     }
 
-    // Determine if this is a refresh (has existing content) or initial load
-    const hasExistingContent = contentState.current !== null;
+    // Determine if this is a refresh (has existing content) or initial load - use ref
+    const hasExistingContent = contentStateRef.current.current !== null;
     const newStatus = hasExistingContent ? 'refreshing' : 'loading';
     
     // Update state to show loading/refreshing without clearing existing content
@@ -137,7 +290,7 @@ export const useContentManager = ({
       error: undefined
     }));
     
-    debug.log(`[ContentManager] ${newStatus === 'refreshing' ? 'Refreshing' : 'Loading'} page content...`);
+    debug.log(ts(), `[ContentManager] ${newStatus === 'refreshing' ? 'Refreshing' : 'Loading'} page content...`);
 
     try {
       const response = await new Promise<any>((resolve, reject) => {
@@ -154,65 +307,10 @@ export const useContentManager = ({
       });
 
       if (response?.success && response?.content) {
-        debug.log('[ContentManager] Content loaded:', response.content);
+        debug.log(ts(), '[ContentManager] Content loaded:', response.content);
         
-        // Log content size and samples (on-demand fetch)
-        const contentString = JSON.stringify(response.content);
-        const totalSizeKB = (contentString.length / 1024).toFixed(2);
-        const totalSizeMB = (contentString.length / (1024 * 1024)).toFixed(2);
-        
-        debug.log('📊 [ContentManager] Received content size (on-demand):');
-        debug.log(`   Total size: ${totalSizeKB} KB (${totalSizeMB} MB)`);
-        debug.log(`   URL: ${response.content.url}`);
-        debug.log(`   Title: ${response.content.title}`);
-        
-        // Log sizes of individual content sections
-        if (response.content.allDOMContent) {
-          if (response.content.allDOMContent.fullHTML) {
-            const htmlSizeKB = (response.content.allDOMContent.fullHTML.length / 1024).toFixed(2);
-            debug.log(`   - fullHTML: ${htmlSizeKB} KB`);
-            debug.log('     Sample:', response.content.allDOMContent.fullHTML.substring(0, 200));
-          }
-          if (response.content.textContent) {
-            const textSizeKB = (response.content.textContent.length / 1024).toFixed(2);
-            debug.log(`   - textContent: ${textSizeKB} KB`);
-            debug.log('     Sample:', response.content.textContent.substring(0, 200));
-          }
-          if (response.content.allDOMContent.allFormData) {
-            const formDataSize = (JSON.stringify(response.content.allDOMContent.allFormData).length / 1024).toFixed(2);
-            debug.log(`   - allFormData: ${formDataSize} KB (${response.content.allDOMContent.allFormData.length} elements)`);
-            if (response.content.allDOMContent.allFormData.length > 0) {
-              debug.log('     First 3 elements:', response.content.allDOMContent.allFormData.slice(0, 3).map((f: any) => ({
-                type: f.type,
-                name: f.name,
-                label: f.label,
-                selector: f.bestSelector
-              })));
-            }
-          }
-          if (response.content.allDOMContent.clickableElements) {
-            const clickableSize = (JSON.stringify(response.content.allDOMContent.clickableElements).length / 1024).toFixed(2);
-            debug.log(`   - clickableElements: ${clickableSize} KB (${response.content.allDOMContent.clickableElements.length} elements)`);
-            if (response.content.allDOMContent.clickableElements.length > 0) {
-              debug.log('     First 3 elements:', response.content.allDOMContent.clickableElements.slice(0, 3).map((c: any) => ({
-                tagName: c.tagName,
-                text: c.text?.substring(0, 50),
-                selector: c.selector
-              })));
-            }
-          }
-          if (response.content.allDOMContent.shadowContent && response.content.allDOMContent.shadowContent.length > 0) {
-            const shadowSize = (JSON.stringify(response.content.allDOMContent.shadowContent).length / 1024).toFixed(2);
-            debug.log(`   - shadowContent: ${shadowSize} KB (${response.content.allDOMContent.shadowContent.length} shadow roots)`);
-            // response.content.allDOMContent.shadowContent.forEach((shadow: any, index: number) => {
-            //   debug.log(`     Shadow Root ${index + 1}:`, {
-            //     host: `${shadow.hostElement}${shadow.hostId ? '#' + shadow.hostId : ''}`,
-            //     contentSize: (shadow.content?.length || 0) + ' chars',
-            //     textPreview: shadow.textContent?.substring(0, 100)
-            //   });
-            // });
-          }
-        }
+        // Log detailed content information
+        logContentDetails(response.content, 'on-demand');
         
         const timestamp = response.content.timestamp || Date.now();
         
@@ -220,21 +318,7 @@ export const useContentManager = ({
         lastDirectResponseTimestampRef.current = timestamp;
         
         // Update cache
-        contentCacheRef.current.set(`${tabId}`, {
-          content: response.content,
-          timestamp,
-          tabId: tabId
-        });
-        
-        // Clean old cache entries (keep only last 5)
-        if (contentCacheRef.current.size > TIMING_CONSTANTS.MAX_CACHE_SIZE) {
-          const entries = Array.from(contentCacheRef.current.entries());
-          entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
-          contentCacheRef.current.clear();
-          entries.slice(0, TIMING_CONSTANTS.MAX_CACHE_SIZE).forEach(([key, value]) => {
-            contentCacheRef.current.set(key, value);
-          });
-        }
+        updateCache(contentCacheRef.current, `${tabId}`, response.content, timestamp, tabId);
         
         setContentState(prev => ({
           current: response.content,
@@ -247,7 +331,7 @@ export const useContentManager = ({
         // Clear stale indicator when fresh content is loaded
         setShowStaleIndicator(false);
       } else {
-        debug.log('[ContentManager] Failed to load content:', response?.error);
+        debug.log(ts(), '[ContentManager] Failed to load content:', response?.error);
         setContentState(prev => ({
           ...prev,
           status: prev.current ? 'ready' : 'error', // Keep existing content if available
@@ -255,122 +339,125 @@ export const useContentManager = ({
         }));
       }
     } catch (error) {
-      debug.error('[ContentManager] Error fetching fresh page content:', error);
+      debug.error(ts(), '[ContentManager] Error fetching fresh page content:', error);
       setContentState(prev => ({
         ...prev,
         status: prev.current ? 'ready' : 'error', // Keep existing content if available
         error: error instanceof Error ? error.message : ERROR_MESSAGES.CONTENT_FETCH_FAILED
       }));
     }
-  }, [currentTabId, contentState.status, contentState.current, isContentFresh]);
+  }, [currentTabId, isContentFresh]); // Reduced dependencies using refs
 
-  // Monitor for DOM changes and stale content
+  // ================================================================================
+  // MESSAGE HANDLING
+  // ================================================================================
+  
+  /**
+   * Handle content became stale message
+   */
+  const handleContentBecameStale = useCallback((message: any) => {
+    // Use ref for stable comparison
+    if (message.tabId !== currentTabIdRef.current) return;
+    
+    // Show indicator immediately
+    debug.log(ts(), '[ContentManager] Content became stale');
+    setShowStaleIndicator(true);
+      
+    // Capture the incremental DOM update if available
+    if (message.domUpdate) {
+      debug.log(ts(), '[ContentManager] Received incremental DOM update:', message.domUpdate);
+      setLatestDOMUpdate(message.domUpdate);
+    }
+
+    // Invalidate cache for this tab so the next fetch is fresh
+    const cacheKey = `${message.tabId}`;
+    contentCacheRef.current.delete(cacheKey);
+
+    // Always refresh on stale. Avoid overlap if a fetch is already in-flight.
+    const status = contentStateRef.current.status;
+    if (status === 'loading' || status === 'refreshing') {
+      debug.log(ts(), '[ContentManager] Skipping auto-refresh – fetch already in progress');
+      return;
+    }
+
+    // If panel is active, schedule a refresh for 2.5s later
+    if (isPanelActive) {
+      if (autoRefreshTimerRef.current) {
+        clearTimeout(autoRefreshTimerRef.current);
+      }
+      autoRefreshTimerRef.current = setTimeout(() => {
+        const currentStatus = contentStateRef.current.status;
+        if (currentStatus === 'loading' || currentStatus === 'refreshing') {
+          debug.log(ts(), '[ContentManager] Skipping scheduled refresh – fetch started in the meantime');
+          autoRefreshTimerRef.current = null;
+          return;
+        }
+        debug.log(ts(), '[ContentManager] Auto-refreshing due to stale content (panel active, 2.5s delay)');
+        void fetchFreshPageContent(true, message.tabId);
+        setShowStaleIndicator(false);
+        autoRefreshTimerRef.current = null;
+      }, 2500) as unknown as NodeJS.Timeout;
+      return;
+    }
+
+    // Panel not active: refresh immediately
+    debug.log(ts(), '[ContentManager] Auto-refreshing due to stale content (panel inactive)');
+    void fetchFreshPageContent(true, message.tabId);
+  }, [isPanelActive, isAgentLoading, fetchFreshPageContent]); // Stable
+  
+  /**
+   * Handle page content updated message
+   */
+  const handlePageContentUpdated = useCallback((message: any) => {
+    // Use ref for stable comparison
+    if (message.tabId !== currentTabIdRef.current || !message.data) return;
+    
+    debug.log(ts(), '[ContentManager] Received page content update from background');
+    
+    // Skip if we just received this content via direct response
+    if (lastDirectResponseTimestampRef.current === message.data.timestamp) {
+      debug.log(ts(), '[ContentManager] Skipping broadcast - already processed via direct response');
+      return;
+    }
+    
+    // Log detailed content information
+    logContentDetails(message.data, 'broadcast');
+    
+    const timestamp = Date.now();
+    
+    // Update cache
+    updateCache(contentCacheRef.current, `${message.tabId}`, message.data, timestamp, message.tabId);
+    
+    // Only update state if we don't already have this exact content - use ref
+    const isDifferentContent = contentStateRef.current.current?.timestamp !== message.data.timestamp;
+    if (isDifferentContent) {
+      setContentState(prev => ({
+        current: message.data,
+        previous: prev.current,
+        status: 'ready',
+        lastFetch: timestamp,
+        error: undefined
+      }));
+    } else {
+      debug.log(ts(), '[ContentManager] Skipping duplicate content update (same timestamp)');
+    }
+  }, []); // Stable - uses refs
+
+  // ================================================================================
+  // EFFECTS - MESSAGE LISTENERS
+  // ================================================================================
+  
+  /**
+   * Monitor for DOM changes and stale content (stable handlers = stable listener)
+   */
   useEffect(() => {
     if (!isActive) return;
     
     const handleMessage = (message: any) => {
-      if (message.type === 'contentBecameStale' && message.tabId === currentTabId) {
-        // Show indicator immediately
-        debug.log('[ContentManager] Content became stale (auto-refresh DISABLED)');
-        setShowStaleIndicator(true);
-          
-        // Capture the incremental DOM update if available
-        if (message.domUpdate) {
-          debug.log('[ContentManager] Received incremental DOM update:', message.domUpdate);
-          setLatestDOMUpdate(message.domUpdate);
-        }
+      if (message.type === 'contentBecameStale') {
+        handleContentBecameStale(message);
       } else if (message.type === 'pageContentUpdated') {
-        if (message.tabId === currentTabId && message.data) {
-          debug.log('[ContentManager] Received page content update from background');
-          
-          // Skip if we just received this content via direct response
-          if (lastDirectResponseTimestampRef.current === message.data.timestamp) {
-            debug.log('[ContentManager] Skipping broadcast - already processed via direct response');
-            return;
-          }
-          
-          // Log content size and samples (broadcast)
-          const contentString = JSON.stringify(message.data);
-          const totalSizeKB = (contentString.length / 1024).toFixed(2);
-          const totalSizeMB = (contentString.length / (1024 * 1024)).toFixed(2);
-          
-          debug.log('📊 [ContentManager] Received content size (broadcast):');
-          debug.log(`   Total size: ${totalSizeKB} KB (${totalSizeMB} MB)`);
-          debug.log(`   URL: ${message.data.url}`);
-          debug.log(`   Title: ${message.data.title}`);
-          
-          // Log sizes of individual content sections
-          if (message.data.allDOMContent) {
-            if (message.data.allDOMContent.fullHTML) {
-              const htmlSizeKB = (message.data.allDOMContent.fullHTML.length / 1024).toFixed(2);
-              debug.log(`   - fullHTML: ${htmlSizeKB} KB`);
-              debug.log('     Sample:', message.data.allDOMContent.fullHTML.substring(0, 200));
-            }
-            if (message.data.textContent) {
-              const textSizeKB = (message.data.textContent.length / 1024).toFixed(2);
-              debug.log(`   - textContent: ${textSizeKB} KB`);
-              debug.log('     Sample:', message.data.textContent.substring(0, 200));
-            }
-            if (message.data.allDOMContent.allFormData) {
-              const formDataSize = (JSON.stringify(message.data.allDOMContent.allFormData).length / 1024).toFixed(2);
-              debug.log(`   - allFormData: ${formDataSize} KB (${message.data.allDOMContent.allFormData.length} elements)`);
-              if (message.data.allDOMContent.allFormData.length > 0) {
-                debug.log('     First 3 elements:', message.data.allDOMContent.allFormData.slice(0, 3).map((f: any) => ({
-                  type: f.type,
-                  name: f.name,
-                  label: f.label,
-                  selector: f.bestSelector
-                })));
-              }
-            }
-            if (message.data.allDOMContent.clickableElements) {
-              const clickableSize = (JSON.stringify(message.data.allDOMContent.clickableElements).length / 1024).toFixed(2);
-              debug.log(`   - clickableElements: ${clickableSize} KB (${message.data.allDOMContent.clickableElements.length} elements)`);
-              if (message.data.allDOMContent.clickableElements.length > 0) {
-                debug.log('     First 3 elements:', message.data.allDOMContent.clickableElements.slice(0, 3).map((c: any) => ({
-                  tagName: c.tagName,
-                  text: c.text?.substring(0, 50),
-                  selector: c.selector
-                })));
-              }
-            }
-            if (message.data.allDOMContent.shadowContent && message.data.allDOMContent.shadowContent.length > 0) {
-              const shadowSize = (JSON.stringify(message.data.allDOMContent.shadowContent).length / 1024).toFixed(2);
-              debug.log(`   - shadowContent: ${shadowSize} KB (${message.data.allDOMContent.shadowContent.length} shadow roots)`);
-              // message.data.allDOMContent.shadowContent.forEach((shadow: any, index: number) => {
-              //   debug.log(`     Shadow Root ${index + 1}:`, {
-              //     host: `${shadow.hostElement}${shadow.hostId ? '#' + shadow.hostId : ''}`,
-              //     contentSize: (shadow.content?.length || 0) + ' chars',
-              //     textPreview: shadow.textContent?.substring(0, 100)
-              //   });
-              // });
-            }
-          }
-          
-          const timestamp = Date.now();
-          
-          // Update cache
-          const cacheKey = `${message.tabId}`;
-          contentCacheRef.current.set(cacheKey, {
-            content: message.data,
-            timestamp,
-            tabId: message.tabId
-          });
-          
-          // Only update state if we don't already have this exact content
-          const isDifferentContent = contentState.current?.timestamp !== message.data.timestamp;
-          if (isDifferentContent) {
-            setContentState(prev => ({
-              current: message.data,
-              previous: prev.current,
-              status: 'ready',
-              lastFetch: timestamp,
-              error: undefined
-            }));
-          } else {
-            debug.log('[ContentManager] Skipping duplicate content update (same timestamp)');
-          }
-        }
+        handlePageContentUpdated(message);
       }
     };
     
@@ -384,13 +471,18 @@ export const useContentManager = ({
         autoRefreshTimerRef.current = null;
       }
     };
-  }, [currentTabId, isActive, contentState.current]);
+  }, [isActive, handleContentBecameStale, handlePageContentUpdated]); // Stable handlers now
 
-  return {
+  // ================================================================================
+  // RETURN
+  // ================================================================================
+
+  // Memoize return object for stable reference
+  return useMemo(() => ({
     contentState,
     showStaleIndicator,
     latestDOMUpdate,
     fetchFreshPageContent,
     clearCache
-  };
+  }), [contentState, showStaleIndicator, latestDOMUpdate, fetchFreshPageContent, clearCache]);
 };
