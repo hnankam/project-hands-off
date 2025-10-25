@@ -275,6 +275,7 @@ input:focus {
 .copilotKitAssistantMessage {
   max-width: 100% !important; /* Allow full width instead of 80% */
   width: 100% !important; /* Force full width */
+  padding-right: 0px !important;
 }
 
 /* ==========================================================
@@ -291,9 +292,37 @@ input:focus {
   margin-bottom: 0.75rem !important;
 }
 
+.copilotKitMessageControlButton > svg {
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  min-height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+  stroke-width: 2 !important;
+  shape-rendering: geometricPrecision !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  display: block !important;
+}
+
 .dark .copilotKitMessageControlButton {
   color: #ffffff !important;
   margin-bottom: 0.75rem !important;
+}
+
+.dark .copilotKitMessageControlButton > svg {
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  min-height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+  stroke-width: 2 !important;
+  shape-rendering: geometricPrecision !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  display: block !important;
 }
 
 .copilotKitActivityDot {
@@ -453,6 +482,164 @@ footer div[class*="suggestions"] button {
   border-top-right-radius: 0.75rem;
   border: 1px solid var(--copilot-kit-separator-color) !important;
   margin-bottom: 0.5rem !important;
+}
+
+/* ==========================================================
+   CODE BLOCKS (CopilotKit)
+   Subtle, theme-aware, thin toolbar
+   ========================================================== */
+/* Container */
+.copilot-chat-container .copilotKitCodeBlock {
+  position: relative !important;
+  width: 100% !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--copilot-kit-border-color) !important;
+  background: var(--copilot-kit-response-background-color, var(--copilot-kit-secondary-color)) !important; /* lighter in light mode */
+  overflow: hidden !important;
+  /* Reduce flicker on visibility changes */
+  backface-visibility: hidden !important;
+  transform: translateZ(0) !important;
+  will-change: auto !important;
+  contain: paint !important;
+}
+
+/* Dark mode container */
+.copilot-chat-container.dark .copilotKitCodeBlock {
+  background: var(--copilot-kit-secondary-color, #151C24) !important;
+  border-color: var(--copilot-kit-border-color, #374151) !important;
+}
+
+/* Toolbar */
+.copilot-chat-container .copilotKitCodeBlockToolbar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  height: 28px !important; /* thinner */
+  padding: 0 8px !important;
+  background: rgba(0,0,0,0.03) !important;
+  border-bottom: 1px solid var(--copilot-kit-separator-color) !important;
+  color: var(--copilot-kit-text-muted-color) !important;
+  font-size: 11px !important;
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlockToolbar {
+  background: rgba(255,255,255,0.03) !important;
+}
+
+/* Toolbar buttons/icons */
+.copilot-chat-container .copilotKitCodeBlockToolbar button,
+.copilot-chat-container .copilotKitCodeBlockToolbar a {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 20px !important;
+  width: 20px !important;
+  padding: 0 !important;
+  border-radius: 4px !important;
+  color: inherit !important;
+  background: transparent !important;
+}
+
+.copilot-chat-container .copilotKitCodeBlockToolbar button:hover,
+.copilot-chat-container .copilotKitCodeBlockToolbar a:hover {
+  background: rgba(0,0,0,0.06) !important;
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlockToolbar button:hover,
+.copilot-chat-container.dark .copilotKitCodeBlockToolbar a:hover {
+  background: rgba(255,255,255,0.08) !important;
+}
+
+.copilot-chat-container .copilotKitCodeBlockToolbar svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+/* Code area */
+.copilot-chat-container .copilotKitCodeBlock pre,
+.copilot-chat-container .copilotKitCodeBlock code {
+  background: transparent !important;
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  -webkit-font-smoothing: antialiased !important;
+  text-rendering: optimizeLegibility !important;
+  /* In light mode, nudge token brightness and saturation slightly for readability */
+}
+
+/* Apply only in light mode to the inline tokens, not the container */
+.copilot-chat-container:not(.dark) .copilotKitCodeBlock code {
+  filter: brightness(0.7) saturate(2.08) contrast(1.5);
+}
+
+.copilot-chat-container .copilotKitCodeBlock pre {
+  margin: 0 !important;
+  padding: 12px 14px !important;
+  overflow: auto !important;
+  /* Thin, theme-aware scrollbars (match chat area) */
+  scrollbar-width: thin !important; /* Firefox */
+}
+
+/* WebKit scrollbar inside code blocks */
+.copilot-chat-container .copilotKitCodeBlock pre::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+.copilot-chat-container .copilotKitCodeBlock pre::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+.copilot-chat-container .copilotKitCodeBlock pre::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.35) !important; /* slate-400 @ ~35% */
+  border-radius: 3px !important;
+}
+.copilot-chat-container .copilotKitCodeBlock pre::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5) !important;
+}
+.copilot-chat-container.dark .copilotKitCodeBlock pre::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.35) !important; /* slate-600 @ ~35% */
+}
+.copilot-chat-container.dark .copilotKitCodeBlock pre::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5) !important;
+}
+
+/* Some CopilotKit builds render a styled div as the scroller instead of <pre>. Style it too. */
+.copilot-chat-container .copilotKitCodeBlock > div[style] {
+  background: var(--copilot-kit-response-background-color, #363737) !important; /* light mode */
+  color: var(--copilot-kit-text-color, #0C1117) !important;
+  /* Reduce flicker and ensure GPU compositing on the scroller */
+  backface-visibility: hidden !important;
+  transform: translateZ(0) !important;
+  will-change: auto !important;
+  contain: paint !important;
+  /* Thin scrollbars */
+  scrollbar-width: thin !important; /* Firefox */
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlock > div[style] {
+  /* Keep dark theme background as-is by not overriding to light */
+  background: rgb(30, 30, 30) !important;
+  color: #e5e7eb !important;
+}
+
+.copilot-chat-container .copilotKitCodeBlock > div[style]::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+.copilot-chat-container .copilotKitCodeBlock > div[style]::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+.copilot-chat-container .copilotKitCodeBlock > div[style]::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.35) !important;
+  border-radius: 3px !important;
+}
+.copilot-chat-container .copilotKitCodeBlock > div[style]::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5) !important;
+}
+.copilot-chat-container.dark .copilotKitCodeBlock > div[style]::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.35) !important;
+}
+.copilot-chat-container.dark .copilotKitCodeBlock > div[style]::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5) !important;
 }
 
 .copilotKitMessagesContainer > div:not([class]) {
@@ -655,19 +842,7 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   margin-bottom: 0rem !important;
 }
 
-.copilotKitAssistantMessage > .copilotKitMessageControls > .copilotKitMessageControlButton > svg {
-  min-width: 14px !important;
-  min-height: 14px !important;
-  max-width: 14px !important;
-  max-height: 14px !important;
-}
-
-.dark .copilotKitAssistantMessage > .copilotKitMessageControls > .copilotKitMessageControlButton > svg {
-  min-width: 14px !important;
-  min-height: 14px !important;
-  max-width: 14px !important;
-  max-height: 14px !important;
-}
+/* Assistant message control button SVG sizing - consolidated with general button styling above */
 
 /* ==========================================================
    CUSTOM INPUT BUTTON STYLES
@@ -838,3 +1013,17 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   100% { background-position: -200% 0; }
 }
 
+/* Scale-in animation for copy success icon */
+@keyframes scale-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

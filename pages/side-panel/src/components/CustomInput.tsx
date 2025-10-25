@@ -387,6 +387,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
 
   const send = () => {
     if (inProgress) return;
+    // Update text to include image links
     onSend(text);
     setText('');
 

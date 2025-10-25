@@ -31,7 +31,7 @@ const manifest = {
   version: packageJson.version,
   description: '__MSG_extensionDescription__',
   host_permissions: ['<all_urls>'],
-  permissions: ['storage', 'unlimitedStorage', 'scripting', 'tabs', 'notifications', 'sidePanel', 'offscreen'],
+  permissions: ['storage', 'unlimitedStorage', 'scripting', 'tabs', 'notifications', 'sidePanel', 'offscreen', 'contextMenus'],
   options_page: 'options/index.html',
   background: {
     service_worker: 'background.js',
@@ -89,7 +89,7 @@ const manifest = {
     default_path: 'side-panel/index.html',
   },
   content_security_policy: {
-    extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* https://*.huggingface.co https://huggingface.co https://cdn-lfs.huggingface.co https://*.hf.co https://xethub.hf.co https://cas-bridge.xethub.hf.co https://*.jsdelivr.net https://cdn.jsdelivr.net https://api.cloud.copilotkit.ai wss://*;",
+    extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* https://localhost:* https://*.huggingface.co https://huggingface.co https://cdn-lfs.huggingface.co https://*.hf.co https://xethub.hf.co https://cas-bridge.xethub.hf.co https://*.jsdelivr.net https://cdn.jsdelivr.net https://api.cloud.copilotkit.ai https://firebasestorage.googleapis.com https://storage.googleapis.com https://*.googleapis.com https://*.googleusercontent.com https://*.firebaseapp.com https://*.firebasestorage.app wss://*; img-src 'self' data: blob: https://firebasestorage.googleapis.com https://storage.googleapis.com https://*.googleusercontent.com https://*.firebasestorage.app;",
   },
 } satisfies ManifestType;
 

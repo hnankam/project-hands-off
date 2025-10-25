@@ -17,6 +17,7 @@ const models = [
   { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', provider: 'Google' },
   { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', provider: 'Google' },
   { id: 'gpt-5', label: 'GPT-5', provider: 'OpenAI' },
+  { id: 'gpt-5-mini', label: 'GPT-5 Mini', provider: 'OpenAI' },
 ];
 
 export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedModel, onModelChange }) => {

@@ -29,11 +29,36 @@ export const WaitCountdown: React.FC<WaitCountdownProps> = ({ seconds, status, i
     ? `Finished waiting ${Math.max(0, Math.min(30, Math.floor(Number(seconds) || 0)))}s`
     : `Waiting ${remaining}s…`;
 
+  // Custom icon for wait action - clock/timer
+  const waitIcon = (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ flexShrink: 0, marginRight: 6, display: 'inline-block', verticalAlign: 'middle' }}>
+      <defs>
+        <linearGradient id="waitIconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style={{ stopColor: '#8B5CF6', stopOpacity: 1 }} />
+          <stop offset="100%" style={{ stopColor: '#EC4899', stopOpacity: 1 }} />
+        </linearGradient>
+      </defs>
+      {/* Clock circle */}
+      <circle stroke="url(#waitIconGradient)" cx="12" cy="12" r="10" />
+      {/* Clock hands */}
+      <path stroke="url(#waitIconGradient)" d="M12 6v6l4 2" />
+    </svg>
+  );
+
   return (
     <div
       className={isLight ? 'text-gray-600' : 'text-gray-500'}
-      style={{ padding: 6, fontSize: 12 }}
+      style={{ padding: 6, fontSize: 12, display: 'flex', alignItems: 'center' }}
       aria-live="polite">
+      {waitIcon}
       {done ? (
         <span>{text}</span>
       ) : (

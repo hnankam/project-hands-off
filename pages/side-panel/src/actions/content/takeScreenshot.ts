@@ -1,4 +1,6 @@
 import { debug as baseDebug } from '@extension/shared';
+import { COPIOLITKIT_CONFIG } from '../../constants';
+import { ensureFirebase, uploadDataUrlToStorage } from '../../utils/firebaseStorage';
 
 // Timestamped debug wrappers
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
@@ -7,6 +9,125 @@ const debug = {
   warn: (...args: any[]) => baseDebug.warn(ts(), ...args),
   error: (...args: any[]) => baseDebug.error(ts(), ...args),
 } as const;
+
+/**
+ * Estimate base64 payload size in KB (excluding the data URL header)
+ */
+function getBase64SizeKB(dataUrl: string): number {
+  try {
+    const commaIndex = dataUrl.indexOf(',');
+    const base64 = commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
+    const padding = (base64.match(/=+$/) || [''])[0].length;
+    const bytes = (base64.length * 3) / 4 - padding;
+    return Math.max(1, Math.round(bytes / 1024));
+  } catch {
+    return Math.max(1, Math.round(dataUrl.length / 1024));
+  }
+}
+
+interface OptimizeOptions {
+  targetFormat: 'png' | 'jpeg';
+  maxDimension: number; // longest side in px
+  maxKB: number; // target max size
+  startQuality: number; // 0-1 for jpeg
+  minQuality: number; // 0-1 for jpeg
+}
+
+/**
+ * Downscale and compress a data URL to meet size/dimension targets.
+ * Always prefers JPEG for large payloads to avoid bloat.
+ */
+async function optimizeDataUrl(
+  dataUrl: string,
+  {
+    targetFormat,
+    maxDimension,
+    maxKB,
+    startQuality,
+    minQuality,
+  }: OptimizeOptions,
+): Promise<{ dataUrl: string; width: number; height: number; quality?: number; outputFormat: 'png' | 'jpeg'; sizeKB: number }> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = dataUrl;
+  });
+
+  const originalWidth = img.width;
+  const originalHeight = img.height;
+  let scale = Math.min(1, maxDimension / Math.max(originalWidth, originalHeight));
+  let outW = Math.max(1, Math.round(originalWidth * scale));
+  let outH = Math.max(1, Math.round(originalHeight * scale));
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    // Fallback: return original
+    const fallbackKB = getBase64SizeKB(dataUrl);
+    return {
+      dataUrl,
+      width: originalWidth,
+      height: originalHeight,
+      outputFormat: targetFormat,
+      sizeKB: fallbackKB,
+    };
+  }
+
+  let quality = Math.min(0.9, Math.max(minQuality, startQuality));
+  let outputFormat: 'png' | 'jpeg' = targetFormat;
+
+  const encode = (): string => {
+    canvas.width = outW;
+    canvas.height = outH;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, outW, outH);
+    if (outputFormat === 'jpeg') {
+      return canvas.toDataURL('image/jpeg', quality);
+    }
+    return canvas.toDataURL('image/png');
+  };
+
+  let optimized = encode();
+  let sizeKB = getBase64SizeKB(optimized);
+
+  // If PNG is requested but exceeds size, switch to JPEG for efficiency
+  if (outputFormat === 'png' && sizeKB > maxKB) {
+    outputFormat = 'jpeg';
+    optimized = encode();
+    sizeKB = getBase64SizeKB(optimized);
+  }
+
+  // First, try lowering JPEG quality
+  while (outputFormat === 'jpeg' && sizeKB > maxKB && quality > minQuality + 0.001) {
+    quality = Math.max(minQuality, quality - 0.1);
+    optimized = encode();
+    sizeKB = getBase64SizeKB(optimized);
+  }
+
+  // If still too big, progressively downscale
+  while (sizeKB > maxKB && Math.max(outW, outH) > 320) {
+    outW = Math.max(1, Math.round(outW * 0.85));
+    outH = Math.max(1, Math.round(outH * 0.85));
+    optimized = encode();
+    sizeKB = getBase64SizeKB(optimized);
+
+    if (outputFormat === 'jpeg' && sizeKB > maxKB && quality > minQuality + 0.001) {
+      quality = Math.max(minQuality, quality - 0.05);
+      optimized = encode();
+      sizeKB = getBase64SizeKB(optimized);
+    }
+  }
+
+  return {
+    dataUrl: optimized,
+    width: outW,
+    height: outH,
+    quality: outputFormat === 'jpeg' ? Math.round(quality * 100) : undefined,
+    outputFormat,
+    sizeKB,
+  };
+}
 
 /**
  * Result type for take screenshot operation
@@ -25,6 +146,7 @@ interface TakeScreenshotResult {
     quality?: number;
     isFullPage: boolean;
     dataUrl?: string;
+    url?: string;
   };
 }
 
@@ -176,21 +298,49 @@ export async function handleTakeScreenshot(
           quality: format === 'jpeg' ? quality : undefined,
         });
 
-        const dims = result[0].result.dimensions;
+        const optimized = await optimizeDataUrl(dataUrl, {
+          targetFormat: format,
+          maxDimension: 1024,
+          maxKB: 250,
+          startQuality: Math.min(0.85, Math.max(0.4, (quality ?? 25) / 100)),
+          minQuality: 0.4,
+        });
+
+        const dims = { width: optimized.width, height: optimized.height };
+
+        // Try uploading to Firebase storage when enabled and configured
+        let hostedUrl: string | undefined;
+        try {
+          if (COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS && COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
+            const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
+            const ext = optimized.outputFormat === 'jpeg' ? 'jpg' : 'png';
+            const path = `screenshots/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+            hostedUrl = await uploadDataUrlToStorage(
+              storage,
+              path,
+              optimized.dataUrl,
+              optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
+            );
+          }
+        } catch (e) {
+          debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback');
+        }
+
         return {
           status: 'success',
           message:
             'Screenshot captured (visible area). Note: Full page screenshots require multiple captures. Current implementation captures the visible viewport.',
           screenshotInfo: {
-            format: format,
+            format: optimized.outputFormat,
             dimensions: {
               width: dims?.width || 0,
               height: dims?.height || 0,
             },
-            sizeKB: Math.round(dataUrl.length / 1024),
-            quality: format === 'jpeg' ? quality : undefined,
+            sizeKB: optimized.sizeKB,
+            quality: optimized.quality,
             isFullPage: false,
-            dataUrl: dataUrl,
+            dataUrl: hostedUrl ? undefined : optimized.dataUrl,
+            url: hostedUrl,
           },
         };
       }
@@ -206,6 +356,14 @@ export async function handleTakeScreenshot(
         quality: format === 'jpeg' ? quality : undefined,
       });
 
+      const optimized = await optimizeDataUrl(dataUrl, {
+        targetFormat: format,
+        maxDimension: 1024,
+        maxKB: 250,
+        startQuality: Math.min(0.85, Math.max(0.4, (quality ?? 25) / 100)),
+        minQuality: 0.4,
+      });
+
       // Get viewport dimensions
       const dimensions = await chrome.scripting.executeScript({
         target: { tabId },
@@ -216,24 +374,47 @@ export async function handleTakeScreenshot(
         }),
       });
 
-      const dims = dimensions[0]?.result;
-      const sizeKB = Math.round(dataUrl.length / 1024);
+      const dims = {
+        width: optimized.width,
+        height: optimized.height,
+        devicePixelRatio: dimensions[0]?.result?.devicePixelRatio,
+      } as any;
+      const sizeKB = optimized.sizeKB;
+
+      // Try uploading to Firebase storage when enabled and configured
+      let hostedUrl: string | undefined;
+      try {
+        if (COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS && COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
+          const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
+          const ext = optimized.outputFormat === 'jpeg' ? 'jpg' : 'png';
+          const path = `screenshots/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+          hostedUrl = await uploadDataUrlToStorage(
+            storage,
+            path,
+            optimized.dataUrl,
+            optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
+          );
+        }
+      } catch (e) {
+        debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback');
+      }
 
       return {
         status: 'success',
         message:
           'Screenshot captured successfully. The screenshot has been captured and is available as a data URL. You can use it for analysis or comparison purposes.',
         screenshotInfo: {
-          format: format,
+          format: optimized.outputFormat,
           dimensions: {
             width: dims?.width || 0,
             height: dims?.height || 0,
             devicePixelRatio: dims?.devicePixelRatio || 1,
           },
           sizeKB: sizeKB,
-          quality: format === 'jpeg' ? quality : undefined,
+          quality: optimized.quality,
           isFullPage: false,
-          dataUrl: dataUrl,
+          dataUrl: hostedUrl ? undefined : optimized.dataUrl,
+          url: hostedUrl,
         },
       };
     }

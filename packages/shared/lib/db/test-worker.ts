@@ -7,9 +7,10 @@ import { DBWorkerClient } from './db-worker-client.js';
 
 // Note: This test file needs to be moved to pages/side-panel/src/lib/__tests__
 // For now, create a temporary instance with a placeholder path
-const embeddingsStorage = new DBWorkerClient(
-  new URL('../../../pages/side-panel/src/workers/db-worker.ts', import.meta.url)
-);
+const embeddingsStorage = new DBWorkerClient({
+  workerUrl: new URL('../../../pages/side-panel/src/workers/db-worker.ts', import.meta.url),
+  debug: true,
+});
 
 export async function testWorkerImplementation() {
   console.log('🧪 Starting Web Worker Tests...\n');
@@ -17,7 +18,7 @@ export async function testWorkerImplementation() {
   try {
     // Test 1: Initialization
     console.log('Test 1: Worker Initialization');
-    await embeddingsStorage.initialize(true); // Use memory
+    await embeddingsStorage.initialize(true); // Use memory (default dbName)
     console.log('✅ Worker initialized\n');
 
     // Test 2: Store HTML Chunks

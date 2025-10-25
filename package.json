@@ -44,10 +44,13 @@
     "postinstall": "pnpm copy-env && pnpm download-onnx-wasm"
   },
   "dependencies": {
+    "@copilotkit/react-core": "^1.10.6",
+    "@copilotkit/react-ui": "^1.10.6",
     "@huggingface/transformers": "^3.7.5",
     "@surrealdb/wasm": "^1.4.1",
     "@themaximalist/vectordb.js": "^0.1.2",
     "fastembed": "^2.0.0",
+    "firebase": "^11.0.2",
     "onnxruntime-web": "^1.23.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

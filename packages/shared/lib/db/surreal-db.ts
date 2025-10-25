@@ -1,6 +1,9 @@
 // Dynamic imports to avoid build-time evaluation
 type Surreal = any;
 
+// Debug logging toggle (development only)
+const DEBUG = true;
+
 /**
  * SurrealDB instance for the Chrome extension
  * Uses WebAssembly engine with IndexedDB for persistent storage
@@ -16,7 +19,7 @@ class SurrealDBManager {
    */
   async connect(dbName = 'chrome_ext_db', useMemory = false): Promise<void> {
     if (this.isConnected && this.db) {
-      console.log('SurrealDB already connected');
+      DEBUG && console.log('SurrealDB already connected');
       return;
     }
 
@@ -41,7 +44,7 @@ class SurrealDBManager {
       });
 
       this.isConnected = true;
-      console.log(`SurrealDB connected: ${connectionString}`);
+      DEBUG && console.log(`SurrealDB connected: ${connectionString}`);
     } catch (error) {
       console.error('Failed to connect to SurrealDB:', error);
       throw error;
@@ -73,7 +76,7 @@ class SurrealDBManager {
       await this.db.close();
       this.isConnected = false;
       this.db = null;
-      console.log('SurrealDB connection closed');
+      DEBUG && console.log('SurrealDB connection closed');
     }
   }
 
@@ -179,6 +182,6 @@ export async function initializeSchema(): Promise<void> {
     DEFINE INDEX IF NOT EXISTS downloads_timestamp ON downloads FIELDS timestamp;
   `);
 
-  console.log('Database schema initialized');
+  DEBUG && console.log('Database schema initialized');
 }
 

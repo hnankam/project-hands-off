@@ -7,9 +7,10 @@ import { DBWorkerClient } from './db-worker-client.js';
 
 // Note: This verification file needs to be moved to pages/side-panel/src/lib
 // For now, create a temporary instance with a placeholder path
-const embeddingsStorage = new DBWorkerClient(
-  new URL('../../../pages/side-panel/src/workers/db-worker.ts', import.meta.url)
-);
+const embeddingsStorage = new DBWorkerClient({
+  workerUrl: new URL('../../../pages/side-panel/src/workers/db-worker.ts', import.meta.url),
+  debug: true,
+});
 
 export async function verifyMemoryMode() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

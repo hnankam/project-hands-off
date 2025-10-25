@@ -60,6 +60,7 @@ export type SessionStorageType = ReturnType<typeof createStorage<SessionStateTyp
   addSession: (title: string) => Promise<void>;
   setActiveSession: (sessionId: string) => Promise<void>;
   closeSession: (sessionId: string) => Promise<void>;
+  openAllSessions: () => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   updateSessionTitle: (sessionId: string, title: string) => Promise<void>;
   updateSessionAgentAndModel: (sessionId: string, agent: string, model: string) => Promise<void>;
@@ -91,7 +92,7 @@ export const sessionStorage: SessionStorageType = {
       // Find the last selected agent and model from existing sessions
       // Look for the most recent session with a selected model
       let lastSelectedAgent = 'general'; // Default agent
-      let lastSelectedModel = 'gemini-2.5-flash-lite'; // Default model
+      let lastSelectedModel = 'claude-4.5-haiku'; // Default model
       
       if (currentState.sessions.length > 0) {
         // Sort sessions by timestamp (most recent first)
@@ -172,7 +173,7 @@ export const sessionStorage: SessionStorageType = {
           // No open sessions remain - create a new session automatically
           // Find the last selected agent and model from existing sessions
           let lastSelectedAgent = 'general'; // Default agent
-          let lastSelectedModel = 'gemini-2.5-flash-lite'; // Default model
+          let lastSelectedModel = 'claude-4.5-haiku'; // Default model
           
           if (updatedSessions.length > 0) {
             // Sort sessions by timestamp (most recent first)
@@ -206,6 +207,19 @@ export const sessionStorage: SessionStorageType = {
       return {
         sessions: updatedSessions,
         currentSessionId: newCurrentSessionId,
+      };
+    });
+  },
+  openAllSessions: async () => {
+    await storage.set(currentState => {
+      const updatedSessions = currentState.sessions.map(session => ({
+        ...session,
+        isOpen: true,
+      }));
+
+      return {
+        sessions: updatedSessions,
+        currentSessionId: currentState.currentSessionId,
       };
     });
   },

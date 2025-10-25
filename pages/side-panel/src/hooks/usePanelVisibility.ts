@@ -49,7 +49,16 @@ export const usePanelVisibility = ({
   
   // Track side panel visibility and user interaction using Page Visibility API + click/blur events
   useEffect(() => {
+    // If this session is not active, don't attach any listeners.
+    // Also ensure state is consistent and inert.
+    if (!isActive) {
+      setIsPanelVisible(false);
+      setIsPanelInteractive(false);
+      return;
+    }
+
     const handleVisibilityChange = () => {
+      if (!isActive) return;
       const isVisible = !document.hidden;
       setIsPanelVisible(isVisible);
       debug.log(`[usePanelVisibility] Side panel visibility changed: ${isVisible ? 'visible' : 'hidden'}`);
@@ -71,6 +80,7 @@ export const usePanelVisibility = ({
     };
 
     const handleClick = (event?: Event) => {
+      if (!isActive) return;
       // Call optional callback (main logic handled by parent)
       if (onClickInPanel) {
         onClickInPanel(event);
@@ -78,6 +88,7 @@ export const usePanelVisibility = ({
     };
 
     const handleBlur = () => {
+      if (!isActive) return;
       // Window lost focus - mark as not interactive
       setIsPanelInteractive(false);
       

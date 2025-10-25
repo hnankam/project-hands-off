@@ -11,6 +11,9 @@
 import { Surreal } from 'surrealdb';
 import { surrealdbWasmEngines } from '@surrealdb/wasm';
 
+// Debug logging toggle (set to true for development)
+const DEBUG = true;
+
 // Worker state
 let db: Surreal | null = null;
 let isConnected = false;
@@ -35,7 +38,7 @@ interface WorkerResponse {
  */
 async function initializeDB(dbName: string, useMemory: boolean): Promise<void> {
   if (isConnected && db) {
-    console.log('[DB Worker] Already connected');
+    DEBUG && console.log('[DB Worker] Already connected');
     return;
   }
 
@@ -48,9 +51,9 @@ async function initializeDB(dbName: string, useMemory: boolean): Promise<void> {
     // Connect to memory or IndexedDB
     const connectionString = useMemory ? 'mem://' : `indxdb://${dbName}`;
     
-    console.log(`[DB Worker] 🔌 Connecting to SurrealDB...`);
-    console.log(`[DB Worker]    Mode: ${useMemory ? 'IN-MEMORY (fast, no persistence)' : 'IndexedDB (persistent)'}`);
-    console.log(`[DB Worker]    Connection: ${connectionString}`);
+    DEBUG && console.log(`[DB Worker] 🔌 Connecting to SurrealDB...`);
+    DEBUG && console.log(`[DB Worker]    Mode: ${useMemory ? 'IN-MEMORY (fast, no persistence)' : 'IndexedDB (persistent)'}`);
+    DEBUG && console.log(`[DB Worker]    Connection: ${connectionString}`);
     
     await db.connect(connectionString);
 
@@ -61,8 +64,8 @@ async function initializeDB(dbName: string, useMemory: boolean): Promise<void> {
     });
 
     isConnected = true;
-    console.log(`[DB Worker] ✅ Connected successfully`);
-    console.log(`[DB Worker] ℹ️  Storage: ${useMemory ? 'RAM (cleared on refresh)' : 'IndexedDB (persistent across sessions)'}`);
+    DEBUG && console.log(`[DB Worker] ✅ Connected successfully`);
+    DEBUG && console.log(`[DB Worker] ℹ️  Storage: ${useMemory ? 'RAM (cleared on refresh)' : 'IndexedDB (persistent across sessions)'}`);
   } catch (error) {
     console.error('[DB Worker] ❌ Failed to connect:', error);
     throw error;
@@ -152,7 +155,7 @@ async function initializeEmbeddingsSchema(): Promise<void> {
     DEFINE INDEX IF NOT EXISTS clickable_elements_timestamp ON clickable_elements FIELDS timestamp;
   `);
 
-  console.log('[DB Worker] ✅ Schema initialized with HNSW indexes');
+  DEBUG && console.log('[DB Worker] ✅ Schema initialized with HNSW indexes');
 }
 
 /**
@@ -179,7 +182,7 @@ async function storeHTMLChunks(payload: {
     url: payload.pageURL 
   });
 
-  console.log(`[DB Worker] Storing ${payload.chunks.length} HTML chunks in batches of ${BATCH_SIZE}...`);
+  DEBUG && console.log(`[DB Worker] Storing ${payload.chunks.length} HTML chunks in batches of ${BATCH_SIZE}...`);
 
   // Insert in batches
   for (let i = 0; i < payload.chunks.length; i += BATCH_SIZE) {
@@ -198,10 +201,10 @@ async function storeHTMLChunks(payload: {
     
     await db.query(`INSERT INTO html_chunks $records`, { records });
     
-    console.log(`[DB Worker] Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(payload.chunks.length / BATCH_SIZE)} complete`);
+    DEBUG && console.log(`[DB Worker] Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(payload.chunks.length / BATCH_SIZE)} complete`);
   }
 
-  console.log(`[DB Worker] ✅ Stored ${payload.chunks.length} HTML chunks`);
+  DEBUG && console.log(`[DB Worker] ✅ Stored ${payload.chunks.length} HTML chunks`);
 }
 
 /**
@@ -238,7 +241,7 @@ async function storeFormFields(payload: {
     await db.query(`INSERT INTO form_fields $records`, { records });
   }
 
-  console.log(`[DB Worker] ✅ Stored ${payload.groups.length} form field groups`);
+  DEBUG && console.log(`[DB Worker] ✅ Stored ${payload.groups.length} form field groups`);
 }
 
 /**
@@ -275,7 +278,7 @@ async function storeClickableElements(payload: {
     await db.query(`INSERT INTO clickable_elements $records`, { records });
   }
 
-  console.log(`[DB Worker] ✅ Stored ${payload.groups.length} clickable element groups`);
+  DEBUG && console.log(`[DB Worker] ✅ Stored ${payload.groups.length} clickable element groups`);
 }
 
 /**
@@ -517,6 +520,6 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
 });
 
 // Signal that worker is ready
-console.log('[DB Worker] 🚀 Worker initialized and ready');
+DEBUG && console.log('[DB Worker] 🚀 Worker initialized and ready');
 self.postMessage({ type: 'ready' });
 
