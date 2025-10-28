@@ -11,7 +11,7 @@ import { createHttpAgent, getDynamicAgentUrl } from '../agents/dynamic.js';
  * Middleware to log and route dynamic_agent requests based on headers
  */
 export function createDynamicRoutingMiddleware(runtime) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const agent = req.headers['x-copilot-agent-type'] || req.query.agent || DEFAULT_AGENT;
     const model = req.headers['x-copilot-model-type'] || req.query.model || DEFAULT_MODEL;
     const reqId = res.locals.reqId;
@@ -38,11 +38,14 @@ export function createDynamicRoutingMiddleware(runtime) {
     
     // Always update dynamic_agent to use the correct model and agent from headers
     log(`🔄 Dynamic routing: Updating dynamic_agent to ${model} with agent=${agent}`, reqId);
-    log(`   Target URL: ${getDynamicAgentUrl(agent, model)}`, reqId);
+    
+    // Get the target URL (await since it's async now)
+    const targetUrl = await getDynamicAgentUrl(agent, model);
+    log(`   Target URL: ${targetUrl}`, reqId);
     log(`   Headers to forward: x-copilot-agent-type=${agent}, x-copilot-model-type=${model}`, reqId);
     
     // Recreate the HttpAgent with the new URL (agent + model in path) and headers
-    runtime.agents['dynamic_agent'] = createHttpAgent(agent, model);
+    runtime.agents['dynamic_agent'] = await createHttpAgent(agent, model);
     
     // Ensure GraphQL body includes forwardedParameters.model ONLY for generateCopilotResponse,
     // so we don't break other operations like LoadAgentStateInput

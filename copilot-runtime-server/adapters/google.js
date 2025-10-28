@@ -3,18 +3,31 @@
  */
 
 import { GoogleGenerativeAIAdapter } from "@copilotkit/runtime";
-import { GOOGLE_API_KEY, DEBUG } from '../config/index.js';
+import { DEBUG } from '../config/index.js';
+import { getProviderConfig, getModelConfig } from '../config/loader.js';
 
 /**
  * Create Google Gemini adapter
- * Used for non-agent components like useCopilotChatSuggestions
+ * Used for Gemini models
+ * 
+ * @param {string} modelKey - Model key from configuration (e.g., 'gemini-2.5-flash-lite')
  */
-export function createGeminiAdapter() {
+export async function createGeminiAdapter(modelKey = 'gemini-2.5-flash-lite') {
+  const modelConfig = await getModelConfig(modelKey);
+  const providerConfig = await getProviderConfig('google');
+  
+  if (!providerConfig?.credentials?.api_key) {
+    throw new Error('Google API key not found in database configuration');
+  }
+  
+  const modelId = modelConfig?.model_id || 'gemini-2.5-flash-lite';
+  const apiKey = providerConfig.credentials.api_key;
+  
   return new GoogleGenerativeAIAdapter({
-    model: "gemini-2.5-flash-lite",
-    apiKey: GOOGLE_API_KEY,
+    model: modelId,
+    apiKey: apiKey,
     promptCaching: {
-      enabled: true,
+      enabled: providerConfig?.default_settings?.prompt_caching?.enabled ?? true,
       debug: DEBUG
     }
   });

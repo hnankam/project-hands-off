@@ -1,8 +1,5 @@
-"""Agent prompt configurations loaded from a configuration file."""
+"""Agent prompt configurations loaded from database."""
 
-import os
-import json
-from pathlib import Path
 from typing import Dict, Any, List
 
 
@@ -12,17 +9,14 @@ _agent_types_cache: List[str] | None = None
 
 
 def _load_config() -> Dict[str, Any]:
-    """Load agents configuration JSON.
+    """Load agents configuration from database.
     
-    Path is resolved from environment variable AGENTS_CONFIG_PATH or defaults to
-    copilotkit-pydantic/config/agents.json.
+    All agent configurations, prompts, and base instructions are loaded from PostgreSQL.
     """
-    default_path = Path(__file__).parent / 'agents.json'
-    config_path = Path(os.getenv('AGENTS_CONFIG_PATH', str(default_path)))
-    if not config_path.exists():
-        raise FileNotFoundError(f"Agents configuration not found at {config_path}")
-    with config_path.open('r', encoding='utf-8') as f:
-        return json.load(f)
+    from .db_loaders import get_agents_config_from_db
+    from . import logger
+    logger.info("Loading agents configuration from database")
+    return get_agents_config_from_db()
 
 
 def _build_agent_prompts(config: Dict[str, Any]) -> Dict[str, str]:

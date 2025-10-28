@@ -8,27 +8,42 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Debug mode configuration
-DEBUG = (
-    os.getenv("NODE_ENV", "development") != "production" 
-    and os.getenv("DEBUG", "false").lower() != "false"
-) or os.getenv("DEBUG", "false").lower() == "false"
-# Debug mode configuration - ENABLED
-DEBUG = False  # Explicitly enabled for debugging
+# Explicit and predictable: enable only when DEBUG env is truthy
+DEBUG = os.getenv("DEBUG", "false").lower() in {"1", "true", "yes"}
 
-# Logger configuration
+# Logger configuration (supports plain or JSON based on LOG_FORMAT)
 logger = logging.getLogger("copilotkit-agent")
 if not logger.handlers:
-    logging.basicConfig(
-        level=logging.DEBUG if DEBUG else logging.INFO,
-        format='%(asctime)s [%(levelname)s] %(name)s - %(message)s'
-    )
+    log_level = logging.DEBUG if DEBUG else logging.INFO
+    log_format = os.getenv("LOG_FORMAT", "plain").lower()
+    handler = logging.StreamHandler()
+    if log_format == "json":
+        try:
+            import json as _json
+            class JsonFormatter(logging.Formatter):
+                def format(self, record: logging.LogRecord) -> str:
+                    payload = {
+                        "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
+                        "level": record.levelname,
+                        "logger": record.name,
+                        "message": record.getMessage(),
+                    }
+                    # Attach optional request/session identifiers if present on the record
+                    for attr in ("request_id", "session_id", "agent_type", "model"):
+                        if hasattr(record, attr):
+                            payload[attr] = getattr(record, attr)
+                    return _json.dumps(payload, ensure_ascii=False)
+            handler.setFormatter(JsonFormatter())
+        except Exception:
+            handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s - %(message)s'))
+    else:
+        handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s - %(message)s'))
+    logger.setLevel(log_level)
+    logger.addHandler(handler)
 
 # Server configuration
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8001))
 
-# API Keys
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-AZURE_OPENAI_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
-AZURE_OPENAI_BASE_URL = os.getenv('AZURE_OPENAI_BASE_URL')
-
+# Note: API keys and provider credentials are now stored in the database
+# and loaded via config/models.py from the 'providers' table

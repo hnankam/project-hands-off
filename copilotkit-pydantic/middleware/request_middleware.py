@@ -5,7 +5,6 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import DEBUG, logger
-from core import get_agent
 
 
 async def agent_model_middleware(request: Request, call_next):
@@ -37,8 +36,9 @@ async def agent_model_middleware(request: Request, call_next):
     if DEBUG:
         logger.info(f"[{req_id}] Agent={agent_type} Model={model_name} {request.method} {request.url.path}")
     
-    # Get the appropriate agent for this agent_type + model combination
-    selected_agent = get_agent(agent_type, model_name)
+    # Annotate request context for downstream handlers
+    request.state.agent_type = agent_type
+    request.state.model_name = model_name
     if DEBUG:
         logger.info(f"[{req_id}] Using agent={agent_type} model={model_name}")
     

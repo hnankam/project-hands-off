@@ -1,41 +1,46 @@
 /**
  * Model configurations and endpoints
+ * Now loaded from config/models.json or database via loader
  */
 
-// Available models and their endpoint mappings
-export const MODEL_ENDPOINTS = {
-  'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
-  'gemini-2.5-flash': 'gemini-2.5-flash',
-  'gemini-2.5-pro': 'gemini-2.5-pro',
-  'claude-3.5-sonnet': 'claude-3.5-sonnet',
-  'claude-3.7-sonnet': 'claude-3.7-sonnet',
-  'claude-4.1-opus': 'claude-4.1-opus',
-  'claude-4.5-sonnet': 'claude-4.5-sonnet',
-  'claude-4.5-haiku': 'claude-4.5-haiku',
-  'gpt-5-mini': 'gpt-5-mini',
-  'gpt-5': 'gpt-5',
-  'gpt5-pro': 'gpt5-pro',
-};
+import { 
+  getModelEndpoint as getModelEndpointFromLoader,
+  getDefaultAgent as getDefaultAgentFromLoader,
+  getDefaultModel as getDefaultModelFromLoader,
+  isClaudeModel as isClaudeModelFromLoader,
+  isGeminiModel as isGeminiModelFromLoader,
+  isGPTModel as isGPTModelFromLoader,
+  loadModelsConfig
+} from './loader.js';
 
-// Default models
-export const DEFAULT_AGENT = 'general';
-export const DEFAULT_MODEL = 'gemini-2.5-flash-lite';
+// Load configuration on module init (top-level await)
+const modelsConfig = await loadModelsConfig();
 
-// Model type helpers
+// Default models - loaded from configuration
+export const DEFAULT_AGENT = modelsConfig.default_agent;
+export const DEFAULT_MODEL = modelsConfig.default_model;
+
+// Build MODEL_ENDPOINTS from configuration for backward compatibility
+export const MODEL_ENDPOINTS = modelsConfig.models.reduce((acc, model) => {
+  acc[model.key] = model.endpoint;
+  return acc;
+}, {});
+
+// Model type helpers - delegate to loader
 export function isClaudeModel(model) {
-  return model.startsWith('claude-');
+  return isClaudeModelFromLoader(model);
 }
 
 export function isGeminiModel(model) {
-  return model.startsWith('gemini-');
+  return isGeminiModelFromLoader(model);
 }
 
 export function isGPTModel(model) {
-  return model.startsWith('gpt-') || model.startsWith('gpt5-');
+  return isGPTModelFromLoader(model);
 }
 
-// Get model endpoint path
+// Get model endpoint path - delegate to loader
 export function getModelEndpoint(model) {
-  return MODEL_ENDPOINTS[model] || DEFAULT_MODEL;
+  return getModelEndpointFromLoader(model);
 }
 

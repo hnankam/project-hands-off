@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '@extension/ui';
+import { API_CONFIG } from '../constants';
 
 interface AgentSelectorProps {
   isLight: boolean;
@@ -11,82 +12,61 @@ interface Agent {
   id: string;
   label: string;
   icon: React.ReactNode;
+  description?: string;
 }
 
-const agents: Agent[] = [
-  { 
-    id: 'databricks', 
-    label: 'Databricks Agent',
-    icon: (
+// Icon mapping for agents
+const getAgentIcon = (agentId: string): React.ReactNode => {
+  const iconMap: Record<string, React.ReactNode> = {
+    databricks: (
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
       </svg>
-    )
-  },
-  { 
-    id: 'wiki', 
-    label: 'Wiki Agent',
-    icon: (
+    ),
+    wiki: (
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
       </svg>
-    )
-  },
-  { 
-    id: 'jira', 
-    label: 'Jira Agent',
-    icon: (
+    ),
+    jira: (
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
       </svg>
-    )
-  },
-  { 
-    id: 'aep', 
-    label: 'AEP Agent',
-    icon: (
+    ),
+    aep: (
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
         <path d="M13 10V3L4 14h7v7l9-11h-7z" />
       </svg>
-    )
-  },
-  { 
-    id: 'general', 
-    label: 'General Agent',
-    icon: (
+    ),
+    general: (
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
         <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
       </svg>
-    )
-  },
-  { 
-    id: 'sharepoint', 
-    label: 'SharePoint Agent',
-    icon: (
+    ),
+    sharepoint: (
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
       </svg>
-    )
-  },
-  { 
-    id: 'excel', 
-    label: 'Excel Agent',
-    icon: (
+    ),
+    excel: (
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
       </svg>
-    )
-  },
-  { 
-    id: 'word', 
-    label: 'Word Agent',
-    icon: (
+    ),
+    word: (
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
-    )
-  },
-];
+    ),
+  };
+  
+  // Default icon for unknown agents
+  return iconMap[agentId] || (
+    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
+  );
+};
 
 export const AgentSelector: React.FC<AgentSelectorProps> = ({
   isLight,
@@ -94,7 +74,42 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   onAgentChange,
 }) => {
   const [isOpen, setIsOpen] = React.useState(false);
+  const [agents, setAgents] = React.useState<Agent[]>([]);
+  const [loading, setLoading] = React.useState(true);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // Fetch agents from API
+  React.useEffect(() => {
+    const fetchAgents = async () => {
+      try {
+        const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.CONFIG_AGENTS}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch agents');
+        }
+        const data = await response.json();
+        
+        // Add icons to the fetched agents
+        const agentsWithIcons = data.agents.map((agent: { id: string; label: string; description?: string }) => ({
+          ...agent,
+          icon: getAgentIcon(agent.id),
+        }));
+        
+        setAgents(agentsWithIcons);
+      } catch (error) {
+        console.error('Error fetching agents:', error);
+        // Fallback to a default agent if API fails
+        setAgents([{
+          id: 'general',
+          label: 'General Agent',
+          icon: getAgentIcon('general'),
+        }]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAgents();
+  }, []);
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -111,6 +126,18 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   }, [isOpen]);
 
   const selectedAgentData = agents.find(a => a.id === selectedAgent) || agents[0];
+
+  // Show loading state
+  if (loading || agents.length === 0) {
+    return (
+      <div className="flex items-center gap-1.5 px-2 py-1 text-xs rounded-md h-[26px] opacity-50">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+        <span className="font-medium">Loading...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="relative" ref={dropdownRef}>

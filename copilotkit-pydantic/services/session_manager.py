@@ -2,6 +2,8 @@
 
 from collections import defaultdict
 from typing import Dict
+import time
+import os
 from pydantic_ai.ag_ui import StateDeps
 
 from config import logger
@@ -10,6 +12,14 @@ from core.models import AgentState
 # Session-based state management
 # Structure: session_states[session_id][agent_type:model] = StateDeps
 session_states: Dict[str, Dict[str, StateDeps[AgentState]]] = defaultdict(dict)
+
+# Track last access for session and per-key to support TTL/LRU eviction
+_session_last_access: Dict[str, float] = {}
+_state_last_access: Dict[str, Dict[str, float]] = defaultdict(dict)
+
+# Limits
+TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "3600"))
+MAX_STATES_PER_SESSION = int(os.getenv("MAX_STATES_PER_SESSION", "20"))
 
 
 def get_or_create_session_state(
@@ -28,11 +38,29 @@ def get_or_create_session_state(
         StateDeps instance for this session
     """
     key = f"{agent_type}:{model}"
+
+    # TTL cleanup for the session
+    _cleanup_expired_sessions()
+
+    # Enforce per-session cap via LRU eviction
+    if key not in session_states[session_id] and len(session_states[session_id]) >= MAX_STATES_PER_SESSION:
+        # evict least-recently used state in this session
+        per_state_access = _state_last_access.get(session_id, {})
+        if per_state_access:
+            lru_key = min(per_state_access.items(), key=lambda kv: kv[1])[0]
+            session_states[session_id].pop(lru_key, None)
+            per_state_access.pop(lru_key, None)
+            logger.info(f"Evicted least-recently used state session={session_id} key={lru_key}")
+
     if key not in session_states[session_id]:
         logger.debug(f"Creating new state session={session_id} agent={agent_type} model={model}")
         session_states[session_id][key] = StateDeps(AgentState())
     else:
         logger.debug(f"Reusing state session={session_id} agent={agent_type} model={model}")
+
+    now = time.time()
+    _session_last_access[session_id] = now
+    _state_last_access[session_id][key] = now
     return session_states[session_id][key]
 
 
@@ -45,4 +73,16 @@ def cleanup_session(session_id: str) -> None:
     if session_id in session_states:
         logger.info(f"Cleaning up session session={session_id}")
         del session_states[session_id]
+        _session_last_access.pop(session_id, None)
+        _state_last_access.pop(session_id, None)
+
+
+def _cleanup_expired_sessions() -> None:
+    """Remove sessions not accessed within TTL."""
+    if TTL_SECONDS <= 0:
+        return
+    now = time.time()
+    expired = [sid for sid, ts in _session_last_access.items() if (now - ts) > TTL_SECONDS]
+    for sid in expired:
+        cleanup_session(sid)
 

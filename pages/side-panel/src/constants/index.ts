@@ -134,6 +134,18 @@ export const THEME_COLORS = {
   },
 } as const;
 
+// API configuration
+export const API_CONFIG = {
+  BASE_URL: 'http://localhost:3001',
+  ENDPOINTS: {
+    CONFIG: '/api/config',
+    CONFIG_AGENTS: '/api/config/agents',
+    CONFIG_MODELS: '/api/config/models',
+    CONFIG_DEFAULTS: '/api/config/defaults',
+  },
+  CACHE_TTL: 5 * 60 * 1000, // 5 minutes for config cache
+} as const;
+
 // CopilotKit configuration
 export const COPIOLITKIT_CONFIG = {
   RUNTIME_URL: 'http://localhost:3001/api/copilotkit',

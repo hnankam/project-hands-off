@@ -1,0 +1,32 @@
+# Legacy JSON configuration files (no longer used - all config loaded from database)
+# Kept in .gitignore for local backup/reference purposes
+config/providers.json
+config/models.json
+config/agents.json
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Node modules
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Uploads
+uploads/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+

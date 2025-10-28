@@ -4,6 +4,8 @@ import json
 from fastapi import FastAPI, Request
 
 from config import DEBUG, logger, get_agent_types, get_models, get_model_names
+from config.db_loaders import _db_cache  # for readiness check
+from database.connection import get_db_connection
 from core import get_agent
 from services import (
     get_or_create_session_state,
@@ -53,8 +55,10 @@ def register_agent_routes(app: FastAPI) -> None:
                                     f"agent={agent_type_str} model={model_str}"
                                 )
                         
-                        # Store the body in the request state for potential re-reading
-                        request._body = body_bytes
+                        # Rehydrate a new Request with the same scope so downstream can read body
+                        async def _receive_once():
+                            return {"type": "http.request", "body": body_bytes, "more_body": False}
+                        request = Request(request.scope, receive=_receive_once)
                         
                     except Exception as e:
                         logger.warning(
@@ -116,6 +120,26 @@ def register_info_routes(app: FastAPI) -> None:
             },
             "usage_streaming": "Connect via WebSocket to receive real-time usage updates"
         }
+
+    @app.get("/healthz")
+    async def healthz():
+        return {"status": "ok"}
+
+    @app.get("/readyz")
+    async def readyz():
+        # Check DB and basic cache presence
+        db_ok = False
+        try:
+            async with get_db_connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT 1")
+                    _ = await cur.fetchone()
+                    db_ok = True
+        except Exception as e:
+            logger.warning(f"Readiness DB check failed: {e}")
+        caches_ok = bool(_db_cache.get('models_config')) and bool(_db_cache.get('agents_config'))
+        status = "ok" if db_ok and caches_ok else "degraded"
+        return {"status": status, "db": db_ok, "caches": caches_ok}
 
     @app.post("/sessions/{session_id}/cleanup")
     async def cleanup_session_endpoint(session_id: str):

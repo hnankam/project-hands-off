@@ -9,8 +9,8 @@ import { getModelEndpoint, DEFAULT_AGENT, DEFAULT_MODEL } from '../config/models
 /**
  * Generate dynamic agent URL based on agent type and model
  */
-export function getDynamicAgentUrl(agent, model) {
-  const endpoint = getModelEndpoint(model);
+export async function getDynamicAgentUrl(agent, model) {
+  const endpoint = await getModelEndpoint(model);
   // Include agent type in the URL path: /agent/{agent_type}/{model}
   return `${AGENT_BASE_URL}/agent/${agent}/${endpoint}`;
 }
@@ -18,9 +18,10 @@ export function getDynamicAgentUrl(agent, model) {
 /**
  * Create a new HttpAgent with the specified agent and model
  */
-export function createHttpAgent(agent = DEFAULT_AGENT, model = DEFAULT_MODEL) {
+export async function createHttpAgent(agent = DEFAULT_AGENT, model = DEFAULT_MODEL) {
+  const url = await getDynamicAgentUrl(agent, model);
   return new HttpAgent({ 
-    url: getDynamicAgentUrl(agent, model),
+    url,
     headers: {
       'x-copilot-agent-type': agent,
       'x-copilot-model-type': model,
@@ -32,7 +33,7 @@ export function createHttpAgent(agent = DEFAULT_AGENT, model = DEFAULT_MODEL) {
 /**
  * Create the default dynamic agent
  */
-export function createDefaultAgent() {
-  return createHttpAgent(DEFAULT_AGENT, DEFAULT_MODEL);
+export async function createDefaultAgent() {
+  return await createHttpAgent(DEFAULT_AGENT, DEFAULT_MODEL);
 }
 

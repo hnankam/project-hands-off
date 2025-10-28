@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '@extension/ui';
+import { API_CONFIG } from '../constants';
 
 interface ModelSelectorProps {
   isLight: boolean;
@@ -7,22 +8,99 @@ interface ModelSelectorProps {
   onModelChange: (model: string) => void;
 }
 
-const models = [
-  { id: 'claude-4.5-haiku', label: 'Claude 4.5 Haiku', provider: 'Anthropic' },
-  { id: 'claude-4.5-sonnet', label: 'Claude 4.5 Sonnet', provider: 'Anthropic' },
-  { id: 'claude-4.1-opus', label: 'Claude 4.1 Opus', provider: 'Anthropic' },
-  { id: 'claude-3.7-sonnet', label: 'Claude 3.7 Sonnet', provider: 'Anthropic' },
-  { id: 'claude-3.5-sonnet', label: 'Claude 3.5 Sonnet', provider: 'Anthropic' },
-  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', provider: 'Google' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', provider: 'Google' },
-  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', provider: 'Google' },
-  { id: 'gpt-5', label: 'GPT-5', provider: 'OpenAI' },
-  { id: 'gpt-5-mini', label: 'GPT-5 Mini', provider: 'OpenAI' },
-];
+interface Model {
+  id: string;
+  label: string;
+  provider: string;
+}
 
 export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedModel, onModelChange }) => {
   const [isOpen, setIsOpen] = React.useState(false);
+  const [models, setModels] = React.useState<Model[]>([]);
+  const [loading, setLoading] = React.useState(true);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // Fetch models from API
+  React.useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.CONFIG_MODELS}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch models');
+        }
+        const data = await response.json();
+        
+        // Sort models: Provider priority, then by version (descending), then by tier
+        const sortedModels = data.models.sort((a: Model, b: Model) => {
+          // Provider priority: Anthropic (Claude) > Google (Gemini) > OpenAI (GPT)
+          const providerOrder: Record<string, number> = {
+            'Anthropic': 0,
+            'Google': 1,
+            'OpenAI': 2,
+          };
+          
+          const aProviderPriority = providerOrder[a.provider] ?? 999;
+          const bProviderPriority = providerOrder[b.provider] ?? 999;
+          
+          if (aProviderPriority !== bProviderPriority) {
+            return aProviderPriority - bProviderPriority;
+          }
+          
+          // Extract version numbers from model IDs (e.g., "4.5" from "claude-4.5-haiku")
+          const versionRegex = /(\d+)\.(\d+)/;
+          const aVersionMatch = a.id.match(versionRegex);
+          const bVersionMatch = b.id.match(versionRegex);
+          
+          if (aVersionMatch && bVersionMatch) {
+            const aVersion = parseFloat(`${aVersionMatch[1]}.${aVersionMatch[2]}`);
+            const bVersion = parseFloat(`${bVersionMatch[1]}.${bVersionMatch[2]}`);
+            
+            if (aVersion !== bVersion) {
+              return bVersion - aVersion; // Descending order (higher version first)
+            }
+          }
+          
+          // Within same version, sort by tier (based on common naming patterns)
+          const tierPatterns = ['opus', 'sonnet', 'haiku', 'pro', 'flash', 'mini', 'lite'];
+          const getTierPriority = (id: string): number => {
+            const lowerID = id.toLowerCase();
+            if (lowerID.includes('opus')) return 0;
+            if (lowerID.includes('sonnet')) return 1;
+            if (lowerID.includes('pro')) return 2;
+            if (lowerID.includes('haiku')) return 3;
+            if (lowerID.includes('flash') && !lowerID.includes('lite')) return 4;
+            if (lowerID.includes('mini')) return 5;
+            if (lowerID.includes('lite')) return 6;
+            return 999;
+          };
+          
+          const aTierPriority = getTierPriority(a.id);
+          const bTierPriority = getTierPriority(b.id);
+          
+          if (aTierPriority !== bTierPriority) {
+            return aTierPriority - bTierPriority;
+          }
+          
+          // Fallback to alphabetical by label
+          return a.label.localeCompare(b.label);
+        });
+        
+        setModels(sortedModels);
+      } catch (error) {
+        console.error('Error fetching models:', error);
+        // Fallback to a default model if API fails
+        setModels([{
+          id: 'claude-4.5-haiku',
+          label: 'Claude 4.5 Haiku',
+          provider: 'Anthropic',
+        }]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchModels();
+  }, []);
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -39,6 +117,18 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
   }, [isOpen]);
 
   const selectedModelData = models.find(m => m.id === selectedModel) || models[0];
+
+  // Show loading state
+  if (loading || models.length === 0) {
+    return (
+      <div className="flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs opacity-50">
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <path d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+        </svg>
+        <span className="font-medium truncate">Loading...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="relative" ref={dropdownRef}>

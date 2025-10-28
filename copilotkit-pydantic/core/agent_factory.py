@@ -3,7 +3,7 @@
 from pydantic_ai import Agent
 from pydantic_ai.ag_ui import StateDeps
 
-from config import AGENT_PROMPTS, get_models, logger
+from config import get_agent_prompts, get_models, logger
 from core.models import AgentState
 from tools.agent_tools import register_agent_tools
 
@@ -25,7 +25,8 @@ def create_agent(agent_type: str, model_name: str) -> Agent:
     from utils.message_processor import process_message_attachments, keep_recent_messages
     
     MODELS = get_models()
-    instructions = AGENT_PROMPTS.get(agent_type, AGENT_PROMPTS["general"])
+    AGENT_PROMPTS = get_agent_prompts()
+    instructions = AGENT_PROMPTS.get(agent_type, AGENT_PROMPTS.get("general", ""))
     model = MODELS.get(model_name, MODELS['claude-4.5-haiku'])['model']
     model_settings = MODELS.get(model_name, MODELS['claude-4.5-haiku'])['model_settings']
     

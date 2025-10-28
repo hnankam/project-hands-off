@@ -1,0 +1,26 @@
+{
+  "agents": [
+    {
+      "type": "general",
+      "name": "General Agent",
+      "description": "General purpose AI agent for common tasks",
+      "enabled": true,
+      "endpoint_pattern": "/agent/{agent_type}/{model}"
+    },
+    {
+      "type": "databricks",
+      "name": "Databricks Agent",
+      "description": "Specialized agent for Databricks operations",
+      "enabled": true,
+      "endpoint_pattern": "/agent/{agent_type}/{model}"
+    },
+    {
+      "type": "excel",
+      "name": "Excel Agent",
+      "description": "Specialized agent for Excel operations",
+      "enabled": true,
+      "endpoint_pattern": "/agent/{agent_type}/{model}"
+    }
+  ]
+}
+

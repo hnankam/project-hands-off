@@ -4,6 +4,7 @@
  */
 
 import { isClaudeModel, isGeminiModel, isGPTModel, DEFAULT_MODEL } from '../config/models.js';
+import { getForcedModel, getModelConfig } from '../config/loader.js';
 import { createAnthropicAdapter, createClaudeHaikuAdapter } from './anthropic.js';
 import { createGeminiAdapter } from './google.js';
 import { createAzureOpenAIAdapter } from './openai.js';
@@ -12,24 +13,55 @@ import { log } from '../utils/logger.js';
 /**
  * Factory that creates a CopilotServiceAdapter selecting provider per request.model
  */
-export function createDynamicServiceAdapter() {
-  // Force provider-specific canonical models
-  const openaiAdapter = createAzureOpenAIAdapter('gpt-4o-mini');
-  const googleAdapter = createGeminiAdapter('gemini-2.5-flash-lite');
-  const anthropicHaikuAdapter = createClaudeHaikuAdapter();
+export async function createDynamicServiceAdapter() {
+  // Get default forced models from configuration
+  const defaultGeminiModel = 'gemini-2.5-flash-lite';
+  const defaultClaudeModel = 'claude-4.5-haiku';
+  const defaultGPTModel = 'gpt-4o-mini';
+  
+  // Create adapters with forced models (await since they're async now)
+  const openaiAdapter = await createAzureOpenAIAdapter(defaultGPTModel);
+  const googleAdapter = await createGeminiAdapter(defaultGeminiModel);
+  const anthropicHaikuAdapter = await createClaudeHaikuAdapter();
+
+  const processWithRetry = async (label, fn, retries = 2) => {
+    let lastErr;
+    for (let attempt = 1; attempt <= retries + 1; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastErr = err;
+        const delay = Math.min(1000 * attempt, 3000);
+        log(`Retry ${attempt}/${retries} for ${label} after error: ${err?.message || err}`);
+        if (attempt <= retries) {
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
+    }
+    throw lastErr;
+  };
 
   return {
     async process(request) {
-      const model = (request?.model
+      const requestedModel = (request?.model
         || request?.forwardedParameters?.model
         || DEFAULT_MODEL);
       
-      if (isGeminiModel(model)) {
-        log('DynamicServiceAdapter -> provider: Google Generative AI, forced model: gemini-2.5-flash-lite (requested:', model, ')');
-        return googleAdapter.process({ ...request, model: 'gemini-2.5-flash-lite' });
+      // Get forced model from configuration (for cost optimization)
+      const forcedModel = await getForcedModel(requestedModel);
+      const modelConfig = await getModelConfig(requestedModel);
+      
+      if (isGeminiModel(requestedModel)) {
+        const forcedGemini = modelConfig?.forced_model || defaultGeminiModel;
+        log('DynamicServiceAdapter -> provider: Google Generative AI, forced model:', forcedGemini, '(requested:', requestedModel, ')');
+        return processWithRetry('google', () => googleAdapter.process({ ...request, model: forcedGemini }));
       }
-      if (isClaudeModel(model)) {
-        log('DynamicServiceAdapter -> provider: Anthropic (Bedrock), forced model: claude-4.5-haiku (requested:', model, ')');
+      
+      if (isClaudeModel(requestedModel)) {
+        const forcedClaude = modelConfig?.forced_model || defaultClaudeModel;
+        log('DynamicServiceAdapter -> provider: Anthropic (Bedrock), forced model:', forcedClaude, '(requested:', requestedModel, ')');
+        
+        // Sanitize messages for Anthropic
         const sanitizeForAnthropic = (msgs = []) => {
           const out = [];
           for (let i = 0; i < msgs.length; i++) {
@@ -50,16 +82,20 @@ export function createDynamicServiceAdapter() {
           }
           return out;
         };
+        
         const sanitizedMessages = sanitizeForAnthropic(request.messages);
-        return anthropicHaikuAdapter.process({ ...request, model: 'claude-4.5-haiku', messages: sanitizedMessages });
+        return processWithRetry('anthropic', () => anthropicHaikuAdapter.process({ ...request, model: forcedClaude, messages: sanitizedMessages }));
       }
-      if (isGPTModel(model)) {
-        log('DynamicServiceAdapter -> provider: OpenAI (Azure), forced model: gpt-4o-mini (requested:', model, ')');
-        return openaiAdapter.process({ ...request, model: 'gpt-4o-mini' });
+      
+      if (isGPTModel(requestedModel)) {
+        const forcedGPT = modelConfig?.forced_model || defaultGPTModel;
+        log('DynamicServiceAdapter -> provider: OpenAI (Azure), forced model:', forcedGPT, '(requested:', requestedModel, ')');
+        return processWithRetry('openai', () => openaiAdapter.process({ ...request, model: forcedGPT }));
       }
+      
       // default to OpenAI-compatible (Azure OpenAI)
-      log('DynamicServiceAdapter -> provider: OpenAI (Azure) [default fallback], model:', model);
-      return openaiAdapter.process(request);
+      log('DynamicServiceAdapter -> provider: OpenAI (Azure) [default fallback], model:', requestedModel);
+      return processWithRetry('openai-default', () => openaiAdapter.process(request));
     },
   };
 }

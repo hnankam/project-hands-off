@@ -6,6 +6,7 @@ from datetime import datetime
 from fastapi import WebSocket
 
 from config import logger
+import os
 
 
 class ConnectionManager:
@@ -15,6 +16,7 @@ class ConnectionManager:
         """Initialize the connection manager."""
         # Store connections per session_id
         self.active_connections: Dict[str, Set[WebSocket]] = defaultdict(set)
+        self.max_per_session = int(os.getenv("MAX_WS_PER_SESSION", "10"))
     
     async def connect(self, websocket: WebSocket, session_id: str) -> None:
         """Accept and register a new WebSocket connection.
@@ -24,8 +26,18 @@ class ConnectionManager:
             session_id: The session ID this connection belongs to
         """
         await websocket.accept()
-        self.active_connections[session_id].add(websocket)
-        logger.debug(f"WS connected for session={session_id} total={len(self.active_connections[session_id])}")
+        # Enforce per-session connection limit
+        conns = self.active_connections[session_id]
+        if len(conns) >= self.max_per_session:
+            try:
+                await websocket.send_json({"type": "error", "message": "Too many WebSocket connections for this session"})
+            except Exception:
+                pass
+            await websocket.close(code=4000)
+            logger.warning(f"WS rejected for session={session_id}: limit reached ({self.max_per_session})")
+            return
+        conns.add(websocket)
+        logger.debug(f"WS connected for session={session_id} total={len(conns)}")
     
     def disconnect(self, websocket: WebSocket, session_id: str) -> None:
         """Remove a WebSocket connection.

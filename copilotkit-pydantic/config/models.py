@@ -1,13 +1,11 @@
-"""Model configurations loaded from a configuration file."""
+"""Model configurations loaded from database."""
 
-import os
-import json
 import importlib
-from pathlib import Path
 from typing import Any, Dict
 
 from anthropic import AsyncAnthropicBedrock
 from openai import AsyncAzureOpenAI
+from openai import AsyncOpenAI
 
 from pydantic_ai import ModelSettings
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
@@ -26,17 +24,14 @@ _backcompat_settings: Dict[str, Any] | None = None
 
 
 def _load_config() -> Dict[str, Any]:
-    """Load models configuration JSON.
+    """Load models configuration from database.
     
-    Path is resolved from environment variable MODELS_CONFIG_PATH or defaults to
-    copilotkit-pydantic/config/models.json.
+    All model configurations, providers, and credentials are loaded from PostgreSQL.
     """
-    default_path = Path(__file__).with_suffix('.json')
-    config_path = Path(os.getenv('MODELS_CONFIG_PATH', str(default_path)))
-    if not config_path.exists():
-        raise FileNotFoundError(f"Models configuration not found at {config_path}")
-    with config_path.open('r', encoding='utf-8') as f:
-        return json.load(f)
+    from .db_loaders import get_models_config_from_db
+    from . import logger
+    logger.info("Loading models configuration from database")
+    return get_models_config_from_db()
 
 
 def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -80,19 +75,23 @@ def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
                 )
             )
             
-        elif provider_type in {'openai', 'azure_openai'}:
-            # Direct credentials from config (required)
+        elif provider_type == 'openai':
+            # OpenAI (non-Azure)
+            api_key = credentials.get('api_key')
+            if not api_key:
+                raise ValueError(f"Provider '{provider_key}': api_key is required in credentials")
+            providers[provider_key] = OpenAIProvider(openai_client=AsyncOpenAI(api_key=api_key))
+        elif provider_type == 'azure_openai':
+            # Azure OpenAI
             endpoint = credentials.get('endpoint')
             api_version = credentials.get('api_version')
             api_key = credentials.get('api_key')
-            
             if not endpoint:
                 raise ValueError(f"Provider '{provider_key}': endpoint is required in credentials")
             if not api_version:
                 raise ValueError(f"Provider '{provider_key}': api_version is required in credentials")
             if not api_key:
                 raise ValueError(f"Provider '{provider_key}': api_key is required in credentials")
-            
             providers[provider_key] = OpenAIProvider(openai_client=AsyncAzureOpenAI(
                 azure_endpoint=endpoint,
                 api_version=api_version,

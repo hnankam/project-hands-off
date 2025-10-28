@@ -1,3 +1,4 @@
-# AI Model credentials (contains API keys)
+# Legacy JSON configuration files (no longer used - all config loaded from database)
+# Kept in .gitignore for local backup/reference purposes
 config/models.json
 config/agents.json
