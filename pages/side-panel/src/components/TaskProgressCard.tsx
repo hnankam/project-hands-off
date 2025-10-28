@@ -1,5 +1,7 @@
 import type { FC } from 'react';
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
 import { useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 
@@ -64,6 +66,21 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   const [editValue, setEditValue] = useState('');
   const cardRef = React.useRef<HTMLElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const addInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Add-step state
+  const [isAdding, setIsAdding] = useState(false);
+  const [addValue, setAddValue] = useState('');
+
+  // Delete plan modal state
+  const [deletePlanOpen, setDeletePlanOpen] = useState(false);
+
+  // Drag & drop reordering state
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // Chat hook for triggering runs
+  const { sendMessage, isLoading: isChatLoading } = useCopilotChatHeadless_c();
 
   // Debug logging
   React.useEffect(() => {
@@ -103,6 +120,14 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     }
   }, [editingStepIndex]);
 
+  // Focus add input when add mode starts
+  React.useEffect(() => {
+    if (isAdding && addInputRef.current) {
+      addInputRef.current.focus();
+      addInputRef.current.select?.();
+    }
+  }, [isAdding]);
+
   // Handlers for inline editing
   const handleStartEdit = (stepIndex: number, currentDescription: string) => {
     if (!isHistorical) {
@@ -138,6 +163,143 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     }
   };
 
+  // Handlers for adding a new step
+  const handleStartAdd = () => {
+    if (!isHistorical) {
+      setIsExpanded(true);
+      setIsAdding(true);
+      setAddValue('');
+    }
+  };
+
+  const handleAddSubmit = () => {
+    if (setState && addValue.trim()) {
+      const newSteps = [...state.steps, { description: addValue.trim(), status: 'pending' as const }];
+      setState({ ...state, steps: newSteps });
+    }
+    setIsAdding(false);
+    setAddValue('');
+  };
+
+  const handleAddCancel = () => {
+    setIsAdding(false);
+    setAddValue('');
+  };
+
+  const handleAddKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleAddSubmit();
+    } else if (e.key === 'Escape') {
+      handleAddCancel();
+    }
+  };
+
+  // Handlers for reordering steps
+  const handleMoveStepUp = (index: number) => {
+    if (!setState) return;
+    if (index <= 0 || index >= state.steps.length) return;
+    const newSteps = [...state.steps];
+    const temp = newSteps[index - 1];
+    newSteps[index - 1] = newSteps[index];
+    newSteps[index] = temp;
+    setState({ ...state, steps: newSteps });
+  };
+
+  // Drag & drop handlers
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggingIndex(index);
+    setDragOverIndex(null);
+    try {
+      e.dataTransfer.setData('text/plain', String(index));
+    } catch {}
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (dragOverIndex !== index) setDragOverIndex(index);
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (!setState) return;
+    let sourceIndex = draggingIndex;
+    if (sourceIndex === null) {
+      const payload = e.dataTransfer.getData('text/plain');
+      const parsed = Number.parseInt(payload, 10);
+      if (!Number.isNaN(parsed)) sourceIndex = parsed;
+    }
+    if (sourceIndex === null || sourceIndex === index) {
+      setDraggingIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+    const newSteps = [...state.steps];
+    const [moved] = newSteps.splice(sourceIndex, 1);
+    let targetIndex = index;
+    if (sourceIndex < index) targetIndex = index - 1;
+    newSteps.splice(targetIndex, 0, moved);
+    setState({ ...state, steps: newSteps });
+    setDraggingIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingIndex(null);
+    setDragOverIndex(null);
+  };
+
+  // Run button handler - submit a user message to continue plan
+  const handleRunPlan = async () => {
+    try {
+      await sendMessage({ role: 'user', content: 'Continue to the next step in the plan' } as any);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[TaskProgressCard] Failed to send run/continue message:', e);
+    }
+  };
+
+  // Delete plan - open modal
+  const handleOpenDeletePlan = () => {
+    setDeletePlanOpen(true);
+  };
+
+  // Confirm delete plan - clears all steps and hides plan UI
+  const handleConfirmDeletePlan = () => {
+    if (!setState) return;
+    setIsAdding(false);
+    setEditingStepIndex(null);
+    setEditValue('');
+    setDeletePlanOpen(false);
+    setState({ ...state, steps: [] });
+  };
+
+  // Cancel delete plan
+  const handleCancelDeletePlan = () => {
+    setDeletePlanOpen(false);
+  };
+
+  // Close modal on Escape
+  React.useEffect(() => {
+    if (!deletePlanOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDeletePlanOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [deletePlanOpen]);
+
+  const handleMoveStepDown = (index: number) => {
+    if (!setState) return;
+    if (index < 0 || index >= state.steps.length - 1) return;
+    const newSteps = [...state.steps];
+    const temp = newSteps[index + 1];
+    newSteps[index + 1] = newSteps[index];
+    newSteps[index] = temp;
+    setState({ ...state, steps: newSteps });
+  };
+
   if (!state.steps || state.steps.length === 0) {
     return null;
   }
@@ -147,6 +309,8 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   const completedCount = activeSteps.filter((step) => step.status === "completed").length;
   const progressPercentage = activeSteps.length > 0 ? (completedCount / activeSteps.length) * 100 : 0;
   const isLight = theme === 'light';
+  const hasPendingActive = activeSteps.some((step) => step.status === 'pending');
+  const canRunPlan = hasPendingActive && !isChatLoading;
 
   // Collapsed view - compact single line
   if (!isExpanded) {
@@ -229,6 +393,54 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
             <span className={`text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
               {completedCount}/{activeSteps.length}
             </span>
+            {showControls && !isHistorical && setState && (
+              <button
+                onClick={handleStartAdd}
+                className={`p-1 rounded transition-colors ${
+                  isLight 
+                    ? 'text-gray-500 hover:bg-gray-100' 
+                    : 'text-gray-400 hover:bg-gray-700'
+                }`}
+                aria-label="Add step"
+                title="Add step"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            )}
+            {showControls && !isHistorical && canRunPlan && (
+              <button
+                onClick={handleRunPlan}
+                className={`p-1 rounded transition-colors ${
+                  isLight 
+                    ? 'text-gray-500 hover:bg-blue-100 hover:text-blue-600' 
+                    : 'text-gray-400 hover:bg-blue-900/30 hover:text-blue-400'
+                }`}
+                aria-label="Run/continue plan"
+                title="Run/continue plan"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
+                </svg>
+              </button>
+            )}
+            {showControls && !isHistorical && setState && (
+              <button
+                onClick={handleOpenDeletePlan}
+                className={`p-1 rounded transition-colors ${
+                  isLight 
+                    ? 'text-gray-500 hover:bg-red-100 hover:text-red-600' 
+                    : 'text-gray-400 hover:bg-red-900/30 hover:text-red-400'
+                }`}
+                aria-label="Delete plan"
+                title="Delete plan"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            )}
             <button
               onClick={() => setIsExpanded(false)}
               className={`p-1 rounded transition-colors ${
@@ -263,10 +475,18 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
            const isFailed = step.status === "failed";
            const isDeleted = step.status === "deleted";
            const isPending = step.status === "pending" || (isHistorical && step.status === "running");
+           const draggableEnabled = showControls && !isHistorical && !!setState && editingStepIndex !== index;
+           const isDragSource = draggingIndex === index;
+           const isDragOver = dragOverIndex === index && draggingIndex !== index;
 
           return (
             <div
               key={index}
+              draggable={draggableEnabled}
+              onDragStart={(e) => draggableEnabled && handleDragStart(e, index)}
+              onDragOver={(e) => draggableEnabled && handleDragOver(e, index)}
+              onDrop={(e) => draggableEnabled && handleDrop(e, index)}
+              onDragEnd={handleDragEnd}
               className={`group flex items-center gap-1.5 px-1.5 py-1 rounded transition-all ${
                 isDeleted
                   ? isLight
@@ -287,7 +507,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                       : isLight
                         ? "bg-gray-50/50 border border-gray-200/50"
                         : "bg-gray-600/10 border border-gray-600/30"
-              }`}
+              } ${draggableEnabled ? 'cursor-grab active:cursor-grabbing' : ''} ${isDragSource ? (isLight ? 'opacity-70' : 'opacity-70') : ''} ${isDragOver ? (isLight ? 'ring-1 ring-blue-300' : 'ring-1 ring-blue-500/50') : ''}`}
             >
                {/* Status Icon - matching model switch overlay */}
                {isDeleted ? (
@@ -345,9 +565,48 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                 </div>
               )}
 
-              {/* Action Buttons - only show for non-historical cards on hover and not for deleted steps */}
+              {/* Action Buttons - non-deleted steps */}
               {showControls && !isHistorical && !isDeleted && editingStepIndex !== index && setState && (
                 <div className="flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Move up */}
+                  <button
+                    disabled={index === 0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMoveStepUp(index);
+                    }}
+                    className={`p-0.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                      isLight 
+                        ? 'text-gray-500 hover:bg-gray-200 hover:text-gray-700' 
+                        : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                    }`}
+                    aria-label="Move step up"
+                    title="Move up"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    </svg>
+                  </button>
+
+                  {/* Move down */}
+                  <button
+                    disabled={index === state.steps.length - 1}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMoveStepDown(index);
+                    }}
+                    className={`p-0.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                      isLight 
+                        ? 'text-gray-500 hover:bg-gray-200 hover:text-gray-700' 
+                        : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                    }`}
+                    aria-label="Move step down"
+                    title="Move down"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
                   {/* Rerun button - only for completed or failed steps */}
                   {(isCompleted || isFailed) && (
                     <button
@@ -375,6 +634,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                   )}
                   
                   {/* Edit button */}
+                  {!isCompleted && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -392,23 +652,19 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
                   </button>
+                  )}
                   
                   {/* Delete button */}
+                  {!isCompleted && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      console.log('[Delete] Button clicked for step index:', index);
-                      console.log('[Delete] Current step:', state.steps[index]);
-                      console.log('[Delete] setState available:', !!setState);
                       const newSteps = [...state.steps];
                       newSteps[index] = {
                         ...newSteps[index],
                         status: 'deleted' as const
                       };
-                      console.log('[Delete] New steps array:', newSteps);
-                      console.log('[Delete] Updated step:', newSteps[index]);
                       setState({ ...state, steps: newSteps });
-                      console.log('[Delete] setState called with new state');
                     }}
                     className={`p-0.5 rounded transition-colors ${
                       isLight 
@@ -422,12 +678,132 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
                   </button>
+                  )}
+                </div>
+              )}
+
+              {/* Restore button - for deleted steps */}
+              {showControls && !isHistorical && isDeleted && setState && (
+                <div className="flex items-center gap-0.5 ml-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const newSteps = [...state.steps];
+                      newSteps[index] = {
+                        ...newSteps[index],
+                        status: 'pending' as const
+                      };
+                      setState({ ...state, steps: newSteps });
+                    }}
+                    className={`p-0.5 rounded transition-colors ${
+                      isLight 
+                        ? 'text-gray-500 hover:bg-green-100 hover:text-green-600' 
+                        : 'text-gray-400 hover:bg-green-900/30 hover:text-green-400'
+                    }`}
+                    aria-label="Restore step"
+                    title="Restore step"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 13l-4-4m0 0l4-4m-4 4h11a4 4 0 110 8h-1" />
+                    </svg>
+                  </button>
                 </div>
               )}
             </div>
           );
         })}
+        {showControls && !isHistorical && isAdding && (
+          <div
+            className={`group flex items-center gap-1.5 px-1.5 py-1 rounded transition-all ${
+              isLight
+                ? 'bg-gray-50/50 border border-gray-200/50'
+                : 'bg-gray-600/10 border border-gray-600/30'
+            }`}
+          >
+            <div className={`h-3.5 w-3.5 rounded-full border-2 flex-shrink-0 ${
+              isLight ? 'border-gray-300' : 'border-gray-600'
+            }`} />
+            <input
+              ref={addInputRef}
+              type="text"
+              value={addValue}
+              placeholder="New step..."
+              onChange={(e) => setAddValue(e.target.value)}
+              onBlur={handleAddSubmit}
+              onKeyDown={handleAddKeyDown}
+              className={`flex-1 min-w-0 text-[10px] bg-transparent border-none outline-none px-1 ${
+                isLight ? 'text-gray-900' : 'text-gray-100'
+              }`}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
       </div>
+      {/* Delete Plan Modal (reuse style from SessionList) */}
+      {deletePlanOpen && createPortal((
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
+            onClick={handleCancelDeletePlan}
+          />
+          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
+            <div
+              className={`${
+                isLight ? 'bg-gray-50 border border-gray-200' : 'bg-[#151C24] border border-gray-700'
+              } w-full max-w-sm rounded-lg shadow-xl`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={`flex items-center justify-between px-3 py-2 border-b ${isLight ? 'border-gray-200' : 'border-gray-700'}`}>
+                <h2 className={`text-sm font-semibold ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>Delete Plan</h2>
+                <button
+                  onClick={handleCancelDeletePlan}
+                  className={`${isLight ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-100' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'} p-0.5 rounded-md transition-colors`}
+                >
+                  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="px-3 py-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className={`${isLight ? 'bg-red-100' : 'bg-red-900/30'} flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center`}>
+                    <svg className={`${isLight ? 'text-red-600' : 'text-red-400'} w-3.5 h-3.5`} fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className={`${isLight ? 'text-gray-900' : 'text-gray-100'} text-sm font-medium`}>
+                      Permanently delete plan?
+                    </p>
+                    <p className={`${isLight ? 'text-gray-600' : 'text-gray-400'} text-xs mt-1`}>
+                      This will remove the plan and its steps from the chat UI and cannot be recovered.
+                    </p>
+                    {state.steps.some((s) => s.status !== 'completed' && s.status !== 'deleted') && (
+                      <p className={`${isLight ? 'text-red-600' : 'text-red-400'} text-xs mt-2`}>
+                        Some steps are not completed or deleted. This action cannot be undone.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className={`flex items-center justify-end gap-2 px-3 py-2 border-t ${isLight ? 'border-gray-200' : 'border-gray-700'}`}>
+                <button
+                  onClick={handleCancelDeletePlan}
+                  className={`${isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-700 text-gray-100 hover:bg-gray-600'} px-3 py-1.5 text-xs font-medium rounded-md transition-colors`}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDeletePlan}
+                  className={`bg-red-600 text-white hover:bg-red-700 px-3 py-1.5 text-xs font-medium rounded-md transition-colors`}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      ), document.body)}
    </div>
   );
 };

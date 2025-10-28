@@ -51,39 +51,130 @@ export async function handleMoveCursorToElement(cssSelector: string): Promise<Mo
       world: 'MAIN',
       func: (selector: string): any => {
         try {
-          // First try to find element in main DOM
-          let element = document.querySelector(selector);
-          let foundInShadowDOM = false;
-          let shadowHostInfo = '';
+          // Shadow DOM helper - supports >> notation
+          const querySelectorWithShadowDOM = (selector: string): Element | null => {
+            if (!selector.includes(' >> ')) {
+              return document.querySelector(selector);
+            }
 
-          // If not found in main DOM, search in Shadow DOM
-          if (!element) {
-            console.log('[MoveCursor] Element not found in main DOM, searching Shadow DOM...');
+            const parts = selector.split(' >> ');
+            if (parts.length !== 2) {
+              throw new Error(`Invalid shadow DOM selector format. Expected "shadowPath >> elementSelector"`);
+            }
 
-            // Search through all shadow roots with early exit
-            for (const hostElement of Array.from(document.querySelectorAll('*'))) {
-              if (hostElement.shadowRoot && !element) {
-                try {
-                  const shadowElement = hostElement.shadowRoot.querySelector(selector);
-                  if (shadowElement) {
-                    element = shadowElement;
-                    foundInShadowDOM = true;
-                    shadowHostInfo = `${hostElement.tagName}${hostElement.id ? '#' + hostElement.id : ''}${hostElement.className ? '.' + hostElement.className.split(' ')[0] : ''}`;
-                    console.log('[MoveCursor] Found element in Shadow DOM:', shadowHostInfo);
-                    break; // Early exit - stop searching once element is found
-                  }
-                } catch (shadowError) {
-                  // Ignore shadow DOM query errors (invalid selectors, etc.)
-                  console.log('[MoveCursor] Shadow DOM query error:', shadowError);
-                }
+            const shadowPath = parts[0].trim();
+            const elementSelector = parts[1].trim();
+
+            const pathSegments = shadowPath
+              .split(' > ')
+              .map(s => s.trim())
+              .filter(s => s && s !== 'document');
+
+            if (pathSegments.length === 0) {
+              throw new Error(`Shadow path must contain at least one element`);
+            }
+
+            let currentRoot: Document | ShadowRoot = document;
+            
+            for (const segment of pathSegments) {
+              const hostElement: Element | null = currentRoot.querySelector(segment);
+              
+              if (!hostElement) {
+                throw new Error(`Shadow host not found: ${segment}`);
+              }
+              
+              if (!hostElement.shadowRoot) {
+                throw new Error(`Element ${segment} does not have a shadow root`);
+              }
+              
+              currentRoot = hostElement.shadowRoot;
+            }
+
+            return currentRoot.querySelector(elementSelector);
+          };
+
+          // Helper: iterate through ancestors, including across shadow boundaries
+          const forEachAncestor = (start: Element, cb: (el: Element) => void) => {
+            let node: Element | null = start;
+            const visited = new Set<Element>();
+            while (node && !visited.has(node)) {
+              visited.add(node);
+              cb(node);
+              const rootNode: Node | Document | ShadowRoot = (node.getRootNode && (node.getRootNode() as Node)) || document;
+              const maybeHost = (rootNode as any as ShadowRoot).host as Element | undefined;
+              if (maybeHost && maybeHost !== node) {
+                node = maybeHost;
+              } else {
+                node = node.parentElement;
               }
             }
-          }
+          };
+
+          // Build composed ancestor chain from leaf → ... → shadowHost → ... → documentElement
+          const getComposedChain = (el: Element | null): Element[] => {
+            if (!el) return [];
+            const chain: Element[] = [];
+            forEachAncestor(el, e => chain.push(e));
+            return chain;
+          };
+
+          // Diff previous and next chains; chains are leaf→...→root
+          const diffChains = (prev: Element[], next: Element[]) => {
+            let iPrev = prev.length - 1;
+            let iNext = next.length - 1;
+            while (iPrev >= 0 && iNext >= 0 && prev[iPrev] === next[iNext]) {
+              iPrev--; iNext--;
+            }
+            return {
+              leaving: prev.slice(0, iPrev + 1), // from leaf up to divergence
+              entering: next.slice(0, iNext + 1).reverse(), // from outermost new → leaf
+            } as { leaving: Element[]; entering: Element[] };
+          };
+
+          // Dispatch helpers with correct bubbling/composed defaults
+          const dispatchPointerMove = (el: Element, x: number, y: number) => {
+            el.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, pointerType: 'mouse' }));
+            el.dispatchEvent(new MouseEvent('mousemove', { view: window, bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y }));
+          };
+          const dispatchEnterSequence = (targets: Element[], x: number, y: number) => {
+            // outermost → leaf
+            for (const t of targets) {
+              t.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, pointerType: 'mouse' }));
+              t.dispatchEvent(new MouseEvent('mouseover', { view: window, bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y }));
+              t.dispatchEvent(new PointerEvent('pointerenter', { bubbles: false, cancelable: true, composed: true, clientX: x, clientY: y, pointerType: 'mouse' }));
+              t.dispatchEvent(new MouseEvent('mouseenter', { view: window, bubbles: false, cancelable: true, composed: true, clientX: x, clientY: y }));
+            }
+          };
+          const dispatchLeaveSequence = (targets: Element[], x: number, y: number, oldLeaf: Element | null) => {
+            // pointerout/mouseout bubble from leaf; send once from old leaf if available
+            if (oldLeaf) {
+              oldLeaf.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, pointerType: 'mouse' }));
+              oldLeaf.dispatchEvent(new MouseEvent('mouseout', { view: window, bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y }));
+            }
+            // pointerleave/mouseleave do not bubble; fire on each leaving element (leaf→outer)
+            for (const t of targets) {
+              t.dispatchEvent(new PointerEvent('pointerleave', { bubbles: false, cancelable: true, composed: true, clientX: x, clientY: y, pointerType: 'mouse' }));
+              t.dispatchEvent(new MouseEvent('mouseleave', { view: window, bubbles: false, cancelable: true, composed: true, clientX: x, clientY: y }));
+            }
+          };
+
+          // Hit testing helper (skip detached or null)
+          const hitTest = (x: number, y: number): Element | null => {
+            let el = document.elementFromPoint(x, y);
+            // elementFromPoint already respects pointer-events; keep as-is but guard detached
+            if (el && !(el as Element).isConnected) return null;
+            return el;
+          };
+
+          // Find element using shadow-aware query
+          let element = querySelectorWithShadowDOM(selector);
+          const foundInShadowDOM = selector.includes(' >> ');
+          const shadowHostInfo = foundInShadowDOM ? selector.split(' >> ')[0].trim() : '';
 
           if (!element) {
             return {
               success: false,
-              message: `No element found with selector: "${selector}" in main DOM or Shadow DOM. Please analyze the HTML and provide a valid CSS selector.`,
+              message: `No element found with selector: "${selector}". Please analyze the HTML and provide a valid CSS selector.`,
             };
           }
 
@@ -199,8 +290,7 @@ export async function handleMoveCursorToElement(cssSelector: string): Promise<Mo
                 const centerY = rect.top + rect.height / 2;
 
                 // Animation constants
-                const ANIMATION_STEPS = 30;
-                const STEP_DURATION = 20;
+                const ANIMATION_DURATION = 600; // ms
                 const CURSOR_DELAY_NEW = 200;
                 const CURSOR_DELAY_EXISTING = 0;
                 const HIGHLIGHT_DURATION = 5000;
@@ -208,68 +298,114 @@ export async function handleMoveCursorToElement(cssSelector: string): Promise<Mo
 
                 // Animate cursor to element position
                 const animateCursor = () => {
-                  const stepX = (centerX - cursorState.lastX) / ANIMATION_STEPS;
-                  const stepY = (centerY - cursorState.lastY) / ANIMATION_STEPS;
-                  let step = 0;
+                  const startX = cursorState.lastX;
+                  const startY = cursorState.lastY;
+                  let lastLeaf: Element | null = null;
+                  let lastChain: Element[] = [];
+                  let rafId = 0;
 
-                  const moveStep = () => {
-                    if (step < ANIMATION_STEPS) {
-                      cursorState.lastX += stepX;
-                      cursorState.lastY += stepY;
+                  const frame = (tStart: number) => {
+                    const tick = (now: number) => {
+                      const elapsed = Math.min(ANIMATION_DURATION, now - tStart);
+                      const progress = elapsed / (ANIMATION_DURATION || 1);
+                      const x = startX + (centerX - startX) * progress;
+                      const y = startY + (centerY - startY) * progress;
 
-                      // Add slight randomness for natural movement
+                      // Slight natural movement
                       const randomX = (Math.random() - 0.5) * 2;
                       const randomY = (Math.random() - 0.5) * 2;
 
-                      cursor!.style.left = cursorState.lastX + randomX + 'px';
-                      cursor!.style.top = cursorState.lastY + randomY + 'px';
+                      cursor!.style.left = x + randomX + 'px';
+                      cursor!.style.top = y + randomY + 'px';
                       cursor!.style.opacity = '1';
                       cursor!.style.animation = 'none';
 
-                      step++;
-                      setTimeout(moveStep, STEP_DURATION);
-                    } else {
-                      // Final position - animation complete
-                      cursorState.lastX = centerX;
-                      cursorState.lastY = centerY;
-                      cursor!.style.left = centerX + 'px';
-                      cursor!.style.top = centerY + 'px';
-                      cursor!.style.animation = 'copilotPulse 1.2s ease-in-out infinite';
-
-                      // Auto-hide cursor after 5 minutes
-                      cursorState.hideTimeout = setTimeout(() => {
-                        if (cursor) {
-                          cursor.style.animation = 'copilotFadeOut 0.5s ease-out forwards';
-                          setTimeout(() => {
-                            if (cursor) {
-                              cursor.remove();
-                            }
-                          }, 500);
+                      // Hit test and dispatch proper transitions
+                      // Hit exactly what's under the cursor - events bubble naturally to parents
+                      const hit = hitTest(x, y);
+                      const chain = getComposedChain(hit);
+                      if (hit) {
+                        const { leaving, entering } = diffChains(lastChain, chain);
+                        if (leaving.length || entering.length || hit !== lastLeaf) {
+                          dispatchLeaveSequence(leaving, x, y, lastLeaf);
+                          dispatchEnterSequence(entering, x, y);
+                          dispatchPointerMove(hit, x, y);
+                          lastLeaf = hit;
+                          lastChain = chain;
+                          // Mirror cursor style
+                          try {
+                            const cur = window.getComputedStyle(hit as HTMLElement).cursor || 'default';
+                            (cursor as HTMLElement).style.cursor = cur;
+                          } catch {}
+                        } else {
+                          dispatchPointerMove(hit, x, y);
                         }
-                      }, AUTO_HIDE_DELAY);
+                      }
 
-                      // Remove highlight after delay
-                      setTimeout(() => {
-                        (targetElement as HTMLElement).style.cssText = originalStyle;
-                      }, HIGHLIGHT_DURATION);
+                      if (elapsed < ANIMATION_DURATION) {
+                        rafId = requestAnimationFrame(tick);
+                      } else {
+                        // Finalize
+                        cursorState.lastX = centerX;
+                        cursorState.lastY = centerY;
+                        // Perform final hover enter on the last target to ensure parity
+                        if (hit) {
+                          const { entering } = diffChains(lastChain, chain);
+                          if (entering.length) dispatchEnterSequence(entering, centerX, centerY);
+                          // Mirror cursor style from hovered element
+                          try {
+                            const cur = window.getComputedStyle(hit as HTMLElement).cursor || 'default';
+                            (cursor as HTMLElement).style.cursor = cur;
+                          } catch {}
+                        }
+                        // Continue completion logic
+                      // Final position - animation complete
+                        cursor!.style.left = centerX + 'px';
+                        cursor!.style.top = centerY + 'px';
+                        cursor!.style.animation = 'copilotPulse 1.2s ease-in-out infinite';
 
-                      // Resolve with success
-                      resolve({
-                        success: true,
-                        message: `Cursor moved to: "${(targetElement.textContent || targetElement.tagName).substring(0, 50)}"${foundInShadowDOM ? ` (in Shadow DOM: ${shadowHostInfo})` : ''}`,
-                        elementInfo: {
-                          tag: targetElement.tagName,
-                          text: (targetElement.textContent || '').trim().substring(0, 100),
-                          id: targetElement.id,
-                          className: targetElement.className,
-                          foundInShadowDOM: foundInShadowDOM,
-                          shadowHost: foundInShadowDOM ? shadowHostInfo : null,
-                        },
-                      });
-                    }
+                        const elemAtCursor = document.elementFromPoint(centerX, centerY);
+                        if (elemAtCursor) {
+                          // Ensure final enter/move sequence
+                          dispatchPointerMove(elemAtCursor, centerX, centerY);
+                        }
+
+                        // Auto-hide cursor after 5 minutes
+                        cursorState.hideTimeout = setTimeout(() => {
+                          if (cursor) {
+                            cursor.style.animation = 'copilotFadeOut 0.5s ease-out forwards';
+                            setTimeout(() => {
+                              if (cursor) {
+                                cursor.remove();
+                              }
+                            }, 500);
+                          }
+                        }, AUTO_HIDE_DELAY);
+
+                        // Remove highlight after delay
+                        setTimeout(() => {
+                          (targetElement as HTMLElement).style.cssText = originalStyle;
+                        }, HIGHLIGHT_DURATION);
+
+                        // Resolve with success
+                        resolve({
+                          success: true,
+                          message: `Cursor moved to: "${(targetElement.textContent || targetElement.tagName).substring(0, 50)}"${foundInShadowDOM ? ` (in Shadow DOM: ${shadowHostInfo})` : ''}`,
+                          elementInfo: {
+                            tag: targetElement.tagName,
+                            text: (targetElement.textContent || '').trim().substring(0, 100),
+                            id: targetElement.id,
+                            className: targetElement.className,
+                            foundInShadowDOM: foundInShadowDOM,
+                            shadowHost: foundInShadowDOM ? shadowHostInfo : null,
+                          },
+                        });
+                      }
+                    };
+                    rafId = requestAnimationFrame(now => tick(now));
                   };
 
-                  moveStep();
+                  requestAnimationFrame(start => frame(start));
                 };
 
                 // Start cursor animation with delay for new cursor

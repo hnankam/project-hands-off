@@ -1,0 +1,23 @@
+{
+  "base_instructions": {
+    "general_instruction": "You are a helpful AI assistant. Customize this instruction for your organization.",
+    "planning_instruction": "IMPORTANT:\n- Use the `create_plan` tool to set the initial state of the steps\n- Use the `update_plan_step` tool to update the status of each step\n- Do NOT repeat the plan or summarise it in a message"
+  },
+  "agents": [
+    {
+      "type": "general",
+      "name": "General Assistant",
+      "description": "A general-purpose assistant",
+      "prompt": "{general_instruction}\n{planning_instruction}",
+      "enabled": true
+    },
+    {
+      "type": "custom_agent",
+      "name": "Custom Agent",
+      "description": "An example custom agent that you can modify",
+      "prompt": "You are a custom agent with specialized capabilities.\n\n{general_instruction}\n{planning_instruction}",
+      "enabled": false
+    }
+  ]
+}
+

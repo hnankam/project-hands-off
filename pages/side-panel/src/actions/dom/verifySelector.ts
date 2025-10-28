@@ -67,10 +67,68 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
           let foundInShadowDOM = false;
           let totalElementCount = 0;
 
+          // Helper: Parse and query shadow DOM selectors with >> notation
+          const querySelectorWithShadowDOM = (selector: string): Element[] => {
+            // Check if this is a shadow DOM selector with >> notation
+            if (!selector.includes(' >> ')) {
+              // Regular selector - just query the document
+              try {
+                return Array.from(document.querySelectorAll(selector));
+              } catch (e) {
+                throw new Error(`Invalid CSS selector: ${selector}`);
+              }
+            }
+
+            // Shadow DOM selector: "shadowPath >> elementSelector"
+            const parts = selector.split(' >> ');
+            if (parts.length !== 2) {
+              throw new Error(`Invalid shadow DOM selector format. Expected "shadowPath >> elementSelector", got: ${selector}`);
+            }
+
+            const shadowPath = parts[0].trim();
+            const elementSelector = parts[1].trim();
+
+            // Parse shadow path: "document > element1 > element2 > ..."
+            const pathSegments = shadowPath
+              .split(' > ')
+              .map(s => s.trim())
+              .filter(s => s && s !== 'document');
+
+            if (pathSegments.length === 0) {
+              throw new Error(`Shadow path must contain at least one element, got: ${shadowPath}`);
+            }
+
+            // Traverse the shadow path
+            let currentRoot: Document | ShadowRoot = document;
+            
+            for (const segment of pathSegments) {
+              // Query for the host element in the current root
+              const hostElement: Element | null = currentRoot.querySelector(segment);
+              
+              if (!hostElement) {
+                throw new Error(`Shadow host not found: ${segment} in path ${shadowPath}`);
+              }
+              
+              if (!hostElement.shadowRoot) {
+                throw new Error(`Element ${segment} does not have a shadow root in path ${shadowPath}`);
+              }
+              
+              // Move into the shadow root
+              currentRoot = hostElement.shadowRoot;
+            }
+
+            // Now query for the element selector within the final shadow root
+            try {
+              return Array.from(currentRoot.querySelectorAll(elementSelector));
+            } catch (e) {
+              throw new Error(`Invalid element selector in shadow DOM: ${elementSelector}`);
+            }
+          };
+
           // First, check if selector is syntactically valid by trying to use it
           try {
-            // Test selector validity by attempting to use it
-            document.querySelector(selector);
+            // Test selector validity by attempting to parse and use it
+            querySelectorWithShadowDOM(selector);
           } catch (selectorError) {
             return {
               success: false,
@@ -86,96 +144,49 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
             };
           }
 
-          // Search in main DOM
-          const mainDOMElements = document.querySelectorAll(selector);
-          if (mainDOMElements.length > 0) {
-            foundInMainDOM = true;
-            totalElementCount += mainDOMElements.length;
+          // Use the shadow-aware query helper
+          const elements = querySelectorWithShadowDOM(selector);
+          totalElementCount = elements.length;
+          
+          // Determine if elements are in shadow DOM based on selector syntax
+          const isShadowDOMSelector = selector.includes(' >> ');
+          
+          if (elements.length > 0) {
+            if (isShadowDOMSelector) {
+              foundInShadowDOM = true;
+              // Extract shadow path for display
+              const shadowPath = selector.split(' >> ')[0].trim();
+              shadowHosts.push(shadowPath);
+            } else {
+              foundInMainDOM = true;
+            }
 
             // Collect details for first few elements (limit to avoid overwhelming response)
-            const elementsToProcess = Math.min(mainDOMElements.length, 5);
+            const elementsToProcess = Math.min(elements.length, 5);
             for (let i = 0; i < elementsToProcess; i++) {
-              const element = mainDOMElements[i];
+              const element = elements[i];
               elementDetails.push({
                 tag: element.tagName,
                 text: (element.textContent || '').trim().substring(0, 100),
                 id: element.id || '',
                 className: element.className || '',
-                foundInShadowDOM: false,
-                shadowHost: null,
+                foundInShadowDOM: isShadowDOMSelector,
+                shadowHost: isShadowDOMSelector ? selector.split(' >> ')[0].trim() : null,
               });
             }
           }
 
-          // Search in Shadow DOM
-          const shadowRoots: ShadowRoot[] = [];
-
-          // Find all shadow roots
-          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
-            acceptNode: node => {
-              const element = node as Element;
-              if (element.shadowRoot) {
-                shadowRoots.push(element.shadowRoot);
-              }
-              return NodeFilter.FILTER_ACCEPT;
-            },
-          });
-
-          // Walk the tree to find all shadow roots
-          while (walker.nextNode()) {}
-
-          // Search each shadow root
-          for (const shadowRoot of shadowRoots) {
-            try {
-              const shadowElements = shadowRoot.querySelectorAll(selector);
-              if (shadowElements.length > 0) {
-                foundInShadowDOM = true;
-                totalElementCount += shadowElements.length;
-
-                // Get shadow host info
-                const shadowHost = shadowRoot.host;
-                const hostInfo = `${shadowHost.tagName}${shadowHost.id ? '#' + shadowHost.id : ''}${shadowHost.className ? '.' + shadowHost.className.split(' ')[0] : ''}`;
-
-                if (!shadowHosts.includes(hostInfo)) {
-                  shadowHosts.push(hostInfo);
-                }
-
-                // Collect details for first few shadow elements
-                const elementsToProcess = Math.min(shadowElements.length, 3);
-                for (let i = 0; i < elementsToProcess; i++) {
-                  const element = shadowElements[i];
-                  elementDetails.push({
-                    tag: element.tagName,
-                    text: (element.textContent || '').trim().substring(0, 100),
-                    id: element.id || '',
-                    className: element.className || '',
-                    foundInShadowDOM: true,
-                    shadowHost: hostInfo,
-                  });
-                }
-              }
-            } catch (shadowError) {
-              // Ignore individual shadow DOM query errors
-              console.log('[VerifySelector] Shadow DOM query error:', shadowError);
-            }
-          }
-
-          const isValid = foundInMainDOM || foundInShadowDOM;
+          const isValid = elements.length > 0;
 
           let message = '';
           if (isValid) {
-            const parts = [];
-            if (foundInMainDOM) {
-              const mainCount = document.querySelectorAll(selector).length;
-              parts.push(`${mainCount} element(s) in main DOM`);
+            if (isShadowDOMSelector) {
+              message = `Selector is valid and found ${totalElementCount} element(s) in Shadow DOM`;
+            } else {
+              message = `Selector is valid and found ${totalElementCount} element(s) in main DOM`;
             }
-            if (foundInShadowDOM) {
-              const shadowCount = totalElementCount - (foundInMainDOM ? document.querySelectorAll(selector).length : 0);
-              parts.push(`${shadowCount} element(s) in ${shadowHosts.length} shadow DOM(s)`);
-            }
-            message = `Selector is valid and found ${totalElementCount} total element(s): ${parts.join(', ')}`;
           } else {
-            message = `Selector is valid but found no elements in main DOM or Shadow DOM. Please check if the element exists or use a different selector.`;
+            message = `Selector is valid but found no elements. Please check if the element exists or use a different selector.`;
           }
 
           return {

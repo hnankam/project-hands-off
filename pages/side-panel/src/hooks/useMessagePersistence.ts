@@ -83,7 +83,7 @@ export const useMessagePersistence = ({
       }
 
       try {
-        // // 📝 LOG FULL RAW MESSAGES BEING SAVED
+        // 📝 LOG FULL RAW MESSAGES BEING SAVED
         // debug.log('========== SAVING MESSAGES TO STORAGE ==========');
         // debug.log(`Session ID: ${sessionId}`);
         // debug.log(`Total messages to save: ${messagesToSave.length}`);
@@ -256,6 +256,10 @@ export const useMessagePersistence = ({
       return;
     }
 
+    // Reset restore attempts counter on manual load to allow fresh attempts
+    restoreAttemptsRef.current = 0;
+    debug.log('[useMessagePersistence] Reset restore attempts counter for fresh load');
+
     try {
       const result = await chrome.storage.local.get([STORAGE_CONSTANTS.CHAT_STORAGE_KEY]);
       const storedData: StoredChatData = result[STORAGE_CONSTANTS.CHAT_STORAGE_KEY] || {};
@@ -306,6 +310,7 @@ export const useMessagePersistence = ({
 
   // Auto-restore messages when session becomes active or panel is reopened
   const hasAutoRestoredRef = useRef(false);
+  const lastRestoredSessionRef = useRef<string>('');
   const panelOpenTimeRef = useRef<number>(0);
 
   // Track when panel becomes visible
@@ -314,6 +319,16 @@ export const useMessagePersistence = ({
       panelOpenTimeRef.current = Date.now();
     }
   }, [isPanelVisible, isActive]);
+  
+  // Reset auto-restore flag and attempts counter when session changes
+  useEffect(() => {
+    if (lastRestoredSessionRef.current !== sessionId) {
+      hasAutoRestoredRef.current = false;
+      restoreAttemptsRef.current = 0; // Reset attempts for new session
+      lastRestoredSessionRef.current = sessionId;
+      debug.log(`[useMessagePersistence] Session changed to ${sessionId}, reset restore flags`);
+    }
+  }, [sessionId]);
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | undefined;

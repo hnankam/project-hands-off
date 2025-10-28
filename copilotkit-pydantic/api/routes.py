@@ -3,7 +3,7 @@
 import json
 from fastapi import FastAPI, Request
 
-from config import DEBUG, logger, agent_types, MODEL_NAMES, get_models
+from config import DEBUG, logger, get_agent_types, get_models, get_model_names
 from core import get_agent
 from services import (
     get_or_create_session_state,
@@ -22,8 +22,8 @@ def register_agent_routes(app: FastAPI) -> None:
         app: The FastAPI application instance
     """
     # Create routes for all combinations with session-based state
-    for agent_type in agent_types:
-        for model in MODEL_NAMES:
+    for agent_type in get_agent_types():
+        for model in get_model_names():
             path = f"/agent/{agent_type}/{model}"
             agent = get_agent(agent_type, model)
             

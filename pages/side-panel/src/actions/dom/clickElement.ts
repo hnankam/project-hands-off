@@ -55,10 +55,122 @@ export async function handleClickElement(
       world: 'MAIN',
       func: (selector: string, moveCursor: boolean): any => {
         try {
+          // Helper: Parse and query shadow DOM selectors with >> notation
+          const querySelectorWithShadowDOM = (selector: string): Element | null => {
+            // Check if this is a shadow DOM selector with >> notation
+            if (!selector.includes(' >> ')) {
+              // Regular selector - just query the document
+              return document.querySelector(selector);
+            }
+
+            // Shadow DOM selector: "shadowPath >> elementSelector"
+            const parts = selector.split(' >> ');
+            if (parts.length !== 2) {
+              throw new Error(`Invalid shadow DOM selector format. Expected "shadowPath >> elementSelector", got: ${selector}`);
+            }
+
+            const shadowPath = parts[0].trim();
+            const elementSelector = parts[1].trim();
+
+            // Parse shadow path: "document > element1 > element2 > ..."
+            const pathSegments = shadowPath
+              .split(' > ')
+              .map(s => s.trim())
+              .filter(s => s && s !== 'document');
+
+            if (pathSegments.length === 0) {
+              throw new Error(`Shadow path must contain at least one element, got: ${shadowPath}`);
+            }
+
+            // Traverse the shadow path
+            let currentRoot: Document | ShadowRoot = document;
+            
+            for (const segment of pathSegments) {
+              // Query for the host element in the current root
+              const hostElement: Element | null = currentRoot.querySelector(segment);
+              
+              if (!hostElement) {
+                throw new Error(`Shadow host not found: ${segment} in path ${shadowPath}`);
+              }
+              
+              if (!hostElement.shadowRoot) {
+                throw new Error(`Element ${segment} does not have a shadow root in path ${shadowPath}`);
+              }
+              
+              // Move into the shadow root
+              currentRoot = hostElement.shadowRoot;
+            }
+
+            // Now query for the element selector within the final shadow root
+            return currentRoot.querySelector(elementSelector);
+          };
+
+          // Helper: iterate through ancestors, including across shadow boundaries
+          const forEachAncestor = (start: Element, cb: (el: Element) => void) => {
+            let node: Element | null = start;
+            const visited = new Set<Element>();
+            while (node && !visited.has(node)) {
+              visited.add(node);
+              cb(node);
+              const rootNode: Node | Document | ShadowRoot = (node.getRootNode && (node.getRootNode() as Node)) || document;
+              const maybeHost = (rootNode as any as ShadowRoot).host as Element | undefined;
+              if (maybeHost && maybeHost !== node) {
+                node = maybeHost;
+              } else {
+                node = node.parentElement;
+              }
+            }
+          };
+
+          // Utility: determine if an element is inherently interactive/clickable
+          const isPotentiallyClickable = (el: Element | null): boolean => {
+            if (!el) return false;
+            const tag = el.tagName.toLowerCase();
+            const attr = (name: string) => (el as HTMLElement).getAttribute?.(name);
+            const has = (name: string) => (el as HTMLElement).hasAttribute?.(name);
+            const role = attr('role') || '';
+            const tabindex = Number((el as HTMLElement).getAttribute('tabindex') || 'NaN');
+            const style = (el as HTMLElement).style?.pointerEvents || '';
+            if (style === 'none') return false;
+
+            const interactiveTags = new Set([
+              'a', 'button', 'input', 'textarea', 'select', 'option', 'summary', 'label', 'details'
+            ]);
+            if (interactiveTags.has(tag)) return true;
+            if (tag === 'a' && !!(el as HTMLAnchorElement).href) return true;
+            if (has('onclick')) return true;
+            if (has('aria-haspopup') || has('aria-controls')) return true;
+            if (!Number.isNaN(tabindex) && tabindex >= 0) return true;
+            if (/^(button|link|menuitem|tab|checkbox|radio|switch)$/i.test(role)) return true;
+            return false;
+          };
+
+          // Utility: walk up to the best clickable ancestor commonly used across sites
+          const getBestClickableTarget = (start: Element): HTMLElement => {
+            let el: Element | null = start;
+            // Prefer the nearest ancestor that is clearly interactive
+            const selector = [
+              'a[href]',
+              'button',
+              'input:not([type="hidden"])',
+              'textarea',
+              'select',
+              '[role="button"]',
+              '[role="link"]',
+              '[onclick]',
+              '[tabindex]'
+            ].join(',');
+            const nearest = (start as HTMLElement).closest(selector) as HTMLElement | null;
+            if (nearest) return nearest;
+            // Otherwise climb until we hit something probably clickable
+            while (el && el !== document.body && !isPotentiallyClickable(el)) el = el.parentElement;
+            return (el as HTMLElement) || (start as HTMLElement);
+          };
+
           // First, check if selector is syntactically valid by trying to use it
           try {
-            // Test selector validity by attempting to use it
-            document.querySelector(selector);
+            // Test selector validity by attempting to parse and use it
+            querySelectorWithShadowDOM(selector);
           } catch (selectorError) {
             return {
               success: false,
@@ -66,41 +178,17 @@ export async function handleClickElement(
             };
           }
 
-          // First try to find element in main DOM
-          let element = document.querySelector(selector);
-          let foundInShadowDOM = false;
-          let shadowHostInfo = '';
-
-          // If not found in main DOM, search in Shadow DOM
-          if (!element) {
-            console.log('[ClickElement] Element not found in main DOM, searching Shadow DOM...');
-
-            // Search through all shadow roots with early exit
-            for (const hostElement of Array.from(document.querySelectorAll('*'))) {
-              if (hostElement.shadowRoot && !element) {
-                try {
-                  const shadowElement = hostElement.shadowRoot.querySelector(selector);
-                  if (shadowElement) {
-                    element = shadowElement;
-                    foundInShadowDOM = true;
-                    shadowHostInfo = `${hostElement.tagName}${hostElement.id ? '#' + hostElement.id : ''}${hostElement.className ? '.' + hostElement.className.split(' ')[0] : ''}`;
-                    console.log('[ClickElement] Found element in Shadow DOM:', shadowHostInfo);
-                    break; // Early exit - stop searching once element is found
-                  }
-                } catch (shadowError) {
-                  // Ignore shadow DOM query errors (invalid selectors, etc.)
-                  console.log('[ClickElement] Shadow DOM query error:', shadowError);
-                }
-              }
-            }
-          }
+          // Find element using shadow-aware query
+          let element = querySelectorWithShadowDOM(selector);
+          const foundInShadowDOM = selector.includes(' >> ');
+          const shadowHostInfo = foundInShadowDOM ? selector.split(' >> ')[0].trim() : '';
 
           if (!element) {
             const res = {
               success: false,
-              message: `No element found with selector: "${selector}" in main DOM or Shadow DOM. Please analyze the HTML and provide a valid CSS selector.`,
+              message: `No element found with selector: "${selector}". Please analyze the HTML and provide a valid CSS selector.`,
             };
-            console.log('[ClickElement] No element found with selector in main DOM or Shadow DOM:', selector);
+            console.log('[ClickElement] No element found with selector:', selector);
             console.log('[ClickElement] Returning error result:', res);
             return res;
           }
@@ -144,30 +232,126 @@ export async function handleClickElement(
                 // Focus the element (important for forms and keyboard events)
                 (targetElement as HTMLElement).focus();
 
-                // Get rect for visual feedback
+                // CRITICAL FIX: Verify what element is ACTUALLY at the target position
+                // This prevents clicking wrong element due to overlapping children/parents
                 const rect = targetElement.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                const actualElementAtPoint = document.elementFromPoint(centerX, centerY);
+                
+                // Determine which element to click
+                let elementToClick = targetElement;
+                let clickNote = '';
+                
+                if (actualElementAtPoint && actualElementAtPoint !== targetElement) {
+                  // Element at cursor is different from selector target
+                  const isChild = targetElement.contains(actualElementAtPoint);
+                  const isParent = actualElementAtPoint.contains(targetElement);
+                  
+                  if (isChild) {
+                    // Child element covers the center - click the child (what user would click)
+                    elementToClick = actualElementAtPoint;
+                    clickNote = ' [clicked child at cursor position]';
+                    console.log('[ClickElement] Clicking child element at cursor:', {
+                      selectorTarget: targetElement.tagName + (targetElement.id ? '#' + targetElement.id : ''),
+                      actualAtPoint: actualElementAtPoint.tagName + (actualElementAtPoint.id ? '#' + actualElementAtPoint.id : ''),
+                    });
+                  } else if (isParent) {
+                    // Target is child of element at point - click the target (more specific)
+                    elementToClick = targetElement;
+                    clickNote = ' [kept target, more specific than parent]';
+                    console.log('[ClickElement] Keeping target (more specific):', {
+                      selectorTarget: targetElement.tagName + (targetElement.id ? '#' + targetElement.id : ''),
+                      parentAtPoint: actualElementAtPoint.tagName + (actualElementAtPoint.id ? '#' + actualElementAtPoint.id : ''),
+                    });
+                  } else {
+                    // Completely different element - possible overlay
+                    clickNote = ' [WARNING: different element at cursor]';
+                    console.warn('[ClickElement] Different element at cursor position:', {
+                      selectorTarget: targetElement.tagName + (targetElement.id ? '#' + targetElement.id : ''),
+                      actualAtPoint: actualElementAtPoint.tagName + (actualElementAtPoint.id ? '#' + actualElementAtPoint.id : ''),
+                    });
+                  }
+                }
 
                 // Enhanced clicking for modern web apps
                 const clickElement = (el: Element) => {
-                  const elRect = el.getBoundingClientRect();
+                  // Resolve the most likely clickable target for generic sites
+                  const primaryTarget = getBestClickableTarget(el) || (el as HTMLElement);
+                  // If the element is a label tied to a control, prefer the control
+                  const htmlEl = primaryTarget as HTMLElement;
+                  let finalTarget: HTMLElement = htmlEl;
+                  if (htmlEl.tagName.toLowerCase() === 'label') {
+                    const forId = htmlEl.getAttribute('for');
+                    if (forId) {
+                      const ctrl = document.getElementById(forId) as HTMLElement | null;
+                      if (ctrl) finalTarget = ctrl;
+                    }
+                  }
+
+                  const elRect = finalTarget.getBoundingClientRect();
                   const x = elRect.left + elRect.width / 2;
                   const y = elRect.top + elRect.height / 2;
 
-                  // Create comprehensive event sequence including focus
+                  // Create comprehensive event sequence including pointer + mouse + focus
                   const events = [
+                    new PointerEvent('pointerover', {
+                      bubbles: true,
+                      cancelable: true,
+                      composed: true,
+                      clientX: x,
+                      clientY: y,
+                      pointerType: 'mouse',
+                    }),
+                    new MouseEvent('mouseenter', {
+                      view: window,
+                      bubbles: true,
+                      cancelable: true,
+                      composed: true,
+                      clientX: x,
+                      clientY: y,
+                    }),
+                    new MouseEvent('mouseover', {
+                      view: window,
+                      bubbles: true,
+                      cancelable: true,
+                      composed: true,
+                      clientX: x,
+                      clientY: y,
+                    }),
                     new FocusEvent('focus', { bubbles: true, cancelable: true }),
+                    new PointerEvent('pointerdown', {
+                      bubbles: true,
+                      cancelable: true,
+                      composed: true,
+                      clientX: x,
+                      clientY: y,
+                      pointerType: 'mouse',
+                      button: 0,
+                    }),
                     new MouseEvent('mousedown', {
                       view: window,
                       bubbles: true,
                       cancelable: true,
+                      composed: true,
                       clientX: x,
                       clientY: y,
+                      button: 0,
+                    }),
+                    new PointerEvent('pointerup', {
+                      bubbles: true,
+                      cancelable: true,
+                      composed: true,
+                      clientX: x,
+                      clientY: y,
+                      pointerType: 'mouse',
                       button: 0,
                     }),
                     new MouseEvent('mouseup', {
                       view: window,
                       bubbles: true,
                       cancelable: true,
+                      composed: true,
                       clientX: x,
                       clientY: y,
                       button: 0,
@@ -176,6 +360,7 @@ export async function handleClickElement(
                       view: window,
                       bubbles: true,
                       cancelable: true,
+                      composed: true,
                       clientX: x,
                       clientY: y,
                       button: 0,
@@ -183,10 +368,52 @@ export async function handleClickElement(
                   ];
 
                   // Dispatch all events in sequence
-                  events.forEach(event => el.dispatchEvent(event));
+                  events.forEach(event => finalTarget.dispatchEvent(event));
+
+                  // Also try clicking the nearest clickable ancestor (common with icons inside buttons)
+                  const ancestor = (finalTarget as HTMLElement).closest(
+                    'a[href],button,[role="button"],[onclick],[data-action],[tabindex],*[aria-controls],*[aria-haspopup]'
+                  ) as HTMLElement | null;
+                  if (ancestor && ancestor !== finalTarget) {
+                    const aRect = ancestor.getBoundingClientRect();
+                    const ax = aRect.left + aRect.width / 2;
+                    const ay = aRect.top + aRect.height / 2;
+
+                    const ancestorEvents = [
+                      new PointerEvent('pointerover', { bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay, pointerType: 'mouse' }),
+                      new MouseEvent('mouseenter', { view: window, bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay }),
+                      new MouseEvent('mouseover', { view: window, bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay }),
+                      new PointerEvent('pointerdown', { bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay, pointerType: 'mouse', button: 0 }),
+                      new MouseEvent('mousedown', { view: window, bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay, button: 0 }),
+                      new PointerEvent('pointerup', { bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay, pointerType: 'mouse', button: 0 }),
+                      new MouseEvent('mouseup', { view: window, bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay, button: 0 }),
+                      new MouseEvent('click', { view: window, bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay, button: 0 }),
+                    ];
+                    ancestorEvents.forEach(ev => ancestor.dispatchEvent(ev));
+
+                    // If it's a link or button, also invoke native click
+                    try { (ancestor as HTMLElement).click?.(); } catch {}
+                  }
+
+                  // Keyboard fallback (some UIs respond to Enter/Space on focused elements)
+                  try {
+                    const kdEnter = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true });
+                    const kuEnter = new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true });
+                    el.dispatchEvent(kdEnter);
+                    el.dispatchEvent(kuEnter);
+
+                    const kdSpace = new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true });
+                    const kuSpace = new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true, cancelable: true });
+                    el.dispatchEvent(kdSpace);
+                    el.dispatchEvent(kuSpace);
+                  } catch {}
+
+                  // Fallback: call native click to trigger default handlers
+                  try { (finalTarget as HTMLElement).click?.(); } catch {}
                 };
 
-                clickElement(targetElement);
+                // Click the verified element (what's actually at the cursor)
+                clickElement(elementToClick);
 
                 // Visual feedback for click
                 const clickFeedback = document.createElement('div');
@@ -211,14 +438,16 @@ export async function handleClickElement(
 
                   const successResult = {
                     success: true,
-                    message: `Clicked: "${(targetElement.textContent || targetElement.tagName).substring(0, 50)}"${foundInShadowDOM ? ` (in Shadow DOM: ${shadowHostInfo})` : ''}`,
+                    message: `Clicked: "${(elementToClick.textContent || elementToClick.tagName).substring(0, 50)}"${clickNote}${foundInShadowDOM ? ` (in Shadow DOM: ${shadowHostInfo})` : ''}`,
                     elementInfo: {
-                      tag: targetElement.tagName,
-                      text: (targetElement.textContent || '').trim().substring(0, 100),
-                      id: targetElement.id,
-                      href: (targetElement as HTMLAnchorElement).href || null,
+                      tag: elementToClick.tagName,
+                      text: (elementToClick.textContent || '').trim().substring(0, 100),
+                      id: elementToClick.id || '',
+                      href: (elementToClick as HTMLAnchorElement).href || null,
                       foundInShadowDOM: foundInShadowDOM,
                       shadowHost: foundInShadowDOM ? shadowHostInfo : null,
+                      clickedActualElement: elementToClick !== targetElement,
+                      actualElementTag: elementToClick !== targetElement ? elementToClick.tagName : undefined,
                     },
                   };
                   console.log('[ClickElement] Returning success result:', successResult);
@@ -333,6 +562,22 @@ export async function handleClickElement(
                       cursor!.style.opacity = '1';
                       cursor!.style.animation = 'none';
 
+                      // Dispatch mousemove to trigger hover effects as cursor moves
+                      const elemUnderCursor = document.elementFromPoint(cursorState.lastX, cursorState.lastY);
+                      if (elemUnderCursor) {
+                        // Propagate hover to ancestors so parent :hover effects apply
+                        forEachAncestor(elemUnderCursor, target => {
+                          target.dispatchEvent(new MouseEvent('mousemove', {
+                            view: window,
+                            bubbles: true,
+                            cancelable: true,
+                            composed: true,
+                            clientX: cursorState.lastX,
+                            clientY: cursorState.lastY,
+                          }));
+                        });
+                      }
+
                       step++;
                       setTimeout(moveStep, STEP_DURATION);
                     } else {
@@ -342,6 +587,17 @@ export async function handleClickElement(
                       cursor!.style.left = centerX + 'px';
                       cursor!.style.top = centerY + 'px';
                       cursor!.style.animation = 'copilotPulse 1.2s ease-in-out infinite';
+
+                      // Trigger hover effects at final position
+                      const elemAtCursor = document.elementFromPoint(centerX, centerY);
+                      if (elemAtCursor) {
+                        // Dispatch hover chain to element and its ancestors
+                        forEachAncestor(elemAtCursor, target => {
+                          target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, cancelable: true, composed: true, clientX: centerX, clientY: centerY, pointerType: 'mouse' }));
+                          target.dispatchEvent(new MouseEvent('mouseenter', { view: window, bubbles: true, cancelable: true, composed: true, clientX: centerX, clientY: centerY }));
+                          target.dispatchEvent(new MouseEvent('mouseover', { view: window, bubbles: true, cancelable: true, composed: true, clientX: centerX, clientY: centerY }));
+                        });
+                      }
 
                       // Perform click after cursor animation completes
                       performClick();

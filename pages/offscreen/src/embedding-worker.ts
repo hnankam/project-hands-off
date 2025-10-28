@@ -11,6 +11,20 @@ const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
 const DEBUG = true;
 const log = (...args: any[]) => DEBUG && console.log(...args);
 
+// ===== EMBEDDING MODEL SELECTION =====
+// Choose your embedding model (comment/uncomment to switch):
+const EMBEDDING_MODEL = 'Xenova/paraphrase-MiniLM-L3-v2'; // 🚀 FASTEST (14MB, ~40% faster, good quality)
+// const EMBEDDING_MODEL = 'Supabase/gte-small';          // ⭐ RECOMMENDED (33MB, most stable, best accuracy)
+// const EMBEDDING_MODEL = 'Xenova/bge-small-en-v1.5';    // ⭐ ALTERNATIVE (33MB, state-of-the-art small model)
+// const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2';     // 📊 ORIGINAL (23MB, baseline)
+// const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L12-v2';    // 🎯 HIGHEST QUALITY (45MB, slower but best quality)
+
+// ===== QUANTIZATION SELECTION =====
+// Choose quantization level (comment/uncomment to switch):
+const USE_AGGRESSIVE_QUANTIZATION = true;  // ⚡ FASTEST (q4, ~40% faster, minimal quality loss)
+// const USE_AGGRESSIVE_QUANTIZATION = false; // 🎯 BALANCED (q8, default quality)
+// =====================================
+
 // Configure environment for worker context
 env.allowRemoteModels = true;
 env.allowLocalModels = true;
@@ -30,14 +44,16 @@ async function ensurePipeline() {
   if (embeddingPipeline) return;
   if (!pipelineInitPromise) {
     pipelineInitPromise = (async () => {
-      log(ts(), '[EmbeddingWorker] Initializing transformers pipeline (WASM, single-threaded in worker)...');
+      const dtype = USE_AGGRESSIVE_QUANTIZATION ? 'q4' : 'q8';
+      log(ts(), `[EmbeddingWorker] Initializing transformers pipeline with model: ${EMBEDDING_MODEL} (WASM, ${dtype})...`);
       const start = performance.now();
       // WebGPU is not available in workers; use WASM
-      embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+      embeddingPipeline = await pipeline('feature-extraction', EMBEDDING_MODEL, {
         device: 'wasm',
-        dtype: 'q8',
+        dtype: dtype,
       });
-      log(ts(), '[EmbeddingWorker] Pipeline ready in', (performance.now() - start).toFixed(0), 'ms');
+      log(ts(), `[EmbeddingWorker] Pipeline ready in ${(performance.now() - start).toFixed(0)}ms`);
+      log(ts(), `[EmbeddingWorker] Model: ${EMBEDDING_MODEL} (${dtype}) ${USE_AGGRESSIVE_QUANTIZATION ? '(aggressive quantization)' : '(balanced quantization)'}`);
     })();
   }
   await pipelineInitPromise;
@@ -58,7 +74,7 @@ async function embedBatch(texts: string[]): Promise<number[][]> {
   await ensurePipeline();
   // Fast-path: no inputs
   if (!texts || texts.length === 0) return [];
-  const BATCH_SIZE = 32;
+  const BATCH_SIZE = 16; // Reduced to 16 to prevent GPU/CPU contention
   // Clamp concurrency by available cores
   const hc = (self as any)?.navigator?.hardwareConcurrency || 4;
   const MAX_CONCURRENT = Math.max(2, Math.min(8, (hc as number) - 1));
@@ -80,18 +96,11 @@ async function embedBatch(texts: string[]): Promise<number[][]> {
     return { index: batchIndex, embeddings: batchEmbeddings };
   };
 
-  // Schedule with concurrency window
-  const collected: { index: number; embeddings: number[][] }[] = [];
-  for (let i = 0; i < totalBatches; i += MAX_CONCURRENT) {
-    const windowPromises: Array<Promise<{ index: number; embeddings: number[][] }>> = [];
-    for (let j = 0; j < MAX_CONCURRENT && i + j < totalBatches; j++) {
-      windowPromises.push(processBatch(i + j));
-    }
-    const windowResults = await Promise.all(windowPromises);
-    collected.push(...windowResults);
-  }
+  // Process ALL batches in parallel (no pools - true parallelism)
+  const batchPromises = Array.from({ length: totalBatches }, (_, i) => processBatch(i));
+  const collected = await Promise.all(batchPromises);
 
-  // Flatten in order
+  // Flatten in order (already sorted by index)
   collected.sort((a, b) => a.index - b.index);
   const all = collected.flatMap((r) => r.embeddings);
   return all;

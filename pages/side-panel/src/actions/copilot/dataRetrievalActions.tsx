@@ -69,17 +69,17 @@ export const createGetHtmlChunksByRangeAction = ({ currentPageContent, isLight }
     );
   },
   handler: async ({ start, end }: { start: number; end: number }) => {
+    debug.log(ts(), '[Agent Request] getHtmlChunksByRange:', { start, end });
     const url = currentPageContent?.url || '';
     if (!url) return { status: 'error', message: 'No page URL' };
     const s = Math.max(0, Number(start));
     const e = Math.max(s, Number(end));
     try {
-      debug.log(ts(), '[AgentAction] getHtmlChunksByRange → querying DB:', { url: url.substring(0, 80), start: s, end: e });
       const rows = await embeddingsStorage.fetchHTMLChunksByRange(url, s, e);
-      debug.log(ts(), '[AgentAction] getHtmlChunksByRange → fetched:', rows.length);
+      debug.log(ts(), '[Agent Response] getHtmlChunksByRange:', { status: 'success', count: rows.length });
       return { status: 'success', message: `Fetched ${rows.length} chunk(s)`, chunks: rows };
     } catch (err) {
-      debug.error('[AgentAction] getHtmlChunksByRange error:', err);
+      debug.error(ts(), '[Agent Response] getHtmlChunksByRange error:', err);
       return { status: 'error', message: 'DB query failed' };
     }
   },

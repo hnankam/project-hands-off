@@ -23,13 +23,13 @@ interface FormActionDependencies {
  */
 export const createInputDataAction = ({ isLight, clipText }: FormActionDependencies) => ({
   name: 'inputData',
-  description: 'Fill a form field matched by selector (inputs, textareas, selects, checkboxes, contenteditable).',
+  description: 'Fill a form field matched by selector (inputs, textareas, selects, checkboxes, contenteditable). Supports Shadow DOM with >> notation.',
   parameters: [
     {
       name: 'cssSelector',
       type: 'string',
       description:
-        "A valid CSS selector for the input field (e.g., '#email', 'input[name=\"username\"]', '#message').",
+        "A valid CSS selector for the input field (e.g., '#email', 'document > x-app >> #message'). Use searchPageContent() to find appropriate selectors.",
       required: true,
     },
     {
@@ -67,6 +67,7 @@ export const createInputDataAction = ({ isLight, clipText }: FormActionDependenc
     clearFirst?: boolean; 
     moveCursor?: boolean;
   }) => {
+    debug.log(ts(), '[Agent Request] inputData:', { cssSelector, value, clearFirst, moveCursor });
     const result = await handleInputData(cssSelector, value, clearFirst, moveCursor);
     debug.log(ts(), '[Agent Response] inputData:', result);
     return result;

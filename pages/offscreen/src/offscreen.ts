@@ -29,6 +29,20 @@ log(ts(), '[Offscreen] Starting offscreen document for embeddings...');
 // Runtime preference: default to WebGPU when available, else worker fallback.
 const EMBEDDING_RUNTIME_PREFERENCE: 'worker' | 'auto' = 'auto';
 
+// ===== EMBEDDING MODEL SELECTION =====
+// Choose your embedding model (comment/uncomment to switch):
+const EMBEDDING_MODEL = 'Xenova/paraphrase-MiniLM-L3-v2'; // 🚀 FASTEST (14MB, ~40% faster, good quality)
+// const EMBEDDING_MODEL = 'Supabase/gte-small';          // ⭐ RECOMMENDED (33MB, most stable, best accuracy)
+// const EMBEDDING_MODEL = 'Xenova/bge-small-en-v1.5';    // ⭐ ALTERNATIVE (33MB, state-of-the-art small model)
+// const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2';     // 📊 ORIGINAL (23MB, baseline)
+// const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L12-v2';    // 🎯 HIGHEST QUALITY (45MB, slower but best quality)
+
+// ===== QUANTIZATION SELECTION =====
+// Choose quantization level (comment/uncomment to switch):
+const USE_AGGRESSIVE_QUANTIZATION = true;  // ⚡ FASTEST (fp16/q4, ~30-40% faster, minimal quality loss)
+// const USE_AGGRESSIVE_QUANTIZATION = false; // 🎯 BALANCED (fp32/q8, default quality)
+// =====================================
+
 // Configure transformers.js environment
 env.allowRemoteModels = true;
 env.allowLocalModels = true;
@@ -51,7 +65,7 @@ async function initializePipeline() {
     return;
   }
 
-  log(ts(), '[Offscreen] 🔄 Initializing pipeline (this will take a few seconds)...');
+  log(ts(), `[Offscreen] 🔄 Initializing pipeline with model: ${EMBEDDING_MODEL} (this will take a few seconds)...`);
   const startTime = performance.now();
 
   // Try WebGPU first (GPU-accelerated), fallback to WASM
@@ -68,16 +82,23 @@ async function initializePipeline() {
     
     log(ts(), `[Offscreen] 🎯 Attempting to initialize with device: ${device.toUpperCase()}`);
     
-    embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+    // Select dtype based on device and quantization setting
+    const dtype = USE_AGGRESSIVE_QUANTIZATION 
+      ? (device === 'webgpu' ? 'fp16' : 'q4')  // Aggressive: fp16 for GPU, q4 for CPU
+      : (device === 'webgpu' ? 'fp32' : 'q8'); // Balanced: fp32 for GPU, q8 for CPU
+    
+    log(ts(), `[Offscreen] ⚙️  Quantization: ${dtype} ${USE_AGGRESSIVE_QUANTIZATION ? '(aggressive)' : '(balanced)'}`);
+    
+    embeddingPipeline = await pipeline('feature-extraction', EMBEDDING_MODEL, {
       device: device,
-      dtype: device === 'webgpu' ? 'fp32' : 'q8', // WebGPU requires fp32
+      dtype: dtype,
     });
     pipelineDevice = device;
     
     const duration = performance.now() - startTime;
     log(ts(), `[Offscreen] ✅ Pipeline initialized in ${duration.toFixed(2)}ms`);
     log(ts(), `[Offscreen] 🚀 FINAL DEVICE: ${device.toUpperCase()} ${device === 'webgpu' ? '(GPU-accelerated, should not block UI)' : '(CPU-based, may block UI)'}`);
-    log(ts(), '[Offscreen] ℹ️  Model is now loaded in memory and ready for fast embeddings');
+    log(ts(), `[Offscreen] ℹ️  Model: ${EMBEDDING_MODEL} (${dtype}) is now loaded in memory and ready for fast embeddings`);
   } catch (error) {
     err(ts(), '[Offscreen] ❌ Failed to initialize with', device, ':', error);
     err(ts(), '[Offscreen] ❌ Error details:', error instanceof Error ? error.message : String(error));
@@ -87,14 +108,18 @@ async function initializePipeline() {
     if (device === 'webgpu') {
       log(ts(), '[Offscreen] 🔄 Falling back to WASM...');
       try {
-        embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+        const dtype = USE_AGGRESSIVE_QUANTIZATION ? 'q4' : 'q8';
+        log(ts(), `[Offscreen] ⚙️  Quantization: ${dtype} ${USE_AGGRESSIVE_QUANTIZATION ? '(aggressive)' : '(balanced)'}`);
+        
+        embeddingPipeline = await pipeline('feature-extraction', EMBEDDING_MODEL, {
           device: 'wasm',
-          dtype: 'q8',
+          dtype: dtype,
         });
         pipelineDevice = 'wasm';
         const duration = performance.now() - startTime;
         log(ts(), `[Offscreen] ✅ Pipeline initialized with WASM fallback in ${duration.toFixed(2)}ms`);
         log(ts(), `[Offscreen] 🚀 FINAL DEVICE: WASM (CPU-based, may block UI)`);
+        log(ts(), `[Offscreen] ℹ️  Model: ${EMBEDDING_MODEL} (${dtype})`);
       } catch (wasmError) {
         err(ts(), '[Offscreen] ❌ WASM fallback also failed:', wasmError);
         throw wasmError;
@@ -113,13 +138,20 @@ async function generateEmbedding(text: string): Promise<number[]> {
     // Small (384) – conversion here is fine; avoid worker hop for single item
     const embedding = Array.from(output.data as Iterable<number>).map((v: number) => Number(v));
     
-    // Validate: replace NULL/undefined with zero array
-    if (!embedding || embedding.length === 0 || embedding.some(v => v === null || v === undefined || isNaN(v))) {
-      warn(ts(), '[Offscreen] ⚠️  Invalid embedding detected, replacing with zeros');
-      return new Array(384).fill(0);
-    }
-    
-    return embedding;
+  // Validate: replace NaN values with zeros, keep valid values
+  if (!embedding || embedding.length === 0) {
+    warn(ts(), '[Offscreen] ⚠️  Empty embedding detected, replacing entire vector with zeros');
+    return new Array(384).fill(0);
+  }
+  
+  const hasInvalid = embedding.some(v => v === null || v === undefined || isNaN(v));
+  if (hasInvalid) {
+    const invalidCount = embedding.filter(v => v === null || v === undefined || isNaN(v)).length;
+    warn(ts(), `[Offscreen] ⚠️  Found ${invalidCount} invalid values in embedding, replacing with zeros`);
+    return embedding.map(v => (v === null || v === undefined || isNaN(v)) ? 0 : v);
+  }
+  
+  return embedding;
   }
 
   // Otherwise, initialize worker lazily
@@ -153,10 +185,17 @@ async function generateEmbedding(text: string): Promise<number[]> {
     (embeddingWorker as Worker).postMessage({ type: 'embedText', text, requestId });
   });
   
-  // Validate: replace NULL/undefined with zero array
-  if (!embedding || embedding.length === 0 || embedding.some(v => v === null || v === undefined || isNaN(v))) {
-    warn(ts(), '[Offscreen] ⚠️  Invalid embedding from worker, replacing with zeros');
+  // Validate: replace NaN values with zeros, keep valid values
+  if (!embedding || embedding.length === 0) {
+    warn(ts(), '[Offscreen] ⚠️  Empty embedding from worker, replacing entire vector with zeros');
     return new Array(384).fill(0);
+  }
+  
+  const hasInvalid = embedding.some(v => v === null || v === undefined || isNaN(v));
+  if (hasInvalid) {
+    const invalidCount = embedding.filter(v => v === null || v === undefined || isNaN(v)).length;
+    warn(ts(), `[Offscreen] ⚠️  Found ${invalidCount} invalid values in worker embedding, replacing with zeros`);
+    return embedding.map(v => (v === null || v === undefined || isNaN(v)) ? 0 : v);
   }
   
   return embedding;
@@ -165,38 +204,46 @@ async function generateEmbedding(text: string): Promise<number[]> {
 // Generate embeddings for multiple texts (prefer worker by default; WebGPU when preference is 'auto')
 async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (EMBEDDING_RUNTIME_PREFERENCE === 'auto' && pipelineDevice === 'webgpu' && embeddingPipeline) {
-    const BATCH_SIZE = 32;
+    const BATCH_SIZE = 16; // Optimal batch size for GPU performance
     const totalBatches = Math.ceil(texts.length / BATCH_SIZE);
-    const results: number[][] = [];
-    for (let i = 0; i < totalBatches; i++) {
+    
+    // Ensure worker is ready before parallel processing
+    if (!embeddingWorker) {
+      log(ts(), '[Offscreen] Spawning embedding worker...');
+      embeddingWorker = new Worker(new URL('./embedding-worker.ts', import.meta.url), { type: 'module' });
+      await new Promise<void>((resolve, reject) => {
+        const requestId = `init_${Date.now()}`;
+        const onMessage = (ev: MessageEvent) => {
+          if (ev.data?.type === 'workerResponse' && ev.data.requestId === requestId) {
+            (embeddingWorker as Worker).removeEventListener('message', onMessage);
+            ev.data.success ? resolve() : reject(new Error(ev.data.error));
+          }
+        };
+        (embeddingWorker as Worker).addEventListener('message', onMessage);
+        (embeddingWorker as Worker).postMessage({ type: 'initialize', requestId });
+      });
+      log(ts(), '[Offscreen] Embedding worker ready');
+    }
+
+    log(ts(), `[Offscreen] 🚀 Processing ${texts.length} texts in ${totalBatches} parallel batches (WebGPU)...`);
+    const startTime = performance.now();
+
+    // Process ALL batches in parallel (true parallelism)
+    const batchPromises = Array.from({ length: totalBatches }, async (_, i) => {
+      const batchStartTime = performance.now();
       const startIdx = i * BATCH_SIZE;
       const batch = texts.slice(startIdx, Math.min(startIdx + BATCH_SIZE, texts.length));
+      
+      log(ts(), `[Offscreen] 📦 Batch ${i + 1}/${totalBatches} started (${batch.length} texts)`);
+      
       const output = await embeddingPipeline(batch, { pooling: 'mean', normalize: true });
       const size = 384;
-      // Offload heavy conversion to worker: pack view buffer and transfer
-      // Ensure worker is ready
-      if (!embeddingWorker) {
-        log(ts(), '[Offscreen] Spawning embedding worker...');
-        embeddingWorker = new Worker(new URL('./embedding-worker.ts', import.meta.url), { type: 'module' });
-        await new Promise<void>((resolve, reject) => {
-          const requestId = `init_${Date.now()}`;
-          const onMessage = (ev: MessageEvent) => {
-            if (ev.data?.type === 'workerResponse' && ev.data.requestId === requestId) {
-              (embeddingWorker as Worker).removeEventListener('message', onMessage);
-              ev.data.success ? resolve() : reject(new Error(ev.data.error));
-            }
-          };
-          (embeddingWorker as Worker).addEventListener('message', onMessage);
-          (embeddingWorker as Worker).postMessage({ type: 'initialize', requestId });
-        });
-        log(ts(), '[Offscreen] Embedding worker ready');
-      }
-
+      
       const typed = output.data as Float32Array;
       const viewBuffer = typed.buffer.slice(typed.byteOffset, typed.byteOffset + typed.byteLength);
 
       const embeddingsFromWorker: number[][] = await new Promise((resolve, reject) => {
-        const requestId = `post_${Date.now()}_${i}`;
+        const requestId = `post_${Date.now()}_${i}_${Math.random()}`;
         const onMessage = (ev: MessageEvent) => {
           if (ev.data?.type === 'workerResponse' && ev.data.requestId === requestId) {
             (embeddingWorker as Worker).removeEventListener('message', onMessage);
@@ -214,15 +261,37 @@ async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
         }, [viewBuffer]);
       });
 
-      results.push(...embeddingsFromWorker);
-    }
+      const batchDuration = (performance.now() - batchStartTime).toFixed(0);
+      log(ts(), `[Offscreen] ✅ Batch ${i + 1}/${totalBatches} complete (${batchDuration}ms)`);
+
+      return embeddingsFromWorker;
+    });
+
+    const batchResults = await Promise.all(batchPromises);
+    const results = batchResults.flat();
     
-    // Validate all embeddings: replace NULL/undefined with zero arrays
+    const totalDuration = (performance.now() - startTime).toFixed(0);
+    log(ts(), `[Offscreen] ✅ All ${totalBatches} batches completed in parallel (total: ${totalDuration}ms)`);
+    
+    // Validate all embeddings: replace NaN values with zeros, keep valid values
     const validatedResults = results.map((embedding, index) => {
-      if (!embedding || embedding.length === 0 || embedding.some(v => v === null || v === undefined || isNaN(v))) {
-        console.warn(ts(), `[Offscreen] ⚠️  Invalid embedding at index ${index}, replacing with zeros`);
+      if (!embedding || embedding.length === 0) {
+        warn(ts(), `[Offscreen] ⚠️  Empty embedding at index ${index}, replacing entire vector with zeros`);
         return new Array(384).fill(0);
       }
+      
+      const hasInvalid = embedding.some(v => v === null || v === undefined || isNaN(v));
+      if (hasInvalid) {
+        const invalidCount = embedding.filter(v => v === null || v === undefined || isNaN(v)).length;
+        if (invalidCount === 384) {
+          // All values are invalid - this is a pipeline error, replace entire vector
+          warn(ts(), `[Offscreen] ⚠️  Embedding at index ${index} has ALL 384 values invalid (pipeline error), replacing entire vector with zeros`);
+          return new Array(384).fill(0);
+        }
+        warn(ts(), `[Offscreen] ⚠️  Embedding at index ${index} has ${invalidCount} invalid values, replacing with zeros`);
+        return embedding.map(v => (v === null || v === undefined || isNaN(v)) ? 0 : v);
+      }
+      
       return embedding;
     });
     
@@ -230,7 +299,7 @@ async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   }
 
   if (!embeddingWorker) {
-    console.log(ts(), '[Offscreen] Spawning embedding worker...');
+    log(ts(), '[Offscreen] Spawning embedding worker (WASM)...');
     embeddingWorker = new Worker(new URL('./embedding-worker.ts', import.meta.url), { type: 'module' });
     await new Promise<void>((resolve, reject) => {
       const requestId = `init_${Date.now()}`;
@@ -243,8 +312,11 @@ async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
       (embeddingWorker as Worker).addEventListener('message', onMessage);
       (embeddingWorker as Worker).postMessage({ type: 'initialize', requestId });
     });
-    console.log(ts(), '[Offscreen] Embedding worker ready');
+    log(ts(), '[Offscreen] Embedding worker ready');
   }
+
+  log(ts(), `[Offscreen] 🚀 Processing ${texts.length} texts via WASM worker...`);
+  const startTime = performance.now();
 
   const embeddings = await new Promise<number[][]>((resolve, reject) => {
     const requestId = `batch_${Date.now()}`;
@@ -257,13 +329,29 @@ async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
     (embeddingWorker as Worker).addEventListener('message', onMessage);
     (embeddingWorker as Worker).postMessage({ type: 'generateEmbeddings', texts, requestId });
   });
+
+  const totalDuration = (performance.now() - startTime).toFixed(0);
+  log(ts(), `[Offscreen] ✅ WASM worker completed ${texts.length} embeddings (${totalDuration}ms)`);
   
-  // Validate all embeddings: replace NULL/undefined with zero arrays
+  // Validate all embeddings: replace NaN values with zeros, keep valid values
   const validatedEmbeddings = embeddings.map((embedding, index) => {
-    if (!embedding || embedding.length === 0 || embedding.some(v => v === null || v === undefined || isNaN(v))) {
-      console.warn(ts(), `[Offscreen] ⚠️  Invalid embedding from worker at index ${index}, replacing with zeros`);
+    if (!embedding || embedding.length === 0) {
+      warn(ts(), `[Offscreen] ⚠️  Empty embedding from worker at index ${index}, replacing entire vector with zeros`);
       return new Array(384).fill(0);
     }
+    
+    const hasInvalid = embedding.some(v => v === null || v === undefined || isNaN(v));
+    if (hasInvalid) {
+      const invalidCount = embedding.filter(v => v === null || v === undefined || isNaN(v)).length;
+      if (invalidCount === 384) {
+        // All values are invalid - this is a pipeline error, replace entire vector
+        warn(ts(), `[Offscreen] ⚠️  Worker embedding at index ${index} has ALL 384 values invalid (pipeline error), replacing entire vector with zeros`);
+        return new Array(384).fill(0);
+      }
+      warn(ts(), `[Offscreen] ⚠️  Worker embedding at index ${index} has ${invalidCount} invalid values, replacing with zeros`);
+      return embedding.map(v => (v === null || v === undefined || isNaN(v)) ? 0 : v);
+    }
+    
     return embedding;
   });
   

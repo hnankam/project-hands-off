@@ -413,7 +413,20 @@ class PageAnalyzer {
         // Extract incremental DOM update details
         const domUpdate = this.extractDOMUpdate(capturedMutations);
         
-        log('[CEB] Page content changed, notifying extension with incremental update');
+        // Only notify if there are actual changes (filter out empty updates)
+        const hasActualChanges = domUpdate.summary.addedCount > 0 || 
+                                 domUpdate.summary.removedCount > 0 || 
+                                 domUpdate.summary.textChangesCount > 0;
+        
+        if (!hasActualChanges) {
+          log('[CEB] DOM mutations detected but no significant changes to report, skipping notification');
+          changeDetected = false;
+          capturedMutations = [];
+          return;
+        }
+        
+        log('[CEB] Page content changed, notifying extension with incremental update', 
+            `(+${domUpdate.summary.addedCount} -${domUpdate.summary.removedCount} ~${domUpdate.summary.textChangesCount})`);
         chrome.runtime.sendMessage({
           type: 'domContentChanged',
           tabId: chrome.runtime.id, // Will be set by background script

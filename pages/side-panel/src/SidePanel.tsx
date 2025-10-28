@@ -15,8 +15,12 @@ import {
 } from '@extension/ui';
 import { HomePage } from './pages/HomePage';
 import { SessionsPage } from './pages/SessionsPage';
+import { useDBWorkerClient } from './hooks/useDBWorkerClient';
 
 const SidePanel = () => {
+  // Initialize DB worker client (required for embeddings storage)
+  const { isReady: dbWorkerReady, error: dbWorkerError } = useDBWorkerClient();
+
   // Defensive check for React
   if (typeof React === 'undefined' || !React || !React.useState) {
     console.error('[SidePanel] React is not properly loaded!', { React, hasUseState: !!(React as any)?.useState });

@@ -32,11 +32,51 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
   const autoCloseTimerRef = useRef<NodeJS.Timeout | null>(null);
   const manualOnlyRef = useRef(false); // After auto-close, only manual toggling allowed
   const prevStreamingRef = useRef<boolean>(false);
+  const myIdRef = useRef<number>(0);
+  const [isLatest, setIsLatest] = useState(false);
 
-  // Open during streaming; close shortly after streaming ends. Once auto-closed, switch to manual-only.
+  // Global coordination: ensure only the newest mounted block is considered "latest"
+  // so only that block reflects the global streaming state in its title.
+  // We coordinate via a window-level custom event to update all instances.
+  // Module-scoped vars
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  (window as any).__thinkingBlockSeq = (window as any).__thinkingBlockSeq || 0;
+  (window as any).__thinkingBlockLatest = (window as any).__thinkingBlockLatest || 0;
+
+  useEffect(() => {
+    // Assign a unique id to this instance
+    const seq = (window as any).__thinkingBlockSeq + 1;
+    (window as any).__thinkingBlockSeq = seq;
+    myIdRef.current = seq;
+    // Mark this as latest and notify others
+    (window as any).__thinkingBlockLatest = seq;
+    const ev = new CustomEvent('thinking-latest-changed', { detail: { id: seq } });
+    window.dispatchEvent(ev);
+    setIsLatest(true);
+
+    const handler = (e: any) => {
+      const latestId = e?.detail?.id;
+      setIsLatest(latestId === myIdRef.current);
+    };
+    const closeAllHandler = () => {
+      // Close block unless it was manually forced open recently
+      setIsOpen(false);
+      manualOnlyRef.current = true; // After programmatic close, keep manual-only to avoid auto-opening
+    };
+    window.addEventListener('thinking-latest-changed', handler);
+    window.addEventListener('thinking-close-all', closeAllHandler);
+    return () => {
+      window.removeEventListener('thinking-latest-changed', handler);
+      window.removeEventListener('thinking-close-all', closeAllHandler);
+    };
+  }, []);
+
+  // Open during streaming for the latest block; close shortly after streaming ends.
+  // Once auto-closed, switch to manual-only.
   useEffect(() => {
     const prev = prevStreamingRef.current;
-    prevStreamingRef.current = isStreaming;
+    const isActiveStreaming = isStreaming && isLatest;
+    prevStreamingRef.current = isActiveStreaming;
 
     // Clear any pending close timer on state change
     if (autoCloseTimerRef.current) {
@@ -44,20 +84,20 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
       autoCloseTimerRef.current = null;
     }
 
-    if (isStreaming && !manualOnlyRef.current) {
+    if (isActiveStreaming && !manualOnlyRef.current) {
       // While streaming, keep it open
       setIsOpen(true);
       return;
     }
 
     // When streaming transitions to false for the first time, auto-close and enter manual-only mode
-    if (!isStreaming && prev && !manualOnlyRef.current) {
+    if (!isActiveStreaming && prev && !manualOnlyRef.current) {
       autoCloseTimerRef.current = setTimeout(() => {
         setIsOpen(false);
         manualOnlyRef.current = true; // From now on, only manual open/close
       }, 800);
     }
-  }, [isStreaming]);
+  }, [isStreaming, isLatest]);
   
   const toggleAccordion = () => {
     setIsOpen(!isOpen);
@@ -69,6 +109,59 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
     }
   };
   
+  // PERFORMANCE: Pre-compile regex patterns once
+  const THINKING_OPEN_RE = React.useMemo(() => /<thinking\s*>/i, []);
+  const THINKING_CLOSE_RE = React.useMemo(() => /<\/thinking\s*>/i, []);
+  const THINKING_TAGS_RE = React.useMemo(() => /<\/?thinking\s*>/gi, []);
+
+  // Extract only the content that is actually inside <thinking>...</thinking> tags.
+  // The markdown renderer should only pass content between the tags, but sometimes
+  // malformed markdown causes the entire response to be wrapped. This extracts
+  // just the thinking portion and strips any tag artifacts.
+  const extractThinkingInner = React.useCallback((node: React.ReactNode): React.ReactNode => {
+    // Collapse multiple blank lines to a single newline for cleaner display
+    const collapseBlankLines = (text: string): string => text.replace(/(\r?\n)\s*(\r?\n)+/g, '$1');
+
+    // Helper to recursively collect all text content from React nodes
+    const collectText = (n: React.ReactNode): string => {
+      if (typeof n === 'string') return n;
+      if (typeof n === 'number') return String(n);
+      if (Array.isArray(n)) return n.map(collectText).join('');
+      if (React.isValidElement(n)) {
+        const el = n as React.ReactElement<{ children?: React.ReactNode }>;
+        return collectText(el.props?.children);
+      }
+      return '';
+    };
+
+    // Get all text to check for thinking tags
+    const allText = collectText(node);
+    
+    // PERFORMANCE: Early exit if no thinking tags present
+    if (!allText.includes('<thinking') && !allText.includes('</thinking')) {
+      return node;
+    }
+    
+    // If content has thinking tags, extract only what's between the first valid pair
+    const openMatch = allText.match(THINKING_OPEN_RE);
+    const closeMatch = allText.match(THINKING_CLOSE_RE);
+    
+    if (openMatch && closeMatch && openMatch.index !== undefined && closeMatch.index !== undefined) {
+      const start = openMatch.index + openMatch[0].length;
+      const end = closeMatch.index;
+      
+      if (end > start) {
+        // Return only the content between the tags, stripped of any tag artifacts
+        return collapseBlankLines(
+          allText.slice(start, end).replace(THINKING_TAGS_RE, '').trim()
+        );
+      }
+    }
+    
+    // If tags are malformed or unmatched, strip all tag artifacts and return content
+    return collapseBlankLines(allText.replace(THINKING_TAGS_RE, '').trim());
+  }, [THINKING_OPEN_RE, THINKING_CLOSE_RE, THINKING_TAGS_RE]);
+
   // Remove a single leading space character from the very first text node only,
   // preserving newlines and internal spacing for pre-wrap semantics.
   const normalizedChildren = React.useMemo(() => {
@@ -133,8 +226,9 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
       return node;
     };
 
-    return trimNode(children);
-  }, [children]);
+    const innerOnly = extractThinkingInner(children);
+    return trimNode(innerOnly);
+  }, [children, extractThinkingInner]);
 
   return (
     <div
@@ -165,7 +259,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
         
         {/* Title */}
         <div className={`flex-1 text-xs font-medium ${isLight ? 'text-blue-700/80' : 'text-blue-300/80'}`}>
-          {isStreaming ? 'Thinking...' : 'Thought'}
+          {isStreaming && isLatest ? 'Thinking...' : 'Thought'}
         </div>
         
         {/* Chevron icon for accordion state */}
@@ -183,14 +277,20 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
         </svg>
       </button>
       
-      {/* Accordion Content - Collapsible (scrollable with thin messages scrollbar) */}
+      {/* Accordion Content - Collapsible. While streaming, expand and disable vertical scrollbar */}
       <div
         id="thinking-content"
         className={`overflow-hidden transition-all duration-200 ease-in-out ${
-          isOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'
+          isOpen
+            ? (isStreaming && isLatest ? 'max-h-[75vh] opacity-100' : 'max-h-[500px] opacity-100')
+            : 'max-h-0 opacity-0'
         }`}>
         <div
-          className={`p-2 pl-3 pr-3 text-xs overflow-y-auto max-h-40 overscroll-contain session-tabs-scroll ${
+          className={`p-2 pl-3 pr-3 text-xs ${
+            isStreaming && isLatest
+              ? 'overflow-y-hidden max-h-none'
+              : 'overflow-y-auto max-h-40 overscroll-contain session-tabs-scroll'
+          } ${
             isLight ? 'text-blue-900/80' : 'text-blue-100/80'
           } [&_.whitespace-pre-wrap]:m-0 [&_.whitespace-pre-wrap]:p-0 [&_.whitespace-pre-wrap]:text-[13px] [&_.whitespace-pre-wrap]:leading-[1.35]
              [&_.copilotKitMarkdownElement]:m-0 [&_.copilotKitMarkdownElement]:p-0 [&_.copilotKitMarkdownElement:not(:last-child)]:!mb-0`}

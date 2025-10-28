@@ -6,9 +6,8 @@
 import { DBWorkerClient } from './db-worker-client.js';
 
 // Note: This test file needs to be moved to pages/side-panel/src/lib/__tests__
-// For now, create a temporary instance with a placeholder path
-const embeddingsStorage = new DBWorkerClient({
-  workerUrl: new URL('../../../pages/side-panel/src/workers/db-worker.ts', import.meta.url),
+// For now, create a temporary instance using default worker path
+const dbWorkerClient = new DBWorkerClient({
   debug: true,
 });
 
@@ -18,7 +17,7 @@ export async function testWorkerImplementation() {
   try {
     // Test 1: Initialization
     console.log('Test 1: Worker Initialization');
-    await embeddingsStorage.initialize(true); // Use memory (default dbName)
+    await dbWorkerClient.initialize(true); // Use memory (default dbName)
     console.log('✅ Worker initialized\n');
 
     // Test 2: Store HTML Chunks
@@ -31,7 +30,7 @@ export async function testWorkerImplementation() {
     }));
 
     const startStore = performance.now();
-    const storePromise = embeddingsStorage.storeHTMLChunks({
+    const storePromise = dbWorkerClient.storeHTMLChunks({
       pageURL: 'https://test.example.com',
       pageTitle: 'Test Page',
       chunks: testChunks,
@@ -50,7 +49,7 @@ export async function testWorkerImplementation() {
     console.log('Test 3: Search HTML Chunks');
     const queryEmbedding = Array.from({ length: 384 }, () => Math.random());
     const startSearch = performance.now();
-    const searchResults = await embeddingsStorage.searchHTMLChunks(
+    const searchResults = await dbWorkerClient.searchHTMLChunks(
       'https://test.example.com',
       queryEmbedding,
       5
@@ -73,7 +72,7 @@ export async function testWorkerImplementation() {
       },
     ];
 
-    await embeddingsStorage.storeFormFields({
+    await dbWorkerClient.storeFormFields({
       pageURL: 'https://test.example.com',
       groups: testFormGroups,
       sessionId: 'test-session',
@@ -82,7 +81,7 @@ export async function testWorkerImplementation() {
 
     // Test 5: Search Form Fields
     console.log('Test 5: Search Form Fields');
-    const formResults = await embeddingsStorage.searchFormFields(
+    const formResults = await dbWorkerClient.searchFormFields(
       'https://test.example.com',
       queryEmbedding,
       3
@@ -104,7 +103,7 @@ export async function testWorkerImplementation() {
       },
     ];
 
-    await embeddingsStorage.storeClickableElements({
+    await dbWorkerClient.storeClickableElements({
       pageURL: 'https://test.example.com',
       groups: testClickableGroups,
       sessionId: 'test-session',
@@ -113,7 +112,7 @@ export async function testWorkerImplementation() {
 
     // Test 7: Search Clickable Elements
     console.log('Test 7: Search Clickable Elements');
-    const clickableResults = await embeddingsStorage.searchClickableElements(
+    const clickableResults = await dbWorkerClient.searchClickableElements(
       'https://test.example.com',
       queryEmbedding,
       3
@@ -125,9 +124,9 @@ export async function testWorkerImplementation() {
     // Test 8: Concurrent Operations
     console.log('Test 8: Concurrent Operations (Non-blocking)');
     const concurrent = await Promise.all([
-      embeddingsStorage.searchHTMLChunks('https://test.example.com', queryEmbedding, 3),
-      embeddingsStorage.searchFormFields('https://test.example.com', queryEmbedding, 2),
-      embeddingsStorage.searchClickableElements('https://test.example.com', queryEmbedding, 2),
+      dbWorkerClient.searchHTMLChunks('https://test.example.com', queryEmbedding, 3),
+      dbWorkerClient.searchFormFields('https://test.example.com', queryEmbedding, 2),
+      dbWorkerClient.searchClickableElements('https://test.example.com', queryEmbedding, 2),
     ]);
     console.log('✅ All concurrent operations completed');
     console.log(`   HTML: ${concurrent[0].length}, Forms: ${concurrent[1].length}, Clickable: ${concurrent[2].length}\n`);
@@ -142,7 +141,7 @@ export async function testWorkerImplementation() {
     }));
 
     const startLarge = performance.now();
-    await embeddingsStorage.storeHTMLChunks({
+    await dbWorkerClient.storeHTMLChunks({
       pageURL: 'https://test-large.example.com',
       pageTitle: 'Large Test Page',
       chunks: largeChunks,
@@ -195,7 +194,7 @@ export function testUIResponsiveness() {
   console.log('Starting storage of 100 chunks...');
   console.log('🖱️  TRY INTERACTING WITH THE UI NOW!');
 
-  embeddingsStorage.storeHTMLChunks({
+  dbWorkerClient.storeHTMLChunks({
     pageURL: 'https://responsiveness-test.example.com',
     pageTitle: 'Responsiveness Test',
     chunks: testChunks,

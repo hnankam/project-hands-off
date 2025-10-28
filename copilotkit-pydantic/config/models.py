@@ -1,7 +1,14 @@
-"""Model configurations for different AI providers."""
+"""Model configurations loaded from a configuration file."""
 
 import os
+import json
+import importlib
+from pathlib import Path
+from typing import Any, Dict
+
 from anthropic import AsyncAnthropicBedrock
+from openai import AsyncAzureOpenAI
+
 from pydantic_ai import ModelSettings
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from pydantic_ai.models.anthropic import AnthropicModelSettings
@@ -10,137 +17,261 @@ from pydantic_ai.models.openai import OpenAIModel, OpenAIModelSettings
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
-from openai import AsyncAzureOpenAI
-
-# Model Settings
-model_settings = ModelSettings(
-    temperature=0.0,
-    max_tokens=2048,
-)
-
-google_model_settings = GoogleModelSettings(
-    google_thinking_config={'include_thoughts': True, 'thinking_budget': 1024},
-    temperature=0.0,
-    max_tokens=1024,
-)
-
-anthropic_model_settings = AnthropicModelSettings(
-    extra_headers={
-        "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,context-1m-2025-08-07"
-    },
-    temperature=0.0,
-    max_tokens=4096,
-)
-
-bedrock_model_settings = BedrockModelSettings(
-    bedrock_additional_model_requests_fields={
-        "thinking": {"type": "enabled", "budget_tokens": 1024},
-        "max_tokens": 4096,
-    },
-)
-
-openai_model_settings = OpenAIModelSettings(
-    temperature=0.0,
-    max_tokens=4096,
-)
-
-# Model Providers
-google_provider = GoogleProvider(api_key=os.getenv('GOOGLE_API_KEY'))
-anthropic_provider = AnthropicProvider(anthropic_client=AsyncAnthropicBedrock())
-
-# Azure OpenAI provider configuration
-openai_provider = OpenAIProvider(openai_client=AsyncAzureOpenAI(
-    azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT'),
-    api_version=os.getenv('AZURE_OPENAI_API_VERSION'),
-    api_key=os.getenv('AZURE_OPENAI_API_KEY'),
-))
 
 
-def _get_models():
-    """Lazy initialization of models to avoid circular imports."""
-    from utils.anthropic_cache import AnthropicModelWithCache
+# Internal cache
+_models_cache: Dict[str, Dict[str, Any]] | None = None
+_model_names_cache: list[str] | None = None
+_backcompat_settings: Dict[str, Any] | None = None
+
+
+def _load_config() -> Dict[str, Any]:
+    """Load models configuration JSON.
     
-    return {
-        'gemini-2.5-flash-lite': {
-            'model': GoogleModel('gemini-2.5-flash-lite', provider=google_provider),
-            'model_settings': google_model_settings
-        },
-        'gemini-2.5-flash': {
-            'model': GoogleModel('gemini-2.5-flash', provider=google_provider),
-            'model_settings': google_model_settings
-        },
-        'gemini-2.5-pro': {
-            'model': GoogleModel('gemini-2.5-pro', provider=google_provider),
-            'model_settings': google_model_settings
-        },
-        'claude-3.5-sonnet': {
-            'model': AnthropicModelWithCache('us.anthropic.claude-3-5-sonnet-20241022-v2:0', provider=anthropic_provider),
-            'model_settings': anthropic_model_settings
-        },
-        'claude-3.7-sonnet': {
-            'model': AnthropicModelWithCache('us.anthropic.claude-3-7-sonnet-20250219-v1:0', provider=anthropic_provider),
-            'model_settings': anthropic_model_settings
-        },
-        'claude-4.1-opus': {
-            'model': AnthropicModelWithCache('us.anthropic.claude-opus-4-1-20250805-v1:0', provider=anthropic_provider),
-            'model_settings': anthropic_model_settings
-        },
-        'claude-4.5-sonnet': {
-            'model': AnthropicModelWithCache('us.anthropic.claude-sonnet-4-5-20250929-v1:0', provider=anthropic_provider),
-            'model_settings': anthropic_model_settings
-        },
-        'claude-4.5-haiku': {
-            'model': AnthropicModelWithCache('us.anthropic.claude-haiku-4-5-20251001-v1:0', provider=anthropic_provider),
-            'model_settings': anthropic_model_settings
-        },
-        'gpt-5-mini': {
-            'model': OpenAIModel('gpt-5-mini', provider=openai_provider),
-            'model_settings': openai_model_settings
-        },
-        'gpt-5': {
-            'model': OpenAIModel('gpt-5', provider=openai_provider),
-            'model_settings': openai_model_settings
-        },
-        'gpt5-pro': {
-            'model': OpenAIModel('gpt5-pro', provider=openai_provider),
-            'model_settings': openai_model_settings
-        },
-    }
+    Path is resolved from environment variable MODELS_CONFIG_PATH or defaults to
+    copilotkit-pydantic/config/models.json.
+    """
+    default_path = Path(__file__).with_suffix('.json')
+    config_path = Path(os.getenv('MODELS_CONFIG_PATH', str(default_path)))
+    if not config_path.exists():
+        raise FileNotFoundError(f"Models configuration not found at {config_path}")
+    with config_path.open('r', encoding='utf-8') as f:
+        return json.load(f)
 
 
-# Lazy-loaded models dictionary
-_models_cache = None
+def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Build provider instances from configuration.
+    
+    All credentials must be provided in the configuration file.
+    For multi-tenant support, each team/org will have their own credential set.
+    """
+    providers: Dict[str, Any] = {}
+
+    for provider_key, provider_cfg in (config.get('providers') or {}).items():
+        provider_type = provider_cfg.get('type')
+        credentials = provider_cfg.get('credentials', {})
+        
+        if provider_type == 'google':
+            # Direct credential from config (required)
+            api_key = credentials.get('api_key')
+            if not api_key:
+                raise ValueError(f"Provider '{provider_key}': api_key is required in credentials")
+            
+            providers[provider_key] = GoogleProvider(api_key=api_key)
+            
+        elif provider_type in {'anthropic', 'anthropic_bedrock'}:
+            # Bedrock Anthropic - pass credentials directly to the client
+            aws_access_key_id = credentials.get('aws_access_key_id')
+            aws_secret_access_key = credentials.get('aws_secret_access_key')
+            aws_session_token = credentials.get('aws_session_token')
+            region = credentials.get('region')
+            
+            if not aws_access_key_id or not aws_secret_access_key:
+                raise ValueError(f"Provider '{provider_key}': aws_access_key_id and aws_secret_access_key are required")
+            if not region:
+                raise ValueError(f"Provider '{provider_key}': region is required")
+            
+            providers[provider_key] = AnthropicProvider(
+                anthropic_client=AsyncAnthropicBedrock(
+                    aws_access_key=aws_access_key_id,
+                    aws_secret_key=aws_secret_access_key,
+                    aws_session_token=aws_session_token,
+                    aws_region=region,
+                )
+            )
+            
+        elif provider_type in {'openai', 'azure_openai'}:
+            # Direct credentials from config (required)
+            endpoint = credentials.get('endpoint')
+            api_version = credentials.get('api_version')
+            api_key = credentials.get('api_key')
+            
+            if not endpoint:
+                raise ValueError(f"Provider '{provider_key}': endpoint is required in credentials")
+            if not api_version:
+                raise ValueError(f"Provider '{provider_key}': api_version is required in credentials")
+            if not api_key:
+                raise ValueError(f"Provider '{provider_key}': api_key is required in credentials")
+            
+            providers[provider_key] = OpenAIProvider(openai_client=AsyncAzureOpenAI(
+                azure_endpoint=endpoint,
+                api_version=api_version,
+                api_key=api_key,
+            ))
+        else:
+            raise ValueError(f"Unsupported provider type: {provider_type}")
+    return providers
 
 
-def get_models():
-    """Get the models dictionary (lazy-loaded)."""
-    global _models_cache
+def _build_settings_factories(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Create per-provider default ModelSettings instances for back-compat and reuse."""
+    factories: Dict[str, Any] = {}
+    for provider_key, provider_cfg in (config.get('providers') or {}).items():
+        provider_type = provider_cfg.get('type')
+        settings_cfg: Dict[str, Any] = provider_cfg.get('model_settings') or {}
+
+        if provider_type == 'google':
+            factories[provider_key] = GoogleModelSettings(
+                google_thinking_config=settings_cfg.get('google_thinking_config'),
+                temperature=settings_cfg.get('temperature', 0.0),
+                max_tokens=settings_cfg.get('max_tokens', 4096),
+            )
+        elif provider_type in {'anthropic', 'anthropic_bedrock'}:
+            factories[provider_key] = AnthropicModelSettings(
+                extra_headers=settings_cfg.get('extra_headers') or {},
+                temperature=settings_cfg.get('temperature', 0.0),
+                max_tokens=settings_cfg.get('max_tokens', 4096),
+            )
+        elif provider_type in {'openai', 'azure_openai'}:
+            factories[provider_key] = OpenAIModelSettings(
+                temperature=settings_cfg.get('temperature', 0.0),
+                max_tokens=settings_cfg.get('max_tokens', 4096),
+            )
+    return factories
+
+
+def _build_models(config: Dict[str, Any]) -> tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
+    """Instantiate models and settings from config.
+    
+    Returns a tuple of (models_dict, backcompat_settings) where models_dict maps
+    model key -> {'model': Model, 'model_settings': ModelSettings}
+    and backcompat_settings contains representative settings for backward exports.
+    """
+    providers = _build_providers(config)
+    settings_factories = _build_settings_factories(config)
+
+    # Note: We delay imports of custom model classes until we need them to avoid circular imports
+    models: Dict[str, Dict[str, Any]] = {}
+
+    for model_cfg in (config.get('models') or []):
+        key = model_cfg['key']
+        provider_ref = model_cfg['provider']
+        model_name = model_cfg['name']
+        provider = providers.get(provider_ref)
+        if provider is None:
+            raise ValueError(f"Model '{key}' references unknown provider '{provider_ref}'")
+
+        # Per-model overrides for settings
+        per_model_settings_cfg = (model_cfg.get('model_settings') or {})
+        provider_type = (config['providers'][provider_ref]).get('type')
+
+        if provider_type == 'google':
+            # Lazy import to avoid circular dependency - use importlib to bypass utils.__init__
+            google_module = importlib.import_module('utils.google_attachments')
+            GoogleModelWithAttachments = google_module.GoogleModelWithAttachments
+            
+            factory_settings = settings_factories.get(provider_ref, {})
+            settings = GoogleModelSettings(
+                google_thinking_config=per_model_settings_cfg.get('google_thinking_config') or factory_settings.get('google_thinking_config'),
+                temperature=per_model_settings_cfg.get('temperature', factory_settings.get('temperature', 0.0)),
+                max_tokens=per_model_settings_cfg.get('max_tokens', factory_settings.get('max_tokens', 4096)),
+            )
+            model_instance = GoogleModelWithAttachments(model_name, provider=provider)
+        elif provider_type in {'anthropic', 'anthropic_bedrock'}:
+            # Lazy import to avoid circular dependency - use importlib to bypass utils.__init__
+            anthropic_module = importlib.import_module('utils.anthropic_cache')
+            AnthropicModelWithCache = anthropic_module.AnthropicModelWithCache
+            
+            factory_settings = settings_factories.get(provider_ref, {})
+            settings = AnthropicModelSettings(
+                extra_headers=per_model_settings_cfg.get('extra_headers') or factory_settings.get('extra_headers', {}),
+                temperature=per_model_settings_cfg.get('temperature', factory_settings.get('temperature', 0.0)),
+                max_tokens=per_model_settings_cfg.get('max_tokens', factory_settings.get('max_tokens', 4096)),
+            )
+            model_instance = AnthropicModelWithCache(model_name, provider=provider)
+        elif provider_type in {'openai', 'azure_openai'}:
+            factory_settings = settings_factories.get(provider_ref, {})
+            settings = OpenAIModelSettings(
+                temperature=per_model_settings_cfg.get('temperature', factory_settings.get('temperature', 0.0)),
+                max_tokens=per_model_settings_cfg.get('max_tokens', factory_settings.get('max_tokens', 4096)),
+            )
+            model_instance = OpenAIModel(model_name, provider=provider)
+        else:
+            # Fallback generic
+            settings = ModelSettings(
+                temperature=per_model_settings_cfg.get('temperature', 0.0),
+                max_tokens=per_model_settings_cfg.get('max_tokens', 2048),
+            )
+            model_instance = OpenAIModel(model_name, provider=provider)  # pragma: no cover
+
+        models[key] = {
+            'model': model_instance,
+            'model_settings': settings,
+        }
+
+    # Backward-compat representative settings (first seen for each type)
+    backcompat: Dict[str, Any] = {}
+    for provider_key, provider_cfg in (config.get('providers') or {}).items():
+        ptype = provider_cfg.get('type')
+        if ptype == 'google' and 'google_model_settings' not in backcompat:
+            backcompat['google_model_settings'] = settings_factories[provider_key]
+        elif ptype in {'anthropic', 'anthropic_bedrock'} and 'anthropic_model_settings' not in backcompat:
+            backcompat['anthropic_model_settings'] = settings_factories[provider_key]
+            # Provide a Bedrock settings object for parity if present in config
+            bedrock_cfg = provider_cfg.get('bedrock_model_settings') or {}
+            backcompat['bedrock_model_settings'] = BedrockModelSettings(
+                bedrock_additional_model_requests_fields=bedrock_cfg.get('bedrock_additional_model_requests_fields')
+            ) if bedrock_cfg else BedrockModelSettings(
+                bedrock_additional_model_requests_fields={'thinking': {'type': 'enabled', 'budget_tokens': 1024}, 'max_tokens': 4096}
+            )
+        elif ptype in {'openai', 'azure_openai'} and 'openai_model_settings' not in backcompat:
+            backcompat['openai_model_settings'] = settings_factories[provider_key]
+
+    return models, backcompat
+
+
+def get_models() -> Dict[str, Dict[str, Any]]:
+    """Get the models dictionary (lazy-loaded from JSON config)."""
+    global _models_cache, _model_names_cache, _backcompat_settings
     if _models_cache is None:
-        _models_cache = _get_models()
+        config = _load_config()
+        _models_cache, _backcompat_settings = _build_models(config)
+        _model_names_cache = list(_models_cache.keys())
     return _models_cache
 
 
-# For backward compatibility, expose MODELS as a property-like access
+def get_model_names() -> list[str]:
+    """Get list of available model names without instantiating models."""
+    global _model_names_cache
+    if _model_names_cache is None:
+        # Load names directly from config without instantiating models
+        config = _load_config()
+        _model_names_cache = [m['key'] for m in (config.get('models') or [])]
+    return _model_names_cache or []
+
+
+# Backward-compat module-level exports
 MODELS = property(lambda self: get_models())
 
-# For direct module-level access
+# Keep exported settings names for callers that import them
+# Use a generic base model_settings for callers expecting a ModelSettings
+model_settings = ModelSettings(temperature=0.0, max_tokens=2048)
+
+google_model_settings = None
+anthropic_model_settings = None
+bedrock_model_settings = None
+
+
+# Provide attribute access for MODELS at module level
 def __getattr__(name):
     if name == 'MODELS':
         return get_models()
+    if name == 'MODEL_NAMES':
+        return get_model_names()
+    if name in {'google_model_settings', 'anthropic_model_settings', 'bedrock_model_settings'}:
+        # Ensure models (and backcompat settings) are initialized on first access
+        global google_model_settings, anthropic_model_settings, bedrock_model_settings
+        if _backcompat_settings is None:
+            _ = get_models()
+        google_model_settings = _backcompat_settings.get('google_model_settings') if _backcompat_settings else None
+        anthropic_model_settings = _backcompat_settings.get('anthropic_model_settings') if _backcompat_settings else None
+        bedrock_model_settings = _backcompat_settings.get('bedrock_model_settings') if _backcompat_settings else None
+        return {
+            'google_model_settings': google_model_settings,
+            'anthropic_model_settings': anthropic_model_settings,
+            'bedrock_model_settings': bedrock_model_settings,
+        }[name]
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
-# Available model names for route generation
-MODEL_NAMES = [
-    'gemini-2.5-flash-lite',
-    'gemini-2.5-flash', 
-    'gemini-2.5-pro',
-    'claude-3.5-sonnet',
-    'claude-3.7-sonnet',
-    'claude-4.1-opus',
-    'claude-4.5-sonnet',
-    'claude-4.5-haiku',
-    'gpt-5-mini',
-    'gpt-5',
-    'gpt5-pro',
-]
+# Available model names are provided lazily via get_model_names()
 

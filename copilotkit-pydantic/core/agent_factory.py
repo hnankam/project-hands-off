@@ -5,7 +5,6 @@ from pydantic_ai.ag_ui import StateDeps
 
 from config import AGENT_PROMPTS, get_models, logger
 from core.models import AgentState
-from utils.message_processor import keep_recent_messages
 from tools.agent_tools import register_agent_tools
 
 # Agent cache for reusing agent instances
@@ -22,6 +21,9 @@ def create_agent(agent_type: str, model_name: str) -> Agent:
     Returns:
         Configured Agent instance
     """
+    # Lazy import to avoid circular dependency
+    from utils.message_processor import process_message_attachments, keep_recent_messages
+    
     MODELS = get_models()
     instructions = AGENT_PROMPTS.get(agent_type, AGENT_PROMPTS["general"])
     model = MODELS.get(model_name, MODELS['claude-4.5-haiku'])['model']
@@ -32,7 +34,7 @@ def create_agent(agent_type: str, model_name: str) -> Agent:
         instructions=instructions,
         deps_type=StateDeps[AgentState],
         model_settings=model_settings,
-        history_processors=[keep_recent_messages],
+        history_processors=[process_message_attachments, keep_recent_messages],
         retries=3,
     )
     

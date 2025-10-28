@@ -4,31 +4,33 @@
   'use strict';
 
   /**
-   * Generate a short, unique CSS selector for an element in the main DOM.
+   * Generate a short, unique CSS selector for an element in the main DOM or shadow DOM.
    * - Early-returns as soon as a unique selector is found
    * - Uses parent-scoped nth-of-type to avoid document-wide scans
    * - If no short unique selector is found, returns a guaranteed-unique path from body using nth-child
+   * - NOW SHADOW DOM AWARE: Pass shadowRoot parameter for elements in shadow DOM
    *
-   * Note: This utility queries the main DOM only. For shadow DOM, run it with the element’s shadowRoot as the root in a wrapper, or use a context-aware helper.
-   * @param {Element} el
+   * @param {Element} el - The element to generate a selector for
+   * @param {ShadowRoot|null} shadowRoot - Optional shadow root if element is in shadow DOM
    * @returns {{ selector: string, isUnique: boolean }}
    */
-  function generateFastSelector(el) {
+  function generateFastSelector(el, shadowRoot = null) {
     if (!el || el.nodeType !== Node.ELEMENT_NODE) {
       return { selector: 'body', isUnique: false };
     }
 
     // Guard CSS.escape availability
     if (typeof CSS === 'undefined' || typeof CSS.escape !== 'function') {
-      // Fallback: hierarchical path from body
-      return buildGuaranteedUnique(el);
+      // Fallback: hierarchical path from body/shadow root
+      return buildGuaranteedUnique(el, shadowRoot);
     }
 
     const tagName = el.tagName.toLowerCase();
+    const root = shadowRoot || document; // Use shadow root if provided, otherwise main document
     
     const isUnique = (selector) => {
       try {
-        const matches = document.querySelectorAll(selector);
+        const matches = root.querySelectorAll(selector); // Query the correct root
         return matches.length === 1 && matches[0] === el;
       } catch {
         return false;
@@ -125,14 +127,16 @@
       }
     }
 
-    // Final fallback: Build path from body using nth-child (guaranteed unique)
-    return buildGuaranteedUnique(el);
+    // Final fallback: Build path from body/shadow root using nth-child (guaranteed unique)
+    return buildGuaranteedUnique(el, shadowRoot);
   }
 
-  function buildGuaranteedUnique(el) {
+  function buildGuaranteedUnique(el, shadowRoot = null) {
     const path = [];
     let current = el;
-    while (current && current !== document.body) {
+    const rootNode = shadowRoot || document.body;
+    
+    while (current && current !== rootNode && current.parentElement) {
       const parent = current.parentElement;
       if (!parent) break;
       const siblings = Array.from(parent.children);
@@ -140,14 +144,17 @@
       path.unshift(`${current.tagName.toLowerCase()}:nth-child(${index})`);
       current = parent;
     }
-    const uniqueSelector = path.length > 0 ? `body > ${path.join(' > ')}` : el.tagName.toLowerCase();
+    
+    // For shadow DOM, don't include 'body >' prefix
+    const prefix = shadowRoot ? '' : 'body > ';
+    const uniqueSelector = path.length > 0 ? `${prefix}${path.join(' > ')}` : el.tagName.toLowerCase();
     return { selector: uniqueSelector, isUnique: true };
   }
 
   // Make utilities available globally
   window.utils = {
     generateFastSelector: generateFastSelector,
-    version: '5.3-shortest-unique-fast' // Version marker to verify new code is loaded
+    version: '5.4-shadow-aware' // Version marker - now shadow DOM aware
   };
   
   // Gate logs in production by checking a flag injected elsewhere if desired

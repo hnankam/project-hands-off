@@ -164,9 +164,9 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
         const cacheKey = `${message.tabId}`;
         contentCacheRef.current.delete(cacheKey);
 
-        // If panel is active OR assistant is streaming, refresh immediately
-        if (isPanelActive || isAgentLoading) {
-          debug.log('[ChatSession] Immediate auto-refresh (panel active or assistant streaming)');
+        // Only refresh immediately if assistant is streaming (not just panel active)
+        if (isAgentLoading) {
+          debug.log('[ChatSession] Immediate auto-refresh (assistant streaming)');
           fetchFreshPageContent(true, message.tabId);
           setShowStaleIndicator(false);
           // Clear any pending timer
@@ -177,7 +177,8 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
           return;
         }
 
-        // Panel inactive: wait for user interaction; do not schedule background refresh
+        // Panel active but agent not streaming: show stale indicator, no auto-refresh
+        // User can manually refresh if needed
         if (autoRefreshTimerRef.current) {
           clearTimeout(autoRefreshTimerRef.current);
           autoRefreshTimerRef.current = null;
