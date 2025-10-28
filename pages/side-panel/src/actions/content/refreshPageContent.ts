@@ -28,27 +28,31 @@ interface RefreshPageContentResult {
  * @returns Promise with status and message object
  */
 export async function handleRefreshPageContent(
-  pageContentForAgent: any,
-  triggerManualRefresh?: () => void
+  getCurrentPageContent: () => any,
+  triggerManualRefresh?: () => void | Promise<void>
 ): Promise<RefreshPageContentResult> {
   debug.log('🔄 [RefreshContent] AI requested fresh page content');
 
   try {
     // Call the manual refresh callback directly to trigger the same UI refresh pathway
     if (triggerManualRefresh) {
-      debug.log('[RefreshContent] Triggering manual refresh via callback');
-      triggerManualRefresh();
-      // Brief delay to allow the fetch to start
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      debug.log('[RefreshContent] Triggering manual refresh and waiting for embeddings...');
+      await triggerManualRefresh(); // Now awaits the embedding completion
+
+      // Read the latest page content AFTER refresh + embeddings
+      const latest = typeof getCurrentPageContent === 'function' ? getCurrentPageContent() : undefined;
+      const latestTitle = latest?.pageTitle || latest?.title || 'Unknown';
+      const latestUrl = latest?.pageURL || latest?.url || 'Unknown';
+      const latestHtmlLength = latest?.pageHTML?.length || latest?.allDOMContent?.fullHTML?.length || 0;
+
       return {
         status: 'success',
         message:
-          'Page content refreshed successfully! You can now analyze the pageHTML to find elements and extract CSS selectors.',
+          'Page content refreshed and embeddings completed! You can now search the page content using semantic search.',
         pageInfo: {
-          title: pageContentForAgent?.pageTitle || 'Unknown',
-          url: pageContentForAgent?.pageURL || 'Unknown',
-          htmlLength: pageContentForAgent?.pageHTML?.length || 0,
+          title: latestTitle,
+          url: latestUrl,
+          htmlLength: latestHtmlLength,
         },
       };
     } else {

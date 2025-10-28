@@ -1,6 +1,7 @@
 """Message history processing and compaction utilities."""
 
 import json
+import re
 from typing import Any
 from pydantic_ai import RunContext
 from pydantic_ai.messages import (
@@ -10,11 +11,182 @@ from pydantic_ai.messages import (
     SystemPromptPart,
     ToolCallPart,
     ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_ai.ag_ui import StateDeps
 
 from config import logger
 from core.models import AgentState
+
+
+async def process_message_attachments(
+    ctx: RunContext[StateDeps[AgentState]], 
+    messages: list[ModelMessage]
+) -> list[ModelMessage]:
+    """Process user messages with attachment manifests.
+    
+    This history processor runs before messages are sent to the model.
+    It transforms user messages that contain attachment manifests into
+    Claude's structured content format with text, image, and document parts.
+    
+    Only processes attachments in the MOST RECENT user message to avoid
+    re-processing historical attachments that have already been sent to the API.
+    
+    Args:
+        ctx: The run context (not used but required by history processor signature)
+        messages: List of messages to process
+        
+    Returns:
+        List of messages with attachments transformed
+    """
+    processed_messages: list[ModelMessage] = []
+    
+    # Find the index of the last ModelRequest (most recent user message)
+    last_request_idx = -1
+    for idx, message in enumerate(messages):
+        if isinstance(message, ModelRequest):
+            last_request_idx = idx
+    
+    for idx, message in enumerate(messages):
+        # Only process ModelRequest messages (user messages)
+        if not isinstance(message, ModelRequest):
+            processed_messages.append(message)
+            continue
+        
+        is_last_request = (idx == last_request_idx)
+        
+        # Check if any parts contain attachment manifest
+        new_parts = []
+        has_attachments = False
+        
+        for part in message.parts:
+            # Only process UserPromptPart
+            if not isinstance(part, UserPromptPart):
+                new_parts.append(part)
+                continue
+            
+            content = part.content
+            if not isinstance(content, str):
+                new_parts.append(part)
+                continue
+            
+            # Parse manifest (only log for latest message)
+            clean_text, attachments = parse_attachment_manifest(content, log_parse=is_last_request)
+            
+            if not attachments:
+                # No attachments, keep original part
+                new_parts.append(part)
+                continue
+            
+            # Only process attachments for the most recent user message
+            # For historical messages, remove manifest but don't re-create attachment references
+            if not is_last_request:
+                # Historical message - attachments already processed, just keep clean text
+                if clean_text.strip():
+                    new_parts.append(UserPromptPart(content=clean_text))
+                logger.debug(f"Skipping {len(attachments)} historical attachment(s) in manifest (already processed)")
+                continue
+            
+            has_attachments = True
+            
+            # Create new UserPromptPart with just the clean text
+            if clean_text.strip():
+                new_parts.append(UserPromptPart(content=clean_text))
+            
+            # Add attachment parts
+            # Note: Pydantic AI needs specific part types for images/documents
+            # For now, append them as text description since we don't have native support
+            # The model will receive URLs it can access
+            attachment_descriptions = []
+            for attachment in attachments:
+                name = attachment.get('name', 'attachment')
+                mime_type = attachment.get('type', 'application/octet-stream')
+                url = attachment.get('url', '')
+                size = attachment.get('size', 0)
+                
+                if not url:
+                    logger.warning(f"Skipping attachment '{name}' with no URL")
+                    continue
+                
+                # Create a descriptive text block about the attachment
+                # The URL will be accessible to the model
+                if mime_type.startswith('image/'):
+                    desc = f"[Image: {name} - {url}]"
+                else:
+                    desc = f"[Document: {name} ({mime_type}) - {url}]"
+                
+                attachment_descriptions.append(desc)
+                logger.info(f"Processed NEW attachment: {name} ({mime_type})")
+            
+            if attachment_descriptions:
+                # Add attachment info as a separate text part
+                new_parts.append(UserPromptPart(content="\n".join(attachment_descriptions)))
+        
+        # If we modified any parts (either new attachments or cleaned historical ones), create new message
+        if new_parts and new_parts != list(message.parts):
+            # Create new message with transformed parts
+            processed_messages.append(ModelRequest(
+                parts=new_parts,
+                instructions=message.instructions,
+            ))
+            if has_attachments:
+                logger.info(f"Transformed message with NEW attachments into {len(new_parts)} parts")
+        else:
+            processed_messages.append(message)
+    
+    return processed_messages
+
+
+def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[str, list[dict[str, Any]]]:
+    """Parse attachment manifest from user message content.
+    
+    Extracts the <!--ATTACHMENTS: [...] --> block from message content,
+    parses the JSON manifest, and returns the clean text and attachments list.
+    
+    Args:
+        content: The raw user message content (may include manifest)
+        log_parse: Whether to log the parsing (only for new attachments, not historical)
+        
+    Returns:
+        Tuple of (clean_text, attachments_list)
+        - clean_text: Message content with manifest removed
+        - attachments_list: List of attachment dicts with name, type, size, url
+        
+    Example manifest format:
+        <!--ATTACHMENTS:
+        [
+            {
+                "name": "document.pdf",
+                "type": "application/pdf",
+                "size": 1024000,
+                "url": "https://firebase.storage.url/..."
+            }
+        ]
+        -->
+    """
+    # Pattern to match the attachment manifest block
+    manifest_pattern = r'<!--ATTACHMENTS:\s*(\[.*?\])\s*-->'
+    
+    match = re.search(manifest_pattern, content, re.DOTALL)
+    if not match:
+        return content, []
+    
+    try:
+        # Parse the JSON manifest
+        manifest_json = match.group(1)
+        attachments = json.loads(manifest_json)
+        
+        # Remove the manifest block from content
+        clean_text = re.sub(manifest_pattern, '', content, flags=re.DOTALL).strip()
+        
+        if log_parse:
+            logger.info(f"Parsed attachment manifest: {len(attachments)} attachments")
+        return clean_text, attachments
+        
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse attachment manifest: {e}")
+        # Return original content if parsing fails
+        return content, []
 
 
 async def keep_recent_messages(

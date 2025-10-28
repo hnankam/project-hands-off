@@ -56,6 +56,7 @@ export const createOpenNewTabAction = ({ isLight, clipText }: Omit<NavigationAct
     );
   },
   handler: async ({ url, active = true }: { url: string; active?: boolean }) => {
+    debug.log(ts(), '[Agent Request] openNewTab:', { url, active });
     const result = await handleOpenNewTab(url, active);
     debug.log(ts(), '[Agent Response] openNewTab:', result);
     return result;
@@ -117,6 +118,7 @@ export const createScrollAction = ({ isLight, clipText, yesNo }: NavigationActio
     amount?: number; 
     scrollTo?: boolean;
   }) => {
+    debug.log(ts(), '[Agent Request] scroll:', { cssSelector, direction, amount, scrollTo });
     const result = await handleScroll(
       cssSelector, 
       direction as 'up' | 'down' | 'left' | 'right' | 'top' | 'bottom' | 'to', 
@@ -134,18 +136,18 @@ export const createScrollAction = ({ isLight, clipText, yesNo }: NavigationActio
  */
 export const createDragAndDropAction = ({ isLight, clipText }: Omit<NavigationActionDependencies, 'yesNo'>) => ({
   name: 'dragAndDrop',
-  description: 'Drag from source selector and drop on target selector (supports offsets and canvas cases).',
+  description: 'Drag from source selector and drop on target selector (supports offsets and canvas cases). Supports Shadow DOM with >> notation.',
   parameters: [
     {
       name: 'sourceCssSelector',
       type: 'string',
-      description: "CSS selector for the element to drag (e.g., '#draggable-item', '.card[data-id=\"123\"]').",
+      description: "CSS selector for the element to drag (e.g., '#draggable-item', 'document > x-app >> .card').",
       required: true,
     },
     {
       name: 'targetCssSelector',
       type: 'string',
-      description: "CSS selector for the drop target element (e.g., '.drop-zone', '#target-container').",
+      description: "CSS selector for the drop target element (e.g., '.drop-zone', 'document > x-app >> #container').",
       required: true,
     },
     {
@@ -182,6 +184,7 @@ export const createDragAndDropAction = ({ isLight, clipText }: Omit<NavigationAc
     offsetX?: number; 
     offsetY?: number;
   }) => {
+    debug.log(ts(), '[Agent Request] dragAndDrop:', { sourceCssSelector, targetCssSelector, offsetX, offsetY });
     const result = await handleDragAndDrop(sourceCssSelector, targetCssSelector, offsetX, offsetY    );
     debug.log(ts(), '[Agent Response] dragAndDrop:', result);
     return result;

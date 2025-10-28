@@ -4,12 +4,16 @@
  * All database operations are non-blocking and happen in the worker
  */
 
+// Timestamp helper for consistent logging
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+
 // Typed message contracts and error type
 type DBOp =
   | 'initialize'
   | 'storeHTMLChunks'
   | 'storeFormFields'
   | 'storeClickableElements'
+  | 'storeDOMUpdate'
   | 'searchHTMLChunks'
   | 'searchFormFields'
   | 'searchClickableElements'
@@ -56,31 +60,21 @@ class DBWorkerClient {
   private debug = true;
   private defaultDbName = 'embeddings_db';
 
-  // Backward-compatible: accept path or URL; new preferred: options with worker/workerUrl
-  constructor(private workerPathOrUrlOrOpts?: string | URL | { worker?: Worker; workerUrl?: string | URL; debug?: boolean; defaultDbName?: string }) {
+  // Constructor accepts optional config for advanced use cases
+  constructor(private config?: { worker?: Worker; debug?: boolean; defaultDbName?: string }) {
     // Create promise that resolves when worker is ready
     this.workerReadyPromise = new Promise(resolve => {
       this.workerReadyResolve = resolve;
     });
 
-    if (typeof workerPathOrUrlOrOpts === 'object' && workerPathOrUrlOrOpts !== null && 'worker' in workerPathOrUrlOrOpts) {
-      const opts = workerPathOrUrlOrOpts as { worker?: Worker; workerUrl?: string | URL; debug?: boolean; defaultDbName?: string };
-      this.debug = !!opts.debug;
-      if (opts.defaultDbName) this.defaultDbName = opts.defaultDbName;
-      if (opts.worker) {
-        this.worker = opts.worker;
+    if (config) {
+      if (config.debug !== undefined) this.debug = config.debug;
+      if (config.defaultDbName) this.defaultDbName = config.defaultDbName;
+      if (config.worker) {
+        this.worker = config.worker;
         this.attachWorkerListeners();
       }
     }
-  }
-
-  private getWorkerPath(): string | URL {
-    if (typeof this.workerPathOrUrlOrOpts === 'string' || this.workerPathOrUrlOrOpts instanceof URL) {
-      return this.workerPathOrUrlOrOpts as string | URL;
-    }
-    const asOpts = this.workerPathOrUrlOrOpts as { workerUrl?: string | URL } | undefined;
-    if (asOpts?.workerUrl) return asOpts.workerUrl;
-    throw new Error('[DB Worker Client] workerUrl not provided. Construct with a path/URL or with { workerUrl }/ { worker } options.');
   }
 
   /**
@@ -89,7 +83,7 @@ class DBWorkerClient {
    */
   async initialize(useMemory = true, dbName: string = this.defaultDbName): Promise<void> {
     if (this.isInitialized) {
-      if (this.debug) console.log('[DB Worker Client] Already initialized');
+      if (this.debug) console.log(`${ts()} [DB Worker Client] Already initialized`);
       return;
     }
 
@@ -100,19 +94,20 @@ class DBWorkerClient {
 
     this.initializationPromise = (async () => {
       try {
-        // Create/attach worker only if not already provided via constructor options
+        // Create worker if not already provided via constructor
         if (!this.worker) {
-          const workerPath = this.getWorkerPath();
-          this.worker = new Worker(workerPath, { type: 'module' });
+          // Use .js extension because this file is consumed from the built dist of @extension/shared
+          // Vite's new URL('./...', import.meta.url) correctly resolves the worker path at build time
+          this.worker = new Worker(new URL('./db-worker.js', import.meta.url), { type: 'module' });
           this.attachWorkerListeners();
         }
 
-        if (this.debug) console.log('[DB Worker Client] Worker created, waiting for ready signal...');
+        if (this.debug) console.log(`${ts()} [DB Worker Client] Worker created, waiting for ready signal...`);
 
         // Wait for worker to signal it's ready
         await this.workerReadyPromise;
 
-        if (this.debug) console.log('[DB Worker Client] Worker ready, initializing database...');
+        if (this.debug) console.log(`${ts()} [DB Worker Client] Worker ready, initializing database...`);
 
         // Send initialization message
         // IMPORTANT: useMemory=true for in-memory storage (fast, no IndexedDB persistence)
@@ -122,9 +117,9 @@ class DBWorkerClient {
         });
 
         this.isInitialized = true;
-        if (this.debug) console.log('[DB Worker Client] ✅ Initialized successfully');
+        if (this.debug) console.log(`${ts()} [DB Worker Client] ✅ Initialized successfully`);
       } catch (error) {
-        console.error('[DB Worker Client] ❌ Failed to initialize:', error);
+        console.error(`${ts()} [DB Worker Client] ❌ Failed to initialize:`, error);
         this.initializationPromise = null;
         throw error;
       }
@@ -141,7 +136,7 @@ class DBWorkerClient {
 
     // Handle ready signal
     if (response.type === 'ready') {
-      if (this.debug) console.log('[DB Worker Client] Received ready signal from worker');
+      if (this.debug) console.log(`${ts()} [DB Worker Client] Received ready signal from worker`);
       if (this.workerReadyResolve) {
         this.workerReadyResolve();
         this.workerReadyResolve = null;
@@ -166,8 +161,16 @@ class DBWorkerClient {
   private attachWorkerListeners() {
     if (!this.worker) return;
     this.worker.addEventListener('message', this.handleWorkerMessage.bind(this));
-    this.worker.addEventListener('error', (error) => {
-      console.error('[DB Worker Client] Worker error:', error);
+    this.worker.addEventListener('error', (error: ErrorEvent) => {
+      console.error(`${ts()} [DB Worker Client] Worker error:`, {
+        message: error.message,
+        filename: error.filename,
+        lineno: error.lineno,
+        colno: error.colno,
+      });
+    });
+    this.worker.addEventListener('messageerror', (event) => {
+      console.error(`${ts()} [DB Worker Client] Worker messageerror:`, event);
     });
   }
 
@@ -233,7 +236,7 @@ class DBWorkerClient {
       if (this.debug) console.log(`[DB Worker Client] 📤 Sending ${portion.length} HTML chunks (batch ${i}-${i + portion.length - 1})`);
       await this.sendMessage('storeHTMLChunks', { ...data, chunks: portion }, opts);
     }
-    if (this.debug) console.log('[DB Worker Client] ✅ HTML chunks stored');
+    if (this.debug) console.log(`${ts()} [DB Worker Client] ✅ HTML chunks stored`);
   }
 
   /**
@@ -257,7 +260,7 @@ class DBWorkerClient {
       if (this.debug) console.log(`[DB Worker Client] 📤 Sending ${portion.length} form field groups`);
       await this.sendMessage('storeFormFields', { ...data, groups: portion }, opts);
     }
-    if (this.debug) console.log('[DB Worker Client] ✅ Form fields stored');
+    if (this.debug) console.log(`${ts()} [DB Worker Client] ✅ Form fields stored`);
   }
 
   /**
@@ -281,7 +284,26 @@ class DBWorkerClient {
       if (this.debug) console.log(`[DB Worker Client] 📤 Sending ${portion.length} clickable element groups`);
       await this.sendMessage('storeClickableElements', { ...data, groups: portion }, opts);
     }
-    if (this.debug) console.log('[DB Worker Client] ✅ Clickable elements stored');
+    if (this.debug) console.log(`${ts()} [DB Worker Client] ✅ Clickable elements stored`);
+  }
+
+  /**
+   * Store DOM update with embedding and recency score
+   */
+  async storeDOMUpdate(data: {
+    pageURL: string;
+    pageTitle: string;
+    updateJSON: string;
+    summary: string;
+    embedding: number[];
+    sessionId?: string;
+  }, opts?: { timeoutMs?: number; signal?: AbortSignal }): Promise<void> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    if (this.debug) console.log(`${ts()} [DB Worker Client] 📤 Storing DOM update`);
+    await this.sendMessage('storeDOMUpdate', data, opts);
+    if (this.debug) console.log(`${ts()} [DB Worker Client] ✅ DOM update stored`);
   }
 
   /**
@@ -361,7 +383,7 @@ class DBWorkerClient {
       pageURL,
       queryEmbedding,
       topK,
-    });
+    }, { timeoutMs: 10000 }); // 10s timeout for debugging
     if (this.debug) console.log(`[DB Worker Client] ✅ Found ${results.length} results`);
     return results;
   }
@@ -428,7 +450,7 @@ class DBWorkerClient {
       this.initializationPromise = null;
       this.pendingMessages.forEach(entry => entry.timeout && clearTimeout(entry.timeout));
       this.pendingMessages.clear();
-      if (this.debug) console.log('[DB Worker Client] Worker terminated');
+      if (this.debug) console.log(`${ts()} [DB Worker Client] Worker terminated`);
     }
   }
 }

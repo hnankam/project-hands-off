@@ -103,14 +103,12 @@ export const useMessageSanitization = (
    * Operations performed:
    * 1. Retain only last 500 messages
    * 2. Truncate large tool message content (>100 chars)
-   * 3. Track if any changes were made
+   * 3. Normalize thinking tags in assistant messages
    * 
    * @param messagesToProcess - Array of messages to sanitize
    * @returns Object with sanitized messages and hasChanges flag
    */
   const sanitizeMessages = useCallback((messagesToProcess: any[]): SanitizationResult => {
-    console.log('[useMessageSanitization] Sanitizing and deduplicating messages...');
-
     let hasChanges = false;
 
     // Retain only the last 500 messages
@@ -118,68 +116,203 @@ export const useMessageSanitization = (
     if (messagesToProcess.length > 500) {
       retainedMessages = messagesToProcess.slice(-500);
       hasChanges = true;
-      console.log('[useMessageSanitization] Retained last 500 messages from', messagesToProcess.length);
     }
 
-    // Helper: normalize <thinking> tags in assistant content so only the content between
-    // the first well-formed pair renders inside ThinkingBlock, preventing the entire
-    // assistant response from being captured when tags are malformed or repeated.
+    // PERFORMANCE: Pre-compile regex patterns once (outside the inner function)
+    const THINKING_OPEN_RE = /<thinking\s*>/i;
+    const THINKING_CLOSE_RE = /<\/thinking\s*>/i;
+    const THINKING_TAGS_RE = /<\/?thinking\s*>/gi;
+    const DOUBLE_NEWLINE_RE = /\r?\n\r?\n/;
+    
+    // PERFORMANCE: Use Set for O(1) lookup instead of array.includes()
+    const TRUNCATABLE_TOOLS = new Set([
+      'searchPageContent',
+      'searchFormData',
+      'searchDOMUpdates',
+      'searchClickableElements',
+      'takeScreenshot',
+    ]);
+
+    // Helper: normalize <thinking> tags in assistant content
     const normalizeThinking = (text: string): { text: string; changed: boolean } => {
       try {
-        const openRe = /<thinking\s*>/i;
-        const closeRe = /<\/thinking\s*>/i;
-        const openMatch = text.match(openRe);
+        // PERFORMANCE: Early exit if no thinking tags present
+        if (!text.includes('<thinking')) return { text, changed: false };
+        
+        const openMatch = text.match(THINKING_OPEN_RE);
         if (!openMatch) return { text, changed: false };
 
         const openIndex = openMatch.index ?? -1;
+        const beforeThinking = text.slice(0, openIndex);
         const afterOpen = text.slice(openIndex + openMatch[0].length);
-        const closeMatch = afterOpen.match(closeRe);
+        const closeMatch = afterOpen.match(THINKING_CLOSE_RE);
 
         let thinkingContent: string;
-        let rest: string;
+        let afterThinking: string;
+        
         if (closeMatch && closeMatch.index !== undefined) {
           thinkingContent = afterOpen.slice(0, closeMatch.index);
-          rest = afterOpen.slice(closeMatch.index + closeMatch[0].length);
+          afterThinking = afterOpen.slice(closeMatch.index + closeMatch[0].length);
         } else {
           // If no explicit close tag, heuristically close at first double newline or end
-          const dblNl = afterOpen.search(/\r?\n\r?\n/);
+          const dblNl = afterOpen.search(DOUBLE_NEWLINE_RE);
           if (dblNl >= 0) {
             thinkingContent = afterOpen.slice(0, dblNl);
-            rest = afterOpen.slice(dblNl);
+            afterThinking = afterOpen.slice(dblNl);
           } else {
             thinkingContent = afterOpen;
-            rest = '';
+            afterThinking = '';
           }
         }
 
-        // Remove any stray thinking tags from the rest of the content
-        const cleanedRest = rest.replace(/<\/?thinking\s*>/gi, '');
-        const normalized = `${text.slice(0, openIndex)}<thinking>${thinkingContent}</thinking>${cleanedRest}`;
-        return { text: normalized, changed: true };
+        // Remove any stray thinking tags from content
+        let cleanedThinking = thinkingContent.replace(THINKING_TAGS_RE, '').trim();
+        const cleanedAfter = afterThinking.replace(THINKING_TAGS_RE, '').trim();
+        
+        // Collapse multiple blank lines inside the thinking content to a single newline
+        cleanedThinking = cleanedThinking.replace(/(\r?\n)\s*(\r?\n)+/g, '$1');
+        
+        // Reconstruct: thinking block MUST be isolated with blank lines
+        const parts = [];
+        if (beforeThinking.trim()) parts.push(beforeThinking.trim());
+        
+        // Critical: Thinking block must be completely isolated with newlines
+        if (cleanedThinking) {
+          parts.push(`<thinking>\n\n${cleanedThinking}\n\n</thinking>`);
+        }
+        
+        if (cleanedAfter) parts.push(cleanedAfter);
+        
+        // Join with double newline for paragraph separation
+        return { text: parts.join('\n\n'), changed: true };
       } catch {
         return { text, changed: false };
       }
     };
 
-    // Sanitize large tool call content and normalize assistant thinking tags - only create new objects if we modify something
+    // Helper: Smart truncate tool results preserving JSON structure and counts
+    const truncateToolResult = (content: string, toolName: string): string => {
+      try {
+        const parsed = JSON.parse(content);
+        
+        // Special handling for takeScreenshot - different structure (no results array)
+        if (toolName === 'takeScreenshot') {
+          const truncated: any = {
+            status: parsed.status,
+            message: parsed.message,
+          };
+          
+          // Preserve screenshotInfo metadata, but truncate dataUrl
+          if (parsed.screenshotInfo) {
+            truncated.screenshotInfo = {
+              format: parsed.screenshotInfo.format,
+              dimensions: parsed.screenshotInfo.dimensions,
+              sizeKB: parsed.screenshotInfo.sizeKB,
+              quality: parsed.screenshotInfo.quality,
+              isFullPage: parsed.screenshotInfo.isFullPage,
+              url: parsed.screenshotInfo.url,
+              // Truncate the large dataUrl base64 string
+              dataUrl: parsed.screenshotInfo.dataUrl 
+                ? '...truncated base64 data...' 
+                : undefined,
+            };
+          }
+          
+          return JSON.stringify(truncated);
+        }
+        
+        // For search tools: Preserve COMPLETE top-level structure
+        const truncated: any = {};
+        
+        // Preserve all top-level fields in original order
+        if (parsed.success !== undefined) truncated.success = parsed.success;
+        if (parsed.query !== undefined) truncated.query = parsed.query;
+        if (parsed.resultsCount !== undefined) truncated.resultsCount = parsed.resultsCount; // Critical for ActionStatus
+        if (parsed.error !== undefined) truncated.error = parsed.error;
+        
+        // Truncate results array while preserving structure
+        if (Array.isArray(parsed.results)) {
+          truncated.results = parsed.results.map((item: any, index: number) => {
+            // Keep only first 2 results with essential fields
+            if (index >= 2) return { _note: '...truncated...' };
+            
+            // Preserve essential fields based on tool type
+            if (toolName === 'searchPageContent') {
+              return { 
+                rank: item.rank, 
+                similarity: item.similarity,
+                text: typeof item.text === 'string' ? item.text.substring(0, 100) + '...' : item.text 
+              };
+            } else if (toolName === 'searchFormData') {
+              return { 
+                rank: item.rank, 
+                similarity: item.similarity,
+                selector: item.selector, 
+                type: item.type, 
+                name: item.name 
+              };
+            } else if (toolName === 'searchClickableElements') {
+              return { 
+                rank: item.rank, 
+                similarity: item.similarity,
+                selector: item.selector, 
+                text: typeof item.text === 'string' ? item.text.substring(0, 50) : item.text 
+              };
+            } else if (toolName === 'searchDOMUpdates') {
+              return { 
+                rank: item.rank, 
+                similarity: item.similarity,
+                summary: typeof item.summary === 'string' ? item.summary.substring(0, 100) : item.summary, 
+                timeAgo: item.timeAgo 
+              };
+            }
+            
+            // Generic truncation for other tools - keep essential fields
+            const { rank, similarity, selector, text, name, type, ...rest } = item;
+            return { rank, similarity, selector, text, name, type, _truncated: true };
+          });
+        } else if (parsed.results !== undefined) {
+          // results exists but is not an array (e.g. null or empty) - preserve as-is
+          truncated.results = parsed.results;
+        }
+        
+        return JSON.stringify(truncated);
+      } catch {
+        // Not JSON or parse failed, do simple truncation
+        return content.substring(0, 90) + '...';
+      }
+    };
+
+    // Helper: Check if content is already truncated
+    const isAlreadyTruncated = (content: string): boolean => {
+      try {
+        const parsed = JSON.parse(content);
+        
+        // Check for takeScreenshot truncation marker
+        if (parsed.screenshotInfo?.dataUrl === '...truncated base64 data...') {
+          return true;
+        }
+        
+        // Check if results array contains truncation markers
+        return Array.isArray(parsed.results) && parsed.results.some((r: any) => 
+          r?._note === '...truncated...' || r?._truncated === true
+        );
+      } catch {
+        // Not JSON, check simple string truncation
+        return content.endsWith('...');
+      }
+    };
+
+    // PERFORMANCE: Sanitize in single pass - only create new objects if modified
     const sanitizedMessages = retainedMessages.map((message) => {
+      // Truncate large tool message content
       if (message.role === 'tool' && message.id?.includes('result') && message.content?.length > 100) {
         const tool_name = message.toolName || '';
-        if (
-          [
-            'searchPageContent',
-            'searchFormData',
-            'searchDOMUpdates',
-            'searchClickableElements',
-            'takeScreenshot',
-          ].includes(tool_name)
-        ) {
-          // Check if content needs truncation
-          if (!message.content.endsWith('...')) {
-            console.log('[useMessageSanitization] Truncating content for tool call:', tool_name, message.id);
+        // PERFORMANCE: Use Set.has() instead of array.includes() - O(1) vs O(n)
+        if (TRUNCATABLE_TOOLS.has(tool_name) && !isAlreadyTruncated(message.content)) {
             hasChanges = true;
-            return { ...message, content: message.content.substring(0, 90) + '...' };
-          }
+          const truncatedContent = truncateToolResult(message.content, tool_name);
+          return { ...message, content: truncatedContent };
         }
       }
 
@@ -191,23 +324,13 @@ export const useMessageSanitization = (
           return { ...message, content: normalized.text };
         }
       }
-      // Return original object if no changes needed
+      
+      // PERFORMANCE: Return original reference (not a copy) when unchanged
       return message;
     });
 
-    // Client-side deduplication disabled: keep all sanitized messages as-is
-    const finalMessages = sanitizedMessages;
-
-    console.log('[useMessageSanitization] Sanitization complete:', {
-      original: messagesToProcess.length,
-      retained: retainedMessages.length,
-      sanitized: sanitizedMessages.length,
-      final: finalMessages.length,
-      removed: messagesToProcess.length - finalMessages.length,
-      hasChanges,
-    });
-
-    return { messages: finalMessages, hasChanges };
+    // Return sanitized messages
+    return { messages: sanitizedMessages, hasChanges };
   }, []);
 
   /**
@@ -251,6 +374,20 @@ export const useMessageSanitization = (
         
         if (result.hasChanges || currentSig !== nextSig) {
           setMessages(result.messages);
+
+          // Auto-close all ThinkingBlock instances immediately after restore
+          try {
+            window.dispatchEvent(new CustomEvent('thinking-close-all'));
+            if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
+              requestAnimationFrame(() => {
+                window.dispatchEvent(new CustomEvent('thinking-close-all'));
+              });
+            } else {
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('thinking-close-all'));
+              }, 0);
+            }
+          } catch {}
         }
         // No-op when nothing changed
       }

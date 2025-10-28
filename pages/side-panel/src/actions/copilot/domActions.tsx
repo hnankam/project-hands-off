@@ -15,6 +15,7 @@ import {
   handleVerifySelector,
   handleGetSelectorAtPoint,
   handleGetSelectorsAtPoints,
+  handleKeystrokeSequence,
 } from '../index';
 
 // Timestamp helper for consistent logging
@@ -33,13 +34,13 @@ interface DOMActionDependencies {
  */
 export const createMoveCursorToElementAction = ({ isLight, clipText }: Omit<DOMActionDependencies, 'pageDataRef'>) => ({
   name: 'moveCursorToElement',
-  description: 'Show/move cursor to the element matching the selector. Auto-hides after 5 minutes.',
+  description: 'Show/move cursor to the element matching the selector. Supports Shadow DOM with >> notation. Auto-hides after 5 minutes.',
   parameters: [
     {
       name: 'cssSelector',
       type: 'string',
       description:
-        "A CSS selector to identify the element (e.g., '#create-account-btn', '.card.manual-setup'). Use searchPageContent() to find appropriate selectors.",
+        "A CSS selector to identify the element (e.g., '#create-account-btn', 'document > x-app >> #input'). Use searchPageContent() to find appropriate selectors.",
       required: true,
     },
   ],
@@ -52,6 +53,7 @@ export const createMoveCursorToElementAction = ({ isLight, clipText }: Omit<DOMA
     />
   ),
   handler: async ({ cssSelector }: { cssSelector: string }) => {
+    debug.log(ts(), '[Agent Request] moveCursorToElement:', { cssSelector });
     const result = await handleMoveCursorToElement(cssSelector);
     debug.log(ts(), '[Agent Response] moveCursorToElement:', result);
     return result;
@@ -75,7 +77,9 @@ export const createRefreshPageContentAction = ({ isLight, pageDataRef, triggerMa
     />
   ),
   handler: async () => {
-    const result = await handleRefreshPageContent(pageDataRef.current.pageContent, triggerManualRefresh);
+    debug.log(ts(), '[Agent Request] refreshPageContent');
+    const getCurrentPageContent = () => pageDataRef.current?.pageContent;
+    const result = await handleRefreshPageContent(getCurrentPageContent, triggerManualRefresh);
     debug.log(ts(), '[Agent Response] refreshPageContent:', result);
     return result;
   },
@@ -98,6 +102,7 @@ export const createCleanupExtensionUIAction = ({ isLight }: Omit<DOMActionDepend
     />
   ),
   handler: async () => {
+    debug.log(ts(), '[Agent Request] cleanupExtensionUI');
     const result = await handleCleanupExtensionUI();
     debug.log(ts(), '[Agent Response] cleanupExtensionUI:', result);
     return result;
@@ -110,13 +115,13 @@ export const createCleanupExtensionUIAction = ({ isLight }: Omit<DOMActionDepend
  */
 export const createClickElementAction = ({ isLight, clipText }: Omit<DOMActionDependencies, 'pageDataRef'>) => ({
   name: 'clickElement',
-  description: 'Click the element matching the provided CSS selector.',
+  description: 'Click the element matching the provided CSS selector. Supports Shadow DOM with >> notation (e.g., "shadowPath >> #element").',
   parameters: [
     {
       name: 'cssSelector',
       type: 'string',
       description:
-        "A CSS selector to identify the element (e.g., '#create-account-btn', '.card.manual-setup'). Use searchPageContent() to find appropriate selectors.",
+        "A CSS selector to identify the element (e.g., '#create-account-btn', 'document > x-app >> #input'). Use searchPageContent() to find appropriate selectors.",
       required: true,
     },
     {
@@ -135,6 +140,7 @@ export const createClickElementAction = ({ isLight, clipText }: Omit<DOMActionDe
     />
   ),
   handler: async ({ cssSelector, autoMoveCursor }: { cssSelector: string; autoMoveCursor?: boolean }) => {
+    debug.log(ts(), '[Agent Request] clickElement:', { cssSelector, autoMoveCursor });
     const result = await handleClickElement(cssSelector, autoMoveCursor);
     debug.log(ts(), '[Agent Response] clickElement:', result);
     return result;
@@ -147,12 +153,12 @@ export const createClickElementAction = ({ isLight, clipText }: Omit<DOMActionDe
  */
 export const createVerifySelectorAction = ({ isLight, clipText }: Omit<DOMActionDependencies, 'pageDataRef'>) => ({
   name: 'verifySelector',
-  description: 'Validate a CSS selector (syntax, match count, shadow DOM info, element details).',
+  description: 'Validate a CSS selector (syntax, match count, shadow DOM info, element details). Supports Shadow DOM with >> notation.',
   parameters: [
     {
       name: 'cssSelector',
       type: 'string',
-      description: "The CSS selector to verify (e.g., '#submit-btn', '.menu-item', 'input[type=\"email\"]').",
+      description: "The CSS selector to verify (e.g., '#submit-btn', 'document > x-app >> #input'). Use >> to traverse shadow DOM.",
       required: true,
     },
   ],
@@ -165,6 +171,7 @@ export const createVerifySelectorAction = ({ isLight, clipText }: Omit<DOMAction
     />
   ),
   handler: async ({ cssSelector }: { cssSelector: string }) => {
+    debug.log(ts(), '[Agent Request] verifySelector:', { cssSelector });
     const result = await handleVerifySelector(cssSelector);
     debug.log(ts(), '[Agent Response] verifySelector:', result);
     return result;
@@ -191,6 +198,7 @@ export const createGetSelectorAtPointAction = ({ isLight }: Omit<DOMActionDepend
     />
   ),
   handler: async ({ x, y }: { x: number; y: number }) => {
+    debug.log(ts(), '[Agent Request] getSelectorAtPoint:', { x, y });
     const result = await handleGetSelectorAtPoint(Number(x), Number(y));
     debug.log(ts(), '[Agent Response] getSelectorAtPoint:', result);
     return result;
@@ -216,9 +224,80 @@ export const createGetSelectorsAtPointsAction = ({ isLight }: Omit<DOMActionDepe
     />
   ),
   handler: async ({ points }: { points: Array<{ x: number; y: number }> }) => {
+    debug.log(ts(), '[Agent Request] getSelectorsAtPoints:', { pointsCount: points?.length });
     const safe = Array.isArray(points) ? points.map((p: any) => ({ x: Number(p.x), y: Number(p.y) })) : [];
     const result = await handleGetSelectorsAtPoints(safe);
     debug.log(ts(), '[Agent Response] getSelectorsAtPoints:', result);
+    return result;
+  },
+});
+
+/**
+ * Creates the sendKeystrokes action
+ * Sends keyboard shortcuts and sequences to the active page (supports modifiers and repeats)
+ */
+export const createSendKeystrokesAction = ({ isLight, clipText }: Omit<DOMActionDependencies, 'pageDataRef'>) => ({
+  name: 'sendKeystrokes',
+  description:
+    'Send keyboard shortcuts or sequences to the page. Supports modifiers (ctrl/meta/alt/shift), repeats, optional target focus via selector (supports shadow >>), and per-key delay.',
+  parameters: [
+    {
+      name: 'sequence',
+      type: 'object[]',
+      description:
+        "Array of keystrokes. Each item: { key: string, ctrl?: boolean, meta?: boolean, alt?: boolean, shift?: boolean, repeat?: number }. Example: [{ key: 'k', meta: true }] for Cmd+K.",
+      required: true,
+    },
+    {
+      name: 'targetSelector',
+      type: 'string',
+      description: 'Optional CSS selector to focus before typing. Supports Shadow DOM with >> notation.',
+      required: false,
+    },
+    {
+      name: 'delayMs',
+      type: 'number',
+      description: 'Optional delay between keystrokes in milliseconds (default 20ms, max 250ms).',
+      required: false,
+    },
+  ],
+  render: ({ status, args }: any) => (
+    <ActionStatus
+      toolName={`Send keystrokes${(args as any)?.targetSelector ? ` to ${clipText((args as any)?.targetSelector, 48)}` : ''}`}
+      status={status as any}
+      isLight={isLight}
+      messages={{ pending: 'Sending keystrokes…', inProgress: 'Sending keystrokes…', complete: 'Keystrokes sent' }}
+    />
+  ),
+  handler: async ({ sequence, targetSelector, delayMs }: { sequence: any[]; targetSelector?: string; delayMs?: number }) => {
+    // Format keystrokes for logging
+    const formatKeystroke = (s: any): string => {
+      const mods: string[] = [];
+      if (s?.ctrl) mods.push('Ctrl');
+      if (s?.meta) mods.push('Cmd');
+      if (s?.alt) mods.push('Alt');
+      if (s?.shift) mods.push('Shift');
+      const key = String(s?.key ?? '');
+      const repeat = s?.repeat && s.repeat > 1 ? `×${s.repeat}` : '';
+      return mods.length > 0 ? `${mods.join('+')}+${key}${repeat}` : `${key}${repeat}`;
+    };
+    const formattedKeys = Array.isArray(sequence) ? sequence.map(formatKeystroke).join(' ') : '';
+    
+    debug.log(ts(), `[Agent Request] sendKeystrokes: ${formattedKeys}`, { targetSelector, delayMs });
+    
+    const safeSeq = Array.isArray(sequence)
+      ? sequence.map((s: any) => ({
+          key: String(s?.key ?? ''),
+          ctrl: !!s?.ctrl,
+          meta: !!s?.meta,
+          alt: !!s?.alt,
+          shift: !!s?.shift,
+          repeat: Number.isFinite(s?.repeat) ? Math.max(1, Math.min(50, Number(s.repeat))) : 1,
+        }))
+      : [];
+    const req = { sequence: safeSeq, targetSelector: targetSelector ? String(targetSelector) : undefined, delayMs: Number(delayMs) } as any;
+    const result = await handleKeystrokeSequence(req);
+    debug.log(ts(), '[Agent Response] sendKeystrokes:', result);
     return result;
   },
 });

@@ -24,7 +24,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
   ImageRenderer: ImageRendererComponent = ImageRenderer,
 }) => {
   const { isLight } = useStorage(exampleThemeStorage);
-  const { messages, setMessages } = useCopilotChatHeadless_c();
+  const { messages, setMessages, reloadMessages } = useCopilotChatHeadless_c();
 
   // Find the index of the current message
   const index = useMemo(() => {
@@ -69,6 +69,31 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
   };
 
   const content = getMessageContent();
+
+  // Parse hidden attachment manifest from content
+  type AttachmentItem = { name: string; type: string; size: number; url: string };
+  const { cleanedContent, attachments } = useMemo(() => {
+    try {
+      const re = /<!--ATTACHMENTS:\s*([\s\S]*?)\s*-->/m;
+      const m = content.match(re);
+      if (!m) return { cleanedContent: content, attachments: [] as AttachmentItem[] };
+      const json = m[1];
+      const list = JSON.parse(json) as AttachmentItem[];
+      const cleaned = content.replace(re, '').trimEnd();
+      return { cleanedContent: cleaned, attachments: Array.isArray(list) ? list : [] };
+    } catch {
+      return { cleanedContent: content, attachments: [] as AttachmentItem[] };
+    }
+  }, [content]);
+
+  const formatSize = (bytes: number): string => {
+    const kb = bytes / 1024;
+    if (kb >= 1024) {
+      const mb = kb / 1024;
+      return `${mb >= 10 ? Math.round(mb) : Math.round(mb * 10) / 10} MB`;
+    }
+    return `${Math.max(1, Math.round(kb))} KB`;
+  };
 
   // Check if this is an image message
   const isImageMessage = message && 'image' in message && message.image;
@@ -149,6 +174,25 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
       setTimeout(() => setShowCopyFeedback(false), 2000);
     } catch (err) {
       console.error('Failed to copy message:', err);
+    }
+  };
+
+  // Handle rerun (regenerate assistant response for this user message)
+  const handleRerun = () => {
+    try {
+      if (!messages || !message) return;
+      // Find the next assistant message after this user message
+      const following = messages.slice(index + 1).find(m => (m as any)?.role === 'assistant');
+      if (following?.id) {
+        reloadMessages(following.id);
+        return;
+      }
+      // Fallback: rerun starting from this user message
+      if ((message as any)?.id) {
+        reloadMessages((message as any).id);
+      }
+    } catch (e) {
+      console.warn('[CustomUserMessage] Failed to rerun message:', e);
     }
   };
 
@@ -311,7 +355,51 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
           {/* Render image if present */}
           {isImageMessage && <ImageRendererComponent image={message.image!} content={message.content} />}
 
-          {/* Render text content for non-image messages or alongside images */}
+          {/* Attachment chips rendered from hidden manifest */}
+          {attachments.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '2px',
+                marginBottom: '6px',
+                position: 'relative',
+                zIndex: 10001,
+              }}
+            >
+              {attachments.map((att, idx) => (
+                <div
+                  key={`${att.url}-${idx}`}
+                  title={att.name}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    padding: '1px 4px',
+                    borderRadius: 9999,
+                    border: isLight ? '1px solid rgba(59,130,246,0.35)' : '1px solid rgba(255,255,255,0.15)',
+                    background: isLight ? 'rgba(59,130,246,0.10)' : 'rgba(255,255,255,0.07)',
+                    fontSize: 9,
+                    color: isLight ? '#0C1117' : '#e5e7eb',
+                    fontWeight: isLight ? 500 : 400,
+                    maxWidth: '100%',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <path d="M14 2v6h6" />
+                  </svg>
+                  <a href={att.url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {att.name}
+                  </a>
+                  <span style={{ opacity: 0.7, fontSize: 8 }}>({formatSize(att.size)})</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Render text content for non-image messages or alongside images (with manifest removed) */}
           {!isImageMessage && (
             <div
               style={{
@@ -321,7 +409,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
               }}>
-              {content}
+              {cleanedContent}
             </div>
           )}
         </div>
@@ -353,6 +441,40 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
             borderRadius: '6px',
             marginRight: '-0.5rem',
           }}>
+          {/* Copy Button */}
+          <button
+            onClick={handleRerun}
+            className="copilotKitMessageControlButton"
+            title="Rerun response"
+            style={{
+              width: '28px',
+              height: '28px',
+              padding: '0.5rem',
+              borderRadius: '6px',
+              border: 'none',
+              backgroundColor: 'transparent',
+              color: '#3b82f6',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.transform = 'scale(1.15)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 0115.54-5.657" />
+              <path d="M4.5 4.5v3h3" />
+              <path d="M21 12a9 9 0 01-15.54 5.657" />
+              <path d="M19.5 19.5v-3h-3" />
+            </svg>
+          </button>
+          
           {/* Copy Button */}
           <button
             onClick={handleCopy}

@@ -60,6 +60,9 @@ export const withPageConfig = (config: UserConfig) =>
             chunkSizeWarningLimit: 10000, // Suppress warnings in dev
           }),
         },
+        worker: {
+          format: 'es', // Use ES modules for workers to support code splitting
+        },
       },
       config,
     ),

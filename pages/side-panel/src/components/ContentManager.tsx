@@ -79,11 +79,16 @@ const logContentDetails = (content: any, source: 'on-demand' | 'broadcast') => {
       const formDataSize = (JSON.stringify(content.allDOMContent.allFormData).length / 1024).toFixed(2);
       debug.log(ts(), `   - allFormData: ${formDataSize} KB (${content.allDOMContent.allFormData.length} elements)`);
       if (content.allDOMContent.allFormData.length > 0) {
-        debug.log(ts(), '     First 3 elements:', content.allDOMContent.allFormData.slice(0, 3).map((f: any) => ({
+        debug.log(ts(), '     First 10 elements:', content.allDOMContent.allFormData.slice(0, 10).map((f: any) => ({
+          isUnique: f.isUnique,  // Globally unique - FIRST for console visibility
+          selector: f.bestSelector,  // Always globally unique
           type: f.type,
           name: f.name,
           label: f.label,
-          selector: f.bestSelector
+          foundInShadowDOM: f.foundInShadowDOM,
+          shadowPath: f.shadowPath,
+          shadowDepth: f.shadowDepth,
+          shadowHostSelector: f.shadowHostSelector
         })));
       }
     }
@@ -93,10 +98,15 @@ const logContentDetails = (content: any, source: 'on-demand' | 'broadcast') => {
       const clickableSize = (JSON.stringify(content.allDOMContent.clickableElements).length / 1024).toFixed(2);
       debug.log(ts(), `   - clickableElements: ${clickableSize} KB (${content.allDOMContent.clickableElements.length} elements)`);
       if (content.allDOMContent.clickableElements.length > 0) {
-        debug.log(ts(), '     First 3 elements:', content.allDOMContent.clickableElements.slice(0, 3).map((c: any) => ({
+        debug.log(ts(), '     First 10 elements:', content.allDOMContent.clickableElements.slice(0, 10).map((c: any) => ({
+          isUnique: c.isUnique,  // Globally unique - FIRST for console visibility
+          selector: c.selector,  // Always globally unique
           tagName: c.tagName,
           text: c.text?.substring(0, 50),
-          selector: c.selector
+          foundInShadowDOM: c.foundInShadowDOM,
+          shadowPath: c.shadowPath,
+          shadowDepth: c.shadowDepth,
+          shadowHostSelector: c.shadowHostSelector
         })));
       }
     }
@@ -373,36 +383,32 @@ export const useContentManager = ({
     const cacheKey = `${message.tabId}`;
     contentCacheRef.current.delete(cacheKey);
 
-    // Always refresh on stale. Avoid overlap if a fetch is already in-flight.
+    // Check if fetch already in-flight
     const status = contentStateRef.current.status;
     if (status === 'loading' || status === 'refreshing') {
       debug.log(ts(), '[ContentManager] Skipping auto-refresh – fetch already in progress');
       return;
     }
 
-    // If panel is active, schedule a refresh for 2.5s later
-    if (isPanelActive) {
+    // Only refresh immediately if assistant is streaming (not just panel active)
+    if (isAgentLoading) {
+      debug.log(ts(), '[ContentManager] Immediate auto-refresh (assistant streaming)');
+      void fetchFreshPageContent(true, message.tabId);
+      setShowStaleIndicator(false);
+      // Clear any pending timer
       if (autoRefreshTimerRef.current) {
         clearTimeout(autoRefreshTimerRef.current);
-      }
-      autoRefreshTimerRef.current = setTimeout(() => {
-        const currentStatus = contentStateRef.current.status;
-        if (currentStatus === 'loading' || currentStatus === 'refreshing') {
-          debug.log(ts(), '[ContentManager] Skipping scheduled refresh – fetch started in the meantime');
-          autoRefreshTimerRef.current = null;
-          return;
-        }
-        debug.log(ts(), '[ContentManager] Auto-refreshing due to stale content (panel active, 2.5s delay)');
-        void fetchFreshPageContent(true, message.tabId);
-        setShowStaleIndicator(false);
         autoRefreshTimerRef.current = null;
-      }, 2500) as unknown as NodeJS.Timeout;
+      }
       return;
     }
 
-    // Panel not active: refresh immediately
-    debug.log(ts(), '[ContentManager] Auto-refreshing due to stale content (panel inactive)');
-    void fetchFreshPageContent(true, message.tabId);
+    // Panel active but agent not streaming: show stale indicator, no auto-refresh
+    // User can manually refresh if needed
+    if (autoRefreshTimerRef.current) {
+      clearTimeout(autoRefreshTimerRef.current);
+      autoRefreshTimerRef.current = null;
+    }
   }, [isPanelActive, isAgentLoading, fetchFreshPageContent]); // Stable
   
   /**

@@ -21,6 +21,7 @@ export { handleOpenNewTab } from './navigation/openNewTab';
 
 // Interaction Actions
 export { handleDragAndDrop } from './interactions/dragAndDrop';
+export { handleKeystrokeSequence } from './dom/keyboard';
 
 // Content Actions
 export { handleRefreshPageContent } from './content/refreshPageContent';

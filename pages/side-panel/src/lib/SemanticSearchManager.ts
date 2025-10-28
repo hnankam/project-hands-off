@@ -40,22 +40,32 @@ export interface FormFieldResult {
   type: string;
   name: string;
   id: string;
-  selector: string;
+  selector: string;  // Always globally unique
   placeholder?: string;
   value?: string;
   textContent?: string;
+  isUnique?: boolean;  // Globally unique
+  foundInShadowDOM?: boolean;
+  shadowHostSelector?: string;
+  shadowPath?: string;
+  shadowDepth?: number;
 }
 
 export interface ClickableElementResult {
   rank: number;
   similarity: number;
   tagName: string;
-  selector: string;
+  selector: string;  // Always globally unique
   text: string;
   ariaLabel?: string;
   title?: string;
   href?: string;
   role?: string;
+  isUnique?: boolean;  // Globally unique
+  foundInShadowDOM?: boolean;
+  shadowHostSelector?: string;
+  shadowPath?: string;
+  shadowDepth?: number;
 }
 
 /**
@@ -264,10 +274,15 @@ export class SemanticSearchManager {
             type: field.fieldType,
             name: field.fieldName,
             id: field.fieldId,
-            selector: field.selector,
+            selector: field.selector,  // Always globally unique
             placeholder: field.placeholder,
             value: field.fieldValue,
             textContent: undefined,
+            isUnique: field.isUnique,  // Globally unique
+            foundInShadowDOM: field.foundInShadowDOM,
+            shadowHostSelector: field.shadowHostSelector,
+            shadowPath: field.shadowPath,
+            shadowDepth: field.shadowDepth,
           }),
         ),
       };
@@ -344,12 +359,17 @@ export class SemanticSearchManager {
             rank: i + 1,
             similarity: Math.round(element.similarity * 100) / 100,
             tagName: element.tagName,
-            selector: element.selector,
+            selector: element.selector,  // Always globally unique
             text: element.text,
             ariaLabel: element.ariaLabel,
             title: undefined,
             href: element.href,
             role: undefined,
+            isUnique: element.isUnique,  // Globally unique
+            foundInShadowDOM: element.foundInShadowDOM,
+            shadowHostSelector: element.shadowHostSelector,
+            shadowPath: element.shadowPath,
+            shadowDepth: element.shadowDepth,
           }),
         ),
       };

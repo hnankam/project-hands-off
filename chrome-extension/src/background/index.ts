@@ -1,11 +1,11 @@
 import 'webextension-polyfill';
 import { exampleThemeStorage } from '@extension/storage';
 
-// Type declaration for utils library
+// Type declaration for utils library (now shadow DOM aware)
 declare global {
   interface Window {
     utils: {
-      generateFastSelector: (element: Element) => { selector: string; isUnique: boolean };
+      generateFastSelector: (element: Element, shadowRoot?: ShadowRoot | null) => { selector: string; isUnique: boolean };
     };
   }
 }
@@ -274,15 +274,20 @@ async function embedPageContent(content: any): Promise<{
   const allFormData = content.allDOMContent?.allFormData;
   
   if (allFormData && Array.isArray(allFormData) && allFormData.length > 0) {
-    // Convert all form fields to clean format
+    // Convert all form fields to clean format (selector is ALWAYS globally unique)
     const cleanedFormFields = allFormData.map((field: any) => ({
-      selector: field.bestSelector || field.selector || 'unknown',
+      selector: field.bestSelector || field.selector || 'unknown',  // Always globally unique
       tagName: field.tagName || 'unknown',
       fieldType: field.type || 'unknown',
       fieldName: field.name || '',
       fieldId: field.id || '',
       placeholder: field.placeholder,
       fieldValue: field.value,
+      isUnique: field.isUnique !== undefined ? field.isUnique : false,  // Globally unique
+      foundInShadowDOM: field.foundInShadowDOM || false,
+      shadowHostSelector: field.shadowHostSelector || undefined,
+      shadowPath: field.shadowPath || undefined,
+      shadowDepth: field.shadowDepth || undefined,
     }));
     
     // Intelligently chunk the array directly (target ~10KB per chunk)
@@ -307,13 +312,18 @@ async function embedPageContent(content: any): Promise<{
   const clickableElements = content.allDOMContent?.clickableElements;
   
   if (clickableElements && Array.isArray(clickableElements) && clickableElements.length > 0) {
-    // Convert all clickable elements to clean format
+    // Convert all clickable elements to clean format (selector is ALWAYS globally unique)
     const cleanedClickableElements = clickableElements.map((element: any) => ({
-      selector: element.bestSelector || element.selector || 'unknown',
+      selector: element.bestSelector || element.selector || 'unknown',  // Always globally unique
       tagName: element.tagName || 'unknown',
       text: element.text || '',
       ariaLabel: element.ariaLabel,
       href: element.href,
+      isUnique: element.isUnique !== undefined ? element.isUnique : false,  // Globally unique
+      foundInShadowDOM: element.foundInShadowDOM || false,
+      shadowHostSelector: element.shadowHostSelector || undefined,
+      shadowPath: element.shadowPath || undefined,
+      shadowDepth: element.shadowDepth || undefined,
     }));
     
     // Intelligently chunk the array directly (target ~10KB per chunk)
@@ -627,6 +637,36 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
               return { success: false, error: 'No element found at click position' };
             }
             
+            // Text Sanitization Function (same as in main extraction)
+            const sanitizeText = (text: string | null | undefined): string => {
+              if (!text) return '';
+              
+              let result = text;
+              
+              // Remove zero-width characters
+              result = result.replace(/[\u200B-\u200D\uFEFF]/g, '');
+              
+              // Normalize Unicode whitespace to regular spaces
+              result = result.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ');
+              
+              // Replace tabs with spaces
+              result = result.replace(/\t/g, ' ');
+              
+              // Collapse multiple spaces into single space
+              result = result.replace(/ {2,}/g, ' ');
+              
+              // Trim each line
+              result = result.split('\n').map(line => line.trim()).join('\n');
+              
+              // Collapse multiple newlines (max 2)
+              result = result.replace(/\n{3,}/g, '\n\n');
+              
+              // Trim leading/trailing whitespace
+              result = result.trim();
+              
+              return result;
+            };
+            
             // HTML Cleaning Function (same as used for page content)
             const cleanHtmlForElement = (html: string) => {
               if (!html || html.length === 0) {
@@ -736,8 +776,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             const display = computedStyle.display;
             const position = computedStyle.position;
             
-            // Get text content (truncated if too long)
-            const textContent = element.textContent?.trim().substring(0, 200) || '';
+            // Get text content (sanitized and truncated if too long)
+            const textContent = sanitizeText(element.textContent)?.substring(0, 200) || '';
             
             // Get element dimensions
             const rect = element.getBoundingClientRect();
@@ -1128,11 +1168,16 @@ async function handlePageContentUpdate(data: any, tabId?: number, skipBroadcast 
         const formDataSize = (JSON.stringify(data.allDOMContent.allFormData).length / 1024).toFixed(2);
         log(`   - allFormData: ${formDataSize} KB (${data.allDOMContent.allFormData.length} elements)`);
         if (data.allDOMContent.allFormData.length > 0) {
-          log('   - allFormData first 3 elements:', data.allDOMContent.allFormData.slice(0, 3).map((f: any) => ({
+          log('   - allFormData first 10 elements:', data.allDOMContent.allFormData.slice(0, 10).map((f: any) => ({
+            isUnique: f.isUnique,  // Globally unique - FIRST for console visibility
+            selector: f.bestSelector,  // Always globally unique
             type: f.type,
             name: f.name,
             label: f.label,
-            selector: f.bestSelector
+            foundInShadowDOM: f.foundInShadowDOM,
+            shadowPath: f.shadowPath,
+            shadowDepth: f.shadowDepth,
+            shadowHostSelector: f.shadowHostSelector
           })));
         }
       }
@@ -1140,10 +1185,15 @@ async function handlePageContentUpdate(data: any, tabId?: number, skipBroadcast 
         const clickableSize = (JSON.stringify(data.allDOMContent.clickableElements).length / 1024).toFixed(2);
         log(`   - clickableElements: ${clickableSize} KB (${data.allDOMContent.clickableElements.length} elements)`);
         if (data.allDOMContent.clickableElements.length > 0) {
-          log('   - clickableElements first 3 elements:', data.allDOMContent.clickableElements.slice(0, 3).map((c: any) => ({
+          log('   - clickableElements first 10 elements:', data.allDOMContent.clickableElements.slice(0, 10).map((c: any) => ({
+            isUnique: c.isUnique,  // Globally unique - FIRST for console visibility
+            selector: c.selector,  // Always globally unique
             tagName: c.tagName,
             text: c.text?.substring(0, 50),
-            selector: c.selector
+            foundInShadowDOM: c.foundInShadowDOM,
+            shadowPath: c.shadowPath,
+            shadowDepth: c.shadowDepth,
+            shadowHostSelector: c.shadowHostSelector
           })));
         }
       }
@@ -1264,6 +1314,59 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
         target: { tabId: tabId },
         func: () => {
 
+          // Text Sanitization Function (runs in page context to normalize whitespace)
+          const sanitizeText = (text: string | null | undefined, options = {
+            trimLines: true,        // Trim each line
+            collapseSpaces: true,   // Collapse multiple spaces into one
+            collapseNewlines: true, // Collapse multiple newlines into max N
+            maxNewlines: 2,         // Maximum consecutive newlines
+            trim: true,             // Trim final result
+            removeZeroWidth: true,  // Remove zero-width characters
+            normalizeUnicode: true  // Normalize Unicode whitespace
+          }): string => {
+            if (!text) return '';
+            
+            let result = text;
+            
+            // Remove zero-width characters if enabled
+            if (options.removeZeroWidth) {
+              // Zero-width space, zero-width non-joiner, zero-width joiner, word joiner
+              result = result.replace(/[\u200B-\u200D\uFEFF]/g, '');
+            }
+            
+            // Normalize Unicode whitespace to regular spaces if enabled
+            if (options.normalizeUnicode) {
+              // Non-breaking space, en space, em space, thin space, hair space, etc.
+              result = result.replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ');
+            }
+            
+            // Replace tabs with spaces
+            result = result.replace(/\t/g, ' ');
+            
+            // Collapse multiple spaces into single space (if enabled)
+            if (options.collapseSpaces) {
+              result = result.replace(/ {2,}/g, ' ');
+            }
+            
+            // Trim each line (if enabled)
+            if (options.trimLines) {
+              result = result.split('\n').map(line => line.trim()).join('\n');
+            }
+            
+            // Collapse multiple newlines (if enabled)
+            if (options.collapseNewlines) {
+              const pattern = new RegExp(`\\n{${options.maxNewlines + 1},}`, 'g');
+              result = result.replace(pattern, '\n'.repeat(options.maxNewlines));
+            }
+            
+            // Trim leading/trailing whitespace (if enabled)
+            if (options.trim) {
+              result = result.trim();
+            }
+            
+            return result;
+          };
+
           // HTML Cleaning Function (runs in page context to clean before sending data)
           const cleanHtmlForAgent = (html: string) => {
             if (!html || html.length === 0) {
@@ -1365,6 +1468,38 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
               });
             };
             removeComments(doc.body);
+
+            // Remove empty attributes (attributes with empty string values)
+            doc.querySelectorAll('*').forEach(element => {
+              const attrs = Array.from(element.attributes);
+              for (const attr of attrs) {
+                if (attr.value === '') {
+                  element.removeAttribute(attr.name);
+                }
+              }
+            });
+
+            // Sanitize attribute values (normalize whitespace in attribute values)
+            doc.querySelectorAll('*').forEach(element => {
+              const attrs = Array.from(element.attributes);
+              for (const attr of attrs) {
+                if (attr.value && attr.value.length > 0) {
+                  // Apply text sanitization to attribute values with more conservative settings
+                  const cleaned = sanitizeText(attr.value, {
+                    trimLines: true,
+                    collapseSpaces: true,
+                    collapseNewlines: true,
+                    maxNewlines: 1,
+                    trim: true,
+                    removeZeroWidth: true,
+                    normalizeUnicode: true
+                  });
+                  if (cleaned !== attr.value) {
+                    element.setAttribute(attr.name, cleaned);
+                  }
+                }
+              }
+            });
 
             let cleanedHtml = doc.documentElement.outerHTML;
             
@@ -1515,13 +1650,37 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
             // PERFORMANCE OPTIMIZATION: Build shadow root map once, reuse for all queries
             const shadowRootMap = new Map<ShadowRoot, { host: Element; depth: number; path: string }>();
             
+            // Helper: Escape special characters in CSS selectors
+            const escapeCSSIdentifier = (identifier: string): string => {
+              // Escape special CSS characters: . # [ ] : ( ) , > + ~ " '
+              return identifier.replace(/([\\.#\[\]:(),>+~"'])/g, '\\$1');
+            };
+            
             // Single-pass: Build complete shadow root map with metadata (runs once)
             const buildShadowRootMap = (root: Document | ShadowRoot | Element, depth: number = 0, parentPath: string = 'document') => {
               const elements = root.querySelectorAll('*');
               
               for (const element of Array.from(elements)) {
                 if (element.shadowRoot && !shadowRootMap.has(element.shadowRoot)) {
-                  const hostIdentifier = `${element.tagName.toLowerCase()}${element.id ? '#' + element.id : ''}${element.className && typeof element.className === 'string' && element.classList.length > 0 ? '.' + Array.from(element.classList).slice(0, 2).join('.') : ''}`;
+                  // Build host identifier with proper CSS escaping
+                  let hostIdentifier = element.tagName.toLowerCase();
+                  
+                  // Add ID if present (with proper escaping for special characters)
+                  if (element.id) {
+                    hostIdentifier += '#' + escapeCSSIdentifier(element.id);
+                  }
+                  
+                  // Add up to 2 classes if present (with proper escaping)
+                  if (element.className && typeof element.className === 'string' && element.classList.length > 0) {
+                    const escapedClasses = Array.from(element.classList)
+                      .slice(0, 2)
+                      .map(cls => escapeCSSIdentifier(cls))
+                      .join('.');
+                    if (escapedClasses) {
+                      hostIdentifier += '.' + escapedClasses;
+                    }
+                  }
+                  
                   const currentPath = `${parentPath} > ${hostIdentifier}`;
                   
                   shadowRootMap.set(element.shadowRoot, {
@@ -1575,7 +1734,12 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                   // Use cached metadata (O(1) lookup)
                   const metadata = shadowRootMap.get(currentNode);
                   if (metadata) {
-                    const hostIdentifier = `${metadata.host.tagName.toLowerCase()}${metadata.host.id ? '#' + metadata.host.id : ''}`;
+                    // Build host identifier with proper CSS escaping (same as buildShadowRootMap)
+                    let hostIdentifier = metadata.host.tagName.toLowerCase();
+                    if (metadata.host.id) {
+                      hostIdentifier += '#' + escapeCSSIdentifier(metadata.host.id);
+                    }
+                    
                     return {
                       foundInShadowDOM: true,
                       shadowPath: metadata.path,
@@ -1616,15 +1780,56 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
               }
             };
             
+            // GLOBAL uniqueness verification (checks across ALL shadow roots and main DOM)
+            const verifyGlobalUniqueness = (el: Element, selector: string, currentShadowRoot: ShadowRoot | null): boolean => {
+              if (!selector || !el) return false;
+              
+              let totalMatches = 0;
+              let matchesTargetElement = false;
+              
+              try {
+                // Check main DOM
+                const mainMatches = document.querySelectorAll(selector);
+                totalMatches += mainMatches.length;
+                if (Array.from(mainMatches).includes(el)) {
+                  matchesTargetElement = true;
+                }
+                
+                // Check ALL shadow roots (using the shadowRootMap we built earlier)
+                for (const shadowRoot of shadowRootMap.keys()) {
+                  try {
+                    const shadowMatches = shadowRoot.querySelectorAll(selector);
+                    totalMatches += shadowMatches.length;
+                    if (Array.from(shadowMatches).includes(el)) {
+                      matchesTargetElement = true;
+                    }
+                  } catch (e) {
+                    // Skip invalid selectors in this shadow root
+                  }
+                }
+                
+                // Globally unique means: only 1 match total AND it's our element
+                return totalMatches === 1 && matchesTargetElement;
+              } catch (e) {
+                return false;
+              }
+            };
+            
             // Enhanced selector uniqueness enforcer with context-aware strategies
-            const ensureUniqueSelector = (el: Element, initialSelector: string, shadowRoot: ShadowRoot | null): { selector: string; isUnique: boolean } => {
+            const ensureUniqueSelector = (el: Element, initialSelector: string, shadowRoot: ShadowRoot | null): { selector: string; isUnique: boolean; isGloballyUnique: boolean } => {
+              // Helper to create return object with both uniqueness flags
+              const makeResult = (selector: string, isUnique: boolean) => {
+                const isGloballyUnique = isUnique ? verifyGlobalUniqueness(el, selector, shadowRoot) : false;
+                return { selector, isUnique, isGloballyUnique };
+              };
+              
               if (!el || !initialSelector) {
-                return { selector: initialSelector || el.tagName.toLowerCase(), isUnique: false };
+                return makeResult(initialSelector || el.tagName.toLowerCase(), false);
               }
               
               // Test if initial selector is already unique
               if (verifySelectorUniqueness(el, initialSelector, shadowRoot)) {
-                return { selector: initialSelector, isUnique: true };
+                return makeResult(initialSelector, true);
               }
               
               const tagName = el.tagName.toLowerCase();
@@ -1640,7 +1845,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                 if (value) {
                   const attrSelector = `${tagName}[${attr}="${CSS.escape(value)}"]`;
                   if (verifySelectorUniqueness(el, attrSelector, shadowRoot)) {
-                    return { selector: attrSelector, isUnique: true };
+                    return makeResult(attrSelector, true);
                   }
                 }
               }
@@ -1655,7 +1860,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                   if (value) {
                     const combinedSelector = `${tagName}.${CSS.escape(firstClass)}[${attr}="${CSS.escape(value)}"]`;
                     if (verifySelectorUniqueness(el, combinedSelector, shadowRoot)) {
-                      return { selector: combinedSelector, isUnique: true };
+                      return makeResult(combinedSelector, true);
                     }
                   }
                 }
@@ -1690,7 +1895,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                   }
                   
                   if (verifySelectorUniqueness(el, multiSelector, shadowRoot)) {
-                    return { selector: multiSelector, isUnique: true };
+                    return makeResult(multiSelector, true);
                   }
                 }
               }
@@ -1702,7 +1907,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
               if (typeIndex >= 0) {
                 const nthSelector = `${tagName}:nth-of-type(${typeIndex + 1})`;
                 if (verifySelectorUniqueness(el, nthSelector, shadowRoot)) {
-                  return { selector: nthSelector, isUnique: true };
+                  return makeResult(nthSelector, true);
                 }
               }
               
@@ -1722,7 +1927,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                 
                 const contextSelector = `${parentPart} > ${tagName}`;
                 if (verifySelectorUniqueness(el, contextSelector, shadowRoot)) {
-                  return { selector: contextSelector, isUnique: true };
+                  return makeResult(contextSelector, true);
                 }
                 
                 // Try with nth-of-type in parent context
@@ -1731,7 +1936,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                 if (parentIndex >= 0) {
                   const parentNthSelector = `${parentPart} > ${tagName}:nth-of-type(${parentIndex + 1})`;
                   if (verifySelectorUniqueness(el, parentNthSelector, shadowRoot)) {
-                    return { selector: parentNthSelector, isUnique: true };
+                    return makeResult(parentNthSelector, true);
                   }
                 }
               }
@@ -1752,7 +1957,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                 
                 const hierarchicalSelector = `${grandparentPart} > ${parentPart} > ${tagName}`;
                 if (verifySelectorUniqueness(el, hierarchicalSelector, shadowRoot)) {
-                  return { selector: hierarchicalSelector, isUnique: true };
+                  return makeResult(hierarchicalSelector, true);
                 }
               }
               
@@ -1763,7 +1968,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                 if (childIndex >= 0) {
                   const nthChildSelector = `${tagName}:nth-child(${childIndex + 1})`;
                   if (verifySelectorUniqueness(el, nthChildSelector, shadowRoot)) {
-                    return { selector: nthChildSelector, isUnique: true };
+                    return makeResult(nthChildSelector, true);
                   }
                   
                   // Try with parent context + nth-child
@@ -1771,7 +1976,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                     const parentTag = el.parentElement.tagName.toLowerCase();
                     const parentNthChild = `${parentTag} > ${tagName}:nth-child(${childIndex + 1})`;
                     if (verifySelectorUniqueness(el, parentNthChild, shadowRoot)) {
-                      return { selector: parentNthChild, isUnique: true };
+                      return makeResult(parentNthChild, true);
                     }
                   }
                 }
@@ -1779,7 +1984,38 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
               
               // If all strategies fail, return initial selector marked as non-unique
               console.warn('[Selector Uniqueness] Failed to generate unique selector for element:', el, 'Selector:', initialSelector);
-              return { selector: initialSelector, isUnique: false };
+              return makeResult(initialSelector, false);
+            };
+            
+            // Make selector globally unique by incorporating shadow path if needed
+            // This ensures bestSelector is ALWAYS globally unique for the agent
+            const makeGloballyUniqueSelector = (
+              selector: string, 
+              isGloballyUnique: boolean,
+              shadowPath: string | undefined, 
+              shadowHostSelector: string | undefined, 
+              foundInShadowDOM: boolean
+            ): string => {
+              // CRITICAL: If element is in shadow DOM, ALWAYS include the shadow path
+              // Even if the selector is globally unique, the agent cannot access it from main document
+              // without the full shadow path for traversal
+              if (foundInShadowDOM) {
+                // Prefer full shadow path for complete traversal info
+                if (shadowPath) {
+                  // Use >> notation to indicate shadow root piercing at each level
+                  // Example: "document > x-app-entry-point-wrapper > ... >> #input"
+                  return `${shadowPath} >> ${selector}`;
+                }
+                
+                // Fallback to shadowHostSelector if path not available
+                if (shadowHostSelector) {
+                  return `${shadowHostSelector} >> ${selector}`;
+                }
+              }
+              
+              // Main DOM element - return as-is
+              // If not unique, agent will need to handle disambiguation
+              return selector;
             };
             
             // Optimized: Use cached shadow root map to build shadow roots array (no re-traversal)
@@ -1939,7 +2175,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
             return {
               url: window.location.href,
               title: document.title,
-              textContent: document.body.innerText || '',
+              textContent: sanitizeText(document.body.innerText || ''),
               
               // ONLY extract what the AI agent actually uses:
               allDOMContent: {
@@ -2011,7 +2247,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                     if (id) {
                       const labelElement = document.querySelector(`label[for="${CSS.escape(id)}"]`);
                       if (labelElement) {
-                        label = labelElement.textContent?.trim() || '';
+                        label = sanitizeText(labelElement.textContent);
                       }
                     }
                     
@@ -2022,7 +2258,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                       if (container && container.id) {
                         const labelElement = document.querySelector(`label[for="${CSS.escape(container.id)}"]`);
                         if (labelElement) {
-                          label = labelElement.textContent?.trim() || '';
+                          label = sanitizeText(labelElement.textContent);
                         }
                       }
                     }
@@ -2031,10 +2267,11 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                     if (!label) {
                       const parentLabel = input.closest('label');
                       if (parentLabel) {
-                        label = parentLabel.textContent?.trim() || '';
+                        label = sanitizeText(parentLabel.textContent);
                         // Remove the input's own text content if it's included
                         if (input.textContent) {
-                          label = label.replace(input.textContent, '').trim();
+                          const inputText = sanitizeText(input.textContent);
+                          label = sanitizeText(label.replace(inputText, ''));
                         }
                       }
                     }
@@ -2043,13 +2280,13 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                     if (!label) {
                       const ariaLabel = input.getAttribute('aria-label');
                       if (ariaLabel) {
-                        label = ariaLabel;
+                        label = sanitizeText(ariaLabel);
                       } else {
                         const ariaLabelledBy = input.getAttribute('aria-labelledby');
                         if (ariaLabelledBy) {
                           const labelElement = document.getElementById(ariaLabelledBy);
                           if (labelElement) {
-                            label = labelElement.textContent?.trim() || '';
+                            label = sanitizeText(labelElement.textContent);
                           }
                         }
                       }
@@ -2061,7 +2298,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                       if (parent) {
                         const textNodes = Array.from(parent.childNodes)
                           .filter(node => node.nodeType === Node.TEXT_NODE)
-                          .map(node => node.textContent?.trim())
+                          .map(node => sanitizeText(node.textContent))
                           .filter((text): text is string => text !== undefined && text.length > 0);
                         
                         if (textNodes.length > 0) {
@@ -2076,13 +2313,16 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                       if (formItem) {
                         const labelElement = formItem.querySelector('label[data-slot="form-label"]');
                         if (labelElement) {
-                          label = labelElement.textContent?.trim() || '';
+                          label = sanitizeText(labelElement.textContent);
                         }
                       }
                     }
                     
-                    // Generate CSS selectors using our optimized fast generator
-                    const generateFormSelector = (el: Element): { selector: string; isUnique: boolean } => {
+                    // Get shadow DOM context first (needed for selector generation and uniqueness check)
+                    const shadowContext = getShadowContext(input);
+                    
+                    // Generate CSS selectors using our optimized fast generator (now shadow-aware)
+                    const generateFormSelector = (el: Element, shadowRoot: ShadowRoot | null): { selector: string; isUnique: boolean } => {
                       if (!el || el.nodeType !== Node.ELEMENT_NODE) {
                         return { selector: el.tagName.toLowerCase(), isUnique: false };
                       }
@@ -2092,21 +2332,29 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                         return generateRobustFallbackSelector(el);
                       }
 
-                      // Using fast selector generator - tested and confirmed as best performer
-                      return window.utils.generateFastSelector(el);
+                      // Using fast selector generator - now shadow-aware!
+                      return window.utils.generateFastSelector(el, shadowRoot);
                     };
-
-                    // Get shadow DOM context first (needed for uniqueness check)
-                    const shadowContext = getShadowContext(input);
                     
-                    // Generate initial selector using finder
-                    const selectorResult = generateFormSelector(input);
+                    // Generate initial selector using finder (pass shadow root for shadow-aware generation)
+                    const selectorResult = generateFormSelector(input, shadowContext.shadowRoot);
                     const initialSelector = selectorResult.selector;
                     
                     // ENFORCE UNIQUENESS: Context-aware uniqueness check (main DOM or shadow DOM)
                     const uniqueResult = ensureUniqueSelector(input, initialSelector, shadowContext.shadowRoot);
-                    const bestSelector = uniqueResult.selector;
-                    const isSelectorUnique = uniqueResult.isUnique;
+                    let bestSelector = uniqueResult.selector;
+                    const isScopedUnique = uniqueResult.isUnique;
+                    const isGloballyUnique = uniqueResult.isGloballyUnique;
+                    
+                    // Make selector globally unique by incorporating shadow path if needed
+                    // This ensures bestSelector is ALWAYS globally unique for the agent
+                    bestSelector = makeGloballyUniqueSelector(
+                      bestSelector, 
+                      isGloballyUnique,
+                      shadowContext.shadowPath, 
+                      shadowContext.shadowHostSelector, 
+                      shadowContext.foundInShadowDOM
+                    );
                     
                     // Get value from appropriate source
                     let value = '';
@@ -2127,7 +2375,7 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                     }
                     
                     return {
-                    tagName: input.tagName,
+                   tagName: input.tagName,
                       type: isCustom ? 'select' : type, // Treat custom dropdowns as select type
                       name: name,
                       id: id,
@@ -2136,11 +2384,11 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                       label: label,
                     checked: (input as HTMLInputElement).checked,
                       selected: selected,
-                      textContent: input.textContent || '',
-                      selectors: [bestSelector], // Use finder-generated selector
-                      bestSelector: bestSelector,
+                      textContent: sanitizeText(input.textContent),
+                      selectors: [bestSelector], // Globally unique selector (includes shadow path if needed)
+                      bestSelector: bestSelector, // ALWAYS globally unique selector
                       elementIndex: index,
-                      isUnique: isSelectorUnique, // Use actual uniqueness verification
+                      isUnique: isGloballyUnique || isScopedUnique, // TRUE if globally unique OR if in isolated scope
                       isCustomDropdown: isCustom,
                       foundInShadowDOM: shadowContext.foundInShadowDOM,
                       shadowPath: shadowContext.shadowPath || undefined,
@@ -2152,8 +2400,8 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                 // 3. Clickable elements (for clicking actions) - OPTIMIZED MODERN WEB APP SUPPORT
                   clickableElements: (() => {
                     try {
-                      // Use SAME approach as form data - simple and proven
-                      const generateClickableSelector = (el: Element): { selector: string; isUnique: boolean } => {
+                      // Use SAME approach as form data - simple and proven (now shadow-aware)
+                      const generateClickableSelector = (el: Element, shadowRoot: ShadowRoot | null): { selector: string; isUnique: boolean } => {
                         if (!el || el.nodeType !== Node.ELEMENT_NODE) {
                           return { selector: el.tagName.toLowerCase(), isUnique: false };
                         }
@@ -2163,8 +2411,8 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                           return generateRobustFallbackSelector(el);
                         }
 
-                        // Using fast selector generator - tested and confirmed as best performer
-                        return window.utils.generateFastSelector(el);
+                        // Using fast selector generator - now shadow-aware!
+                        return window.utils.generateFastSelector(el, shadowRoot);
                       };
                       
                       // Optimized element collection
@@ -2206,23 +2454,33 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
                         })
                         .map(el => {
                           const rect = el.getBoundingClientRect();
-                          const text = el.textContent?.trim() || '';
+                          const text = sanitizeText(el.textContent);
                           
-                          // Get shadow DOM context first (needed for uniqueness check) - SAME as form data
+                          // Get shadow DOM context first (needed for selector generation and uniqueness check) - SAME as form data
                           const shadowContext = getShadowContext(el);
                           
-                          // Generate initial selector using trusted utility - SAME as form data
-                          const selectorResult = generateClickableSelector(el);
+                          // Generate initial selector using trusted utility (now shadow-aware) - SAME as form data
+                          const selectorResult = generateClickableSelector(el, shadowContext.shadowRoot);
                           const initialSelector = selectorResult.selector;
                           
                           // ENFORCE UNIQUENESS: Context-aware uniqueness check - SAME as form data
                           const uniqueResult = ensureUniqueSelector(el, initialSelector, shadowContext.shadowRoot);
-                          const bestSelector = uniqueResult.selector;
-                          const isSelectorUnique = uniqueResult.isUnique;
+                          let bestSelector = uniqueResult.selector;
+                          const isScopedUnique = uniqueResult.isUnique;
+                          const isGloballyUnique = uniqueResult.isGloballyUnique;
+                          
+                          // Make selector globally unique by incorporating shadow path if needed
+                          bestSelector = makeGloballyUniqueSelector(
+                            bestSelector,
+                            isGloballyUnique,
+                            shadowContext.shadowPath, 
+                            shadowContext.shadowHostSelector, 
+                            shadowContext.foundInShadowDOM
+                          );
                           
                           return {
-                            selector: bestSelector,
-                            isUnique: isSelectorUnique,
+                            selector: bestSelector, // ALWAYS globally unique selector (includes shadow path if needed)
+                            isUnique: isGloballyUnique || isScopedUnique, // TRUE if globally unique OR if in isolated scope
                             tagName: el.tagName.toLowerCase(),
                             text: text.substring(0, 100),
                             href: (el as HTMLAnchorElement).href || '',

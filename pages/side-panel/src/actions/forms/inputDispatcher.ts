@@ -74,52 +74,57 @@ export class InputDispatcher {
           shouldMoveCursor: boolean,
         ): Promise<any> => {
           // Define content script functions inline
-          function findElement(selector: string): any {
-            // console.log('[InputDispatcher] Finding element with selector:', selector);
-
-            // First try to find element in main DOM
-            let element = document.querySelector(selector) as HTMLElement;
-            let foundInShadowDOM = false;
-            let shadowHostInfo = '';
-
-            // If not found in main DOM, search in Shadow DOM
-            if (!element) {
-              // console.log('[InputDispatcher] Element not found in main DOM, searching Shadow DOM...');
-
-              // Search through all shadow roots with early exit
-              for (const hostElement of Array.from(document.querySelectorAll('*'))) {
-                if (hostElement.shadowRoot && !element) {
-                  try {
-                    const shadowElement = hostElement.shadowRoot.querySelector(selector) as HTMLElement;
-                    if (shadowElement) {
-                      element = shadowElement;
-                      foundInShadowDOM = true;
-                      shadowHostInfo = `${hostElement.tagName}${hostElement.id ? '#' + hostElement.id : ''}${hostElement.className ? '.' + hostElement.className.split(' ')[0] : ''}`;
-                      // console.log('[InputDispatcher] Found element in Shadow DOM:', shadowHostInfo);
-                      break;
-                    }
-                  } catch (shadowError) {
-                    // console.log('[InputDispatcher] Shadow DOM query error:', shadowError);
-                  }
-                }
-              }
+          // Shadow DOM helper - supports >> notation
+          function querySelectorWithShadowDOM(selector: string): HTMLElement | null {
+            if (!selector.includes(' >> ')) {
+              return document.querySelector(selector) as HTMLElement;
             }
 
+            const parts = selector.split(' >> ');
+            if (parts.length !== 2) {
+              throw new Error('Invalid shadow DOM selector format. Expected "shadowPath >> elementSelector"');
+            }
+
+            const shadowPath = parts[0].trim();
+            const elementSelector = parts[1].trim();
+
+            const pathSegments = shadowPath
+              .split(' > ')
+              .map((s: string) => s.trim())
+              .filter((s: string) => s && s !== 'document');
+
+            if (pathSegments.length === 0) {
+              throw new Error('Shadow path must contain at least one element');
+            }
+
+            let currentRoot: Document | ShadowRoot = document;
+            
+            for (const segment of pathSegments) {
+              const hostElement: Element | null = currentRoot.querySelector(segment);
+              
+              if (!hostElement) {
+                throw new Error('Shadow host not found: ' + segment);
+              }
+              
+              if (!hostElement.shadowRoot) {
+                throw new Error('Element does not have a shadow root: ' + segment);
+              }
+              
+              currentRoot = hostElement.shadowRoot;
+            }
+
+            return currentRoot.querySelector(elementSelector) as HTMLElement;
+          }
+
+          function findElement(selector: string): any {
+            // Use shadow-aware query
+            const element = querySelectorWithShadowDOM(selector);
+            const foundInShadowDOM = selector.includes(' >> ');
+            const shadowHostInfo = foundInShadowDOM ? selector.split(' >> ')[0].trim() : '';
+
             if (!element) {
-              // console.log('[InputDispatcher] Element not found with selector:', selector);
               return null;
             }
-
-            // Debug: Log found element details
-            // console.log('[InputDispatcher] Found element:', {
-            //   tagName: element.tagName,
-            //   id: element.id,
-            //   className: element.className,
-            //   ariaHidden: element.getAttribute('aria-hidden'),
-            //   tabIndex: element.getAttribute('tabindex'),
-            //   role: element.getAttribute('role'),
-            //   dataSlot: element.getAttribute('data-slot')
-            // });
 
             const inputType =
               (element as HTMLInputElement).type || (element.hasAttribute('contenteditable') ? 'contenteditable' : '');

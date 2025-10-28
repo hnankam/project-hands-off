@@ -6,9 +6,8 @@
 import { DBWorkerClient } from './db-worker-client.js';
 
 // Note: This verification file needs to be moved to pages/side-panel/src/lib
-// For now, create a temporary instance with a placeholder path
-const embeddingsStorage = new DBWorkerClient({
-  workerUrl: new URL('../../../pages/side-panel/src/workers/db-worker.ts', import.meta.url),
+// For now, create a temporary instance using default worker path
+const dbWorkerClient = new DBWorkerClient({
   debug: true,
 });
 
@@ -20,7 +19,7 @@ export async function verifyMemoryMode() {
   try {
     // Step 1: Initialize the worker
     console.log('Step 1: Initializing database worker...');
-    await embeddingsStorage.initialize(true); // Explicit memory mode
+    await dbWorkerClient.initialize(true); // Explicit memory mode
     console.log('✅ Worker initialized\n');
 
     // Step 2: Check console logs
@@ -39,7 +38,7 @@ export async function verifyMemoryMode() {
       index: 0,
     }];
 
-    await embeddingsStorage.storeHTMLChunks({
+    await dbWorkerClient.storeHTMLChunks({
       pageURL: 'https://memory-test.example.com',
       pageTitle: 'Memory Test',
       chunks: testData,
@@ -49,7 +48,7 @@ export async function verifyMemoryMode() {
     // Step 4: Verify data exists
     console.log('Step 4: Verifying data is accessible...');
     const queryEmbedding = Array.from({ length: 384 }, () => Math.random());
-    const results = await embeddingsStorage.searchHTMLChunks(
+    const results = await dbWorkerClient.searchHTMLChunks(
       'https://memory-test.example.com',
       queryEmbedding,
       1
@@ -133,7 +132,7 @@ export async function quickCheck() {
   console.log('🔍 Quick Storage Mode Check\n');
   
   try {
-    await embeddingsStorage.initialize(true);
+    await dbWorkerClient.initialize(true);
     console.log('Check the logs above for:');
     console.log('  "Connection: mem://" = Memory mode ✅');
     console.log('  "Connection: indxdb://" = IndexedDB mode ❌\n');

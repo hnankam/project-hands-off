@@ -242,6 +242,14 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     saveMessagesRef,
       restoreMessagesRef,
   });
+
+  // Ensure messages are loaded when switching to a new active session
+  useEffect(() => {
+    if (isActive) {
+        debug.log(ts(), '[ChatSessionContainer] Active session changed, loading messages');
+      void handleLoadMessages();
+    }
+  }, [sessionId, isActive, handleLoadMessages]);
   
   // Load stored usage stats for this session
   const initialUsage = useMemo(() => {
@@ -369,14 +377,20 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       currentTabId,
     });
 
-    // DOM update embedding hook - replaces DOM update effect block
+    // Live ref that reflects whether embedding work is active right now
+    const embeddingActiveRef = useRef<boolean>(false);
+    useEffect(() => {
+      embeddingActiveRef.current = Boolean(isEmbedding || isEmbeddingProcessing);
+    }, [isEmbedding, isEmbeddingProcessing]);
+
+    // DOM update embedding hook - stores incremental DOM changes
     useDOMUpdateEmbedding({
       latestDOMUpdate,
       isEmbeddingInitialized,
       currentPageContent,
       embedTexts,
-                  sessionId,
-                });
+      sessionId,
+    });
 
     // Agent switching hook - replaces agent switching state machine
     const {
@@ -418,6 +432,40 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       isPanelInteractive,
       currentTabId,
   });
+
+  /**
+   * Enhanced refresh that waits for embeddings to complete
+   * Used by the AI agent's refreshPageContent action
+   */
+  const triggerManualRefreshWithEmbeddingWait = useCallback(async () => {
+    debug.log(ts(), '[ChatSessionContainer] Triggering manual refresh with embedding wait...');
+    
+    // Trigger the refresh
+    await triggerManualRefresh();
+    
+    // Phase 1: wait briefly for embedding to START (content fetch -> effect kicks in)
+    const maxStartWait = 3000; // 3s grace period to detect start
+    const pollInterval = 100;  // Check every 100ms for fast detection
+    let waited = 0;
+    while (!embeddingActiveRef.current && waited < maxStartWait) {
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+      waited += pollInterval;
+    }
+
+    // Phase 2: once started, wait until it finishes (cap total to 30s)
+    const maxFinishWait = 30000;
+    const startTime = Date.now();
+    while (embeddingActiveRef.current && (Date.now() - startTime) < maxFinishWait) {
+      debug.log(ts(), '[ChatSessionContainer] Waiting for embeddings to complete...');
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    if (embeddingActiveRef.current) {
+      debug.log(ts(), '[ChatSessionContainer] ⚠️  Embeddings still processing after timeout');
+    } else {
+      debug.log(ts(), '[ChatSessionContainer] ✅ Embeddings finished');
+    }
+  }, [triggerManualRefresh, isEmbedding, isEmbeddingProcessing]);
 
   
   // Auto-refresh content when panel becomes active (visible or user interacts)
@@ -756,7 +804,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
               initialAgentStepState={initialAgentStepState}
               onAgentStepStateChange={setCurrentAgentStepState}
                 contextMenuMessage={contextMenuMessage}
-                triggerManualRefresh={triggerManualRefresh}
+                triggerManualRefresh={triggerManualRefreshWithEmbeddingWait}
             />
           </CopilotKit>
         </div>

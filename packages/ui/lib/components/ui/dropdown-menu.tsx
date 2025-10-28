@@ -121,13 +121,14 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', isL
 interface DropdownMenuItemProps {
   children: React.ReactNode
   onClick?: (e: React.MouseEvent) => void
+  onMouseDown?: (e: React.MouseEvent) => void
   className?: string
   shortcut?: string
   isLight?: boolean
   disabled?: boolean
 }
 
-export const DropdownMenuItem = ({ children, onClick, className, shortcut, isLight = true, disabled = false }: DropdownMenuItemProps) => {
+export const DropdownMenuItem = ({ children, onClick, onMouseDown, className, shortcut, isLight = true, disabled = false }: DropdownMenuItemProps) => {
   return (
     <button
       className={cn(
@@ -142,6 +143,7 @@ export const DropdownMenuItem = ({ children, onClick, className, shortcut, isLig
         className
       )}
       onClick={disabled ? undefined : onClick}
+      onMouseDown={disabled ? undefined : onMouseDown}
       disabled={disabled}
     >
       <span>{children}</span>

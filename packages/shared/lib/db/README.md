@@ -37,9 +37,8 @@ await initializeSchema();
 ```typescript
 import { DBWorkerClient } from '@extension/shared';
 
-// Provide a concrete worker URL or a Worker instance
+// Create a worker client (automatically resolves worker path)
 const dbWorker = new DBWorkerClient({
-  workerUrl: new URL('../../../pages/side-panel/src/workers/db-worker.ts', import.meta.url),
   debug: false, // set true for development logs
 });
 

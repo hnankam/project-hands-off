@@ -95,6 +95,7 @@ import {
   createGetSelectorAtPointAction,
   createGetSelectorsAtPointsAction,
 } from '../actions/copilot/domActions';
+import { createSendKeystrokesAction } from '../actions/copilot/domActions';
 import { createInputDataAction } from '../actions/copilot/formActions';
 import {
   createOpenNewTabAction,
@@ -242,6 +243,9 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // Chat messages and loading state
   const { messages, setMessages, isLoading, generateSuggestions, reloadMessages, reset } = useCopilotChatHeadless_c();
   
+  // Track streaming state to avoid restoring messages after edits/deletes
+  const wasStreamingRef = useRef(false);
+  
   // Shared agent state for maintaining agent context across interactions
     const { state, setState } = useCoAgent<AgentState>({
     name: 'dynamic_agent',
@@ -265,6 +269,19 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
       resetChatRef.current = reset;
     }
   }, [reset, resetChatRef]);
+  
+  // Clear streaming flag when messages are cleared (reset/delete all)
+  useEffect(() => {
+    if (messages.length === 0) {
+      wasStreamingRef.current = false;
+    }
+  }, [messages.length]);
+  
+  // Clear sanitization cache when session changes to prevent cross-session contamination
+  useEffect(() => {
+    cachedSanitizedRef.current = null;
+    wasStreamingRef.current = false;
+  }, [sessionId]);
 
   // Totals for DB-backed counts (HTML, form, clickable element chunks)
   const [totals, setTotals] = useState<{ html: number; form: number; click: number }>({ html: 0, form: 0, click: 0 });
@@ -316,6 +333,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     pageDataRef.current.embeddings = pageContentEmbedding || null;
     pageDataRef.current.pageContent = currentPageContent;
   }, [pageContentEmbedding, currentPageContent]);
+
+  // Removed continuous normalization effect to avoid render churn
 
   // ================================================================================
   // PAGE METADATA
@@ -391,6 +410,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   useCopilotAction(createVerifySelectorAction({ isLight, clipText }) as any, [domDeps]);
   useCopilotAction(createGetSelectorAtPointAction({ isLight }) as any, [isLight]);
   useCopilotAction(createGetSelectorsAtPointsAction({ isLight }) as any, [isLight]);
+  useCopilotAction(createSendKeystrokesAction({ isLight, clipText }) as any, [domDeps]);
 
   // --- FORM ACTIONS ---
   useCopilotAction(createInputDataAction({ isLight, clipText }) as any, [isLight, clipText]);
@@ -532,7 +552,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           //   title: sessionTitle || `Session ${sessionId.slice(0, 8)}`,
           //   initial: `Work in autopilot mode.`,
           // }}
-          imageUploadsEnabled={true}
+          imageUploadsEnabled={false} // Disable image uploads for now, using custom input for attachments
           onSubmitMessage={React.useCallback((message: string) => {
             debug.log('[ChatInner] User submitted message:', message);
             try {
@@ -577,16 +597,56 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
             console.log('[ChatInner] Error:', errorEvent);
           }}
           onInProgress={React.useCallback(async (inProgress: boolean) => {
-            if (inProgress) return;
-            // Streaming stopped
+            // Track streaming state - only sanitize when transitioning from streaming to not-streaming
+            if (inProgress) {
+              wasStreamingRef.current = true;
+              return;
+            }
+            
+            // If we weren't streaming, this is likely a message edit/delete - don't restore
+            if (!wasStreamingRef.current) {
+              return;
+            }
+            
+            // Reset flag - we're handling the streaming completion
+            wasStreamingRef.current = false;
+            
+            // Streaming stopped - sanitize current messages immediately to fix thinking tags
             try {
+              // Get messages from ref to avoid dependency loop
               const fn = saveMessagesRef?.current;
               if (!fn) return;
+              
               const data = fn();
               const all = (data && (data as any).allMessages) || [];
+              
+              // Sanitize the messages
+              const signature = computeMessagesSignature(all);
+              let result: { messages: any[]; hasChanges: boolean };
+              
+              if (cachedSanitizedRef.current && cachedSanitizedRef.current.signature === signature) {
+                result = cachedSanitizedRef.current.result;
+              } else {
+                result = sanitizeMessages(all);
+                cachedSanitizedRef.current = { signature, result } as any;
+              }
+              
+              // PERFORMANCE: Apply sanitization if changes were made - use rAF to batch with next paint
+              if (result.hasChanges) {
+                // Schedule for next animation frame to avoid blocking but still be fast
+                // result.messages is already a new array from sanitizeMessages, no need to spread
+                if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
+                  requestAnimationFrame(() => setMessages(result.messages));
+                } else {
+                  setMessages(result.messages);
+                }
+              }
+              
+              // Save to storage
               if (all && all.length > 0) {
                 void saveMessagesToStorage(all);
               }
+              
               // Generate suggestions only after the assistant stops streaming
               if (showSuggestions && generateSuggestions) {
                 debug.log('🧠 [ChatInner] Assistant stopped, generating suggestions...');
@@ -599,7 +659,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
             } catch (e) {
               debug.warn?.('[ChatInner] Auto-save on assistant stop failed:', e);
             }
-          }, [saveMessagesRef, saveMessagesToStorage, showSuggestions, generateSuggestions])}
+          }, [saveMessagesRef, saveMessagesToStorage, showSuggestions, generateSuggestions, computeMessagesSignature, sanitizeMessages, setMessages])}
           renderError={React.useCallback((err: { message: string; operation?: string; timestamp: number; onDismiss: () => void; onRetry?: () => void; }) => {
             const { message, operation /* onDismiss, timestamp */ } = err;
             // Create an Error object from the message

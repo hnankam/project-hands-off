@@ -33,9 +33,10 @@ export const createWaitAction = ({ isLight }: UtilityActionDependencies) => ({
     return <WaitCountdown seconds={s} status={status as any} isLight={isLight} />;
   },
   handler: async ({ seconds }: { seconds: number }) => {
+    debug.log(ts(), '[Agent Request] wait:', { seconds });
     const s = Math.max(0, Math.min(30, Math.floor(Number(seconds || 0))));
     await new Promise(resolve => setTimeout(resolve, s * 1000));
-    debug.log(ts(), '[Agent Response] wait complete:', s, 'seconds');
+    debug.log(ts(), '[Agent Response] wait:', { status: 'success', waitedSeconds: s });
     return { status: 'success', waitedSeconds: s } as const;
   },
 });

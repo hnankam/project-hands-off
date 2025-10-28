@@ -8,6 +8,11 @@ import React from 'react';
 import type { SemanticSearchManager } from '../../lib/SemanticSearchManager';
 import { ActionStatus } from '../../components/ActionStatus';
 
+import { debug } from '@extension/shared';
+
+// Timestamp helper for consistent logging
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+
 interface SearchActionDependencies {
   searchManager: SemanticSearchManager;
   isLight: boolean;
@@ -77,7 +82,10 @@ export const createSearchPageContentAction = ({ searchManager, isLight, clipText
     );
   },
   handler: async ({ query, topK = 3 }: { query: string; topK?: number }) => {
-    return await searchManager.searchPageContent(query, topK);
+    debug.log(ts(), '[Agent Request] searchPageContent:', { query, topK });
+    const result = await searchManager.searchPageContent(query, topK);
+    debug.log(ts(), '[Agent Response] searchPageContent:', result);
+    return result;
   },
 });
 
@@ -146,7 +154,10 @@ export const createSearchFormDataAction = ({ searchManager, isLight, clipText }:
     );
   },
   handler: async ({ query, topK = 5 }: { query: string; topK?: number }) => {
-    return await searchManager.searchFormData(query, topK);
+    debug.log(ts(), '[Agent Request] searchFormData:', { query, topK });
+    const result = await searchManager.searchFormData(query, topK);
+    debug.log(ts(), '[Agent Response] searchFormData:', result);
+    return result;
   },
 });
 
@@ -190,7 +201,10 @@ export const createSearchDOMUpdatesAction = ({ searchManager, isLight, clipText 
     );
   },
   handler: async ({ query, topK = 5 }: { query: string; topK?: number }) => {
-    return await searchManager.searchDOMUpdates(query, topK);
+    debug.log(ts(), '[Agent Request] searchDOMUpdates:', { query, topK });
+    const result = await searchManager.searchDOMUpdates(query, topK);
+    debug.log(ts(), '[Agent Response] searchDOMUpdates:', result);
+    return result;
   },
 });
 
@@ -257,7 +271,10 @@ export const createSearchClickableElementsAction = ({ searchManager, isLight, cl
     );
   },
   handler: async ({ query, topK = 5 }: { query: string; topK?: number }) => {
-    return await searchManager.searchClickableElements(query, topK);
+    debug.log(ts(), '[Agent Request] searchClickableElements:', { query, topK });
+    const result = await searchManager.searchClickableElements(query, topK);
+    debug.log(ts(), '[Agent Response] searchClickableElements:', result);
+    return result;
   },
 });
 

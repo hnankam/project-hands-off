@@ -2,6 +2,11 @@ import React, { useMemo, useRef, useState, useEffect } from 'react';
 import type { InputProps } from '@copilotkit/react-ui';
 import { useChatContext } from '@copilotkit/react-ui';
 import { useCopilotContext } from '@copilotkit/react-core';
+import { COPIOLITKIT_CONFIG } from '../constants';
+import { ensureFirebase } from '../utils/firebaseStorage';
+import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { debug, useStorage } from '@extension/shared';
+import { exampleThemeStorage } from '@extension/storage';
 
 const MAX_NEWLINES = 6;
 
@@ -18,10 +23,11 @@ interface AutoResizingTextareaProps {
   onCompositionStart?: () => void;
   onCompositionEnd?: () => void;
   onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onPaste?: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void;
 }
 
 const AutoResizingTextarea = React.forwardRef<HTMLTextAreaElement, AutoResizingTextareaProps>(
-  ({ placeholder, autoFocus, maxRows = 6, value, onChange, onCompositionStart, onCompositionEnd, onKeyDown }, ref) => {
+  ({ placeholder, autoFocus, maxRows = 6, value, onChange, onCompositionStart, onCompositionEnd, onKeyDown, onPaste }, ref) => {
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
     const handleResize = () => {
@@ -64,6 +70,7 @@ const AutoResizingTextarea = React.forwardRef<HTMLTextAreaElement, AutoResizingT
         onCompositionStart={onCompositionStart}
         onCompositionEnd={onCompositionEnd}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
         rows={1}
         style={{
           resize: 'none',
@@ -233,9 +240,8 @@ const CustomIcons = {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round">
-      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-      <circle cx="8.5" cy="8.5" r="1.5" />
-      <polyline points="21 15 16 10 5 21" />
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
     </svg>
   ),
   microphone: (
@@ -293,6 +299,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
 }) => {
   const context = useChatContext();
   const copilotContext = useCopilotContext();
+  const { isLight } = useStorage(exampleThemeStorage);
 
   const showPoweredBy = !copilotContext.copilotApiConfig?.publicApiKey;
 
@@ -301,7 +308,26 @@ export const CustomInput: React.FC<CustomInputProps> = ({
     copilotContext.copilotApiConfig.transcribeAudioUrl !== undefined;
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isComposing, setIsComposing] = useState(false);
+
+  // Drag & drop state for file uploads
+  const [isDragActive, setIsDragActive] = useState(false);
+  const dragCounterRef = useRef(0);
+
+  type AttachmentItem = {
+    id: string;
+    file: File;
+    name: string;
+    size: number;
+    previewUrl: string; // object URL for quick preview
+    status: 'pending' | 'uploading' | 'uploaded' | 'error';
+    progress: number; // 0..100
+    uploadedUrl?: string; // Firebase download URL
+    error?: string;
+  };
+
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
 
   const handleDivClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
@@ -385,11 +411,78 @@ export const CustomInput: React.FC<CustomInputProps> = ({
     }
   }, [text]);
 
-  const send = () => {
+  const uploadAttachment = async (item: AttachmentItem, sessionId: string) => {
+    if (!COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS || !COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
+      return item; // fallback to blob URL
+    }
+    try {
+      const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
+      const ts = Date.now();
+      const safeName = item.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `attachments/${sessionId || 'default'}/${ts}-${safeName}`;
+      const storageRef = fbRef(storage as any, path);
+      return await new Promise<AttachmentItem>((resolve, reject) => {
+        const task = uploadBytesResumable(storageRef as any, item.file);
+        setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'uploading', progress: 0 } : a));
+        task.on('state_changed', (snap: any) => {
+          const prog = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+          setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, progress: prog } : a));
+        }, (err: any) => {
+          setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'error', error: String(err) } : a));
+          reject(err);
+        }, async () => {
+          const url = await getDownloadURL(task.snapshot.ref);
+          const updated: AttachmentItem = { ...item, status: 'uploaded', progress: 100, uploadedUrl: url };
+          setAttachments(prev => prev.map(a => a.id === item.id ? updated : a));
+          resolve(updated);
+        });
+      });
+    } catch (e: any) {
+      setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'error', error: String(e) } : a));
+      return item;
+    }
+  };
+
+  const send = async () => {
     if (inProgress) return;
-    // Update text to include image links
-    onSend(text);
+
+    // Upload all pending attachments first
+    const sessionId = listenSessionId || 'default';
+    const updatedAttachments = [...attachments];
+    for (let i = 0; i < updatedAttachments.length; i++) {
+      const item = updatedAttachments[i];
+      if (item.status === 'pending') {
+        // eslint-disable-next-line no-await-in-loop
+        const uploaded = await uploadAttachment(item, sessionId);
+        updatedAttachments[i] = uploaded;
+      }
+    }
+    // Commit any state changes so UI reflects uploaded URLs/progress
+    setAttachments(updatedAttachments);
+
+    // Build final message as single text (GraphQL API expects string, not content parts)
+    // Build hidden manifest block for server/UI parsing
+    const manifest = updatedAttachments
+      .filter(a => a.status !== 'error')
+      .map(a => ({
+        name: a.name,
+        type: a.file.type || 'application/octet-stream',
+        size: a.size,
+        url: a.uploadedUrl || a.previewUrl,
+      }));
+    const manifestBlock = manifest.length > 0
+      ? `\n\n<!--ATTACHMENTS:\n${JSON.stringify(manifest)}\n-->`
+      : '';
+    const finalText = `${text}${manifestBlock}`;
+
+    debug.log('[CustomInput] Final text:', finalText);
+
+    onSend(finalText);
     setText('');
+
+    // Cleanup attachments
+    attachments.forEach(a => URL.revokeObjectURL(a.previewUrl));
+    setAttachments([]);
 
     textareaRef.current?.focus();
   };
@@ -417,9 +510,153 @@ export const CustomInput: React.FC<CustomInputProps> = ({
 
   const sendDisabled = !canSend && !canStop;
 
+  // Upload any file types by inserting object URLs into the input as links
+  const handleFilesPicked = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const newItems: AttachmentItem[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files.item(i)!;
+      const id = `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`;
+      const url = URL.createObjectURL(f);
+      const tooLarge = f.size > MAX_UPLOAD_BYTES;
+      newItems.push({
+        id,
+        file: f,
+        name: f.name,
+        size: f.size,
+        previewUrl: url,
+        status: tooLarge ? 'error' : 'pending',
+        progress: 0,
+        error: tooLarge ? `File exceeds 30MB limit (${formatSize(f.size)})` : undefined,
+      });
+    }
+    setAttachments(prev => [...prev, ...newItems]);
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments(prev => {
+      const found = prev.find(a => a.id === id);
+      if (found) URL.revokeObjectURL(found.previewUrl);
+      return prev.filter(a => a.id !== id);
+    });
+  };
+
+  const formatSize = (bytes: number): string => {
+    const kb = bytes / 1024;
+    if (kb >= 1024) {
+      const mb = kb / 1024;
+      return `${mb >= 10 ? Math.round(mb) : Math.round(mb * 10) / 10} MB`;
+    }
+    return `${Math.max(1, Math.round(kb))} KB`;
+  };
+
+  const MAX_UPLOAD_BYTES = 30 * 1024 * 1024; // 30MB
+
+  const openFilePicker = () => {
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  // Helpers to handle drag & drop uploads
+  const eventHasFiles = (e: React.DragEvent) => {
+    try {
+      const items = Array.from(e.dataTransfer?.items || []);
+      if (items.some(i => i.kind === 'file')) return true;
+      const types = Array.from(e.dataTransfer?.types || []);
+      return types.includes('Files');
+    } catch {
+      return false;
+    }
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current += 1;
+    if (eventHasFiles(e)) setIsDragActive(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (eventHasFiles(e)) {
+      e.dataTransfer.dropEffect = 'copy';
+      if (!isDragActive) setIsDragActive(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setIsDragActive(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+    dragCounterRef.current = 0;
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      handleFilesPicked(files);
+      try { e.dataTransfer.clearData(); } catch {}
+    }
+  };
+
+  // Paste handler for images/files from clipboard
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    try {
+      const items = Array.from(e.clipboardData?.items || []);
+      const fileItems = items.filter(i => i.kind === 'file');
+      if (fileItems.length === 0) return;
+      e.preventDefault();
+      const files: File[] = [];
+      for (const item of fileItems) {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+      if (files.length > 0) {
+        // Convert to FileList-like handle by creating a DataTransfer
+        const dt = new DataTransfer();
+        files.forEach(f => dt.items.add(f));
+        handleFilesPicked(dt.files);
+      }
+    } catch (err) {
+      console.warn('[CustomInput] Paste handling failed:', err);
+    }
+  };
+
   return (
     <div className={`copilotKitInputContainer ${showPoweredBy ? 'poweredByContainer' : ''}`}>
-      <div className="copilotKitInput" onClick={handleDivClick}>
+      <div
+        className="copilotKitInput"
+        onClick={handleDivClick}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        style={{ position: 'relative' }}
+      >
+        {isDragActive && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              border: isLight ? '2px dashed rgba(59,130,246,0.5)' : '2px dashed rgba(255,255,255,0.25)',
+              background: isLight ? 'rgba(59,130,246,0.06)' : 'rgba(255,255,255,0.06)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '8px',
+              pointerEvents: 'none',
+              zIndex: 5,
+            }}
+          >
+            <span style={{ fontSize: '12px', opacity: 0.8 }}>
+              Drop files to attach
+            </span>
+          </div>
+        )}
         <AutoResizingTextarea
           ref={textareaRef}
           placeholder={context.labels.placeholder}
@@ -427,6 +664,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
           maxRows={MAX_NEWLINES}
           value={text}
           onChange={event => setText(event.target.value)}
+          onPaste={handlePaste}
           onCompositionStart={() => setIsComposing(true)}
           onCompositionEnd={() => setIsComposing(false)}
           onKeyDown={event => {
@@ -438,12 +676,109 @@ export const CustomInput: React.FC<CustomInputProps> = ({
             }
           }}
         />
+        {/* Attachments preview */}
+        {attachments.length > 0 && (
+          <div
+            className="mt-1 px-1"
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '4px',
+              maxHeight: '120px',
+              overflowY: 'auto',
+            }}
+          >
+            {attachments.map(att => {
+              const isError = att.status === 'error';
+              const borderCol = isError
+                ? (isLight ? 'rgba(239,68,68,0.9)' : 'rgba(248,113,113,0.9)')
+                : (isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.15)');
+              const bgCol = isError
+                ? (isLight ? 'rgba(239,68,68,0.08)' : 'rgba(248,113,113,0.12)')
+                : (isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.07)');
+              const pillStyle: React.CSSProperties = {
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '2px 6px',
+                borderRadius: '9999px',
+                border: `1px solid ${borderCol}`,
+                background: bgCol,
+                fontSize: '11px',
+                color: isLight ? '#0C1117' : '#e5e7eb',
+                maxWidth: '100%',
+                whiteSpace: 'nowrap',
+              };
+              const dotColor = att.status === 'uploaded' ? '#10b981' : att.status === 'error' ? '#ef4444' : '#3b82f6';
+              return (
+                <div key={att.id} style={pillStyle} title={att.name}>
+                  {/* File icon */}
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <path d="M14 2v6h6" />
+                  </svg>
+                  {/* Content wrapper with gradient mask so it doesn't overlap the remove button */}
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      maxWidth: '240px',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {/* Name and size */}
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>{att.name}</span>
+                      <span style={{ opacity: 0.85 }}>({formatSize(att.size)})</span>
+                    </div>
+                    {/* Status */}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: dotColor, display: 'inline-block' }} />
+                      {att.status === 'uploading' && <span style={{ opacity: 0.85 }}>{Math.max(0, Math.min(att.progress, 100))}%</span>}
+                    </span>
+                  </div>
+                  {/* Remove */}
+                  <button
+                    onClick={() => removeAttachment(att.id)}
+                    title="Remove attachment"
+                    style={{
+                      marginLeft: '3px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '16px',
+                      height: '16px',
+                      borderRadius: '50%',
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      color: 'inherit',
+                    }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="copilotKitInputControls">
-          {onUpload && (
-            <button onClick={onUpload} className="copilotKitInputControlButton">
+          {/* Enable upload for all file types via hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="*/*"
+            style={{ display: 'none' }}
+            onChange={(e) => handleFilesPicked(e.target.files)}
+          />
+          <button onClick={openFilePicker} className="copilotKitInputControlButton">
               {CustomIcons.upload}
             </button>
-          )}
+          
 
           <div style={{ flexGrow: 1 }} />
 

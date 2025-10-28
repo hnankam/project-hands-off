@@ -1,6 +1,6 @@
 import { debug as baseDebug } from '@extension/shared';
-import { COPIOLITKIT_CONFIG } from '../../constants';
-import { ensureFirebase, uploadDataUrlToStorage } from '../../utils/firebaseStorage';
+// import { COPIOLITKIT_CONFIG } from '../../constants';
+// import { ensureFirebase, uploadDataUrlToStorage } from '../../utils/firebaseStorage';
 
 // Timestamped debug wrappers
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
@@ -308,23 +308,23 @@ export async function handleTakeScreenshot(
 
         const dims = { width: optimized.width, height: optimized.height };
 
-        // Try uploading to Firebase storage when enabled and configured
-        let hostedUrl: string | undefined;
-        try {
-          if (COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS && COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
-            const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
-            const ext = optimized.outputFormat === 'jpeg' ? 'jpg' : 'png';
-            const path = `screenshots/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-            hostedUrl = await uploadDataUrlToStorage(
-              storage,
-              path,
-              optimized.dataUrl,
-              optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
-            );
-          }
-        } catch (e) {
-          debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback');
-        }
+        // Firebase upload disabled for now; keep url undefined
+        let hostedUrl: string | undefined = undefined;
+        // try {
+        //   if (COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS && COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
+        //     const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
+        //     const ext = optimized.outputFormat === 'jpeg' ? 'jpg' : 'png';
+        //     const path = `screenshots/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        //     hostedUrl = await uploadDataUrlToStorage(
+        //       storage,
+        //       path,
+        //       optimized.dataUrl,
+        //       optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
+        //     );
+        //   }
+        // } catch (e) {
+        //   debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback');
+        // }
 
         return {
           status: 'success',
@@ -339,7 +339,7 @@ export async function handleTakeScreenshot(
             sizeKB: optimized.sizeKB,
             quality: optimized.quality,
             isFullPage: false,
-            dataUrl: hostedUrl ? undefined : optimized.dataUrl,
+            dataUrl: optimized.dataUrl,
             url: hostedUrl,
           },
         };
@@ -381,23 +381,24 @@ export async function handleTakeScreenshot(
       } as any;
       const sizeKB = optimized.sizeKB;
 
-      // Try uploading to Firebase storage when enabled and configured
-      let hostedUrl: string | undefined;
-      try {
-        if (COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS && COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
-          const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
-          const ext = optimized.outputFormat === 'jpeg' ? 'jpg' : 'png';
-          const path = `screenshots/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-          hostedUrl = await uploadDataUrlToStorage(
-            storage,
-            path,
-            optimized.dataUrl,
-            optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
-          );
-        }
-      } catch (e) {
-        debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback');
-      }
+
+      // Firebase upload disabled for now; keep url undefined
+      let hostedUrl: string | undefined = undefined;
+      // try {
+      //   if (COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS && COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
+      //     const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
+      //     const ext = optimized.outputFormat === 'jpeg' ? 'jpg' : 'png';
+      //     const path = `screenshots/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      //     hostedUrl = await uploadDataUrlToStorage(
+      //       storage,
+      //       path,
+      //       optimized.dataUrl,
+      //       optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
+      //     );
+      //   }
+      // } catch (e) {
+      //   debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback');
+      // }
 
       return {
         status: 'success',
@@ -413,7 +414,7 @@ export async function handleTakeScreenshot(
           sizeKB: sizeKB,
           quality: optimized.quality,
           isFullPage: false,
-          dataUrl: hostedUrl ? undefined : optimized.dataUrl,
+          dataUrl: optimized.dataUrl,
           url: hostedUrl,
         },
       };
