@@ -51,15 +51,14 @@ export async function createDynamicServiceAdapter() {
       const forcedModel = await getForcedModel(requestedModel);
       const modelConfig = await getModelConfig(requestedModel);
       
+      
       if (isGeminiModel(requestedModel)) {
         const forcedGemini = modelConfig?.forced_model || defaultGeminiModel;
-        log('DynamicServiceAdapter -> provider: Google Generative AI, forced model:', forcedGemini, '(requested:', requestedModel, ')');
         return processWithRetry('google', () => googleAdapter.process({ ...request, model: forcedGemini }));
       }
       
       if (isClaudeModel(requestedModel)) {
         const forcedClaude = modelConfig?.forced_model || defaultClaudeModel;
-        log('DynamicServiceAdapter -> provider: Anthropic (Bedrock), forced model:', forcedClaude, '(requested:', requestedModel, ')');
         
         // Sanitize messages for Anthropic
         const sanitizeForAnthropic = (msgs = []) => {
@@ -89,12 +88,10 @@ export async function createDynamicServiceAdapter() {
       
       if (isGPTModel(requestedModel)) {
         const forcedGPT = modelConfig?.forced_model || defaultGPTModel;
-        log('DynamicServiceAdapter -> provider: OpenAI (Azure), forced model:', forcedGPT, '(requested:', requestedModel, ')');
         return processWithRetry('openai', () => openaiAdapter.process({ ...request, model: forcedGPT }));
       }
       
       // default to OpenAI-compatible (Azure OpenAI)
-      log('DynamicServiceAdapter -> provider: OpenAI (Azure) [default fallback], model:', requestedModel);
       return processWithRetry('openai-default', () => openaiAdapter.process(request));
     },
   };

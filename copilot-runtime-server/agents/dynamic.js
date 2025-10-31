@@ -17,16 +17,52 @@ export async function getDynamicAgentUrl(agent, model) {
 
 /**
  * Create a new HttpAgent with the specified agent and model
+ * @param {string} agent - The agent type
+ * @param {string} model - The model type
+ * @param {Object} authContext - Optional authentication context with user, org, and team info
  */
-export async function createHttpAgent(agent = DEFAULT_AGENT, model = DEFAULT_MODEL) {
+export async function createHttpAgent(agent = DEFAULT_AGENT, model = DEFAULT_MODEL, authContext = {}) {
   const url = await getDynamicAgentUrl(agent, model);
+  
+  // Build headers including auth context if provided
+  const headers = {
+    'x-copilot-agent-type': agent,
+    'x-copilot-model-type': model,
+    'Content-Type': 'application/json'
+  };
+  
+  // Add auth context headers if available
+  if (authContext.userId) {
+    headers['x-copilot-user-id'] = authContext.userId;
+  }
+  if (authContext.userEmail) {
+    headers['x-copilot-user-email'] = authContext.userEmail;
+  }
+  if (authContext.userName) {
+    headers['x-copilot-user-name'] = authContext.userName;
+  }
+  if (authContext.organizationId) {
+    headers['x-copilot-organization-id'] = authContext.organizationId;
+  }
+  if (authContext.organizationName) {
+    headers['x-copilot-organization-name'] = authContext.organizationName;
+  }
+  if (authContext.organizationSlug) {
+    headers['x-copilot-organization-slug'] = authContext.organizationSlug;
+  }
+  if (authContext.memberRole) {
+    headers['x-copilot-member-role'] = authContext.memberRole;
+  }
+  if (authContext.teamId) {
+    headers['x-copilot-team-id'] = authContext.teamId;
+  }
+  if (authContext.teamName) {
+    headers['x-copilot-team-name'] = authContext.teamName;
+  }
+  
   return new HttpAgent({ 
     url,
-    headers: {
-      'x-copilot-agent-type': agent,
-      'x-copilot-model-type': model,
-      'Content-Type': 'application/json'
-    }
+    headers
   });
 }
 

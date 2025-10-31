@@ -1,293 +1,641 @@
-<div align="center">
+# Project Hands-Off
 
-<picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/99cb6303-64e4-4bed-bf3f-35735353e6de" />
-    <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/a5dbf71c-c509-4c4f-80f4-be88a1943b0a" />
-    <img alt="Logo" src="https://github.com/user-attachments/assets/99cb6303-64e4-4bed-bf3f-35735353e6de" />
-</picture>
+> AI-Powered Browser Assistant with Multi-Tenant Organization & Team Management
 
 ![](https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=black)
-![](https://img.shields.io/badge/Typescript-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![](https://img.shields.io/badge/Typescript-3178C6?style=flat-square&logo=typescript&logoColor=black)
+![](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white)
+![](https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=node.js&logoColor=white)
 ![](https://badges.aleen42.com/src/vitejs.svg)
 
-![GitHub action badge](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite/actions/workflows/build-zip.yml/badge.svg)
-![GitHub action badge](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite/actions/workflows/lint.yml/badge.svg)
+## 📋 Table of Contents
 
-<a href="https://discord.gg/4ERQ6jgV9a" target="_blank"><img src="https://discord.com/api/guilds/1263404974830915637/widget.png"/></a>
-
-> This boilerplate
-> has [Legacy version](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite/tree/legacy)
-
-</div>
-
-> [!NOTE]
-> This project is listed in the [Awesome Vite](https://github.com/vitejs/awesome-vite)
-
-> [!TIP]
-> Share storage state between all pages
->
-> https://github.com/user-attachments/assets/3b8e189f-6443-490e-a455-4f9570267f8c
-
-## Table of Contents
-
-- [Intro](#intro)
+- [Overview](#overview)
 - [Features](#features)
-- [Structure](#structure)
-    - [ChromeExtension](#structure-chrome-extension)
-    - [Packages](#structure-packages)
-    - [Pages](#structure-pages)
-- [Installation](#installation)
-    - [Chrome](#installation-chrome)
-    - [Firefox](#installation-firefox)
-- [Install dependency](#install-dependency)
-    - [For root](#install-dependency-for-root)
-    - [For module](#install-dependency-for-module)
-- [Environment variables](#env-variables)
-    - [Add new](#env-variables-new)
-    - [Set via CLI](#env-variables-cli-set)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Development](#development)
+- [Authentication & Authorization](#authentication--authorization)
+- [Project Structure](#project-structure)
+- [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
-    - [Hot module reload seems to have frozen](#hot-module-reload-seems-to-have-frozen)
-    - [Imports not resolving correctly](#imports-not-resolving-correctly)
-- [Community](#community)
-- [Debugging](#debugging)
-- [Reference](#reference)
-- [Star History](#star-history)
-- [Contributors](#contributors)
+- [License](#license)
 
-## Intro
+## 🎯 Overview
 
-This boilerplate helps you create Chrome/Firefox extensions using React and Typescript. It improves
-the build speed and development experience by using Vite and Turborepo.
+Project Hands-Off is an intelligent browser extension that integrates AI capabilities directly into your browsing experience. It combines a React-based Chrome extension with a sophisticated backend infrastructure featuring:
 
-## Features
+- **Multi-tenant organization and team management** with role-based access control
+- **CopilotKit-powered AI agents** with dynamic model selection (Claude, GPT-4, Gemini)
+- **Semantic search** using vector embeddings for intelligent content discovery
+- **Session-based chat** with message history and context preservation
+- **Invitation system** for team collaboration
 
-### Core Stack
-- [React](https://reactjs.org/) 19.1.0
-- [TypeScript](https://www.typescriptlang.org/)
-- [Tailwindcss](https://tailwindcss.com/)
-- [Vite](https://vitejs.dev/) 6.3.6 with [Rollup](https://rollupjs.org/)
-- [Turborepo](https://turbo.build/repo) with 16-thread concurrency
-- [Prettier](https://prettier.io/)
-- [ESLint](https://eslint.org/)
-- [Chrome Extensions Manifest Version 3](https://developer.chrome.com/docs/extensions/mv3/intro/)
+## ✨ Features
 
-### AI & Embeddings (v0.1.1)
-- [Transformers.js](https://huggingface.co/docs/transformers.js) 3.7.5 - Browser-compatible ML inference
-- [Offscreen Document](https://developer.chrome.com/docs/extensions/reference/api/offscreen) - Isolated embedding engine
-- **Xenova/all-MiniLM-L6-v2** - 384-dimensional embeddings (~30MB model)
-- **Semantic Search** - Vector similarity search for page content, forms, and elements
-- **Auto-Embedding** - Automatic embedding when page content changes
+### 🤖 AI & Intelligence
+- **Multiple AI Providers**: Claude (Anthropic), GPT-4 (OpenAI), Gemini (Google)
+- **Dynamic Agent System**: Switch between specialized agents on-the-fly
+- **Semantic Search**: Vector embeddings with Transformers.js (Xenova/all-MiniLM-L6-v2)
+- **Context-Aware Chat**: Maintains conversation history with intelligent compaction
+- **Browser Integration**: Direct interaction with web pages and forms
 
-### Database & Storage
-- [SurrealDB WASM](https://surrealdb.com/) 1.4.1 - Embedded database with in-memory support
-- **SCHEMAFULL** tables with proper datetime handling
-- **IndexedDB** persistence for messages and embeddings
-- **Type-safe** interfaces for all data operations
+### 👥 Multi-User & Organizations
+- **Better Auth Integration**: Secure authentication with email/password
+- **Organization Management**: Multi-tenant architecture with organization isolation
+- **Team Support**: Organize users into teams within organizations
+- **Role-Based Access**: Member, admin, and owner roles
+- **Invitation System**: Email-based invitations with secure token flow
+- **Active Context Forwarding**: Automatic org/team context sent to AI agents
 
-### Developer Experience
-- [Custom i18n package](/packages/i18n/)
-- [Custom HMR (Hot Module Rebuild) plugin](/packages/hmr)
-- [End-to-end testing with WebdriverIO](https://webdriver.io/)
-- **Fast builds** - 25% faster with optimized Turbo configuration
-- **Hot reload** - Instant updates during development
+### 💾 Data & Storage
+- **Dual Database Architecture**:
+  - PostgreSQL for user management, orgs, teams, invitations
+  - SurrealDB WASM for in-browser embeddings and session storage
+- **IndexedDB Persistence**: Client-side data persistence
+- **Message History**: Searchable chat history with usage tracking
+- **Embedding Auto-Generation**: Automatic embedding when content changes
 
-## Installation
+### 🎨 User Experience
+- **Side Panel Interface**: Modern, responsive chat UI
+- **Dark/Light Modes**: Full theme support
+- **Organization Selector**: Quick switching between organizations
+- **Agent & Model Selectors**: Easy configuration of AI behavior
+- **Settings & Preferences**: Customizable chat experience
+- **Admin Dashboard**: Complete organization and team management
 
-1. Clone this repository.( ```git clone https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite``` )
-2. Ensure your node version is >= than in `.nvmrc` file, recommend to use [nvm](https://github.com/nvm-sh/nvm?tab=readme-ov-file#intro)
-3. Edit `/packages/i18n/locales/`{your locale(s)}/`messages.json`
-4. In the objects `extensionDescription` and `extensionName`, change the `message` fields (leave `description` alone)
-5. Install pnpm globally: `npm install -g pnpm`
-6. Run `pnpm install`
-7. Check if you have that configuration in your IDE/Editor:
-    - <b>VS Code</b>:
-        - Installed [ESLint extension](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint)
-        - Installed [Prettier extension](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
-        - Enabled `Typescript Workbench version` in settings:
-            - CTRL + SHIFT + P -> Search: `Typescript: Select Typescript version...` -> `Use Workbench version`
-            - [Read more](https://code.visualstudio.com/docs/languages/typescript#_using-newer-typescript-versions)
-        - Optional, for imports to work correctly in WSL, you might need to install the [Remote - WSL](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-wsl) extension and connect to WSL remotely from VS Code. See overview section in the extension page for more information.
-    - <b>WebStorm</b>:
-      - Configured [ESLint](https://www.jetbrains.com/help/webstorm/eslint.html#ws_eslint_configure_run_eslint_on_save)
-      - Configured [Prettier](https://prettier.io/docs/en/webstorm.html)
-      - Optional, but useful `File | Settings | Tools | Actions on Save`\
-      -> `Optimize imports` and `Reformat code`
-8. Run `pnpm update-version <version>` for change the `version` to the desired version of your extension.
+### 🔧 Developer Experience
+- **Hot Module Reload**: Instant updates during development
+- **Turborepo**: Optimized monorepo with 16-thread concurrency
+- **TypeScript**: Full type safety across frontend
+- **Python Type Hints**: Pydantic models for backend
+- **ESLint & Prettier**: Automated code formatting
+- **Modular Architecture**: Clean separation of concerns
 
-> [!IMPORTANT]
-> On Windows, make sure you have WSL enabled and Linux distribution (e.g. Ubuntu) installed on WSL.
-> 
-> [Installation Guide](https://learn.microsoft.com/en-us/windows/wsl/install)
+## 🏗 Architecture
 
-<b>Then, depending on the target browser:</b>
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Chrome Extension                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │  Side Panel  │  │   Content    │  │  Background  │      │
+│  │  (Chat UI)   │  │   Scripts    │  │   Service    │      │
+│  └──────┬───────┘  └──────────────┘  └──────────────┘      │
+│         │                                                     │
+└─────────┼─────────────────────────────────────────────────────┘
+          │
+          │ HTTP/WebSocket
+          │
+┌─────────▼─────────────────────────────────────────────────────┐
+│              Copilot Runtime Server (Node.js)                 │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │  Authentication Middleware                            │    │
+│  │  - Better Auth integration                            │    │
+│  │  - Session management                                 │    │
+│  │  - Org/Team context extraction                        │    │
+│  └──────────────────────────────────────────────────────┘    │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │  Dynamic Routing                                      │    │
+│  │  - Agent selection                                    │    │
+│  │  - Model configuration                                │    │
+│  │  - Context forwarding                                 │    │
+│  └──────────────────────────────────────────────────────┘    │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │  Routes: /auth, /copilotkit, /invitations, /config   │    │
+│  └──────────────────────────────────────────────────────┘    │
+└───────────────────────────┬───────────────────────────────────┘
+                            │
+                            │ HTTP Headers (org/team/user context)
+                            │
+┌───────────────────────────▼───────────────────────────────────┐
+│          Pydantic AI Server (Python/FastAPI)                  │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │  Request Middleware                                   │    │
+│  │  - Extract user/org/team from headers                │    │
+│  │  - Populate request.state                            │    │
+│  └──────────────────────────────────────────────────────┘    │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │  Agent Factory                                        │    │
+│  │  - Dynamic agent instantiation                        │    │
+│  │  - Model-specific configuration                       │    │
+│  └──────────────────────────────────────────────────────┘    │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │  Session Manager & Usage Tracker                      │    │
+│  └──────────────────────────────────────────────────────┘    │
+└───────────────────────────────────────────────────────────────┘
 
-### For Chrome: <a name="installation-chrome"></a>
+┌───────────────────────────────────────────────────────────────┐
+│                    Data Layer                                 │
+│  ┌──────────────────┐         ┌──────────────────┐           │
+│  │   PostgreSQL     │         │  SurrealDB WASM  │           │
+│  │  - Users         │         │  - Embeddings    │           │
+│  │  - Organizations │         │  - Chat History  │           │
+│  │  - Teams         │         │  - Sessions      │           │
+│  │  - Invitations   │         │  (IndexedDB)     │           │
+│  └──────────────────┘         └──────────────────┘           │
+└───────────────────────────────────────────────────────────────┘
+```
 
-1. Run:
-    - Dev: `pnpm dev` (on Windows, you should run as administrator;
-      see [issue#456](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite/issues/456))
-    - Prod: `pnpm build`
-2. Open in browser - `chrome://extensions`
-3. Check - <kbd>Developer mode</kbd>
-4. Click - <kbd>Load unpacked</kbd> in the upper left corner
-5. Select the `dist` directory from the boilerplate project
+### Key Data Flow
 
-### For Firefox: <a name="installation-firefox"></a>
+1. **User Authentication**: Side panel → Runtime server (Better Auth) → PostgreSQL
+2. **Chat Request**: Side panel → Runtime server (extracts org/team) → Pydantic server
+3. **Context Forwarding**: Runtime middleware injects `x-copilot-user-id`, `x-copilot-organization-id`, `x-copilot-team-id` headers
+4. **AI Processing**: Pydantic server uses context for personalized responses
+5. **Message Storage**: Responses stored in SurrealDB with embeddings
 
-1. Run:
-    - Dev: `pnpm dev:firefox`
-    - Prod: `pnpm build:firefox`
-2. Open in browser - `about:debugging#/runtime/this-firefox`
-3. Click - <kbd>Load Temporary Add-on...</kbd> in the upper right corner
-4. Select the `./dist/manifest.json` file from the boilerplate project
+## 🚀 Quick Start
 
-> [!NOTE]
-> In Firefox, you load add-ons in temporary mode. That means they'll disappear after each browser close. You have to
-> load the add-on on every browser launch.
+### Prerequisites
 
-## Install dependency for turborepo: <a name="install-dependency"></a>
+- **Node.js** >= 20 (see `.nvmrc`)
+- **Python** >= 3.11
+- **pnpm** >= 8
+- **PostgreSQL** >= 14
+- **Chrome/Edge** browser
 
-### For root: <a name="install-dependency-for-root"></a>
+### Installation
 
-1. Run `pnpm i <package> -w`
+1. **Clone the repository**
+```bash
+git clone <repository-url>
+cd project-hands-off
+```
 
-### For module: <a name="install-dependency-for-module"></a>
+2. **Install dependencies**
+```bash
+# Install pnpm globally if needed
+npm install -g pnpm
 
-1. Run `pnpm i <package> -F <module name>`
+# Install extension dependencies
+pnpm install
 
-`package` - Name of the package you want to install e.g. `nodemon` \
-`module-name` - You can find it inside each `package.json` under the key `name`, e.g. `@extension/content-script`, you
-can use only `content-script` without `@extension/` prefix
+# Install Python server dependencies
+cd copilotkit-pydantic
+pip install -r requirements.txt
+cd ..
 
-## How do I disable modules I'm not using?
+# Install runtime server dependencies
+cd copilot-runtime-server
+npm install
+cd ..
+```
 
-[Read here](packages/module-manager/README.md)
+3. **Set up environment variables**
 
-## Environment variables
+Create `.env` files in each component:
 
-Read: [Env Documentation](packages/env/README.md)
+**Extension** (`/` root):
+```env
+VITE_RUNTIME_SERVER_URL=http://localhost:3100
+```
 
-## Boilerplate structure <a name="structure"></a>
+**Runtime Server** (`copilot-runtime-server/.env`):
+```env
+# Database
+DATABASE_URL=postgresql://user:password@localhost:5432/hands_off
 
-### Chrome extension <a name="structure-chrome-extension"></a>
+# Better Auth
+BETTER_AUTH_SECRET=your-secret-key-here
+BETTER_AUTH_URL=http://localhost:3100
 
-The extension lives in the `chrome-extension` directory and includes the following files:
+# AI Providers (get your keys)
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+GOOGLE_API_KEY=...
 
-- [`manifest.ts`](chrome-extension/manifest.ts) - script that outputs the `manifest.json`
-- [`src/background`](chrome-extension/src/background) - [background script](https://developer.chrome.com/docs/extensions/mv3/background_pages/)
-  (`background.service_worker` in manifest.json)
-- [`public`](chrome-extension/public/) - icons referenced in the manifest; content CSS for user's page injection
+# Server Config
+PORT=3100
+NODE_ENV=development
 
-> [!IMPORTANT]
-> To facilitate development, the boilerplate is configured to "Read and change all your data on all websites".
-> In production, it's best practice to limit the premissions to only the strictly necessary websites. See
-> [Declaring permissions](https://developer.chrome.com/docs/extensions/develop/concepts/declare-permissions)
-> and edit `manifest.js` accordingly.
+# Python Server
+PYDANTIC_SERVER_URL=http://localhost:8001
+```
 
-### Pages <a name="structure-pages"></a>
+**Pydantic Server** (`copilotkit-pydantic/.env`):
+```env
+# AI Provider Keys
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+GOOGLE_API_KEY=...
 
-Code that is transpiled to be part of the extension lives in the [pages](pages) directory.
+# Server Config
+PORT=8001
+DEBUG=true
+```
 
-- [`content`](pages/content) - Scripts injected into specified pages (You can see it in console)
-- [`content-ui`](pages/content-ui) - React Components injected into specified pages (You can see it at the very bottom of pages)
-- [`content-runtime`](pages/content-runtime/src/) - [injected content scripts](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts#functionality)
-  This can be injected from e.g. `popup` like standard `content`
-- [`devtools`](pages/devtools/) - [extend the browser DevTools](https://developer.chrome.com/docs/extensions/how-to/devtools/extend-devtools#creating)
-  (`devtools_page` in manifest.json)
-- [`devtools-panel`](pages/devtools-panel/) - [DevTools panel](https://developer.chrome.com/docs/extensions/reference/api/devtools/panels)
-  for [devtools](pages/devtools/src/index.ts)
-- [`new-tab`](pages/new-tab/) - [override the default New Tab page](https://developer.chrome.com/docs/extensions/develop/ui/override-chrome-pages)
-  (`chrome_url_overrides.newtab` in manifest.json)
-- [`options`](pages/options/) - [options page](https://developer.chrome.com/docs/extensions/develop/ui/options-page)
-  (`options_page` in manifest.json)
-- [`popup`](pages/popup/) - [popup](https://developer.chrome.com/docs/extensions/reference/api/action#popup) shown when
-  clicking the extension in the toolbar
-  (`action.default_popup` in manifest.json)
-- [`side-panel`](pages/side-panel/) - [sidepanel (Chrome 114+)](https://developer.chrome.com/docs/extensions/reference/api/sidePanel)
-  (`side_panel.default_path` in manifest.json)
+4. **Initialize the database**
+```bash
+cd copilot-runtime-server
+npm run db:init
+cd ..
+```
 
-### Packages <a name="structure-packages"></a>
+5. **Start the development servers**
 
-Some shared packages:
+```bash
+# Terminal 1: Chrome Extension
+pnpm dev
 
-- `dev-utils` - utilities for Chrome extension development (manifest-parser, logger)
-- `env` - exports object which contain all environment variables from `.env` and dynamically declared
-- `hmr` - custom HMR plugin for Vite, injection script for reload/refresh, HMR dev-server
-- `i18n` - custom internationalization package; provides i18n function with type safety and other validation
-- `shared` - shared code for the entire project (types, constants, custom hooks, components etc.)
-- `storage` - helpers for easier integration with [storage](https://developer.chrome.com/docs/extensions/reference/api/storage), e.g. local/session storages
-- `tailwind-config` - shared Tailwind config for entire project
-- `tsconfig` - shared tsconfig for the entire project
-- `ui` - function to merge your Tailwind config with the global one; you can save components here
-- `vite-config` - shared Vite config for the entire project
+# Terminal 2: Runtime Server
+cd copilot-runtime-server
+npm run dev
 
-Other useful packages:
+# Terminal 3: Pydantic Server
+cd copilotkit-pydantic
+python main.py
+```
 
-- `zipper` - run `pnpm zip` to pack the `dist` folder into `extension-YYYYMMDD-HHmmss.zip` inside the newly created
-  `dist-zip`
-- `module-manager` - run `pnpm module-manager` to enable/disable modules
-- `e2e` - run `pnpm e2e` for end-to-end tests of your zipped extension on different browsers
+6. **Load the extension**
+   - Open Chrome and navigate to `chrome://extensions`
+   - Enable "Developer mode"
+   - Click "Load unpacked"
+   - Select the `dist` directory
 
-## Troubleshooting
+7. **Open the side panel**
+   - Click the extension icon in the toolbar
+   - Click "Open Side Panel"
+   - Sign up for a new account or log in
 
-### Hot module reload seems to have frozen
+## 💻 Development
 
-If saving source files doesn't cause the extension HMR code to trigger a reload of the browser page, try this:
+### Project Commands
 
-1. Ctrl+C the development server and restart it (`pnpm run dev`)
-2. If you get a [`grpc` error](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite/issues/612),
-   [kill the
-   `turbo` process](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite/issues/612#issuecomment-2518982339)
-   and run `pnpm dev` again.
+```bash
+# Extension Development
+pnpm dev              # Development mode with HMR
+pnpm build            # Production build
+pnpm dev:firefox      # Firefox development mode
+pnpm build:firefox    # Firefox production build
 
-### Imports not resolving correctly
+# Code Quality
+pnpm lint             # Run ESLint
+pnpm type-check       # TypeScript type checking
+pnpm format           # Format with Prettier
 
-If you are using WSL and imports are not resolving correctly, ensure that you have connected VS Code to WSL remotely using the [Remote - WSL](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-wsl) extension.
+# Utilities
+pnpm update-version <version>  # Update extension version
+pnpm zip              # Package extension for distribution
+pnpm e2e              # Run end-to-end tests
 
-## Community
+# Module Management
+pnpm module-manager   # Enable/disable extension modules
+```
 
-To chat with other community members, you can join the [Discord](https://discord.gg/4ERQ6jgV9a) server.
-You can ask questions on that server, and you can also help others.
+### Runtime Server Commands
 
-Also, suggest new features or share any challenges you've faced while developing Chrome extensions!
+```bash
+cd copilot-runtime-server
 
-## Debugging
+npm run dev           # Start with nodemon
+npm start             # Production start
+npm run db:init       # Initialize database
+npm run db:migrate    # Run migrations
+npm test              # Run tests
+```
 
-If you're debugging one, you can use [Brie](https://go.briehq.com/github?utm_source=CEB) lets you capture screenshots, errors, and network activity, making it easier for us to help.
+### Pydantic Server Commands
 
-## Reference
+```bash
+cd copilotkit-pydantic
 
-- [Chrome Extensions](https://developer.chrome.com/docs/extensions)
-- [Vite Plugin](https://vitejs.dev/guide/api-plugin.html)
-- [Rollup](https://rollupjs.org/guide/en/)
-- [Turborepo](https://turbo.build/repo/docs)
-- [Rollup-plugin-chrome-extension](https://www.extend-chrome.dev/rollup-plugin)
+python main.py                # Start server
+python scripts/init_db.py     # Initialize database
+```
 
-## Star History <a name="star-history"></a>
+### Adding Dependencies
 
-<a href="https://star-history.com/#Jonghakseo/chrome-extension-boilerplate-react-vite&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Jonghakseo/chrome-extension-boilerplate-react-vite&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Jonghakseo/chrome-extension-boilerplate-react-vite&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Jonghakseo/chrome-extension-boilerplate-react-vite&type=Date" />
- </picture>
-</a>
+**Root/Extension packages:**
+```bash
+pnpm i <package> -w              # Add to workspace root
+pnpm i <package> -F side-panel   # Add to specific module
+```
 
-## Contributors <a name="contributors"></a>
+**Runtime Server:**
+```bash
+cd copilot-runtime-server
+npm install <package>
+```
 
-This Boilerplate is made possible thanks to all of its contributors.
+**Pydantic Server:**
+```bash
+cd copilotkit-pydantic
+pip install <package>
+# Don't forget to update requirements.txt
+pip freeze > requirements.txt
+```
 
-<a href="https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite/graphs/contributors">
-  <img width="500px" src="https://contrib.rocks/image?repo=Jonghakseo/chrome-extension-boilerplate-react-vite" alt="All Contributors"/>
-</a>
+## 🔐 Authentication & Authorization
+
+### Better Auth Setup
+
+The project uses [Better Auth](https://www.better-auth.com/) for authentication with the organization plugin.
+
+**Key Features:**
+- Email/password authentication
+- Organization multi-tenancy
+- Team management within organizations
+- Session-based authentication
+- Secure invitation system
+
+**Database Schema:**
+- `user` - User accounts
+- `session` - Active sessions with `activeOrganizationId` and `activeTeamId`
+- `organization` - Organizations/tenants
+- `member` - User-organization membership with roles
+- `team` - Teams within organizations
+- `teamMember` - User-team membership
+- `invitation` - Pending invitations
+
+### Context Forwarding
+
+The runtime server automatically extracts and forwards authentication context to the AI server:
+
+**Headers sent to Pydantic server:**
+- `x-copilot-user-id` - User ID
+- `x-copilot-user-email` - User email
+- `x-copilot-user-name` - User display name
+- `x-copilot-organization-id` - Active organization ID
+- `x-copilot-organization-name` - Organization name
+- `x-copilot-organization-slug` - Organization slug
+- `x-copilot-team-id` - Active team ID
+- `x-copilot-team-name` - Team name
+- `x-copilot-member-role` - User's role in organization
+
+**Auto-Selection Logic:**
+- If no active organization: selects first organization and saves to session
+- If no active team: selects first team user belongs to and saves to session
+- All context automatically forwarded on every AI request
+
+### Roles & Permissions
+
+**Organization Roles:**
+- `owner` - Full control over organization
+- `admin` - Manage members and teams
+- `member` - Basic access
+
+**Enforcement:**
+- Backend: Middleware validates organization/team access
+- Frontend: UI components adapt based on role
+- Database: Foreign key constraints ensure data isolation
+
+## 📁 Project Structure
+
+```
+project-hands-off/
+├── chrome-extension/          # Extension manifest and config
+│   ├── manifest.ts            # Manifest generation
+│   ├── public/                # Static assets
+│   └── src/background/        # Background service worker
+│
+├── pages/                     # Extension pages (transpiled)
+│   ├── side-panel/            # Main chat interface (React)
+│   │   ├── src/
+│   │   │   ├── components/    # UI components
+│   │   │   ├── context/       # React contexts (Auth, etc.)
+│   │   │   ├── hooks/         # Custom hooks
+│   │   │   ├── lib/           # Auth client, utilities
+│   │   │   ├── pages/         # Page components
+│   │   │   └── actions/       # Browser actions
+│   │   └── index.tsx
+│   ├── popup/                 # Extension popup
+│   ├── options/               # Options page
+│   ├── content/               # Content scripts
+│   ├── content-ui/            # Injected UI components
+│   └── offscreen/             # Offscreen document for embeddings
+│
+├── packages/                  # Shared packages
+│   ├── shared/                # Common types, hooks, components
+│   ├── storage/               # Storage helpers
+│   ├── ui/                    # UI components library
+│   ├── i18n/                  # Internationalization
+│   ├── hmr/                   # Hot module reload plugin
+│   └── ...
+│
+├── copilot-runtime-server/    # Node.js/Express server
+│   ├── middleware/
+│   │   ├── dynamicRouting.js  # Agent/model selection + context forwarding
+│   │   ├── auth.js            # Better Auth integration
+│   │   └── ...
+│   ├── routes/
+│   │   ├── auth.js            # Authentication endpoints
+│   │   ├── copilotkit.js      # CopilotKit proxy
+│   │   ├── invitations.js     # Invitation system
+│   │   └── config.js          # Dynamic configuration
+│   ├── auth/
+│   │   └── index.js           # Better Auth setup
+│   ├── config/
+│   │   ├── models.json        # AI model configurations
+│   │   ├── agents.json        # Agent definitions
+│   │   └── providers.json     # Provider settings
+│   ├── scripts/               # Database scripts
+│   └── server.js              # Entry point
+│
+├── copilotkit-pydantic/       # Python/FastAPI AI server
+│   ├── middleware/
+│   │   └── request_middleware.py  # Extract user/org/team context
+│   ├── core/
+│   │   ├── agent_factory.py   # Dynamic agent creation
+│   │   └── models.py          # Pydantic models
+│   ├── api/
+│   │   ├── routes.py          # HTTP endpoints
+│   │   └── websocket.py       # WebSocket handler
+│   ├── services/
+│   │   ├── session_manager.py # Session state management
+│   │   └── usage_tracker.py   # Token usage tracking
+│   ├── history_processor/     # Message compaction
+│   ├── config/
+│   │   ├── models.json        # Model definitions
+│   │   ├── agents.json        # Agent configurations
+│   │   └── prompts.py         # System prompts
+│   ├── database/              # Database connection
+│   └── main.py                # Entry point
+│
+├── dist/                      # Built extension (generated)
+├── landing-page/              # Invitation acceptance page
+└── tests/e2e/                 # End-to-end tests
+```
+
+### Key Components
+
+**Side Panel** (`pages/side-panel/`):
+- Main user interface with chat, settings, admin dashboard
+- React context for authentication and state management
+- Organization and team selectors in UI
+- Agent and model configuration
+
+**Runtime Server** (`copilot-runtime-server/`):
+- Proxies requests between extension and AI server
+- Handles authentication with Better Auth
+- Manages organizations, teams, and invitations
+- Extracts and forwards user context to AI server
+
+**Pydantic Server** (`copilotkit-pydantic/`):
+- Hosts AI agents with CopilotKit
+- Receives user/org/team context via headers
+- Manages conversation history and sessions
+- Tracks token usage and implements caching
+
+## ⚙️ Configuration
+
+### AI Models Configuration
+
+**Runtime Server** (`copilot-runtime-server/config/models.json`):
+```json
+{
+  "claude-3.5-sonnet": {
+    "provider": "anthropic",
+    "model": "claude-3-5-sonnet-20241022",
+    "description": "Most capable Claude model"
+  },
+  "gpt-4o": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "description": "Latest GPT-4 model"
+  }
+}
+```
+
+**Pydantic Server** (`copilotkit-pydantic/config/models.json`):
+```json
+{
+  "claude-3.5-sonnet": {
+    "provider": "anthropic",
+    "model_name": "claude-3-5-sonnet-20241022",
+    "supports_vision": true
+  }
+}
+```
+
+### Agents Configuration
+
+**Runtime Server** (`copilot-runtime-server/config/agents.json`):
+```json
+{
+  "general": {
+    "name": "General Assistant",
+    "description": "General-purpose AI assistant",
+    "default_model": "claude-3.5-sonnet"
+  },
+  "coding": {
+    "name": "Coding Assistant",
+    "description": "Specialized for programming tasks",
+    "default_model": "claude-3.5-sonnet"
+  }
+}
+```
+
+### Dynamic Configuration API
+
+The runtime server exposes a configuration API:
+
+```
+GET /api/config/models    # List available models
+GET /api/config/agents    # List available agents
+```
+
+This allows the frontend to dynamically adapt to available models and agents.
+
+## 🐛 Troubleshooting
+
+### Extension Issues
+
+**HMR not working:**
+1. Stop the dev server (Ctrl+C)
+2. Kill any `turbo` processes
+3. Run `pnpm dev` again
+
+**Extension not loading:**
+1. Check `dist/manifest.json` is valid
+2. Look for errors in `chrome://extensions` (developer mode)
+3. Try removing and re-adding the extension
+
+**Side panel not opening:**
+1. Ensure the extension has the `sidePanel` permission
+2. Check background service worker logs
+3. Verify the side panel path in manifest
+
+### Server Issues
+
+**Runtime server won't start:**
+1. Check database connection: `DATABASE_URL` is correct
+2. Ensure PostgreSQL is running
+3. Run `npm run db:init` to initialize database
+4. Check for port conflicts (default 3100)
+
+**Pydantic server errors:**
+1. Verify Python version >= 3.11
+2. Check all requirements installed: `pip install -r requirements.txt`
+3. Ensure AI provider API keys are set
+4. Check for port conflicts (default 8001)
+
+**Database connection errors:**
+```bash
+# Check PostgreSQL is running
+pg_isready
+
+# Test connection
+psql postgresql://user:password@localhost:5432/hands_off
+
+# Reinitialize if needed
+cd copilot-runtime-server
+npm run db:init
+```
+
+**Authentication not working:**
+1. Verify `BETTER_AUTH_SECRET` is set
+2. Check `BETTER_AUTH_URL` matches your runtime server URL
+3. Clear browser cookies and try again
+4. Check database tables were created: `user`, `session`, `organization`, etc.
+
+**Organization/Team context not forwarding:**
+1. Check runtime server logs for "Auth Context" messages
+2. Verify user is member of an organization
+3. Check pydantic server logs show correct IDs
+4. Ensure middleware is extracting headers correctly
+
+### Common Errors
+
+**`grpc` error in turbo:**
+```bash
+# Kill turbo process
+pkill -f turbo
+# Or on Windows: taskkill /F /IM turbo.exe
+pnpm dev
+```
+
+**TypeScript errors in VS Code:**
+1. Ensure using workspace TypeScript version
+2. Cmd/Ctrl+Shift+P → "TypeScript: Select TypeScript Version" → "Use Workspace Version"
+
+**Module not found errors:**
+```bash
+# Clear node_modules and reinstall
+rm -rf node_modules
+pnpm install
+```
+
+**Build fails:**
+```bash
+# Clean build artifacts
+rm -rf dist
+pnpm build
+```
+
+## 📖 Documentation
+
+Additional documentation:
+- [Runtime Server Setup](copilot-runtime-server/SETUP.md)
+- [Invitation System](INVITATION_SYSTEM.md)
+- [Invitation Architecture](INVITATION_ARCHITECTURE.md)
+- [Admin Refactoring](ADMIN_REFACTORING.md)
+- [Single Team Enforcement](SINGLE_TEAM_ENFORCEMENT.md)
+- [UI Team Enforcement](UI_TEAM_ENFORCEMENT.md)
+
+## 📄 License
+
+[Add your license here]
 
 ---
 
-## Special Thanks To
-
-| <a href="https://jb.gg/OpenSourceSupport"><img width="40" src="https://resources.jetbrains.com/storage/products/company/brand/logos/jb_beam.png" alt="JetBrains Logo (Main) logo."></a> | <a href="https://www.linkedin.com/in/j-acks0n"><img width="40" style="border-radius:50%" src='https://avatars.githubusercontent.com/u/23139754' alt='Jackson Hong'/></a> |
-|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-
----
-
-Made by [Jonghakseo](https://jonghakseo.github.io/)
+**Note**: This project is built on [Chrome Extension Boilerplate with React + Vite + TypeScript](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite)

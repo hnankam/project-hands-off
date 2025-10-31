@@ -15,8 +15,8 @@ export function createCorsMiddleware() {
       // Same-origin/extension requests
       if (!origin) return callback(null, true);
       
-      // Allow chrome extensions in debug mode
-      if (DEBUG && origin.startsWith('chrome-extension://')) {
+      // Always allow chrome extensions (this is a Chrome extension app)
+      if (origin.startsWith('chrome-extension://')) {
         return callback(null, true);
       }
       
@@ -32,7 +32,9 @@ export function createCorsMiddleware() {
       
       return callback(new Error('CORS: Origin not allowed'), false);
     },
-    credentials: true
+    credentials: true,
+    exposedHeaders: ['set-cookie'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
   });
 }
 

@@ -30,6 +30,7 @@ import {
   errorHandlerMiddleware,
   notFoundMiddleware
 } from './middleware/index.js';
+import { teamMembersBypassMiddleware } from './middleware/team-members-bypass.js';
 
 // Routes
 import { 
@@ -38,7 +39,9 @@ import {
   getAgentsHandler,
   getModelsHandler,
   getDefaultsHandler,
-  getCompleteConfigHandler
+  getCompleteConfigHandler,
+  authRouter,
+  invitationsRouter
 } from './routes/index.js';
 
 // Create Express app
@@ -49,28 +52,37 @@ if (TRUST_PROXY) {
   app.set('trust proxy', 1);
 }
 
-// Security headers
+// CORS middleware MUST be first to handle OPTIONS preflight
+app.use(createCorsMiddleware());
+
+// Team members bypass middleware - allow org admins to view all team members
+// Must be before auth routes to intercept the request
+app.use('/api/auth/organization', teamMembersBypassMiddleware);
+
+// CRITICAL: Mount auth routes BEFORE body parsing middleware
+// Per Better Auth docs: https://www.better-auth.com/docs/integrations/express
+app.use('/api/auth', authRouter);
+
+// Mount invitations routes (also before body parsing for cookie access)
+app.use('/api/invitations', invitationsRouter);
+
+// Security headers (after auth to avoid interfering)
 app.use(helmet({
   crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
 }));
 
-// Body parsing middleware
-app.use(express.json({ limit: `${BODY_LIMIT_MB}mb` }));
-app.use(express.urlencoded({ extended: true, limit: `${BODY_LIMIT_MB}mb` }));
-
-// CORS middleware
-app.use(createCorsMiddleware());
-
 // Request ID middleware
 app.use(requestIdMiddleware);
 
-// Rate limiting
-app.use('/api', rateLimit({
+// Rate limiting for non-auth API routes
+const apiRateLimiter = rateLimit({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
-}));
+  skip: (req) => req.path.startsWith('/auth'), // Skip auth routes
+});
+app.use('/api', apiRateLimiter);
 
 // Initialize server with async configuration loading
 (async () => {
@@ -99,6 +111,10 @@ app.use('/api', rateLimit({
     // Health check endpoint
     app.get('/health', healthCheckHandler);
 
+    // Body parsing middleware for all other routes (AFTER auth routes per Better Auth docs)
+    app.use(express.json({ limit: `${BODY_LIMIT_MB}mb` }));
+    app.use(express.urlencoded({ extended: true, limit: `${BODY_LIMIT_MB}mb` }));
+
     // Configuration endpoints for side panel
     app.get('/api/config', getCompleteConfigHandler);
     app.get('/api/config/agents', getAgentsHandler);
@@ -115,6 +131,8 @@ app.use('/api', rateLimit({
     const server = app.listen(PORT, () => {
       log(`🚀 CopilotKit Runtime Server running on http://0.0.0.0:${PORT}`);
       log(`   Health check: http://0.0.0.0:${PORT}/health`);
+      log(`   Authentication: http://0.0.0.0:${PORT}/api/auth/*`);
+      log(`   Invitations: http://0.0.0.0:${PORT}/api/invitations/*`);
       log(`   CopilotKit endpoint: http://0.0.0.0:${PORT}/api/copilotkit`);
       log(`   Configuration endpoints:`);
       log(`     - GET http://0.0.0.0:${PORT}/api/config (complete config)`);

@@ -21,24 +21,38 @@ export function createAnthropicClient(providerConfig) {
   }
   
   const { aws_access_key_id, aws_secret_access_key, aws_region, region } = providerConfig.credentials;
-  
-  // Support both 'aws_region' and 'region' field names for backward compatibility
   const effectiveRegion = aws_region || region;
   
   if (!aws_access_key_id || !aws_secret_access_key || !effectiveRegion) {
-    throw new Error(`Missing required AWS credentials in database configuration. Found: ${JSON.stringify({
-      hasAccessKey: !!aws_access_key_id,
-      hasSecretKey: !!aws_secret_access_key,
-      hasRegion: !!effectiveRegion,
-      credentials: Object.keys(providerConfig.credentials || {})
-    })}`);
+    throw new Error('Missing required AWS credentials (access_key, secret_key, or region)');
   }
   
-  return new AnthropicBedrock({
-    awsAccessKeyId: aws_access_key_id,
-    awsSecretAccessKey: aws_secret_access_key,
+  // Clear AWS environment variables to prevent credential chain conflicts
+  const originalSessionToken = process.env.AWS_SESSION_TOKEN;
+  const originalAccessKey = process.env.AWS_ACCESS_KEY_ID;
+  const originalSecretKey = process.env.AWS_SECRET_ACCESS_KEY;
+  
+  if (originalSessionToken) delete process.env.AWS_SESSION_TOKEN;
+  if (originalAccessKey) delete process.env.AWS_ACCESS_KEY_ID;
+  if (originalSecretKey) delete process.env.AWS_SECRET_ACCESS_KEY;
+  
+  // IMPORTANT: Use correct Bedrock SDK parameter names
+  // awsAccessKey/awsSecretKey (not awsAccessKeyId/awsSecretAccessKey)
+  // providerChainResolver: null disables AWS credential chain (prevents ~/.aws/credentials interference)
+  const client = new AnthropicBedrock({
+    awsAccessKey: aws_access_key_id,
+    awsSecretKey: aws_secret_access_key,
     awsRegion: effectiveRegion,
+    awsSessionToken: null,
+    providerChainResolver: null, // Only use explicit credentials
   });
+  
+  // Restore environment variables
+  if (originalSessionToken) process.env.AWS_SESSION_TOKEN = originalSessionToken;
+  if (originalAccessKey) process.env.AWS_ACCESS_KEY_ID = originalAccessKey;
+  if (originalSecretKey) process.env.AWS_SECRET_ACCESS_KEY = originalSecretKey;
+  
+  return client;
 }
 
 /**

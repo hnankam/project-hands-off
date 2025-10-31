@@ -7,4 +7,5 @@ export * from './requestId.js';
 export * from './dynamicRouting.js';
 export * from './errorHandler.js';
 export * from './notFound.js';
+export * from './auth.js';
 

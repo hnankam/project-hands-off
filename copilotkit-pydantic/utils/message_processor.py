@@ -29,6 +29,8 @@ async def process_message_attachments(
     It transforms user messages that contain attachment manifests into
     Claude's structured content format with text, image, and document parts.
     
+    Processes both UserPromptPart and ToolReturnPart (for screenshots) within ModelRequest messages.
+    
     Only processes attachments in the MOST RECENT user message to avoid
     re-processing historical attachments that have already been sent to the API.
     
@@ -47,6 +49,8 @@ async def process_message_attachments(
         if isinstance(message, ModelRequest):
             last_request_idx = idx
     
+    logger.debug(f"[process_message_attachments] Last ModelRequest index: {last_request_idx} out of {len(messages)} messages")
+    
     for idx, message in enumerate(messages):
         # Only process ModelRequest messages (user messages)
         if not isinstance(message, ModelRequest):
@@ -60,80 +64,132 @@ async def process_message_attachments(
         has_attachments = False
         
         for part in message.parts:
-            # Only process UserPromptPart
-            if not isinstance(part, UserPromptPart):
-                new_parts.append(part)
-                continue
-            
-            content = part.content
-            if not isinstance(content, str):
-                new_parts.append(part)
-                continue
-            
-            # Parse manifest (only log for latest message)
-            clean_text, attachments = parse_attachment_manifest(content, log_parse=is_last_request)
-            
-            if not attachments:
-                # No attachments, keep original part
-                new_parts.append(part)
-                continue
-            
-            # Only process attachments for the most recent user message
-            # For historical messages, remove manifest but don't re-create attachment references
-            if not is_last_request:
-                # Historical message - attachments already processed, just keep clean text
-                if clean_text.strip():
-                    new_parts.append(UserPromptPart(content=clean_text))
-                logger.debug(f"Skipping {len(attachments)} historical attachment(s) in manifest (already processed)")
-                continue
-            
-            has_attachments = True
-            
-            # Create new UserPromptPart with just the clean text
-            if clean_text.strip():
-                new_parts.append(UserPromptPart(content=clean_text))
-            
-            # Add attachment parts
-            # Note: Pydantic AI needs specific part types for images/documents
-            # For now, append them as text description since we don't have native support
-            # The model will receive URLs it can access
-            attachment_descriptions = []
-            for attachment in attachments:
-                name = attachment.get('name', 'attachment')
-                mime_type = attachment.get('type', 'application/octet-stream')
-                url = attachment.get('url', '')
-                size = attachment.get('size', 0)
+            # Process both UserPromptPart and ToolReturnPart
+            if isinstance(part, UserPromptPart) and isinstance(part.content, str):
+                content = part.content
+                # Parse manifest (only log for latest message)
+                clean_text, attachments = parse_attachment_manifest(content, log_parse=is_last_request)
                 
-                if not url:
-                    logger.warning(f"Skipping attachment '{name}' with no URL")
+                if not attachments:
+                    # No attachments, keep original part
+                    new_parts.append(part)
                     continue
                 
-                # Create a descriptive text block about the attachment
-                # The URL will be accessible to the model
-                if mime_type.startswith('image/'):
-                    desc = f"[Image: {name} - {url}]"
-                else:
-                    desc = f"[Document: {name} ({mime_type}) - {url}]"
+                # Only process attachments for the most recent user message
+                # For historical messages, remove manifest but don't re-create attachment references
+                if not is_last_request:
+                    # Historical message - attachments already processed, just keep clean text
+                    if clean_text.strip():
+                        new_parts.append(UserPromptPart(content=clean_text))
+                    logger.debug(f"Skipping {len(attachments)} historical attachment(s) in manifest (already processed)")
+                    continue
                 
-                attachment_descriptions.append(desc)
-                logger.info(f"Processed NEW attachment: {name} ({mime_type})")
-            
-            if attachment_descriptions:
-                # Add attachment info as a separate text part
-                new_parts.append(UserPromptPart(content="\n".join(attachment_descriptions)))
+                has_attachments = True
+                
+                # Create new UserPromptPart with just the clean text
+                if clean_text.strip():
+                    new_parts.append(UserPromptPart(content=clean_text))
+                
+                # Add attachment parts
+                for attachment in attachments:
+                    name = attachment.get('name', 'attachment')
+                    mime_type = attachment.get('type', 'application/octet-stream')
+                    url = attachment.get('url', '')
+                    
+                    if not url:
+                        logger.warning(f"Skipping attachment '{name}' with no URL")
+                        continue
+                    
+                    # Create a descriptive text block about the attachment
+                    if mime_type.startswith('image/'):
+                        desc = f"[Image: {name} - {url}]"
+                    else:
+                        desc = f"[Document: {name} ({mime_type}) - {url}]"
+                    
+                    new_parts.append(UserPromptPart(content=desc))
+                    logger.info(f"Processed NEW attachment: {name} ({mime_type})")
+                    
+            elif isinstance(part, ToolReturnPart) and isinstance(part.content, str):
+                content = part.content
+                logger.debug(f"[ToolReturnPart] tool={part.tool_name}, content_length={len(content)}, has_manifest={'<!--ATTACHMENTS:' in content}")
+                # Parse manifest (only log for latest message)
+                clean_text, attachments = parse_attachment_manifest(content, log_parse=is_last_request)
+                
+                logger.debug(f"[ToolReturnPart] Found {len(attachments)} attachments after parsing")
+                
+                if not attachments:
+                    # No attachments, keep original part
+                    new_parts.append(part)
+                    continue
+                
+                # Only process attachments for the most recent message
+                if not is_last_request:
+                    # Historical message - attachments already processed, just keep clean text
+                    new_parts.append(ToolReturnPart(
+                        tool_name=part.tool_name,
+                        content=clean_text,
+                        tool_call_id=part.tool_call_id,
+                        timestamp=part.timestamp
+                    ))
+                    logger.debug(f"Skipping {len(attachments)} historical attachment(s) in tool return (already processed)")
+                    continue
+                
+                has_attachments = True
+                
+                # Keep the cleaned tool return
+                new_parts.append(ToolReturnPart(
+                    tool_name=part.tool_name,
+                    content=clean_text,
+                    tool_call_id=part.tool_call_id,
+                    timestamp=part.timestamp
+                ))
+                
+                # Add attachment references as UserPromptPart
+                for attachment in attachments:
+                    name = attachment.get('name', 'attachment')
+                    mime_type = attachment.get('type', 'application/octet-stream')
+                    url = attachment.get('url', '')
+                    
+                    if not url:
+                        logger.warning(f"Skipping attachment '{name}' with no URL in tool return")
+                        continue
+                    
+                    # Create a descriptive text block about the attachment
+                    if mime_type.startswith('image/'):
+                        desc = f"[Image: {name} - {url}]"
+                    else:
+                        desc = f"[Document: {name} ({mime_type}) - {url}]"
+                    
+                    new_parts.append(UserPromptPart(content=desc))
+                    logger.info(f"Processed NEW tool return attachment: {name} ({mime_type})")
+                    logger.debug(f"  Image reference created: {desc[:100]}...")
+            else:
+                new_parts.append(part)
         
         # If we modified any parts (either new attachments or cleaned historical ones), create new message
         if new_parts and new_parts != list(message.parts):
-            # Create new message with transformed parts
-            processed_messages.append(ModelRequest(
+            new_message = ModelRequest(
                 parts=new_parts,
                 instructions=message.instructions,
-            ))
+            )
+            processed_messages.append(new_message)
             if has_attachments:
                 logger.info(f"Transformed message with NEW attachments into {len(new_parts)} parts")
+                # Log the parts for debugging
+                for i, part in enumerate(new_parts):
+                    part_type = type(part).__name__
+                    if isinstance(part, UserPromptPart):
+                        content_preview = part.content[:100] if isinstance(part.content, str) else str(part.content)[:100]
+                        logger.debug(f"  Part {i}: {part_type} - content: {content_preview}...")
+                    elif isinstance(part, ToolReturnPart):
+                        content_preview = part.content[:100] if isinstance(part.content, str) else str(part.content)[:100]
+                        logger.debug(f"  Part {i}: {part_type} ({part.tool_name}) - content: {content_preview}...")
+                    else:
+                        logger.debug(f"  Part {i}: {part_type}")
         else:
             processed_messages.append(message)
     
+    logger.info(f"[process_message_attachments] Completed. Returning {len(processed_messages)} messages")
     return processed_messages
 
 
@@ -142,6 +198,8 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
     
     Extracts the <!--ATTACHMENTS: [...] --> block from message content,
     parses the JSON manifest, and returns the clean text and attachments list.
+    
+    Handles both plain text and JSON-escaped content (from tool returns).
     
     Args:
         content: The raw user message content (may include manifest)
@@ -164,23 +222,59 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
         ]
         -->
     """
+    logger.debug(f"[parse_manifest] Parsing content (length={len(content)}), starts_with_brace={content.startswith('{')}")
+    
+    # If content looks like a JSON string (from tool return), try to decode it first
+    decoded_content = content
+    if content.startswith('{'):
+        try:
+            # Try to parse as JSON object (tool returns are JSON strings)
+            json_obj = json.loads(content)
+            # If it's a JSON object with a 'message' field, extract it
+            if isinstance(json_obj, dict) and 'message' in json_obj:
+                decoded_content = json_obj['message']
+                logger.debug(f"[parse_manifest] Decoded JSON tool return, extracted message field")
+            else:
+                decoded_content = content
+        except (json.JSONDecodeError, ValueError):
+            # Not JSON, use original
+            decoded_content = content
+    
     # Pattern to match the attachment manifest block
     manifest_pattern = r'<!--ATTACHMENTS:\s*(\[.*?\])\s*-->'
     
-    match = re.search(manifest_pattern, content, re.DOTALL)
+    match = re.search(manifest_pattern, decoded_content, re.DOTALL)
     if not match:
+        if '<!--ATTACHMENTS:' in decoded_content:
+            logger.debug(f"[parse_manifest] Found ATTACHMENTS marker but regex didn't match. Content preview: {decoded_content[:200]}")
         return content, []
     
     try:
         # Parse the JSON manifest
         manifest_json = match.group(1)
+        logger.debug(f"[parse_manifest] Extracted manifest JSON: {manifest_json[:200]}...")
         attachments = json.loads(manifest_json)
         
-        # Remove the manifest block from content
-        clean_text = re.sub(manifest_pattern, '', content, flags=re.DOTALL).strip()
+        # Remove the manifest block from decoded content
+        clean_decoded = re.sub(manifest_pattern, '', decoded_content, flags=re.DOTALL).strip()
+        
+        # If original content was JSON, reconstruct it with cleaned message
+        if content.startswith('{') and decoded_content != content:
+            try:
+                json_obj = json.loads(content)
+                if isinstance(json_obj, dict) and 'message' in json_obj:
+                    json_obj['message'] = clean_decoded
+                    clean_text = json.dumps(json_obj)
+                else:
+                    clean_text = clean_decoded
+            except (json.JSONDecodeError, ValueError):
+                clean_text = clean_decoded
+        else:
+            clean_text = clean_decoded
         
         if log_parse:
             logger.info(f"Parsed attachment manifest: {len(attachments)} attachments")
+        logger.debug(f"[parse_manifest] Successfully parsed {len(attachments)} attachments")
         return clean_text, attachments
         
     except json.JSONDecodeError as e:

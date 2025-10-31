@@ -7,14 +7,16 @@ interface DropdownMenuProps {
   trigger: React.ReactNode
   className?: string
   align?: 'left' | 'right'
+  direction?: 'up' | 'down' | 'auto'
   isLight?: boolean
 }
 
 const DropdownMenuContext = React.createContext<{ isLight: boolean; portalContainer: HTMLElement | null; closeMenu: () => void }>({ isLight: true, portalContainer: null, closeMenu: () => {} })
 
-export const DropdownMenu = ({ children, trigger, className, align = 'left', isLight = true }: DropdownMenuProps) => {
+export const DropdownMenu = ({ children, trigger, className, align = 'left', direction = 'auto', isLight = true }: DropdownMenuProps) => {
   const [isOpen, setIsOpen] = React.useState(false)
-  const [position, setPosition] = React.useState({ top: 0, left: 0, right: 0 })
+  const [position, setPosition] = React.useState({ top: 0, bottom: 0, left: 0, right: 0 })
+  const [openUpward, setOpenUpward] = React.useState(false)
   const dropdownRef = React.useRef<HTMLDivElement>(null)
   const triggerRef = React.useRef<HTMLDivElement>(null)
   const [portalContainer, setPortalContainer] = React.useState<HTMLElement | null>(null)
@@ -54,10 +56,27 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', isL
 
   React.useEffect(() => {
     const updatePosition = () => {
-      if (isOpen && triggerRef.current) {
+      if (isOpen && triggerRef.current && dropdownRef.current) {
         const rect = triggerRef.current.getBoundingClientRect()
+        const dropdownHeight = dropdownRef.current.offsetHeight || 200 // fallback height
+        const spaceBelow = window.innerHeight - rect.bottom
+        const spaceAbove = rect.top
+        
+        // Determine if should open upward based on direction prop
+        let shouldOpenUpward = false
+        if (direction === 'up') {
+          shouldOpenUpward = true
+        } else if (direction === 'down') {
+          shouldOpenUpward = false
+        } else {
+          // Auto mode: open upward if there's not enough space below but enough space above
+          shouldOpenUpward = spaceBelow < dropdownHeight && spaceAbove > dropdownHeight
+        }
+        
+        setOpenUpward(shouldOpenUpward)
         setPosition({
           top: rect.bottom + 4,
+          bottom: window.innerHeight - rect.top + 4,
           left: rect.left,
           right: window.innerWidth - rect.right
         })
@@ -65,7 +84,8 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', isL
     }
 
     if (isOpen) {
-      updatePosition()
+      // Small delay to allow dropdown to render and get accurate height
+      setTimeout(updatePosition, 0)
       window.addEventListener('scroll', updatePosition, true)
       window.addEventListener('resize', updatePosition)
       return () => {
@@ -74,7 +94,7 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', isL
       }
     }
     return undefined
-  }, [isOpen])
+  }, [isOpen, direction])
 
   const handleToggle = () => {
     setIsOpen(!isOpen)
@@ -96,7 +116,7 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', isL
           )}
           style={{
             position: 'absolute',
-            top: `${position.top}px`,
+            ...(openUpward ? { bottom: `${position.bottom}px` } : { top: `${position.top}px` }),
             [align === 'right' ? 'right' : 'left']: align === 'right' ? `${position.right}px` : `${position.left}px`,
             pointerEvents: 'auto'
           }}

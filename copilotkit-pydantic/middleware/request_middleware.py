@@ -33,14 +33,76 @@ async def agent_model_middleware(request: Request, call_next):
         "gemini-2.5-flash-lite"
     )
     
+    # Extract user, organization, and team information from headers
+    user_id = (
+        request.headers.get("x-copilot-user-id") or
+        request.headers.get("X-Copilot-User-Id")
+    )
+    user_email = (
+        request.headers.get("x-copilot-user-email") or
+        request.headers.get("X-Copilot-User-Email")
+    )
+    user_name = (
+        request.headers.get("x-copilot-user-name") or
+        request.headers.get("X-Copilot-User-Name")
+    )
+    organization_id = (
+        request.headers.get("x-copilot-organization-id") or
+        request.headers.get("X-Copilot-Organization-Id")
+    )
+    organization_name = (
+        request.headers.get("x-copilot-organization-name") or
+        request.headers.get("X-Copilot-Organization-Name")
+    )
+    organization_slug = (
+        request.headers.get("x-copilot-organization-slug") or
+        request.headers.get("X-Copilot-Organization-Slug")
+    )
+    member_role = (
+        request.headers.get("x-copilot-member-role") or
+        request.headers.get("X-Copilot-Member-Role")
+    )
+    team_id = (
+        request.headers.get("x-copilot-team-id") or
+        request.headers.get("X-Copilot-Team-Id")
+    )
+    team_name = (
+        request.headers.get("x-copilot-team-name") or
+        request.headers.get("X-Copilot-Team-Name")
+    )
+    
     if DEBUG:
         logger.info(f"[{req_id}] Agent={agent_type} Model={model_name} {request.method} {request.url.path}")
+        if user_id:
+            logger.info(
+                f"[{req_id}] User={user_email} Org={organization_name or 'none'} ({organization_slug or 'none'}) "
+                f"Team={team_name or 'none'} Role={member_role or 'none'}"
+            )
+            logger.info(
+                f"[{req_id}] IDs - UserID={user_id} OrgID={organization_id or 'none'} "
+                f"TeamID={team_id or 'none'}"
+            )
     
     # Annotate request context for downstream handlers
     request.state.agent_type = agent_type
     request.state.model_name = model_name
+    request.state.user_id = user_id
+    request.state.user_email = user_email
+    request.state.user_name = user_name
+    request.state.organization_id = organization_id
+    request.state.organization_name = organization_name
+    request.state.organization_slug = organization_slug
+    request.state.member_role = member_role
+    request.state.team_id = team_id
+    request.state.team_name = team_name
+    
     if DEBUG:
         logger.info(f"[{req_id}] Using agent={agent_type} model={model_name}")
+        if user_id:
+            logger.info(
+                f"[{req_id}] Auth context: user={user_email}, org={organization_name} ({organization_slug}), "
+                f"team={team_name}, userID={user_id}, orgID={organization_id}, teamID={team_id}"
+            )
     
     response = await call_next(request)
     return response

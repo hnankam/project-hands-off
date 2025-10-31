@@ -165,9 +165,11 @@ class AnthropicModelWithCache(AnthropicModel):
         # Call parent's mapping with processed messages
         _, anthropic_messages = await super()._map_message(processed_messages)
         
+        logger.debug(f"[anthropic_cache] After parent mapping: {len(anthropic_messages)} anthropic messages")
+        
         # Post-process to convert attachment markers to proper Anthropic blocks
         final_messages: list[MessageParam] = []
-        for msg in anthropic_messages:
+        for idx, msg in enumerate(anthropic_messages):
             if msg.get('role') == 'user':
                 content = msg.get('content', [])
                 if isinstance(content, list):
@@ -186,6 +188,7 @@ class AnthropicModelWithCache(AnthropicModel):
                                     
                                     if att_type == 'image':
                                         # Fetch image and convert to base64 (required by Bedrock)
+                                        logger.info(f"Fetching image from URL: {url[:80]}...")
                                         base64_data = await self._fetch_url_as_base64(url)
                                         if base64_data:
                                             new_content.append(ImageBlockParam(
@@ -196,9 +199,9 @@ class AnthropicModelWithCache(AnthropicModel):
                                                     'data': base64_data
                                                 }
                                             ))
-                                            logger.info(f"Added image as base64: {name} ({media_type})")
+                                            logger.info(f"✓ Added image as base64: {name} ({media_type}), size: {len(base64_data)} chars")
                                         else:
-                                            logger.warning(f"Failed to fetch image, skipping: {name}")
+                                            logger.warning(f"✗ Failed to fetch image, skipping: {name}")
                                     elif att_type == 'document':
                                         # Fetch document and convert to base64 (required by Bedrock)
                                         base64_data = await self._fetch_url_as_base64(url)
@@ -268,7 +271,13 @@ class AnthropicModelWithCache(AnthropicModel):
                                 new_content.append(block)
                         else:
                             new_content.append(block)
-                    final_messages.append({**msg, 'content': new_content})
+                    final_msg = {**msg, 'content': new_content}
+                    final_messages.append(final_msg)
+                    # Log summary of the message content
+                    image_count = sum(1 for c in new_content if isinstance(c, dict) and c.get('type') == 'image')
+                    doc_count = sum(1 for c in new_content if isinstance(c, dict) and c.get('type') == 'document')
+                    text_count = sum(1 for c in new_content if isinstance(c, dict) and c.get('type') == 'text')
+                    logger.info(f"[anthropic_cache] Final message {idx}: {text_count} text, {image_count} images, {doc_count} docs")
                 else:
                     final_messages.append(msg)
             else:
@@ -301,6 +310,7 @@ class AnthropicModelWithCache(AnthropicModel):
         if instructions := self._get_instructions(messages):
             system_prompt.insert(0, TextBlockParam(type='text', text=instructions))
         
+        logger.info(f"[anthropic_cache] Returning {len(system_prompt)} system prompt parts, {len(final_messages)} messages")
         return system_prompt, final_messages
     
     def _get_tools(
