@@ -107,7 +107,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
           <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
             isLight ? 'text-gray-600' : 'text-gray-400'
           }`}>
-            <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
+            <svg width="15" height="15" fill="currentColor" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
             </svg>
             <div className="min-w-0 flex-1">
@@ -131,7 +131,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
           <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
             isLight ? 'text-blue-600' : 'text-blue-400'
           }`}>
-            <svg className="animate-spin" width="12" height="12" fill="none" viewBox="0 0 24 24">
+            <svg className="animate-spin" width="15" height="15" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
@@ -141,7 +141,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
           <div className={`content-status-indicator content-refreshing flex items-center gap-1 flex-1 min-w-0 ${
             isLight ? 'text-orange-600' : 'text-orange-400'
           }`}>
-            <svg className="animate-spin" width="12" height="12" fill="none" viewBox="0 0 24 24">
+            <svg className="animate-spin" width="15" height="15" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
@@ -151,7 +151,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
           <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
             isLight ? 'text-purple-600' : 'text-purple-400'
           }`}>
-            <svg className="animate-spin" width="12" height="12" fill="none" viewBox="0 0 24 24">
+            <svg className="animate-spin" width="15" height="15" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
@@ -161,7 +161,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
           <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
             isLight ? 'text-green-600' : 'text-green-400'
           }`}>
-            <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
+            <svg width="15" height="15" fill="currentColor" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
             <div className="min-w-0 flex-1">
@@ -176,7 +176,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
           <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
             isLight ? 'text-red-600' : 'text-red-400'
           }`}>
-            <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
+            <svg width="15" height="15" fill="currentColor" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
             <span>Error loading content</span>
@@ -185,7 +185,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
           <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
             isLight ? 'text-blue-600' : 'text-blue-400'
           }`}>
-            <svg className="animate-spin" width="12" height="12" fill="none" viewBox="0 0 24 24">
+            <svg className="animate-spin" width="15" height="15" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
@@ -195,7 +195,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
           <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
             isLight ? 'text-blue-600' : 'text-blue-400'
           }`}>
-            <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
+            <svg width="15" height="15" fill="currentColor" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
             <span>Ready for analysis</span>
@@ -228,7 +228,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
                 : "Analyze Current Page"
           }
         >
-          <svg className={isContentFetching ? 'animate-spin' : ''} width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <svg className={isContentFetching ? 'animate-spin' : ''} width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
           {showStaleIndicator && !isContentFetching && (
@@ -254,7 +254,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
             }`}
             title={showProgressBar ? "Hide Progress Bar" : "Show Progress Bar"}
           >
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
             </svg>
           </button>
@@ -269,7 +269,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
           }`}
           title="Save Messages"
         >
-          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
           </svg>
         </button>
@@ -282,7 +282,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
           }`}
           title="Load Messages"
         >
-          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
         </button>

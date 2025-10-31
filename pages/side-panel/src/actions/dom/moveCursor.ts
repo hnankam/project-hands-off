@@ -50,6 +50,15 @@ export async function handleMoveCursorToElement(cssSelector: string): Promise<Mo
       target: { tabId: tabs[0].id },
       world: 'MAIN',
       func: (selector: string): any => {
+        // Prevent duplicate injection
+        const injectionKey = `__copilotMoveCursorInjected_${selector}`;
+        if ((window as any)[injectionKey]) {
+          console.log('[MoveCursor] Skipping duplicate cursor move injection:', selector);
+          return { success: false, message: 'Cursor move skipped (script already injected)' };
+        }
+        (window as any)[injectionKey] = true;
+        setTimeout(() => delete (window as any)[injectionKey], 3000);
+        
         try {
           // Shadow DOM helper - supports >> notation
           const querySelectorWithShadowDOM = (selector: string): Element | null => {

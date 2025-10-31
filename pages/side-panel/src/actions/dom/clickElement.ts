@@ -54,6 +54,14 @@ export async function handleClickElement(
       target: { tabId: tabs[0].id },
       world: 'MAIN',
       func: (selector: string, moveCursor: boolean): any => {
+        // Prevent duplicate injection
+        const injectionKey = `__copilotClickInjected_${selector}`;
+        if ((window as any)[injectionKey]) {
+          return { success: true, message: 'Click skipped (script already injected)' };
+        }
+        (window as any)[injectionKey] = true;
+        setTimeout(() => delete (window as any)[injectionKey], 3000);
+        
         try {
           // Helper: Parse and query shadow DOM selectors with >> notation
           const querySelectorWithShadowDOM = (selector: string): Element | null => {
@@ -367,49 +375,9 @@ export async function handleClickElement(
                     }),
                   ];
 
-                  // Dispatch all events in sequence
+                  // Dispatch all events in sequence on the resolved final target ONLY
+                  // Avoid additional ancestor or native .click() calls to prevent double triggers
                   events.forEach(event => finalTarget.dispatchEvent(event));
-
-                  // Also try clicking the nearest clickable ancestor (common with icons inside buttons)
-                  const ancestor = (finalTarget as HTMLElement).closest(
-                    'a[href],button,[role="button"],[onclick],[data-action],[tabindex],*[aria-controls],*[aria-haspopup]'
-                  ) as HTMLElement | null;
-                  if (ancestor && ancestor !== finalTarget) {
-                    const aRect = ancestor.getBoundingClientRect();
-                    const ax = aRect.left + aRect.width / 2;
-                    const ay = aRect.top + aRect.height / 2;
-
-                    const ancestorEvents = [
-                      new PointerEvent('pointerover', { bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay, pointerType: 'mouse' }),
-                      new MouseEvent('mouseenter', { view: window, bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay }),
-                      new MouseEvent('mouseover', { view: window, bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay }),
-                      new PointerEvent('pointerdown', { bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay, pointerType: 'mouse', button: 0 }),
-                      new MouseEvent('mousedown', { view: window, bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay, button: 0 }),
-                      new PointerEvent('pointerup', { bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay, pointerType: 'mouse', button: 0 }),
-                      new MouseEvent('mouseup', { view: window, bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay, button: 0 }),
-                      new MouseEvent('click', { view: window, bubbles: true, cancelable: true, composed: true, clientX: ax, clientY: ay, button: 0 }),
-                    ];
-                    ancestorEvents.forEach(ev => ancestor.dispatchEvent(ev));
-
-                    // If it's a link or button, also invoke native click
-                    try { (ancestor as HTMLElement).click?.(); } catch {}
-                  }
-
-                  // Keyboard fallback (some UIs respond to Enter/Space on focused elements)
-                  try {
-                    const kdEnter = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true });
-                    const kuEnter = new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true });
-                    el.dispatchEvent(kdEnter);
-                    el.dispatchEvent(kuEnter);
-
-                    const kdSpace = new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true });
-                    const kuSpace = new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true, cancelable: true });
-                    el.dispatchEvent(kdSpace);
-                    el.dispatchEvent(kuSpace);
-                  } catch {}
-
-                  // Fallback: call native click to trigger default handlers
-                  try { (finalTarget as HTMLElement).click?.(); } catch {}
                 };
 
                 // Click the verified element (what's actually at the cursor)

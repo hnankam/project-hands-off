@@ -169,8 +169,9 @@ export const useMessageSanitization = (
         let cleanedThinking = thinkingContent.replace(THINKING_TAGS_RE, '').trim();
         const cleanedAfter = afterThinking.replace(THINKING_TAGS_RE, '').trim();
         
-        // Collapse multiple blank lines inside the thinking content to a single newline
-        cleanedThinking = cleanedThinking.replace(/(\r?\n)\s*(\r?\n)+/g, '$1');
+        // Collapse 3+ consecutive newlines to double newlines, preserve double newlines
+        // Match 3 or more newlines (with optional whitespace) and replace with exactly 2 newlines
+        cleanedThinking = cleanedThinking.replace(/(\r?\n)(?:\s*\r?\n){2,}/g, '\n\n');
         
         // Reconstruct: thinking block MUST be isolated with blank lines
         const parts = [];
@@ -316,12 +317,23 @@ export const useMessageSanitization = (
         }
       }
 
-      // Normalize assistant content thinking tags
+      // Normalize assistant content thinking tags and newlines
       if (message.role === 'assistant' && typeof message.content === 'string') {
         const normalized = normalizeThinking(message.content);
-        if (normalized.changed) {
+        let finalContent = normalized.text;
+        let contentChanged = normalized.changed;
+        
+        // Apply general newline normalization: max 2 consecutive newlines
+        // This ensures consistency across all assistant messages
+        const normalizedNewlines = finalContent.replace(/(\r?\n)(?:\s*\r?\n){2,}/g, '\n\n');
+        if (normalizedNewlines !== finalContent) {
+          finalContent = normalizedNewlines;
+          contentChanged = true;
+        }
+        
+        if (contentChanged) {
           hasChanges = true;
-          return { ...message, content: normalized.text };
+          return { ...message, content: finalContent };
         }
       }
       

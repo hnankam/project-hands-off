@@ -34,6 +34,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
   const prevStreamingRef = useRef<boolean>(false);
   const myIdRef = useRef<number>(0);
   const [isLatest, setIsLatest] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Global coordination: ensure only the newest mounted block is considered "latest"
   // so only that block reflects the global streaming state in its title.
@@ -98,6 +99,52 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
       }, 800);
     }
   }, [isStreaming, isLatest]);
+
+  // Auto-scroll to bottom during streaming to keep new content visible
+  // Use throttled MutationObserver for smooth, responsive scrolling
+  useEffect(() => {
+    if (!isStreaming || !isLatest || !isOpen || !contentRef.current) {
+      return;
+    }
+
+    const element = contentRef.current;
+    let lastScrollTime = 0;
+    const SCROLL_THROTTLE_MS = 50; // Throttle to max once per 50ms for smooth scrolling
+    
+    // Throttled scroll function - immediate first scroll, then max once per 50ms
+    const scrollToBottom = () => {
+      const now = Date.now();
+      
+      // Allow scroll if enough time has passed since last scroll
+      if (now - lastScrollTime >= SCROLL_THROTTLE_MS) {
+        lastScrollTime = now;
+        requestAnimationFrame(() => {
+          if (element) {
+            element.scrollTop = element.scrollHeight;
+          }
+        });
+      }
+    };
+    
+    // Scroll immediately on mount
+    scrollToBottom();
+
+    // Set up MutationObserver with immediate throttled scrolling
+    const observer = new MutationObserver(() => {
+      // Scroll immediately (or wait for throttle window)
+      scrollToBottom();
+    });
+
+    observer.observe(element, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [isStreaming, isLatest, isOpen]);
   
   const toggleAccordion = () => {
     setIsOpen(!isOpen);
@@ -277,7 +324,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
         </svg>
       </button>
       
-      {/* Accordion Content - Collapsible. While streaming, expand and disable vertical scrollbar */}
+      {/* Accordion Content - Collapsible with auto-scroll during streaming */}
       <div
         id="thinking-content"
         className={`overflow-hidden transition-all duration-200 ease-in-out ${
@@ -286,9 +333,10 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
             : 'max-h-0 opacity-0'
         }`}>
         <div
+          ref={contentRef}
           className={`p-2 pl-3 pr-3 text-xs ${
             isStreaming && isLatest
-              ? 'overflow-y-hidden max-h-none'
+              ? 'overflow-y-auto max-h-[75vh] overscroll-contain session-tabs-scroll'
               : 'overflow-y-auto max-h-40 overscroll-contain session-tabs-scroll'
           } ${
             isLight ? 'text-blue-900/80' : 'text-blue-100/80'

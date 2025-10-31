@@ -52,8 +52,8 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
         title="Settings"
       >
         <svg 
-          width="14"
-          height="14"
+          width="16"
+          height="16"
           fill="none" 
           stroke="currentColor" 
           viewBox="0 0 24 24"
@@ -304,7 +304,7 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
                 : 'text-gray-200 hover:bg-gray-700/50'
             )}
           >
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
             </svg>
             More Settings

@@ -71,18 +71,18 @@ export const ChatErrorDisplay: React.FC<ChatErrorDisplayProps> = ({
 
   return (
     <div
-      className={`transform transition-all duration-300 ease-out ${
+      className={`flex-shrink-0 transform transition-all duration-300 ease-out ${
         isClosing ? 'translate-y-2 opacity-0' : 'translate-y-0 opacity-100'
       }`}>
       <div
-        className={`mx-4 my-2 mb-0 flex items-start gap-3 rounded-lg px-4 py-3 shadow-sm ${
+        className={`mx-4 mt-2 flex items-start gap-2 rounded-lg px-3 py-2 shadow-sm ${
           isLight
             ? 'bg-red-50 text-red-900'
             : 'bg-red-900/20 text-red-200'
         }`}>
         {/* Error Icon */}
         <svg
-          className={`h-5 w-5 flex-shrink-0 ${isLight ? 'text-red-500' : 'text-red-400'}`}
+          className={`h-4 w-4 flex-shrink-0 mt-0.5 ${isLight ? 'text-red-500' : 'text-red-400'}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -95,10 +95,10 @@ export const ChatErrorDisplay: React.FC<ChatErrorDisplayProps> = ({
         </svg>
 
         {/* Error Content */}
-        <div className="flex-1 space-y-2">
+        <div className="flex-1 space-y-1.5">
           {/* Error Message */}
-          <div className="space-y-1">
-            <p className={`text-sm font-medium ${isLight ? 'text-red-900' : 'text-red-200'}`}>
+          <div className="space-y-0.5">
+            <p className={`text-xs font-medium ${isLight ? 'text-red-900' : 'text-red-200'}`}>
               {error.name || 'Error'}
             </p>
             <p className={`text-xs ${isLight ? 'text-red-800' : 'text-red-300'}`}>
@@ -111,7 +111,7 @@ export const ChatErrorDisplay: React.FC<ChatErrorDisplayProps> = ({
             {retry && (
               <button
                 onClick={handleRetry}
-                className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium transition-colors ${
                   isLight
                     ? 'bg-red-100 text-red-900 hover:bg-red-200'
                     : 'bg-red-900/50 text-red-200 hover:bg-red-900/70'
@@ -203,11 +203,11 @@ export const ChatErrorDisplayCompact: React.FC<ChatErrorDisplayProps> = ({
 
   return (
     <div
-      className={`transform transition-all duration-300 ease-out ${
+      className={`flex-shrink-0 transform transition-all duration-300 ease-out ${
         isClosing ? 'scale-95 opacity-0' : 'scale-100 opacity-100'
       }`}>
       <div
-        className={`mx-4 mt-2 mb-0 flex items-center gap-2 rounded px-3 py-2 text-xs shadow-sm ${
+        className={`mx-4 mt-2 flex items-center gap-2 rounded px-3 py-1.5 text-xs shadow-sm ${
           isLight
             ? 'bg-red-50 text-red-800'
             : 'bg-red-900/20 text-red-300'

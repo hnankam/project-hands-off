@@ -24,10 +24,12 @@
     "@extension/storage": "workspace:*",
     "@extension/i18n": "workspace:*",
     "@extension/ui": "workspace:*",
-    "@copilotkit/react-core": "^1.10.6",
-    "@copilotkit/react-ui": "^1.10.6",
-    "html2canvas": "^1.4.1",
-    "zod": "^3.24.4"
+    "@copilotkit/react-core": "1.10.6",
+    "@copilotkit/react-ui": "1.10.6",
+    "better-auth": "1.4.0-beta.14",
+    "firebase": "^11.1.0",
+    "html2canvas": "1.4.1",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@extension/tailwindcss-config": "workspace:*",

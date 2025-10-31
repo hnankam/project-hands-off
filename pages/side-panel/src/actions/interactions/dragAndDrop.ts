@@ -112,6 +112,14 @@ export async function handleDragAndDrop(
         visualStyles: any,
         extraOpts?: any,
       ): any => {
+        // Prevent duplicate injection
+        const injectionKey = `__copilotDragInjected_${sourceSelector}_${targetSelector}`;
+        if ((window as any)[injectionKey]) {
+          return { success: true, message: 'Drag skipped (script already injected)' };
+        }
+        (window as any)[injectionKey] = true;
+        setTimeout(() => delete (window as any)[injectionKey], 3000);
+        
         // Helper function to check if element is visible
         const isVisible = (el: Element): boolean => {
           const style = window.getComputedStyle(el);

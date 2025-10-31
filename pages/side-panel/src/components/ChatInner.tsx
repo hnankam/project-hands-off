@@ -692,7 +692,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
                 error={error}
                 retry={handleRetry} // Use reloadMessages from useCopilotChat
                 isLight={isLight}
-                autoDismissMs={25000}
+                autoDismissMs={15000}
               />
             );
           }, [isLight, reloadMessages, messages])}

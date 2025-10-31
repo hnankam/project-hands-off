@@ -126,7 +126,8 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
 
   // Handle edit
   const handleEdit = () => {
-    setEditedContent(content);
+    // Use cleanedContent so the manifest is hidden during editing
+    setEditedContent(cleanedContent);
     setIsEditing(true);
   };
 
@@ -136,10 +137,16 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
     // Save current content to edit history before editing
     setEditHistory(prev => [...prev, content]);
 
+    // Re-attach the attachments manifest if it exists
+    const manifestBlock = attachments.length > 0
+      ? `\n\n<!--ATTACHMENTS:\n${JSON.stringify(attachments)}\n-->`
+      : '';
+    const finalContent = `${editedContent}${manifestBlock}`;
+
     const updatedMessages = [...messages];
     updatedMessages[index] = {
       ...updatedMessages[index],
-      content: editedContent,
+      content: finalContent,
     };
     setMessages(updatedMessages);
     setIsEditing(false);
@@ -169,7 +176,8 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
   // Handle copy message content
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(content);
+      // Copy cleanedContent (without manifest) for better UX
+      await navigator.clipboard.writeText(cleanedContent);
       setShowCopyFeedback(true);
       setTimeout(() => setShowCopyFeedback(false), 2000);
     } catch (err) {
@@ -377,7 +385,6 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                     gap: '3px',
                     padding: '1px 4px',
                     borderRadius: 9999,
-                    border: isLight ? '1px solid rgba(59,130,246,0.35)' : '1px solid rgba(255,255,255,0.15)',
                     background: isLight ? 'rgba(59,130,246,0.10)' : 'rgba(255,255,255,0.07)',
                     fontSize: 9,
                     color: isLight ? '#0C1117' : '#e5e7eb',

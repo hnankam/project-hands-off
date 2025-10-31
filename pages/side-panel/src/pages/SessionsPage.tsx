@@ -5,6 +5,7 @@ import { ChatSkeleton } from '../components/LoadingStates';
 import type { SessionType } from '@extension/storage';
 import { sessionStorage } from '@extension/storage';
 import { generateSessionName } from '@extension/shared';
+import { useAuth } from '../context/AuthContext';
 import {
   cn,
   Button,
@@ -37,6 +38,9 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   onClose,
   onOpenAbout,
 }) => {
+  // Auth
+  const { signOut, user } = useAuth();
+  
   // Loading state for initial render
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [clearMessagesConfirmOpen, setClearMessagesConfirmOpen] = useState(false);
@@ -97,6 +101,14 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       } catch (error) {
         console.error('[SessionsPage] Failed to copy session ID:', error);
       }
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('[SessionsPage] Logout failed:', error);
     }
   };
 
@@ -716,11 +728,11 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
             onClick={onGoHome}
             title="Home"
             className={cn(
-              'h-6 w-6 p-0',
+              'h-7 w-7 p-0',
               isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-800',
             )}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M11.47 3.84a.75.75 0 0 1 1.06 0l8.69 8.69a.75.75 0 0 1-.53 1.28H19.5V21a.75.75 0 0 1-.75.75h-3a.75.75 0 0 1-.75-.75v-3.75h-6V21a.75.75 0 0 1-.75.75h-3A.75.75 0 0 1 5.25 21v-7.19H3.31a.75.75 0 0 1-.53-1.28l8.69-8.69Z" />
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
           </Button>
 
@@ -733,12 +745,12 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  'h-6 w-6 p-0',
+                  'h-7 w-7 p-0',
                   isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-800',
                 )}>
                 <svg
-                  width="12"
-                  height="12"
+                  width="16"
+                  height="16"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -841,6 +853,22 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
             <DropdownMenuItem onClick={onOpenAbout} isLight={isLight}>About Project Hands-Off</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onClose} isLight={isLight}>Close Panel</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleLogout} isLight={isLight}>
+              <div className="flex items-center gap-2 w-full">
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+                </svg>
+                <span>Logout</span>
+              </div>
+            </DropdownMenuItem>
           </DropdownMenu>
         </div>
       </div>
@@ -853,7 +881,10 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
           sessions.map(session => (
             <div
               key={session.id}
-              className="absolute inset-0 flex flex-col overflow-hidden"
+              className={cn(
+                "absolute inset-0 flex flex-col overflow-hidden",
+                session.id === currentSessionId && "animate-fadeIn"
+              )}
               style={{
                 visibility: session.id === currentSessionId ? 'visible' : 'hidden',
                 zIndex: session.id === currentSessionId ? 1 : 0,

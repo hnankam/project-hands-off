@@ -217,9 +217,45 @@ input:focus {
 /* Ensure CopilotKit chat fills its container */
 .copilotKitChat {
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  display: flex !important;
+  flex-direction: column !important;
   overflow: hidden;
+}
+
+/* Ensure direct children maintain proper order and sizing */
+.copilotKitChat > * {
+  order: 0; /* Default order for messages container */
+}
+
+/* Messages container - should grow to fill available space */
+.copilotKitChat > div:first-child,
+.copilotKitChat > [class*="Messages"]:not([class*="Footer"]) {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  order: 0 !important;
+}
+
+/* Error container - should NOT grow to fill available space */
+.copilotKitChat > div:first-child:has(.bg-red-50),
+.copilotKitChat > div:first-child:has([class*="bg-red"]) {
+  flex: 0 0 auto !important;
+  min-height: auto !important;
+}
+
+/* Footer - fixed at natural size */
+.copilotKitChat > .copilotKitMessagesFooter,
+.copilotKitChat > footer,
+.copilotKitChat footer {
+  flex: 0 0 auto !important;
+  order: 1 !important;
+}
+
+/* Input - fixed at natural size */
+.copilotKitChat > .copilotKitInputContainer,
+.copilotKitChat > .border-t,
+.copilotKitChat > div:has(.copilotKitInput) {
+  flex: 0 0 auto !important;
+  order: 2 !important;
 }
 
 /* Wrapper for CopilotChat to ensure proper flex behavior */
@@ -236,21 +272,26 @@ input:focus {
   overflow-y: auto;
 }
 
-/* Messages area - make it scrollable */
+/* Messages area - make it scrollable and constrain properly */
 .copilot-chat-container .overflow-y-auto {
-  flex: 1;
+  flex: 1 1 0 !important; /* Grow to fill, shrink if needed, base 0 */
+  min-height: 0 !important; /* Critical: allows flex child to shrink below content size */
   overflow-y: auto !important;
   overflow-x: hidden;
+  order: 0 !important; /* Ensure messages appear first */
 }
 
 /* Input area - keep it fixed at bottom */
 .copilot-chat-container .border-t {
+  flex: 0 0 auto !important; /* Don't grow, don't shrink, auto size */
   flex-shrink: 0;
+  order: 2 !important; /* Ensure input always appears after footer in flex layout */
 }
 
 .copilotKitMessagesContainer {
   padding-left: 0.75rem !important;
   padding-right: 0.75rem !important;
+  padding-top: 0rem !important;
 }
 
 /* ==========================================================
@@ -341,7 +382,7 @@ input:focus {
 
 /* More specific selectors to avoid affecting message controls */
 .copilot-chat-container p,
-.copilot-chat-container div:not([role="group"]):not([class*="controls"]):not([class*="actions"]),
+.copilot-chat-container div:not([role="group"]):not([class*="controls"]):not([class*="actions"]):not([class*="suggestions"]),
 .copilot-chat-container span:not([role="group"] span) {
   font-size: 13px !important;
   line-height: 1.4 !important;
@@ -482,6 +523,15 @@ footer div[class*="suggestions"] button {
   border-top-right-radius: 0.75rem;
   border: 1px solid var(--copilot-kit-separator-color) !important;
   margin-bottom: 0.5rem !important;
+}
+
+/* Ensure input container always appears after footer - multiple selectors for robustness */
+.copilotKitInputContainer,
+div.copilotKitInputContainer,
+.copilotKitChat > div:last-child,
+[class*="InputContainer"] {
+  flex: 0 0 auto !important; /* Don't grow, don't shrink, natural size */
+  order: 2 !important;
 }
 
 /* ==========================================================
@@ -727,9 +777,16 @@ p.poweredBy {
 }
 
 /* Suggestions footer wrapper - add position relative for fade effect */
-.copilotKitMessagesFooter {
+.copilotKitMessagesFooter,
+footer.copilotKitMessagesFooter,
+.copilotKitChat > footer,
+[class*="MessagesFooter"] {
   position: relative !important;
   overflow: hidden !important;
+  flex: 0 0 auto !important; /* Don't grow, don't shrink, natural size */
+  order: 1 !important; /* Ensure footer always appears before input in flex layout */
+  contain: layout style !important; /* Isolate from parent layout changes */
+  transform: translateZ(0) !important; /* Create stacking context */
 }
 
 /* Hide scrollbar on footer completely - same as session tabs parent */
@@ -756,7 +813,9 @@ footer.copilotKitMessagesFooter,
   overflow-y: hidden !important;
   scrollbar-width: thin !important;
   gap: 8px !important;
-  padding: 8px 4px !important;
+  padding: 4px 4px !important;
+  font-size: 10px !important;
+  line-height: 1.2 !important;
 }
 
 /* Fade effect at the end of suggestions - positioned on parent */
@@ -832,6 +891,12 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   height: 0 !important;
   overflow: hidden !important;
   pointer-events: none !important;
+}
+
+/* ThinkingBlock - Isolate layout to prevent affecting parent/sibling components */
+.thinking-block {
+  contain: layout style !important; /* Isolate layout and style recalculations */
+  will-change: auto !important; /* Let browser optimize naturally */
 }
 
 .copilotKitUserMessage > .copilotKitMessageControls > .copilotKitMessageControlButton {
@@ -1026,4 +1091,21 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* ==========================================================
+   PAGE TRANSITION ANIMATIONS
+   Smooth fade-in for page changes
+   ========================================================== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-in-out;
 }

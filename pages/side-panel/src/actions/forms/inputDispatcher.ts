@@ -15,6 +15,18 @@ import { ModernInputHandler } from './modernInputHandler';
 // Create handler instances
 const selectInputHandler = new SelectInputHandler();
 
+// Use globalThis to ensure the Map persists across module reloads/HMR
+declare global {
+  var __inputRequestLocks__: Map<string, { timestamp: number; promise: Promise<InputDataResult> }> | undefined;
+}
+
+// Static map to track in-flight input requests (background-side deduplication)
+if (!globalThis.__inputRequestLocks__) {
+  globalThis.__inputRequestLocks__ = new Map<string, { timestamp: number; promise: Promise<InputDataResult> }>();
+  console.log('[InputDispatcher] 🏗️  Initializing global lock Map');
+}
+const inputRequestLocks = globalThis.__inputRequestLocks__;
+
 /**
  * Main input dispatcher that routes to appropriate specialized handlers
  * This replaces the monolithic inputData.ts with a modular system
@@ -57,22 +69,159 @@ export class InputDispatcher {
     clearFirst: boolean = true,
     moveCursor: boolean = true,
   ): Promise<InputDataResult> {
+    // Create stable signature for background-side deduplication FIRST
+    const requestSignature = `${cssSelector}|${value}|${clearFirst}|${moveCursor}`;
+    
+    // Generate unique call ID for tracking
+    const callId = Math.random().toString(36).substring(2, 9);
+    
+    // Check if identical request is already in-flight
+    // Force refresh the reference in case it was reset
+    const lockMap = globalThis.__inputRequestLocks__ || new Map();
+    if (!globalThis.__inputRequestLocks__) {
+      console.log(`[InputDispatcher:${callId}] ⚠️  WARNING: Global lock Map was undefined, recreating it!`);
+      globalThis.__inputRequestLocks__ = lockMap;
+    }
+    
+    const existingLock = lockMap.get(requestSignature);
+    const lockAge = existingLock ? Date.now() - existingLock.timestamp : -1;
+    
+    console.log(`[InputDispatcher:${callId}] 🔍 Lock check:`, { 
+      signature: requestSignature.substring(0, 50),
+      hasLock: !!existingLock,
+      lockAge,
+      willReuse: existingLock && lockAge < 10000,
+      totalLocksInMap: lockMap.size,
+    });
+    
+    if (existingLock && lockAge < 10000) {
+      console.log(`[InputDispatcher:${callId}] ⚠️  DUPLICATE REQUEST BLOCKED - Reusing existing execution (lock age: ${lockAge}ms)`);
+      return existingLock.promise;
+    }
+    
+    console.log(`[InputDispatcher:${callId}] 🎯 handleInputData CALLED:`, { cssSelector, value, clearFirst, moveCursor });
+    
+    // Create execution promise
+    const executionPromise = (async (): Promise<InputDataResult> => {
+      try {
+        const result = await this.executeInputDataInternal(cssSelector, value, clearFirst, moveCursor, callId, requestSignature);
+        
+        // DON'T delete lock immediately - let it expire naturally via timestamp check
+        console.log(`[InputDispatcher:${callId}] 🔒 Lock retained (will expire via timestamp check)`);
+        
+        return result;
+      } catch (error) {
+        // Delete lock immediately on error so retries can proceed
+        if (globalThis.__inputRequestLocks__) {
+          globalThis.__inputRequestLocks__.delete(requestSignature);
+          console.log(`[InputDispatcher:${callId}] 🗑️  Lock deleted due to error`);
+        }
+        throw error;
+      }
+    })();
+    
+    // Store the promise to prevent duplicate execution
+    const lockTimestamp = Date.now();
+    
+    // Ensure we're using the global Map reference
+    if (!globalThis.__inputRequestLocks__) {
+      console.error(`[InputDispatcher:${callId}] ❌ CRITICAL: Global Map is undefined when trying to set lock!`);
+      globalThis.__inputRequestLocks__ = new Map();
+    }
+    
+    globalThis.__inputRequestLocks__.set(requestSignature, {
+      timestamp: lockTimestamp,
+      promise: executionPromise,
+    });
+    
+    console.log(`[InputDispatcher:${callId}] 🔒 Lock acquired at ${lockTimestamp}, total locks:`, globalThis.__inputRequestLocks__.size);
+    
+    // Passive cleanup: Remove stale locks older than 30 seconds when new requests come in
+    if (globalThis.__inputRequestLocks__) {
+      const now = Date.now();
+      let cleaned = 0;
+      for (const [key, lock] of globalThis.__inputRequestLocks__.entries()) {
+        if (now - lock.timestamp > 30000) {
+          globalThis.__inputRequestLocks__.delete(key);
+          cleaned++;
+        }
+      }
+      if (cleaned > 0) {
+        console.log(`[InputDispatcher:${callId}] 🧹 Passively cleaned ${cleaned} stale lock(s)`);
+      }
+    }
+    
+    return executionPromise;
+  }
+
+  private async executeInputDataInternal(
+    cssSelector: string,
+    value: string,
+    clearFirst: boolean,
+    moveCursor: boolean,
+    callId: string,
+    requestSignature: string,
+  ): Promise<InputDataResult> {
     try {
-      // debug.log('[InputDispatcher] Inputting data into field with selector:', cssSelector, 'value:', value);
       // Execute directly in the current page context using scripting API
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!activeTab?.id) {
         return { status: 'error', message: 'Unable to access current tab' };
       }
 
+      console.log(`[InputDispatcher:${callId}] 📤 Calling chrome.scripting.executeScript...`);
       const results = await chrome.scripting.executeScript({
-        target: { tabId: activeTab.id },
+        target: { 
+          tabId: activeTab.id,
+          allFrames: false, // Only inject into the main frame, not iframes
+        },
+        world: 'ISOLATED', // Execute ONLY in the isolated extension world, not MAIN
         func: async (
           selector: string,
           inputValue: string,
           shouldClear: boolean,
           shouldMoveCursor: boolean,
+          callIdParam: string,
+          signature: string,
         ): Promise<any> => {
+          console.log(`[ContentScript:${callIdParam}] 🎬 Script injected and executing...`);
+          
+          // ATOMIC lock check using DOM attribute for cross-injection synchronization
+          const lockAttr = `data-copilot-input-lock-${signature.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 100)}`;
+          
+          // Try to acquire lock atomically using DOM attribute
+          const existingLock = document.documentElement.getAttribute(lockAttr);
+          if (existingLock) {
+            const lockTime = parseInt(existingLock, 10);
+            if (!isNaN(lockTime) && Date.now() - lockTime < 4000) {
+              console.log(`[ContentScript:${callIdParam}] 🚫 Atomic lock already held, skipping duplicate`);
+              return {
+                success: true,
+                message: 'Input skipped (atomic lock held)',
+              };
+            }
+          }
+          
+          // Set atomic lock with timestamp
+          document.documentElement.setAttribute(lockAttr, Date.now().toString());
+          
+          // Also check window-level flag for additional safety
+          const injectionKey = `__copilotInputInjected_${selector}_${inputValue}`;
+          if ((window as any)[injectionKey]) {
+            console.log(`[ContentScript:${callIdParam}] 🚫 Window lock already held, skipping duplicate`);
+            return {
+              success: true,
+              message: 'Input skipped (window lock held)',
+            };
+          }
+          (window as any)[injectionKey] = true;
+          
+          // Auto-cleanup locks after 4 seconds
+          setTimeout(() => {
+            delete (window as any)[injectionKey];
+            document.documentElement.removeAttribute(lockAttr);
+          }, 4000);
+          
           // Define content script functions inline
           // Shadow DOM helper - supports >> notation
           function querySelectorWithShadowDOM(selector: string): HTMLElement | null {
@@ -1229,10 +1378,39 @@ export class InputDispatcher {
             // Scroll into view and focus
             scrollIntoView(elementInfo.element);
 
+            // Check if input is already in progress for this element (prevent concurrent execution)
+            const lockKey = '__copilotInputInProgress__';
+            if ((elementInfo.element as any)[lockKey]) {
+              console.log('[InputDispatcher] Input already in progress for this element, skipping duplicate');
+              return {
+                success: true,
+                message: 'Input skipped (already in progress)',
+                elementInfo: {
+                  tag: elementInfo.element.tagName,
+                  type: elementInfo.inputType || 'N/A',
+                  id: elementInfo.element.id || '',
+                  name: (elementInfo.element as any).name || '',
+                  value: getElementValue(elementInfo.element),
+                  foundInShadowDOM: elementInfo.foundInShadowDOM,
+                  shadowHost: elementInfo.shadowHostInfo,
+                },
+              };
+            }
+
             // Function to perform the actual input
             const performInput = async () => {
-              // Handle different input types
-              const { element, inputType, tagName } = elementInfo;
+              // Set lock flag IMMEDIATELY to prevent concurrent execution
+              (elementInfo.element as any)[lockKey] = true;
+
+              // Safety: Release lock after timeout in case of errors
+              const timeoutId = setTimeout(() => {
+                (elementInfo.element as any)[lockKey] = false;
+                console.log('[InputDispatcher] Lock released by timeout (safety mechanism)');
+              }, 5000);
+
+              try {
+                // Handle different input types
+                const { element, inputType, tagName } = elementInfo;
 
               if (element.tagName === 'INPUT') {
                 const inputElement = element as HTMLInputElement;
@@ -1243,6 +1421,9 @@ export class InputDispatcher {
                   inputElement.checked = shouldCheck;
                   inputElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
                 } else if (type === 'file') {
+                  // Release lock before returning
+                  clearTimeout(timeoutId);
+                  (elementInfo.element as any)[lockKey] = false;
                   return {
                     success: false,
                     message: `File input fields cannot be programmatically set for security reasons`,
@@ -1313,7 +1494,7 @@ export class InputDispatcher {
                               }
                             }
 
-                            return;
+                            return true;
                           }
                         }
                       } catch (error) {
@@ -1334,10 +1515,11 @@ export class InputDispatcher {
                     }
 
                     inputElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+                    return true;
                   };
 
-                  // Start formatter approaches (non-blocking)
-                  tryFormatterApproaches();
+                  // Start formatter approaches and wait to avoid duplicate fills
+                  await tryFormatterApproaches();
                 }
               } else if (element.tagName === 'TEXTAREA') {
                 const textareaElement = element as HTMLTextAreaElement;
@@ -1396,7 +1578,7 @@ export class InputDispatcher {
                           (updateEvent as any).target = textareaElement;
                           textareaElement.dispatchEvent(updateEvent);
 
-                          return;
+                          return true;
                         }
                       }
                     } catch (error) {
@@ -1417,9 +1599,10 @@ export class InputDispatcher {
                   }
 
                   textareaElement.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+                  return true;
                 };
 
-                tryFormatterApproaches();
+                await tryFormatterApproaches();
               } else if (element.tagName === 'SELECT') {
                 // Handle regular select elements
                 console.log('[InputDispatcher] Handling SELECT element');
@@ -1435,6 +1618,9 @@ export class InputDispatcher {
                   }
                 }
                 if (!optionFound) {
+                  // Release lock before returning
+                  clearTimeout(timeoutId);
+                  (elementInfo.element as any)[lockKey] = false;
                   return {
                     success: false,
                     message: `No option found with value or text: "${inputValue}"`,
@@ -1451,6 +1637,9 @@ export class InputDispatcher {
                 // Try keyboard navigation approach
                 const keyboardResult = await tryKeyboardNavigation(element, inputValue);
                 if (keyboardResult.success) {
+                  // Release lock before returning
+                  clearTimeout(timeoutId);
+                  (elementInfo.element as any)[lockKey] = false;
                   return {
                     success: true,
                     message:
@@ -1467,6 +1656,9 @@ export class InputDispatcher {
                     },
                   };
                 } else {
+                  // Release lock before returning
+                  clearTimeout(timeoutId);
+                  (elementInfo.element as any)[lockKey] = false;
                   return {
                     success: false,
                     message: keyboardResult.message || 'Keyboard navigation failed for custom dropdown',
@@ -1491,28 +1683,41 @@ export class InputDispatcher {
 
                 streamText();
               } else {
+                // Release lock before returning
+                clearTimeout(timeoutId);
+                (elementInfo.element as any)[lockKey] = false;
                 return {
                   success: false,
                   message: `Element is not an input field: ${element.tagName}`,
                 };
               }
 
-              // Show success feedback
-              showSuccessFeedback(element);
+                // Show success feedback
+                showSuccessFeedback(element);
 
-              return {
-                success: true,
-                message: 'Input successful',
-                elementInfo: {
-                  tag: element.tagName,
-                  type: inputType || 'N/A',
-                  id: element.id || '',
-                  name: (element as HTMLInputElement).name || '',
-                  value: getElementValue(element),
-                  foundInShadowDOM: elementInfo.foundInShadowDOM,
-                  shadowHost: elementInfo.shadowHostInfo,
-                },
-              };
+                // Clear timeout and release lock
+                clearTimeout(timeoutId);
+                (elementInfo.element as any)[lockKey] = false;
+
+                return {
+                  success: true,
+                  message: 'Input successful',
+                  elementInfo: {
+                    tag: element.tagName,
+                    type: inputType || 'N/A',
+                    id: element.id || '',
+                    name: (element as HTMLInputElement).name || '',
+                    value: getElementValue(element),
+                    foundInShadowDOM: elementInfo.foundInShadowDOM,
+                    shadowHost: elementInfo.shadowHostInfo,
+                  },
+                };
+              } catch (error) {
+                // Release lock on error
+                clearTimeout(timeoutId);
+                (elementInfo.element as any)[lockKey] = false;
+                throw error;
+              }
             };
 
             // If cursor movement is enabled, wait for cursor animation to complete
@@ -1540,11 +1745,14 @@ export class InputDispatcher {
             };
           }
         },
-        args: [cssSelector, value, clearFirst, moveCursor] as [string, string, boolean, boolean],
+        args: [cssSelector, value, clearFirst, moveCursor, callId, requestSignature] as [string, string, boolean, boolean, string, string],
       });
+
+      console.log(`[InputDispatcher:${callId}] 📥 executeScript completed, results:`, results);
 
       if (results && results[0]?.result) {
         const result = results[0].result;
+        console.log(`[InputDispatcher:${callId}] ✅ Result received:`, result);
         if (result.success && result.elementInfo) {
           return {
             status: 'success',

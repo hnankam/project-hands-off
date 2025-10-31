@@ -243,13 +243,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       restoreMessagesRef,
   });
 
-  // Ensure messages are loaded when switching to a new active session
-  useEffect(() => {
-    if (isActive) {
-        debug.log(ts(), '[ChatSessionContainer] Active session changed, loading messages');
-      void handleLoadMessages();
-    }
-  }, [sessionId, isActive, handleLoadMessages]);
+  // Note: Message loading is handled automatically by useMessagePersistence's auto-restore
+  // No need to explicitly call handleLoadMessages here as it would cause double renders
+  // The auto-restore triggers 500ms after session becomes active, allowing CopilotKit to initialize
   
   // Load stored usage stats for this session
   const initialUsage = useMemo(() => {

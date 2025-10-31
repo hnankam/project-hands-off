@@ -1,6 +1,6 @@
 import { debug as baseDebug } from '@extension/shared';
-// import { COPIOLITKIT_CONFIG } from '../../constants';
-// import { ensureFirebase, uploadDataUrlToStorage } from '../../utils/firebaseStorage';
+import { COPIOLITKIT_CONFIG } from '../../constants';
+import { ensureFirebase, uploadDataUrlToStorage } from '../../utils/firebaseStorage';
 
 // Timestamped debug wrappers
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
@@ -308,41 +308,52 @@ export async function handleTakeScreenshot(
 
         const dims = { width: optimized.width, height: optimized.height };
 
-        // Firebase upload disabled for now; keep url undefined
+        // Firebase upload enabled
         let hostedUrl: string | undefined = undefined;
-        // try {
-        //   if (COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS && COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
-        //     const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
-        //     const ext = optimized.outputFormat === 'jpeg' ? 'jpg' : 'png';
-        //     const path = `screenshots/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-        //     hostedUrl = await uploadDataUrlToStorage(
-        //       storage,
-        //       path,
-        //       optimized.dataUrl,
-        //       optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
-        //     );
-        //   }
-        // } catch (e) {
-        //   debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback');
-        // }
+        try {
+          if (COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS && COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
+            const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
+            const ext = optimized.outputFormat === 'jpeg' ? 'jpg' : 'png';
+            const path = `screenshots/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+            hostedUrl = await uploadDataUrlToStorage(
+              storage,
+              path,
+              optimized.dataUrl,
+              optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
+            );
+          }
+        } catch (e) {
+          debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback');
+        }
 
-        return {
-          status: 'success',
-          message:
-            'Screenshot captured (visible area). Note: Full page screenshots require multiple captures. Current implementation captures the visible viewport.',
-          screenshotInfo: {
-            format: optimized.outputFormat,
-            dimensions: {
-              width: dims?.width || 0,
-              height: dims?.height || 0,
+      // Build attachment manifest if Firebase URL is available
+      const attachmentManifest = hostedUrl
+        ? `\n\n<!--ATTACHMENTS:\n${JSON.stringify([
+            {
+              name: `screenshot.${optimized.outputFormat === 'jpeg' ? 'jpg' : 'png'}`,
+              type: optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
+              size: Math.round(optimized.sizeKB * 1024),
+              url: hostedUrl,
             },
-            sizeKB: optimized.sizeKB,
-            quality: optimized.quality,
-            isFullPage: false,
-            dataUrl: optimized.dataUrl,
-            url: hostedUrl,
+          ])}\n-->`
+        : '';
+
+      return {
+        status: 'success',
+        message:
+          `Screenshot captured (visible area). Note: Full page screenshots require multiple captures. Current implementation captures the visible viewport.${attachmentManifest}`,
+        screenshotInfo: {
+          format: optimized.outputFormat,
+          dimensions: {
+            width: dims?.width || 0,
+            height: dims?.height || 0,
           },
-        };
+          sizeKB: optimized.sizeKB,
+          quality: optimized.quality,
+          isFullPage: false,
+          url: hostedUrl,
+        },
+      };
       }
 
       return {
@@ -382,28 +393,40 @@ export async function handleTakeScreenshot(
       const sizeKB = optimized.sizeKB;
 
 
-      // Firebase upload disabled for now; keep url undefined
+      // Firebase upload enabled
       let hostedUrl: string | undefined = undefined;
-      // try {
-      //   if (COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS && COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
-      //     const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
-      //     const ext = optimized.outputFormat === 'jpeg' ? 'jpg' : 'png';
-      //     const path = `screenshots/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-      //     hostedUrl = await uploadDataUrlToStorage(
-      //       storage,
-      //       path,
-      //       optimized.dataUrl,
-      //       optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
-      //     );
-      //   }
-      // } catch (e) {
-      //   debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback');
-      // }
+      try {
+        if (COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS && COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
+          const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
+          const ext = optimized.outputFormat === 'jpeg' ? 'jpg' : 'png';
+          const path = `screenshots/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+          hostedUrl = await uploadDataUrlToStorage(
+            storage,
+            path,
+            optimized.dataUrl,
+            optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
+          );
+        }
+      } catch (e) {
+        debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback');
+      }
+
+      // Build attachment manifest if Firebase URL is available
+      const attachmentManifest = hostedUrl
+        ? `\n\n<!--ATTACHMENTS:\n${JSON.stringify([
+            {
+              name: `screenshot.${optimized.outputFormat === 'jpeg' ? 'jpg' : 'png'}`,
+              type: optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
+              size: Math.round(sizeKB * 1024),
+              url: hostedUrl,
+            },
+          ])}\n-->`
+        : '';
 
       return {
         status: 'success',
         message:
-          'Screenshot captured successfully. The screenshot has been captured and is available as a data URL. You can use it for analysis or comparison purposes.',
+          `Screenshot captured successfully. The screenshot has been captured and is available for analysis or comparison purposes.${attachmentManifest}`,
         screenshotInfo: {
           format: optimized.outputFormat,
           dimensions: {
@@ -414,7 +437,6 @@ export async function handleTakeScreenshot(
           sizeKB: sizeKB,
           quality: optimized.quality,
           isFullPage: false,
-          dataUrl: optimized.dataUrl,
           url: hostedUrl,
         },
       };

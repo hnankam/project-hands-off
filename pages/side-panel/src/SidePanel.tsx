@@ -11,13 +11,20 @@ import { exampleThemeStorage, sessionStorage } from '@extension/storage';
 import {
   cn,
   ErrorDisplay,
-  LoadingSpinner,
 } from '@extension/ui';
 import { HomePage } from './pages/HomePage';
 import { SessionsPage } from './pages/SessionsPage';
+import { AdminPage } from './pages/AdminPage';
+import LoginPage from './pages/LoginPage';
+import AcceptInvitationPage from './pages/AcceptInvitationPage';
+import { useAuth } from './context/AuthContext';
 import { useDBWorkerClient } from './hooks/useDBWorkerClient';
+import { ChatSkeleton } from './components/LoadingStates';
 
 const SidePanel = () => {
+  // Authentication
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+
   // Initialize DB worker client (required for embeddings storage)
   const { isReady: dbWorkerReady, error: dbWorkerError } = useDBWorkerClient();
 
@@ -36,16 +43,36 @@ const SidePanel = () => {
   const { isLight, theme } = useStorage(exampleThemeStorage);
   const { sessions, currentSessionId } = useStorage(sessionStorage);
 
-  // Simple in-panel navigation between Home and Sessions
-  const [activePage, setActivePage] = useState<'home' | 'sessions'>('sessions');
+  // Simple in-panel navigation between Home, Sessions, and Admin
+  const [activePage, setActivePage] = useState<'home' | 'sessions' | 'admin'>('sessions');
+  const [isPageRestored, setIsPageRestored] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutText, setAboutText] = useState('');
   const [contextMenuMessage, setContextMenuMessage] = useState<string | null>(null);
+  
+  // Invitation handling
+  const [invitationId, setInvitationId] = useState<string | null>(null);
 
   // CopilotKit configuration
   const copilotKitConfig = {
     publicApiKey: 'ck_pub_c94e406d9327510d0463f3dbe3c1f2e8',
   };
+
+  // Navigation handlers that update both state and hash
+  const navigateToHome = useCallback(() => {
+    setActivePage('home');
+    window.location.hash = '#/home';
+  }, []);
+
+  const navigateToSessions = useCallback(() => {
+    setActivePage('sessions');
+    window.location.hash = '#/sessions';
+  }, []);
+
+  const navigateToAdmin = useCallback(() => {
+    setActivePage('admin');
+    window.location.hash = '#/admin';
+  }, []);
 
   const closeSidePanel = () => {
     // Send message to popup to update its state
@@ -70,6 +97,82 @@ const SidePanel = () => {
     }
     setAboutOpen(true);
   }, []);
+
+  // Restore last visited page on mount (unless there's a hash in URL)
+  useEffect(() => {
+    const restoreLastPage = async () => {
+      try {
+        const hash = window.location.hash;
+        
+        // If there's already a hash route, let the hash checker handle it
+        if (hash && (hash.includes('admin') || hash.includes('sessions') || hash.includes('home') || hash.includes('accept-invitation'))) {
+          setIsPageRestored(true);
+          return;
+        }
+        
+        // Otherwise, restore from storage
+        const result = await chrome.storage.local.get(['lastVisitedPage']);
+        if (result.lastVisitedPage && ['home', 'sessions', 'admin'].includes(result.lastVisitedPage)) {
+          setActivePage(result.lastVisitedPage as 'home' | 'sessions' | 'admin');
+        }
+      } catch (error) {
+        console.error('[SidePanel] Failed to restore last page:', error);
+      } finally {
+        setIsPageRestored(true);
+      }
+    };
+
+    restoreLastPage();
+  }, []);
+
+  // Save current page to storage whenever it changes
+  useEffect(() => {
+    if (!isPageRestored) return; // Don't save during initial restoration
+    
+    chrome.storage.local.set({ lastVisitedPage: activePage }).catch((error) => {
+      console.error('[SidePanel] Failed to save last page:', error);
+    });
+  }, [activePage, isPageRestored]);
+
+  // Check for invitation in URL hash and handle routing
+  useEffect(() => {
+    if (!isPageRestored) return; // Wait for page restoration before checking hash
+
+    const checkHash = () => {
+      const hash = window.location.hash;
+      
+      // Check for #/accept-invitation/{invitationId} or #accept-invitation/{invitationId}
+      const invitationMatch = hash.match(/accept-invitation\/([a-zA-Z0-9_-]+)/);
+      if (invitationMatch) {
+        setInvitationId(invitationMatch[1]);
+        return;
+      }
+      
+      // Check for #/admin or #admin
+      if (hash.includes('admin')) {
+        setActivePage('admin');
+        return;
+      }
+      
+      // Check for #/sessions or #sessions
+      if (hash.includes('sessions')) {
+        setActivePage('sessions');
+        return;
+      }
+      
+      // Check for #/home or #home
+      if (hash.includes('home')) {
+        setActivePage('home');
+        return;
+      }
+    };
+
+    checkHash();
+
+    // Listen for hash changes
+    window.addEventListener('hashchange', checkHash);
+    return () => window.removeEventListener('hashchange', checkHash);
+  }, [isPageRestored]);
 
   // Apply dark mode class to document element for proper CopilotKit theming
   useEffect(() => {
@@ -149,23 +252,68 @@ const SidePanel = () => {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [aboutOpen]);
 
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className={cn('h-screen', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+        <ChatSkeleton />
+      </div>
+    );
+  }
+
+  // Show accept invitation page if there's an invitation ID (even if authenticated)
+  if (invitationId) {
+    return (
+      <AcceptInvitationPage
+        invitationId={invitationId}
+        onSuccess={() => {
+          // Clear invitation ID and force full page reload to refresh all data
+          setInvitationId(null);
+          window.location.hash = '#/admin';
+          window.location.reload();
+        }}
+      />
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
   return (
     <div className={cn('flex h-screen flex-col overflow-hidden', isLight ? 'bg-white' : 'bg-[#151C24]')}>
-      {/* Page Content */}
-      {activePage === 'sessions' ? (
-        <SessionsPage
-          isLight={isLight}
-          sessions={sessions}
-          currentSessionId={currentSessionId}
-          publicApiKey={copilotKitConfig.publicApiKey}
-          contextMenuMessage={contextMenuMessage}
-          onGoHome={() => setActivePage('home')}
-          onClose={closeSidePanel}
-          onOpenAbout={openAbout}
-        />
-      ) : (
-        <HomePage isLight={isLight} onGoToSessions={() => setActivePage('sessions')} />
-      )}
+      {/* Page Content with smooth transitions */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {activePage === 'sessions' && (
+          <div key="sessions" className="flex-1 flex flex-col overflow-hidden animate-fadeIn">
+            <SessionsPage
+              isLight={isLight}
+              sessions={sessions}
+              currentSessionId={currentSessionId}
+              publicApiKey={copilotKitConfig.publicApiKey}
+              contextMenuMessage={contextMenuMessage}
+              onGoHome={navigateToHome}
+              onClose={closeSidePanel}
+              onOpenAbout={openAbout}
+            />
+          </div>
+        )}
+        {activePage === 'admin' && (
+          <div key="admin" className="flex-1 flex flex-col overflow-hidden animate-fadeIn">
+            <AdminPage onGoHome={navigateToHome} />
+          </div>
+        )}
+        {activePage === 'home' && (
+          <div key="home" className="flex-1 flex flex-col overflow-hidden animate-fadeIn">
+            <HomePage
+              isLight={isLight}
+              onGoToSessions={navigateToSessions}
+              onGoAdmin={navigateToAdmin}
+            />
+          </div>
+        )}
+      </div>
 
       {/* About Modal */}
       {aboutOpen && (
@@ -245,4 +393,4 @@ const SidePanel = () => {
   );
 };
 
-export default withErrorBoundary(withSuspense(SidePanel, <LoadingSpinner />), ErrorDisplay);
+export default withErrorBoundary(withSuspense(SidePanel, <ChatSkeleton />), ErrorDisplay);

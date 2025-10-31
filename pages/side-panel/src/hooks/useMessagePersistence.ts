@@ -302,7 +302,7 @@ export const useMessagePersistence = ({
             }
           }
         }
-      }, 200);
+      }, 100); // Reduced from 200ms for faster verification
     } catch (error) {
       debug.error('❌ [useMessagePersistence] Failed to load messages:', error);
     }
@@ -339,12 +339,12 @@ export const useMessagePersistence = ({
     if (isActive && isPanelVisible && !hasAutoRestoredRef.current) {
       hasAutoRestoredRef.current = true;
 
-      // Wait longer to ensure CopilotKit has fully initialized before restoring
+      // Wait for CopilotKit to initialize before restoring
       // This prevents CopilotKit from overriding restored messages with empty thread state
       timeoutId = setTimeout(() => {
-        debug.log('[useMessagePersistence] Auto-restore triggered - waiting for CopilotKit initialization');
+        debug.log('[useMessagePersistence] Auto-restore triggered - CopilotKit should be initialized');
         handleLoadMessages();
-      }, 500); // Increased from 50ms to 500ms to allow CopilotKit to initialize
+      }, 150); // Optimized delay - balance between initialization and responsiveness
     }
 
     // Reset flag when session becomes inactive OR panel becomes hidden
@@ -367,8 +367,8 @@ export const useMessagePersistence = ({
     if (!isActive || !isPanelVisible) return;
 
     const timeSincePanelOpen = Date.now() - panelOpenTimeRef.current;
-    // Only monitor for the first 2 seconds after panel opens
-    if (timeSincePanelOpen > 1500) return;
+    // Only monitor for the first 1 second after panel opens (reduced for faster initialization)
+    if (timeSincePanelOpen > 1000) return;
 
     let watchdogRestoreDone = false;
     const intervalId = setInterval(() => {
@@ -384,12 +384,12 @@ export const useMessagePersistence = ({
           watchdogRestoreDone = true; // do it at most once
         }
       }
-    }, 400); // Check at a slower interval
+    }, 300); // Reduced from 400ms for more responsive detection
 
-    // Stop monitoring after 2 seconds
+    // Stop monitoring after 1 second (reduced from 2 seconds)
     const stopTimeoutId = setTimeout(() => {
       clearInterval(intervalId);
-    }, 2000);
+    }, 1000);
 
     return () => {
       clearInterval(intervalId);

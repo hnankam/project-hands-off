@@ -117,6 +117,14 @@ export async function handleScroll(
         scrollCompletionDelay: number,
         indicatorDuration: number,
       ): Promise<ScrollResult> => {
+        // Prevent duplicate injection
+        const injectionKey = `__copilotScrollInjected_${selector}_${scrollDirection}_${scrollAmount}`;
+        if ((window as any)[injectionKey]) {
+          return Promise.resolve({ success: true, message: 'Scroll skipped (script already injected)' });
+        }
+        (window as any)[injectionKey] = true;
+        setTimeout(() => delete (window as any)[injectionKey], 3000);
+        
         console.log('[Scroll] Internal script started with params:', {
           selector,
           scrollDirection,

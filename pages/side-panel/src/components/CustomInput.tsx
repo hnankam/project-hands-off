@@ -690,9 +690,6 @@ export const CustomInput: React.FC<CustomInputProps> = ({
           >
             {attachments.map(att => {
               const isError = att.status === 'error';
-              const borderCol = isError
-                ? (isLight ? 'rgba(239,68,68,0.9)' : 'rgba(248,113,113,0.9)')
-                : (isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.15)');
               const bgCol = isError
                 ? (isLight ? 'rgba(239,68,68,0.08)' : 'rgba(248,113,113,0.12)')
                 : (isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.07)');
@@ -702,7 +699,6 @@ export const CustomInput: React.FC<CustomInputProps> = ({
                 gap: '5px',
                 padding: '2px 6px',
                 borderRadius: '9999px',
-                border: `1px solid ${borderCol}`,
                 background: bgCol,
                 fontSize: '11px',
                 color: isLight ? '#0C1117' : '#e5e7eb',
