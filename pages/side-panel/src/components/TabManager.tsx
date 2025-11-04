@@ -130,7 +130,7 @@ export const useTabManager = ({
   useEffect(() => {
     if (!isActive) return;
     
-    debug.log(ts(), '[TabManager] Tab change tracking enabled');
+    // debug.log(ts(), '[TabManager] Tab change tracking enabled');
     
     /**
      * Handle tab activation (user switches tabs)
@@ -141,7 +141,7 @@ export const useTabManager = ({
       // Only process if tab actually changed
       if (previousTabId === activeInfo.tabId) return;
       
-      debug.log(ts(), `[TabManager] Tab activated: ${previousTabId} -> ${activeInfo.tabId} (interactive: ${isPanelInteractive})`);
+      // debug.log(ts(), `[TabManager] Tab activated: ${previousTabId} -> ${activeInfo.tabId} (interactive: ${isPanelInteractive})`);
       
       // Update tab ID immediately
       setCurrentTabId(activeInfo.tabId);
@@ -155,11 +155,11 @@ export const useTabManager = ({
       
       // Mark for pending refresh (ensures refresh happens when user clicks back)
       pendingRefreshRef.current = true;
-      debug.log(ts(), '[TabManager] Marked for pending refresh');
+      // debug.log(ts(), '[TabManager] Marked for pending refresh');
       
       // If interactive now, refresh immediately (but keep pending flag)
       if (isPanelInteractive) {
-        debug.log(ts(), '[TabManager] Panel interactive - refreshing immediately');
+        // debug.log(ts(), '[TabManager] Panel interactive - refreshing immediately');
         onContentRefresh(activeInfo.tabId);
       }
     };
@@ -175,7 +175,7 @@ export const useTabManager = ({
       
       // Handle URL changes
       if (tabId === currentTabId && changeInfo.url) {
-        debug.log(ts(), `[TabManager] URL changed (interactive: ${isPanelInteractive})`);
+        // debug.log(ts(), `[TabManager] URL changed (interactive: ${isPanelInteractive})`);
         
         // Update title if available
         if (changeInfo.title || tab.title) {
@@ -184,11 +184,11 @@ export const useTabManager = ({
         
         // Mark for pending refresh
         pendingRefreshRef.current = true;
-        debug.log(ts(), '[TabManager] URL changed - marked for pending refresh');
+        // debug.log(ts(), '[TabManager] URL changed - marked for pending refresh');
         
         // If interactive now, refresh with debounce
         if (isPanelInteractive) {
-          debug.log(ts(), '[TabManager] Panel interactive - refreshing (debounced)');
+          // debug.log(ts(), '[TabManager] Panel interactive - refreshing (debounced)');
           clearPendingTimeout();
           tabChangeTimeoutRef.current = setTimeout(() => {
             onContentRefresh(tabId);
@@ -222,19 +222,19 @@ export const useTabManager = ({
     
     // Log state changes
     if (justBecameInteractive) {
-      debug.log(ts(), `[TabManager] ✅ Panel became interactive (pending: ${pendingRefreshRef.current}, tabId: ${currentTabId})`);
+      // debug.log(ts(), `[TabManager] ✅ Panel became interactive (pending: ${pendingRefreshRef.current}, tabId: ${currentTabId})`);
     } else if (justBecameNotInteractive) {
-      debug.log(ts(), `[TabManager] ❌ Panel became NOT interactive (pending: ${pendingRefreshRef.current})`);
+      // debug.log(ts(), `[TabManager] ❌ Panel became NOT interactive (pending: ${pendingRefreshRef.current})`);
     }
     
     // When panel becomes interactive, check for pending refresh
     if (justBecameInteractive && isActive && currentTabId && pendingRefreshRef.current) {
-      debug.log(ts(), '[TabManager] Triggering pending refresh');
+      // debug.log(ts(), '[TabManager] Triggering pending refresh');
       onContentRefresh(currentTabId);
       pendingRefreshRef.current = false;
-      debug.log(ts(), '[TabManager] Cleared pending refresh flag');
+      // debug.log(ts(), '[TabManager] Cleared pending refresh flag');
     } else if (justBecameInteractive && isActive && currentTabId && !pendingRefreshRef.current) {
-      debug.log(ts(), '[TabManager] Panel interactive but no pending refresh');
+      // debug.log(ts(), '[TabManager] Panel interactive but no pending refresh');
     }
     
     previousIsPanelInteractiveRef.current = isPanelInteractive;
@@ -269,12 +269,12 @@ export const useTabManager = ({
       try {
         chrome.runtime.sendMessage({ type: 'getCurrentTab' }, (response) => {
           if (chrome.runtime.lastError) {
-            debug.error(ts(), '[TabManager] Failed to get current tab:', chrome.runtime.lastError);
+            // debug.error(ts(), '[TabManager] Failed to get current tab:', chrome.runtime.lastError);
             return;
           }
           
           if (response?.tabId) {
-            debug.log(ts(), '[TabManager] Got current tab:', response);
+            // debug.log(ts(), '[TabManager] Got current tab:', response);
             const isFirstTimeGettingTab = !currentTabId && !initialTabFetchRef.current;
             const needsRefreshAfterPanelOpen = panelJustBecameVisible;
             
@@ -288,23 +288,23 @@ export const useTabManager = ({
             
             if (needsFetch && !isFetchingRef.current) {
               const reason = isFirstTimeGettingTab ? 'first time' : 'panel opened';
-              debug.log(ts(), `[TabManager] Auto-fetching content (${reason})`);
+              // debug.log(ts(), `[TabManager] Auto-fetching content (${reason})`);
               
               isFetchingRef.current = true;
               initialTabFetchRef.current = true;
               onContentRefresh(response.tabId);
               isFetchingRef.current = false;
             } else if (needsFetch && isFetchingRef.current) {
-              debug.log(ts(), '[TabManager] Skipping fetch - already fetching');
+              // debug.log(ts(), '[TabManager] Skipping fetch - already fetching');
             }
           } else {
-            debug.log(ts(), '[TabManager] No active tab found');
+            // debug.log(ts(), '[TabManager] No active tab found');
             setCurrentTabId(null);
             setCurrentTabTitle('');
           }
         });
       } catch (error) {
-        debug.error(ts(), '[TabManager] Failed to get current tab:', error);
+        // debug.error(ts(), '[TabManager] Failed to get current tab:', error);
       }
     };
 

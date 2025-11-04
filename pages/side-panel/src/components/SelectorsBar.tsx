@@ -10,10 +10,12 @@ interface SelectorsBarProps {
   selectedModel: string;
   showAgentCursor: boolean;
   showSuggestions: boolean;
+  showThoughtBlocks: boolean;
   onAgentChange: (agent: string) => void;
   onModelChange: (model: string) => void;
   onShowAgentCursorChange: (show: boolean) => void;
   onShowSuggestionsChange: (show: boolean) => void;
+  onShowThoughtBlocksChange: (show: boolean) => void;
   onExpandSettingsClick: () => void;
 }
 
@@ -23,10 +25,12 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
   selectedModel,
   showAgentCursor,
   showSuggestions,
+  showThoughtBlocks,
   onAgentChange,
   onModelChange,
   onShowAgentCursorChange,
   onShowSuggestionsChange,
+  onShowThoughtBlocksChange,
   onExpandSettingsClick,
 }) => {
   return (
@@ -57,8 +61,10 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
         isLight={isLight}
         showAgentCursor={showAgentCursor}
         showSuggestions={showSuggestions}
+        showThoughtBlocks={showThoughtBlocks}
         onShowAgentCursorChange={onShowAgentCursorChange}
         onShowSuggestionsChange={onShowSuggestionsChange}
+        onShowThoughtBlocksChange={onShowThoughtBlocksChange}
         onExpandClick={onExpandSettingsClick}
       />
     </div>

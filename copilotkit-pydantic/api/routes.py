@@ -1,10 +1,11 @@
 """API route handlers for agent endpoints."""
 
-import json
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
-from config import DEBUG, logger, get_agent_types, get_models, get_model_names
-from config.db_loaders import _db_cache  # for readiness check
+from config import DEBUG, logger
+from config.db_loaders import _sync_cache as _context_cache  # for readiness check
 from database.connection import get_db_connection
 from core import get_agent
 from services import (
@@ -12,91 +13,177 @@ from services import (
     cleanup_session,
     session_states,
     manager,
-    create_usage_tracking_callback
+    create_usage_tracking_callback,
+    ensure_agent_ready,
+    deploy_context,
+    restart_context,
+    get_context_status,
+    list_deployments,
 )
+from services.deployment_manager import DeploymentError
 from pydantic_ai.ag_ui import handle_ag_ui_request
 
 
+class DeploymentRequest(BaseModel):
+    organization_id: str
+    team_id: str
+    force: bool = False
+
+
+def _make_not_found(message: str) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": message})
+
+
+def _make_unauthorized(message: str) -> JSONResponse:
+    return JSONResponse(status_code=401, content={"error": message})
+
+
 def register_agent_routes(app: FastAPI) -> None:
-    """Register agent routes for all agent types and models.
-    
-    Args:
-        app: The FastAPI application instance
-    """
-    # Create routes for all combinations with session-based state
-    for agent_type in get_agent_types():
-        for model in get_model_names():
-            path = f"/agent/{agent_type}/{model}"
-            agent = get_agent(agent_type, model)
-            
-            # Create a route handler for this specific agent/model
-            def create_handler(agent_ref, agent_type_str, model_str):
-                async def handler(request: Request):
-                    # Extract session/thread ID from request body
-                    session_id = 'default'
-                    try:
-                        # Read the body once
-                        body_bytes = await request.body()
-                        if body_bytes:
-                            body = json.loads(body_bytes)
-                            
-                            # Try to get session ID from various possible fields
-                            session_id = (
-                                body.get('thread_id') or 
-                                body.get('threadId') or
-                                body.get('session_id') or 
-                                body.get('sessionId') or
-                                'default'
-                            )
-                            
-                            if DEBUG:
-                                logger.info(
-                                    f"[{request.state.req_id}] session_id={session_id} "
-                                    f"agent={agent_type_str} model={model_str}"
-                                )
-                        
-                        # Rehydrate a new Request with the same scope so downstream can read body
-                        async def _receive_once():
-                            return {"type": "http.request", "body": body_bytes, "more_body": False}
-                        request = Request(request.scope, receive=_receive_once)
-                        
-                    except Exception as e:
-                        logger.warning(
-                            f"[{request.state.req_id}] Error extracting session ID: {e}. "
-                            f"Using 'default'"
-                        )
-                        session_id = 'default'
-                    
-                    # Get or create state for this session
-                    state_deps = get_or_create_session_state(session_id, agent_type_str, model_str)
-                    
-                    # Create usage callback that broadcasts via WebSocket
-                    usage_callback = create_usage_tracking_callback(
-                        session_id=session_id,
-                        agent_type=agent_type_str,
-                        model=model_str,
-                        broadcast_func=manager.broadcast_to_session
+    """Register agent routes with parameterized handler."""
+
+    if DEBUG:
+        logger.info("Registering agent endpoint with dynamic context resolution")
+
+    @app.post("/agent/{agent_type}/{model}")
+    async def run_agent(agent_type: str, model: str, request: Request):
+        # Enforce authentication context propagated from runtime
+        session_id = request.headers.get("x-copilot-session-id")
+        thread_id = request.headers.get("x-copilot-thread-id")
+        user_id = request.headers.get("x-copilot-user-id")
+        organization_id = request.headers.get("x-copilot-organization-id")
+        team_id = request.headers.get("x-copilot-team-id")
+
+        if not session_id or not user_id or not organization_id or not team_id:
+            return _make_unauthorized("Missing authentication context")
+
+        conversation_id = thread_id or session_id
+
+        if DEBUG and thread_id:
+            logger.debug(
+                "Using thread conversation id=%s (auth session=%s) for agent request",
+                conversation_id,
+                session_id,
+            )
+
+        try:
+            await ensure_agent_ready(organization_id, team_id, agent_type, model)
+        except DeploymentError as exc:  # pragma: no cover - translated to HTTP
+            logger.warning(
+                "Deployment error for org=%s team=%s agent=%s model=%s: %s",
+                organization_id,
+                team_id,
+                agent_type,
+                model,
+                exc,
+            )
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+        state_deps = get_or_create_session_state(
+            conversation_id,
+            agent_type,
+            model,
+            organization_id,
+            team_id,
+        )
+
+        agent_db_id = None
+        model_db_id = None
+        try:
+            async with get_db_connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """
+                        SELECT id
+                          FROM agents
+                         WHERE agent_type = %s
+                           AND (organization_id IS NULL OR organization_id = %s)
+                           AND (team_id IS NULL OR team_id = %s)
+                         ORDER BY
+                           CASE
+                             WHEN team_id = %s THEN 0
+                             WHEN team_id IS NULL AND organization_id = %s THEN 1
+                             WHEN organization_id IS NULL THEN 2
+                             ELSE 3
+                           END,
+                           created_at DESC
+                         LIMIT 1
+                        """,
+                        (agent_type, organization_id, team_id, team_id, organization_id),
                     )
-                    
-                    # Handle AG-UI request with on_complete callback
-                    response = await handle_ag_ui_request(
-                        agent=agent_ref,
-                        request=request,
-                        deps=state_deps,
-                        on_complete=usage_callback,
+                    agent_row = await cur.fetchone()
+                    if agent_row:
+                        agent_db_id = agent_row.get("id")
+
+                    await cur.execute(
+                        """
+                        SELECT id
+                          FROM models
+                         WHERE model_key = %s
+                           AND (organization_id IS NULL OR organization_id = %s)
+                           AND (team_id IS NULL OR team_id = %s)
+                         ORDER BY
+                           CASE
+                             WHEN team_id = %s THEN 0
+                             WHEN team_id IS NULL AND organization_id = %s THEN 1
+                             WHEN organization_id IS NULL THEN 2
+                             ELSE 3
+                           END,
+                           created_at DESC
+                         LIMIT 1
+                        """,
+                        (model, organization_id, team_id, team_id, organization_id),
                     )
-                    
-                    if DEBUG:
-                        logger.info(
-                            f"[{request.state.req_id}] Completed agent call "
-                            f"session_id={session_id}"
-                        )
-                    return response
-                return handler
-            
-            # Register the route with agent type and model captured
-            app.post(path)(create_handler(agent, agent_type, model))
-            logger.info(f"Registered: POST {path}")
+                    model_row = await cur.fetchone()
+                    if model_row:
+                        model_db_id = model_row.get("id")
+        except Exception as exc:
+            logger.warning(
+                "Failed to resolve agent/model IDs for usage tracking: %s",
+                exc,
+            )
+
+        if agent_db_id is None:
+            logger.warning(
+                "Falling back to agent type for usage tracking id resolution: %s",
+                agent_type,
+            )
+        if model_db_id is None:
+            logger.warning(
+                "Falling back to model key for usage tracking id resolution: %s",
+                model,
+            )
+
+        usage_callback = create_usage_tracking_callback(
+            session_id=conversation_id,
+            agent_id=agent_db_id or agent_type,
+            model_id=model_db_id or model,
+            agent_label=agent_type,
+            model_label=model,
+            broadcast_func=manager.broadcast_to_session,
+            auth_session_id=session_id,
+            user_id=user_id,
+            organization_id=organization_id,
+            team_id=team_id,
+        )
+
+        response = await handle_ag_ui_request(
+            agent=get_agent(agent_type, model, organization_id, team_id),
+            request=request,
+            deps=state_deps,
+            on_complete=usage_callback,
+        )
+
+        if DEBUG:
+            logger.info(
+                "[%s] Completed agent call session=%s org=%s team=%s",
+                getattr(request.state, 'req_id', 'unknown'),
+                conversation_id,
+                organization_id,
+                team_id,
+            )
+        return response
+
+    logger.info("Registered: POST /agent/{agent_type}/{model}")
 
 
 def register_info_routes(app: FastAPI) -> None:
@@ -137,7 +224,7 @@ def register_info_routes(app: FastAPI) -> None:
                     db_ok = True
         except Exception as e:
             logger.warning(f"Readiness DB check failed: {e}")
-        caches_ok = bool(_db_cache.get('models_config')) and bool(_db_cache.get('agents_config'))
+        caches_ok = bool(_context_cache)
         status = "ok" if db_ok and caches_ok else "degraded"
         return {"status": status, "db": db_ok, "caches": caches_ok}
 
@@ -177,3 +264,172 @@ def register_info_routes(app: FastAPI) -> None:
             )
         }
 
+    @app.post("/deployments/context")
+    async def deploy_context_endpoint(payload: DeploymentRequest):
+        await deploy_context(payload.organization_id, payload.team_id, force=payload.force)
+        return get_context_status(payload.organization_id, payload.team_id)
+
+    @app.post("/deployments/context/restart")
+    async def restart_context_endpoint(payload: DeploymentRequest):
+        await restart_context(payload.organization_id, payload.team_id)
+        return get_context_status(payload.organization_id, payload.team_id)
+
+    @app.get("/deployments/context")
+    async def get_context_status_endpoint(organization_id: str, team_id: str):
+        return get_context_status(organization_id, team_id)
+
+    @app.get("/deployments")
+    async def list_deployments_endpoint():
+        return {
+            'deployments': list_deployments()
+        }
+    
+    @app.get("/tools/{agent_type}/{model}")
+    async def list_agent_tools(agent_type: str, model: str, request: Request):
+        """List all tools available for a specific agent and model.
+        
+        Args:
+            agent_type: The type of agent (e.g., 'planner')
+            model: The model identifier (e.g., 'gpt-4')
+            request: The FastAPI request object
+            
+        Returns:
+            List of tool definitions with their signatures
+        """
+        # Enforce authentication context
+        organization_id = request.headers.get("x-copilot-organization-id")
+        team_id = request.headers.get("x-copilot-team-id")
+        
+        if not organization_id or not team_id:
+            return _make_unauthorized("Missing authentication context")
+        
+        try:
+            # Ensure agent is ready before fetching tools
+            try:
+                await ensure_agent_ready(organization_id, team_id, agent_type, model)
+            except DeploymentError as exc:
+                logger.warning(
+                    "Deployment error for tools endpoint org=%s team=%s agent=%s model=%s: %s",
+                    organization_id,
+                    team_id,
+                    agent_type,
+                    model,
+                    exc,
+                )
+                return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+            
+            # Get the agent instance
+            agent = get_agent(agent_type, model, organization_id, team_id)
+            
+            # Extract tool information
+            tools = []
+            
+            # Get custom tools registered with @agent.tool
+            if hasattr(agent, '_function_tools') and agent._function_tools:
+                for tool_name, tool_def in agent._function_tools.items():
+                    tool_info = {
+                        'name': tool_name,
+                        'description': tool_def.description or '',
+                        'parameters': [],
+                        'source': 'custom',
+                    }
+                    
+                    # Extract parameter information from the function
+                    if hasattr(tool_def, 'function'):
+                        import inspect
+                        sig = inspect.signature(tool_def.function)
+                        for param_name, param in sig.parameters.items():
+                            if param_name == 'ctx':  # Skip context parameter
+                                continue
+                            
+                            param_info = {
+                                'name': param_name,
+                                'required': param.default == inspect.Parameter.empty,
+                                'type': str(param.annotation) if param.annotation != inspect.Parameter.empty else 'any',
+                            }
+                            tool_info['parameters'].append(param_info)
+                    
+                    tools.append(tool_info)
+            
+            # Get MCP toolset tools
+            if hasattr(agent, '_user_toolsets') and agent._user_toolsets:
+                logger.debug(f"Found {len(agent._user_toolsets)} toolset(s)")
+                for toolset in agent._user_toolsets:
+                    logger.debug(f"Processing toolset: {type(toolset).__name__}")
+                    # Check if this is an MCP toolset
+                    if hasattr(toolset, 'id') and hasattr(toolset, 'tool_prefix'):
+                        logger.info(f"Found MCP toolset: {toolset.id} (prefix: {toolset.tool_prefix})")
+                        # MCP tools need to be fetched asynchronously
+                        try:
+                            # Start the MCP server connection if not already started
+                            if hasattr(toolset, '__aenter__'):
+                                await toolset.__aenter__()
+                            
+                            # For MCP toolsets, we need to list the available tools
+                            # The tools are dynamically loaded from the MCP server
+                            if hasattr(toolset, 'list_tools'):
+                                # Use list_tools method if available
+                                logger.debug(f"Calling list_tools() on {toolset.id}")
+                                tool_list = await toolset.list_tools()
+                                logger.info(f"Found {len(tool_list)} tools from {toolset.id}")
+                                
+                                for mcp_tool in tool_list:
+                                    tool_name = mcp_tool.name if hasattr(mcp_tool, 'name') else str(mcp_tool)
+                                    tool_desc = mcp_tool.description if hasattr(mcp_tool, 'description') else ''
+                                    
+                                    tool_info = {
+                                        'name': f"{toolset.tool_prefix}_{tool_name}",
+                                        'description': tool_desc or '',
+                                        'parameters': [],
+                                        'source': 'mcp',
+                                        'mcp_server': toolset.id,
+                                    }
+                                    
+                                    # Extract parameters from MCP tool schema
+                                    if hasattr(mcp_tool, 'inputSchema'):
+                                        schema = mcp_tool.inputSchema
+                                        if isinstance(schema, dict):
+                                            properties = schema.get('properties', {})
+                                            required = schema.get('required', [])
+                                            
+                                            for prop_name, prop_schema in properties.items():
+                                                param_info = {
+                                                    'name': prop_name,
+                                                    'required': prop_name in required,
+                                                    'type': prop_schema.get('type', 'any'),
+                                                    'description': prop_schema.get('description', ''),
+                                                }
+                                                tool_info['parameters'].append(param_info)
+                                    
+                                    tools.append(tool_info)
+                                    logger.debug(f"Added tool: {tool_info['name']}")
+                            else:
+                                logger.warning(f"Toolset {toolset.id} has no list_tools method")
+                        except Exception as e:
+                            logger.error(f"Failed to extract MCP tools from {toolset.id}: {e}", exc_info=True)
+            
+            # Get built-in tools
+            if hasattr(agent, '_builtin_tools') and agent._builtin_tools:
+                for builtin_tool in agent._builtin_tools:
+                    tool_name = type(builtin_tool).__name__
+                    tool_info = {
+                        'name': tool_name.replace('Tool', '').lower(),  # e.g., WebSearchTool -> websearch
+                        'description': f"Built-in {tool_name}",
+                        'parameters': [],
+                        'source': 'builtin',
+                    }
+                    tools.append(tool_info)
+            
+            return {
+                'agent_type': agent_type,
+                'model': model,
+                'tools': tools,
+                'total_tools': len(tools),
+            }
+            
+        except Exception as e:
+            logger.error(f"Error listing tools for agent {agent_type}/{model}: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"Failed to list tools: {str(e)}"}
+            )

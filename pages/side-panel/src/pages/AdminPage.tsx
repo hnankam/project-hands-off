@@ -12,7 +12,11 @@ import { exampleThemeStorage } from '@extension/storage';
 import { OrganizationsTab } from '../components/admin/OrganizationsTab';
 import { TeamsTab } from '../components/admin/TeamsTab';
 import { UsersTab } from '../components/admin/UsersTab';
+import { ProvidersTab } from '../components/admin/ProvidersTab';
+import ModelsTab from '@src/components/admin/ModelsTab';
+import AgentsTab from '@src/components/admin/AgentsTab';
 import { usePendingInvitations } from '../hooks/usePendingInvitations';
+import UserMenu from '../components/UserMenu';
 
 interface Organization {
   id: string;
@@ -25,6 +29,8 @@ interface Organization {
 
 interface AdminPageProps {
   onGoHome?: () => void;
+  onGoToSessions?: () => void;
+  initialTab?: 'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents';
 }
 
 // Simple settings button component with upward-opening dropdown
@@ -185,12 +191,16 @@ const SettingsButton: React.FC<{ isLight: boolean; theme: string; onOpenSettings
   );
 };
 
-export function AdminPage({ onGoHome }: AdminPageProps) {
-  const { user, signOut } = useAuth();
+export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organizations' }: AdminPageProps) {
+  const { user, organization, activeTeam, member } = useAuth();
   const { isLight, theme } = useStorage(exampleThemeStorage);
-  const [activeTab, setActiveTab] = useState<'organizations' | 'teams' | 'users'>('organizations');
+  const [activeTab, setActiveTab] = useState<'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents'>(initialTab);
   const [selectedOrgForTeams, setSelectedOrgForTeams] = useState('');
   const version = chrome.runtime?.getManifest?.()?.version || '1.0.0';
+  
+  // Check if user is owner or admin (can access all tabs)
+  const memberRoles = Array.isArray(member?.role) ? member.role : member?.role ? [member.role] : [];
+  const isOwnerOrAdmin = memberRoles.includes('owner') || memberRoles.includes('admin');
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -214,6 +224,17 @@ export function AdminPage({ onGoHome }: AdminPageProps) {
     }
   }, [user]);
 
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
+  // Preselect active organization when component mounts or organization changes
+  useEffect(() => {
+    if (organization?.id && !selectedOrgForTeams) {
+      setSelectedOrgForTeams(organization.id);
+    }
+  }, [organization]);
+
   const loadOrganizations = async () => {
     try {
       const { data, error } = await authClient.organization.list();
@@ -221,14 +242,6 @@ export function AdminPage({ onGoHome }: AdminPageProps) {
       setOrganizations(data || []);
     } catch (err: any) {
       console.error('Error loading organizations:', err);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut();
-    } catch (error) {
-      console.error('[AdminPage] Logout failed:', error);
     }
   };
 
@@ -320,47 +333,11 @@ export function AdminPage({ onGoHome }: AdminPageProps) {
             </Button>
           )}
           
-          {/* More Options Dropdown */}
-          <DropdownMenu
-            align="right"
+          {/* User Menu with Organization and Team Selectors */}
+          <UserMenu
             isLight={isLight}
-            trigger={
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  'h-7 w-7 p-0',
-                  isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-800',
-                )}>
-                <svg
-                  width="16"
-                  height="16"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round">
-                  <path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                </svg>
-              </Button>
-            }>
-            <DropdownMenuItem onClick={handleLogout} isLight={isLight}>
-              <div className="flex items-center gap-2 w-full">
-                <svg
-                  className="h-3.5 w-3.5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round">
-                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
-                </svg>
-                <span>Logout</span>
-              </div>
-            </DropdownMenuItem>
-          </DropdownMenu>
+            onGoToSessions={onGoToSessions}
+          />
         </div>
       </div>
 
@@ -371,23 +348,31 @@ export function AdminPage({ onGoHome }: AdminPageProps) {
           isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700',
         )}>
         <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
-          {(['organizations', 'teams', 'users'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={cn(
-                'flex-shrink-0 px-3 py-1 text-xs font-medium rounded transition-colors capitalize',
-                activeTab === tab
-                  ? isLight
-                    ? 'bg-gray-200 text-gray-900'
-                    : 'bg-gray-700 text-gray-100'
-                  : isLight
-                  ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
-              )}>
-              {tab}
-            </button>
-          ))}
+          {(['organizations', 'teams', 'users', 'providers', 'models', 'agents'] as const)
+            .filter(tab => {
+              // Hide providers, models, and agents tabs for member users
+              if (['providers', 'models', 'agents'].includes(tab) && !isOwnerOrAdmin) {
+                return false;
+              }
+              return true;
+            })
+            .map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={cn(
+                  'flex-shrink-0 px-3 py-1 text-xs font-medium rounded transition-colors capitalize',
+                  activeTab === tab
+                    ? isLight
+                      ? 'bg-gray-200 text-gray-900'
+                      : 'bg-gray-700 text-gray-100'
+                    : isLight
+                    ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                )}>
+                {tab}
+              </button>
+            ))}
         </div>
       </div>
 
@@ -539,40 +524,106 @@ export function AdminPage({ onGoHome }: AdminPageProps) {
         {/* Tab Content */}
         {activeTab === 'organizations' && (
           <div className="animate-fadeIn">
-            <OrganizationsTab
-              isLight={isLight}
-              onError={setError}
-              onSuccess={setSuccess}
-              onNavigateToTeams={(orgId) => {
-                setActiveTab('teams');
-                setSelectedOrgForTeams(orgId);
-              }}
-            />
+          <OrganizationsTab
+            isLight={isLight}
+            onError={setError}
+            onSuccess={setSuccess}
+            onNavigateToTeams={(orgId) => {
+              setActiveTab('teams');
+              setSelectedOrgForTeams(orgId);
+            }}
+          />
           </div>
         )}
 
         {activeTab === 'teams' && (
           <div className="animate-fadeIn">
-            <TeamsTab
-              isLight={isLight}
-              organizations={organizations}
-              preselectedOrgId={selectedOrgForTeams}
-              onError={setError}
-              onSuccess={setSuccess}
-            />
+          <TeamsTab
+            isLight={isLight}
+            organizations={organizations}
+            preselectedOrgId={selectedOrgForTeams}
+            onError={setError}
+            onSuccess={setSuccess}
+          />
           </div>
         )}
 
         {activeTab === 'users' && (
           <div className="animate-fadeIn">
-            <UsersTab
-              isLight={isLight}
-              organizations={organizations}
-              preselectedOrgId={selectedOrgForTeams}
-              onError={setError}
-              onSuccess={setSuccess}
-            />
+          <UsersTab
+            isLight={isLight}
+            organizations={organizations}
+            preselectedOrgId={selectedOrgForTeams}
+            onError={setError}
+            onSuccess={setSuccess}
+          />
           </div>
+        )}
+
+        {activeTab === 'models' && (
+          isOwnerOrAdmin ? (
+            <div className="animate-fadeIn">
+              <ModelsTab
+                isLight={isLight}
+                organizations={organizations}
+                preselectedOrgId={selectedOrgForTeams}
+                onError={setError}
+                onSuccess={setSuccess}
+              />
+            </div>
+          ) : (
+            <div className={cn('flex-1 flex items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+              <div className="text-center">
+                <p className={cn('text-sm', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                  You need owner or admin permissions to access this section.
+                </p>
+              </div>
+            </div>
+          )
+        )}
+
+        {activeTab === 'agents' && (
+          isOwnerOrAdmin ? (
+            <div className="animate-fadeIn">
+              <AgentsTab
+                isLight={isLight}
+                organizations={organizations}
+                preselectedOrgId={selectedOrgForTeams}
+                onError={setError}
+                onSuccess={setSuccess}
+              />
+            </div>
+          ) : (
+            <div className={cn('flex-1 flex items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+              <div className="text-center">
+                <p className={cn('text-sm', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                  You need owner or admin permissions to access this section.
+                </p>
+              </div>
+            </div>
+          )
+        )}
+
+        {activeTab === 'providers' && (
+          isOwnerOrAdmin ? (
+            <div className="animate-fadeIn">
+              <ProvidersTab
+                isLight={isLight}
+                organizations={organizations}
+                preselectedOrgId={selectedOrgForTeams}
+                onError={setError}
+                onSuccess={setSuccess}
+              />
+            </div>
+          ) : (
+            <div className={cn('flex-1 flex items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+              <div className="text-center">
+                <p className={cn('text-sm', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                  You need owner or admin permissions to access this section.
+                </p>
+              </div>
+            </div>
+          )
         )}
         </div>
       </div>
@@ -585,7 +636,7 @@ export function AdminPage({ onGoHome }: AdminPageProps) {
         )}>
         <div className="flex items-center justify-between px-4 py-1.5">
           <div className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
-            Hands-Off v{version}
+            v {version}
           </div>
           <SettingsButton isLight={isLight} theme={theme} onOpenSettings={() => setSettingsOpen(true)} />
         </div>

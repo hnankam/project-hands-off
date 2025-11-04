@@ -24,10 +24,11 @@ interface AutoResizingTextareaProps {
   onCompositionEnd?: () => void;
   onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onPaste?: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void;
+  disabled?: boolean;
 }
 
 const AutoResizingTextarea = React.forwardRef<HTMLTextAreaElement, AutoResizingTextareaProps>(
-  ({ placeholder, autoFocus, maxRows = 6, value, onChange, onCompositionStart, onCompositionEnd, onKeyDown, onPaste }, ref) => {
+  ({ placeholder, autoFocus, maxRows = 6, value, onChange, onCompositionStart, onCompositionEnd, onKeyDown, onPaste, disabled = false }, ref) => {
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
     const handleResize = () => {
@@ -70,12 +71,16 @@ const AutoResizingTextarea = React.forwardRef<HTMLTextAreaElement, AutoResizingT
         onCompositionStart={onCompositionStart}
         onCompositionEnd={onCompositionEnd}
         onKeyDown={onKeyDown}
-        onPaste={onPaste}
+        onPaste={disabled ? undefined : onPaste}
+        disabled={disabled}
         rows={1}
         style={{
           resize: 'none',
           overflow: 'auto',
           boxSizing: 'border-box',
+          opacity: disabled ? 0.6 : 1,
+          backgroundColor: disabled ? 'transparent' : undefined,
+          cursor: disabled ? 'not-allowed' : undefined,
         }}
       />
     );
@@ -269,6 +274,7 @@ const CustomIcons = {
 interface CustomInputProps extends InputProps {
   // prefillText and onPrefillCleared removed - using custom events instead
   listenSessionId?: string; // Only handle events for this session
+  isAgentAndModelSelected?: boolean;
 }
 
 /**
@@ -296,10 +302,20 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   onUpload,
   hideStopButton = false,
   listenSessionId,
+  isAgentAndModelSelected = true,
 }) => {
   const context = useChatContext();
   const copilotContext = useCopilotContext();
   const { isLight } = useStorage(exampleThemeStorage);
+  const isInputEnabled = Boolean(isAgentAndModelSelected);
+
+  // Log input enabled state changes
+  useEffect(() => {
+    console.log(`[CustomInput] Input state changed for session ${listenSessionId?.slice(0, 8) || 'unknown'}:`, {
+      isAgentAndModelSelected,
+      isInputEnabled,
+    });
+  }, [isAgentAndModelSelected, isInputEnabled, listenSessionId]);
 
   const showPoweredBy = !copilotContext.copilotApiConfig?.publicApiKey;
 
@@ -329,6 +345,16 @@ export const CustomInput: React.FC<CustomInputProps> = ({
 
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
 
+  useEffect(() => {
+    if (!isInputEnabled) {
+      setText('');
+      setAttachments(prev => {
+        prev.forEach(a => URL.revokeObjectURL(a.previewUrl));
+        return [];
+      });
+    }
+  }, [isInputEnabled]);
+
   const handleDivClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
 
@@ -337,6 +363,8 @@ export const CustomInput: React.FC<CustomInputProps> = ({
 
     // If the user clicked the textarea, do nothing (it's already focused)
     if (target.tagName === 'TEXTAREA') return;
+
+    if (!isInputEnabled) return;
 
     // Otherwise, focus the textarea
     textareaRef.current?.focus();
@@ -372,7 +400,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
       }
       lastPrefillTimestampRef.current = timestamp;
 
-      if (prefillText && prefillText.trim()) {
+      if (prefillText && prefillText.trim() && isInputEnabled) {
         console.log('[CustomInput] Setting text to prefill content');
         setText(prefillText);
 
@@ -388,7 +416,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
       window.removeEventListener('copilot-prefill-text', handlePrefillEvent);
       console.log('[CustomInput] Unregistered copilot-prefill-text event listener');
     };
-  }, [listenSessionId]);
+  }, [listenSessionId, isInputEnabled]);
 
   // Separate effect to handle focusing after text is set
   // This only runs when text changes and we have a pending focus
@@ -444,7 +472,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   };
 
   const send = async () => {
-    if (inProgress) return;
+    if (inProgress || !isInputEnabled) return;
 
     // Upload all pending attachments first
     const sessionId = listenSessionId || 'default';
@@ -495,14 +523,16 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   const isInProgress = inProgress || pushToTalkState === 'transcribing';
   const buttonIcon = isInProgress && !hideStopButton ? CustomIcons.stop : CustomIcons.send;
   const showPushToTalk =
-    pushToTalkConfigured && (pushToTalkState === 'idle' || pushToTalkState === 'recording') && !inProgress;
+    pushToTalkConfigured && (pushToTalkState === 'idle' || pushToTalkState === 'recording') && !inProgress && isInputEnabled;
 
   const canSend = useMemo(() => {
+    if (!isInputEnabled) return false;
+
     const interruptEvent = copilotContext.langGraphInterruptAction?.event;
     const interruptInProgress = interruptEvent?.name === 'LangGraphInterruptEvent' && !interruptEvent?.response;
 
     return !isInProgress && text.trim().length > 0 && pushToTalkState === 'idle' && !interruptInProgress;
-  }, [copilotContext.langGraphInterruptAction?.event, isInProgress, text, pushToTalkState]);
+  }, [copilotContext.langGraphInterruptAction?.event, isInProgress, text, pushToTalkState, isInputEnabled]);
 
   const canStop = useMemo(() => {
     return isInProgress && !hideStopButton;
@@ -512,7 +542,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
 
   // Upload any file types by inserting object URLs into the input as links
   const handleFilesPicked = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+    if (!isInputEnabled || !files || files.length === 0) return;
     const newItems: AttachmentItem[] = [];
     for (let i = 0; i < files.length; i++) {
       const f = files.item(i)!;
@@ -553,11 +583,13 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   const MAX_UPLOAD_BYTES = 30 * 1024 * 1024; // 30MB
 
   const openFilePicker = () => {
+    if (!isInputEnabled) return;
     if (fileInputRef.current) fileInputRef.current.click();
   };
 
   // Helpers to handle drag & drop uploads
   const eventHasFiles = (e: React.DragEvent) => {
+    if (!isInputEnabled) return false;
     try {
       const items = Array.from(e.dataTransfer?.items || []);
       if (items.some(i => i.kind === 'file')) return true;
@@ -571,6 +603,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isInputEnabled) return;
     dragCounterRef.current += 1;
     if (eventHasFiles(e)) setIsDragActive(true);
   };
@@ -578,6 +611,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isInputEnabled) return;
     if (eventHasFiles(e)) {
       e.dataTransfer.dropEffect = 'copy';
       if (!isDragActive) setIsDragActive(true);
@@ -587,6 +621,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isInputEnabled) return;
     dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
     if (dragCounterRef.current === 0) setIsDragActive(false);
   };
@@ -594,6 +629,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isInputEnabled) return;
     setIsDragActive(false);
     dragCounterRef.current = 0;
     const files = e.dataTransfer?.files;
@@ -605,6 +641,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
 
   // Paste handler for images/files from clipboard
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!isInputEnabled) return;
     try {
       const items = Array.from(e.clipboardData?.items || []);
       const fileItems = items.filter(i => i.kind === 'file');
@@ -659,7 +696,11 @@ export const CustomInput: React.FC<CustomInputProps> = ({
         )}
         <AutoResizingTextarea
           ref={textareaRef}
-          placeholder={context.labels.placeholder}
+          placeholder={
+            isInputEnabled
+              ? context.labels.placeholder
+              : 'Please select an agent and model to start chatting'
+          }
           autoFocus={false}
           maxRows={MAX_NEWLINES}
           value={text}
@@ -770,10 +811,15 @@ export const CustomInput: React.FC<CustomInputProps> = ({
             accept="*/*"
             style={{ display: 'none' }}
             onChange={(e) => handleFilesPicked(e.target.files)}
+            disabled={!isInputEnabled}
           />
-          <button onClick={openFilePicker} className="copilotKitInputControlButton">
-              {CustomIcons.upload}
-            </button>
+          <button
+            onClick={openFilePicker}
+            className="copilotKitInputControlButton"
+            disabled={!isInputEnabled}
+          >
+            {CustomIcons.upload}
+          </button>
           
 
           <div style={{ flexGrow: 1 }} />
@@ -785,7 +831,9 @@ export const CustomInput: React.FC<CustomInputProps> = ({
                 pushToTalkState === 'recording'
                   ? 'copilotKitInputControlButton copilotKitPushToTalkRecording'
                   : 'copilotKitInputControlButton'
-              }>
+              }
+              disabled={!isInputEnabled}
+            >
               {CustomIcons.microphone}
             </button>
           )}

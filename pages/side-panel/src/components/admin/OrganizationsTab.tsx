@@ -30,6 +30,27 @@ interface OrganizationsTabProps {
   onNavigateToTeams: (orgId: string) => void;
 }
 
+const OrganizationSkeletonCard: React.FC<{ isLight: boolean }> = ({ isLight }) => (
+  <div
+    className={cn(
+      'rounded-lg border',
+      isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+    )}>
+    <div className="p-3 space-y-3 animate-pulse">
+      <div className="flex items-center justify-between">
+        <div className={cn('h-3 w-24 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+        <div className={cn('h-5 w-16 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+      </div>
+      <div className={cn('h-2.5 w-32 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+      <div className="space-y-2">
+        <div className={cn('h-2 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+        <div className={cn('h-2 w-5/6 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+        <div className={cn('h-2 w-2/3 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+      </div>
+    </div>
+  </div>
+);
+
 export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeams }: OrganizationsTabProps) {
   const { user } = useAuth();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -48,16 +69,21 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
   const [hasOwnerRole, setHasOwnerRole] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userTeamIds, setUserTeamIds] = useState<Record<string, Set<string>>>({}); // orgId -> Set of teamIds user belongs to
+  const [listLoading, setListLoading] = useState(true);
 
   // Load organizations on mount and when user changes (e.g., after login)
   useEffect(() => {
     if (user) {
       loadOrganizations();
+    } else {
+      setListLoading(false);
+      setOrganizations([]);
     }
   }, [user]);
 
   const loadOrganizations = async () => {
     try {
+      setListLoading(true);
       const { data, error } = await authClient.organization.list();
       if (error) throw new Error(error.message);
 
@@ -107,6 +133,8 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
       setHasOwnerRole(hasOwner);
     } catch (err: any) {
       onError(err.message);
+    } finally {
+      setListLoading(false);
     }
   };
 
@@ -387,6 +415,12 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
 
       {/* Organizations List - Compact Cards */}
       <div className="space-y-2">
+        {listLoading ? (
+          Array.from({ length: 3 }).map((_, idx) => (
+            <OrganizationSkeletonCard key={`org-skeleton-${idx}`} isLight={isLight} />
+          ))
+        ) : (
+          <>
         {organizations.map(org => (
           <div
             key={org.id}
@@ -616,6 +650,8 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
               Create your first organization
             </button>
           </div>
+        )}
+          </>
         )}
       </div>
 

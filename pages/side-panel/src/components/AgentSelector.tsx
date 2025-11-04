@@ -1,6 +1,7 @@
 import React from 'react';
 import { cn } from '@extension/ui';
 import { API_CONFIG } from '../constants';
+import { useAuth } from '../context/AuthContext';
 
 interface AgentSelectorProps {
   isLight: boolean;
@@ -13,6 +14,7 @@ interface Agent {
   label: string;
   icon: React.ReactNode;
   description?: string;
+  enabled?: boolean;
 }
 
 // Icon mapping for agents
@@ -76,40 +78,116 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   const [isOpen, setIsOpen] = React.useState(false);
   const [agents, setAgents] = React.useState<Agent[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [missingContext, setMissingContext] = React.useState(false);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+  const { organization, activeTeam, isLoading: authLoading } = useAuth();
 
   // Fetch agents from API
   React.useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!organization?.id || !activeTeam) {
+      setMissingContext(true);
+      setAgents([]);
+      setLoading(false);
+      if (selectedAgent !== '') {
+        onAgentChange('');
+      }
+      return;
+    }
+
+    const controller = new AbortController();
+    let isActive = true;
+
+    setLoading(true);
+    setMissingContext(false);
+
     const fetchAgents = async () => {
       try {
-        const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.CONFIG_AGENTS}`);
+        // Add team ID as query parameter to ensure we're fetching the correct team's agents
+        const url = new URL(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.CONFIG_AGENTS}`);
+        if (activeTeam) {
+          url.searchParams.append('teamId', activeTeam);
+        }
+        
+        console.log('[AgentSelector] Fetching agents for team:', activeTeam);
+        const response = await fetch(url.toString(), {
+          credentials: 'include',
+          signal: controller.signal,
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch agents');
         }
         const data = await response.json();
+        if (!isActive) {
+          return;
+        }
+        console.log('[AgentSelector] Fetched agents:', data.agents?.length || 0, 'agents');
+
+        if (data.missingContext || !data.agents || data.agents.length === 0) {
+          if (!isActive) {
+            return;
+          }
+          setMissingContext(true);
+          setAgents([]);
+          onAgentChange(''); // Clear selected agent in parent state
+          return;
+        }
         
+        if (!isActive) {
+          return;
+        }
+        setMissingContext(false);
+
         // Add icons to the fetched agents
-        const agentsWithIcons = data.agents.map((agent: { id: string; label: string; description?: string }) => ({
+        const agentsWithIcons = data.agents.map((agent: { id: string; label: string; description?: string; enabled?: boolean }) => ({
           ...agent,
           icon: getAgentIcon(agent.id),
         }));
         
+        if (!isActive) {
+          return;
+        }
         setAgents(agentsWithIcons);
+        
+        // Auto-select first agent if none is selected or current selection is invalid
+        const hasValidSelection = selectedAgent && agentsWithIcons.some((agent: Agent) => agent.id === selectedAgent);
+        if (!hasValidSelection && agentsWithIcons.length > 0) {
+          const firstEnabledAgent = agentsWithIcons.find((agent: Agent) => agent.enabled !== false) || agentsWithIcons[0];
+          if (firstEnabledAgent) {
+            onAgentChange(firstEnabledAgent.id);
+          }
+        }
       } catch (error) {
+        if ((error as Error)?.name === 'AbortError') {
+          return;
+        }
         console.error('Error fetching agents:', error);
         // Fallback to a default agent if API fails
-        setAgents([{
-          id: 'general',
-          label: 'General Agent',
-          icon: getAgentIcon('general'),
-        }]);
+        if (isActive) {
+          setMissingContext(false);
+          setAgents([{
+            id: 'general',
+            label: 'General Agent',
+            icon: getAgentIcon('general'),
+          }]);
+        }
       } finally {
-        setLoading(false);
+        if (isActive) {
+          setLoading(false);
+        }
       }
     };
 
     fetchAgents();
-  }, []);
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, [organization?.id, activeTeam, authLoading]);
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -125,16 +203,31 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     return undefined;
   }, [isOpen]);
 
-  const selectedAgentData = agents.find(a => a.id === selectedAgent) || agents[0];
+  const selectedAgentData = agents.find(a => a.id === selectedAgent);
 
   // Show loading state
-  if (loading || agents.length === 0) {
+  if (loading) {
     return (
       <div className="flex items-center gap-1.5 px-2 py-1 text-xs rounded-md h-[26px] opacity-50">
         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
           <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
         </svg>
         <span className="font-medium">Loading...</span>
+      </div>
+    );
+  }
+
+  if (missingContext || agents.length === 0) {
+    // Show different message based on whether we have a team or not
+    const hasTeam = !!(organization?.id && activeTeam);
+    const message = hasTeam ? 'Team has no agents configured' : 'Select a team to load agents';
+    
+    return (
+      <div className="flex items-center gap-1.5 px-2 py-1 text-xs rounded-md h-[26px] opacity-50">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <path d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span className="font-medium">{message}</span>
       </div>
     );
   }
@@ -146,13 +239,21 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
         className={cn(
           'flex items-center gap-1.5 px-2 py-1 text-xs rounded-md h-[26px] min-w-0',
           isLight
-            ? 'text-gray-700'
-            : 'text-gray-200'
+            ? selectedAgentData ? 'text-gray-700' : 'text-gray-500'
+            : selectedAgentData ? 'text-gray-200' : 'text-gray-400'
         )}
       >
-        <span className="flex-shrink-0">{selectedAgentData.icon}</span>
+        <span className="flex-shrink-0">
+          {selectedAgentData ? selectedAgentData.icon : (
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          )}
+        </span>
         <span className="font-medium truncate flex-1 min-w-0 relative overflow-hidden">
-          <span className="block truncate">{selectedAgentData.label}</span>
+          <span className="block truncate">
+            {selectedAgentData ? selectedAgentData.label : 'Select Agent'}
+          </span>
           <span 
             className={cn(
               'absolute right-0 top-0 bottom-0 w-8 pointer-events-none',
@@ -193,12 +294,17 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
             <button
               key={agent.id}
               onClick={() => {
-                onAgentChange(agent.id);
-                setIsOpen(false);
+                if (agent.enabled !== false) {
+                  onAgentChange(agent.id);
+                  setIsOpen(false);
+                }
               }}
+              disabled={agent.enabled === false}
               className={cn(
                 'flex items-center gap-1.5 w-full px-2.5 py-1.5 text-xs transition-colors',
-                selectedAgent === agent.id
+                agent.enabled === false
+                  ? 'opacity-50 cursor-not-allowed'
+                  : selectedAgent === agent.id
                   ? isLight
                     ? 'bg-blue-50 text-blue-700 font-medium'
                     : 'bg-blue-900/30 text-blue-300 font-medium'
@@ -209,7 +315,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
             >
               {agent.icon}
               <span>{agent.label}</span>
-              {selectedAgent === agent.id && (
+              {selectedAgent === agent.id && agent.enabled !== false && (
                 <svg
                   className="ml-auto"
                   width="12"

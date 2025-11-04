@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections import defaultdict
 from typing import Any
 from pydantic_ai import RunContext
 from pydantic_ai.messages import (
@@ -299,11 +300,19 @@ async def keep_recent_messages(
     - Separates paired messages inappropriately
     - Breaks the logical flow of multi-turn interactions
 
+    CRITICAL FIX: This function also removes orphaned tool_use blocks (ToolCallPart)
+    that don't have corresponding tool_result blocks (ToolReturnPart) in subsequent messages.
+    This prevents Anthropic API errors like:
+    "messages.X: `tool_use` ids were found without `tool_result` blocks immediately after"
+
+    The fix applies ONLY to older messages (not the last message) to preserve the
+    ability for the current turn to complete tool execution.
+
     Reference: https://github.com/pydantic/pydantic-ai/issues/2050
     """
 
-    # for index, message in enumerate(messages):
-    #     logger.info(f"Message {index}: {message}")
+    for index, message in enumerate(messages):
+        logger.info(f"Message {index}: {message}")
 
     logger.info(f"Message History Usage: {ctx.usage.total_tokens} = {ctx.usage.input_tokens} + {ctx.usage.output_tokens}")
 
@@ -366,10 +375,19 @@ async def keep_recent_messages(
         return ids
 
     total_msgs = len(messages)
-    keep_full_after_index = max(0, total_msgs - 1)  # keep only the last message untouched
+    keep_full_after_index = max(0, total_msgs - 25)  # keep only the last message untouched
     last_return_occurrence: dict[str, int] = {}
     last_call_occurrence: dict[str, int] = {}
+    
+    # Build map of tool_call_id -> message index where the corresponding tool return exists
+    tool_return_exists: dict[str, int] = {}
+    tool_return_occurrences: dict[str, list[int]] = defaultdict(list)
     for _idx, _msg in enumerate(messages):
+        for part in getattr(_msg, 'parts', []) or []:
+            if isinstance(part, ToolReturnPart):
+                tool_call_id = _get_tool_return_id(part)
+                if tool_call_id:
+                    tool_return_exists[tool_call_id] = _idx
         for sig in _iter_tool_return_sigs(_msg):
             last_return_occurrence[sig] = _idx
         for cid in _iter_tool_call_ids(_msg):
@@ -444,6 +462,16 @@ async def keep_recent_messages(
                     if idx < keep_full_after_index and cid is not None:
                         if last_call_occurrence.get(cid, idx) != idx:
                             continue
+                        # CRITICAL FIX: Drop tool_use blocks without corresponding tool_result in next message
+                        # This prevents Anthropic API rejection for orphaned tool_use blocks
+                        if cid not in tool_return_exists:
+                            logger.warning(f"Dropping orphaned tool_use with id={cid} at message {idx} (no corresponding tool_result found)")
+                            continue
+                        # Verify the tool_result appears after this tool_use
+                        return_idx = tool_return_exists.get(cid)
+                        if return_idx is not None and return_idx <= idx:
+                            logger.warning(f"Dropping tool_use with id={cid} at message {idx} (tool_result at {return_idx} appears before or at same position)")
+                            continue
                     new_parts_rev.append(part)
                     continue
 
@@ -452,19 +480,68 @@ async def keep_recent_messages(
 
             new_parts = list(reversed(new_parts_rev))
 
+            # Skip messages that have no parts after sanitization (e.g., all tool calls were orphaned)
+            if not new_parts:
+                logger.warning(f"Skipping message {idx} - all parts were removed during sanitization")
+                continue
+
             if hasattr(msg, 'parts'):
                 try:
                     msg.parts = new_parts
                 except Exception:
                     # If parts is read-only, create a shallow copy with updated parts when possible
                     pass
-        except Exception:
+        except Exception as e:
             # On any error, keep the message as-is
+            logger.warning(f"Error sanitizing message {idx}: {e}")
             pass
         sanitized_messages.append(msg)
 
     # Continue with compaction on sanitized list
-    messages = sanitized_messages
+    # --- Post-sanitization: ensure tool results still have matching tool uses ---
+    def _collect_prev_call_ids(msg_list: list[ModelMessage], index: int) -> set[str]:
+        if index <= 0:
+            return set()
+        return set(_iter_tool_call_ids(msg_list[index - 1]))
+
+    post_validated_messages: list[ModelMessage] = []
+    for idx, msg in enumerate(sanitized_messages):
+        prev_call_ids = _collect_prev_call_ids(sanitized_messages, idx)
+        try:
+            original_parts = (getattr(msg, 'parts', []) or [])
+            filtered_parts: list[Any] = []
+            for part in original_parts:
+                if isinstance(part, ToolReturnPart):
+                    rid = _get_tool_return_id(part)
+                    if rid is None:
+                        logger.warning(
+                            f"Dropping tool_result without tool_call_id at message {idx}"
+                        )
+                        continue
+                    if rid not in prev_call_ids:
+                        logger.warning(
+                            f"Dropping tool_result with id={rid} at message {idx} "
+                            "(no matching tool_use in previous message)"
+                        )
+                        continue
+                filtered_parts.append(part)
+
+            if not filtered_parts:
+                logger.warning(
+                    f"Skipping message {idx} - all parts removed during tool_result validation"
+                )
+                continue
+
+            if hasattr(msg, 'parts'):
+                try:
+                    msg.parts = filtered_parts
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Error validating tool results for message {idx}: {e}")
+        post_validated_messages.append(msg)
+
+    messages = post_validated_messages
 
     message_window = 100
 

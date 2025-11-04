@@ -65,39 +65,66 @@ export const ChatMessageSkeleton: FC<{ isUser?: boolean }> = ({ isUser = false }
  */
 export const ChatSkeleton: FC = () => {
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Header skeleton */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center gap-3">
-          <Skeleton width={20} height={20} rounded />
-          <Skeleton width={120} height={16} />
+    <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-[#0C1117]">
+      {/* Top tabs area */}
+      <div className="flex items-center gap-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#151C24] px-3 py-2">
+        <div className="flex items-center gap-2 overflow-hidden">
+          <Skeleton width={110} height={26} className="rounded-full" />
+          <Skeleton width={120} height={26} className="rounded-full opacity-80" />
+          <Skeleton width={18} height={18} rounded />
         </div>
-        <div className="flex items-center gap-2">
-          <Skeleton width={24} height={24} rounded />
-          <Skeleton width={24} height={24} rounded />
-          <Skeleton width={24} height={24} rounded />
+        <div className="ml-auto flex items-center gap-2">
+          <Skeleton width={22} height={22} rounded />
+          <Skeleton width={22} height={22} rounded />
+          <Skeleton width={22} height={22} rounded />
         </div>
       </div>
-      
-      {/* Messages area skeleton */}
-      <div className="flex-1 p-4 space-y-4 overflow-hidden">
-        {/* Assistant messages */}
-        <ChatMessageSkeleton isUser={false} />
-        <ChatMessageSkeleton isUser={false} />
-        
-        {/* User message */}
-        <ChatMessageSkeleton isUser={true} />
-        
-        {/* More assistant messages */}
-        <ChatMessageSkeleton isUser={false} />
-        <ChatMessageSkeleton isUser={false} />
+
+      {/* Message list */}
+      <div className="flex-1 overflow-hidden bg-white dark:bg-[#0C1117]">
+        <div className="h-full overflow-hidden px-4 py-3 space-y-6">
+          <div className="space-y-3">
+            <Skeleton width={110} height={10} className="ml-1 opacity-60" />
+            <ChatMessageSkeleton />
+            <ChatMessageSkeleton />
+          </div>
+
+          <div className="space-y-3">
+            <Skeleton width={120} height={10} className="opacity-60" />
+            <ChatMessageSkeleton isUser />
+          </div>
+
+          <div className="space-y-3">
+            <Skeleton width={94} height={5} className="ml-1 opacity-60" />
+            <ChatMessageSkeleton />
+            <ChatMessageSkeleton />
+          </div>
+
+          <div className="space-y-3">
+            <Skeleton width={94} height={5} className="ml-1 opacity-60" />
+            <ChatMessageSkeleton />
+            <ChatMessageSkeleton />
+          </div>
+
+        </div>
       </div>
-      
-      {/* Input area skeleton */}
-      <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-        <div className="flex items-center gap-3">
-          <Skeleton height={40} className="flex-1 rounded-full" />
-          <Skeleton width={40} height={40} rounded />
+
+      {/* Composer */}
+      <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0C1117]">
+        <div className="px-4 pt-3 pb-2">
+          <Skeleton height={90} className="rounded-2xl" />
+        </div>
+        <div className="px-4 pb-3 flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-1">
+            <Skeleton width={22} height={22} rounded />
+            <Skeleton width={22} height={22} rounded />
+            <Skeleton width={22} height={22} rounded />
+            <Skeleton width={22} height={22} rounded />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton width={70} height={28} className="rounded-full" />
+            <Skeleton width={32} height={32} rounded />
+          </div>
         </div>
       </div>
     </div>
@@ -111,7 +138,7 @@ export const ChatSkeleton: FC = () => {
  */
 export const SessionTabsSkeleton: FC = () => {
   return (
-    <div className="flex gap-2 p-2 border-t border-gray-200 dark:border-gray-700">
+    <div className="flex gap-2 p-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#151C24]">
       <Skeleton width={80} height={28} className="rounded-full" />
       <Skeleton width={100} height={28} className="rounded-full" />
       <Skeleton width={90} height={28} className="rounded-full" />
@@ -126,7 +153,7 @@ export const SessionTabsSkeleton: FC = () => {
  */
 export const StatusBarSkeleton: FC = () => {
   return (
-    <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-b border-gray-200 dark:border-gray-700">
+    <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#151C24]">
       <div className="flex items-center gap-4 flex-1">
         <Skeleton width={40} height={12} />
         <Skeleton width={120} height={12} />

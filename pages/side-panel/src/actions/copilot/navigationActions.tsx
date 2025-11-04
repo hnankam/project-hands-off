@@ -40,7 +40,7 @@ export const createOpenNewTabAction = ({ isLight, clipText }: Omit<NavigationAct
       required: false,
     },
   ],
-  render: ({ status, args }: any) => {
+  render: ({ status, args, result, error }: any) => {
     const url = clipText((args as any)?.url, 56);
     return (
       <ActionStatus
@@ -52,6 +52,9 @@ export const createOpenNewTabAction = ({ isLight, clipText }: Omit<NavigationAct
           inProgress: `Opening ${url} on a new tab`,
           complete: `Opened ${url} on new tab ${((args as any)?.active || true) ? 'and made active' : 'in background'}`
         }}
+        args={args}
+        result={result}
+        error={error}
       />
     );
   },
@@ -99,12 +102,15 @@ export const createScrollAction = ({ isLight, clipText, yesNo }: NavigationActio
       required: false,
     },
   ],
-  render: ({ status, args }: any) => (
+  render: ({ status, args, result, error }: any) => (
     <ActionStatus
       toolName={`Scroll ${clipText((args as any)?.cssSelector || 'page', 40)} ${String((args as any)?.direction || 'down')}${(args as any)?.amount ? ` by ${Number((args as any)?.amount)}px` : ''}${typeof (args as any)?.scrollTo === 'boolean' ? ` (to=${yesNo((args as any)?.scrollTo)})` : ''}`}
       status={status as any}
       isLight={isLight}
       messages={{ pending: 'Scrolling…', inProgress: 'Scrolling…', complete: 'Scroll complete' }}
+      args={args}
+      result={result}
+      error={error}
     />
   ),
   handler: async ({ 
@@ -165,12 +171,15 @@ export const createDragAndDropAction = ({ isLight, clipText }: Omit<NavigationAc
       required: false,
     },
   ],
-  render: ({ status, args }: any) => (
+  render: ({ status, args, result, error }: any) => (
     <ActionStatus
       toolName={`Drag ${clipText((args as any)?.sourceCssSelector, 32)} → ${clipText((args as any)?.targetCssSelector, 32)}`}
       status={status as any}
       isLight={isLight}
       messages={{ pending: 'Dragging and dropping…', inProgress: 'Dragging and dropping…', complete: 'Drag-and-drop complete' }}
+      args={args}
+      result={result}
+      error={error}
     />
   ),
   handler: async ({ 

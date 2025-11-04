@@ -38,17 +38,25 @@ async def get_db_connection():
     if _pool is None:
         await init_connection_pool()
     assert _pool is not None
-    async with _pool.connection() as conn:
-        # ensure rows are returned as dicts and apply sensible timeouts per session
-        conn.row_factory = dict_row
-        try:
-            async with conn.cursor() as cur:
-                # 10s statement timeout, 5min idle in transaction timeout
-                await cur.execute("SET statement_timeout TO 10000; SET idle_in_transaction_session_timeout TO 300000;")
-        except Exception:
-            # Ignore if SET fails (e.g., insufficient perms); continue
-            pass
-        yield conn
+    try:
+        async with _pool.connection() as conn:
+            # ensure rows are returned as dicts and apply sensible timeouts per session
+            conn.row_factory = dict_row
+            try:
+                async with conn.cursor() as cur:
+                    # 10s statement timeout, 5min idle in transaction timeout
+                    await cur.execute(
+                        "SET statement_timeout TO 10000; SET idle_in_transaction_session_timeout TO 300000;"
+                    )
+            except Exception:
+                # Ignore if SET fails (e.g., insufficient perms); continue
+                pass
+            yield conn
+    except psycopg.OperationalError as exc:
+        logger.warning("[DB] Connection error; resetting pool", exc_info=True)
+        await reset_connection_pool(force=True)
+        await init_connection_pool()
+        raise
 
 
 async def init_connection_pool(min_size: int = 1, max_size: int = 10) -> None:
@@ -68,6 +76,21 @@ async def init_connection_pool(min_size: int = 1, max_size: int = 10) -> None:
         )
         await _pool.open()
         logger.info("Initialized PostgreSQL async connection pool")
+
+
+async def reset_connection_pool(force: bool = False) -> None:
+    """Close and discard the current pool so the next call re-initializes it."""
+    global _pool
+    async with _pool_lock:
+        if _pool is None:
+            return
+        if not force and not _pool.closed:
+            # No need to reset a healthy pool unless forced
+            return
+        try:
+            await _pool.close()
+        finally:
+            _pool = None
 
 
 async def init_database(schema_file: Optional[str] = None):
@@ -120,7 +143,7 @@ async def drop_all_tables():
     
     drop_sql = """
     DROP TABLE IF EXISTS audit_logs CASCADE;
-    DROP TABLE IF EXISTS usage_logs CASCADE;
+    DROP TABLE IF EXISTS usage CASCADE;
     DROP TABLE IF EXISTS config_versions CASCADE;
     DROP TABLE IF EXISTS base_instructions CASCADE;
     DROP TABLE IF EXISTS agents CASCADE;

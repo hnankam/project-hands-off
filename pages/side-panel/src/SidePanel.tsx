@@ -45,6 +45,7 @@ const SidePanel = () => {
 
   // Simple in-panel navigation between Home, Sessions, and Admin
   const [activePage, setActivePage] = useState<'home' | 'sessions' | 'admin'>('sessions');
+  const [adminInitialTab, setAdminInitialTab] = useState<'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents'>('organizations');
   const [isPageRestored, setIsPageRestored] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutText, setAboutText] = useState('');
@@ -69,7 +70,8 @@ const SidePanel = () => {
     window.location.hash = '#/sessions';
   }, []);
 
-  const navigateToAdmin = useCallback(() => {
+  const navigateToAdmin = useCallback((tab: 'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents' = 'organizations') => {
+    setAdminInitialTab(tab);
     setActivePage('admin');
     window.location.hash = '#/admin';
   }, []);
@@ -296,12 +298,13 @@ const SidePanel = () => {
               onGoHome={navigateToHome}
               onClose={closeSidePanel}
               onOpenAbout={openAbout}
+              onGoAdmin={navigateToAdmin}
             />
           </div>
         )}
         {activePage === 'admin' && (
           <div key="admin" className="flex-1 flex flex-col overflow-hidden animate-fadeIn">
-            <AdminPage onGoHome={navigateToHome} />
+            <AdminPage onGoHome={navigateToHome} onGoToSessions={navigateToSessions} initialTab={adminInitialTab} />
           </div>
         )}
         {activePage === 'home' && (

@@ -1,10 +1,13 @@
 """Agent tool definitions and registration."""
 
+from __future__ import annotations
+
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.ag_ui import StateDeps
 from ag_ui.core import EventType, StateSnapshotEvent
 
 from core.models import AgentState, Step, StepStatus
+from tools.mcp_loader import load_mcp_toolsets
 
 
 def register_agent_tools(agent: Agent) -> None:
@@ -14,6 +17,10 @@ def register_agent_tools(agent: Agent) -> None:
         agent: The agent instance to register tools on
     """
     
+    # Load and register MCP server toolsets
+    for toolset in load_mcp_toolsets():
+        agent._user_toolsets.append(toolset)
+
     @agent.tool(sequential=True, retries=0)
     async def create_plan(ctx: RunContext[StateDeps[AgentState]], steps: list[str]) -> StateSnapshotEvent:
         """Create a plan with multiple steps.

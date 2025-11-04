@@ -51,7 +51,17 @@ export default function OrganizationSettings() {
       });
 
       if (result.data) {
-        setMembers(result.data as any);
+        const raw = result.data as any;
+        const list = Array.isArray(raw)
+          ? raw
+          : Array.isArray(raw?.members)
+          ? raw.members
+          : Array.isArray(raw?.items)
+          ? raw.items
+          : [];
+        setMembers(list as Member[]);
+      } else {
+        setMembers([]);
       }
     } catch (error) {
       console.error('Error loading members:', error);
@@ -71,14 +81,25 @@ export default function OrganizationSettings() {
       });
 
       if (result.data) {
-        setInvitations(result.data as any);
+        const raw = result.data as any;
+        const list = Array.isArray(raw)
+          ? raw
+          : Array.isArray(raw?.invitations)
+          ? raw.invitations
+          : Array.isArray(raw?.items)
+          ? raw.items
+          : [];
+        setInvitations(list as Invitation[]);
+      } else {
+        setInvitations([]);
       }
     } catch (error) {
       console.error('Error loading invitations:', error);
     }
   };
 
-  const isAdmin = member?.role?.includes('admin') || member?.role?.includes('owner');
+  const memberRoles = Array.isArray(member?.role) ? member.role : member?.role ? [member.role] : [];
+  const isAdmin = memberRoles.includes('admin') || memberRoles.includes('owner');
 
   if (!organization) {
     return (
@@ -139,26 +160,29 @@ export default function OrganizationSettings() {
             </div>
           ) : (
             <div className="space-y-2">
-              {members.map((m) => (
-                <div
-                  key={m.id}
-                  className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg flex items-center justify-between"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {m.email}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {m.role.join(', ')}
-                    </p>
+              {members.map((m) => {
+                const roles = Array.isArray(m.role) ? m.role : [m.role].filter(Boolean);
+                return (
+                  <div
+                    key={m.id}
+                    className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {m.email}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {roles.join(', ')}
+                      </p>
+                    </div>
+                    {isAdmin && !roles.includes('owner') && (
+                      <button className="text-xs text-red-600 hover:text-red-700 dark:text-red-400">
+                        Remove
+                      </button>
+                    )}
                   </div>
-                  {isAdmin && !m.role.includes('owner') && (
-                    <button className="text-xs text-red-600 hover:text-red-700 dark:text-red-400">
-                      Remove
-                    </button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -169,26 +193,29 @@ export default function OrganizationSettings() {
               No pending invitations
             </p>
           ) : (
-            invitations.map((inv) => (
-              <div
-                key={inv.id}
-                className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg flex items-center justify-between"
-              >
-                <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {inv.email}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {inv.status} • {inv.role.join(', ')}
-                  </p>
+            invitations.map((inv) => {
+              const roles = Array.isArray(inv.role) ? inv.role : [inv.role].filter(Boolean);
+              return (
+                <div
+                  key={inv.id}
+                  className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg flex items-center justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      {inv.email}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {inv.status} • {roles.join(', ')}
+                    </p>
+                  </div>
+                  {isAdmin && inv.status === 'pending' && (
+                    <button className="text-xs text-red-600 hover:text-red-700 dark:text-red-400">
+                      Cancel
+                    </button>
+                  )}
                 </div>
-                {isAdmin && inv.status === 'pending' && (
-                  <button className="text-xs text-red-600 hover:text-red-700 dark:text-red-400">
-                    Cancel
-                  </button>
-                )}
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
@@ -215,7 +242,7 @@ interface InviteMemberModalProps {
 
 function InviteMemberModal({ organizationId, onClose, onSuccess }: InviteMemberModalProps) {
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<string[]>(['member']);
+  const [role, setRole] = useState<Array<'member' | 'admin' | 'owner'>>(['member']);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -277,7 +304,7 @@ function InviteMemberModal({ organizationId, onClose, onSuccess }: InviteMemberM
             </label>
             <select
               value={role[0]}
-              onChange={(e) => setRole([e.target.value])}
+            onChange={(e) => setRole([e.target.value as 'member' | 'admin' | 'owner'])}
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
             >
               <option value="member">Member</option>

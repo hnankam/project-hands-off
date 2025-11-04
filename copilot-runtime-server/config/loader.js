@@ -3,150 +3,166 @@
  * Loads configuration from PostgreSQL database
  */
 
-// Cache for loaded configurations
-let _providersConfig = null;
-let _modelsConfig = null;
-let _agentsConfig = null;
+// Cache for loaded configurations, keyed by organization/team context
+const _providersConfigCache = new Map();
+const _modelsConfigCache = new Map();
+const _agentsConfigCache = new Map();
+
+function makeCacheKey({ organizationId = null, teamId = null } = {}) {
+  const org = organizationId ?? 'global';
+  const team = teamId ?? 'global';
+  return `${org}:${team}`;
+}
 
 /**
  * Load providers configuration from database
  */
-export async function loadProvidersConfig() {
-  if (_providersConfig) {
-    return _providersConfig;
+export async function loadProvidersConfig(options = {}) {
+  const cacheKey = makeCacheKey({ organizationId: null, teamId: null, ...options });
+  if (_providersConfigCache.has(cacheKey)) {
+    return _providersConfigCache.get(cacheKey);
   }
 
   const { getModelsConfigFromDb } = await import('./db-loaders.js');
-  const dbConfig = await getModelsConfigFromDb();
-  _providersConfig = { providers: dbConfig.providers };
-  console.log('[Config] Loaded providers configuration from database');
+  const dbConfig = await getModelsConfigFromDb(options);
+  const config = { providers: dbConfig.providers };
+  _providersConfigCache.set(cacheKey, config);
+  console.log('[Config] Loaded providers configuration from database for context', cacheKey);
   
-  return _providersConfig;
+  return config;
 }
 
 /**
  * Load models configuration from database
  */
-export async function loadModelsConfig() {
-  if (_modelsConfig) {
-    return _modelsConfig;
+export async function loadModelsConfig(options = {}) {
+  const cacheKey = makeCacheKey(options);
+  if (_modelsConfigCache.has(cacheKey)) {
+    return _modelsConfigCache.get(cacheKey);
   }
 
   const { getModelsConfigFromDb } = await import('./db-loaders.js');
-  const dbConfig = await getModelsConfigFromDb();
-  _modelsConfig = {
+  const dbConfig = await getModelsConfigFromDb(options);
+  const config = {
     models: dbConfig.models,
     default_agent: dbConfig.default_agent,
     default_model: dbConfig.default_model
   };
-  console.log('[Config] Loaded models configuration from database');
+  _modelsConfigCache.set(cacheKey, config);
+  console.log('[Config] Loaded models configuration from database for context', cacheKey);
   
-  return _modelsConfig;
+  return config;
 }
 
 /**
  * Load agents configuration from database
  */
-export async function loadAgentsConfig() {
-  if (_agentsConfig) {
-    return _agentsConfig;
+export async function loadAgentsConfig(options = {}) {
+  const cacheKey = makeCacheKey(options);
+  if (_agentsConfigCache.has(cacheKey)) {
+    return _agentsConfigCache.get(cacheKey);
   }
 
   const { getAgentsConfigFromDb } = await import('./db-loaders.js');
-  const dbConfig = await getAgentsConfigFromDb();
-  _agentsConfig = dbConfig;
-  console.log('[Config] Loaded agents configuration from database');
+  const dbConfig = await getAgentsConfigFromDb(options);
+  _agentsConfigCache.set(cacheKey, dbConfig);
+  console.log('[Config] Loaded agents configuration from database for context', cacheKey);
   
-  return _agentsConfig;
+  return dbConfig;
 }
 
 /**
  * Get provider configuration by key
  */
-export async function getProviderConfig(providerKey) {
-  const config = await loadProvidersConfig();
+export async function getProviderConfig(providerKey, options = {}) {
+  const config = await loadProvidersConfig(options);
   return config.providers[providerKey];
 }
 
 /**
  * Get model configuration by key
  */
-export async function getModelConfig(modelKey) {
-  const config = await loadModelsConfig();
+export async function getModelConfig(modelKey, options = {}) {
+  const config = await loadModelsConfig(options);
   return config.models.find(m => m.key === modelKey);
 }
 
 /**
  * Get all models for a specific provider
  */
-export async function getModelsByProvider(providerType) {
-  const config = await loadModelsConfig();
+export async function getModelsByProvider(providerType, options = {}) {
+  const config = await loadModelsConfig(options);
   return config.models.filter(m => m.provider === providerType && m.enabled);
 }
 
 /**
  * Get agent configuration by type
  */
-export async function getAgentConfig(agentType) {
-  const config = await loadAgentsConfig();
+export async function getAgentConfig(agentType, options = {}) {
+  const config = await loadAgentsConfig(options);
   return config.agents.find(a => a.type === agentType);
 }
 
 /**
  * Get all enabled agents
  */
-export async function getEnabledAgents() {
-  const config = await loadAgentsConfig();
+export async function getEnabledAgents(options = {}) {
+  const config = await loadAgentsConfig(options);
   return config.agents.filter(a => a.enabled);
 }
 
 /**
  * Get default agent type
  */
-export async function getDefaultAgent() {
-  const config = await loadModelsConfig();
+export async function getDefaultAgent(options = {}) {
+  const config = await loadModelsConfig(options);
   return config.default_agent;
 }
 
 /**
  * Get default model key
  */
-export async function getDefaultModel() {
-  const config = await loadModelsConfig();
+export async function getDefaultModel(options = {}) {
+  const config = await loadModelsConfig(options);
   return config.default_model;
 }
 
 /**
  * Get model endpoint mapping
  */
-export async function getModelEndpoint(modelKey) {
-  const model = await getModelConfig(modelKey);
+export async function getModelEndpoint(modelKey, options = {}) {
+  const model = await getModelConfig(modelKey, options);
   if (!model) {
-    return await getDefaultModel();
+    return await getDefaultModel(options);
   }
-  return model.endpoint;
+  // Endpoint path was historically stored separately; fall back to model key
+  if (model.model_settings?.endpoint) {
+    return model.model_settings.endpoint;
+  }
+  return model.key;
 }
 
 /**
  * Get forced model (for cost optimization)
  */
-export async function getForcedModel(modelKey) {
-  const model = await getModelConfig(modelKey);
+export async function getForcedModel(modelKey, options = {}) {
+  const model = await getModelConfig(modelKey, options);
   if (!model) {
     return modelKey;
   }
-  return model.forced_model || modelKey;
+  // Forced model overrides were previously stored separately; fall back to original key
+  return model.model_settings?.forced_model || modelKey;
 }
 
 /**
  * Get Bedrock model ID for Claude models
  */
-export async function getBedrockModelId(modelKey) {
-  const model = await getModelConfig(modelKey);
+export async function getBedrockModelId(modelKey, options = {}) {
+  const model = await getModelConfig(modelKey, options);
   if (!model) {
     return null;
   }
-  return model.bedrock_model_id || model.model_id;
+  return model.model_settings?.bedrock_model_id || model.model_id;
 }
 
 /**
@@ -173,8 +189,8 @@ export function isGPTModel(modelKey) {
 /**
  * Get provider type for a model
  */
-export function getProviderTypeForModel(modelKey) {
-  const model = getModelConfig(modelKey);
+export async function getProviderTypeForModel(modelKey, options = {}) {
+  const model = await getModelConfig(modelKey, options);
   if (!model) {
     return 'azure_openai'; // default fallback
   }
@@ -185,9 +201,9 @@ export function getProviderTypeForModel(modelKey) {
  * Invalidate cache (force reload on next access)
  */
 export function invalidateCache() {
-  _providersConfig = null;
-  _modelsConfig = null;
-  _agentsConfig = null;
+  _providersConfigCache.clear();
+  _modelsConfigCache.clear();
+  _agentsConfigCache.clear();
 }
 
 // ============================================================================

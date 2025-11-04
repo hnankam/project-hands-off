@@ -8,6 +8,7 @@ from pydantic_ai.ag_ui import StateDeps
 
 from config import logger
 from core.models import AgentState
+from utils.context import context_tuple
 
 # Session-based state management
 # Structure: session_states[session_id][agent_type:model] = StateDeps
@@ -23,9 +24,11 @@ MAX_STATES_PER_SESSION = int(os.getenv("MAX_STATES_PER_SESSION", "20"))
 
 
 def get_or_create_session_state(
-    session_id: str, 
-    agent_type: str, 
-    model: str
+    session_id: str,
+    agent_type: str,
+    model: str,
+    organization_id: str | None,
+    team_id: str | None,
 ) -> StateDeps[AgentState]:
     """Get or create state for a specific session and agent/model combo.
     
@@ -37,7 +40,8 @@ def get_or_create_session_state(
     Returns:
         StateDeps instance for this session
     """
-    key = f"{agent_type}:{model}"
+    org_token, team_token = context_tuple(organization_id, team_id)
+    key = f"{org_token}:{team_token}:{agent_type}:{model}"
 
     # TTL cleanup for the session
     _cleanup_expired_sessions()
@@ -53,10 +57,24 @@ def get_or_create_session_state(
             logger.info(f"Evicted least-recently used state session={session_id} key={lru_key}")
 
     if key not in session_states[session_id]:
-        logger.debug(f"Creating new state session={session_id} agent={agent_type} model={model}")
+        logger.debug(
+            "Creating new state session=%s agent=%s model=%s org=%s team=%s",
+            session_id,
+            agent_type,
+            model,
+            organization_id,
+            team_id,
+        )
         session_states[session_id][key] = StateDeps(AgentState())
     else:
-        logger.debug(f"Reusing state session={session_id} agent={agent_type} model={model}")
+        logger.debug(
+            "Reusing state session=%s agent=%s model=%s org=%s team=%s",
+            session_id,
+            agent_type,
+            model,
+            organization_id,
+            team_id,
+        )
 
     now = time.time()
     _session_last_access[session_id] = now

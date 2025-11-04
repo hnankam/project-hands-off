@@ -21,43 +21,70 @@ export function invalidateCache() {
 /**
  * Load providers configuration from database
  */
-export async function loadProvidersFromDb() {
-  const providers = {};
-  
-  const result = await query(`
+export async function loadProvidersFromDb({ organizationId = null, teamId = null } = {}) {
+  const providerMap = new Map();
+
+  const useScopedFilter = organizationId !== null || teamId !== null;
+
+  const params = [];
+  let whereClause = '';
+  if (useScopedFilter) {
+    whereClause = 'WHERE (organization_id IS NULL OR organization_id = $1) AND (team_id IS NULL OR team_id = $2)';
+    params.push(organizationId, teamId);
+  }
+
+  const result = await query(
+    `
     SELECT 
       provider_key,
       provider_type,
       credentials,
       model_settings,
       bedrock_model_settings,
-      enabled
+      organization_id,
+      team_id,
+      enabled,
+      updated_at,
+      created_at
     FROM providers
-    WHERE enabled = true
-    ORDER BY provider_key
-  `);
-  
+    ${whereClause}
+    ORDER BY enabled DESC, provider_key
+    `,
+    params,
+  );
+
   for (const row of result.rows) {
+    const specificity = (row.team_id ? 2 : row.organization_id ? 1 : 0);
+    const existing = providerMap.get(row.provider_key);
+    if (!existing || specificity > existing.specificity) {
+      providerMap.set(row.provider_key, {
+        specificity,
+        data: row,
+      });
+    }
+  }
+
+  const providers = {};
+  for (const { data: row } of providerMap.values()) {
     providers[row.provider_key] = {
       type: row.provider_type,
-      name: row.provider_key, // Can be enhanced with a display_name column
+      name: row.provider_key,
       enabled: row.enabled,
       credentials: row.credentials || {},
-      default_settings: row.model_settings || { prompt_caching: { enabled: true, debug: false } }
+      default_settings: row.model_settings || { prompt_caching: { enabled: true, debug: false } },
+      organization_id: row.organization_id,
+      team_id: row.team_id,
+      bedrock_model_settings: row.bedrock_model_settings || null,
+      updated_at: row.updated_at,
+      created_at: row.created_at,
     };
-    
-    // Add Azure-specific config if available
+
     if (row.provider_type === 'azure_openai' && row.model_settings?.azure_config) {
       providers[row.provider_key].azure_config = row.model_settings.azure_config;
     }
-    
-    // Add bedrock settings if present
-    if (row.bedrock_model_settings) {
-      providers[row.provider_key].bedrock_model_settings = row.bedrock_model_settings;
-    }
   }
-  
-  console.log(`[DB] Loaded ${result.rows.length} providers from database`);
+
+  console.log(`[DB] Loaded ${providerMap.size} providers from database (context org=${organizationId} team=${teamId})`);
   return providers;
 }
 
@@ -74,17 +101,16 @@ export async function loadModelsFromDb() {
       m.display_name,
       m.description,
       m.model_settings_override,
-      m.endpoint,
-      m.forced_model,
-      m.bedrock_model_id,
-      m.deployment_name,
+      m.organization_id,
+      m.team_id,
       m.enabled,
+      m.updated_at,
+      m.created_at,
       p.provider_key,
       p.provider_type
     FROM models m
     JOIN providers p ON m.provider_id = p.id
-    WHERE m.enabled = true
-    ORDER BY m.model_key
+    ORDER BY m.enabled DESC, m.model_key
   `);
   
   for (const row of result.rows) {
@@ -93,25 +119,14 @@ export async function loadModelsFromDb() {
       name: row.display_name || row.model_name,
       provider: row.provider_key,
       model_id: row.model_name, // The actual model ID (e.g., gemini-2.5-flash-lite)
-      endpoint: row.endpoint || row.model_key,
       enabled: row.enabled,
-      description: row.description || ''
+      description: row.description || '',
+      organization_id: row.organization_id,
+      team_id: row.team_id,
+      updated_at: row.updated_at,
+      created_at: row.created_at
     };
-    
-    // Add runtime-specific fields
-    if (row.forced_model) {
-      modelConfig.forced_model = row.forced_model;
-    }
-    
-    if (row.bedrock_model_id) {
-      modelConfig.bedrock_model_id = row.bedrock_model_id;
-    }
-    
-    if (row.deployment_name) {
-      modelConfig.deployment_name = row.deployment_name;
-    }
-    
-    // Add model settings override if present
+
     if (row.model_settings_override) {
       modelConfig.model_settings = row.model_settings_override;
     }
@@ -136,10 +151,11 @@ export async function loadAgentsFromDb() {
       description,
       prompt_template,
       endpoint_pattern,
+      organization_id,
+      team_id,
       enabled
     FROM agents
-    WHERE enabled = true
-    ORDER BY agent_type
+    ORDER BY enabled DESC, agent_type
   `);
   
   for (const row of result.rows) {
@@ -149,6 +165,8 @@ export async function loadAgentsFromDb() {
       description: row.description || '',
       prompt: row.prompt_template, // For compatibility
       endpoint_pattern: row.endpoint_pattern || '/agent/{agent_type}/{model}',
+      organization_id: row.organization_id,
+      team_id: row.team_id,
       enabled: row.enabled
     });
   }
@@ -181,29 +199,86 @@ export async function loadDefaultsFromDb() {
 /**
  * Get complete models configuration from database (cached)
  */
-export async function getModelsConfigFromDb() {
-  const cacheKey = 'models_config';
-  
+export async function getModelsConfigFromDb({ organizationId = null, teamId = null } = {}) {
+  const cacheKey = `models_config:${organizationId ?? 'global'}:${teamId ?? 'global'}`;
+
   if (_cacheValid && _dbCache[cacheKey]) {
-    console.log('[DB] Returning cached models configuration');
+    console.log(`[DB] Returning cached models for org=${organizationId} team=${teamId}`);
     return _dbCache[cacheKey];
   }
-  
+
   try {
-    const providers = await loadProvidersFromDb();
-    const models = await loadModelsFromDb();
+  const params = [];
+  let whereClause = '';
+  if (teamId !== null && organizationId !== null) {
+    whereClause = 'WHERE m.organization_id = $1 AND m.team_id = $2';
+    params.push(organizationId, teamId);
+  } else if (organizationId !== null) {
+    whereClause = 'WHERE m.organization_id = $1 AND m.team_id IS NULL';
+    params.push(organizationId);
+  }
+
+    const { rows: modelRows } = await query(
+      `
+      SELECT 
+        m.model_key,
+        m.model_name,
+        m.display_name,
+        m.description,
+        m.model_settings_override,
+        m.organization_id,
+        m.team_id,
+        m.enabled,
+        m.updated_at,
+        m.created_at,
+        p.provider_key,
+        p.provider_type
+      FROM models m
+      JOIN providers p ON m.provider_id = p.id
+      ${whereClause}
+      ORDER BY m.enabled DESC, m.model_key
+      `,
+      params,
+    );
+
+    // promote the order to pick the most specific scope
+    const scopedModels = new Map();
+    for (const row of modelRows) {
+      const key = row.model_key;
+      const specificity = (row.team_id ? 2 : row.organization_id ? 1 : 0);
+      const existing = scopedModels.get(key);
+      if (!existing || specificity > existing.specificity) {
+        scopedModels.set(key, { row, specificity });
+      }
+    }
+
+    const models = Array.from(scopedModels.values()).map(({ row }) => ({
+      key: row.model_key,
+      name: row.display_name || row.model_name,
+      provider: row.provider_key,
+      model_id: row.model_name,
+      enabled: row.enabled,
+      description: row.description || '',
+      organization_id: row.organization_id,
+      team_id: row.team_id,
+      model_settings: row.model_settings_override || null,
+      updated_at: row.updated_at,
+      created_at: row.created_at
+    }));
+
+    const providers = await loadProvidersFromDb({ organizationId, teamId });
     const defaults = await loadDefaultsFromDb();
-    
+
     const config = {
       providers,
       models,
       default_agent: defaults.default_agent,
       default_model: defaults.default_model
     };
-    
+
     _dbCache[cacheKey] = config;
     _cacheValid = true;
-    
+
     return config;
   } catch (error) {
     console.error('[DB] Error loading models configuration:', error.message);
@@ -214,24 +289,74 @@ export async function getModelsConfigFromDb() {
 /**
  * Get complete agents configuration from database (cached)
  */
-export async function getAgentsConfigFromDb() {
-  const cacheKey = 'agents_config';
-  
+export async function getAgentsConfigFromDb({ organizationId = null, teamId = null } = {}) {
+  const cacheKey = `agents_config:${organizationId ?? 'global'}:${teamId ?? 'global'}`;
+
   if (_cacheValid && _dbCache[cacheKey]) {
-    console.log('[DB] Returning cached agents configuration');
+    console.log(`[DB] Returning cached agents for org=${organizationId} team=${teamId}`);
     return _dbCache[cacheKey];
   }
-  
+
   try {
-    const agents = await loadAgentsFromDb();
-    
+  const params = [];
+  let whereClause = '';
+  if (teamId !== null && organizationId !== null) {
+    whereClause = 'WHERE organization_id = $1 AND team_id = $2';
+    params.push(organizationId, teamId);
+  } else if (organizationId !== null) {
+    whereClause = 'WHERE organization_id = $1 AND team_id IS NULL';
+    params.push(organizationId);
+  }
+
+    const { rows: agentRows } = await query(
+      `
+      SELECT 
+        agent_type,
+        agent_name,
+        description,
+        prompt_template,
+        organization_id,
+        team_id,
+        enabled,
+        updated_at,
+        created_at
+      FROM agents
+      ${whereClause}
+      ORDER BY enabled DESC, agent_type
+      `,
+      params,
+    );
+
+    const scopedAgents = new Map();
+    for (const row of agentRows) {
+      const key = row.agent_type;
+      const specificity = (row.team_id ? 2 : row.organization_id ? 1 : 0);
+      const existing = scopedAgents.get(key);
+      if (!existing || specificity > existing.specificity) {
+        scopedAgents.set(key, { row, specificity });
+      }
+    }
+
+    const agents = Array.from(scopedAgents.values()).map(({ row }) => ({
+      type: row.agent_type,
+      name: row.agent_name,
+      description: row.description || '',
+      prompt: row.prompt_template,
+      endpoint_pattern: '/agent/{agent_type}/{model}',
+      organization_id: row.organization_id,
+      team_id: row.team_id,
+      enabled: row.enabled,
+      updated_at: row.updated_at,
+      created_at: row.created_at
+    }));
+
     const config = {
       agents
     };
-    
+
     _dbCache[cacheKey] = config;
     _cacheValid = true;
-    
+
     return config;
   } catch (error) {
     console.error('[DB] Error loading agents configuration:', error.message);

@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS providers (
     provider_key VARCHAR(100) NOT NULL UNIQUE,
     provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('google', 'anthropic', 'anthropic_bedrock', 'openai', 'azure_openai')),
     credentials JSONB NOT NULL, -- Encrypted credentials
+    organization_id TEXT REFERENCES organization(id) ON DELETE SET NULL,
+    team_id TEXT REFERENCES team(id) ON DELETE SET NULL,
     model_settings JSONB DEFAULT '{}'::jsonb,
     bedrock_model_settings JSONB,
     enabled BOOLEAN DEFAULT true,
@@ -24,6 +26,8 @@ CREATE TABLE IF NOT EXISTS providers (
 
 CREATE INDEX idx_providers_type ON providers(provider_type);
 CREATE INDEX idx_providers_enabled ON providers(enabled);
+CREATE INDEX idx_providers_org ON providers(organization_id);
+CREATE INDEX idx_providers_team ON providers(team_id);
 
 -- ============================================================================
 -- MODELS
@@ -37,6 +41,8 @@ CREATE TABLE IF NOT EXISTS models (
     display_name VARCHAR(255),
     description TEXT,
     model_settings_override JSONB,
+    organization_id TEXT REFERENCES organization(id) ON DELETE SET NULL,
+    team_id TEXT REFERENCES team(id) ON DELETE SET NULL,
     enabled BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -46,6 +52,8 @@ CREATE TABLE IF NOT EXISTS models (
 CREATE INDEX idx_models_provider ON models(provider_id);
 CREATE INDEX idx_models_enabled ON models(enabled);
 CREATE INDEX idx_models_key ON models(model_key);
+CREATE INDEX idx_models_org ON models(organization_id);
+CREATE INDEX idx_models_team ON models(team_id);
 
 -- ============================================================================
 -- AGENTS
@@ -57,6 +65,8 @@ CREATE TABLE IF NOT EXISTS agents (
     agent_name VARCHAR(255) NOT NULL,
     description TEXT,
     prompt_template TEXT NOT NULL,
+    organization_id TEXT REFERENCES organization(id) ON DELETE SET NULL,
+    team_id TEXT REFERENCES team(id) ON DELETE SET NULL,
     enabled BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -65,6 +75,8 @@ CREATE TABLE IF NOT EXISTS agents (
 
 CREATE INDEX idx_agents_type ON agents(agent_type);
 CREATE INDEX idx_agents_enabled ON agents(enabled);
+CREATE INDEX idx_agents_org ON agents(organization_id);
+CREATE INDEX idx_agents_team ON agents(team_id);
 
 -- ============================================================================
 -- BASE INSTRUCTIONS (Reusable prompt components)
@@ -75,6 +87,8 @@ CREATE TABLE IF NOT EXISTS base_instructions (
     instruction_key VARCHAR(100) NOT NULL UNIQUE,
     instruction_value TEXT NOT NULL,
     description TEXT,
+    organization_id TEXT REFERENCES organization(id) ON DELETE SET NULL,
+    team_id TEXT REFERENCES team(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -103,14 +117,17 @@ CREATE INDEX idx_config_versions_config_id ON config_versions(config_id);
 -- USAGE TRACKING
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS usage_logs (
+CREATE TABLE IF NOT EXISTS usage (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    agent_type VARCHAR(100),
-    model_key VARCHAR(100),
+    agent_id UUID REFERENCES agents(id) ON DELETE SET NULL,
+    model_id UUID REFERENCES models(id) ON DELETE SET NULL,
     session_id VARCHAR(255),
+    user_id TEXT REFERENCES "user"(id) ON DELETE SET NULL,
+    organization_id TEXT REFERENCES organization(id) ON DELETE SET NULL,
+    team_id TEXT REFERENCES team(id) ON DELETE SET NULL,
     request_tokens INTEGER,
     response_tokens INTEGER,
-    total_tokens INTEGER,
+    usage_details JSONB,
     cost DECIMAL(10, 6),
     duration_ms INTEGER,
     status VARCHAR(50),
@@ -119,9 +136,15 @@ CREATE TABLE IF NOT EXISTS usage_logs (
     metadata JSONB DEFAULT '{}'::jsonb
 );
 
-CREATE INDEX idx_usage_logs_created_at ON usage_logs(created_at);
-CREATE INDEX idx_usage_logs_agent_model ON usage_logs(agent_type, model_key);
-CREATE INDEX idx_usage_logs_session ON usage_logs(session_id);
+CREATE INDEX idx_usage_created_at ON usage(created_at);
+CREATE INDEX idx_usage_agent_model ON usage(agent_id, model_id);
+CREATE INDEX idx_usage_agent_id ON usage(agent_id);
+CREATE INDEX idx_usage_model_id ON usage(model_id);
+CREATE INDEX idx_usage_session ON usage(session_id);
+CREATE INDEX idx_usage_user ON usage(user_id);
+CREATE INDEX idx_usage_user_id ON usage(user_id);
+CREATE INDEX idx_usage_org ON usage(organization_id);
+CREATE INDEX idx_usage_team ON usage(team_id);
 
 -- ============================================================================
 -- AUDIT LOG
@@ -176,6 +199,6 @@ COMMENT ON TABLE models IS 'AI models available in the system';
 COMMENT ON TABLE agents IS 'Agent types and prompts';
 COMMENT ON TABLE base_instructions IS 'Reusable prompt components';
 COMMENT ON TABLE config_versions IS 'Version history for configurations';
-COMMENT ON TABLE usage_logs IS 'Track API usage and costs';
+COMMENT ON TABLE usage IS 'Track API usage and costs';
 COMMENT ON TABLE audit_logs IS 'Audit trail for all configuration changes';
 

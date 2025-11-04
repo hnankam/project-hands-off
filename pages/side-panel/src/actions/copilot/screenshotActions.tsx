@@ -46,7 +46,7 @@ export const createTakeScreenshotAction = ({ isLight }: ScreenshotActionDependen
       required: false,
     },
   ],
-  render: ({ status, args, result }: any) => {
+  render: ({ status, args, result, error }: any) => {
     const isFullPage = (args as any)?.captureFullPage;
     const format = (args as any)?.format || 'jpeg';
     const quality = (args as any)?.quality || 20;
@@ -107,6 +107,9 @@ export const createTakeScreenshotAction = ({ isLight }: ScreenshotActionDependen
           inProgress: `Capturing ${captureType} screenshot (${details})`,
           complete: completeMessage
         }}
+        args={args}
+        result={result}
+        error={error}
       />
     );
   },

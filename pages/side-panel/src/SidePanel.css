@@ -277,7 +277,7 @@ input:focus {
   flex: 1 1 0 !important; /* Grow to fill, shrink if needed, base 0 */
   min-height: 0 !important; /* Critical: allows flex child to shrink below content size */
   overflow-y: auto !important;
-  overflow-x: hidden;
+  overflow-x: hidden !important; /* Prevent global horizontal scrollbar */
   order: 0 !important; /* Ensure messages appear first */
 }
 
@@ -476,11 +476,12 @@ footer div[class*="suggestions"] button {
 
 /* ==========================================================
    CHAT AREA SCROLLBARS
-   Subtle, theme-aware
+   Subtle, theme-aware, thin horizontal and vertical scrollbars
    ========================================================== */
-/* Ensure scrollbar is visible */
+/* Vertical and horizontal scrollbars */
 .copilot-chat-container .overflow-y-auto::-webkit-scrollbar {
   width: 6px;
+  height: 6px; /* Thin horizontal scrollbar (only shows when needed) */
 }
 
 .copilot-chat-container .overflow-y-auto::-webkit-scrollbar-track {
@@ -502,6 +503,60 @@ footer div[class*="suggestions"] button {
 }
 
 .dark .copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5);
+}
+
+/* Scrollbar corner (where horizontal and vertical meet) */
+.copilot-chat-container .overflow-y-auto::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Individual message containers - allow horizontal scroll when content overflows */
+.copilot-chat-container .copilotKitMessage,
+.copilot-chat-container .copilotKitAssistantMessage,
+.copilot-chat-container .copilotKitUserMessage,
+.copilot-chat-container .copilotKitToolMessage,
+.copilot-chat-container [class*="copilotKitMessageBody"],
+.copilot-chat-container [class*="copilotKitToolCall"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+/* Match thin scrollbar styling for message-level horizontal scrollbars */
+.copilot-chat-container .copilotKitMessage::-webkit-scrollbar,
+.copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar,
+.copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar,
+.copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar {
+  height: 3px;
+}
+
+.copilot-chat-container .copilotKitMessage::-webkit-scrollbar-thumb,
+.copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb,
+.copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb,
+.copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 3px;
+}
+
+.copilot-chat-container .copilotKitMessage::-webkit-scrollbar-thumb:hover,
+.copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb:hover,
+.copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb:hover,
+.copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+.dark .copilot-chat-container .copilotKitMessage::-webkit-scrollbar-thumb,
+.dark .copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb,
+.dark .copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb,
+.dark .copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3);
+}
+
+.dark .copilot-chat-container .copilotKitMessage::-webkit-scrollbar-thumb:hover,
+.dark .copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb:hover,
+.dark .copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb:hover,
+.dark .copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb:hover {
   background: rgba(75, 85, 99, 0.5);
 }
 
@@ -1108,4 +1163,34 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 
 .animate-fadeIn {
   animation: fadeIn 0.2s ease-in-out;
+}
+
+/* ==========================================================
+   CHAT INPUT DISABLED STATE
+   Disable input when agent or model not selected
+   ========================================================== */
+/* Disable the chat input when agent or model is not selected */
+.chat-input-disabled .copilotKitInput,
+.chat-input-disabled .copilotKitInput textarea,
+.chat-input-disabled .copilotKitInputControls,
+.chat-input-disabled .copilotKitInputControlButton {
+  pointer-events: none !important;
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+.chat-input-disabled .copilotKitInput textarea {
+  background-color: rgba(0, 0, 0, 0.02) !important;
+}
+
+.dark .chat-input-disabled .copilotKitInput textarea {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+}
+
+.chat-input-disabled .copilotKitMessagesFooter,
+.chat-input-disabled .copilotKitMessagesFooter button,
+.chat-input-disabled footer.copilotKitMessagesFooter,
+.chat-input-disabled footer.copilotKitMessagesFooter button {
+  pointer-events: none !important;
+  opacity: 0.5 !important;
 }

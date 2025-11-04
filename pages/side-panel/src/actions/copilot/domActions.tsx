@@ -44,12 +44,15 @@ export const createMoveCursorToElementAction = ({ isLight, clipText }: Omit<DOMA
       required: true,
     },
   ],
-  render: ({ status, args }: any) => (
+  render: ({ status, args, result, error }: any) => (
     <ActionStatus
       toolName={`Move cursor to ${clipText((args as any)?.cssSelector, 60)}`}
       status={status as any}
       isLight={isLight}
       messages={{ pending: 'Moving cursor…', inProgress: 'Moving cursor…', complete: 'Cursor moved' }}
+      args={args}
+      result={result}
+      error={error}
     />
   ),
   handler: async ({ cssSelector }: { cssSelector: string }) => {
@@ -68,12 +71,15 @@ export const createRefreshPageContentAction = ({ isLight, pageDataRef, triggerMa
   name: 'refreshPageContent',
   description: 'Refresh current page HTML (for latest content/embeddings).',
   parameters: [],
-  render: ({ status }: any) => (
+  render: ({ status, args, result, error }: any) => (
     <ActionStatus
       toolName="Refresh page content"
       status={status as any}
       isLight={isLight}
       messages={{ pending: 'Refreshing page content…', inProgress: 'Refreshing page content…', complete: 'Page refreshed' }}
+      args={args}
+      result={result}
+      error={error}
     />
   ),
   handler: async () => {
@@ -93,12 +99,15 @@ export const createCleanupExtensionUIAction = ({ isLight }: Omit<DOMActionDepend
   name: 'cleanupExtensionUI',
   description: 'Remove all extension UI elements and styles from the page.',
   parameters: [],
-  render: ({ status }: any) => (
+  render: ({ status, args, result, error }: any) => (
     <ActionStatus
       toolName="Clean up UI"
       status={status as any}
       isLight={isLight}
       messages={{ pending: 'Cleaning up UI…', inProgress: 'Cleaning up UI…', complete: 'UI cleaned' }}
+      args={args}
+      result={result}
+      error={error}
     />
   ),
   handler: async () => {
@@ -131,12 +140,15 @@ export const createClickElementAction = ({ isLight, clipText }: Omit<DOMActionDe
       required: false,
     },
   ],
-  render: ({ status, args }: any) => (
+  render: ({ status, args, result, error }: any) => (
     <ActionStatus
       toolName={`Click ${clipText((args as any)?.cssSelector, 60)}`}
       status={status as any}
       isLight={isLight}
       messages={{ pending: 'Clicking…', inProgress: 'Clicking…', complete: 'Click done' }}
+      args={args}
+      result={result}
+      error={error}
     />
   ),
   handler: async ({ cssSelector, autoMoveCursor }: { cssSelector: string; autoMoveCursor?: boolean }) => {
@@ -162,12 +174,15 @@ export const createVerifySelectorAction = ({ isLight, clipText }: Omit<DOMAction
       required: true,
     },
   ],
-  render: ({ status, args }: any) => (
+  render: ({ status, args, result, error }: any) => (
     <ActionStatus
       toolName={`Verify ${clipText((args as any)?.cssSelector, 60)}`}
       status={status as any}
       isLight={isLight}
       messages={{ pending: 'Verifying selector…', inProgress: 'Verifying selector…', complete: 'Selector verified' }}
+      args={args}
+      result={result}
+      error={error}
     />
   ),
   handler: async ({ cssSelector }: { cssSelector: string }) => {
@@ -189,12 +204,15 @@ export const createGetSelectorAtPointAction = ({ isLight }: Omit<DOMActionDepend
     { name: 'x', type: 'number', description: 'Viewport X coordinate in CSS px', required: true },
     { name: 'y', type: 'number', description: 'Viewport Y coordinate in CSS px', required: true },
   ],
-  render: ({ status, args }: any) => (
+  render: ({ status, args, result, error }: any) => (
     <ActionStatus
       toolName={`Selector at (${Number((args as any)?.x)}, ${Number((args as any)?.y)})`}
       status={status as any}
       isLight={isLight}
       messages={{ pending: 'Finding selector at point…', inProgress: 'Finding selector at point…', complete: 'Selector found' }}
+      args={args}
+      result={result}
+      error={error}
     />
   ),
   handler: async ({ x, y }: { x: number; y: number }) => {
@@ -215,12 +233,15 @@ export const createGetSelectorsAtPointsAction = ({ isLight }: Omit<DOMActionDepe
   parameters: [
     { name: 'points', type: 'object[]', description: 'Array of points {x:number,y:number}', required: true },
   ],
-  render: ({ status, args }: any) => (
+  render: ({ status, args, result, error }: any) => (
     <ActionStatus
       toolName={`Selectors at ${Array.isArray((args as any)?.points) ? (args as any).points.length : 0} point(s)`}
       status={status as any}
       isLight={isLight}
       messages={{ pending: 'Finding selectors…', inProgress: 'Finding selectors…', complete: 'Selectors found' }}
+      args={args}
+      result={result}
+      error={error}
     />
   ),
   handler: async ({ points }: { points: Array<{ x: number; y: number }> }) => {
@@ -261,15 +282,89 @@ export const createSendKeystrokesAction = ({ isLight, clipText }: Omit<DOMAction
       required: false,
     },
   ],
-  render: ({ status, args }: any) => (
-    <ActionStatus
-      toolName={`Send keystrokes${(args as any)?.targetSelector ? ` to ${clipText((args as any)?.targetSelector, 48)}` : ''}`}
-      status={status as any}
-      isLight={isLight}
-      messages={{ pending: 'Sending keystrokes…', inProgress: 'Sending keystrokes…', complete: 'Keystrokes sent' }}
-    />
-  ),
+  render: ({ status, args, result, error }: any) => {
+    // Format keystrokes for display
+    const formatKeystroke = (s: any): string => {
+      const mods: string[] = [];
+      if (s?.ctrl) mods.push('Ctrl');
+      if (s?.meta) mods.push('Cmd');
+      if (s?.alt) mods.push('Alt');
+      if (s?.shift) mods.push('Shift');
+      const key = String(s?.key ?? '');
+      const repeat = s?.repeat && s.repeat > 1 ? `×${s.repeat}` : '';
+      return mods.length > 0 ? `${mods.join('+')}+${key}${repeat}` : `${key}${repeat}`;
+    };
+    
+    const sequence = (args as any)?.sequence;
+    const formattedKeys = Array.isArray(sequence) && sequence.length > 0 
+      ? sequence.map(formatKeystroke).join(' ')
+      : '';
+    const targetSelector = (args as any)?.targetSelector;
+    
+    // Build tool name with keys
+    const keysDisplay = formattedKeys ? `: ${clipText(formattedKeys, 60)}` : '';
+    const targetDisplay = targetSelector ? ` to ${clipText(targetSelector, 40)}` : '';
+    const toolName = `Send keystrokes${keysDisplay}${targetDisplay}`;
+    
+    // Build messages with keys
+    const keysMsg = formattedKeys ? ` (${clipText(formattedKeys, 60)})` : '';
+    
+    // Keyboard icon with gradient
+    const keyboardIcon = (
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ flexShrink: 0, marginRight: 6 }}
+      >
+        <defs>
+          <linearGradient id="keyboardGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style={{ stopColor: '#8B5CF6', stopOpacity: 1 }} />
+            <stop offset="50%" style={{ stopColor: '#EC4899', stopOpacity: 1 }} />
+            <stop offset="100%" style={{ stopColor: '#F59E0B', stopOpacity: 1 }} />
+          </linearGradient>
+        </defs>
+        {/* Keyboard body */}
+        <rect stroke="url(#keyboardGradient)" x="2" y="6" width="20" height="12" rx="2" />
+        {/* Keys */}
+        <line stroke="url(#keyboardGradient)" strokeWidth="1.5" x1="6" y1="10" x2="6" y2="10" opacity="0.7" />
+        <line stroke="url(#keyboardGradient)" strokeWidth="1.5" x1="10" y1="10" x2="10" y2="10" opacity="0.7" />
+        <line stroke="url(#keyboardGradient)" strokeWidth="1.5" x1="14" y1="10" x2="14" y2="10" opacity="0.7" />
+        <line stroke="url(#keyboardGradient)" strokeWidth="1.5" x1="18" y1="10" x2="18" y2="10" opacity="0.7" />
+        {/* Spacebar */}
+        <line stroke="url(#keyboardGradient)" strokeWidth="1.5" x1="8" y1="14" x2="16" y2="14" opacity="0.7" />
+      </svg>
+    );
+    
+    return (
+      <ActionStatus
+        toolName={toolName}
+        status={status as any}
+        isLight={isLight}
+        icon={keyboardIcon}
+        messages={{ 
+          pending: `Sending keystrokes${keysMsg}…`, 
+          inProgress: `Sending keystrokes${keysMsg}…`, 
+          complete: `Keystrokes sent${keysMsg}`
+        }}
+        args={args}
+        result={result}
+        error={error}
+      />
+    );
+  },
   handler: async ({ sequence, targetSelector, delayMs }: { sequence: any[]; targetSelector?: string; delayMs?: number }) => {
+    // Validate sequence is not empty
+    if (!Array.isArray(sequence) || sequence.length === 0) {
+      const error = { status: 'error', message: 'Keystroke sequence cannot be empty' };
+      debug.log(ts(), '[Agent Request] sendKeystrokes: ERROR - empty sequence');
+      return error;
+    }
+    
     // Format keystrokes for logging
     const formatKeystroke = (s: any): string => {
       const mods: string[] = [];
@@ -281,20 +376,26 @@ export const createSendKeystrokesAction = ({ isLight, clipText }: Omit<DOMAction
       const repeat = s?.repeat && s.repeat > 1 ? `×${s.repeat}` : '';
       return mods.length > 0 ? `${mods.join('+')}+${key}${repeat}` : `${key}${repeat}`;
     };
-    const formattedKeys = Array.isArray(sequence) ? sequence.map(formatKeystroke).join(' ') : '';
+    const formattedKeys = sequence.map(formatKeystroke).join(' ');
     
     debug.log(ts(), `[Agent Request] sendKeystrokes: ${formattedKeys}`, { targetSelector, delayMs });
     
-    const safeSeq = Array.isArray(sequence)
-      ? sequence.map((s: any) => ({
-          key: String(s?.key ?? ''),
-          ctrl: !!s?.ctrl,
-          meta: !!s?.meta,
-          alt: !!s?.alt,
-          shift: !!s?.shift,
-          repeat: Number.isFinite(s?.repeat) ? Math.max(1, Math.min(50, Number(s.repeat))) : 1,
-        }))
-      : [];
+    const safeSeq = sequence.map((s: any) => ({
+      key: String(s?.key ?? ''),
+      ctrl: !!s?.ctrl,
+      meta: !!s?.meta,
+      alt: !!s?.alt,
+      shift: !!s?.shift,
+      repeat: Number.isFinite(s?.repeat) ? Math.max(1, Math.min(50, Number(s.repeat))) : 1,
+    })).filter(s => s.key !== ''); // Filter out any strokes with empty keys
+    
+    // Double-check after filtering
+    if (safeSeq.length === 0) {
+      const error = { status: 'error', message: 'No valid keystrokes in sequence' };
+      debug.log(ts(), '[Agent Response] sendKeystrokes: ERROR - no valid keys after filtering');
+      return error;
+    }
+    
     const req = { sequence: safeSeq, targetSelector: targetSelector ? String(targetSelector) : undefined, delayMs: Number(delayMs) } as any;
     const result = await handleKeystrokeSequence(req);
     debug.log(ts(), '[Agent Response] sendKeystrokes:', result);

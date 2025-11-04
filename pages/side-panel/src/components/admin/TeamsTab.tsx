@@ -45,6 +45,26 @@ interface TeamsTabProps {
   onSuccess: (message: string) => void;
 }
 
+const TeamSkeletonCard: React.FC<{ isLight: boolean }> = ({ isLight }) => (
+  <div
+    className={cn(
+      'rounded-lg border',
+      isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+    )}>
+    <div className="p-3 space-y-3 animate-pulse">
+      <div className="flex items-center justify-between">
+        <div className={cn('h-3 w-32 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+        <div className={cn('h-5 w-16 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+      </div>
+      <div className={cn('h-2.5 w-24 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+      <div className="space-y-2">
+        <div className={cn('h-2 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+        <div className={cn('h-2 w-5/6 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+      </div>
+    </div>
+  </div>
+);
+
 export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, onSuccess }: TeamsTabProps) {
   const { user } = useAuth();
   const [teams, setTeams] = useState<Team[]>([]);
@@ -61,6 +81,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
   const [userRole, setUserRole] = useState<string[]>([]);
   const [canManageTeams, setCanManageTeams] = useState(false);
   const [userTeamIds, setUserTeamIds] = useState<Set<string>>(new Set()); // Track teams user is member of
+  const [teamsLoading, setTeamsLoading] = useState(false);
 
   // Auto-select organization if there's only one
   useEffect(() => {
@@ -72,6 +93,10 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
   useEffect(() => {
     if (selectedOrgForTeam) {
       loadUserRoleAndTeams(selectedOrgForTeam);
+    } else {
+      setTeams([]);
+      setTeamMembers({});
+      setTeamsLoading(false);
     }
   }, [selectedOrgForTeam]);
 
@@ -82,6 +107,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
   }, [preselectedOrgId]);
 
   const loadUserRoleAndTeams = async (organizationId: string) => {
+    setTeamsLoading(true);
     try {
       // First, get the full organization data including member info
       const { data: fullOrg } = await (authClient.organization as any).getFullOrganization({
@@ -153,6 +179,8 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
       setCanManageTeams(false);
       setTeams([]);
       setUserTeamIds(new Set());
+    } finally {
+      setTeamsLoading(false);
     }
   };
 
@@ -446,6 +474,12 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
 
           {/* Teams List - Compact Cards */}
           <div className="space-y-2">
+            {teamsLoading && teams.length === 0 ? (
+              Array.from({ length: 3 }).map((_, idx) => (
+                <TeamSkeletonCard key={`team-skeleton-${idx}`} isLight={isLight} />
+              ))
+            ) : (
+              <>
             {teams.map(team => (
               <div
                 key={team.id}
@@ -572,16 +606,44 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                         )}>
                         {!userTeamIds.has(team.id) ? (
                           <div className={cn(
-                            'text-center py-4 text-[11px] transition-opacity ease-in-out',
+                            'text-center py-4 transition-opacity ease-in-out',
                             expandedTeamIds.has(team.id) 
                               ? 'opacity-100 duration-400 delay-200' 
-                              : 'opacity-0 duration-150',
-                            isLight ? 'text-gray-500' : 'text-gray-400'
+                              : 'opacity-0 duration-150'
                           )}>
-                            <svg className="w-5 h-5 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <svg className={cn(
+                              'w-5 h-5 mx-auto mb-2 opacity-50',
+                              isLight ? 'text-gray-400' : 'text-gray-500'
+                            )} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                             </svg>
-                            You don't have access to view members of this team
+                            <p className={cn('text-[11px] mb-3', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              You're not a member of this team
+                            </p>
+                            {canManageTeams && user && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await (authClient.organization as any).addTeamMember({
+                                      teamId: team.id,
+                                      userId: user.id,
+                                    });
+                                    onSuccess('Successfully joined team!');
+                                    await loadUserRoleAndTeams(selectedOrgForTeam);
+                                  } catch (error: any) {
+                                    onError(error.message || 'Failed to join team');
+                                  }
+                                }}
+                                className={cn(
+                                  'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                                  isLight
+                                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                    : 'bg-blue-500 hover:bg-blue-600 text-white'
+                                )}
+                              >
+                                Join Team
+                              </button>
+                            )}
                           </div>
                         ) : teamMembers[team.id] ? (
                           <div className={cn(
@@ -661,6 +723,8 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                   Create your first team
                 </button>
               </div>
+            )}
+              </>
             )}
           </div>
         </>

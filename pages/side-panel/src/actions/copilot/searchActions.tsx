@@ -41,7 +41,7 @@ export const createSearchPageContentAction = ({ searchManager, isLight, clipText
       required: false,
     },
   ],
-  render: ({ status, result, args }: any) => {
+  render: ({ status, result, args, error }: any) => {
     const query = clipText((args as any)?.query, 48);
     const numChunks = status === 'complete' && result ? ((result as any)?.resultsCount || 0) : 0;
     
@@ -78,6 +78,9 @@ export const createSearchPageContentAction = ({ searchManager, isLight, clipText
           inProgress: `Searching for "${query}"`,
           complete: `Search complete for "${query}". Found ${numChunks} chunk${numChunks !== 1 ? 's' : ''}`
         }}
+        args={args}
+        result={result}
+        error={error}
       />
     );
   },
@@ -111,7 +114,7 @@ export const createSearchFormDataAction = ({ searchManager, isLight, clipText }:
       required: false,
     },
   ],
-  render: ({ status, result, args }: any) => {
+  render: ({ status, result, args, error }: any) => {
     const query = clipText((args as any)?.query, 48);
     const numFields = status === 'complete' && result ? ((result as any)?.resultsCount || 0) : 0;
     
@@ -150,6 +153,9 @@ export const createSearchFormDataAction = ({ searchManager, isLight, clipText }:
           inProgress: `Searching form fields for "${query}"`,
           complete: `Found ${numFields} form field${numFields !== 1 ? 's' : ''} for "${query}"`
         }}
+        args={args}
+        result={result}
+        error={error}
       />
     );
   },
@@ -183,7 +189,7 @@ export const createSearchDOMUpdatesAction = ({ searchManager, isLight, clipText 
       required: false,
     },
   ],
-  render: ({ status, result, args }: any) => {
+  render: ({ status, result, args, error }: any) => {
     const query = clipText((args as any)?.query, 48);
     const numUpdates = status === 'complete' && result ? ((result as any)?.resultsCount || 0) : 0;
     
@@ -197,6 +203,9 @@ export const createSearchDOMUpdatesAction = ({ searchManager, isLight, clipText 
           inProgress: `Searching DOM updates for "${query}"`,
           complete: `Found ${numUpdates} DOM update${numUpdates !== 1 ? 's' : ''} for "${query}"`
         }}
+        args={args}
+        result={result}
+        error={error}
       />
     );
   },
@@ -230,7 +239,7 @@ export const createSearchClickableElementsAction = ({ searchManager, isLight, cl
       required: false,
     },
   ],
-  render: ({ status, result, args }: any) => {
+  render: ({ status, result, args, error }: any) => {
     const query = clipText((args as any)?.query, 48);
     const numElements = status === 'complete' && result ? ((result as any)?.resultsCount || 0) : 0;
     
@@ -267,6 +276,9 @@ export const createSearchClickableElementsAction = ({ searchManager, isLight, cl
           inProgress: `Searching clickable elements for "${query}"`,
           complete: `Found ${numElements} clickable element${numElements !== 1 ? 's' : ''} for "${query}"`
         }}
+        args={args}
+        result={result}
+        error={error}
       />
     );
   },

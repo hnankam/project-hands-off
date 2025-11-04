@@ -8,9 +8,11 @@ interface SettingsModalProps {
   isLight: boolean;
   showAgentCursor: boolean;
   showSuggestions: boolean;
+  showThoughtBlocks: boolean;
   onClose: () => void;
   onShowAgentCursorChange: (show: boolean) => void;
   onShowSuggestionsChange: (show: boolean) => void;
+  onShowThoughtBlocksChange: (show: boolean) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -18,9 +20,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   isLight,
   showAgentCursor,
   showSuggestions,
+  showThoughtBlocks,
   onClose,
   onShowAgentCursorChange,
   onShowSuggestionsChange,
+  onShowThoughtBlocksChange,
 }) => {
   const { theme } = useStorage(exampleThemeStorage);
 
@@ -255,6 +259,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className={cn(
                     'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                     showSuggestions ? 'translate-x-4' : 'translate-x-0'
+                  )}
+                />
+              </button>
+            </div>
+
+            {/* Divider */}
+            <div className={cn('border-t', isLight ? 'border-gray-200' : 'border-gray-700')} />
+
+            {/* Show Thought Blocks Toggle */}
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <label
+                  htmlFor="show-thought-blocks"
+                  className={cn(
+                    'text-xs font-medium cursor-pointer',
+                    isLight ? 'text-gray-900' : 'text-gray-100'
+                  )}
+                >
+                  Show Thought Blocks
+                </label>
+                <p
+                  className={cn(
+                    'text-xs mt-0.5',
+                    isLight ? 'text-gray-500' : 'text-gray-400'
+                  )}
+                >
+                  Reveal the assistant's hidden reasoning
+                </p>
+              </div>
+              <button
+                id="show-thought-blocks"
+                role="switch"
+                aria-checked={showThoughtBlocks}
+                onClick={() => onShowThoughtBlocksChange(!showThoughtBlocks)}
+                className={cn(
+                  'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 ml-3',
+                  showThoughtBlocks
+                    ? 'bg-blue-600 focus:ring-blue-500'
+                    : isLight
+                    ? 'bg-gray-200 focus:ring-gray-300'
+                    : 'bg-gray-600 focus:ring-gray-500'
+                )}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                    showThoughtBlocks ? 'translate-x-4' : 'translate-x-0'
                   )}
                 />
               </button>

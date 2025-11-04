@@ -58,6 +58,9 @@ export function useUsageStream(
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
+  const connectionOpenedAtRef = useRef<number>(0);
+  const immediateFailureCountRef = useRef(0);
+  const hasReceivedMessageRef = useRef(false);
 
   const resetCumulative = useCallback(() => {
     // Always reset to zeros, not to initial values
@@ -80,6 +83,9 @@ export function useUsageStream(
         wsRef.current.close();
       } catch {}
       wsRef.current = null;
+      // Reset failure counters when switching sessions
+      immediateFailureCountRef.current = 0;
+      reconnectAttemptsRef.current = 0;
     }
 
     // Prevent duplicate connections for the same session
@@ -108,12 +114,15 @@ export function useUsageStream(
       const ws = new WebSocket(`${wsUrl}/ws/usage/${sessionId}`);
       wsRef.current = ws;
       (ws as any)._sessionId = sessionId;
+      hasReceivedMessageRef.current = false;
 
       ws.onopen = () => {
         log('✅ WebSocket connected');
         setIsConnected(true);
         setError(null);
         reconnectAttemptsRef.current = 0;
+        connectionOpenedAtRef.current = Date.now();
+        immediateFailureCountRef.current = 0; // Reset on successful connection
       };
 
       ws.onmessage = event => {
@@ -141,6 +150,8 @@ export function useUsageStream(
             response: data.response_tokens,
             total: data.total_tokens,
           });
+
+          hasReceivedMessageRef.current = true;
         } catch (e) {
           err('❌ Error parsing WebSocket message:', e);
         }
@@ -155,14 +166,51 @@ export function useUsageStream(
         } catch {}
       };
 
-      ws.onclose = () => {
-        log('🔌 WebSocket disconnected');
+      ws.onclose = (event) => {
+        const connectionDuration = Date.now() - connectionOpenedAtRef.current;
+        log('🔌 WebSocket disconnected', { 
+          code: event.code, 
+          reason: event.reason,
+          wasClean: event.wasClean,
+          connectionDuration: `${connectionDuration}ms`,
+          sessionId: (ws as any)._sessionId
+        });
         setIsConnected(false);
         // Clear ping interval immediately on close
         if ((ws as any)._pingInterval) {
           clearInterval((ws as any)._pingInterval);
         }
         wsRef.current = null;
+
+        // Only treat as "immediate failure" if connection never opened OR closed within 100ms
+        // This indicates a server rejection (connection limit reached)
+        // Normal disconnects after successful operation should not trigger immediate failure logic
+        const neverOpened = connectionOpenedAtRef.current === 0;
+        const closedImmediately =
+          connectionOpenedAtRef.current > 0 && connectionDuration < 200 && !hasReceivedMessageRef.current;
+        const isImmediateFailure = neverOpened || closedImmediately;
+        
+        if (isImmediateFailure) {
+          immediateFailureCountRef.current++;
+          log(
+            `⚠️ Immediate connection failure detected (${immediateFailureCountRef.current}/3) - connection ${
+              neverOpened ? 'never opened' : 'closed in ' + connectionDuration + 'ms'
+            }, hasReceivedMessage=${hasReceivedMessageRef.current}`,
+          );
+          
+          // If we've had 3+ immediate failures, stop reconnecting - likely server rejection
+          if (immediateFailureCountRef.current >= 3) {
+            log('❌ Multiple immediate failures detected - stopping reconnection (likely server connection limit reached)');
+            setError('Connection rejected by server (limit may be reached)');
+            return;
+          }
+        } else {
+          // Reset immediate failure counter for normal disconnects
+          immediateFailureCountRef.current = 0;
+          log(
+            `ℹ️ Normal disconnect after ${connectionDuration}ms (hasReceivedMessage=${hasReceivedMessageRef.current}) - will not count as immediate failure`,
+          );
+        }
 
         // Attempt to reconnect if enabled and haven't exceeded max attempts
         if (enabled && reconnectAttemptsRef.current < maxReconnectAttempts) {
@@ -195,12 +243,18 @@ export function useUsageStream(
 
   // Connect when sessionId, enabled, or wsUrl changes
   useEffect(() => {
+    log(`📍 useUsageStream effect triggered:`, { sessionId, enabled, hasExistingConnection: !!wsRef.current });
+    
     if (sessionId && enabled) {
       connect();
+    } else if (!enabled && wsRef.current) {
+      log(`⏸️ Disabled - closing existing WebSocket connection for session ${sessionId}`);
     }
 
     // Cleanup on unmount or when dependencies change
     return () => {
+      log(`🧹 useUsageStream cleanup triggered for session ${sessionId}, enabled was: ${enabled}`);
+      
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
@@ -214,11 +268,12 @@ export function useUsageStream(
           clearInterval((ws as any)._pingInterval);
         }
 
+        log(`🛑 Closing WebSocket in cleanup for session ${(ws as any)._sessionId}`);
         ws.close();
         wsRef.current = null;
       }
     };
-  }, [connect]);
+  }, [connect, sessionId, enabled]);
 
   return {
     lastUsage,

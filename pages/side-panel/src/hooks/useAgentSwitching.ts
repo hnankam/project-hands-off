@@ -63,13 +63,6 @@ export const useAgentSwitching = ({
   // Token to cancel an in-flight switch sequence when inputs change again
   const switchRunIdRef = useRef(0);
 
-  // Save agent/model selection to storage whenever they change
-  useEffect(() => {
-    if (selectedAgent && selectedModel) {
-      sessionStorage.updateSessionAgentAndModel(sessionId, selectedAgent, selectedModel);
-    }
-  }, [selectedAgent, selectedModel, sessionId]);
-
   // Agent switching logic - handles the 3-step process with cancellation and precise timing
   useEffect(() => {
     const agentChanged = previousAgentRef.current !== selectedAgent;
@@ -81,7 +74,30 @@ export const useAgentSwitching = ({
       return;
     }
 
-    console.log(ts(), '[useAgentSwitching] Agent/Model change detected');
+    // Don't trigger switching modal when clearing to empty values (no team/no agents)
+    // or when initially loading with empty values
+    if (!selectedAgent || !selectedModel) {
+      console.log(ts(), '[useAgentSwitching] Agent/Model cleared to empty, skipping switch process');
+      previousAgentRef.current = selectedAgent;
+      previousModelRef.current = selectedModel;
+      setActiveAgent(selectedAgent);
+      setActiveModel(selectedModel);
+      return;
+    }
+
+    // Skip switching process if this is initial auto-selection (previous values were empty)
+    // This prevents duplicate message loading during initial page load
+    const wasEmpty = !previousAgentRef.current || !previousModelRef.current;
+    if (wasEmpty && selectedAgent && selectedModel) {
+      console.log(ts(), '[useAgentSwitching] Initial agent/model auto-selection detected, skipping switch process');
+      previousAgentRef.current = selectedAgent;
+      previousModelRef.current = selectedModel;
+      setActiveAgent(selectedAgent);
+      setActiveModel(selectedModel);
+      return;
+    }
+
+    console.log(ts(), '[useAgentSwitching] Agent/Model change detected (user initiated)');
 
     // Increment run id to cancel any in-flight sequences
     const runId = ++switchRunIdRef.current;

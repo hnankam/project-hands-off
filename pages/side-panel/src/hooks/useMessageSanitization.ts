@@ -1,5 +1,224 @@
 import { useRef, useMemo, useCallback, useEffect } from 'react';
 
+const TRUNCATION_SUFFIX = '... [output truncated]';
+const TRUNCATABLE_TOOLS = new Set([
+  'searchPageContent',
+  'searchFormData',
+  'searchDOMUpdates',
+  'searchClickableElements',
+  'takeScreenshot',
+]);
+const DOUBLE_NEWLINE_RE = /\r?\n\s*\r?\n/;
+const THINKING_OPEN_RE = /<(thinking|think)\s*>/i;
+const THINKING_CLOSE_RE = /<\/(thinking|think)\s*>/i;
+const THINKING_TAGS_RE = /<\/?(thinking|think)\s*>/gi;
+
+const isAlreadyTruncated = (content: string): boolean => {
+  return typeof content === 'string' && content.endsWith(TRUNCATION_SUFFIX);
+};
+
+/**
+ * Smart truncation that preserves JSON structure and stats
+ * Only truncates large content fields (text, html, dataUrl) while keeping metadata
+ */
+const truncateToolResult = (content: any, toolName: string): any => {
+  // If it's not an object and not a string, return as is
+  if (typeof content !== 'object' && typeof content !== 'string') {
+    return content;
+  }
+
+  // If it's null, return as is
+  if (content === null) {
+    return content;
+  }
+
+  // If it's a string, try to parse it as JSON first
+  let parsed: any = content;
+  let wasString = false;
+  
+  if (typeof content === 'string') {
+    wasString = true;
+    // Try to parse as JSON
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      // Not JSON, treat as plain string
+      if (content.length <= 100) return content;
+      return `${content.slice(0, 100)}${TRUNCATION_SUFFIX}`;
+    }
+  }
+
+  // At this point, parsed is an object
+  if (typeof parsed !== 'object' || parsed === null) {
+    return content;
+  }
+
+  // Check if already truncated (look for truncation suffix in any string field)
+  const contentStr = JSON.stringify(parsed);
+  if (contentStr.includes(TRUNCATION_SUFFIX)) {
+    return content; // Return original format
+  }
+
+  // Clone the object to avoid mutating original
+  let truncated: any;
+  try {
+    truncated = JSON.parse(JSON.stringify(parsed));
+  } catch {
+    return content;
+  }
+
+  // Tool-specific truncation logic
+  if (toolName === 'searchPageContent' || toolName === 'searchFormData' || 
+      toolName === 'searchDOMUpdates' || toolName === 'searchClickableElements') {
+    // Structure: { success, query, resultsCount, results: [{rank, similarity, text, html, ...}] }
+    // Preserve: success, query, resultsCount, rank, similarity
+    // Truncate: text, html fields in results array
+    if (Array.isArray(truncated.results)) {
+      truncated.results = truncated.results.map((result: any) => {
+        const truncatedResult = { ...result };
+        
+        // Truncate text field (keep first 200 chars)
+        if (typeof result.text === 'string' && result.text.length > 200) {
+          truncatedResult.text = result.text.slice(0, 200) + TRUNCATION_SUFFIX;
+        }
+        
+        // Truncate html field (keep first 200 chars)
+        if (typeof result.html === 'string' && result.html.length > 200) {
+          truncatedResult.html = result.html.slice(0, 200) + TRUNCATION_SUFFIX;
+        }
+        
+        // Truncate any other large string fields
+        Object.keys(truncatedResult).forEach(key => {
+          if (typeof truncatedResult[key] === 'string' && 
+              truncatedResult[key].length > 500 &&
+              key !== 'selector' && // Keep selectors intact
+              key !== 'name' && 
+              key !== 'id' &&
+              key !== 'type') {
+            truncatedResult[key] = truncatedResult[key].slice(0, 200) + TRUNCATION_SUFFIX;
+          }
+        });
+        
+        return truncatedResult;
+      });
+    }
+  } else if (toolName === 'takeScreenshot') {
+    // Structure: { status, message, screenshotInfo: { format, dimensions, sizeKB, quality, isFullPage, dataUrl, url } }
+    // Preserve: ALL metadata (status, message, screenshotInfo with all fields except dataUrl)
+    // Truncate: only dataUrl if present
+    if (truncated.screenshotInfo?.dataUrl) {
+      const dataUrl = truncated.screenshotInfo.dataUrl;
+      if (dataUrl.length > 100) {
+        // Keep the data URL prefix (data:image/jpeg;base64,) and truncate the base64 part
+        const prefixMatch = dataUrl.match(/^(data:image\/[^;]+;base64,)/);
+        if (prefixMatch) {
+          truncated.screenshotInfo.dataUrl = prefixMatch[1] + dataUrl.slice(prefixMatch[1].length, prefixMatch[1].length + 50) + TRUNCATION_SUFFIX;
+        } else {
+          truncated.screenshotInfo.dataUrl = dataUrl.slice(0, 100) + TRUNCATION_SUFFIX;
+        }
+      }
+    }
+    
+    // Truncate message if it's extremely long (but keep attachment manifest)
+    if (typeof truncated.message === 'string' && truncated.message.length > 1000) {
+      // Try to preserve the attachment manifest at the end
+      const attachmentMatch = truncated.message.match(/(<!--ATTACHMENTS:[\s\S]*?-->)/);
+      if (attachmentMatch) {
+        const mainMessage = truncated.message.slice(0, truncated.message.indexOf(attachmentMatch[0]));
+        truncated.message = (mainMessage.length > 500 ? mainMessage.slice(0, 500) + TRUNCATION_SUFFIX : mainMessage) + attachmentMatch[0];
+      } else {
+        truncated.message = truncated.message.slice(0, 500) + TRUNCATION_SUFFIX;
+      }
+    }
+  } else {
+    // Generic truncation for other tools
+    // Truncate any string fields longer than 500 chars
+    Object.keys(truncated).forEach(key => {
+      if (typeof truncated[key] === 'string' && truncated[key].length > 500) {
+        truncated[key] = truncated[key].slice(0, 200) + TRUNCATION_SUFFIX;
+      } else if (Array.isArray(truncated[key])) {
+        // Recursively truncate array items
+        truncated[key] = truncated[key].map((item: any) => {
+          if (typeof item === 'string' && item.length > 500) {
+            return item.slice(0, 200) + TRUNCATION_SUFFIX;
+          } else if (typeof item === 'object') {
+            return truncateToolResult(item, toolName);
+          }
+          return item;
+        });
+      }
+    });
+  }
+
+  // Return in the same format as input
+  // If input was a JSON string, return a JSON string
+  // If input was an object, return an object
+  if (wasString) {
+    try {
+      return JSON.stringify(truncated);
+    } catch {
+      return truncated;
+    }
+  }
+  
+  return truncated;
+};
+
+const normalizeThinking = (text: string): { text: string; changed: boolean } => {
+  if (typeof text !== 'string') {
+    return { text, changed: false };
+  }
+
+  if (!THINKING_OPEN_RE.test(text)) {
+    return { text, changed: false };
+  }
+
+  const openMatch = text.match(THINKING_OPEN_RE);
+  if (!openMatch || openMatch.index === undefined) {
+    return { text, changed: false };
+  }
+
+  const openIndex = openMatch.index;
+  const beforeThinking = text.slice(0, openIndex);
+  const afterOpen = text.slice(openIndex + openMatch[0].length);
+  const closeMatch = afterOpen.match(THINKING_CLOSE_RE);
+
+  let thinkingContent = '';
+  let afterThinking = '';
+
+  if (closeMatch && closeMatch.index !== undefined) {
+    thinkingContent = afterOpen.slice(0, closeMatch.index);
+    afterThinking = afterOpen.slice(closeMatch.index + closeMatch[0].length);
+  } else {
+    const dblNlIndex = afterOpen.search(DOUBLE_NEWLINE_RE);
+    if (dblNlIndex >= 0) {
+      thinkingContent = afterOpen.slice(0, dblNlIndex);
+      afterThinking = afterOpen.slice(dblNlIndex);
+    } else {
+      thinkingContent = afterOpen;
+      afterThinking = '';
+    }
+  }
+
+  let cleanedThinking = thinkingContent.replace(THINKING_TAGS_RE, '').trim();
+  const cleanedAfter = afterThinking.replace(THINKING_TAGS_RE, '').trim();
+
+  cleanedThinking = cleanedThinking.replace(/(\r?\n)(?:\s*\r?\n){2,}/g, '\n\n');
+
+  const parts: string[] = [];
+  if (beforeThinking.trim()) {
+    parts.push(beforeThinking.trim());
+  }
+  if (cleanedThinking) {
+    parts.push(`<think>\n\n${cleanedThinking}\n\n</think>`);
+  }
+  if (cleanedAfter) {
+    parts.push(cleanedAfter);
+  }
+
+  return { text: parts.join('\n\n'), changed: true };
+};
+
 /**
  * Message data structure returned by saveMessages
  */
@@ -52,6 +271,9 @@ export const useMessageSanitization = (
   const lastSanitizeAtRef = useRef<number>(0);
   const cachedSanitizedRef = useRef<{ signature: string; result: SanitizationResult } | null>(null);
   const previousCountRef = useRef(0);
+  const previousMessagesLengthRef = useRef(0);
+  const previousMessagesRef = useRef<any[]>([]);
+  const cachedFilteredRef = useRef<{ messages: any[]; filtered: any[] }>({ messages: [], filtered: [] });
 
   /**
    * Compute a compact signature representing the relevant message content
@@ -68,6 +290,15 @@ export const useMessageSanitization = (
   }, []);
 
   /**
+   * Track when messages array changes (even if content is the same)
+   * This helps identify CopilotKit reference changes
+   */
+  useEffect(() => {
+    const currentLength = messages?.length || 0;
+    previousMessagesLengthRef.current = currentLength;
+  }, [messages]);
+
+  /**
    * PERFORMANCE OPTIMIZATION: Memoize filtered messages to avoid duplicate filtering
    * Filters out:
    * - "Thinking" messages (content starting with **)
@@ -76,10 +307,43 @@ export const useMessageSanitization = (
    */
   const filteredMessages = useMemo(() => {
     if (!messages || messages.length === 0) {
+      console.log('🔍 [useMessageSanitization] Messages empty, returning empty filtered array');
+      previousMessagesRef.current = [];
+      cachedFilteredRef.current = { messages: [], filtered: [] };
       return [];
     }
 
-    return messages.filter(message => {
+    // Check if this is a reference change vs content change
+    const isReferenceChange = previousMessagesRef.current !== messages;
+    
+    // If only reference changed but content is identical, return cached result
+    if (isReferenceChange && cachedFilteredRef.current.messages.length === messages.length) {
+      const contentUnchanged = messages.every((msg, idx) => {
+        const cachedMsg = cachedFilteredRef.current.messages[idx];
+        return (
+          msg === cachedMsg ||
+          (msg?.id === cachedMsg?.id && JSON.stringify(msg?.content) === JSON.stringify(cachedMsg?.content))
+        );
+      });
+
+      if (contentUnchanged) {
+        // Reference-only change detected - return cached result without logging
+        previousMessagesRef.current = messages;
+        return cachedFilteredRef.current.filtered;
+      }
+    }
+
+    const isContentChange = isReferenceChange && (
+      previousMessagesRef.current.length !== messages.length ||
+      !previousMessagesRef.current.every((msg, idx) => 
+        msg === messages[idx] || 
+        (msg?.id === messages[idx]?.id && JSON.stringify(msg?.content) === JSON.stringify(messages[idx]?.content))
+      )
+    );
+
+    // Content changed - filtering messages
+
+    const filtered = messages.filter(message => {
       if (typeof message.content === 'string') {
         return !message.content.startsWith('**') && message.content.trim() !== '';
       } else if (typeof message.content === 'object' && message.content !== null) {
@@ -95,225 +359,125 @@ export const useMessageSanitization = (
       }
       return true;
     });
+
+    previousMessagesRef.current = messages;
+    cachedFilteredRef.current = { messages, filtered };
+    return filtered;
   }, [messages]);
+
+  /**
+   * Normalize tool_use blocks to include a tool_result block if the next block is missing.
+   * This helps prevent Anthropic API rejection for transcripts.
+   */
+  const normalizeToolUse = (messages: any[]): { messages: any[]; changed: boolean } => {
+    let changed = false;
+
+    const patched = messages.map((message, index) => {
+      if (
+        !message ||
+        message.role !== 'assistant' ||
+        !Array.isArray(message.content)
+      ) {
+        return message;
+      }
+
+      const newBlocks: any[] = [];
+      const blocks = message.content as Array<{ type: string; [key: string]: any }>;
+
+      blocks.forEach((block, blockIndex) => {
+        newBlocks.push(block);
+        if (block?.type !== 'tool_use') {
+          return;
+        }
+
+        const nextBlock = blocks[blockIndex + 1];
+        const hasToolResult = nextBlock && nextBlock.type === 'tool_result';
+        if (hasToolResult) {
+          return;
+        }
+
+        const toolResult = {
+          type: 'tool_result',
+          tool_use_id: block?.id,
+          content: [{ type: 'text', text: 'Completed with no explicit result.' }],
+        };
+
+        changed = true;
+        newBlocks.push(toolResult);
+      });
+
+      if (!changed) {
+        return message;
+      }
+
+      return {
+        ...message,
+        content: newBlocks,
+      };
+    });
+
+    return { messages: patched, changed };
+  };
 
   /**
    * Sanitize and deduplicate messages
    * 
    * Operations performed:
-   * 1. Retain only last 500 messages
-   * 2. Truncate large tool message content (>100 chars)
-   * 3. Normalize thinking tags in assistant messages
+   * 1. Filter out messages with invalid/missing role property
+   * 2. Retain only last 500 messages
+   * 3. Truncate large tool message content (>100 chars)
+   * 4. Normalize thinking tags in assistant messages
    * 
    * @param messagesToProcess - Array of messages to sanitize
    * @returns Object with sanitized messages and hasChanges flag
    */
-  const sanitizeMessages = useCallback((messagesToProcess: any[]): SanitizationResult => {
+  const sanitizeMessages = useCallback((inputMessages: any[]): SanitizationResult => {
     let hasChanges = false;
-
-    // Retain only the last 500 messages
-    let retainedMessages = messagesToProcess;
-    if (messagesToProcess.length > 500) {
-      retainedMessages = messagesToProcess.slice(-500);
+    
+    // Step 1: Filter out messages with undefined/invalid role
+    const validMessages = inputMessages.filter(msg => {
+      if (!msg || typeof msg !== 'object') {
+        hasChanges = true;
+        return false;
+      }
+      // Ensure role property exists and is valid
+      if (!msg.role || typeof msg.role !== 'string' || !['user', 'assistant', 'tool', 'system'].includes(msg.role)) {
+        console.warn('[useMessageSanitization] Filtering out message with invalid role:', msg.role);
+        hasChanges = true;
+        return false;
+      }
+      return true;
+    });
+    
+    const messages = normalizeToolUse(validMessages).messages;
+    const normalizedMessages = normalizeToolUse(messages);
+    if (normalizedMessages.changed) {
       hasChanges = true;
     }
-
-    // PERFORMANCE: Pre-compile regex patterns once (outside the inner function)
-    const THINKING_OPEN_RE = /<thinking\s*>/i;
-    const THINKING_CLOSE_RE = /<\/thinking\s*>/i;
-    const THINKING_TAGS_RE = /<\/?thinking\s*>/gi;
-    const DOUBLE_NEWLINE_RE = /\r?\n\r?\n/;
-    
-    // PERFORMANCE: Use Set for O(1) lookup instead of array.includes()
-    const TRUNCATABLE_TOOLS = new Set([
-      'searchPageContent',
-      'searchFormData',
-      'searchDOMUpdates',
-      'searchClickableElements',
-      'takeScreenshot',
-    ]);
-
-    // Helper: normalize <thinking> tags in assistant content
-    const normalizeThinking = (text: string): { text: string; changed: boolean } => {
-      try {
-        // PERFORMANCE: Early exit if no thinking tags present
-        if (!text.includes('<thinking')) return { text, changed: false };
-        
-        const openMatch = text.match(THINKING_OPEN_RE);
-        if (!openMatch) return { text, changed: false };
-
-        const openIndex = openMatch.index ?? -1;
-        const beforeThinking = text.slice(0, openIndex);
-        const afterOpen = text.slice(openIndex + openMatch[0].length);
-        const closeMatch = afterOpen.match(THINKING_CLOSE_RE);
-
-        let thinkingContent: string;
-        let afterThinking: string;
-        
-        if (closeMatch && closeMatch.index !== undefined) {
-          thinkingContent = afterOpen.slice(0, closeMatch.index);
-          afterThinking = afterOpen.slice(closeMatch.index + closeMatch[0].length);
-        } else {
-          // If no explicit close tag, heuristically close at first double newline or end
-          const dblNl = afterOpen.search(DOUBLE_NEWLINE_RE);
-          if (dblNl >= 0) {
-            thinkingContent = afterOpen.slice(0, dblNl);
-            afterThinking = afterOpen.slice(dblNl);
-          } else {
-            thinkingContent = afterOpen;
-            afterThinking = '';
-          }
-        }
-
-        // Remove any stray thinking tags from content
-        let cleanedThinking = thinkingContent.replace(THINKING_TAGS_RE, '').trim();
-        const cleanedAfter = afterThinking.replace(THINKING_TAGS_RE, '').trim();
-        
-        // Collapse 3+ consecutive newlines to double newlines, preserve double newlines
-        // Match 3 or more newlines (with optional whitespace) and replace with exactly 2 newlines
-        cleanedThinking = cleanedThinking.replace(/(\r?\n)(?:\s*\r?\n){2,}/g, '\n\n');
-        
-        // Reconstruct: thinking block MUST be isolated with blank lines
-        const parts = [];
-        if (beforeThinking.trim()) parts.push(beforeThinking.trim());
-        
-        // Critical: Thinking block must be completely isolated with newlines
-        if (cleanedThinking) {
-          parts.push(`<thinking>\n\n${cleanedThinking}\n\n</thinking>`);
-        }
-        
-        if (cleanedAfter) parts.push(cleanedAfter);
-        
-        // Join with double newline for paragraph separation
-        return { text: parts.join('\n\n'), changed: true };
-      } catch {
-        return { text, changed: false };
+    const sanitizedMessages = normalizedMessages.messages.map((message: any, index: number) => {
+      const signature = computeMessagesSignature(message);
+      const cached = cachedSanitizedRef.current?.result.messages[index];
+      if (cached && cached.signature === signature) {
+        return cached.result;
       }
-    };
 
-    // Helper: Smart truncate tool results preserving JSON structure and counts
-    const truncateToolResult = (content: string, toolName: string): string => {
-      try {
-        const parsed = JSON.parse(content);
-        
-        // Special handling for takeScreenshot - different structure (no results array)
-        if (toolName === 'takeScreenshot') {
-          const truncated: any = {
-            status: parsed.status,
-            message: parsed.message,
-          };
-          
-          // Preserve screenshotInfo metadata, but truncate dataUrl
-          if (parsed.screenshotInfo) {
-            truncated.screenshotInfo = {
-              format: parsed.screenshotInfo.format,
-              dimensions: parsed.screenshotInfo.dimensions,
-              sizeKB: parsed.screenshotInfo.sizeKB,
-              quality: parsed.screenshotInfo.quality,
-              isFullPage: parsed.screenshotInfo.isFullPage,
-              url: parsed.screenshotInfo.url,
-              // Truncate the large dataUrl base64 string
-              dataUrl: parsed.screenshotInfo.dataUrl 
-                ? '...truncated base64 data...' 
-                : undefined,
-            };
-          }
-          
-          return JSON.stringify(truncated);
-        }
-        
-        // For search tools: Preserve COMPLETE top-level structure
-        const truncated: any = {};
-        
-        // Preserve all top-level fields in original order
-        if (parsed.success !== undefined) truncated.success = parsed.success;
-        if (parsed.query !== undefined) truncated.query = parsed.query;
-        if (parsed.resultsCount !== undefined) truncated.resultsCount = parsed.resultsCount; // Critical for ActionStatus
-        if (parsed.error !== undefined) truncated.error = parsed.error;
-        
-        // Truncate results array while preserving structure
-        if (Array.isArray(parsed.results)) {
-          truncated.results = parsed.results.map((item: any, index: number) => {
-            // Keep only first 2 results with essential fields
-            if (index >= 2) return { _note: '...truncated...' };
-            
-            // Preserve essential fields based on tool type
-            if (toolName === 'searchPageContent') {
-              return { 
-                rank: item.rank, 
-                similarity: item.similarity,
-                text: typeof item.text === 'string' ? item.text.substring(0, 100) + '...' : item.text 
-              };
-            } else if (toolName === 'searchFormData') {
-              return { 
-                rank: item.rank, 
-                similarity: item.similarity,
-                selector: item.selector, 
-                type: item.type, 
-                name: item.name 
-              };
-            } else if (toolName === 'searchClickableElements') {
-              return { 
-                rank: item.rank, 
-                similarity: item.similarity,
-                selector: item.selector, 
-                text: typeof item.text === 'string' ? item.text.substring(0, 50) : item.text 
-              };
-            } else if (toolName === 'searchDOMUpdates') {
-              return { 
-                rank: item.rank, 
-                similarity: item.similarity,
-                summary: typeof item.summary === 'string' ? item.summary.substring(0, 100) : item.summary, 
-                timeAgo: item.timeAgo 
-              };
-            }
-            
-            // Generic truncation for other tools - keep essential fields
-            const { rank, similarity, selector, text, name, type, ...rest } = item;
-            return { rank, similarity, selector, text, name, type, _truncated: true };
-          });
-        } else if (parsed.results !== undefined) {
-          // results exists but is not an array (e.g. null or empty) - preserve as-is
-          truncated.results = parsed.results;
-        }
-        
-        return JSON.stringify(truncated);
-      } catch {
-        // Not JSON or parse failed, do simple truncation
-        return content.substring(0, 90) + '...';
-      }
-    };
-
-    // Helper: Check if content is already truncated
-    const isAlreadyTruncated = (content: string): boolean => {
-      try {
-        const parsed = JSON.parse(content);
-        
-        // Check for takeScreenshot truncation marker
-        if (parsed.screenshotInfo?.dataUrl === '...truncated base64 data...') {
-          return true;
-        }
-        
-        // Check if results array contains truncation markers
-        return Array.isArray(parsed.results) && parsed.results.some((r: any) => 
-          r?._note === '...truncated...' || r?._truncated === true
-        );
-      } catch {
-        // Not JSON, check simple string truncation
-        return content.endsWith('...');
-      }
-    };
-
-    // PERFORMANCE: Sanitize in single pass - only create new objects if modified
-    const sanitizedMessages = retainedMessages.map((message) => {
       // Truncate large tool message content
-      if (message.role === 'tool' && message.id?.includes('result') && message.content?.length > 100) {
+      if (message.role === 'tool' && message.id?.includes('result')) {
         const tool_name = message.toolName || '';
         // PERFORMANCE: Use Set.has() instead of array.includes() - O(1) vs O(n)
-        if (TRUNCATABLE_TOOLS.has(tool_name) && !isAlreadyTruncated(message.content)) {
+        if (TRUNCATABLE_TOOLS.has(tool_name)) {
+          // Check if content needs truncation (string > 100 chars OR object with large fields)
+          const needsTruncation = 
+            (typeof message.content === 'string' && message.content.length > 100 && !isAlreadyTruncated(message.content)) ||
+            (typeof message.content === 'object' && message.content !== null && 
+             JSON.stringify(message.content).length > 500 && 
+             !JSON.stringify(message.content).includes(TRUNCATION_SUFFIX));
+          
+          if (needsTruncation) {
             hasChanges = true;
-          const truncatedContent = truncateToolResult(message.content, tool_name);
-          return { ...message, content: truncatedContent };
+            const truncatedContent = truncateToolResult(message.content, tool_name);
+            return { ...message, content: truncatedContent };
+          }
         }
       }
 
@@ -416,7 +580,7 @@ export const useMessageSanitization = (
       setHeadlessMessagesCount(newCount);
       previousCountRef.current = newCount;
     }
-  }, [filteredMessages, setHeadlessMessagesCount]);
+  }, [filteredMessages, setHeadlessMessagesCount, messages]);
 
   return {
     filteredMessages,

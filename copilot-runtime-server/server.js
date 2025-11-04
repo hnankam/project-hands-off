@@ -40,8 +40,13 @@ import {
   getModelsHandler,
   getDefaultsHandler,
   getCompleteConfigHandler,
+  getTeamsHandler,
   authRouter,
-  invitationsRouter
+  invitationsRouter,
+  providersRouter,
+  modelsRouter,
+  agentsRouter,
+  baseInstructionsRouter,
 } from './routes/index.js';
 
 // Create Express app
@@ -115,11 +120,18 @@ app.use('/api', apiRateLimiter);
     app.use(express.json({ limit: `${BODY_LIMIT_MB}mb` }));
     app.use(express.urlencoded({ extended: true, limit: `${BODY_LIMIT_MB}mb` }));
 
+    // Admin management endpoints
+    app.use('/api/admin/providers', providersRouter);
+    app.use('/api/admin/models', modelsRouter);
+    app.use('/api/admin/agents', agentsRouter);
+    app.use('/api/admin/base-instructions', baseInstructionsRouter);
+
     // Configuration endpoints for side panel
     app.get('/api/config', getCompleteConfigHandler);
     app.get('/api/config/agents', getAgentsHandler);
     app.get('/api/config/models', getModelsHandler);
     app.get('/api/config/defaults', getDefaultsHandler);
+    app.get('/api/config/teams', getTeamsHandler);
 
     // 404 handler for unmatched routes (JSON)
     app.use(notFoundMiddleware);
@@ -133,12 +145,14 @@ app.use('/api', apiRateLimiter);
       log(`   Health check: http://0.0.0.0:${PORT}/health`);
       log(`   Authentication: http://0.0.0.0:${PORT}/api/auth/*`);
       log(`   Invitations: http://0.0.0.0:${PORT}/api/invitations/*`);
+      log(`   Admin: http://0.0.0.0:${PORT}/api/admin/{providers,models}`);
       log(`   CopilotKit endpoint: http://0.0.0.0:${PORT}/api/copilotkit`);
       log(`   Configuration endpoints:`);
       log(`     - GET http://0.0.0.0:${PORT}/api/config (complete config)`);
       log(`     - GET http://0.0.0.0:${PORT}/api/config/agents`);
       log(`     - GET http://0.0.0.0:${PORT}/api/config/models`);
       log(`     - GET http://0.0.0.0:${PORT}/api/config/defaults`);
+      log(`     - GET http://0.0.0.0:${PORT}/api/config/teams`);
       log(`   Configured to forward requests to agent base: ${AGENT_BASE_URL}`);
     });
 

@@ -188,3 +188,161 @@ export const TeamSelector: React.FC<TeamSelectorProps> = ({
   );
 };
 
+interface SingleTeamSelectorProps {
+  isLight: boolean;
+  teams: Team[];
+  selectedTeamId: string;
+  onTeamChange: (teamId: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  allowEmpty?: boolean;
+}
+
+export const SingleTeamSelector: React.FC<SingleTeamSelectorProps> = ({
+  isLight,
+  teams,
+  selectedTeamId,
+  onTeamChange,
+  placeholder = 'Select team',
+  disabled = false,
+  allowEmpty = true,
+}) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+    return undefined;
+  }, [isOpen]);
+
+  const selectedTeam = teams.find(team => team.id === selectedTeamId);
+
+  if (disabled) {
+    return (
+      <div
+        className={cn(
+          'flex items-start gap-1.5 px-2 py-1.5 text-xs rounded-md min-h-[32px] border opacity-60',
+          isLight ? 'bg-white border-gray-300 text-gray-500' : 'bg-[#151C24] border-gray-600 text-gray-400',
+        )}
+      >
+        <span className="flex-1 truncate text-left">{selectedTeam ? selectedTeam.name : placeholder}</span>
+      </div>
+    );
+  }
+
+  if (teams.length === 0) {
+    return (
+      <div
+        className={cn(
+          'flex items-start gap-1.5 px-2 py-1.5 text-xs rounded-md min-h-[32px] border opacity-50',
+          isLight ? 'bg-white border-gray-300 text-gray-500' : 'bg-[#151C24] border-gray-600 text-gray-400',
+        )}
+      >
+        <span className="flex-1 truncate text-left">No teams available</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          'flex items-start gap-1.5 px-2 py-1.5 text-xs rounded-md min-h-[32px] min-w-0 w-full border',
+          isLight
+            ? 'text-gray-700 hover:bg-gray-100 border-gray-300 bg-white'
+            : 'text-gray-200 hover:bg-gray-700 border-gray-600 bg-[#151C24]',
+        )}
+      >
+        <span className="font-medium truncate flex-1 min-w-0 text-left">
+          {selectedTeam ? selectedTeam.name : placeholder}
+        </span>
+        <svg
+          className={cn('transition-transform flex-shrink-0 mt-0.5', isOpen ? 'rotate-180' : '')}
+          width="12"
+          height="12"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div
+          className={cn(
+            'absolute top-full left-0 mt-1 w-full min-w-[180px] rounded-md border shadow-lg z-[9999] max-h-[240px] overflow-y-auto',
+            isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+          )}
+        >
+          {allowEmpty && (
+            <button
+              type="button"
+              onClick={() => {
+                onTeamChange('');
+                setIsOpen(false);
+              }}
+              className={cn(
+                'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors',
+                !selectedTeam ? (isLight ? 'bg-blue-50 text-blue-700 font-medium' : 'bg-blue-900/30 text-blue-300 font-medium') : isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700',
+              )}
+            >
+              <span className="flex-shrink-0">
+                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </span>
+              <span className="truncate flex-1 text-left">No team</span>
+            </button>
+          )}
+          {teams.map(team => (
+            <button
+              type="button"
+              key={team.id}
+              onClick={() => {
+                onTeamChange(team.id);
+                setIsOpen(false);
+              }}
+              className={cn(
+                'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors',
+                selectedTeamId === team.id
+                  ? isLight
+                    ? 'bg-blue-50 text-blue-700 font-medium'
+                    : 'bg-blue-900/30 text-blue-300 font-medium'
+                  : isLight
+                    ? 'text-gray-700 hover:bg-gray-100'
+                    : 'text-gray-200 hover:bg-gray-700',
+              )}
+            >
+              <span className="truncate flex-1 text-left">{team.name}</span>
+              {selectedTeamId === team.id && (
+                <svg className="ml-auto flex-shrink-0" width="12" height="12" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+

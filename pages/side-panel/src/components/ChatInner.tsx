@@ -51,6 +51,7 @@ import { ComponentsMap, CopilotChat, useCopilotChatSuggestions } from '@copilotk
 import { debug, useStorage, cosineSimilarity, embeddingService } from '@extension/shared';
 import { embeddingsStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
+import { cn } from '@extension/ui';
 
 // UI Components
 import { WeatherCard } from './WeatherCard';
@@ -61,6 +62,7 @@ import { StreamingContext } from '../context/StreamingContext';
 import { CustomUserMessage } from './CustomUserMessage';
 import { CustomInput } from './CustomInput';
 import { ThinkingBlock } from './ThinkingBlock';
+const EmptyThinkingBlock: React.FC<{ children?: React.ReactNode }> = () => null;
 import { ChatErrorDisplay } from './ChatErrorDisplay';
 
 // Custom Hooks
@@ -104,7 +106,9 @@ import {
 } from '../actions/copilot/navigationActions';
 import { createTakeScreenshotAction } from '../actions/copilot/screenshotActions';
 import { createGetWeatherAction } from '../actions/copilot/weatherActions';
+import { createJiraActions } from '../actions/copilot/jiraActions';
 import { createWaitAction } from '../actions/copilot/utilityActions';
+import { useGenericTools, createGenericToolActions } from '../actions/copilot/genericToolActions';
 
 // Types & Libraries
 import { AgentState } from '../lib/types';
@@ -126,6 +130,20 @@ import {
   handleGetSelectorAtPoint,
   handleGetSelectorsAtPoints,
 } from '../actions';
+
+// ==============================================================================
+// Helper Components
+// ==============================================================================
+
+interface CopilotActionRegistrarProps {
+  action: any;
+  deps?: any[];
+}
+
+const CopilotActionRegistrar: FC<CopilotActionRegistrarProps> = ({ action, deps = [] }) => {
+  useCopilotAction(action as any, deps);
+  return null;
+};
 
 // ================================================================================
 // TYPES & INTERFACES
@@ -153,6 +171,7 @@ export interface ChatInnerProps {
   resetChatRef: React.MutableRefObject<(() => void) | null>;
   setIsAgentLoading: (loading: boolean) => void;
   showSuggestions: boolean;
+  showThoughtBlocks: boolean;
   // Progress bar state callbacks
   onProgressBarStateChange?: (hasProgressBar: boolean, showProgressBar: boolean, onToggle: () => void) => void;
   // Agent step state management
@@ -162,6 +181,13 @@ export interface ChatInnerProps {
   contextMenuMessage?: string | null;
   // Manual refresh callback
   triggerManualRefresh?: () => void;
+  // Agent and model selection state
+  isAgentAndModelSelected?: boolean;
+  // Agent and model configuration for generic tool actions
+  agentType?: string;
+  modelType?: string;
+  organizationId?: string;
+  teamId?: string;
 }
 
 // ================================================================================
@@ -186,18 +212,24 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   setThemeColor,
   setCurrentMessages,
   saveMessagesToStorage,
+  agentType = 'dynamic_agent',
+  modelType = '',
+  organizationId = '',
+  teamId = '',
   setHeadlessMessagesCount,
   saveMessagesRef,
   restoreMessagesRef,
   resetChatRef,
   setIsAgentLoading,
   showSuggestions,
+  showThoughtBlocks,
   onProgressBarStateChange,
   initialAgentStepState,
   onAgentStepStateChange,
   contextMenuMessage,
   dbTotals,
   triggerManualRefresh,
+  isAgentAndModelSelected = true,
 }) => {
   // ================================================================================
   // THEME & STORAGE
@@ -426,6 +458,51 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // --- WEATHER ACTIONS ---
   useCopilotAction(createGetWeatherAction({ themeColor }) as any, [themeColor]);
 
+  // --- JIRA MCP ACTIONS ---
+  const jiraActions = useMemo(() => createJiraActions({ isLight }), [isLight]);
+
+  // --- GENERIC TOOL ACTIONS ---
+  // Dynamically fetch and register all backend tools not covered by specific actions
+  const genericTools = useGenericTools({
+    isLight,
+    agentType,
+    model: modelType,
+    organizationId,
+    teamId,
+  });
+  
+  const genericToolActions = useMemo(
+    () => createGenericToolActions(genericTools, isLight),
+    [genericTools, isLight]
+  );
+  
+  // Log the structure of actions before attempting to register
+  useEffect(() => {
+    console.log(`[ChatInner] Generic tool actions array:`, genericToolActions);
+    console.log(`[ChatInner] Is array?`, Array.isArray(genericToolActions));
+    console.log(`[ChatInner] Length:`, genericToolActions?.length);
+    
+    if (genericToolActions && genericToolActions.length > 0) {
+      console.log(`[ChatInner] First action structure:`, {
+        name: genericToolActions[0]?.name,
+        description: genericToolActions[0]?.description,
+        available: genericToolActions[0]?.available,
+        hasRender: typeof genericToolActions[0]?.render === 'function',
+        hasParameters: Array.isArray(genericToolActions[0]?.parameters),
+        paramCount: genericToolActions[0]?.parameters?.length,
+      });
+    }
+  }, [genericToolActions]);
+  
+  const safeGenericActions = useMemo(() => {
+    if (Array.isArray(genericToolActions)) {
+      console.log(`[ChatInner] Prepared ${genericToolActions.length} generic tool actions for registration`);
+      return genericToolActions;
+    }
+    console.error(`[ChatInner] genericToolActions is not an array:`, typeof genericToolActions, genericToolActions);
+    return [];
+  }, [genericToolActions]);
+
   // --- UTILITY ACTIONS ---
   useCopilotAction(createWaitAction({ isLight }) as any, [isLight]);
 
@@ -509,14 +586,20 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   
   // Custom markdown renderers for chat messages (stable reference)
   const customMarkdownTagRenderers = React.useMemo(() => ({
-    thinking: ThinkingBlock,
-  }), []);
+    think: showThoughtBlocks ? ThinkingBlock : EmptyThinkingBlock,
+  }), [showThoughtBlocks]);
 
   // Create a stable, session-scoped Input component to avoid remounts
   const ScopedInput = useMemo(() => {
-    const Comp = (props: any) => <CustomInput {...props} listenSessionId={sessionId} />;
+    const Comp = (props: any) => (
+      <CustomInput
+        {...props}
+        listenSessionId={sessionId}
+        isAgentAndModelSelected={isAgentAndModelSelected}
+      />
+    );
     return Comp;
-  }, [sessionId]);
+  }, [sessionId, isAgentAndModelSelected]);
 
   // ================================================================================
   // RENDER
@@ -529,8 +612,16 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     
     return (
     <div className="flex h-full flex-col overflow-hidden">
+      {/* Register Jira and generic tool actions without violating hook rules */}
+      {jiraActions.map((action) => (
+        <CopilotActionRegistrar key={`jira-${action.name}`} action={action} deps={[isLight]} />
+      ))}
+      {safeGenericActions.map((action) => (
+        <CopilotActionRegistrar key={`generic-${action.name}`} action={action} deps={[action.name, isLight]} />
+      ))}
+
       {/* CopilotChat with inline historical cards and floating progress card */}
-      <div className="copilot-chat-wrapper relative min-h-0 flex-1">
+      <div className={cn("copilot-chat-wrapper relative min-h-0 flex-1", !isAgentAndModelSelected && "chat-input-disabled")}>
         {/* Floating TaskProgressCard - sticks to top and floats above messages */}
         {dynamicAgentState.steps && dynamicAgentState.steps.length > 0 && showProgressBar && (
           <div 
@@ -669,20 +760,60 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
             // Create retry handler using reloadMessages
             const handleRetry = () => {
               console.log('[ChatInner] 🔄 Calling reloadMessages...');
+
+              const currentMessages = messages || [];
+              let sanitizedMessagesArr = currentMessages;
+
+              try {
+                const signature = computeMessagesSignature(currentMessages);
+                let result: { messages: any[]; hasChanges: boolean } | null = null;
+
+                if (cachedSanitizedRef.current && cachedSanitizedRef.current.signature === signature) {
+                  result = cachedSanitizedRef.current.result;
+                } else {
+                  result = sanitizeMessages(currentMessages);
+                  cachedSanitizedRef.current = { signature, result } as any;
+                }
+
+                if (result) {
+                  sanitizedMessagesArr = result.messages;
+
+                  if (result.hasChanges) {
+                    const newSignature = computeMessagesSignature(result.messages);
+                    if (newSignature !== signature) {
+                      setMessages(result.messages);
+                    }
+                  }
+                }
+              } catch (err) {
+                console.warn('[ChatInner] Failed to sanitize messages before retry:', err);
+              }
+
+              // Validate messages have proper roles before calling reloadMessages
+              const validMessages = sanitizedMessagesArr.filter(m => 
+                m && typeof m === 'object' && 
+                m.role && typeof m.role === 'string' && 
+                ['user', 'assistant', 'tool', 'system'].includes(m.role)
+              );
+              
+              if (validMessages.length === 0) {
+                console.error('[ChatInner] No valid messages found to reload (all messages have invalid roles)');
+                return;
+              }
               
               // Try to find the last assistant message (failed/incomplete response)
-              const lastAssistantMessage = [...messages].reverse().find(m => m.role === 'assistant');
+              const lastAssistantMessage = [...validMessages].reverse().find(m => m.role === 'assistant');
               if (lastAssistantMessage?.id) {
                 console.log('[ChatInner] Reloading from last assistant message:', lastAssistantMessage.id);
                 reloadMessages(lastAssistantMessage.id);
               } else {
                 // If no assistant message, reload from last user message to retry generation
-                const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
+                const lastUserMessage = [...validMessages].reverse().find(m => m.role === 'user');
                 if (lastUserMessage?.id) {
                   console.log('[ChatInner] No assistant message found, reloading from last user message:', lastUserMessage.id);
                   reloadMessages(lastUserMessage.id);
                 } else {
-                  console.warn('[ChatInner] No user or assistant message found to reload');
+                  console.warn('[ChatInner] No valid user or assistant message found to reload');
                 }
               }
             };
@@ -695,7 +826,15 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
                 autoDismissMs={15000}
               />
             );
-          }, [isLight, reloadMessages, messages])}
+          }, [
+            isLight,
+            reloadMessages,
+            messages,
+            sanitizeMessages,
+            computeMessagesSignature,
+            setMessages,
+            cachedSanitizedRef,
+          ])}
           // onInProgress={(isInProgress) => {
           //     console.log('[ChatInner] In progress:', isInProgress);
           // }}

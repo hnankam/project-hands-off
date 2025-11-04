@@ -189,11 +189,12 @@ async function executeKeystrokeSequenceInternal(
 ): Promise<KeystrokeResult> {
   try {
 
-    // Focus target if provided
+    // Focus target if provided - now using ISOLATED world to match keystroke execution
+    // This ensures locks and state are shared between focus and keystroke phases
     if (req.targetSelector) {
       const [result] = await chrome.scripting.executeScript({
         target: { tabId: (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id as number },
-        world: 'MAIN',
+        world: 'ISOLATED',
         func: (selector: string) => {
           // Prevent duplicate focus injection
           const focusKey = `__copilotFocusInjected_${selector}`;
@@ -242,6 +243,70 @@ async function executeKeystrokeSequenceInternal(
         const injectionKey = `__copilotKeyboardInjected_${signature}`;
         const lockAttr = `data-copilot-keyboard-lock-${signature.replace(/[^a-zA-Z0-9]/g, '_')}`;
         
+        // One-time debug logger for inbound keyboard events within the page.
+        if (!(window as any).__copilotKeyLogInstalled) {
+          (window as any).__copilotKeyLogInstalled = true;
+          (window as any).__copilotKeyLog = [];
+          if (!(window as any).__copilotSyntheticKeyGuard) {
+            (window as any).__copilotSyntheticKeyGuard = {
+              current: null as null | {
+                id: string;
+                key: string;
+                keyupHandled: boolean;
+                cleanupScheduled?: boolean;
+              },
+            };
+          }
+          const capture = (type: string) => (event: KeyboardEvent) => {
+            const formatNode = (node: EventTarget | null): string => {
+              if (!node) return 'null';
+              if (node instanceof HTMLElement) return node.tagName;
+              if (node instanceof Document) return '#document';
+              if (node instanceof Window) return 'window';
+              const anyNode = node as any;
+              return anyNode.tagName || anyNode.nodeName || typeof anyNode;
+            };
+
+            const guard = (window as any).__copilotSyntheticKeyGuard;
+            if (guard?.current && guard.current.key === event.key) {
+              const currentGuard = guard.current;
+              if (type === 'keyup') {
+                if (currentGuard.keyupHandled) {
+                  // Prevent duplicate synthetic keyup events from propagating
+                  event.stopImmediatePropagation();
+                  event.preventDefault();
+                  // eslint-disable-next-line no-console
+                  console.log('[Copilot][Guard] Suppressed duplicate keyup', { key: event.key, trusted: event.isTrusted, time: performance.now() });
+                  return;
+                }
+                currentGuard.keyupHandled = true;
+                if (!currentGuard.cleanupScheduled) {
+                  currentGuard.cleanupScheduled = true;
+                  setTimeout(() => {
+                    if (guard.current === currentGuard) {
+                      guard.current = null;
+                    }
+                  }, 120);
+                }
+              }
+            }
+
+            const entry = {
+              type,
+              key: event.key,
+              time: performance.now(),
+              target: formatNode(event.target),
+              composedPath: event.composedPath().map(formatNode).slice(0, 4),
+            };
+            (window as any).__copilotKeyLog.push(entry);
+            // eslint-disable-next-line no-console
+            console.log('[Copilot][KeyLog]', entry);
+          };
+          (['keydown', 'keypress', 'keyup'] as Array<keyof WindowEventMap>).forEach(evt => {
+            window.addEventListener(evt, capture(evt) as EventListener, true);
+          });
+        }
+
         // Try to acquire lock atomically using DOM attribute
         const existingLock = document.documentElement.getAttribute(lockAttr);
         if (existingLock) {
@@ -262,57 +327,116 @@ async function executeKeystrokeSequenceInternal(
         }
         (window as any)[injectionKey] = true;
         
-        // Auto-cleanup locks after 3 seconds
-        setTimeout(() => {
+        // Cleanup function to be called immediately after dispatch
+        const cleanup = () => {
           delete (window as any)[injectionKey];
           document.documentElement.removeAttribute(lockAttr);
-        }, 3000);
+        };
+        
+        // Fallback cleanup after 3 seconds (in case immediate cleanup fails)
+        const cleanupTimer = setTimeout(cleanup, 3000);
         
         const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
         let dispatched = 0;
         const normalizeKey = (key: string) => key.length === 1 ? key : key; // keep named keys intact
 
-        for (const stroke of sequence) {
-          const repeat = Math.max(1, Math.min(50, Number(stroke.repeat ?? 1)));
-          for (let i = 0; i < repeat; i++) {
-            const key = normalizeKey(stroke.key);
-            const initCommon: KeyboardEventInit = {
-              key,
-              code: key.length === 1 ? `Key${key.toUpperCase()}` : key,
-              ctrlKey: !!stroke.ctrl,
-              metaKey: !!stroke.meta,
-              altKey: !!stroke.alt,
-              shiftKey: !!stroke.shift,
-              bubbles: true,
-              cancelable: true,
-              composed: true,
-            };
+        try {
+          const guard = (window as any).__copilotSyntheticKeyGuard;
 
-            // keydown
-            document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', initCommon));
-            // keypress (optional; many modern apps rely on keydown/up only)
-            document.activeElement?.dispatchEvent(new KeyboardEvent('keypress', initCommon));
-            // input (text insertion for single-character keys)
-            if (key.length === 1) {
-              const ae = document.activeElement as HTMLElement | null;
-              if (ae && (ae as HTMLInputElement).value !== undefined) {
-                const inputEl = ae as HTMLInputElement | HTMLTextAreaElement;
-                const start = (inputEl as any).selectionStart ?? inputEl.value.length;
-                const end = (inputEl as any).selectionEnd ?? inputEl.value.length;
-                inputEl.setRangeText(key, start, end, 'end');
-                ae.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, composed: true, data: key, inputType: 'insertText' }));
-              } else if (ae && (ae as HTMLElement).isContentEditable) {
-                document.execCommand('insertText', false, key);
+          for (const stroke of sequence) {
+            const repeat = Math.max(1, Math.min(50, Number(stroke.repeat ?? 1)));
+            for (let i = 0; i < repeat; i++) {
+              const key = normalizeKey(stroke.key);
+              const initCommon: KeyboardEventInit = {
+                key,
+                code: key.length === 1 ? `Key${key.toUpperCase()}` : key,
+                ctrlKey: !!stroke.ctrl,
+                metaKey: !!stroke.meta,
+                altKey: !!stroke.alt,
+                shiftKey: !!stroke.shift,
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+              };
+
+              const target = (document.activeElement as HTMLElement | null) || document.body || document.documentElement;
+              const dispatchKeyEvent = (type: 'keydown' | 'keypress' | 'keyup') => {
+                // eslint-disable-next-line no-console
+                console.log('[Copilot][DispatchEvent]', { type, key, time: performance.now() });
+                const event = new KeyboardEvent(type, initCommon);
+                target?.dispatchEvent(event);
+                dispatched += 1;
+              };
+
+              const isCharacterKey = key.length === 1 && !stroke.ctrl && !stroke.meta && !stroke.alt;
+              const releaseDelay = Math.max(8, Math.min(80, delayMsInner || 12));
+
+              if (guard) {
+                guard.current = {
+                  id: `${signature}-${key}-${Date.now()}-${i}`,
+                  key,
+                  keyupHandled: false,
+                };
               }
-            }
-            // keyup
-            document.activeElement?.dispatchEvent(new KeyboardEvent('keyup', initCommon));
 
-            dispatched += 3; // rough count of events; input may add 1 more
-            if (delayMsInner > 0) await wait(delayMsInner);
+              // keydown always fires
+              dispatchKeyEvent('keydown');
+
+              if (isCharacterKey) {
+                // keypress for character keys (legacy compatibility)
+                dispatchKeyEvent('keypress');
+
+                // insert text for focused inputs/contenteditable
+                const ae = target as HTMLElement | null;
+                if (ae) {
+                  if ((ae as HTMLInputElement).value !== undefined) {
+                    const inputEl = ae as HTMLInputElement | HTMLTextAreaElement;
+                    const start = (inputEl as any).selectionStart ?? inputEl.value.length;
+                    const end = (inputEl as any).selectionEnd ?? inputEl.value.length;
+                    inputEl.setRangeText(key, start, end, 'end');
+                    ae.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, composed: true, data: key, inputType: 'insertText' }));
+                    dispatched += 1;
+                  } else if (ae.isContentEditable) {
+                    document.execCommand('insertText', false, key);
+                  }
+                }
+              } else {
+                // Give non-character keys a small hold time before keyup
+                await wait(releaseDelay);
+              }
+
+              // keyup releases the key
+              dispatchKeyEvent('keyup');
+
+              if (guard?.current && guard.current.key === key) {
+                setTimeout(() => {
+                  if (guard.current && guard.current.key === key && guard.current.keyupHandled) {
+                    guard.current = null;
+                  }
+                }, 150);
+              }
+
+              if (delayMsInner > 0) await wait(delayMsInner);
+            }
           }
+          
+          // Post-dispatch settle: Allow page event handlers to complete before returning
+          // This prevents race conditions where subsequent actions (like screenshot) might
+          // trigger pending handlers or re-dispatch events
+          await wait(16); // One frame at 60fps
+          
+          // Clear locks immediately now that dispatch is complete
+          clearTimeout(cleanupTimer);
+          cleanup();
+          console.log('[Keyboard] 🔓 Locks cleared immediately after dispatch completion');
+          
+          return dispatched;
+        } catch (error) {
+          // Ensure cleanup happens even if an error occurs
+          clearTimeout(cleanupTimer);
+          cleanup();
+          throw error;
         }
-        return dispatched;
       },
       args: [req.sequence, delayMs, requestSignature],
     });

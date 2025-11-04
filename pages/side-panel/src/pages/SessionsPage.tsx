@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { ChatSessionContainer } from '../components/ChatSessionContainer';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ChatSkeleton } from '../components/LoadingStates';
@@ -6,6 +6,7 @@ import type { SessionType } from '@extension/storage';
 import { sessionStorage } from '@extension/storage';
 import { generateSessionName } from '@extension/shared';
 import { useAuth } from '../context/AuthContext';
+import UserMenu from '../components/UserMenu';
 import {
   cn,
   Button,
@@ -26,6 +27,7 @@ interface SessionsPageProps {
   onGoHome: () => void;
   onClose: () => void;
   onOpenAbout: () => void;
+  onGoAdmin?: (tab?: 'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents') => void;
 }
 
 export const SessionsPage: React.FC<SessionsPageProps> = ({
@@ -37,12 +39,15 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   onGoHome,
   onClose,
   onOpenAbout,
+  onGoAdmin,
 }) => {
   // Auth
-  const { signOut, user } = useAuth();
+  const { user } = useAuth();
   
   // Loading state for initial render
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isEnsuringInitialSession, setIsEnsuringInitialSession] = useState(false);
+  const [isSessionReady, setIsSessionReady] = useState(false);
+  const sessionReadyTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const [clearMessagesConfirmOpen, setClearMessagesConfirmOpen] = useState(false);
   const [resetSessionConfirmOpen, setResetSessionConfirmOpen] = useState(false);
   const [messageCount, setMessageCount] = useState(0);
@@ -53,28 +58,112 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   
   // Ref to store reset functions per session
   const resetFunctionsRef = React.useRef<Record<string, () => void>>({});
+  const hasAttemptedInitialSessionRef = React.useRef(false);
 
   // Initialize with a default session if none exist
   useEffect(() => {
-    if (sessions.length === 0) {
-      sessionStorage.addSession(generateSessionName());
+    if (sessions.length > 0) {
+      hasAttemptedInitialSessionRef.current = true;
+      return;
     }
-    // Set initial loading to false after sessions are loaded
-    setIsInitialLoading(false);
-  }, [sessions.length]);
+
+    if (isEnsuringInitialSession || hasAttemptedInitialSessionRef.current) {
+      return;
+    }
+
+    let isCancelled = false;
+    hasAttemptedInitialSessionRef.current = true;
+
+    const ensureInitialSession = async () => {
+      setIsEnsuringInitialSession(true);
+      try {
+        await sessionStorage.addSession(generateSessionName());
+      } catch (error) {
+        console.error('[SessionsPage] Failed to ensure initial session:', error);
+        if (!isCancelled) {
+          hasAttemptedInitialSessionRef.current = false;
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsEnsuringInitialSession(false);
+        }
+      }
+    };
+
+    ensureInitialSession();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [sessions.length, isEnsuringInitialSession]);
 
   // Callback to receive live message counts from ChatSessionContainer
   const handleMessagesCountChange = useCallback((sessionId: string, count: number) => {
-    setSessionMessageCounts(prev => ({
-      ...prev,
-      [sessionId]: count,
-    }));
+    console.log(`🎯 [SessionsPage] Received message count update: ${count} for session ${sessionId}`);
+    setSessionMessageCounts(prev => {
+      const oldCount = prev[sessionId];
+      if (oldCount !== count) {
+        console.log(`🔄 [SessionsPage] Updating UI counter: ${oldCount ?? 'undefined'} → ${count} for session ${sessionId}`);
+      }
+      return {
+        ...prev,
+        [sessionId]: count,
+      };
+    });
   }, []);
   
   // Callback to register reset function from ChatSessionContainer
   const handleRegisterResetFunction = useCallback((sessionId: string, resetFn: () => void) => {
     resetFunctionsRef.current[sessionId] = resetFn;
   }, []);
+
+  const handleSessionReady = useCallback(
+    (sessionId: string) => {
+      if (!currentSessionId || sessionId !== currentSessionId) {
+        return;
+      }
+
+      if (sessionReadyTimeoutRef.current) {
+        clearTimeout(sessionReadyTimeoutRef.current);
+        sessionReadyTimeoutRef.current = null;
+      }
+
+      setIsSessionReady(true);
+    },
+    [currentSessionId],
+  );
+
+  useEffect(() => {
+    if (!currentSessionId) {
+      if (sessionReadyTimeoutRef.current) {
+        clearTimeout(sessionReadyTimeoutRef.current);
+        sessionReadyTimeoutRef.current = null;
+      }
+      setIsSessionReady(true);
+      return;
+    }
+
+    setIsSessionReady(false);
+
+    if (sessionReadyTimeoutRef.current) {
+      clearTimeout(sessionReadyTimeoutRef.current);
+    }
+
+    // Fallback timeout: 1000ms (1s max skeleton time)
+    // This is longer than the ChatSessionContainer's onReady signal (~750ms)
+    // to ensure the signal has time to fire before we force the skeleton to disappear
+    sessionReadyTimeoutRef.current = setTimeout(() => {
+      sessionReadyTimeoutRef.current = null;
+      setIsSessionReady(true);
+    }, 1000);
+
+    return () => {
+      if (sessionReadyTimeoutRef.current) {
+        clearTimeout(sessionReadyTimeoutRef.current);
+        sessionReadyTimeoutRef.current = null;
+      }
+    };
+  }, [currentSessionId]);
 
   const handleNewSession = () => {
     sessionStorage.addSession(generateSessionName());
@@ -104,13 +193,17 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await signOut();
-    } catch (error) {
-      console.error('[SessionsPage] Logout failed:', error);
+  const activeSession = useMemo(() => {
+    if (!currentSessionId) {
+      return null;
     }
-  };
+    return sessions.find(session => session.id === currentSessionId) || null;
+  }, [sessions, currentSessionId]);
+
+  const hasSessions = sessions.length > 0;
+  const isWaitingForFirstSession = !hasSessions && !hasAttemptedInitialSessionRef.current;
+  const shouldShowSkeleton = isEnsuringInitialSession || isWaitingForFirstSession || (!!currentSessionId && !isSessionReady);
+
 
   const handleResetSession = () => {
     // Use the live count tracked from ChatSessionContainer (same as StatusBar)
@@ -661,11 +754,20 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         await sessionStorage.deleteSession(id);
       }
 
+      // Create a fresh session immediately so the UI can recover without reload
+      try {
+        await sessionStorage.addSession(generateSessionName());
+        hasAttemptedInitialSessionRef.current = true;
+      } catch (createError) {
+        // If session creation fails, allow the ensureInitialSession effect to retry
+        console.error('[SessionsPage] Failed to create new session after clearing:', createError);
+        hasAttemptedInitialSessionRef.current = false;
+      }
+
       setClearSessionsConfirmOpen(false);
-      // Reload the page to reflect changes fully
-      window.location.reload();
     } catch (err) {
       console.error('[SessionsPage] Failed to clear all sessions:', err);
+      setClearSessionsConfirmOpen(false);
     }
   };
 
@@ -853,66 +955,51 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
             <DropdownMenuItem onClick={onOpenAbout} isLight={isLight}>About Project Hands-Off</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onClose} isLight={isLight}>Close Panel</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} isLight={isLight}>
-              <div className="flex items-center gap-2 w-full">
-                <svg
-                  className="h-3.5 w-3.5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round">
-                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
-                </svg>
-                <span>Logout</span>
-              </div>
-            </DropdownMenuItem>
           </DropdownMenu>
+
+          {/* User Menu with Organization and Team Selectors */}
+          <UserMenu isLight={isLight} onGoAdmin={onGoAdmin} />
         </div>
       </div>
 
       {/* Session Content Area */}
       <div className="relative flex-1 overflow-hidden">
-        {isInitialLoading ? (
+        {shouldShowSkeleton ? (
           <ChatSkeleton />
-        ) : sessions.length > 0 ? (
-          sessions.map(session => (
-            <div
-              key={session.id}
-              className={cn(
-                "absolute inset-0 flex flex-col overflow-hidden",
-                session.id === currentSessionId && "animate-fadeIn"
-              )}
-              style={{
-                visibility: session.id === currentSessionId ? 'visible' : 'hidden',
-                zIndex: session.id === currentSessionId ? 1 : 0,
-              }}>
-              <ErrorBoundary
-                level="component"
-                fallback={
-                  <div className="flex flex-1 items-center justify-center p-4">
-                    <div className="text-center">
-                      <p className="mb-2 text-red-600 dark:text-red-400">Session Error</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        This session encountered an error. Try switching to another session.
-                      </p>
-                    </div>
+        ) : activeSession ? (
+          <div className={cn('absolute inset-0 flex flex-col overflow-hidden animate-fadeIn')}>
+            <ErrorBoundary
+              level="component"
+              fallback={
+                <div className="flex flex-1 items-center justify-center p-4">
+                  <div className="text-center">
+                    <p className="mb-2 text-red-600 dark:text-red-400">Session Error</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      This session encountered an error. Try switching to another session.
+                    </p>
                   </div>
-                }>
-                <ChatSessionContainer
-                  sessionId={session.id}
-                  isLight={isLight}
-                  publicApiKey={publicApiKey}
-                  isActive={session.id === currentSessionId}
-                  contextMenuMessage={session.id === currentSessionId ? contextMenuMessage : null}
-                  onMessagesCountChange={handleMessagesCountChange}
-                  onRegisterResetFunction={handleRegisterResetFunction}
-                />
-              </ErrorBoundary>
+                </div>
+              }>
+              <ChatSessionContainer
+                key={activeSession.id}
+                sessionId={activeSession.id}
+                isLight={isLight}
+                publicApiKey={publicApiKey}
+                isActive
+                contextMenuMessage={contextMenuMessage}
+                onMessagesCountChange={handleMessagesCountChange}
+                onRegisterResetFunction={handleRegisterResetFunction}
+                onReady={handleSessionReady}
+              />
+            </ErrorBoundary>
+          </div>
+        ) : hasSessions ? (
+          <div className="flex flex-1 items-center justify-center overflow-hidden">
+            <div className="text-center text-gray-500 dark:text-gray-400">
+              <p>Select a session to begin</p>
+              <p className="text-sm">Choose a session from the list below to continue chatting</p>
             </div>
-          ))
+          </div>
         ) : (
           <div className="flex flex-1 items-center justify-center overflow-hidden">
             <div className="text-center text-gray-500 dark:text-gray-400">
@@ -1256,3 +1343,5 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     </>
   );
 };
+
+

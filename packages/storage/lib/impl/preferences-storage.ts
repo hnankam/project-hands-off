@@ -3,6 +3,7 @@ import { createStorage, StorageEnum } from '../base/index.js';
 export interface PreferencesStateType {
   showAgentCursor: boolean;
   showSuggestions: boolean;
+  showThoughtBlocks: boolean;
 }
 
 export type PreferencesStorageType = ReturnType<typeof createStorage<PreferencesStateType>> & {
@@ -10,6 +11,8 @@ export type PreferencesStorageType = ReturnType<typeof createStorage<Preferences
   toggleShowAgentCursor: () => Promise<void>;
   setShowSuggestions: (show: boolean) => Promise<void>;
   toggleShowSuggestions: () => Promise<void>;
+  setShowThoughtBlocks: (show: boolean) => Promise<void>;
+  toggleShowThoughtBlocks: () => Promise<void>;
 };
 
 const storage = createStorage<PreferencesStateType>(
@@ -17,6 +20,7 @@ const storage = createStorage<PreferencesStateType>(
   {
     showAgentCursor: true, // Default to showing agent cursor
     showSuggestions: true, // Default to showing suggestions
+    showThoughtBlocks: true, // Default to showing thought blocks
   },
   {
     storageEnum: StorageEnum.Local,
@@ -48,6 +52,18 @@ export const preferencesStorage: PreferencesStorageType = {
     await storage.set(currentState => ({
       ...currentState,
       showSuggestions: !currentState.showSuggestions,
+    }));
+  },
+  setShowThoughtBlocks: async (show: boolean) => {
+    await storage.set(currentState => ({
+      ...currentState,
+      showThoughtBlocks: show,
+    }));
+  },
+  toggleShowThoughtBlocks: async () => {
+    await storage.set(currentState => ({
+      ...currentState,
+      showThoughtBlocks: !currentState.showThoughtBlocks,
     }));
   },
 };

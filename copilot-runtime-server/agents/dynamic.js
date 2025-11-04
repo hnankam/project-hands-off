@@ -21,7 +21,7 @@ export async function getDynamicAgentUrl(agent, model) {
  * @param {string} model - The model type
  * @param {Object} authContext - Optional authentication context with user, org, and team info
  */
-export async function createHttpAgent(agent = DEFAULT_AGENT, model = DEFAULT_MODEL, authContext = {}) {
+export async function createHttpAgent(agent = DEFAULT_AGENT, model = DEFAULT_MODEL, authContext = {}, extraHeaders = {}) {
   const url = await getDynamicAgentUrl(agent, model);
   
   // Build headers including auth context if provided
@@ -58,6 +58,18 @@ export async function createHttpAgent(agent = DEFAULT_AGENT, model = DEFAULT_MOD
   }
   if (authContext.teamName) {
     headers['x-copilot-team-name'] = authContext.teamName;
+  }
+  if (authContext.sessionId) {
+    headers['x-copilot-session-id'] = authContext.sessionId;
+  }
+
+  // Forward any additional headers (e.g., client thread identifiers)
+  if (extraHeaders && typeof extraHeaders === 'object') {
+    Object.entries(extraHeaders).forEach(([key, value]) => {
+      if (value != null) {
+        headers[key] = value;
+      }
+    });
   }
   
   return new HttpAgent({ 

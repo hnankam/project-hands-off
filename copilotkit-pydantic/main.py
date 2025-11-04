@@ -10,10 +10,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import DEBUG, HOST, PORT, logger
-from config.db_loaders import warm_caches_on_startup
 from database.connection import init_connection_pool
 from middleware import agent_model_middleware
 from api import register_agent_routes, register_info_routes, register_websocket_routes
+from services import initialize_deployments
 
 # Optional: Logfire integration
 # import logfire
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown."""
     # Startup: init DB pool and warm configuration caches
     await init_connection_pool()
-    await warm_caches_on_startup()
+    await initialize_deployments(prewarm_global=True)
     
     logger.info("🚀 Pydantic AI Agent Server initialized")
     logger.info(f"   Debug mode: {DEBUG}")
@@ -55,16 +55,21 @@ allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
 if allowed_origins_env:
     allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
 else:
-    allowed_origins = ["*"] if DEBUG else []
+    # Default: Allow all origins in debug mode, otherwise allow common origins
+    allowed_origins = ["*"] if DEBUG else [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "chrome-extension://*",
+    ]
 
-if allowed_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"]
-    )
+# Always add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 # Register middleware
 app.middleware("http")(agent_model_middleware)

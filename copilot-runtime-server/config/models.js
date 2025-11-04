@@ -22,7 +22,8 @@ export const DEFAULT_MODEL = modelsConfig.default_model;
 
 // Build MODEL_ENDPOINTS from configuration for backward compatibility
 export const MODEL_ENDPOINTS = modelsConfig.models.reduce((acc, model) => {
-  acc[model.key] = model.endpoint;
+  const endpoint = model.model_settings?.endpoint || model.key;
+  acc[model.key] = endpoint;
   return acc;
 }, {});
 

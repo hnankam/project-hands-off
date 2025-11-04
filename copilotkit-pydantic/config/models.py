@@ -1,26 +1,44 @@
-"""Model configurations loaded from database."""
+"""Model configurations loaded from database and cached per context."""
+
+from __future__ import annotations
 
 import importlib
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 from anthropic import AsyncAnthropicBedrock
-from openai import AsyncAzureOpenAI
-from openai import AsyncOpenAI
+from openai import AsyncAzureOpenAI, AsyncOpenAI
 
 from pydantic_ai import ModelSettings
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from pydantic_ai.models.anthropic import AnthropicModelSettings
 from pydantic_ai.models.bedrock import BedrockModelSettings
-from pydantic_ai.models.openai import OpenAIModel, OpenAIModelSettings
+from pydantic_ai.models.openai import OpenAIModelSettings, OpenAIResponsesModel
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
+from utils.context import context_tuple
 
-# Internal cache
-_models_cache: Dict[str, Dict[str, Any]] | None = None
-_model_names_cache: list[str] | None = None
-_backcompat_settings: Dict[str, Any] | None = None
+
+# Internal caches keyed by context tuple (<org>, <team>)
+_models_cache_by_context: Dict[Tuple[str, str], Dict[str, Dict[str, Any]]] = {}
+_model_names_by_context: Dict[Tuple[str, str], List[str]] = {}
+_backcompat_by_context: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+
+def clear_context_models(organization_id: str | None = None, team_id: str | None = None) -> None:
+    """Clear cached models for a specific context or all contexts."""
+
+    if organization_id is None and team_id is None:
+        _models_cache_by_context.clear()
+        _model_names_by_context.clear()
+        _backcompat_by_context.clear()
+        return
+
+    key = context_tuple(organization_id, team_id)
+    _models_cache_by_context.pop(key, None)
+    _model_names_by_context.pop(key, None)
+    _backcompat_by_context.pop(key, None)
 
 
 def _load_config() -> Dict[str, Any]:
@@ -184,14 +202,14 @@ def _build_models(config: Dict[str, Any]) -> tuple[Dict[str, Dict[str, Any]], Di
                 temperature=per_model_settings_cfg.get('temperature', factory_settings.get('temperature', 0.0)),
                 max_tokens=per_model_settings_cfg.get('max_tokens', factory_settings.get('max_tokens', 4096)),
             )
-            model_instance = OpenAIModel(model_name, provider=provider)
+            model_instance = OpenAIResponsesModel(model_name, provider=provider)
         else:
             # Fallback generic
             settings = ModelSettings(
                 temperature=per_model_settings_cfg.get('temperature', 0.0),
                 max_tokens=per_model_settings_cfg.get('max_tokens', 2048),
             )
-            model_instance = OpenAIModel(model_name, provider=provider)  # pragma: no cover
+            model_instance = OpenAIResponsesModel(model_name, provider=provider)  # pragma: no cover
 
         models[key] = {
             'model': model_instance,
@@ -220,23 +238,67 @@ def _build_models(config: Dict[str, Any]) -> tuple[Dict[str, Dict[str, Any]], Di
 
 
 def get_models() -> Dict[str, Dict[str, Any]]:
-    """Get the models dictionary (lazy-loaded from JSON config)."""
-    global _models_cache, _model_names_cache, _backcompat_settings
-    if _models_cache is None:
+    """Get models for the global (unscoped) context."""
+
+    key = context_tuple(None, None)
+    if key not in _models_cache_by_context:
         config = _load_config()
-        _models_cache, _backcompat_settings = _build_models(config)
-        _model_names_cache = list(_models_cache.keys())
-    return _models_cache
+        models, backcompat = _build_models(config)
+        _models_cache_by_context[key] = models
+        _model_names_by_context[key] = list(models.keys())
+        _backcompat_by_context[key] = backcompat
+    return _models_cache_by_context[key]
+
+
+def get_models_for_context(organization_id: str | None, team_id: str | None) -> Dict[str, Dict[str, Any]]:
+    """Get models for a specific organization/team context."""
+
+    key = context_tuple(organization_id, team_id)
+    models = _models_cache_by_context.get(key)
+    if models is None:
+        raise RuntimeError(
+            f"Model configuration not loaded for org={organization_id} team={team_id}. "
+            "The deployment manager must warm this context before usage."
+        )
+    return models
 
 
 def get_model_names() -> list[str]:
-    """Get list of available model names without instantiating models."""
-    global _model_names_cache
-    if _model_names_cache is None:
-        # Load names directly from config without instantiating models
+    """Get list of available model names for the global context."""
+
+    key = context_tuple(None, None)
+    if key not in _model_names_by_context:
         config = _load_config()
-        _model_names_cache = [m['key'] for m in (config.get('models') or [])]
-    return _model_names_cache or []
+        models, backcompat = _build_models(config)
+        _models_cache_by_context[key] = models
+        _model_names_by_context[key] = list(models.keys())
+        _backcompat_by_context[key] = backcompat
+    return _model_names_by_context[key]
+
+
+def get_model_names_for_context(organization_id: str | None, team_id: str | None) -> List[str]:
+    key = context_tuple(organization_id, team_id)
+    names = _model_names_by_context.get(key)
+    if names is None:
+        raise RuntimeError(
+            f"Model names not loaded for org={organization_id} team={team_id}. "
+            "Warm the context via the deployment manager first."
+        )
+    return names
+
+
+def store_models_for_context(
+    organization_id: str | None,
+    team_id: str | None,
+    config: Dict[str, Any],
+) -> None:
+    """Build and cache models for a given context using raw configuration."""
+
+    models, backcompat = _build_models(config)
+    key = context_tuple(organization_id, team_id)
+    _models_cache_by_context[key] = models
+    _model_names_by_context[key] = list(models.keys())
+    _backcompat_by_context[key] = backcompat
 
 
 # Backward-compat module-level exports
@@ -260,11 +322,13 @@ def __getattr__(name):
     if name in {'google_model_settings', 'anthropic_model_settings', 'bedrock_model_settings'}:
         # Ensure models (and backcompat settings) are initialized on first access
         global google_model_settings, anthropic_model_settings, bedrock_model_settings
-        if _backcompat_settings is None:
+        key = context_tuple(None, None)
+        if key not in _backcompat_by_context:
             _ = get_models()
-        google_model_settings = _backcompat_settings.get('google_model_settings') if _backcompat_settings else None
-        anthropic_model_settings = _backcompat_settings.get('anthropic_model_settings') if _backcompat_settings else None
-        bedrock_model_settings = _backcompat_settings.get('bedrock_model_settings') if _backcompat_settings else None
+        backcompat = _backcompat_by_context.get(key, {})
+        google_model_settings = backcompat.get('google_model_settings')
+        anthropic_model_settings = backcompat.get('anthropic_model_settings')
+        bedrock_model_settings = backcompat.get('bedrock_model_settings')
         return {
             'google_model_settings': google_model_settings,
             'anthropic_model_settings': anthropic_model_settings,

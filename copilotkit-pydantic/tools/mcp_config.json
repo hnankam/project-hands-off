@@ -1,0 +1,43 @@
+{
+    "mcpServers": {
+      "corp-jira": {
+        "command": "node",
+        "args": [
+          "/Users/hnankam/Documents/adobe-mcp-servers-main/src/corp-jira/dist/index.js"
+        ],
+        "env": {
+            "JIRA_PERSONAL_ACCESS_TOKEN": "ZGdwamlyYWxsbTpIZWlzZW5iZXJnOTg3NjU0QA==",
+            "JIRA_EMAIL": "dgpjirallm",
+            "JIRA_DEFAULT_PROJECT": "DGROWTH",
+            "JIRA_API_BASE_URL": "https://jira.corp.adobe.com/rest/api/2",
+            "JIRA_ENVIRONMENT": "PROD"
+        },
+        "max_retries": 5
+      },
+      "wiki": {
+        "command": "node",
+        "args": [
+          "/Users/hnankam/Documents/adobe-mcp-servers-main/src/adobe-wiki-v2/dist/index.js"
+        ],
+        "env": {
+          "NODE_ENV": "production",
+          "LOG_LEVEL": "error",
+          "WIKI_MCP_TOKEN": "OTQ5NjUyMDkxMjIyOrSmMha/cBanRlxTXx07LKfJZHuJ"
+        },
+        "max_retries": 5
+      },
+      "corp-github": {
+        "command": "node",
+        "args": [
+          "/Users/hnankam/Documents/adobe-mcp-servers-main/src/corp-github/dist/index.js"
+        ],
+        "env": {
+          "GITHUB_PERSONAL_ACCESS_TOKEN": "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",
+          "GITHUB_API_BASE_URL": "https://git.azr.adobeitc.com/api/v3",
+          "NODE_ENV": "production",
+          "LOG_LEVEL": "error"
+        },
+        "max_retries": 5
+      }
+    }
+  }

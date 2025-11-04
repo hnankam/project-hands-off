@@ -40,7 +40,7 @@ The schema includes the following tables:
 
 ### Tracking Tables
 - **config_versions**: Version history for configurations
-- **usage_logs**: Track API usage and costs
+- **usage**: Track API usage and costs
 - **audit_logs**: Audit trail for configuration changes
 
 ## Quick Start
@@ -186,7 +186,7 @@ Data is inserted with `ON CONFLICT DO UPDATE`, so running the seed multiple time
 Track API usage per model/agent:
 
 ```sql
-INSERT INTO usage_logs (
+INSERT INTO usage (
     agent_type, model_key, session_id,
     request_tokens, response_tokens, total_tokens,
     cost, duration_ms, status
@@ -287,7 +287,7 @@ psql "postgresql://user:pass@host:5432/db" < backup.sql
 
 All critical queries are indexed:
 - Lookup by key (providers, models, agents)
-- Time-based queries (usage_logs, audit_logs)
+- Time-based queries (usage, audit_logs)
 - Foreign key relationships
 
 ### Query Optimization

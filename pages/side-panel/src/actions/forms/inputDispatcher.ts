@@ -216,11 +216,14 @@ export class InputDispatcher {
           }
           (window as any)[injectionKey] = true;
           
-          // Auto-cleanup locks after 4 seconds
-          setTimeout(() => {
+          // Cleanup function to be called immediately after input completes
+          const cleanup = () => {
             delete (window as any)[injectionKey];
             document.documentElement.removeAttribute(lockAttr);
-          }, 4000);
+          };
+          
+          // Fallback cleanup after 4 seconds (in case immediate cleanup fails)
+          const cleanupTimer = setTimeout(cleanup, 4000);
           
           // Define content script functions inline
           // Shadow DOM helper - supports >> notation
@@ -1730,15 +1733,27 @@ export class InputDispatcher {
                 // Store the resolve function so cursor animation can call it
                 (window as any).__copilotInputCallback__ = async () => {
                   const result = await performInput();
+                  // Clear locks immediately after input completes
+                  clearTimeout(cleanupTimer);
+                  cleanup();
+                  console.log(`[ContentScript:${callIdParam}] 🔓 Locks cleared after cursor movement + input`);
                   resolve(result);
                 };
               });
             } else {
               // No cursor movement, perform input immediately
               focusAndHighlight(elementInfo.element, shouldMoveCursor);
-              return await performInput();
+              const result = await performInput();
+              // Clear locks immediately after input completes
+              clearTimeout(cleanupTimer);
+              cleanup();
+              console.log(`[ContentScript:${callIdParam}] 🔓 Locks cleared immediately after input completion`);
+              return result;
             }
           } catch (error) {
+            // Ensure cleanup happens even if an error occurs
+            clearTimeout(cleanupTimer);
+            cleanup();
             return {
               success: false,
               message: `Error inputting data: ${error instanceof Error ? error.message : 'Unknown error'}`,

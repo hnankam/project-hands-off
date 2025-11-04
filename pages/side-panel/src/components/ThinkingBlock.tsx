@@ -28,7 +28,7 @@ import { useStreaming } from '../context/StreamingContext';
 export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) => {
   const { isLight } = useStorage(exampleThemeStorage);
   const { isStreaming } = useStreaming();
-  const [isOpen, setIsOpen] = useState(true); // Start open while generation begins
+  const [isOpen, setIsOpen] = useState(() => Boolean(isStreaming));
   const autoCloseTimerRef = useRef<NodeJS.Timeout | null>(null);
   const manualOnlyRef = useRef(false); // After auto-close, only manual toggling allowed
   const prevStreamingRef = useRef<boolean>(false);
@@ -157,9 +157,9 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
   };
   
   // PERFORMANCE: Pre-compile regex patterns once
-  const THINKING_OPEN_RE = React.useMemo(() => /<thinking\s*>/i, []);
-  const THINKING_CLOSE_RE = React.useMemo(() => /<\/thinking\s*>/i, []);
-  const THINKING_TAGS_RE = React.useMemo(() => /<\/?thinking\s*>/gi, []);
+  const THINKING_OPEN_RE = React.useMemo(() => /<think(?:ing)?\s*>/i, []);
+  const THINKING_CLOSE_RE = React.useMemo(() => /<\/think(?:ing)?\s*>/i, []);
+  const THINKING_TAGS_RE = React.useMemo(() => /<\/?think(?:ing)?\s*>/gi, []);
 
   // Extract only the content that is actually inside <thinking>...</thinking> tags.
   // The markdown renderer should only pass content between the tags, but sometimes

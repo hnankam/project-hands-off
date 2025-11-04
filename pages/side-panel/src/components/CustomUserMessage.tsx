@@ -189,12 +189,24 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
   const handleRerun = () => {
     try {
       if (!messages || !message) return;
+      
+      // Validate that the current message has a valid role
+      if (!(message as any)?.role || typeof (message as any).role !== 'string') {
+        console.error('[CustomUserMessage] Cannot rerun: current message has invalid role:', (message as any)?.role);
+        return;
+      }
+      
       // Find the next assistant message after this user message
-      const following = messages.slice(index + 1).find(m => (m as any)?.role === 'assistant');
+      const following = messages.slice(index + 1).find(m => {
+        const role = (m as any)?.role;
+        return role === 'assistant' && typeof role === 'string';
+      });
+      
       if (following?.id) {
         reloadMessages(following.id);
         return;
       }
+      
       // Fallback: rerun starting from this user message
       if ((message as any)?.id) {
         reloadMessages((message as any).id);

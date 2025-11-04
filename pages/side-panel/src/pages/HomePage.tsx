@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { cn, Button, DropdownMenu, DropdownMenuItem, DropdownMenuSeparator } from '@extension/ui';
-import { useAuth } from '../context/AuthContext';
+import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
+import UserMenu from '../components/UserMenu';
+import { useAuth } from '../context/AuthContext';
 
 interface HomePageProps {
   isLight: boolean;
   onGoToSessions: () => void;
-  onGoAdmin?: () => void;
+  onGoAdmin?: (tab?: 'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents') => void;
 }
 
 // Simple settings button component with upward-opening dropdown
@@ -169,18 +170,11 @@ const SettingsButton: React.FC<{ isLight: boolean; theme: string; onOpenSettings
 };
 
 export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onGoAdmin }) => {
-  const { signOut, user } = useAuth();
   const { theme } = useStorage(exampleThemeStorage);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const version = chrome.runtime?.getManifest?.()?.version || '1.0.0';
-
-  const handleLogout = async () => {
-    try {
-      await signOut();
-    } catch (error) {
-      console.error('[HomePage] Logout failed:', error);
-    }
-  };
+  const { organization, activeTeam } = useAuth();
+  const canAccessSessions = !!(organization && activeTeam);
 
   return (
     <>
@@ -196,58 +190,12 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {/* More Options Dropdown */}
-          <DropdownMenu
-            align="right"
+          {/* User Menu with Organization and Team Selectors */}
+          <UserMenu
             isLight={isLight}
-            trigger={
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  'h-7 w-7 p-0',
-                  isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-800',
-                )}>
-                <svg
-                  width="16"
-                  height="16"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round">
-                  <path d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                </svg>
-              </Button>
-            }>
-            {onGoAdmin && (
-              <DropdownMenuItem onClick={onGoAdmin} isLight={isLight}>
-                <div className="flex items-center gap-2 w-full">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M12 1.5a.75.75 0 0 1 .75.75V4.5a.75.75 0 0 1-1.5 0V2.25A.75.75 0 0 1 12 1.5ZM5.636 4.136a.75.75 0 0 1 1.06 0l1.592 1.591a.75.75 0 0 1-1.061 1.06L5.636 5.197a.75.75 0 0 1 0-1.061ZM18.364 4.136a.75.75 0 0 1 0 1.061l-1.591 1.591a.75.75 0 0 1-1.061-1.06l1.592-1.592a.75.75 0 0 1 1.06 0ZM1.5 12a.75.75 0 0 1 .75-.75H4.5a.75.75 0 0 1 0 1.5H2.25A.75.75 0 0 1 1.5 12Zm19.5 0a.75.75 0 0 1 .75-.75h2.25a.75.75 0 0 1 0 1.5H21.75a.75.75 0 0 1-.75-.75Zm-2.928 5.303a.75.75 0 0 1 1.061 0l1.591 1.591a.75.75 0 0 1-1.06 1.061l-1.591-1.591a.75.75 0 0 1 0-1.061Zm-11.667 0a.75.75 0 0 1 0 1.061l-1.591 1.591a.75.75 0 0 1-1.061-1.06l1.591-1.592a.75.75 0 0 1 1.061 0ZM12 18a.75.75 0 0 1 .75.75v2.25a.75.75 0 0 1-1.5 0v-2.25A.75.75 0 0 1 12 18Zm-4.5-6a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0Z" />
-                  </svg>
-                  <span>Admin</span>
-                </div>
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} isLight={isLight}>
-              <div className="flex items-center gap-2 w-full">
-                <svg
-                  className="h-3.5 w-3.5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round">
-                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
-                </svg>
-                <span>Logout</span>
-              </div>
-            </DropdownMenuItem>
-          </DropdownMenu>
+            onGoAdmin={(tab) => onGoAdmin?.(tab)}
+            onGoToSessions={onGoToSessions}
+          />
         </div>
       </div>
 
@@ -259,21 +207,27 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
           </p>
           <div className="flex flex-col gap-2">
             <button
-              onClick={onGoToSessions}
+              onClick={() => {
+                if (!canAccessSessions) return;
+                onGoToSessions();
+              }}
+              disabled={!canAccessSessions}
               className={cn(
                 'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                isLight ? 'bg-gray-800 text-white hover:bg-gray-900' : 'bg-gray-200 text-gray-900 hover:bg-white',
+                canAccessSessions
+                  ? isLight ? 'bg-gray-800 text-white hover:bg-gray-900' : 'bg-gray-200 text-gray-900 hover:bg-white'
+                  : isLight ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gray-700 text-gray-500 cursor-not-allowed'
               )}>
-              Go to Sessions
+              Go to Sessions{!canAccessSessions && ' (Select org & team)'}
             </button>
             {onGoAdmin && (
               <button
-                onClick={onGoAdmin}
+                onClick={() => onGoAdmin('organizations')}
                 className={cn(
                   'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
                   isLight
-                    ? 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-300'
-                    : 'bg-gray-800 text-gray-100 hover:bg-gray-700 border border-gray-700',
+                    ? 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                    : 'bg-gray-800 text-gray-100 hover:bg-gray-700',
                 )}>
                 Go to Admin
               </button>
@@ -290,7 +244,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
         )}>
         <div className="flex items-center justify-between px-4 py-1.5">
           <div className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
-            Hands-Off v{version}
+            v {version}
           </div>
           <SettingsButton isLight={isLight} theme={theme} onOpenSettings={() => setSettingsOpen(true)} />
         </div>

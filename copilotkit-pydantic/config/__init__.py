@@ -8,11 +8,20 @@ from .models import (
     google_model_settings,
     anthropic_model_settings,
     bedrock_model_settings,
+    get_models_for_context,
+    get_model_names_for_context,
+    store_models_for_context,
+    clear_context_models,
 )
 from .prompts import (
     get_agent_prompts,
     get_agent_types,
     get_agent_info,
+    get_agent_prompts_for_context,
+    get_agent_types_for_context,
+    get_agent_info_for_context,
+    store_prompts_for_context,
+    clear_context_prompts,
 )
 
 # Lazy-loaded MODELS and AGENT_PROMPTS
@@ -40,9 +49,18 @@ __all__ = [
     'google_model_settings',
     'anthropic_model_settings',
     'bedrock_model_settings',
+    'get_models_for_context',
+    'get_model_names_for_context',
+    'store_models_for_context',
+    'clear_context_models',
     'get_agent_prompts',
     'get_agent_types',
     'get_agent_info',
+    'get_agent_prompts_for_context',
+    'get_agent_types_for_context',
+    'get_agent_info_for_context',
+    'store_prompts_for_context',
+    'clear_context_prompts',
     'AGENT_PROMPTS',
     'agent_types',
 ]

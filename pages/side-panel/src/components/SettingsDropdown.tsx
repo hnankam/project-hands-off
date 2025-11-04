@@ -7,8 +7,10 @@ interface SettingsDropdownProps {
   isLight: boolean;
   showAgentCursor: boolean;
   showSuggestions: boolean;
+  showThoughtBlocks: boolean;
   onShowAgentCursorChange: (show: boolean) => void;
   onShowSuggestionsChange: (show: boolean) => void;
+  onShowThoughtBlocksChange: (show: boolean) => void;
   onExpandClick: () => void;
 }
 
@@ -16,8 +18,10 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
   isLight,
   showAgentCursor,
   showSuggestions,
+  showThoughtBlocks,
   onShowAgentCursorChange,
   onShowSuggestionsChange,
+  onShowThoughtBlocksChange,
   onExpandClick,
 }) => {
   const { theme } = useStorage(exampleThemeStorage);
@@ -231,8 +235,8 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
           {/* Show Suggestions Toggle */}
           <div
             className={cn(
-              'px-3 py-2.5',
-              isLight ? 'hover:bg-gray-50' : 'hover:bg-gray-700/50'
+              'px-3 py-2.5 border-b',
+              isLight ? 'border-gray-200 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-700/50'
             )}
           >
             <div className="flex items-center justify-between">
@@ -277,6 +281,61 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
                   className={cn(
                     'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                     showSuggestions ? 'translate-x-4' : 'translate-x-0'
+                  )}
+                />
+              </button>
+            </div>
+          </div>
+
+          {/* Show Thought Blocks Toggle */}
+          <div
+            className={cn(
+              'px-3 py-2.5',
+              isLight ? 'hover:bg-gray-50' : 'hover:bg-gray-700/50'
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex-1 pr-3">
+                <label
+                  htmlFor="show-thought-blocks-dropdown"
+                  className={cn(
+                    'text-xs font-medium cursor-pointer block',
+                    isLight ? 'text-gray-900' : 'text-gray-100'
+                  )}
+                >
+                  Show Thought Blocks
+                </label>
+                <p
+                  className={cn(
+                    'text-xs mt-0.5',
+                    isLight ? 'text-gray-500' : 'text-gray-400'
+                  )}
+                >
+                  Display the assistant's hidden reasoning
+                </p>
+              </div>
+              <button
+                id="show-thought-blocks-dropdown"
+                role="switch"
+                aria-checked={showThoughtBlocks}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onShowThoughtBlocksChange(!showThoughtBlocks);
+                }}
+                className={cn(
+                  'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1',
+                  showThoughtBlocks
+                    ? 'bg-blue-600 focus:ring-blue-500'
+                    : isLight
+                    ? 'bg-gray-200 focus:ring-gray-300'
+                    : 'bg-gray-600 focus:ring-gray-500'
+                )}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                    showThoughtBlocks ? 'translate-x-4' : 'translate-x-0'
                   )}
                 />
               </button>
