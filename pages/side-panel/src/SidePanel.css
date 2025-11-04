@@ -528,7 +528,7 @@ footer div[class*="suggestions"] button {
 .copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar,
 .copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar,
 .copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar {
-  height: 3px;
+  height: 2px;
 }
 
 .copilot-chat-container .copilotKitMessage::-webkit-scrollbar-thumb,
