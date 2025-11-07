@@ -1155,7 +1155,7 @@ const TimeseriesCard: React.FC<{
               )}
             >
               <span className="h-2 w-2" style={{ backgroundColor: colorMap[seriesItem.id] }} />
-              <span>{seriesItem.label}</span>
+              <span className={cn(isLight ? 'text-gray-700' : 'text-gray-200')}>{seriesItem.label}</span>
             </button>
           );
         })}
@@ -1802,7 +1802,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                 <span
                   className={cn(
                     'text-[10px] uppercase transition-opacity',
-                    isLight ? 'text-gray-600' : 'text-gray-400',
+                    isLight ? 'text-gray-600' : 'text-gray-200',
                     !visibleSeries.totalTokens && 'opacity-30'
                   )}
                 >
@@ -1827,7 +1827,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                 <span
                   className={cn(
                     'text-[10px] uppercase transition-opacity',
-                    isLight ? 'text-gray-600' : 'text-gray-400',
+                    isLight ? 'text-gray-600' : 'text-gray-200',
                     !visibleSeries.requestTokens && 'opacity-30'
                   )}
                 >
@@ -1852,7 +1852,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                 <span
                   className={cn(
                     'text-[10px] uppercase transition-opacity',
-                    isLight ? 'text-gray-600' : 'text-gray-400',
+                    isLight ? 'text-gray-600' : 'text-gray-200',
                     !visibleSeries.responseTokens && 'opacity-30'
                   )}
                 >
@@ -2329,7 +2329,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
           isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
         )}
       >
-        <div className="flex items-center justify-between border-b px-4 py-2">
+        <div className={cn('flex items-center justify-between border-b px-4 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
           <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
             Usage Activity
           </h3>
@@ -2358,11 +2358,11 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                       ? 'cursor-not-allowed opacity-40'
                       : isLight
                       ? 'hover:bg-gray-100 text-gray-600'
-                      : 'hover:bg-gray-800 text-gray-400',
+                      : 'hover:bg-gray-700 text-gray-200',
                   )}
                 >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
                 <span className={cn('text-xs px-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -2382,11 +2382,11 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                       ? 'cursor-not-allowed opacity-40'
                       : isLight
                       ? 'hover:bg-gray-100 text-gray-600'
-                      : 'hover:bg-gray-800 text-gray-400',
+                      : 'hover:bg-gray-700 text-gray-200',
                   )}
                 >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
                 </button>
               </div>
@@ -2394,8 +2394,8 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
           )}
         </div>
         <div className="max-h-80 overflow-auto recent-sessions-scroll">
-          <table className="min-w-full divide-y divide-gray-200 text-xs">
-            <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#1A2332]')}>
+          <table className={cn('min-w-full divide-y text-xs', isLight ? 'divide-gray-200' : 'divide-gray-700')}>
+            <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
               <tr>
                 <th
                   className={cn(
@@ -2455,7 +2455,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                 </th>
               </tr>
             </thead>
-            <tbody className={cn('divide-y', isLight ? 'divide-gray-100' : 'divide-gray-800')}>
+            <tbody className={cn('divide-y', isLight ? 'divide-gray-100' : 'divide-gray-700')}>
               {usageData?.recent.data.map(row => (
                 <tr
                   key={row.id}
