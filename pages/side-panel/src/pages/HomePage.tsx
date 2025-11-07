@@ -12,7 +12,7 @@ import { teamsCache } from '../components/TeamSelectorDropdown';
 interface HomePageProps {
   isLight: boolean;
   onGoToSessions: () => void;
-  onGoAdmin?: (tab?: 'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents') => void;
+  onGoAdmin?: (tab?: 'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents' | 'usage') => void;
 }
 
 interface UsageSnapshot {
@@ -306,7 +306,28 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const [activeTeamName, setActiveTeamName] = useState<string | null>(null);
   const [teamsRefreshKey, setTeamsRefreshKey] = useState(0);
   const [currentTipIndex, setCurrentTipIndex] = useState(0);
-  const [activeHomeTab, setActiveHomeTab] = useState<'sessions' | 'usage' | 'insights'>('sessions');
+  
+  // Initialize activeHomeTab from localStorage
+  const [activeHomeTab, setActiveHomeTab] = useState<'sessions' | 'usage' | 'insights'>(() => {
+    try {
+      const stored = localStorage.getItem('homePageActiveTab');
+      if (stored === 'sessions' || stored === 'usage' || stored === 'insights') {
+        return stored;
+      }
+    } catch (error) {
+      console.error('[HomePage] Failed to read tab from localStorage:', error);
+    }
+    return 'sessions';
+  });
+
+  // Persist activeHomeTab to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('homePageActiveTab', activeHomeTab);
+    } catch (error) {
+      console.error('[HomePage] Failed to save tab to localStorage:', error);
+    }
+  }, [activeHomeTab]);
 
   // Get team name - check cache and fetch if needed
   useEffect(() => {
@@ -664,12 +685,6 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
           <div className={cn('flex-1 truncate px-1 text-sm font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
             Home
           </div>
-          {lastMetricsRefresh && (
-            <div className="hidden items-center gap-1 text-[11px] text-gray-500 sm:flex">
-              <span className="hidden sm:inline">Synced</span>
-              <span className="font-mono">{formatRelativeTime(lastMetricsRefresh)}</span>
-            </div>
-          )}
         </div>
         <div className="flex items-center gap-1">
           <UserMenu
@@ -681,19 +696,19 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
       </div>
 
       {/* Home Page Content */}
-      <div className={cn('flex-1 overflow-hidden', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
-        <div className="h-full overflow-y-auto home-page-scroll">
+      <div className={cn('flex-1 min-h-0 overflow-hidden', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+        <div className="h-full min-h-0 overflow-y-auto home-page-scroll">
           <div className="px-3 py-4 space-y-4">
             {/* Hero */}
             <div
               className={cn(
-                'relative overflow-hidden rounded-xl border px-4 py-5',
+                'relative overflow-hidden rounded-xl border px-4 py-5 max-w-4xl mx-auto',
                 isLight
                   ? 'border-gray-200 bg-gradient-to-br from-white via-gray-50 to-blue-50/40'
                   : 'border-gray-800 bg-gradient-to-br from-[#111827] via-[#111b29] to-[#0f172a]'
               )}
             >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-4">
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium">
                     <span
@@ -813,7 +828,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
             {/* Tab Bar - Sticky */}
             <div
               className={cn(
-                'sticky top-0 z-10 flex items-center justify-center gap-2 px-2 py-1 h-[34px] rounded-lg',
+                'sticky top-0 z-10 flex items-center justify-center gap-2 px-2 py-1 h-[34px] rounded-lg max-w-4xl mx-auto',
                 isLight ? 'bg-gray-50' : 'bg-[#151C24]',
                 )}>
               <div className="flex items-center gap-1">
@@ -839,7 +854,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
 
             {/* Tab Content */}
             {activeHomeTab === 'sessions' && (
-              <div className="space-y-4 animate-fadeIn">
+              <div className="space-y-4 animate-fadeIn max-w-4xl mx-auto">
                 {/* Stat Grid */}
                 <div className="grid gap-3 grid-cols-2">
                   {statCards.map(card => (
@@ -918,7 +933,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                   ) : (
                     <div className="overflow-auto max-h-[400px] recent-sessions-scroll">
                       <table className="w-full" style={{ minWidth: '800px' }}>
-                        <thead>
+                        <thead className="sticky top-0 z-10">
                           <tr className={cn(isLight ? 'bg-gray-50 text-gray-500' : 'bg-[#0B121D] text-gray-400')}>
                             <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide">Session</th>
                             <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide">Agent · Model</th>
@@ -1006,7 +1021,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
             )}
 
             {activeHomeTab === 'usage' && (
-              <div className="space-y-4 animate-fadeIn">
+              <div className="space-y-4 animate-fadeIn max-w-4xl mx-auto">
                 {/* Usage Overview */}
                 <div
                   className={cn(
@@ -1016,35 +1031,63 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                 >
                   <div
                     className={cn(
-                      'flex items-center justify-between border-b px-4 py-3',
+                      'relative border-b px-4 py-3',
                       isLight ? 'border-gray-200' : 'border-gray-800'
                     )}
                   >
-                    <div>
-                      <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
-                        Usage Overview
-                      </h3>
-                      <p className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                        Workspace-wide token consumption at a glance.
-                      </p>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                          Usage Overview
+                        </h3>
+                        <p className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                          Workspace-wide token consumption at a glance.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRefreshMetrics}
+                        disabled={usageLoading}
+                        className={cn(
+                          'flex items-center justify-center w-8 h-8 rounded border transition-colors flex-shrink-0',
+                          isLight
+                            ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                            : 'bg-[#151C24] border-gray-700 text-gray-200 hover:bg-gray-800',
+                        )}
+                        title="Refresh usage metrics"
+                      >
+                        <svg className={cn('w-4 h-4', usageLoading ? 'animate-spin' : '')} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path d="M4 4v4h4M16 16v-4h-4" />
+                          <path d="M5.636 5.636A7 7 0 0117 10M14.364 14.364A7 7 0 013 10" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="mt-2 sm:hidden">
+                      <button
+                        onClick={() => onGoAdmin?.('usage')}
+                        className={cn(
+                          'inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide',
+                          isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-300 hover:text-blue-200'
+                        )}
+                      >
+                        View all usage
+                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
                     </div>
                     <button
-                      type="button"
-                      onClick={handleRefreshMetrics}
-                      disabled={usageLoading}
+                      onClick={() => onGoAdmin?.('usage')}
                       className={cn(
-                        'flex items-center justify-center w-8 h-8 rounded border transition-colors',
-                  isLight
-                          ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                          : 'bg-[#151C24] border-gray-700 text-gray-200 hover:bg-gray-800',
+                        'hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide absolute right-14 top-[18px]',
+                        isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-300 hover:text-blue-200'
                       )}
-                      title="Refresh usage metrics"
                     >
-                      <svg className={cn('w-4 h-4', usageLoading ? 'animate-spin' : '')} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2}>
-                        <path d="M4 4v4h4M16 16v-4h-4" />
-                        <path d="M5.636 5.636A7 7 0 0117 10M14.364 14.364A7 7 0 013 10" />
+                      View all usage
+                      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-              </button>
+                    </button>
                   </div>
                   <div className="space-y-4 px-4 py-4">
                     <UsageDisplay
@@ -1115,7 +1158,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
             )}
 
             {activeHomeTab === 'insights' && (
-              <div className="space-y-4 animate-fadeIn">
+              <div className="space-y-4 animate-fadeIn max-w-4xl mx-auto">
                 {/* Insights */}
                 <div
                   className={cn(
@@ -1136,8 +1179,8 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                       Where your team is spending the most time.
                     </p>
           </div>
-                  <div className="space-y-4 px-4 py-4 text-xs">
-                    <div>
+                  <div className="space-y-3 px-4 py-3 text-xs">
+                    <div className="max-w-lg mx-auto">
                       <div className={cn('mb-1 text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-500')}>
                         Top Agents
         </div>
@@ -1160,7 +1203,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         </div>
                       )}
                     </div>
-                    <div>
+                    <div className="max-w-lg mx-auto">
                       <div className={cn('mb-1 text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-500')}>
                         Frequently Used Models
                       </div>
@@ -1183,7 +1226,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         </div>
                       )}
                     </div>
-                    <div>
+                    <div className="max-w-lg mx-auto">
                       <div className={cn('mb-2 text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-500')}>
                         Productivity Tips
                       </div>

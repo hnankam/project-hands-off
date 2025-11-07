@@ -11,8 +11,8 @@ Reset and base styles
 html, body {
   margin: 0;
   padding: 0;
-  height: 100%;
-  overflow: auto;
+  height: 100vh;
+  overflow: hidden;
   background-color: #f9fafb; /* Light theme background - prevents gray flash */
 }
 
@@ -26,8 +26,8 @@ html, body {
 }
 
 #root {
-  height: 100%;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background-color: #f9fafb; /* Light theme background - prevents gray flash */
 }
 

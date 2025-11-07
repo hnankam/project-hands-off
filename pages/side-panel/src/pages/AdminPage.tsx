@@ -206,13 +206,36 @@ const SettingsButton: React.FC<{ isLight: boolean; theme: string; onOpenSettings
 export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organizations' }: AdminPageProps) {
   const { user, organization, activeTeam, member } = useAuth();
   const { isLight, theme } = useStorage(exampleThemeStorage);
-  const [activeTab, setActiveTab] = useState<AdminTabKey>(initialTab);
+  
+  // Initialize activeTab from localStorage, fallback to initialTab
+  const [activeTab, setActiveTab] = useState<AdminTabKey>(() => {
+    try {
+      const stored = localStorage.getItem('adminPageActiveTab');
+      const validTabs: AdminTabKey[] = ['organizations', 'teams', 'users', 'usage', 'providers', 'models', 'agents', 'deployments'];
+      if (stored && validTabs.includes(stored as AdminTabKey)) {
+        return stored as AdminTabKey;
+      }
+    } catch (error) {
+      console.error('[AdminPage] Failed to read tab from localStorage:', error);
+    }
+    return initialTab;
+  });
+  
   const [selectedOrgForTeams, setSelectedOrgForTeams] = useState('');
   const version = chrome.runtime?.getManifest?.()?.version || '1.0.0';
   
   // Check if user is owner or admin (can access all tabs)
   const memberRoles = Array.isArray(member?.role) ? member.role : member?.role ? [member.role] : [];
   const isOwnerOrAdmin = memberRoles.includes('owner') || memberRoles.includes('admin');
+  
+  // Persist activeTab to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('adminPageActiveTab', activeTab);
+    } catch (error) {
+      console.error('[AdminPage] Failed to save tab to localStorage:', error);
+    }
+  }, [activeTab]);
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -236,8 +259,12 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
     }
   }, [user]);
 
+  // Only update activeTab when initialTab changes and is not the default
+  // This allows navigation from HomePage to work while preserving the last active tab on reopen
   useEffect(() => {
-    setActiveTab(initialTab);
+    if (initialTab !== 'organizations') {
+      setActiveTab(initialTab);
+    }
   }, [initialTab]);
 
   // Preselect active organization when component mounts or organization changes
@@ -314,7 +341,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
   };
 
   return (
-    <div className={cn('flex flex-col h-screen overflow-hidden', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+    <div className={cn('flex h-full max-h-full min-h-0 flex-col overflow-hidden relative', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
       {/* Admin Page Header */}
       <div
         className={cn(
@@ -477,8 +504,8 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
       )}
 
       {/* Content Area */}
-      <div className="flex-1 overflow-y-auto admin-page-scroll">
-        <div className="p-4 max-w-4xl mx-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto admin-page-scroll relative isolate">
+        <div className="p-4 max-w-4xl mx-auto relative">
           {/* Alerts */}
           {error && errorVisible && (
             <div

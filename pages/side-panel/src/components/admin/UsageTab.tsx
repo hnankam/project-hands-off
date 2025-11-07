@@ -6,6 +6,8 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -13,6 +15,7 @@ import {
 } from 'recharts';
 import { OrganizationSelector } from './OrganizationSelector';
 import { TeamSelector } from './TeamSelector';
+import { ModelMultiSelector } from './ModelMultiSelector';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -89,6 +92,19 @@ interface BreakdownItem {
   count: number;
 }
 
+interface ModelTimeseriesPoint {
+  bucket: string;
+  requestTokens: number;
+  responseTokens: number;
+  totalTokens: number;
+}
+
+interface ModelTimeseriesSeries {
+  id: string;
+  label: string;
+  points: ModelTimeseriesPoint[];
+}
+
 interface RecentUsageRow {
   id: string;
   sessionId: string;
@@ -102,6 +118,13 @@ interface RecentUsageRow {
   totalTokens: number;
   cost: number | null;
   status: string;
+}
+
+interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }
 
 interface UsageResponse {
@@ -141,7 +164,14 @@ interface UsageResponse {
     teams: BreakdownItem[];
     users: BreakdownItem[];
   };
-  recent: RecentUsageRow[];
+  modelsTimeseries: ModelTimeseriesSeries[];
+  agentsTimeseries: ModelTimeseriesSeries[];
+  teamsTimeseries: ModelTimeseriesSeries[];
+  usersTimeseries: ModelTimeseriesSeries[];
+  recent: {
+    data: RecentUsageRow[];
+    pagination: PaginationInfo;
+  };
 }
 
 interface UsageTabProps {
@@ -168,17 +198,120 @@ const DEFAULT_FILTERS: UsageFilters = {
   modelIds: [],
 };
 
+const UsageSkeleton: React.FC<{ isLight: boolean }> = ({ isLight }) => (
+  <div className="space-y-4 animate-pulse">
+    {/* Summary Cards Skeleton */}
+    <div className="grid grid-cols-2 gap-3">
+      {Array.from({ length: 4 }).map((_, idx) => (
+        <div
+          key={`summary-skeleton-${idx}`}
+          className={cn(
+            'rounded-lg border p-4',
+            isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+          )}
+        >
+          <div className={cn('h-3 w-24 rounded mb-3', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+          <div className={cn('h-8 w-32 rounded mb-2', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+          <div className={cn('h-2.5 w-20 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+        </div>
+      ))}
+    </div>
+
+    {/* Main Chart Skeleton */}
+    <div
+      className={cn(
+        'rounded-lg border p-4',
+        isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+      )}
+    >
+      <div className={cn('h-4 w-40 rounded mb-4', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+      <div className={cn('h-64 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+    </div>
+
+    {/* Breakdown Cards Skeleton */}
+    <div className="grid gap-3 lg:grid-cols-2">
+      {Array.from({ length: 4 }).map((_, idx) => (
+        <div
+          key={`breakdown-skeleton-${idx}`}
+          className={cn(
+            'rounded-lg border p-4',
+            isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+          )}
+        >
+          <div className={cn('h-4 w-32 rounded mb-4', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+          <div className={cn('h-48 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+        </div>
+      ))}
+    </div>
+
+    {/* Table Skeleton */}
+    <div
+      className={cn(
+        'rounded-lg border',
+        isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+      )}
+    >
+      <div className="p-4 border-b">
+        <div className={cn('h-4 w-40 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+      </div>
+      <div className="p-4 space-y-3">
+        {Array.from({ length: 5 }).map((_, idx) => (
+          <div key={`table-row-skeleton-${idx}`} className="flex items-center gap-4">
+            <div className={cn('h-3 w-24 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+            <div className={cn('h-3 flex-1 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+            <div className={cn('h-3 w-20 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+            <div className={cn('h-3 w-20 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
 const numberFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 const decimalFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 
+// Compact number formatter for Y-axis
+const compactNumberFormatter = (value: number): string => {
+  if (value >= 1_000_000_000) {
+    return `${(value / 1_000_000_000).toFixed(1)}B`;
+  }
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(1)}K`;
+  }
+  return value.toString();
+};
+
 const tooltipFormatter = (value: number) => `${numberFormatter.format(Math.max(value, 0))} tokens`;
 
-const chartColors = {
-  total: { light: '#6366F1', dark: '#818CF8' },
-  request: { light: '#22C55E', dark: '#34D399' },
-  response: { light: '#F97316', dark: '#FB923C' },
-  bar: { light: '#0EA5E9', dark: '#38BDF8' },
+const formatBucketLabel = (bucket: string, rangeKey: string) => {
+  const date = new Date(bucket);
+
+  if (Number.isNaN(date.getTime())) {
+    return bucket;
+  }
+
+  if (rangeKey === '1h' || rangeKey === '24h') {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  if (rangeKey === '7d' || rangeKey === '30d') {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
+
+const chartColors = {
+  total: { light: '#9CA3AF', dark: '#6B7280' }, // Gray
+  request: { light: '#3B82F6', dark: '#60A5FA' }, // Blue
+  response: { light: '#10B981', dark: '#34D399' }, // Green
+};
+
+const MODEL_COLOR_PALETTE = ['#3B82F6', '#10B981', '#6366F1', '#F59E0B', '#EC4899', '#A855F7', '#22D3EE'];
 
 const scopeDescriptions: Record<AdminRole, string> = {
   owner: 'organization-wide usage',
@@ -203,21 +336,12 @@ const UserIcon = () => (
   <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
     <circle cx="8.5" cy="7" r="4" />
-    <path d="M20 8v6M23 11h-6" />
   </svg>
 );
 
 const AgentIcon = () => (
   <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-  </svg>
-);
-
-const ModelIcon = () => (
-  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
-    <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-    <line x1="12" y1="22.08" x2="12" y2="12" />
   </svg>
 );
 
@@ -339,46 +463,52 @@ const UserMultiSelector: React.FC<UserMultiSelectorProps> = ({
               : 'bg-[#151C24] border-gray-700'
           )}
         >
-          {users.map(user => {
-            const isSelected = selectedUserIds.includes(user.id);
-            return (
-              <button
-                type="button"
-                key={user.id}
-                onClick={() => toggleUser(user.id)}
-                className={cn(
-                  'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors',
-                  isLight
-                    ? 'text-gray-700 hover:bg-gray-100'
-                    : 'text-gray-200 hover:bg-gray-700'
-                )}
-              >
-                <div className={cn(
-                  'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0',
-                  isSelected
-                    ? 'bg-blue-600 border-blue-600'
-                    : isLight
-                    ? 'border-gray-300'
-                    : 'border-gray-600'
-                )}>
-                  {isSelected && (
-                    <svg
-                      width="10"
-                      height="10"
-                      fill="none"
-                      stroke="white"
-                      viewBox="0 0 24 24"
-                      strokeWidth={3}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
+          {users.length === 0 ? (
+            <div className={cn('px-3 py-2 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+              No users available
+            </div>
+          ) : (
+            users.map(user => {
+              const isSelected = selectedUserIds.includes(user.id);
+              return (
+                <button
+                  type="button"
+                  key={user.id}
+                  onClick={() => toggleUser(user.id)}
+                  className={cn(
+                    'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors',
+                    isLight
+                      ? 'text-gray-700 hover:bg-gray-100'
+                      : 'text-gray-200 hover:bg-gray-700'
                   )}
-                </div>
-                <UserIcon />
-                <span className="truncate flex-1 text-left">{user.label}</span>
-              </button>
-            );
-          })}
+                >
+                  <div className={cn(
+                    'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0',
+                    isSelected
+                      ? 'bg-blue-600 border-blue-600'
+                      : isLight
+                      ? 'border-gray-300'
+                      : 'border-gray-600'
+                  )}>
+                    {isSelected && (
+                      <svg
+                        width="10"
+                        height="10"
+                        fill="none"
+                        stroke="white"
+                        viewBox="0 0 24 24"
+                        strokeWidth={3}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                  <UserIcon />
+                  <span className="truncate flex-1 text-left">{user.label}</span>
+                </button>
+              );
+            })
+          )}
         </div>
       )}
     </div>
@@ -513,220 +643,52 @@ const AgentMultiSelector: React.FC<AgentMultiSelectorProps> = ({
               : 'bg-[#151C24] border-gray-700'
           )}
         >
-          {agents.map(agent => {
-            const isSelected = selectedAgentIds.includes(agent.id);
-            return (
-              <button
-                type="button"
-                key={agent.id}
-                onClick={() => toggleAgent(agent.id)}
-                className={cn(
-                  'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors',
-                  isLight
-                    ? 'text-gray-700 hover:bg-gray-100'
-                    : 'text-gray-200 hover:bg-gray-700'
-                )}
-              >
-                <div className={cn(
-                  'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0',
-                  isSelected
-                    ? 'bg-blue-600 border-blue-600'
-                    : isLight
-                    ? 'border-gray-300'
-                    : 'border-gray-600'
-                )}>
-                  {isSelected && (
-                    <svg
-                      width="10"
-                      height="10"
-                      fill="none"
-                      stroke="white"
-                      viewBox="0 0 24 24"
-                      strokeWidth={3}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </div>
-                <AgentIcon />
-                <span className="truncate flex-1 text-left">{agent.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Model Multi-Selector Component
-interface ModelMultiSelectorProps {
-  isLight: boolean;
-  models: ModelOption[];
-  selectedModelIds: string[];
-  onChange: (modelIds: string[]) => void;
-  placeholder?: string;
-  allowEmpty?: boolean;
-}
-
-const ModelMultiSelector: React.FC<ModelMultiSelectorProps> = ({
-  isLight,
-  models,
-  selectedModelIds,
-  onChange,
-  placeholder = 'All models',
-  allowEmpty = true,
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-    return undefined;
-  }, [isOpen]);
-
-  const toggleModel = (modelId: string) => {
-    const newSelection = selectedModelIds.includes(modelId)
-      ? selectedModelIds.filter(id => id !== modelId)
-      : [...selectedModelIds, modelId];
-    onChange(newSelection);
-  };
-
-  const removeModel = (modelId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const newSelection = selectedModelIds.filter(id => id !== modelId);
-    onChange(newSelection);
-  };
-
-  const selectedModels = models.filter(model => selectedModelIds.includes(model.id));
-
-  return (
-    <div className="relative" ref={dropdownRef}>
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className={cn(
-          'flex items-start gap-1.5 px-2 py-1.5 text-xs rounded-md min-h-[32px] min-w-0 w-full border',
-          isLight
-            ? 'text-gray-700 hover:bg-gray-100 border-gray-300 bg-white'
-            : 'text-gray-200 hover:bg-gray-700 border-gray-600 bg-[#151C24]',
-        )}
-      >
-        <span className="flex-shrink-0 mt-0.5">
-          <ModelIcon />
-        </span>
-        
-        {selectedModels.length > 0 ? (
-          <div className="flex flex-wrap gap-1 flex-1 min-w-0">
-            {selectedModels.map(model => (
-              <span
-                key={model.id}
-                className={cn(
-                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
-                  isLight
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'bg-blue-900/30 text-blue-400'
-                )}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {model.name}
+          {agents.length === 0 ? (
+            <div className={cn('px-3 py-2 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+              No agents available
+            </div>
+          ) : (
+            agents.map(agent => {
+              const isSelected = selectedAgentIds.includes(agent.id);
+              return (
                 <button
                   type="button"
-                  onClick={(e) => removeModel(model.id, e)}
+                  key={agent.id}
+                  onClick={() => toggleAgent(agent.id)}
                   className={cn(
-                    'hover:bg-black/10 rounded-full p-0.5 transition-colors',
-                    isLight ? 'text-blue-600' : 'text-blue-300'
+                    'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors',
+                    isLight
+                      ? 'text-gray-700 hover:bg-gray-100'
+                      : 'text-gray-200 hover:bg-gray-700'
                   )}
                 >
-                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <div className={cn(
+                    'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0',
+                    isSelected
+                      ? 'bg-blue-600 border-blue-600'
+                      : isLight
+                      ? 'border-gray-300'
+                      : 'border-gray-600'
+                  )}>
+                    {isSelected && (
+                      <svg
+                        width="10"
+                        height="10"
+                        fill="none"
+                        stroke="white"
+                        viewBox="0 0 24 24"
+                        strokeWidth={3}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                  <AgentIcon />
+                  <span className="truncate flex-1 text-left">{agent.name}</span>
                 </button>
-              </span>
-            ))}
-          </div>
-        ) : (
-          <span className={cn('flex-1 min-w-0 text-left', isLight ? 'text-gray-500' : 'text-gray-400')}>
-            {placeholder}
-          </span>
-        )}
-        
-        <svg
-          className={cn(
-            'transition-transform flex-shrink-0 mt-0.5',
-            isOpen ? 'rotate-180' : ''
+              );
+            })
           )}
-          width="12"
-          height="12"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {isOpen && (
-        <div
-          className={cn(
-            'absolute top-full left-0 mt-1 w-full min-w-[180px] rounded-md border shadow-lg z-[9999] max-h-[240px] overflow-y-auto',
-            isLight
-              ? 'bg-white border-gray-200'
-              : 'bg-[#151C24] border-gray-700'
-          )}
-        >
-          {models.map(model => {
-            const isSelected = selectedModelIds.includes(model.id);
-            return (
-              <button
-                type="button"
-                key={model.id}
-                onClick={() => toggleModel(model.id)}
-                className={cn(
-                  'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors',
-                  isLight
-                    ? 'text-gray-700 hover:bg-gray-100'
-                    : 'text-gray-200 hover:bg-gray-700'
-                )}
-              >
-                <div className={cn(
-                  'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0',
-                  isSelected
-                    ? 'bg-blue-600 border-blue-600'
-                    : isLight
-                    ? 'border-gray-300'
-                    : 'border-gray-600'
-                )}>
-                  {isSelected && (
-                    <svg
-                      width="10"
-                      height="10"
-                      fill="none"
-                      stroke="white"
-                      viewBox="0 0 24 24"
-                      strokeWidth={3}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </div>
-                <ModelIcon />
-                <span className="truncate flex-1 text-left">{model.name}</span>
-              </button>
-            );
-          })}
         </div>
       )}
     </div>
@@ -741,7 +703,7 @@ const SummaryCard: React.FC<{
 }> = ({ isLight, label, value, description }) => (
   <div
     className={cn(
-      'rounded-lg border px-3 py-2.5 shadow-sm transition-colors',
+      'rounded-lg border px-3 py-2.5 transition-colors',
       isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
     )}
   >
@@ -757,6 +719,463 @@ const SummaryCard: React.FC<{
   </div>
 );
 
+type ModelChartType = 'area-step' | 'stacked-area' | 'line' | 'line-dots' | 'bar';
+type TokenMetricType = 'total' | 'request' | 'response';
+
+const MODEL_CHART_OPTIONS: { value: ModelChartType; label: string; icon: string }[] = [
+  { value: 'area-step', label: 'Step Area', icon: '▭' },
+  { value: 'stacked-area', label: 'Stacked Area', icon: '◰' },
+  { value: 'line', label: 'Line Chart', icon: '📈' },
+  { value: 'line-dots', label: 'Line with Dots', icon: '🔵' },
+  { value: 'bar', label: 'Bar Chart', icon: '📊' },
+];
+
+const TOKEN_METRIC_OPTIONS: { value: TokenMetricType; label: string }[] = [
+  { value: 'total', label: 'Total Tokens' },
+  { value: 'request', label: 'Request Tokens' },
+  { value: 'response', label: 'Response Tokens' },
+];
+
+type SimpleTooltipEntry = {
+  dataKey?: string | number;
+  color?: string;
+  value?: number | string | Array<number | string>;
+};
+
+type SimpleTooltipProps = {
+  active?: boolean;
+  payload?: SimpleTooltipEntry[];
+  label?: string | number;
+};
+
+const TimeseriesCard: React.FC<{
+  isLight: boolean;
+  title: string;
+  rangeKey: string;
+  series: ModelTimeseriesSeries[];
+}> = ({ isLight, title, rangeKey, series }) => {
+  const [chartType, setChartType] = useState<ModelChartType>('area-step');
+  const [tokenMetric, setTokenMetric] = useState<TokenMetricType>('total');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [metricDropdownOpen, setMetricDropdownOpen] = useState(false);
+  const [visibleIds, setVisibleIds] = useState<string[]>(series.map(s => s.id));
+
+  useEffect(() => {
+    setVisibleIds(series.map(s => s.id));
+  }, [series]);
+
+  const colorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    series.forEach((item, index) => {
+      map[item.id] = MODEL_COLOR_PALETTE[index % MODEL_COLOR_PALETTE.length];
+    });
+    return map;
+  }, [series]);
+
+  const labelMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    series.forEach(item => {
+      map[item.id] = item.label;
+    });
+    return map;
+  }, [series]);
+
+  const buckets = useMemo(() => {
+    const bucketSet = new Set<string>();
+    series.forEach(item => {
+      item.points.forEach(point => bucketSet.add(point.bucket));
+    });
+    return Array.from(bucketSet).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+  }, [series]);
+
+  const chartData = useMemo(() => {
+    return buckets.map(bucket => {
+      const entry: Record<string, number | string> = {
+        bucket,
+        label: formatBucketLabel(bucket, rangeKey),
+      };
+      series.forEach(item => {
+        const point = item.points.find(p => p.bucket === bucket);
+        if (point) {
+          entry[item.id] = 
+            tokenMetric === 'total' ? point.totalTokens :
+            tokenMetric === 'request' ? point.requestTokens :
+            point.responseTokens;
+        } else {
+          entry[item.id] = 0;
+        }
+      });
+      return entry;
+    });
+  }, [buckets, rangeKey, series, tokenMetric]);
+
+  const visibleSet = useMemo(() => new Set(visibleIds), [visibleIds]);
+  const visibleSeries = series.filter(item => visibleSet.has(item.id));
+
+  const toggleSeries = (id: string) => {
+    setVisibleIds(prev => (prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]));
+  };
+
+  const tooltipContent = useCallback(
+    (props: SimpleTooltipProps) => {
+      const { active, payload, label } = props;
+
+      if (!active || !payload || payload.length === 0) {
+        return null;
+      }
+
+      const normalizedPayload = (payload as SimpleTooltipEntry[]).filter(Boolean);
+      const filteredPayload = normalizedPayload.filter(entry => entry.dataKey != null && visibleSet.has(String(entry.dataKey)));
+
+      if (filteredPayload.length === 0) {
+        return null;
+      }
+
+      return (
+        <div
+          className={cn(
+            'rounded-lg border shadow-lg overflow-hidden',
+            isLight ? 'bg-white border-gray-200' : 'bg-[#1F2937] border-gray-700',
+          )}
+        >
+          <p className={cn('text-xs font-medium px-3 pt-2 pb-2 border-b', isLight ? 'text-gray-900 border-gray-200' : 'text-gray-100 border-gray-700')}>
+            {label ?? ''}
+          </p>
+          <div className="px-3 py-2">
+            {filteredPayload.map(entry => (
+              <div key={String(entry.dataKey)} className="flex items-center justify-between gap-4 py-0.5">
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2 w-2" style={{ backgroundColor: entry.color }} />
+                  <span className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                    {labelMap[String(entry.dataKey)] || ''}
+                  </span>
+                </div>
+                <span className={cn('text-xs font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                  {numberFormatter.format(Number(entry.value) || 0)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    },
+    [isLight, labelMap, visibleSet],
+  );
+
+  const renderChart = () => {
+    const commonAxes = (
+      <>
+        <CartesianGrid strokeDasharray="3 3" stroke={isLight ? '#E5E7EB' : '#1F2937'} vertical={false} />
+        <XAxis
+          dataKey="label"
+          tick={{ fontSize: 10, fill: isLight ? '#6B7280' : '#9CA3AF' }}
+          tickLine={false}
+          axisLine={false}
+        />
+        <YAxis
+          tickFormatter={value => compactNumberFormatter(value as number)}
+          tick={{ fontSize: 10, fill: isLight ? '#6B7280' : '#9CA3AF' }}
+          tickLine={false}
+          axisLine={false}
+          width={60}
+        />
+        <Tooltip cursor={{ strokeDasharray: '3 3', stroke: isLight ? '#CBD5E1' : '#4B5563' }} content={tooltipContent} />
+      </>
+    );
+
+    const margin = { top: 5, right: 30, left: 0, bottom: 5 };
+
+    if (chartType === 'line') {
+      return (
+        <LineChart data={chartData} margin={margin}>
+          {commonAxes}
+          {visibleSeries.map(seriesItem => (
+            <Line
+              key={seriesItem.id}
+              type="monotone"
+              dataKey={seriesItem.id}
+              stroke={colorMap[seriesItem.id]}
+              strokeWidth={1.8}
+              dot={false}
+            />
+          ))}
+        </LineChart>
+      );
+    }
+
+    if (chartType === 'line-dots') {
+      return (
+        <LineChart data={chartData} margin={margin}>
+          {commonAxes}
+          {visibleSeries.map(seriesItem => (
+            <Line
+              key={seriesItem.id}
+              type="monotone"
+              dataKey={seriesItem.id}
+              stroke={colorMap[seriesItem.id]}
+              strokeWidth={1.8}
+              dot={{ r: 3, strokeWidth: 1.5, fill: colorMap[seriesItem.id], stroke: colorMap[seriesItem.id] }}
+            />
+          ))}
+        </LineChart>
+      );
+    }
+
+    if (chartType === 'bar') {
+      return (
+        <BarChart data={chartData} margin={margin}>
+          {commonAxes}
+          {visibleSeries.map(seriesItem => (
+            <Bar
+              key={seriesItem.id}
+              dataKey={seriesItem.id}
+              stackId="models"
+              fill={colorMap[seriesItem.id]}
+              radius={[4, 4, 0, 0]}
+            />
+          ))}
+        </BarChart>
+      );
+    }
+
+    const gradientDefs = (
+      <defs>
+        {visibleSeries.map(seriesItem => (
+          <linearGradient key={seriesItem.id} id={`modelGradient-${seriesItem.id}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={colorMap[seriesItem.id]} stopOpacity={0.35} />
+            <stop offset="95%" stopColor={colorMap[seriesItem.id]} stopOpacity={0.05} />
+          </linearGradient>
+        ))}
+      </defs>
+    );
+
+    if (chartType === 'stacked-area') {
+      return (
+        <AreaChart data={chartData} margin={margin}>
+          {gradientDefs}
+          {commonAxes}
+          {visibleSeries.map(seriesItem => (
+            <Area
+              key={seriesItem.id}
+              type="monotone"
+              dataKey={seriesItem.id}
+              stackId="models"
+              stroke={colorMap[seriesItem.id]}
+              strokeWidth={1.6}
+              fill={`url(#modelGradient-${seriesItem.id})`}
+              dot={false}
+            />
+          ))}
+        </AreaChart>
+      );
+    }
+
+    // Default: area-step
+    return (
+      <AreaChart data={chartData} margin={margin}>
+        {gradientDefs}
+        {commonAxes}
+        {visibleSeries.map(seriesItem => (
+          <Area
+            key={seriesItem.id}
+            type="step"
+            dataKey={seriesItem.id}
+            stroke={colorMap[seriesItem.id]}
+            strokeWidth={1.6}
+            fill={`url(#modelGradient-${seriesItem.id})`}
+            dot={false}
+          />
+        ))}
+      </AreaChart>
+    );
+  };
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border transition-colors',
+        isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+      )}
+    >
+      <div className={cn('flex items-center justify-between px-4 py-2 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+        <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>{title}</h3>
+        <div className="flex items-center gap-2">
+          {/* Token Metric Selector */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMetricDropdownOpen(prev => !prev)}
+              className={cn(
+                'flex items-center gap-1.5 px-2 py-1 rounded border transition-colors text-xs',
+                isLight
+                  ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                  : 'bg-[#151C24] border-gray-700 text-gray-300 hover:bg-gray-800',
+              )}
+            >
+              <span>{TOKEN_METRIC_OPTIONS.find(opt => opt.value === tokenMetric)?.label}</span>
+              <svg
+                className={cn('h-2.5 w-2.5 transition-transform', metricDropdownOpen && 'rotate-180')}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {metricDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMetricDropdownOpen(false)} />
+                <div
+                  className={cn(
+                    'absolute right-0 mt-1 w-40 rounded-md border shadow-lg z-20 text-xs',
+                    isLight ? 'bg-white border-gray-200' : 'bg-[#1F2937] border-gray-700',
+                  )}
+                >
+                  {TOKEN_METRIC_OPTIONS.map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        setTokenMetric(option.value);
+                        setMetricDropdownOpen(false);
+                      }}
+                      className={cn(
+                        'flex w-full items-center gap-2 px-3 py-2 transition-colors first:rounded-t-md last:rounded-b-md',
+                        tokenMetric === option.value
+                          ? isLight
+                            ? 'bg-blue-50 text-blue-700'
+                            : 'bg-blue-900/30 text-blue-300'
+                          : isLight
+                          ? 'text-gray-700 hover:bg-gray-50'
+                          : 'text-gray-300 hover:bg-gray-800',
+                      )}
+                    >
+                      <span>{option.label}</span>
+                      {tokenMetric === option.value && (
+                        <svg className="ml-auto h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path
+                            fillRule="evenodd"
+                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Chart Type Selector */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setDropdownOpen(prev => !prev)}
+              className={cn(
+                'flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors',
+                isLight
+                  ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                  : 'bg-[#151C24] border-gray-700 text-gray-300 hover:bg-gray-800',
+              )}
+              title={MODEL_CHART_OPTIONS.find(option => option.value === chartType)?.label}
+            >
+              <span className="text-sm">
+                {MODEL_CHART_OPTIONS.find(option => option.value === chartType)?.icon || '▭'}
+              </span>
+              <svg
+                className={cn('h-2.5 w-2.5 transition-transform', dropdownOpen && 'rotate-180')}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {dropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} />
+                <div
+                  className={cn(
+                    'absolute right-0 mt-1 w-44 rounded-md border shadow-lg z-20 text-xs',
+                    isLight ? 'bg-white border-gray-200' : 'bg-[#1F2937] border-gray-700',
+                  )}
+                >
+                  {MODEL_CHART_OPTIONS.map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        setChartType(option.value);
+                        setDropdownOpen(false);
+                      }}
+                      className={cn(
+                        'flex w-full items-center gap-2 px-3 py-2 transition-colors first:rounded-t-md last:rounded-b-md',
+                        chartType === option.value
+                          ? isLight
+                            ? 'bg-blue-50 text-blue-700'
+                            : 'bg-blue-900/30 text-blue-300'
+                          : isLight
+                          ? 'text-gray-700 hover:bg-gray-50'
+                          : 'text-gray-300 hover:bg-gray-800',
+                      )}
+                    >
+                      <span>{option.icon}</span>
+                      <span>{option.label}</span>
+                      {chartType === option.value && (
+                        <svg className="ml-auto h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path
+                            fillRule="evenodd"
+                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-3 px-4 py-2">
+        {series.map(seriesItem => {
+          const isActive = visibleSet.has(seriesItem.id);
+          return (
+            <button
+              key={seriesItem.id}
+              type="button"
+              onClick={() => toggleSeries(seriesItem.id)}
+              className={cn(
+                'flex items-center gap-1.5 rounded px-2 py-1 text-[10px] uppercase transition-colors',
+                isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800',
+                !isActive && 'opacity-40',
+              )}
+            >
+              <span className="h-2 w-2" style={{ backgroundColor: colorMap[seriesItem.id] }} />
+              <span>{seriesItem.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="h-64 w-full py-3">
+        {chartData.length === 0 || visibleSeries.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-xs text-gray-500">
+            No data available
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            {renderChart()}
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const BreakdownCard: React.FC<{
   isLight: boolean;
   title: string;
@@ -764,7 +1183,7 @@ const BreakdownCard: React.FC<{
 }> = ({ isLight, title, data }) => (
   <div
     className={cn(
-      'rounded-lg border shadow-sm transition-colors overflow-hidden',
+      'rounded-lg border transition-colors',
       isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
     )}
   >
@@ -773,14 +1192,14 @@ const BreakdownCard: React.FC<{
         {title}
       </h3>
     </div>
-    <div className="h-64 w-full px-2 py-3">
+    <div className="h-64 w-full py-3">
       {data.length === 0 ? (
         <div className="flex h-full items-center justify-center text-xs text-gray-500">
           No data available
         </div>
       ) : (
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} layout="horizontal" margin={{ left: 8, right: 8 }}>
+          <BarChart data={data} layout="horizontal" margin={{ left: 0, right: 30, top: 5, bottom: 5 }}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke={isLight ? '#E5E7EB' : '#1F2937'}
@@ -789,7 +1208,7 @@ const BreakdownCard: React.FC<{
             <XAxis
               type="number"
               tick={{ fontSize: 10, fill: isLight ? '#6B7280' : '#9CA3AF' }}
-              tickFormatter={value => numberFormatter.format(value as number)}
+              tickFormatter={value => compactNumberFormatter(value as number)}
               tickLine={false}
               axisLine={false}
             />
@@ -799,21 +1218,48 @@ const BreakdownCard: React.FC<{
               tick={{ fontSize: 10, fill: isLight ? '#6B7280' : '#9CA3AF' }}
               tickLine={false}
               axisLine={false}
-              width={80}
+              width={100}
             />
             <Tooltip
               cursor={{ fill: isLight ? '#F3F4F6' : '#1F2937' }}
-              contentStyle={{
-                backgroundColor: isLight ? '#FFFFFF' : '#0B1320',
-                borderRadius: '0.5rem',
-                border: `1px solid ${isLight ? '#E5E7EB' : '#1F2937'}`,
-                fontSize: '11px',
+              content={({ active, payload }) => {
+                if (active && payload && payload.length) {
+                  const entry = payload[0];
+                  return (
+                    <div
+                      className={cn(
+                        'rounded-lg border shadow-lg overflow-hidden',
+                        isLight ? 'bg-white border-gray-200' : 'bg-[#1F2937] border-gray-700',
+                      )}
+                    >
+                      <p className={cn('text-xs font-medium px-3 pt-2 pb-2 border-b', isLight ? 'text-gray-900 border-gray-200' : 'text-gray-100 border-gray-700')}>
+                        {entry.payload.label}
+                      </p>
+                      <div className="px-3 py-2">
+                        <div className="flex items-center justify-between gap-4 py-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <div
+                              className="h-2 w-2"
+                              style={{ backgroundColor: entry.color }}
+                            />
+                            <span className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                              Total tokens
+                            </span>
+                          </div>
+                          <span className={cn('text-xs font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                            {numberFormatter.format(entry.value as number)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
               }}
-              formatter={(value: number) => [`${numberFormatter.format(value)} tokens`, 'Total']}
             />
             <Bar
               dataKey="totalTokens"
-              fill={isLight ? chartColors.bar.light : chartColors.bar.dark}
+              fill={isLight ? chartColors.total.light : chartColors.total.dark}
               radius={[0, 4, 4, 0]}
             />
           </BarChart>
@@ -830,8 +1276,41 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [selectedOrgId, setSelectedOrgId] = useState(preselectedOrgId || '');
+  const [currentPage, setCurrentPage] = useState(1);
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
+  const [visibleSeries, setVisibleSeries] = useState<{
+    totalTokens: boolean;
+    requestTokens: boolean;
+    responseTokens: boolean;
+  }>({
+    totalTokens: true,
+    requestTokens: true,
+    responseTokens: true,
+  });
+
+  type ChartType = 'area' | 'line' | 'bar' | 'stacked-bar' | 'stacked-area' | 'area-spline' | 'step-line' | 'line-dots' | 'area-step';
+  const [chartType, setChartType] = useState<ChartType>('area-step');
+  const [chartDropdownOpen, setChartDropdownOpen] = useState(false);
+
+  const chartTypeOptions: { value: ChartType; label: string; icon: string }[] = [
+    { value: 'area', label: 'Area Chart', icon: '📊' },
+    { value: 'line', label: 'Line Chart', icon: '📈' },
+    { value: 'line-dots', label: 'Line with Dots', icon: '🔵' },
+    { value: 'bar', label: 'Bar Chart', icon: '📊' },
+    { value: 'stacked-bar', label: 'Stacked Bar', icon: '▤' },
+    { value: 'stacked-area', label: 'Stacked Area', icon: '◰' },
+    { value: 'area-spline', label: 'Smooth Area', icon: '〰️' },
+    { value: 'area-step', label: 'Step Area', icon: '▭' },
+    { value: 'step-line', label: 'Step Line', icon: '▬' },
+  ];
+
+  const toggleSeries = (seriesKey: 'totalTokens' | 'requestTokens' | 'responseTokens') => {
+    setVisibleSeries(prev => ({
+      ...prev,
+      [seriesKey]: !prev[seriesKey],
+    }));
+  };
 
   // Auto-select organization if there's only one
   useEffect(() => {
@@ -846,14 +1325,17 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
     }
   }, [preselectedOrgId]);
 
-  // Load teams when organization changes
+  // Load teams and fetch usage when organization changes
   useEffect(() => {
     if (selectedOrgId) {
-      loadTeams(selectedOrgId);
-    } else {
-      setTeams([]);
+      // Reset filters when org changes
+      setFilters(DEFAULT_FILTERS);
+      setCurrentPage(1);
+      // Fetch usage with default filters after resetting
+      // This will also populate teams, agents, models, and users options
+      fetchUsage(DEFAULT_FILTERS);
     }
-  }, [selectedOrgId]);
+  }, [selectedOrgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadTeams = async (organizationId: string) => {
     setTeamsLoading(true);
@@ -877,10 +1359,19 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
   };
 
   const fetchUsage = useCallback(
-    async (overrideFilters?: UsageFilters) => {
+    async (overrideFilters?: UsageFilters, page?: number) => {
       const effectiveFilters = overrideFilters ?? filters;
+      const effectivePage = page ?? currentPage;
       const params = new URLSearchParams();
+      
+      // Send the selected organization ID
+      if (selectedOrgId) {
+        params.set('organizationId', selectedOrgId);
+      }
+      
       params.set('range', effectiveFilters.range || '24h');
+      params.set('page', effectivePage.toString());
+      params.set('limit', '25');
       // For now, we'll just use the first item if multiple are selected
       // Backend currently supports single item filters
       if (effectiveFilters.teamIds.length > 0) {
@@ -949,14 +1440,13 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
         setRefreshing(false);
       }
     },
-    [filters, onError],
+    [filters, currentPage, selectedOrgId, onError],
   );
 
+  // Reset to page 1 when filters change
   useEffect(() => {
-    if (selectedOrgId) {
-      fetchUsage();
-    }
-  }, [selectedOrgId]);
+    setCurrentPage(1);
+  }, [filters.range, filters.teamIds, filters.userIds, filters.agentIds, filters.modelIds]);
 
   const handleFilterChange = (filterKey: string, value: any) => {
     const newFilters = { ...filters, [filterKey]: value };
@@ -1001,38 +1491,21 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
     if (!usageData) return [];
 
     return usageData.timeseries.map(point => {
-      const date = new Date(point.bucket);
-      const rangeKey = usageData.filters.range.selected;
-      let label: string;
-
-      if (Number.isNaN(date.getTime())) {
-        label = point.bucket;
-      } else if (rangeKey === '1h') {
-        label = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      } else if (rangeKey === '24h') {
-        label = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      } else if (rangeKey === '7d' || rangeKey === '30d') {
-        label = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-      } else {
-        label = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-      }
-
       return {
         ...point,
-        label,
+        label: formatBucketLabel(point.bucket, usageData.filters.range.selected),
       };
     });
   }, [usageData]);
 
-  const breakdownCards = useMemo(() => {
-    if (!usageData) return [];
-    return [
-      { key: 'models', title: 'Top Models', data: usageData.breakdowns.models },
-      { key: 'agents', title: 'Top Agents', data: usageData.breakdowns.agents },
-      { key: 'teams', title: 'Teams', data: usageData.breakdowns.teams },
-      { key: 'users', title: 'Users', data: usageData.breakdowns.users },
-    ];
-  }, [usageData]);
+  const modelsBreakdown = usageData?.breakdowns.models ?? [];
+  const modelsTimeseries = usageData?.modelsTimeseries ?? [];
+  const agentsBreakdown = usageData?.breakdowns.agents ?? [];
+  const agentsTimeseries = usageData?.agentsTimeseries ?? [];
+  const teamsBreakdown = usageData?.breakdowns.teams ?? [];
+  const teamsTimeseries = usageData?.teamsTimeseries ?? [];
+  const usersBreakdown = usageData?.breakdowns.users ?? [];
+  const usersTimeseries = usageData?.usersTimeseries ?? [];
 
   const summary = usageData?.summary;
 
@@ -1051,6 +1524,10 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
         return base;
       })()
     : '';
+
+  if (loading && !usageData) {
+    return <UsageSkeleton isLight={isLight} />;
+  }
 
   return (
     <div className="space-y-4">
@@ -1074,7 +1551,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
           </label>
           <TeamSelector
             isLight={isLight}
-            teams={teams}
+            teams={usageData?.filters.teams.options?.map(t => ({ id: t.id, name: t.name, organizationId: selectedOrgId || '' })) ?? []}
             selectedTeamIds={filters.teamIds}
             onTeamChange={handleTeamIdsChange}
             placeholder="All teams"
@@ -1129,71 +1606,66 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
         />
       </div>
 
-      {/* Usage Monitoring Header */}
-      <div
-        className={cn(
-          'rounded-lg border px-3 py-2 shadow-sm transition-colors',
-          isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700',
-        )}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className={cn('text-xs uppercase tracking-wide font-semibold', isLight ? 'text-gray-500' : 'text-gray-400')}>
-              Usage Monitoring
-            </div>
-            <div className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
-              {usageData ? `${rangeDescriptor} · ${scopeLabel}` : 'Loading usage scope...'}
-            </div>
-            <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
-              {lastUpdated ? `Last updated ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Awaiting data'}
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleRefresh}
-              className={cn(
-                'flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors',
-                isLight
-                  ? 'border-gray-200 text-gray-600 hover:bg-white hover:text-gray-900'
-                  : 'border-gray-700 text-gray-300 hover:bg-gray-700/70 hover:text-white',
-              )}
-              disabled={loading || refreshing}
-            >
-              <svg className={cn('h-4 w-4', refreshing && 'animate-spin')} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v4h4M16 16v-4h-4M5.636 5.636a7 7 0 019.9 0l.707.707M14.364 14.364a7 7 0 01-9.9 0l-.707-.707" />
-              </svg>
-              Refresh
-            </button>
-          </div>
+      {/* Range Selector and Refresh */}
+      <div className="mb-4 flex items-center gap-3">
+        <div
+          className={cn(
+            'flex flex-1 items-center gap-1 rounded-lg p-1 min-w-0',
+            isLight ? 'bg-gray-100' : 'bg-[#151C24]',
+          )}
+        >
+          {(usageData?.filters.range.options || []).map(option => {
+            // Keep "Last hour" always, remove "Last " prefix from others for compact display
+            const isLastHour = option.label.toLowerCase() === 'last hour';
+            const compactLabel = isLastHour ? option.label : option.label.replace(/^Last\s+/i, '');
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => handleFilterChange('range', option.value)}
+                title={option.label}
+                className={cn(
+                  'flex-1 min-w-0 px-2 py-1 text-xs font-medium rounded-md transition-colors',
+                  filters.range === option.value
+                    ? isLight
+                      ? 'bg-white text-gray-900'
+                      : 'bg-gray-700 text-white'
+                    : isLight
+                    ? 'text-gray-600 hover:text-gray-900'
+                    : 'text-gray-400 hover:text-gray-200',
+                )}
+              >
+                <span className="hidden sm:inline whitespace-nowrap overflow-hidden text-ellipsis">
+                  {option.label}
+                </span>
+                <span className="inline sm:hidden whitespace-nowrap overflow-hidden text-ellipsis">
+                  {compactLabel}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Filters */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs font-medium">
-            <span className={cn(isLight ? 'text-gray-600' : 'text-gray-300')}>Range</span>
-            <select
-              value={filters.range}
-              onChange={event => handleFilterChange('range', event.target.value)}
-              className={cn(
-                'rounded-md border px-2.5 py-1.5 text-xs transition-colors focus:outline-none font-medium',
-                isLight
-                  ? 'border-gray-300 bg-white text-gray-800 focus:border-blue-500'
-                  : 'border-gray-700 bg-[#0D1117] text-gray-200 focus:border-blue-400',
-              )}
-            >
-              {(usageData?.filters.range.options || []).map(option => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          className={cn(
+            'flex items-center justify-center rounded-lg border p-2 transition-colors flex-shrink-0',
+            isLight
+              ? 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+              : 'border-gray-700 bg-[#151C24] text-gray-200 hover:bg-gray-800',
+          )}
+          disabled={loading || refreshing}
+          title="Refresh"
+        >
+          <svg className={cn('h-4 w-4', refreshing && 'animate-spin')} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v4h4M16 16v-4h-4M5.636 5.636a7 7 0 019.9 0l.707.707M14.364 14.364a7 7 0 01-9.9 0l-.707-.707" />
+          </svg>
+        </button>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 mb-4">
         <SummaryCard
           isLight={isLight}
           label="Total tokens"
@@ -1215,7 +1687,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
         <SummaryCard
           isLight={isLight}
           label="Avg tokens / call"
-          value={summary ? decimalFormatter.format(summary.avgTokens || 0) : '—'}
+          value={summary ? numberFormatter.format(Math.round(summary.avgTokens || 0)) : '—'}
           description={
             summary
               ? `${numberFormatter.format(summary.callCount)} total calls`
@@ -1227,106 +1699,577 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
       {/* Time Series Chart */}
       <div
         className={cn(
-          'rounded-lg border shadow-sm transition-colors',
+          'rounded-lg border transition-colors',
           isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
         )}
       >
-        <div className="flex items-center justify-between border-b px-4 py-2">
-          <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
-            Token usage over time
-          </h3>
-          <span className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
-            Stack shows request vs response tokens
-          </span>
+        <div className="space-y-3">
+          <div className={cn('flex items-center justify-between px-4 py-2 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+            <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+              Overall Token Usage
+            </h3>
+            
+            {/* Chart Type Selector - only show when there's data */}
+            {chartData.length > 0 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setChartDropdownOpen(!chartDropdownOpen)}
+                  className={cn(
+                    'flex items-center gap-1 px-1.5 py-0.5 rounded border transition-colors',
+                    isLight
+                      ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                      : 'bg-[#151C24] border-gray-700 text-gray-300 hover:bg-gray-800'
+                  )}
+                  title={chartTypeOptions.find(opt => opt.value === chartType)?.label}
+                >
+                  <span className="text-sm">{chartTypeOptions.find(opt => opt.value === chartType)?.icon}</span>
+                  <svg
+                    className={cn('h-2.5 w-2.5 transition-transform', chartDropdownOpen && 'rotate-180')}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {chartDropdownOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setChartDropdownOpen(false)}
+                    />
+                    <div
+                      className={cn(
+                        'absolute right-0 mt-1 w-48 rounded-md border shadow-lg z-20',
+                        isLight
+                          ? 'bg-white border-gray-200'
+                          : 'bg-[#1F2937] border-gray-700'
+                      )}
+                    >
+                      {chartTypeOptions.map(option => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => {
+                            setChartType(option.value);
+                            setChartDropdownOpen(false);
+                          }}
+                          className={cn(
+                            'w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors first:rounded-t-md last:rounded-b-md',
+                            chartType === option.value
+                              ? isLight
+                                ? 'bg-blue-50 text-blue-700'
+                                : 'bg-blue-900/30 text-blue-300'
+                              : isLight
+                              ? 'text-gray-700 hover:bg-gray-50'
+                              : 'text-gray-300 hover:bg-gray-800'
+                          )}
+                        >
+                          <span>{option.icon}</span>
+                          <span>{option.label}</span>
+                          {chartType === option.value && (
+                            <svg className="ml-auto h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          {chartData.length > 0 && (
+            <div className="flex items-center gap-4 px-4">
+              <button
+                type="button"
+                onClick={() => toggleSeries('totalTokens')}
+                className={cn(
+                  'flex items-center gap-1.5 cursor-pointer transition-all rounded px-2 py-1 -mx-2 -my-1',
+                  isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800'
+                )}
+              >
+                <div
+                  className={cn(
+                    'h-2 w-2 transition-opacity',
+                    isLight ? 'bg-gray-400' : 'bg-gray-500',
+                    !visibleSeries.totalTokens && 'opacity-30'
+                  )}
+                />
+                <span
+                  className={cn(
+                    'text-[10px] uppercase transition-opacity',
+                    isLight ? 'text-gray-600' : 'text-gray-400',
+                    !visibleSeries.totalTokens && 'opacity-30'
+                  )}
+                >
+                  Total tokens
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleSeries('requestTokens')}
+                className={cn(
+                  'flex items-center gap-1.5 cursor-pointer transition-all rounded px-2 py-1 -mx-2 -my-1',
+                  isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800'
+                )}
+              >
+                <div
+                  className={cn(
+                    'h-2 w-2 transition-opacity',
+                    isLight ? 'bg-blue-500' : 'bg-blue-400',
+                    !visibleSeries.requestTokens && 'opacity-30'
+                  )}
+                />
+                <span
+                  className={cn(
+                    'text-[10px] uppercase transition-opacity',
+                    isLight ? 'text-gray-600' : 'text-gray-400',
+                    !visibleSeries.requestTokens && 'opacity-30'
+                  )}
+                >
+                  Request tokens
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleSeries('responseTokens')}
+                className={cn(
+                  'flex items-center gap-1.5 cursor-pointer transition-all rounded px-2 py-1 -mx-2 -my-1',
+                  isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800'
+                )}
+              >
+                <div
+                  className={cn(
+                    'h-2 w-2 transition-opacity',
+                    isLight ? 'bg-green-500' : 'bg-green-400',
+                    !visibleSeries.responseTokens && 'opacity-30'
+                  )}
+                />
+                <span
+                  className={cn(
+                    'text-[10px] uppercase transition-opacity',
+                    isLight ? 'text-gray-600' : 'text-gray-400',
+                    !visibleSeries.responseTokens && 'opacity-30'
+                  )}
+                >
+                  Response tokens
+                </span>
+              </button>
+            </div>
+          )}
         </div>
-        <div className="h-64 w-full px-2 py-3">
+        <div className="h-64 w-full py-3">
           {loading && !usageData ? (
             <div className="flex h-full items-center justify-center">
               <div className="animate-pulse text-xs text-gray-500">Loading chart...</div>
             </div>
+          ) : chartData.length === 0 ? (
+            <div className={cn('flex h-full items-center justify-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
+              No data available
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="totalGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={isLight ? chartColors.total.light : chartColors.total.dark} stopOpacity={0.4} />
-                    <stop offset="95%" stopColor={isLight ? chartColors.total.light : chartColors.total.dark} stopOpacity={0.05} />
-                  </linearGradient>
-                  <linearGradient id="requestGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={isLight ? chartColors.request.light : chartColors.request.dark} stopOpacity={0.35} />
-                    <stop offset="95%" stopColor={isLight ? chartColors.request.light : chartColors.request.dark} stopOpacity={0.05} />
-                  </linearGradient>
-                  <linearGradient id="responseGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={isLight ? chartColors.response.light : chartColors.response.dark} stopOpacity={0.35} />
-                    <stop offset="95%" stopColor={isLight ? chartColors.response.light : chartColors.response.dark} stopOpacity={0.05} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke={isLight ? '#E5E7EB' : '#1F2937'}
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 11, fill: isLight ? '#4B5563' : '#9CA3AF' }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  tickFormatter={value => numberFormatter.format(value as number)}
-                  tick={{ fontSize: 11, fill: isLight ? '#4B5563' : '#9CA3AF' }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <Tooltip
-                  cursor={{ strokeDasharray: '3 3', stroke: isLight ? '#CBD5F5' : '#4B5563' }}
-                  contentStyle={{
-                    backgroundColor: isLight ? '#FFFFFF' : '#0B1320',
-                    borderRadius: '0.5rem',
-                    border: `1px solid ${isLight ? '#E5E7EB' : '#1F2937'}`,
-                    boxShadow: isLight
-                      ? '0 4px 16px rgba(15, 23, 42, 0.08)'
-                      : '0 6px 18px rgba(15, 23, 42, 0.4)',
-                  }}
-                  formatter={(value, name) => {
-                    if (typeof value !== 'number') return ['0 tokens', name];
-                    if (name === 'totalTokens') return [tooltipFormatter(value), 'Total'];
-                    if (name === 'requestTokens') return [tooltipFormatter(value), 'Request'];
-                    if (name === 'responseTokens') return [tooltipFormatter(value), 'Response'];
-                    if (name === 'callCount') {
-                      return [`${numberFormatter.format(value)} calls`, 'Calls'];
-                    }
-                    return [tooltipFormatter(value), name];
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="totalTokens"
-                  stroke={isLight ? chartColors.total.light : chartColors.total.dark}
-                  strokeWidth={2}
-                  fill="url(#totalGradient)"
-                  dot={false}
-                  name="total"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="requestTokens"
-                  stroke={isLight ? chartColors.request.light : chartColors.request.dark}
-                  strokeWidth={1.4}
-                  fill="url(#requestGradient)"
-                  dot={false}
-                  name="request"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="responseTokens"
-                  stroke={isLight ? chartColors.response.light : chartColors.response.dark}
-                  strokeWidth={1.4}
-                  fill="url(#responseGradient)"
-                  dot={false}
-                  name="response"
-                />
-              </AreaChart>
+              {(() => {
+                const commonProps = {
+                  data: chartData,
+                  margin: { top: 5, right: 30, left: 0, bottom: 5 },
+                };
+
+                const commonChildren = (
+                  <>
+                    <defs>
+                      <linearGradient id="totalGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={isLight ? chartColors.total.light : chartColors.total.dark} stopOpacity={0.4} />
+                        <stop offset="95%" stopColor={isLight ? chartColors.total.light : chartColors.total.dark} stopOpacity={0.05} />
+                      </linearGradient>
+                      <linearGradient id="requestGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={isLight ? chartColors.request.light : chartColors.request.dark} stopOpacity={0.35} />
+                        <stop offset="95%" stopColor={isLight ? chartColors.request.light : chartColors.request.dark} stopOpacity={0.05} />
+                      </linearGradient>
+                      <linearGradient id="responseGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={isLight ? chartColors.response.light : chartColors.response.dark} stopOpacity={0.35} />
+                        <stop offset="95%" stopColor={isLight ? chartColors.response.light : chartColors.response.dark} stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke={isLight ? '#E5E7EB' : '#1F2937'}
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 10, fill: isLight ? '#6B7280' : '#9CA3AF' }}
+                      tickLine={false}
+                      axisLine={false}
+                      height={30}
+                    />
+                    <YAxis
+                      tickFormatter={value => compactNumberFormatter(value as number)}
+                      tick={{ fontSize: 10, fill: isLight ? '#6B7280' : '#9CA3AF' }}
+                      tickLine={false}
+                      axisLine={false}
+                      width={60}
+                    />
+                    <Tooltip
+                      cursor={{ strokeDasharray: '3 3', stroke: isLight ? '#CBD5E1' : '#4B5563' }}
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div
+                              className={cn(
+                                'rounded-lg border shadow-lg overflow-hidden',
+                                isLight ? 'bg-white border-gray-200' : 'bg-[#1F2937] border-gray-700',
+                              )}
+                            >
+                              <p className={cn('text-xs font-medium px-3 pt-2 pb-2 border-b', isLight ? 'text-gray-900 border-gray-200' : 'text-gray-100 border-gray-700')}>
+                                {label}
+                              </p>
+                              <div className="px-3 py-2">
+                                {payload.map((entry: any, index: number) => (
+                                  <div key={index} className="flex items-center justify-between gap-4 py-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <div
+                                      className="h-2 w-2"
+                                      style={{ backgroundColor: entry.color }}
+                                    />
+                                    <span className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                      {entry.name === 'totalTokens' ? 'Total tokens' :
+                                       entry.name === 'requestTokens' ? 'Request tokens' :
+                                       entry.name === 'responseTokens' ? 'Response tokens' : entry.name}
+                                    </span>
+                                  </div>
+                                  <span className={cn('text-xs font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                                    {numberFormatter.format(entry.value as number)}
+                                  </span>
+                                </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                  </>
+                );
+
+                // Render different chart types
+                if (chartType === 'line') {
+                  return (
+                    <LineChart {...commonProps}>
+                      {commonChildren}
+                      {visibleSeries.totalTokens && (
+                        <Line
+                          type="monotone"
+                          dataKey="totalTokens"
+                          stroke={isLight ? chartColors.total.light : chartColors.total.dark}
+                          strokeWidth={2}
+                          dot={false}
+                          name="totalTokens"
+                        />
+                      )}
+                      {visibleSeries.requestTokens && (
+                        <Line
+                          type="monotone"
+                          dataKey="requestTokens"
+                          stroke={isLight ? chartColors.request.light : chartColors.request.dark}
+                          strokeWidth={1.4}
+                          dot={false}
+                          name="requestTokens"
+                        />
+                      )}
+                      {visibleSeries.responseTokens && (
+                        <Line
+                          type="monotone"
+                          dataKey="responseTokens"
+                          stroke={isLight ? chartColors.response.light : chartColors.response.dark}
+                          strokeWidth={1.4}
+                          dot={false}
+                          name="responseTokens"
+                        />
+                      )}
+                    </LineChart>
+                  );
+                }
+
+                if (chartType === 'bar' || chartType === 'stacked-bar') {
+                  return (
+                    <BarChart {...commonProps}>
+                      {commonChildren}
+                      {visibleSeries.totalTokens && (
+                        <Bar
+                          dataKey="totalTokens"
+                          fill={isLight ? chartColors.total.light : chartColors.total.dark}
+                          name="totalTokens"
+                          stackId={chartType === 'stacked-bar' ? 'stack' : undefined}
+                        />
+                      )}
+                      {visibleSeries.requestTokens && (
+                        <Bar
+                          dataKey="requestTokens"
+                          fill={isLight ? chartColors.request.light : chartColors.request.dark}
+                          name="requestTokens"
+                          stackId={chartType === 'stacked-bar' ? 'stack' : undefined}
+                        />
+                      )}
+                      {visibleSeries.responseTokens && (
+                        <Bar
+                          dataKey="responseTokens"
+                          fill={isLight ? chartColors.response.light : chartColors.response.dark}
+                          name="responseTokens"
+                          stackId={chartType === 'stacked-bar' ? 'stack' : undefined}
+                        />
+                      )}
+                    </BarChart>
+                  );
+                }
+
+                if (chartType === 'step-line') {
+                  return (
+                    <LineChart {...commonProps}>
+                      {commonChildren}
+                      {visibleSeries.totalTokens && (
+                        <Line
+                          type="step"
+                          dataKey="totalTokens"
+                          stroke={isLight ? chartColors.total.light : chartColors.total.dark}
+                          strokeWidth={2}
+                          dot={false}
+                          name="totalTokens"
+                        />
+                      )}
+                      {visibleSeries.requestTokens && (
+                        <Line
+                          type="step"
+                          dataKey="requestTokens"
+                          stroke={isLight ? chartColors.request.light : chartColors.request.dark}
+                          strokeWidth={1.4}
+                          dot={false}
+                          name="requestTokens"
+                        />
+                      )}
+                      {visibleSeries.responseTokens && (
+                        <Line
+                          type="step"
+                          dataKey="responseTokens"
+                          stroke={isLight ? chartColors.response.light : chartColors.response.dark}
+                          strokeWidth={1.4}
+                          dot={false}
+                          name="responseTokens"
+                        />
+                      )}
+                    </LineChart>
+                  );
+                }
+
+                if (chartType === 'area-spline') {
+                  return (
+                    <AreaChart {...commonProps}>
+                      {commonChildren}
+                      {visibleSeries.totalTokens && (
+                        <Area
+                          type="natural"
+                          dataKey="totalTokens"
+                          stroke={isLight ? chartColors.total.light : chartColors.total.dark}
+                          strokeWidth={2}
+                          fill="url(#totalGradient)"
+                          dot={false}
+                          name="totalTokens"
+                        />
+                      )}
+                      {visibleSeries.requestTokens && (
+                        <Area
+                          type="natural"
+                          dataKey="requestTokens"
+                          stroke={isLight ? chartColors.request.light : chartColors.request.dark}
+                          strokeWidth={1.4}
+                          fill="url(#requestGradient)"
+                          dot={false}
+                          name="requestTokens"
+                        />
+                      )}
+                      {visibleSeries.responseTokens && (
+                        <Area
+                          type="natural"
+                          dataKey="responseTokens"
+                          stroke={isLight ? chartColors.response.light : chartColors.response.dark}
+                          strokeWidth={1.4}
+                          fill="url(#responseGradient)"
+                          dot={false}
+                          name="responseTokens"
+                        />
+                      )}
+                    </AreaChart>
+                  );
+                }
+
+                if (chartType === 'line-dots') {
+                  return (
+                    <LineChart {...commonProps}>
+                      {commonChildren}
+                      {visibleSeries.totalTokens && (
+                        <Line
+                          type="monotone"
+                          dataKey="totalTokens"
+                          stroke={isLight ? chartColors.total.light : chartColors.total.dark}
+                          strokeWidth={2}
+                          dot={{ fill: isLight ? chartColors.total.light : chartColors.total.dark, r: 3 }}
+                          name="totalTokens"
+                        />
+                      )}
+                      {visibleSeries.requestTokens && (
+                        <Line
+                          type="monotone"
+                          dataKey="requestTokens"
+                          stroke={isLight ? chartColors.request.light : chartColors.request.dark}
+                          strokeWidth={1.4}
+                          dot={{ fill: isLight ? chartColors.request.light : chartColors.request.dark, r: 3 }}
+                          name="requestTokens"
+                        />
+                      )}
+                      {visibleSeries.responseTokens && (
+                        <Line
+                          type="monotone"
+                          dataKey="responseTokens"
+                          stroke={isLight ? chartColors.response.light : chartColors.response.dark}
+                          strokeWidth={1.4}
+                          dot={{ fill: isLight ? chartColors.response.light : chartColors.response.dark, r: 3 }}
+                          name="responseTokens"
+                        />
+                      )}
+                    </LineChart>
+                  );
+                }
+
+                if (chartType === 'area-step') {
+                  return (
+                    <AreaChart {...commonProps}>
+                      {commonChildren}
+                      {visibleSeries.totalTokens && (
+                        <Area
+                          type="step"
+                          dataKey="totalTokens"
+                          stroke={isLight ? chartColors.total.light : chartColors.total.dark}
+                          strokeWidth={2}
+                          fill="url(#totalGradient)"
+                          dot={false}
+                          name="totalTokens"
+                        />
+                      )}
+                      {visibleSeries.requestTokens && (
+                        <Area
+                          type="step"
+                          dataKey="requestTokens"
+                          stroke={isLight ? chartColors.request.light : chartColors.request.dark}
+                          strokeWidth={1.4}
+                          fill="url(#requestGradient)"
+                          dot={false}
+                          name="requestTokens"
+                        />
+                      )}
+                      {visibleSeries.responseTokens && (
+                        <Area
+                          type="step"
+                          dataKey="responseTokens"
+                          stroke={isLight ? chartColors.response.light : chartColors.response.dark}
+                          strokeWidth={1.4}
+                          fill="url(#responseGradient)"
+                          dot={false}
+                          name="responseTokens"
+                        />
+                      )}
+                    </AreaChart>
+                  );
+                }
+
+                if (chartType === 'stacked-area') {
+                  return (
+                    <AreaChart {...commonProps}>
+                      {commonChildren}
+                      {visibleSeries.responseTokens && (
+                        <Area
+                          type="monotone"
+                          dataKey="responseTokens"
+                          stackId="1"
+                          stroke={isLight ? chartColors.response.light : chartColors.response.dark}
+                          strokeWidth={1.4}
+                          fill="url(#responseGradient)"
+                          dot={false}
+                          name="responseTokens"
+                        />
+                      )}
+                      {visibleSeries.requestTokens && (
+                        <Area
+                          type="monotone"
+                          dataKey="requestTokens"
+                          stackId="1"
+                          stroke={isLight ? chartColors.request.light : chartColors.request.dark}
+                          strokeWidth={1.4}
+                          fill="url(#requestGradient)"
+                          dot={false}
+                          name="requestTokens"
+                        />
+                      )}
+                      {visibleSeries.totalTokens && (
+                        <Area
+                          type="monotone"
+                          dataKey="totalTokens"
+                          stackId="1"
+                          stroke={isLight ? chartColors.total.light : chartColors.total.dark}
+                          strokeWidth={2}
+                          fill="url(#totalGradient)"
+                          dot={false}
+                          name="totalTokens"
+                        />
+                      )}
+                    </AreaChart>
+                  );
+                }
+
+                // Default: regular area chart
+                return (
+                  <AreaChart {...commonProps}>
+                    {commonChildren}
+                    {visibleSeries.totalTokens && (
+                      <Area
+                        type="monotone"
+                        dataKey="totalTokens"
+                        stroke={isLight ? chartColors.total.light : chartColors.total.dark}
+                        strokeWidth={2}
+                        fill="url(#totalGradient)"
+                        dot={false}
+                        name="totalTokens"
+                      />
+                    )}
+                    {visibleSeries.requestTokens && (
+                      <Area
+                        type="monotone"
+                        dataKey="requestTokens"
+                        stroke={isLight ? chartColors.request.light : chartColors.request.dark}
+                        strokeWidth={1.4}
+                        fill="url(#requestGradient)"
+                        dot={false}
+                        name="requestTokens"
+                      />
+                    )}
+                    {visibleSeries.responseTokens && (
+                      <Area
+                        type="monotone"
+                        dataKey="responseTokens"
+                        stroke={isLight ? chartColors.response.light : chartColors.response.dark}
+                        strokeWidth={1.4}
+                        fill="url(#responseGradient)"
+                        dot={false}
+                        name="responseTokens"
+                      />
+                    )}
+                  </AreaChart>
+                );
+              })()}
             </ResponsiveContainer>
           )}
         </div>
@@ -1334,32 +2277,123 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
 
       {/* Breakdown Cards */}
       <div className="grid gap-3 lg:grid-cols-2">
-        {breakdownCards.map(card => (
-          <BreakdownCard
-            key={card.key}
+        {modelsTimeseries.length > 0 ? (
+          <TimeseriesCard
             isLight={isLight}
-            title={card.title}
-            data={card.data}
+            title="Top Models"
+            rangeKey={usageData?.filters.range.selected ?? DEFAULT_FILTERS.range}
+            series={modelsTimeseries}
           />
-        ))}
+        ) : (
+          <BreakdownCard isLight={isLight} title="Top Models" data={modelsBreakdown} />
+        )}
+
+        {agentsTimeseries.length > 0 ? (
+          <TimeseriesCard
+            isLight={isLight}
+            title="Top Agents"
+            rangeKey={usageData?.filters.range.selected ?? DEFAULT_FILTERS.range}
+            series={agentsTimeseries}
+          />
+        ) : (
+          <BreakdownCard isLight={isLight} title="Top Agents" data={agentsBreakdown} />
+        )}
+
+        {teamsTimeseries.length > 0 ? (
+          <TimeseriesCard
+            isLight={isLight}
+            title="Teams"
+            rangeKey={usageData?.filters.range.selected ?? DEFAULT_FILTERS.range}
+            series={teamsTimeseries}
+          />
+        ) : (
+          <BreakdownCard isLight={isLight} title="Teams" data={teamsBreakdown} />
+        )}
+
+        {usersTimeseries.length > 0 ? (
+          <TimeseriesCard
+            isLight={isLight}
+            title="Users"
+            rangeKey={usageData?.filters.range.selected ?? DEFAULT_FILTERS.range}
+            series={usersTimeseries}
+          />
+        ) : (
+          <BreakdownCard isLight={isLight} title="Users" data={usersBreakdown} />
+        )}
       </div>
 
       {/* Recent Usage Activity */}
       <div
         className={cn(
-          'overflow-hidden rounded-lg border shadow-sm transition-colors',
+          'overflow-hidden rounded-lg border transition-colors',
           isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
         )}
       >
         <div className="flex items-center justify-between border-b px-4 py-2">
           <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
-            Recent usage activity
+            Usage Activity
           </h3>
-          <span className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
-            Showing last 25 runs
-          </span>
+          {usageData?.recent.pagination && (
+            <div className="flex items-center gap-3">
+              <span className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                {usageData.recent.pagination.total === 0
+                  ? 'No activities'
+                  : `${((usageData.recent.pagination.page - 1) * usageData.recent.pagination.limit) + 1}-${Math.min(
+                      usageData.recent.pagination.page * usageData.recent.pagination.limit,
+                      usageData.recent.pagination.total,
+                    )} of ${numberFormatter.format(usageData.recent.pagination.total)}`}
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newPage = currentPage - 1;
+                    setCurrentPage(newPage);
+                    fetchUsage(filters, newPage);
+                  }}
+                  disabled={currentPage === 1}
+                  className={cn(
+                    'rounded p-1 transition-colors',
+                    currentPage === 1
+                      ? 'cursor-not-allowed opacity-40'
+                      : isLight
+                      ? 'hover:bg-gray-100 text-gray-600'
+                      : 'hover:bg-gray-800 text-gray-400',
+                  )}
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <span className={cn('text-xs px-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                  {currentPage} / {usageData.recent.pagination.totalPages || 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newPage = currentPage + 1;
+                    setCurrentPage(newPage);
+                    fetchUsage(filters, newPage);
+                  }}
+                  disabled={currentPage >= usageData.recent.pagination.totalPages}
+                  className={cn(
+                    'rounded p-1 transition-colors',
+                    currentPage >= usageData.recent.pagination.totalPages
+                      ? 'cursor-not-allowed opacity-40'
+                      : isLight
+                      ? 'hover:bg-gray-100 text-gray-600'
+                      : 'hover:bg-gray-800 text-gray-400',
+                  )}
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="max-h-80 overflow-auto">
+        <div className="max-h-80 overflow-auto recent-sessions-scroll">
           <table className="min-w-full divide-y divide-gray-200 text-xs">
             <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#1A2332]')}>
               <tr>
@@ -1369,7 +2403,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                     isLight ? 'text-gray-600' : 'text-gray-300',
                   )}
                 >
-                  Time
+                  Date & Time
                 </th>
                 <th
                   className={cn(
@@ -1422,7 +2456,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
               </tr>
             </thead>
             <tbody className={cn('divide-y', isLight ? 'divide-gray-100' : 'divide-gray-800')}>
-              {usageData?.recent.map(row => (
+              {usageData?.recent.data.map(row => (
                 <tr
                   key={row.id}
                   className={cn(
@@ -1431,7 +2465,12 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                   )}
                 >
                   <td className={cn('px-3 py-2 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                    {new Date(row.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(row.createdAt).toLocaleString([], {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
                   </td>
                   <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-900' : 'text-gray-100')}>
                     {row.agent}
@@ -1453,7 +2492,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                   </td>
                 </tr>
               ))}
-              {(!usageData?.recent || usageData.recent.length === 0) && (
+              {(!usageData?.recent || usageData.recent.data.length === 0) && (
                 <tr>
                   <td colSpan={7} className="px-3 py-8 text-center text-xs text-gray-500">
                     No recent activity

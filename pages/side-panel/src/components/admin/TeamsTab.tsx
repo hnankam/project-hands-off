@@ -405,9 +405,9 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                 Teams <span className={cn('text-xs font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>({teams.length})</span>
               </h3>
             </div>
-            {canManageTeams && (
+            {canManageTeams && !showCreateTeamForm && (
               <button
-                onClick={() => setShowCreateTeamForm(!showCreateTeamForm)}
+                onClick={() => setShowCreateTeamForm(true)}
                 className={cn(
                   'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors',
                   isLight
@@ -417,7 +417,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
-                {showCreateTeamForm ? 'Cancel' : 'New'}
+                New
               </button>
             )}
           </div>
@@ -464,7 +464,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                   onClick={() => setShowCreateTeamForm(false)}
                   className={cn(
                     'px-4 py-1.5 text-xs rounded transition-colors font-medium',
-                    isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
+                    isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-900/30 text-red-400 hover:bg-red-900/50',
                   )}>
                   Cancel
                 </button>

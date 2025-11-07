@@ -208,7 +208,26 @@ export const SingleTeamSelector: React.FC<SingleTeamSelectorProps> = ({
   allowEmpty = true,
 }) => {
   const [isOpen, setIsOpen] = React.useState(false);
+  const [dropdownPosition, setDropdownPosition] = React.useState<'bottom' | 'top'>('bottom');
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+  const buttonRef = React.useRef<HTMLButtonElement>(null);
+
+  // Calculate dropdown position based on available space
+  React.useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const buttonRect = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - buttonRect.bottom;
+      const spaceAbove = buttonRect.top;
+      const dropdownHeight = 240; // max-h-[240px]
+
+      // Open upward if there's more space above or not enough space below
+      if (spaceBelow < dropdownHeight && spaceAbove > spaceBelow) {
+        setDropdownPosition('top');
+      } else {
+        setDropdownPosition('bottom');
+      }
+    }
+  }, [isOpen]);
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -255,6 +274,7 @@ export const SingleTeamSelector: React.FC<SingleTeamSelectorProps> = ({
   return (
     <div className="relative" ref={dropdownRef}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
@@ -285,7 +305,8 @@ export const SingleTeamSelector: React.FC<SingleTeamSelectorProps> = ({
       {isOpen && (
         <div
           className={cn(
-            'absolute top-full left-0 mt-1 w-full min-w-[180px] rounded-md border shadow-lg z-[9999] max-h-[240px] overflow-y-auto',
+            'absolute left-0 w-full min-w-[180px] rounded-md border shadow-lg z-[9999] max-h-[240px] overflow-y-auto',
+            dropdownPosition === 'top' ? 'bottom-full mb-1' : 'top-full mt-1',
             isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
           )}
         >

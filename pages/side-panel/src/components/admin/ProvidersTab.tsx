@@ -951,24 +951,26 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                   </svg>
                 )}
               </button>
-              <button
-                onClick={() => {
-                  setShowCreateForm(!showCreateForm);
-                  setEditingProviderId(null);
-                  setEditForm(null);
-                }}
-                className={cn(
-                  'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border transition-colors',
-                  isLight
-                    ? 'text-blue-600 border-blue-200 hover:bg-blue-50'
-                    : 'text-blue-300 border-blue-800 hover:bg-blue-900/20',
-                )}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-                {showCreateForm ? 'Cancel' : 'Add Provider'}
-              </button>
+              {!showCreateForm && (
+                <button
+                  onClick={() => {
+                    setShowCreateForm(true);
+                    setEditingProviderId(null);
+                    setEditForm(null);
+                  }}
+                  className={cn(
+                    'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border transition-colors',
+                    isLight
+                      ? 'text-blue-600 border-blue-200 hover:bg-blue-50'
+                      : 'text-blue-300 border-blue-800 hover:bg-blue-900/20',
+                  )}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Provider
+                </button>
+              )}
             </div>
           </div>
 
@@ -1144,7 +1146,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                   }}
                   className={cn(
                     'px-4 py-1.5 text-xs rounded font-medium transition-colors',
-                    isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
+                    isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-900/30 text-red-400 hover:bg-red-900/50',
                   )}
                 >
                   Cancel

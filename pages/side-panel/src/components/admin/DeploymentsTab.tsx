@@ -75,6 +75,55 @@ interface DeploymentsTabProps {
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001';
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 
+const DeploymentSkeleton: React.FC<{ isLight: boolean }> = ({ isLight }) => (
+  <div className="space-y-4 animate-pulse">
+    {/* Stats Cards Skeleton */}
+    <div className="grid grid-cols-2 gap-3">
+      {Array.from({ length: 4 }).map((_, idx) => (
+        <div
+          key={`stats-skeleton-${idx}`}
+          className={cn(
+            'rounded-lg border p-4',
+            isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+          )}
+        >
+          <div className={cn('h-3 w-24 rounded mb-3', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+          <div className={cn('h-8 w-16 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+        </div>
+      ))}
+    </div>
+
+    {/* Endpoints List Skeleton */}
+    <div
+      className={cn(
+        'rounded-lg border',
+        isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+      )}
+    >
+      <div className="p-4 space-y-3">
+        {Array.from({ length: 5 }).map((_, idx) => (
+          <div
+            key={`endpoint-skeleton-${idx}`}
+            className={cn(
+              'rounded-lg border p-3',
+              isLight ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/50 border-gray-700',
+            )}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className={cn('h-4 w-48 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+              <div className={cn('h-6 w-20 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+            </div>
+            <div className="flex items-center gap-3">
+              <div className={cn('h-3 w-32 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+              <div className={cn('h-3 w-24 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
 const STATUS_META: Record<string, { label: string; tone: 'default' | 'info' | 'success' | 'warn' | 'error' } | undefined> = {
   ready: { label: 'Ready', tone: 'success' },
   deploying: { label: 'Deploying', tone: 'info' },
@@ -936,6 +985,10 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
       </div>
     );
   };
+
+  if (loading && deployments.length === 0) {
+    return <DeploymentSkeleton isLight={isLight} />;
+  }
 
   return (
     <div className="space-y-4">

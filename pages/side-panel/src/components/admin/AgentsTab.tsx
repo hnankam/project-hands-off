@@ -4,6 +4,7 @@ import { authClient } from '../../lib/auth-client';
 import { OrganizationSelector } from './OrganizationSelector';
 import { TeamSelector, SingleTeamSelector } from './TeamSelector';
 import { Radio, Checkbox } from './FormControls';
+import { ModelMultiSelector } from './ModelMultiSelector';
 
 interface Organization {
   id: string;
@@ -263,208 +264,6 @@ const ModelIcon = () => (
     <path d="M5 19l7 4 7-4" />
   </svg>
 );
-
-interface ModelMultiSelectorProps {
-  isLight: boolean;
-  models: ModelSummary[];
-  selectedModelIds: string[];
-  onChange: (modelIds: string[]) => void;
-  placeholder?: string;
-  disabled?: boolean;
-  loading?: boolean;
-}
-
-const ModelMultiSelector: React.FC<ModelMultiSelectorProps> = ({
-  isLight,
-  models,
-  selectedModelIds,
-  onChange,
-  placeholder = 'Select models',
-  disabled = false,
-  loading = false,
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-
-    return undefined;
-  }, [isOpen]);
-
-  if (loading) {
-    return (
-      <div
-        className={cn(
-          'h-[34px] w-full rounded-md border animate-pulse',
-          isLight ? 'border-gray-200 bg-gray-100' : 'border-gray-700 bg-gray-800',
-        )}
-      />
-    );
-  }
-
-  if (disabled) {
-    return (
-      <div
-        className={cn(
-          'flex items-center gap-1.5 px-2 py-1.5 text-xs rounded-md min-h-[32px] border opacity-60',
-          isLight ? 'bg-white border-gray-300 text-gray-500' : 'bg-[#151C24] border-gray-600 text-gray-400',
-        )}
-      >
-        <span className="flex-shrink-0 mt-0.5">
-          <ModelIcon />
-        </span>
-        <span className="truncate flex-1 text-left">{placeholder}</span>
-      </div>
-    );
-  }
-
-  const toggleModel = (modelId: string) => {
-    const newSelection = selectedModelIds.includes(modelId)
-      ? selectedModelIds.filter(id => id !== modelId)
-      : [...selectedModelIds, modelId];
-    onChange(newSelection);
-  };
-
-  const removeModel = (modelId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    onChange(selectedModelIds.filter(id => id !== modelId));
-  };
-
-  const selectedModels = selectedModelIds
-    .map(id => models.find(model => model.id === id) || { id, name: id, enabled: true, modelKey: id, teamId: null })
-    .filter(Boolean);
-
-  return (
-    <div className="relative" ref={dropdownRef}>
-      <button
-        type="button"
-        onClick={() => setIsOpen(prev => !prev)}
-        className={cn(
-          'flex items-start gap-1.5 px-2 py-1.5 text-xs rounded-md min-h-[32px] min-w-0 w-full border',
-          isLight ? 'text-gray-700 hover:bg-gray-100 border-gray-300 bg-white' : 'text-gray-200 hover:bg-gray-700 border-gray-600 bg-[#151C24]',
-        )}
-      >
-        <span className="flex-shrink-0 mt-0.5">
-          <ModelIcon />
-        </span>
-        {selectedModels.length > 0 ? (
-          <div className="flex flex-wrap gap-1 flex-1 min-w-0">
-            {selectedModels.map(model => (
-              <span
-                key={model.id}
-                className={cn(
-                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
-                  isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-300',
-                )}
-                onClick={e => e.stopPropagation()}
-              >
-                {model.name}
-                <button
-                  type="button"
-                  onClick={e => removeModel(model.id, e)}
-                  className={cn(
-                    'hover:bg-black/10 rounded-full p-0.5 transition-colors',
-                    isLight ? 'text-purple-600' : 'text-purple-300',
-                  )}
-                >
-                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </span>
-            ))}
-          </div>
-        ) : (
-          <span className={cn('flex-1 min-w-0 text-left', isLight ? 'text-gray-500' : 'text-gray-400')}>
-            {placeholder}
-          </span>
-        )}
-        <svg
-          className={cn('transition-transform flex-shrink-0 mt-0.5', isOpen ? 'rotate-180' : '')}
-          width="12"
-          height="12"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {isOpen && (
-        <div
-          className={cn(
-            'absolute top-full left-0 mt-1 w-full min-w-[200px] rounded-md border shadow-lg z-[9999] max-h-[240px] overflow-y-auto',
-            isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
-          )}
-        >
-          {models.length === 0 ? (
-            <div className={cn('px-3 py-2 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
-              No models available
-            </div>
-          ) : (
-            models.map(model => {
-              const isSelected = selectedModelIds.includes(model.id);
-              return (
-                <button
-                  type="button"
-                  key={model.id}
-                  onClick={() => toggleModel(model.id)}
-                  className={cn(
-                    'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors text-left',
-                    isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700',
-                  )}
-                >
-                  <div
-                    className={cn(
-                      'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0',
-                      isSelected
-                        ? 'bg-purple-600 border-purple-600'
-                        : isLight
-                        ? 'border-gray-300'
-                        : 'border-gray-600',
-                    )}
-                  >
-                    {isSelected && (
-                      <svg width="10" height="10" fill="none" stroke="white" viewBox="0 0 24 24" strokeWidth={3}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </div>
-                  <ModelIcon />
-                  <span className="truncate flex-1">{model.name}</span>
-                  {!model.enabled && (
-                    <span
-                      className={cn(
-                        'text-[10px] px-1 py-0.5 rounded font-medium',
-                        isLight ? 'bg-gray-100 text-gray-500' : 'bg-gray-800 text-gray-400',
-                      )}
-                    >
-                      Disabled
-                    </span>
-                  )}
-                </button>
-              );
-            })
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
 
 export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, onSuccess }: AgentsTabProps) {
   const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -1278,24 +1077,26 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                 </span>
               </h3>
             </div>
-            <button
-              onClick={() => {
-                setShowCreateForm(!showCreateForm);
-                setEditingAgentId(null);
-                setEditForm(null);
-              }}
-              className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border transition-colors',
-                isLight
-                  ? 'text-blue-600 border-blue-200 hover:bg-blue-50'
-                  : 'text-blue-300 border-blue-800 hover:bg-blue-900/20',
-              )}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-              {showCreateForm ? 'Cancel' : 'Add Agent'}
-            </button>
+            {!showCreateForm && (
+              <button
+                onClick={() => {
+                  setShowCreateForm(true);
+                  setEditingAgentId(null);
+                  setEditForm(null);
+                }}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border transition-colors',
+                  isLight
+                    ? 'text-blue-600 border-blue-200 hover:bg-blue-50'
+                    : 'text-blue-300 border-blue-800 hover:bg-blue-900/20',
+                )}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Agent
+              </button>
+            )}
           </div>
 
           {showCreateForm && (
@@ -1381,6 +1182,21 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                 />
               </div>
 
+              <div>
+                <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                  Metadata JSON (optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={createForm.metadata}
+                  onChange={e => setCreateForm(prev => ({ ...prev, metadata: e.target.value }))}
+                  className={cn(
+                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
+                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                  )}
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -1419,21 +1235,6 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                     allowEmpty={false}
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                  Metadata JSON (optional)
-                </label>
-                <textarea
-                  rows={3}
-                  value={createForm.metadata}
-                  onChange={e => setCreateForm(prev => ({ ...prev, metadata: e.target.value }))}
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
-                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                  )}
-                />
               </div>
 
               <div className="space-y-2">
@@ -1511,7 +1312,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                     }}
                     className={cn(
                       'px-4 py-1.5 text-xs rounded font-medium transition-colors',
-                      isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
+                      isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-900/30 text-red-400 hover:bg-red-900/50',
                     )}
                   >
                     Cancel
@@ -1634,6 +1435,21 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                           />
                         </div>
 
+                        <div>
+                          <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                            Metadata JSON
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={editForm.metadata}
+                            onChange={e => setEditForm(prev => (prev ? { ...prev, metadata: e.target.value } : prev))}
+                            className={cn(
+                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
+                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                            )}
+                          />
+                        </div>
+
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -1672,21 +1488,6 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                               allowEmpty={false}
                             />
                           </div>
-                        </div>
-
-                        <div>
-                          <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                            Metadata JSON
-                          </label>
-                          <textarea
-                            rows={3}
-                            value={editForm.metadata}
-                            onChange={e => setEditForm(prev => (prev ? { ...prev, metadata: e.target.value } : prev))}
-                            className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
-                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                            )}
-                          />
                         </div>
 
                         <div className="space-y-2">

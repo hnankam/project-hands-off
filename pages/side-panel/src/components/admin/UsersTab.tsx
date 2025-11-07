@@ -667,9 +667,9 @@ useEffect(() => {
                 Users <span className={cn('text-xs font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>({totalUsersCount})</span>
               </h3>
             </div>
-            {canManageUsers && (
+            {canManageUsers && !showInviteForm && (
             <button
-              onClick={() => setShowInviteForm(!showInviteForm)}
+              onClick={() => setShowInviteForm(true)}
               className={cn(
                 'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors',
                 isLight
@@ -679,7 +679,7 @@ useEffect(() => {
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
-              {showInviteForm ? 'Cancel' : 'Invite'}
+              Invite
             </button>
             )}
           </div>
@@ -756,11 +756,11 @@ useEffect(() => {
                       setShowInviteForm(false);
                       setInviteEmail('');
                       setInviteRole('member');
-                    setInviteTeamIds([]);
+                      setInviteTeamIds([]);
                     }}
                     className={cn(
                     'px-4 py-1.5 text-xs rounded transition-colors font-medium',
-                    isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
+                    isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-900/30 text-red-400 hover:bg-red-900/50',
                     )}>
                     Cancel
                   </button>

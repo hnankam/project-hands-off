@@ -1038,8 +1038,8 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                 stroke="currentColor"
                 viewBox="0 0 24 24"
                 strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
               >
                 <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
                 <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
@@ -1052,24 +1052,26 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                 </span>
               </h3>
             </div>
-            <button
-              onClick={() => {
-                setShowCreateForm(!showCreateForm);
-                setEditingModelId(null);
-                setEditForm(null);
-              }}
-              className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border transition-colors',
-                isLight
-                  ? 'text-blue-600 border-blue-200 hover:bg-blue-50'
-                  : 'text-blue-300 border-blue-800 hover:bg-blue-900/20',
-              )}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-              {showCreateForm ? 'Cancel' : 'Add Model'}
-            </button>
+            {!showCreateForm && (
+              <button
+                onClick={() => {
+                  setShowCreateForm(true);
+                  setEditingModelId(null);
+                  setEditForm(null);
+                }}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border transition-colors',
+                  isLight
+                    ? 'text-blue-600 border-blue-200 hover:bg-blue-50'
+                    : 'text-blue-300 border-blue-800 hover:bg-blue-900/20',
+                )}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Model
+              </button>
+            )}
           </div>
 
           {showCreateForm && (
@@ -1172,6 +1174,37 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                    Model Settings JSON
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={createForm.modelSettings}
+                    onChange={e => setCreateForm(prev => ({ ...prev, modelSettings: e.target.value }))}
+                    className={cn(
+                      'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
+                      isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                    )}
+                  />
+                </div>
+                <div>
+                  <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                    Metadata JSON
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={createForm.metadata}
+                    onChange={e => setCreateForm(prev => ({ ...prev, metadata: e.target.value }))}
+                    className={cn(
+                      'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
+                      isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                    )}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                     Scope
                   </label>
                   <div className="flex items-center gap-4">
@@ -1209,36 +1242,6 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                 </div>
               </div>
 
-              <div>
-                <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                  Model Settings JSON
-                </label>
-                <textarea
-                  rows={4}
-                  value={createForm.modelSettings}
-                  onChange={e => setCreateForm(prev => ({ ...prev, modelSettings: e.target.value }))}
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
-                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                  )}
-                />
-              </div>
-
-              <div>
-                <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                  Metadata JSON
-                </label>
-                <textarea
-                  rows={3}
-                  value={createForm.metadata}
-                  onChange={e => setCreateForm(prev => ({ ...prev, metadata: e.target.value }))}
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
-                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                  )}
-                />
-              </div>
-
               <Checkbox
                 checked={createForm.enabled}
                 onChange={checked => setCreateForm(prev => ({ ...prev, enabled: checked }))}
@@ -1264,7 +1267,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                   }}
                   className={cn(
                     'px-4 py-1.5 text-xs rounded font-medium transition-colors',
-                    isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
+                    isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-900/30 text-red-400 hover:bg-red-900/50',
                   )}
                 >
                   Cancel
@@ -1397,6 +1400,37 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                              Model Settings JSON
+                            </label>
+                            <textarea
+                              rows={3}
+                              value={editForm.modelSettings}
+                              onChange={e => setEditForm(prev => (prev ? { ...prev, modelSettings: e.target.value } : prev))}
+                              className={cn(
+                                'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
+                                isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                              )}
+                            />
+                          </div>
+                          <div>
+                            <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                              Metadata JSON
+                            </label>
+                            <textarea
+                              rows={3}
+                              value={editForm.metadata}
+                              onChange={e => setEditForm(prev => (prev ? { ...prev, metadata: e.target.value } : prev))}
+                              className={cn(
+                                'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
+                                isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                              )}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                               Scope
                             </label>
                             <div className="flex items-center gap-4">
@@ -1430,37 +1464,6 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                               placeholder="Select team"
                               disabled={editForm.scope !== 'team'}
                               allowEmpty={false}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                              Model Settings JSON
-                            </label>
-                            <textarea
-                              rows={3}
-                              value={editForm.modelSettings}
-                              onChange={e => setEditForm(prev => (prev ? { ...prev, modelSettings: e.target.value } : prev))}
-                              className={cn(
-                                'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
-                                isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                              )}
-                            />
-                          </div>
-                          <div>
-                            <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                              Metadata JSON
-                            </label>
-                            <textarea
-                              rows={3}
-                              value={editForm.metadata}
-                              onChange={e => setEditForm(prev => (prev ? { ...prev, metadata: e.target.value } : prev))}
-                              className={cn(
-                                'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
-                                isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                              )}
                             />
                           </div>
                         </div>

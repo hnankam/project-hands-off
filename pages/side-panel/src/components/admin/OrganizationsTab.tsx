@@ -330,9 +330,9 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
             Organizations <span className={cn('text-sm font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>({organizations.length})</span>
           </h2>
         </div>
-        {hasOwnerRole && (
+        {hasOwnerRole && !showCreateForm && (
           <button
-            onClick={() => setShowCreateForm(!showCreateForm)}
+            onClick={() => setShowCreateForm(true)}
             className={cn(
               'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors',
               isLight
@@ -342,7 +342,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
-            {showCreateForm ? 'Cancel' : 'New'}
+            New
           </button>
         )}
       </div>
@@ -405,7 +405,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
               onClick={() => setShowCreateForm(false)}
               className={cn(
                 'px-4 py-1.5 text-xs rounded transition-colors font-medium',
-                isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
+                isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-900/30 text-red-400 hover:bg-red-900/50',
               )}>
               Cancel
             </button>
