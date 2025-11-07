@@ -47,6 +47,7 @@ import {
   modelsRouter,
   agentsRouter,
   baseInstructionsRouter,
+  usageRouter,
 } from './routes/index.js';
 
 // Create Express app
@@ -125,6 +126,7 @@ app.use('/api', apiRateLimiter);
     app.use('/api/admin/models', modelsRouter);
     app.use('/api/admin/agents', agentsRouter);
     app.use('/api/admin/base-instructions', baseInstructionsRouter);
+    app.use('/api/admin/usage', usageRouter);
 
     // Configuration endpoints for side panel
     app.get('/api/config', getCompleteConfigHandler);

@@ -22,44 +22,98 @@ interface TeamSelectorDropdownProps {
   isLight?: boolean;
 }
 
+// Cache outside component to persist across unmount/remount
+export const teamsCache = {
+  orgId: null as string | null,
+  teams: [] as Team[],
+};
+
 export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDropdownProps) {
   const { user, organization, activeTeam, setActiveTeam } = useAuth();
-  const [teams, setTeams] = useState<Team[]>([]);
+  
+  // Initialize teams from cache if available for current org (eager initialization)
+  const [teams, setTeams] = useState<Team[]>(() => {
+    if (organization && teamsCache.orgId === organization.id && teamsCache.teams.length > 0) {
+      return teamsCache.teams;
+    }
+    return [];
+  });
+  
   const [activeTeamName, setActiveTeamName] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const manuallySetNameRef = useRef<string | null>(null);
   const lastOrgIdRef = useRef<string | null>(null);
+  const lastUserIdRef = useRef<string | null>(null);
+  const isLoadingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const autoSelectingTeamRef = useRef(false);
 
+  // Update cache when teams change
+  useEffect(() => {
+    if (organization && teams.length > 0) {
+      teamsCache.orgId = organization.id;
+      teamsCache.teams = teams;
+    }
+  }, [teams, organization]);
+
   useEffect(() => {
     if (!user || !organization) return;
-    
+
+    const currentUserId = user.id;
     const currentOrgId = organization.id;
-    const isOrgChange = lastOrgIdRef.current !== null && lastOrgIdRef.current !== currentOrgId;
     
-    if (isOrgChange) {
-      console.log('[TeamSelector] Organization switched from', lastOrgIdRef.current, 'to', currentOrgId);
+    // First time initialization - set refs and check if teams already loaded
+    if (lastUserIdRef.current === null || lastOrgIdRef.current === null) {
+      lastUserIdRef.current = currentUserId;
+      lastOrgIdRef.current = currentOrgId;
       
+      // If teams already set from cache initialization, skip load
+      if (teams.length > 0) {
+        return;
+      }
+      
+      // No cache, proceed to load
+      loadTeams({ orgId: currentOrgId, force: false });
+      return;
+    }
+    
+    // Check if user or org actually changed (not just object reference)
+    const userIdChanged = lastUserIdRef.current !== currentUserId;
+    const orgIdChanged = lastOrgIdRef.current !== currentOrgId;
+    
+    // If neither changed, skip this effect run
+    if (!userIdChanged && !orgIdChanged) {
+      return;
+    }
+    
+    const isOrgChange = orgIdChanged;
+
+    if (isOrgChange) {
       // Clear current state immediately
       setTeams([]);
       setActiveTeamName(null);
       manuallySetNameRef.current = null;
+      
+      // Clear cache for old org
+      teamsCache.orgId = null;
+      teamsCache.teams = [];
+      
+      lastUserIdRef.current = currentUserId;
+      lastOrgIdRef.current = currentOrgId;
+      
+      // Load teams for new org after delay
+      const timer = setTimeout(() => {
+        loadTeams({ orgId: currentOrgId, force: true });
+      }, 500);
+      
+      return () => clearTimeout(timer);
     }
-    
-    lastOrgIdRef.current = currentOrgId;
-    
-    // Wait for AuthContext to finish setting active team when org changes
-    // Reduced from 800ms to 500ms since we optimized AuthContext
-    const delay = isOrgChange ? 500 : 0;
-    
-    const timer = setTimeout(() => {
-      console.log(isOrgChange ? '[TeamSelector] Loading teams for new organization...' : '[TeamSelector] Loading teams...');
-      loadTeams();
-    }, delay);
-    
-    return () => clearTimeout(timer);
+
+    // Only user changed, not org - just update ref
+    lastUserIdRef.current = currentUserId;
+    // No need to reload teams since org hasn't changed
+    return;
   }, [user, organization]);
 
   useEffect(() => {
@@ -87,88 +141,80 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
 
   useEffect(() => {
     // Update active team name when activeTeam changes
-    console.log('[TeamSelector] activeTeam changed:', activeTeam);
-    console.log('[TeamSelector] Current teams count:', teams.length);
-    console.log('[TeamSelector] Current teams IDs:', teams.map(t => t.id));
-    console.log('[TeamSelector] Current teams full data:', teams.map(t => ({ id: t.id, name: t.name, isMember: t.isMember })));
-    
     if (activeTeam && teams.length > 0) {
-      console.log('[TeamSelector] Searching for team with ID:', activeTeam);
-      console.log('[TeamSelector] ID comparison:');
-      teams.forEach(t => {
-        console.log(`  - Team "${t.name}" ID: "${t.id}" === "${activeTeam}" ? ${t.id === activeTeam}`);
-      });
-      
       const team = teams.find(t => t.id === activeTeam);
-      console.log('[TeamSelector] Found team:', team);
       
       if (team) {
-        console.log('[TeamSelector] Team found! Setting name to:', team.name);
         setActiveTeamName(team.name);
-        manuallySetNameRef.current = null; // Clear manual override
+        manuallySetNameRef.current = null;
       } else {
-        console.warn('[TeamSelector] Active team not found in teams list!');
         // If we manually set a name, keep it
         if (manuallySetNameRef.current) {
-          console.log('[TeamSelector] Using manually set name:', manuallySetNameRef.current);
           setActiveTeamName(manuallySetNameRef.current);
         }
       }
     } else if (!activeTeam) {
-      console.log('[TeamSelector] No active team, clearing name');
       setActiveTeamName(null);
       manuallySetNameRef.current = null;
     }
   }, [activeTeam, teams]);
 
-  const loadTeams = async () => {
+  const loadTeams = async ({ orgId, force }: { orgId?: string | null; force?: boolean } = {}) => {
+    if (!user) {
+      console.warn('[TeamSelector] Cannot load teams without user');
+      return;
+    }
+
+    const targetOrgId = orgId ?? organization?.id ?? null;
+    if (!targetOrgId) {
+      console.warn('[TeamSelector] No organization available to load teams');
+      return;
+    }
+
+    // Prevent concurrent loads
+    if (isLoadingRef.current) {
+      console.log('[TeamSelector] Already loading teams, skipping...');
+      return;
+    }
+
+    // Check module-level cache
+    if (!force && teamsCache.orgId === targetOrgId && teamsCache.teams.length > 0) {
+      console.log('[TeamSelector] Skipping load, teams already cached for org', targetOrgId);
+      return;
+    }
+
     try {
+      isLoadingRef.current = true;
       setIsLoading(true);
       // Fetch teams from the runtime server
       const response = await fetch(`${API_CONFIG.BASE_URL}/api/config/teams`, {
         credentials: 'include',
       });
       
-      console.log('[TeamSelector] API response status:', response.status);
-      
       if (response.ok) {
         const data = await response.json();
-        console.log('[TeamSelector] Teams received from API:', data);
-        console.log('[TeamSelector] Number of teams:', data.teams?.length || 0);
-        console.log('[TeamSelector] Team details:', data.teams?.map((t: Team) => ({ id: t.id, name: t.name, isMember: t.isMember })));
-        console.log('[TeamSelector] Current organization:', organization);
-        console.log('[TeamSelector] Current user:', user?.email);
-        console.log('[TeamSelector] Current activeTeam from context:', activeTeam);
         
+        // Update module-level cache
+        teamsCache.orgId = targetOrgId;
+        teamsCache.teams = data.teams || [];
         setTeams(data.teams || []);
         
         // If we have teams and an active team, update the name
         if (data.teams && activeTeam) {
-          console.log('[TeamSelector] Looking for activeTeam:', activeTeam);
-          console.log('[TeamSelector] All team IDs from API:', data.teams.map((t: Team) => t.id));
-          
           const currentTeam = data.teams.find((t: Team) => t.id === activeTeam);
-          console.log('[TeamSelector] Found team in loaded data:', currentTeam);
           
           if (currentTeam) {
-            console.log('[TeamSelector] Setting active team name to:', currentTeam.name);
             setActiveTeamName(currentTeam.name);
           } else {
-            console.warn('[TeamSelector] Active team ID not found in API response!');
-            console.warn('[TeamSelector] This likely means organization was switched.');
-            
             // Active team doesn't belong to this organization
             // AuthContext should handle this, but as a fallback, auto-select the first member team
             const memberTeams = data.teams.filter((t: Team) => t.isMember);
             if (memberTeams.length > 0) {
-              console.log('[TeamSelector] Fallback: Auto-selecting first member team:', memberTeams[0].name);
               try {
                 const result = await setActiveTeam(memberTeams[0].id);
                 if (result.success) {
                   setActiveTeamName(memberTeams[0].name);
                   manuallySetNameRef.current = null;
-                } else {
-                  console.error('[TeamSelector] Failed to set fallback active team');
                 }
               } catch (err) {
                 console.error('[TeamSelector] Error setting fallback team:', err);
@@ -181,14 +227,11 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
           // No active team at all, but we have teams - auto-select the first one
           const memberTeams = data.teams.filter((t: Team) => t.isMember);
           if (memberTeams.length > 0) {
-            console.log('[TeamSelector] No active team, auto-selecting first member team:', memberTeams[0].name);
             try {
               const result = await setActiveTeam(memberTeams[0].id);
               if (result.success) {
                 setActiveTeamName(memberTeams[0].name);
                 manuallySetNameRef.current = null;
-              } else {
-                console.error('[TeamSelector] Failed to set auto-selected team');
               }
             } catch (err) {
               console.error('[TeamSelector] Error setting auto-selected team:', err);
@@ -202,36 +245,28 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
     } catch (error) {
       console.error('[TeamSelector] Error loading teams:', error);
     } finally {
+      isLoadingRef.current = false;
       setIsLoading(false);
     }
   };
 
   const handleTeamChange = async (teamId: string) => {
-    console.log('[TeamSelector] ===== handleTeamChange START =====');
-    console.log('[TeamSelector] Setting active team:', teamId);
-    
     const previousName = activeTeamName;
     
     // First, find the team name from current teams
     const selectedTeam = teams.find(t => t.id === teamId);
-    console.log('[TeamSelector] Selected team:', selectedTeam);
     
     // Update display immediately (BEFORE any backend calls)
     if (selectedTeam) {
-      console.log('[TeamSelector] Setting team name immediately to:', selectedTeam.name);
       setActiveTeamName(selectedTeam.name);
-      manuallySetNameRef.current = selectedTeam.name; // Store for later
-    } else {
-      console.warn('[TeamSelector] Team not found in current teams list!');
+      manuallySetNameRef.current = selectedTeam.name;
     }
     
     // Then update the backend
-    console.log('[TeamSelector] Calling setActiveTeam...');
     const result = await setActiveTeam(teamId);
-    console.log('[TeamSelector] setActiveTeam completed with result:', result);
 
     if (!result.success) {
-      console.error('[TeamSelector] Failed to set active team on backend, reverting UI');
+      // Revert UI on failure
       if (previousName) {
         setActiveTeamName(previousName);
         manuallySetNameRef.current = previousName;
@@ -242,15 +277,12 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
       return;
     }
 
-    // Backend succeeded, clear manual override so context state drives the display
+    // Backend succeeded, clear manual override
     manuallySetNameRef.current = null;
     
     // Reload teams to ensure we have latest data
-    console.log('[TeamSelector] Reloading teams...');
-    await loadTeams();
-    console.log('[TeamSelector] loadTeams completed');
+    await loadTeams({ force: true });
     
-    console.log('[TeamSelector] ===== handleTeamChange END =====');
     setIsOpen(false);
   };
 
@@ -258,28 +290,22 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
     const previousName = activeTeamName;
     try {
       setIsLoading(true);
-      console.log('[TeamSelector] Joining team:', teamId, teamName);
       
       await (authClient.organization as any).addTeamMember({
         teamId,
         userId: user!.id,
       });
       
-      console.log('[TeamSelector] Successfully joined team, reloading teams...');
-      
       // Reload teams to reflect the change
-      await loadTeams();
-      
-      console.log('[TeamSelector] Setting as active team...');
+      await loadTeams({ force: true });
       
       // Update display immediately
       setActiveTeamName(teamName);
-      manuallySetNameRef.current = teamName; // Store for later
+      manuallySetNameRef.current = teamName;
       
       // Set as active team
       const result = await setActiveTeam(teamId);
       if (!result.success) {
-        console.error('[TeamSelector] Failed to set joined team as active, reverting UI');
         if (previousName) {
           setActiveTeamName(previousName);
           manuallySetNameRef.current = previousName;
@@ -287,19 +313,20 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
           setActiveTeamName(null);
           manuallySetNameRef.current = null;
         }
-        await loadTeams();
+        await loadTeams({ force: true });
         throw new Error('Failed to set active team after joining');
       }
       manuallySetNameRef.current = null;
       
       // Reload one more time to ensure state is fresh
-      await loadTeams();
+      await loadTeams({ force: true });
       
       setIsOpen(false);
     } catch (error) {
       console.error('Error joining team:', error);
       alert(`Failed to join team "${teamName}". Please try again.`);
     } finally {
+      isLoadingRef.current = false;
       setIsLoading(false);
     }
   };

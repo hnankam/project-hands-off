@@ -38,6 +38,20 @@
           "LOG_LEVEL": "error"
         },
         "max_retries": 5
+      },
+      "databricks": {
+        "command": "python",
+        "args": [
+          "/Users/hnankam/Documents/databricks_mcp/src/main.py", "--mcp"
+        ],
+        "env": {
+          "DATABRICKS_HOST": "https://adb-2184028652902907.7.azuredatabricks.net",
+          "DATABRICKS_TOKEN": "dapiaa5b757564c2a9a3023bd423447082d5-2",
+          "LOG_LEVEL": "ERROR",
+          "PYTHONUNBUFFERED": "1"
+        },
+        "max_retries": 2,
+        "disabled": false
       }
     }
   }

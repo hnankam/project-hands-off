@@ -60,6 +60,7 @@ import { WaitCountdown } from './WaitCountdown';
 import { TaskProgressCard, AgentStepState } from './TaskProgressCard';
 import { StreamingContext } from '../context/StreamingContext';
 import { CustomUserMessage } from './CustomUserMessage';
+import { CustomAssistantMessage } from './CustomAssistantMessage';
 import { CustomInput } from './CustomInput';
 import { ThinkingBlock } from './ThinkingBlock';
 const EmptyThinkingBlock: React.FC<{ children?: React.ReactNode }> = () => null;
@@ -844,19 +845,20 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           onRegenerate={() => {
             console.log('[ChatInner] Regenerate');
           }}
-          // onCopy={(text: string) => {
-          //   console.log('[ChatInner] Copy:', text);
-          // }}
-          // onStopGeneration={() => {
-          //   console.log('[ChatInner] Stop generation');
-          // }}
-          // onThumbsDown={() => {
-          //   console.log('[ChatInner] Thumbs down');
-          // }}
-          // onThumbsUp={() => {
-          //   console.log('[ChatInner] Thumbs up');
-          // }}
+          onCopy={(text: string) => {
+            console.log('[ChatInner] 📋 Copy clicked:', text.substring(0, 50));
+          }}
+          onStopGeneration={() => {
+            console.log('[ChatInner] ⏹️ Stop generation clicked');
+          }}
+          onThumbsDown={() => {
+            console.log('[ChatInner] 👎 Thumbs down clicked');
+          }}
+          onThumbsUp={() => {
+            console.log('[ChatInner] 👍 Thumbs up clicked');
+          }}
           markdownTagRenderers={customMarkdownTagRenderers}
+          AssistantMessage={CustomAssistantMessage}
           UserMessage={CustomUserMessage}
           Input={ScopedInput}
         />

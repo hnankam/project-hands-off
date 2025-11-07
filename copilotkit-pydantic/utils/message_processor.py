@@ -9,6 +9,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    RetryPromptPart,
     SystemPromptPart,
     ToolCallPart,
     ToolReturnPart,
@@ -311,8 +312,8 @@ async def keep_recent_messages(
     Reference: https://github.com/pydantic/pydantic-ai/issues/2050
     """
 
-    for index, message in enumerate(messages):
-        logger.info(f"Message {index}: {message}")
+    # for index, message in enumerate(messages):
+    #     logger.info(f"Message {index}: {message}")
 
     logger.info(f"Message History Usage: {ctx.usage.total_tokens} = {ctx.usage.input_tokens} + {ctx.usage.output_tokens}")
 
@@ -336,6 +337,14 @@ async def keep_recent_messages(
             pass
         return None
 
+    def _normalize_content_for_signature(value: Any) -> str:
+        try:
+            if isinstance(value, (dict, list)):
+                return json.dumps(value, sort_keys=True)[:256]
+            return str(value)[:256]
+        except Exception:
+            return str(value)[:256]
+
     def _part_signature(part: Any) -> str:
         # Signature for duplicate detection; prefer id-based
         try:
@@ -345,20 +354,32 @@ async def keep_recent_messages(
                     return f"tool_return_id:{tool_id}"
                 tool_name = getattr(part, 'tool_name', getattr(part, 'name', 'tool'))
                 content = getattr(part, 'content', getattr(part, 'result', ''))
-                if isinstance(content, (dict, list)):
-                    content_str = json.dumps(content)[:256]
-                else:
-                    content_str = str(content)[:256]
+                content_str = _normalize_content_for_signature(content)
                 return f"tool_return_sig:{tool_name}:{content_str}"
+            if isinstance(part, RetryPromptPart) and getattr(part, 'tool_name', None):
+                tool_id = _get_tool_return_id(part)
+                if tool_id:
+                    return f"retry_return_id:{tool_id}"
+                tool_name = getattr(part, 'tool_name', 'tool')
+                content = getattr(part, 'content', '')
+                content_str = _normalize_content_for_signature(content)
+                return f"retry_return_sig:{tool_name}:{content_str}"
             return part.__class__.__name__
         except Exception:
             return part.__class__.__name__
+
+    def _is_tool_result_part(part: Any) -> bool:
+        if isinstance(part, ToolReturnPart):
+            return True
+        if isinstance(part, RetryPromptPart):
+            return getattr(part, 'tool_name', None) is not None
+        return False
 
     # Build last occurrence maps using tool_call_id for both calls and returns
     def _iter_tool_return_sigs(msg: ModelMessage) -> list[str]:
         sigs: list[str] = []
         for part in getattr(msg, 'parts', []) or []:
-            if isinstance(part, ToolReturnPart):
+            if _is_tool_result_part(part):
                 sigs.append(_part_signature(part))
         return sigs
 
@@ -375,7 +396,7 @@ async def keep_recent_messages(
         return ids
 
     total_msgs = len(messages)
-    keep_full_after_index = max(0, total_msgs - 25)  # keep only the last message untouched
+    keep_full_after_index = max(0, total_msgs - 1)  # keep only the last message untouched
     last_return_occurrence: dict[str, int] = {}
     last_call_occurrence: dict[str, int] = {}
     
@@ -384,10 +405,11 @@ async def keep_recent_messages(
     tool_return_occurrences: dict[str, list[int]] = defaultdict(list)
     for _idx, _msg in enumerate(messages):
         for part in getattr(_msg, 'parts', []) or []:
-            if isinstance(part, ToolReturnPart):
+            if _is_tool_result_part(part):
                 tool_call_id = _get_tool_return_id(part)
                 if tool_call_id:
                     tool_return_exists[tool_call_id] = _idx
+                    tool_return_occurrences[tool_call_id].append(_idx)
         for sig in _iter_tool_return_sigs(_msg):
             last_return_occurrence[sig] = _idx
         for cid in _iter_tool_call_ids(_msg):
@@ -403,7 +425,7 @@ async def keep_recent_messages(
             seen_call_ids_in_msg: set[str] = set()
             new_parts_rev: list[Any] = []
             for part in reversed(original_parts):
-                if isinstance(part, ToolReturnPart):
+                if _is_tool_result_part(part):
                     # Per-message dedup ALWAYS enforced: keep only the latest return per tool_call_id
                     rid = _get_tool_return_id(part)
                     if rid is not None:
@@ -412,33 +434,34 @@ async def keep_recent_messages(
                         seen_return_ids_in_msg.add(rid)
                     # For older messages, also truncate and apply cross-message dedup
                     if idx < keep_full_after_index:
-                        # Only truncate for select tools (match frontend behavior)
-                        tool_name = getattr(part, 'tool_name', None)
-                        TRUNCATE_TOOL_NAMES = {
-                            'searchPageContent',
-                            'searchFormData',
-                            'searchDOMUpdates',
-                            'searchClickableElements',
-                            'takeScreenshot',
-                        }
-                        if hasattr(part, 'content') and tool_name in TRUNCATE_TOOL_NAMES:
-                            try:
-                                if isinstance(part.content, (dict, list)):
-                                    text = json.dumps(part.content)
-                                    part.content = _truncate_text(text, limit=100, keep=90)
-                                else:
-                                    part.content = _truncate_text(str(part.content), limit=100, keep=90)
-                            except Exception:
-                                pass
-                        elif hasattr(part, 'result') and tool_name in TRUNCATE_TOOL_NAMES:
-                            try:
-                                if isinstance(part.result, (dict, list)):
-                                    text = json.dumps(part.result)
-                                    part.result = _truncate_text(text, limit=100, keep=90)
-                                else:
-                                    part.result = _truncate_text(str(part.result), limit=100, keep=90)
-                            except Exception:
-                                pass
+                        if isinstance(part, ToolReturnPart):
+                            # Only truncate for select tools (match frontend behavior)
+                            tool_name = getattr(part, 'tool_name', None)
+                            TRUNCATE_TOOL_NAMES = {
+                                'searchPageContent',
+                                'searchFormData',
+                                'searchDOMUpdates',
+                                'searchClickableElements',
+                                'takeScreenshot',
+                            }
+                            if hasattr(part, 'content') and tool_name in TRUNCATE_TOOL_NAMES:
+                                try:
+                                    if isinstance(part.content, (dict, list)):
+                                        text = json.dumps(part.content)
+                                        part.content = _truncate_text(text, limit=100, keep=90)
+                                    else:
+                                        part.content = _truncate_text(str(part.content), limit=100, keep=90)
+                                except Exception:
+                                    pass
+                            elif hasattr(part, 'result') and tool_name in TRUNCATE_TOOL_NAMES:
+                                try:
+                                    if isinstance(part.result, (dict, list)):
+                                        text = json.dumps(part.result)
+                                        part.result = _truncate_text(text, limit=100, keep=90)
+                                    else:
+                                        part.result = _truncate_text(str(part.result), limit=100, keep=90)
+                                except Exception:
+                                    pass
                         sig = _part_signature(part)
                         if last_return_occurrence.get(sig, idx) != idx:
                             continue
@@ -459,18 +482,29 @@ async def keep_recent_messages(
                             continue
                         seen_call_ids_in_msg.add(cid)
                     # For older messages, drop older duplicates across messages
-                    if idx < keep_full_after_index and cid is not None:
-                        if last_call_occurrence.get(cid, idx) != idx:
+                    if cid is not None:
+                        if idx < keep_full_after_index:
+                            if last_call_occurrence.get(cid, idx) != idx:
+                                continue
+                        # CRITICAL FIX: Drop tool_use blocks without corresponding tool_result immediately after
+                        # This prevents Anthropic API rejection for orphaned or misordered tool_use blocks
+                        occurrences = tool_return_occurrences.get(cid, [])
+                        if not occurrences:
+                            logger.warning(
+                                f"Dropping orphaned tool_use with id={cid} at message {idx} (no corresponding tool_result found)"
+                            )
                             continue
-                        # CRITICAL FIX: Drop tool_use blocks without corresponding tool_result in next message
-                        # This prevents Anthropic API rejection for orphaned tool_use blocks
-                        if cid not in tool_return_exists:
-                            logger.warning(f"Dropping orphaned tool_use with id={cid} at message {idx} (no corresponding tool_result found)")
-                            continue
-                        # Verify the tool_result appears after this tool_use
-                        return_idx = tool_return_exists.get(cid)
-                        if return_idx is not None and return_idx <= idx:
-                            logger.warning(f"Dropping tool_use with id={cid} at message {idx} (tool_result at {return_idx} appears before or at same position)")
+                        immediate_next_idx = idx + 1
+                        if immediate_next_idx not in occurrences:
+                            next_occurrence = next((pos for pos in occurrences if pos > idx), None)
+                            if next_occurrence is None:
+                                logger.warning(
+                                    f"Dropping tool_use with id={cid} at message {idx} (tool_result missing after this call)"
+                                )
+                            else:
+                                logger.warning(
+                                    f"Dropping tool_use with id={cid} at message {idx} (tool_result appears at message {next_occurrence}, not immediately after)"
+                                )
                             continue
                     new_parts_rev.append(part)
                     continue
@@ -511,16 +545,16 @@ async def keep_recent_messages(
             original_parts = (getattr(msg, 'parts', []) or [])
             filtered_parts: list[Any] = []
             for part in original_parts:
-                if isinstance(part, ToolReturnPart):
+                if _is_tool_result_part(part):
                     rid = _get_tool_return_id(part)
                     if rid is None:
                         logger.warning(
-                            f"Dropping tool_result without tool_call_id at message {idx}"
+                            f"Dropping {type(part).__name__} without tool_call_id at message {idx}"
                         )
                         continue
                     if rid not in prev_call_ids:
                         logger.warning(
-                            f"Dropping tool_result with id={rid} at message {idx} "
+                            f"Dropping {type(part).__name__} with id={rid} at message {idx} "
                             "(no matching tool_use in previous message)"
                         )
                         continue
@@ -567,7 +601,7 @@ async def keep_recent_messages(
         first_message = messages[cut_index]
 
         # Skip if first message has tool returns (orphaned without calls)
-        if any(isinstance(part, ToolReturnPart) for part in first_message.parts):
+        if any(_is_tool_result_part(part) for part in first_message.parts):
             continue
 
         # Skip if first message has tool calls (violates AI model ordering rules)

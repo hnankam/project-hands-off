@@ -20,6 +20,14 @@ interface Team {
   organizationId: string;
 }
 
+interface ModelSummary {
+  id: string;
+  modelKey: string;
+  name: string;
+  teamId: string | null;
+  enabled: boolean;
+}
+
 interface BaseInstruction {
   id: string;
   instructionKey: string;
@@ -45,6 +53,7 @@ interface AgentRecord {
   metadata: Record<string, any> | null;
   createdAt: string;
   updatedAt: string;
+  modelIds: string[];
 }
 
 type AgentScope = 'organization' | 'team';
@@ -58,6 +67,8 @@ interface AgentFormState {
   teamId: string;
   metadata: string;
   enabled: boolean;
+  modelMode: 'all' | 'custom';
+  modelIds: string[];
 }
 
 interface AgentsTabProps {
@@ -77,6 +88,8 @@ const INITIAL_FORM: AgentFormState = {
   teamId: '',
   metadata: '{}',
   enabled: true,
+  modelMode: 'all',
+  modelIds: [],
 };
 
 const MAX_FETCH_RETRIES = 3;
@@ -243,6 +256,216 @@ const InstructionTemplateSelector: React.FC<InstructionTemplateSelectorProps> = 
   );
 };
 
+const ModelIcon = () => (
+  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3l7 4-7 4-7-4 7-4z" />
+    <path d="M5 12l7 4 7-4" />
+    <path d="M5 19l7 4 7-4" />
+  </svg>
+);
+
+interface ModelMultiSelectorProps {
+  isLight: boolean;
+  models: ModelSummary[];
+  selectedModelIds: string[];
+  onChange: (modelIds: string[]) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  loading?: boolean;
+}
+
+const ModelMultiSelector: React.FC<ModelMultiSelectorProps> = ({
+  isLight,
+  models,
+  selectedModelIds,
+  onChange,
+  placeholder = 'Select models',
+  disabled = false,
+  loading = false,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+
+    return undefined;
+  }, [isOpen]);
+
+  if (loading) {
+    return (
+      <div
+        className={cn(
+          'h-[34px] w-full rounded-md border animate-pulse',
+          isLight ? 'border-gray-200 bg-gray-100' : 'border-gray-700 bg-gray-800',
+        )}
+      />
+    );
+  }
+
+  if (disabled) {
+    return (
+      <div
+        className={cn(
+          'flex items-center gap-1.5 px-2 py-1.5 text-xs rounded-md min-h-[32px] border opacity-60',
+          isLight ? 'bg-white border-gray-300 text-gray-500' : 'bg-[#151C24] border-gray-600 text-gray-400',
+        )}
+      >
+        <span className="flex-shrink-0 mt-0.5">
+          <ModelIcon />
+        </span>
+        <span className="truncate flex-1 text-left">{placeholder}</span>
+      </div>
+    );
+  }
+
+  const toggleModel = (modelId: string) => {
+    const newSelection = selectedModelIds.includes(modelId)
+      ? selectedModelIds.filter(id => id !== modelId)
+      : [...selectedModelIds, modelId];
+    onChange(newSelection);
+  };
+
+  const removeModel = (modelId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    onChange(selectedModelIds.filter(id => id !== modelId));
+  };
+
+  const selectedModels = selectedModelIds
+    .map(id => models.find(model => model.id === id) || { id, name: id, enabled: true, modelKey: id, teamId: null })
+    .filter(Boolean);
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(prev => !prev)}
+        className={cn(
+          'flex items-start gap-1.5 px-2 py-1.5 text-xs rounded-md min-h-[32px] min-w-0 w-full border',
+          isLight ? 'text-gray-700 hover:bg-gray-100 border-gray-300 bg-white' : 'text-gray-200 hover:bg-gray-700 border-gray-600 bg-[#151C24]',
+        )}
+      >
+        <span className="flex-shrink-0 mt-0.5">
+          <ModelIcon />
+        </span>
+        {selectedModels.length > 0 ? (
+          <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+            {selectedModels.map(model => (
+              <span
+                key={model.id}
+                className={cn(
+                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
+                  isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-300',
+                )}
+                onClick={e => e.stopPropagation()}
+              >
+                {model.name}
+                <button
+                  type="button"
+                  onClick={e => removeModel(model.id, e)}
+                  className={cn(
+                    'hover:bg-black/10 rounded-full p-0.5 transition-colors',
+                    isLight ? 'text-purple-600' : 'text-purple-300',
+                  )}
+                >
+                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className={cn('flex-1 min-w-0 text-left', isLight ? 'text-gray-500' : 'text-gray-400')}>
+            {placeholder}
+          </span>
+        )}
+        <svg
+          className={cn('transition-transform flex-shrink-0 mt-0.5', isOpen ? 'rotate-180' : '')}
+          width="12"
+          height="12"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div
+          className={cn(
+            'absolute top-full left-0 mt-1 w-full min-w-[200px] rounded-md border shadow-lg z-[9999] max-h-[240px] overflow-y-auto',
+            isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+          )}
+        >
+          {models.length === 0 ? (
+            <div className={cn('px-3 py-2 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+              No models available
+            </div>
+          ) : (
+            models.map(model => {
+              const isSelected = selectedModelIds.includes(model.id);
+              return (
+                <button
+                  type="button"
+                  key={model.id}
+                  onClick={() => toggleModel(model.id)}
+                  className={cn(
+                    'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors text-left',
+                    isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700',
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0',
+                      isSelected
+                        ? 'bg-purple-600 border-purple-600'
+                        : isLight
+                        ? 'border-gray-300'
+                        : 'border-gray-600',
+                    )}
+                  >
+                    {isSelected && (
+                      <svg width="10" height="10" fill="none" stroke="white" viewBox="0 0 24 24" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                  <ModelIcon />
+                  <span className="truncate flex-1">{model.name}</span>
+                  {!model.enabled && (
+                    <span
+                      className={cn(
+                        'text-[10px] px-1 py-0.5 rounded font-medium',
+                        isLight ? 'bg-gray-100 text-gray-500' : 'bg-gray-800 text-gray-400',
+                      )}
+                    >
+                      Disabled
+                    </span>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, onSuccess }: AgentsTabProps) {
   const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -284,6 +507,8 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   const [selectedOrgId, setSelectedOrgId] = useState(preselectedOrgId || '');
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamFilterIds, setTeamFilterIds] = useState<string[]>([]);
+  const [models, setModels] = useState<ModelSummary[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const teamFilterIdsRef = useRef(teamFilterIds);
   useEffect(() => {
     teamFilterIdsRef.current = teamFilterIds;
@@ -302,6 +527,25 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
 
   const initialLoadCompleteRef = useRef(false);
 
+  const resolveModelsForScope = useCallback(
+    (scope: AgentScope, teamId: string) => {
+      const effectiveTeamId = (teamId || '').trim();
+
+      return models.filter(model => {
+        if (scope === 'organization') {
+          return model.teamId === null;
+        }
+
+        if (!effectiveTeamId) {
+          return model.teamId === null;
+        }
+
+        return model.teamId === null || model.teamId === effectiveTeamId;
+      });
+    },
+    [models],
+  );
+
   useEffect(() => {
     if (!selectedOrgId && organizations.length === 1) {
       setSelectedOrgId(organizations[0].id);
@@ -313,6 +557,58 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       setSelectedOrgId(preselectedOrgId);
     }
   }, [preselectedOrgId, selectedOrgId]);
+
+  useEffect(() => {
+    setCreateForm(prev => {
+      if (prev.modelIds.length === 0) {
+        return prev;
+      }
+
+      const allowedIds = new Set(resolveModelsForScope(prev.scope, prev.teamId).map(model => model.id));
+      const filtered = prev.modelIds.filter(id => allowedIds.has(id));
+      if (filtered.length === prev.modelIds.length) {
+        return prev;
+      }
+      return { ...prev, modelIds: filtered };
+    });
+
+    setEditForm(prev => {
+      if (!prev || prev.modelIds.length === 0) {
+        return prev;
+      }
+
+      const allowedIds = new Set(resolveModelsForScope(prev.scope, prev.teamId).map(model => model.id));
+      const filtered = prev.modelIds.filter(id => allowedIds.has(id));
+      if (filtered.length === prev.modelIds.length) {
+        return prev;
+      }
+      return { ...prev, modelIds: filtered };
+    });
+  }, [models, resolveModelsForScope, createForm.scope, createForm.teamId, editForm?.scope, editForm?.teamId]);
+
+  const availableCreateModels = useMemo(
+    () => resolveModelsForScope(createForm.scope, createForm.teamId),
+    [resolveModelsForScope, createForm.scope, createForm.teamId],
+  );
+
+  const availableEditModels = useMemo(
+    () => (editForm ? resolveModelsForScope(editForm.scope, editForm.teamId) : []),
+    [resolveModelsForScope, editForm?.scope, editForm?.teamId],
+  );
+
+  const createModelsDisabled = !modelsLoading && availableCreateModels.length === 0;
+  const createModelsPlaceholder = createModelsDisabled
+    ? createForm.scope === 'team' && !createForm.teamId
+      ? 'Select a team to choose team-scoped models'
+      : 'No models available for this scope'
+    : 'Select models';
+
+  const editModelsDisabled = !modelsLoading && availableEditModels.length === 0;
+  const editModelsPlaceholder = editModelsDisabled
+    ? editForm && editForm.scope === 'team' && !editForm.teamId
+      ? 'Select a team to choose team-scoped models'
+      : 'No models available for this scope'
+    : 'Select models';
 
   const loadTeams = useCallback(async (orgId: string): Promise<Team[]> => {
     setTeamsLoading(true);
@@ -369,7 +665,11 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       }
 
       const data = await response.json();
-      return data.agents || [];
+      const agentList: AgentRecord[] = (data.agents || []).map((agent: any) => ({
+        ...agent,
+        modelIds: Array.isArray(agent?.modelIds) ? agent.modelIds : [],
+      }));
+      return agentList;
     },
     [baseURL],
   );
@@ -401,6 +701,59 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       return controller;
     },
     [fetchAgents, onError],
+  );
+
+  const fetchModels = useCallback(
+    async (orgId: string, signal?: AbortSignal): Promise<ModelSummary[]> => {
+      const params = new URLSearchParams({ organizationId: orgId });
+
+      const response = await fetch(`${baseURL}/api/admin/models?${params.toString()}`, {
+        credentials: 'include',
+        signal,
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload?.error || `Failed to fetch models (${response.status})`);
+      }
+
+      const data = await response.json();
+      const modelsList: ModelSummary[] = (data.models || []).map((model: any) => ({
+        id: model.id,
+        modelKey: model.modelKey,
+        name: model.displayName || model.modelName || model.modelKey,
+        teamId: model.teamId || null,
+        enabled: Boolean(model.enabled),
+      }));
+      return modelsList;
+    },
+    [baseURL],
+  );
+
+  const refreshModels = useCallback(
+    async (orgId: string) => {
+      setModelsLoading(true);
+      const controller = new AbortController();
+
+      try {
+        const fetched = await fetchModels(orgId, controller.signal);
+        if (!controller.signal.aborted) {
+          setModels(fetched);
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError' && !controller.signal.aborted) {
+          console.error('[AgentsTab] Failed to fetch models:', err);
+          setModels([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setModelsLoading(false);
+        }
+      }
+
+      return controller;
+    },
+    [fetchModels],
   );
 
   const fetchBaseInstructions = useCallback(
@@ -455,6 +808,8 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     if (!selectedOrgId) {
       setAgents([]);
       setTeams([]);
+      setModels([]);
+      setModelsLoading(false);
       initialLoadCompleteRef.current = false;
       return;
     }
@@ -471,10 +826,11 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
 
         if (aborted) return;
 
+        const modelsController = await refreshModels(selectedOrgId);
         const activeTeamId = teamFilterIdsRef.current[0] || null;
         const agentsController = await refreshAgents(selectedOrgId, activeTeamId, { suppressLoading: true });
         const instructionsController = await refreshBaseInstructions(selectedOrgId, activeTeamId);
-        controllers.push(agentsController, instructionsController);
+        controllers.push(modelsController, agentsController, instructionsController);
 
         if (!aborted) {
           initialLoadCompleteRef.current = true;
@@ -549,6 +905,11 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       return;
     }
 
+    if (createForm.modelMode === 'custom' && createForm.modelIds.length === 0) {
+      onError('Select at least one model when restricting model availability');
+      return;
+    }
+
     try {
       const payload = {
         organizationId: selectedOrgId,
@@ -559,6 +920,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         promptTemplate: createForm.promptTemplate.trim(),
         enabled: createForm.enabled,
         metadata: sanitizeJsonText(createForm.metadata, 'Metadata'),
+        modelIds: createForm.modelMode === 'custom' ? createForm.modelIds : [],
       };
 
       const response = await fetch(`${baseURL}/api/admin/agents`, {
@@ -596,6 +958,8 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       teamId: agent.teamId || '',
       metadata: stringifyJson(agent.metadata),
       enabled: agent.enabled,
+      modelMode: agent.modelIds && agent.modelIds.length > 0 ? 'custom' : 'all',
+      modelIds: Array.isArray(agent.modelIds) ? agent.modelIds : [],
     });
   };
 
@@ -627,6 +991,11 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       return;
     }
 
+    if (editForm.modelMode === 'custom' && editForm.modelIds.length === 0) {
+      onError('Select at least one model when restricting model availability');
+      return;
+    }
+
     try {
       const payload = {
         organizationId: selectedOrgId,
@@ -637,6 +1006,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         promptTemplate: editForm.promptTemplate.trim(),
         enabled: editForm.enabled,
         metadata: sanitizeJsonText(editForm.metadata, 'Metadata'),
+        modelIds: editForm.modelMode === 'custom' ? editForm.modelIds : [],
       };
 
       const response = await fetch(`${baseURL}/api/admin/agents/${agentId}`, {
@@ -676,6 +1046,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         promptTemplate: agent.promptTemplate,
         enabled: !agent.enabled,
         metadata: agent.metadata || {},
+        modelIds: Array.isArray(agent.modelIds) ? agent.modelIds : [],
       };
 
       const response = await fetch(`${baseURL}/api/admin/agents/${agent.id}`, {
@@ -819,6 +1190,14 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       </span>
     );
   };
+
+  const modelLookup = useMemo(() => {
+    const mapping: Record<string, ModelSummary> = {};
+    for (const model of models) {
+      mapping[model.id] = model;
+    }
+    return mapping;
+  }, [models]);
 
   const filteredAgents = useMemo(() => {
     if (teamFilterIds.length === 0) {
@@ -1057,6 +1436,55 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                 />
               </div>
 
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                    Model Availability
+                  </label>
+                  <span className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    {createForm.modelMode === 'all' ? 'All models allowed' : `${createForm.modelIds.length} selected`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <Radio
+                    name="create-agent-model-mode"
+                    value="all"
+                    checked={createForm.modelMode === 'all'}
+                    onChange={() => setCreateForm(prev => ({ ...prev, modelMode: 'all' }))}
+                    label="All models"
+                    isLight={isLight}
+                  />
+                  <Radio
+                    name="create-agent-model-mode"
+                    value="custom"
+                    checked={createForm.modelMode === 'custom'}
+                    onChange={() => setCreateForm(prev => ({ ...prev, modelMode: 'custom' }))}
+                    label="Specific models"
+                    isLight={isLight}
+                  />
+                </div>
+                {createForm.modelMode === 'custom' && (
+                  <>
+                    <ModelMultiSelector
+                      isLight={isLight}
+                      models={availableCreateModels}
+                      selectedModelIds={createForm.modelIds}
+                      onChange={ids => setCreateForm(prev => ({ ...prev, modelIds: ids }))}
+                      loading={modelsLoading}
+                      disabled={createModelsDisabled}
+                      placeholder={createModelsPlaceholder}
+                    />
+                    {createModelsDisabled && (
+                      <p className={cn('text-[11px]', isLight ? 'text-red-500' : 'text-red-400')}>
+                        {createForm.scope === 'team' && !createForm.teamId
+                          ? 'Select a team to see team-scoped models.'
+                          : 'No models available for this scope.'}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
               <div className="flex flex-col gap-2">
                 <Checkbox
                   checked={createForm.enabled}
@@ -1261,6 +1689,55 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                           />
                         </div>
 
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                              Model Availability
+                            </label>
+                            <span className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {editForm.modelMode === 'all' ? 'All models allowed' : `${editForm.modelIds.length} selected`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <Radio
+                              name={`edit-agent-model-mode-${agent.id}`}
+                              value="all"
+                              checked={editForm.modelMode === 'all'}
+                              onChange={() => setEditForm(prev => (prev ? { ...prev, modelMode: 'all' } : prev))}
+                              label="All models"
+                              isLight={isLight}
+                            />
+                            <Radio
+                              name={`edit-agent-model-mode-${agent.id}`}
+                              value="custom"
+                              checked={editForm.modelMode === 'custom'}
+                              onChange={() => setEditForm(prev => (prev ? { ...prev, modelMode: 'custom' } : prev))}
+                              label="Specific models"
+                              isLight={isLight}
+                            />
+                          </div>
+                          {editForm.modelMode === 'custom' && (
+                            <>
+                              <ModelMultiSelector
+                                isLight={isLight}
+                                models={availableEditModels}
+                                selectedModelIds={editForm.modelIds}
+                                onChange={ids => setEditForm(prev => (prev ? { ...prev, modelIds: ids } : prev))}
+                                loading={modelsLoading}
+                                disabled={editModelsDisabled}
+                                placeholder={editModelsPlaceholder}
+                              />
+                              {editModelsDisabled && (
+                                <p className={cn('text-[11px]', isLight ? 'text-red-500' : 'text-red-400')}>
+                                  {editForm.scope === 'team' && !editForm.teamId
+                                    ? 'Select a team to see team-scoped models.'
+                                    : 'No models available for this scope.'}
+                                </p>
+                              )}
+                            </>
+                          )}
+                        </div>
+
                         <div className="flex flex-col gap-2">
                           <Checkbox
                             checked={editForm.enabled}
@@ -1354,6 +1831,31 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                             {agent.description}
                           </div>
                         )}
+
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                            Models:
+                          </span>
+                          {(agent.modelIds && agent.modelIds.length > 0) ? (
+                            agent.modelIds.map(modelId => {
+                              const model = modelLookup[modelId];
+                              const displayName = model?.name || modelId;
+                              return (
+                                <span
+                                  key={`${agent.id}-${modelId}`}
+                                  className={cn(
+                                    'inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-medium',
+                                    isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-300'
+                                  )}
+                                >
+                                  {displayName}
+                                </span>
+                              );
+                            })
+                          ) : (
+                            <span className={cn(isLight ? 'text-gray-500' : 'text-gray-400')}>All models</span>
+                          )}
+                        </div>
 
                         <div>
                           <button

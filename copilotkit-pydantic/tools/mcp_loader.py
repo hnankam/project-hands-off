@@ -23,6 +23,9 @@ def mcp_log_handler(level: str, data: Any, logger: str | None = None) -> None:
     # Only log warnings and errors to reduce noise
     if level in ("warning", "error"):
         print(f"[MCP {logger or 'unknown'}] {level.upper()}: {data}", file=sys.stderr)
+    elif level == "debug":
+        # Log debug messages for troubleshooting MCP server issues
+        print(f"[MCP {logger or 'unknown'}] DEBUG: {data}", file=sys.stderr)
 
 
 def load_mcp_toolsets() -> list:

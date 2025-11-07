@@ -26,6 +26,11 @@ async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown."""
     # Startup: init DB pool and warm configuration caches
     await init_connection_pool()
+    
+    # Give the pool a moment to be fully ready before loading deployments
+    import asyncio
+    await asyncio.sleep(0.2)
+    
     await initialize_deployments(prewarm_global=True)
     
     logger.info("🚀 Pydantic AI Agent Server initialized")

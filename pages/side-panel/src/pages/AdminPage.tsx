@@ -15,6 +15,8 @@ import { UsersTab } from '../components/admin/UsersTab';
 import { ProvidersTab } from '../components/admin/ProvidersTab';
 import ModelsTab from '@src/components/admin/ModelsTab';
 import AgentsTab from '@src/components/admin/AgentsTab';
+import { DeploymentsTab } from '../components/admin/DeploymentsTab';
+import { UsageTab } from '../components/admin/UsageTab';
 import { usePendingInvitations } from '../hooks/usePendingInvitations';
 import UserMenu from '../components/UserMenu';
 
@@ -27,10 +29,20 @@ interface Organization {
   createdAt: string | Date;
 }
 
+type AdminTabKey =
+  | 'organizations'
+  | 'teams'
+  | 'users'
+  | 'usage'
+  | 'providers'
+  | 'models'
+  | 'agents'
+  | 'deployments';
+
 interface AdminPageProps {
   onGoHome?: () => void;
   onGoToSessions?: () => void;
-  initialTab?: 'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents';
+  initialTab?: AdminTabKey;
 }
 
 // Simple settings button component with upward-opening dropdown
@@ -194,7 +206,7 @@ const SettingsButton: React.FC<{ isLight: boolean; theme: string; onOpenSettings
 export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organizations' }: AdminPageProps) {
   const { user, organization, activeTeam, member } = useAuth();
   const { isLight, theme } = useStorage(exampleThemeStorage);
-  const [activeTab, setActiveTab] = useState<'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents'>(initialTab);
+  const [activeTab, setActiveTab] = useState<AdminTabKey>(initialTab);
   const [selectedOrgForTeams, setSelectedOrgForTeams] = useState('');
   const version = chrome.runtime?.getManifest?.()?.version || '1.0.0';
   
@@ -347,11 +359,11 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
           'flex items-center gap-2 px-2 py-1 border-t border-b h-[34px]',
           isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700',
         )}>
-        <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
-          {(['organizations', 'teams', 'users', 'providers', 'models', 'agents'] as const)
+        <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0 session-tabs-scroll">
+          {(['organizations', 'teams', 'users', 'usage', 'providers', 'models', 'agents', 'deployments'] as const)
             .filter(tab => {
               // Hide providers, models, and agents tabs for member users
-              if (['providers', 'models', 'agents'].includes(tab) && !isOwnerOrAdmin) {
+              if (['providers', 'models', 'agents', 'deployments'].includes(tab) && !isOwnerOrAdmin) {
                 return false;
               }
               return true;
@@ -465,7 +477,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
       )}
 
       {/* Content Area */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto admin-page-scroll">
         <div className="p-4 max-w-4xl mx-auto">
           {/* Alerts */}
           {error && errorVisible && (
@@ -560,6 +572,18 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
           </div>
         )}
 
+        {activeTab === 'usage' && (
+          <div className="animate-fadeIn">
+            <UsageTab
+            isLight={isLight}
+            organizations={organizations}
+            preselectedOrgId={selectedOrgForTeams}
+            onError={setError}
+            onSuccess={setSuccess}
+          />
+          </div>
+        )}
+
         {activeTab === 'models' && (
           isOwnerOrAdmin ? (
             <div className="animate-fadeIn">
@@ -611,6 +635,27 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
                 isLight={isLight}
                 organizations={organizations}
                 preselectedOrgId={selectedOrgForTeams}
+                onError={setError}
+                onSuccess={setSuccess}
+              />
+            </div>
+          ) : (
+            <div className={cn('flex-1 flex items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+              <div className="text-center">
+                <p className={cn('text-sm', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                  You need owner or admin permissions to access this section.
+                </p>
+              </div>
+            </div>
+          )
+        )}
+
+        {activeTab === 'deployments' && (
+          isOwnerOrAdmin ? (
+            <div className="animate-fadeIn">
+              <DeploymentsTab
+                isLight={isLight}
+                organizations={organizations}
                 onError={setError}
                 onSuccess={setSuccess}
               />

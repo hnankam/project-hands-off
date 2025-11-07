@@ -33,11 +33,16 @@ def get_connection_string() -> str:
 
 @asynccontextmanager
 async def get_db_connection():
-    """Get an async database connection from the pool with automatic cleanup."""
+    """Get an async database connection from the pool with automatic cleanup.
+    
+    Automatically resets and reinitializes the pool on OperationalError,
+    then re-raises the exception so the caller can retry.
+    """
     global _pool
     if _pool is None:
         await init_connection_pool()
     assert _pool is not None
+    
     try:
         async with _pool.connection() as conn:
             # ensure rows are returned as dicts and apply sensible timeouts per session
@@ -53,9 +58,10 @@ async def get_db_connection():
                 pass
             yield conn
     except psycopg.OperationalError as exc:
-        logger.warning("[DB] Connection error; resetting pool", exc_info=True)
+        logger.warning("[DB] Connection error; resetting pool for next attempt", exc_info=True)
+        # Reset the pool so the next call gets a fresh connection
         await reset_connection_pool(force=True)
-        await init_connection_pool()
+        # Re-raise so caller knows to retry
         raise
 
 
@@ -75,6 +81,8 @@ async def init_connection_pool(min_size: int = 1, max_size: int = 10) -> None:
             open=False,
         )
         await _pool.open()
+        # Give the pool a moment to stabilize after opening
+        await asyncio.sleep(0.1)
         logger.info("Initialized PostgreSQL async connection pool")
 
 
@@ -88,7 +96,11 @@ async def reset_connection_pool(force: bool = False) -> None:
             # No need to reset a healthy pool unless forced
             return
         try:
+            logger.debug("Closing connection pool...")
             await _pool.close()
+            # Give more time for connections to fully close and cleanup
+            await asyncio.sleep(0.3)
+            logger.debug("Connection pool closed")
         finally:
             _pool = None
 

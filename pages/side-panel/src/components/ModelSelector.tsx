@@ -7,6 +7,8 @@ interface ModelSelectorProps {
   isLight: boolean;
   selectedModel: string;
   onModelChange: (model: string) => void;
+  selectedAgent?: string;
+  agents?: Array<{ id: string; allowedModels?: string[] | null }>;
 }
 
 interface Model {
@@ -16,13 +18,20 @@ interface Model {
   enabled?: boolean;
 }
 
-export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedModel, onModelChange }) => {
+export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedModel, onModelChange, selectedAgent, agents }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [models, setModels] = React.useState<Model[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [missingContext, setMissingContext] = React.useState(false);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const { organization, activeTeam, isLoading: authLoading } = useAuth();
+  
+  // Get allowed models for the selected agent
+  const allowedModels = React.useMemo(() => {
+    if (!selectedAgent || !agents) return null;
+    const agent = agents.find(a => a.id === selectedAgent);
+    return agent?.allowedModels || null;
+  }, [selectedAgent, agents]);
 
   // Fetch models from API
   React.useEffect(() => {
@@ -144,9 +153,19 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
         setModels(sortedModels);
         
         // Auto-select first model if none is selected or current selection is invalid
-        const hasValidSelection = selectedModel && sortedModels.some((model: Model) => model.id === selectedModel);
+        // Filter by allowed models for the selected agent
+        const allowedModelIds = allowedModels === null ? null : new Set(allowedModels);
+        const hasValidSelection = selectedModel && sortedModels.some((model: Model) => {
+          const isAllowed = allowedModelIds === null || allowedModelIds.has(model.id);
+          return model.id === selectedModel && model.enabled !== false && isAllowed;
+        });
+        
         if (!hasValidSelection && sortedModels.length > 0) {
-          const firstEnabledModel = sortedModels.find((model: Model) => model.enabled !== false) || sortedModels[0];
+          const firstEnabledModel = sortedModels.find((model: Model) => {
+            const isAllowed = allowedModelIds === null || allowedModelIds.has(model.id);
+            return model.enabled !== false && isAllowed;
+          }) || sortedModels.find((model: Model) => model.enabled !== false) || sortedModels[0];
+          
           if (firstEnabledModel) {
             onModelChange(firstEnabledModel.id);
           }
@@ -176,7 +195,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
       isActive = false;
       controller.abort();
     };
-  }, [organization?.id, activeTeam, authLoading]);
+  }, [organization?.id, activeTeam, authLoading, allowedModels]);
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -270,25 +289,31 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
         </svg>
       </button>
 
-      {isOpen && (
-        <div
-          className={cn(
-            'absolute bottom-full left-0 z-[9999] mb-1 max-h-64 w-full min-w-[200px] overflow-y-auto rounded-md border shadow-lg',
-            isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
-          )}>
-          {models.map(model => (
+      {/* Dropdown - Always mounted, visibility controlled with CSS */}
+      <div
+        className={cn(
+          'absolute bottom-full left-0 z-[9999] mb-1 max-h-64 w-full min-w-[200px] overflow-y-auto rounded-md border shadow-lg transition-opacity',
+          isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
+          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        )}>
+        {models.map(model => {
+          // Check if model is allowed for the selected agent
+          const isAllowedForAgent = allowedModels === null || allowedModels.includes(model.id);
+          const isDisabled = model.enabled === false || !isAllowedForAgent;
+          
+          return (
             <button
               key={model.id}
               onClick={() => {
-                if (model.enabled !== false) {
+                if (!isDisabled) {
                   onModelChange(model.id);
                   setIsOpen(false);
                 }
               }}
-              disabled={model.enabled === false}
+              disabled={isDisabled}
               className={cn(
                 'flex w-full flex-col items-start px-2.5 py-1.5 text-xs transition-colors',
-                model.enabled === false
+                isDisabled
                   ? 'opacity-50 cursor-not-allowed'
                   : selectedModel === model.id
                   ? isLight
@@ -300,7 +325,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
               )}>
               <div className="flex w-full items-center justify-between">
                 <span className={cn(selectedModel === model.id && 'font-medium')}>{model.label}</span>
-                {selectedModel === model.id && model.enabled !== false && (
+                {selectedModel === model.id && !isDisabled && (
                   <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20">
                     <path
                       fillRule="evenodd"
@@ -309,12 +334,17 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
                     />
                   </svg>
                 )}
+                {!isAllowedForAgent && (
+                  <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                  </svg>
+                )}
               </div>
               <span className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>{model.provider}</span>
             </button>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 };

@@ -87,6 +87,17 @@ async def _refresh_context(
 
         try:
             bundle = await fetch_context_bundle(organization_id, team_id)
+            
+            logger.info(
+                "[Refresh] 📦 Fetched from DB for org=%s team=%s: %d providers, %d models, %d agents (version=%s, force=%s)",
+                organization_id[:8] if organization_id else 'global',
+                team_id[:8] if team_id else 'org-wide',
+                len(bundle.providers),
+                len(bundle.models),
+                len(bundle.agents),
+                bundle.version.isoformat() if bundle.version else 'none',
+                force
+            )
 
             if (
                 not force
@@ -95,11 +106,21 @@ async def _refresh_context(
                 and state.version >= bundle.version
             ):
                 # No changes detected; simply update freshness timestamps
+                logger.debug(
+                    "[Refresh] ⏭️  No changes detected (version check), skipping reload for org=%s team=%s",
+                    organization_id[:8] if organization_id else 'global',
+                    team_id[:8] if team_id else 'org-wide'
+                )
                 now = time.time()
                 state.last_refresh = now
                 state.next_version_check = now + DEPLOYMENT_REFRESH_INTERVAL_SECONDS
                 state.status = "ready"
                 return state
+            
+            if force:
+                logger.info(
+                    "[Refresh] ⚡ Force reload enabled - bypassing version check, applying all configurations from DB"
+                )
 
             # Persist models/prompts in respective caches
             store_models_for_context(
@@ -143,6 +164,7 @@ async def _refresh_context(
                     'name': agent.get('name', agent['type']),
                     'description': agent.get('description', ''),
                     'enabled': agent.get('enabled', True),
+                    'allowed_models': agent.get('allowed_models') or None,
                 }
                 for agent in bundle.agents
             }
@@ -213,6 +235,12 @@ async def ensure_agent_ready(
     if not agent_meta.get('enabled', True):
         raise EndpointDisabledError(f"Agent '{agent_type}' is disabled for this context")
 
+    allowed_models = agent_meta.get('allowed_models') or None
+    if allowed_models and model_key not in allowed_models:
+        raise EndpointDisabledError(
+            f"Agent '{agent_type}' is not configured to use model '{model_key}'"
+        )
+
     model_meta = state.models_meta.get(model_key)
     if model_meta is None:
         raise ModelNotAvailableError(
@@ -238,8 +266,24 @@ async def deploy_context(
 
 async def restart_context(organization_id: Optional[str], team_id: Optional[str]) -> DeploymentState:
     """Force a context restart regardless of current version."""
+    
+    logger.info(
+        "[Restart] 🔄 Initiating context restart for org=%s team=%s (force reload from DB)",
+        organization_id[:8] if organization_id else 'global',
+        team_id[:8] if team_id else 'org-wide'
+    )
 
-    return await _refresh_context(organization_id, team_id, force=True)
+    state = await _refresh_context(organization_id, team_id, force=True)
+    
+    logger.info(
+        "[Restart] ✅ Context restart completed for org=%s team=%s: %d models, %d agents loaded from DB",
+        organization_id[:8] if organization_id else 'global',
+        team_id[:8] if team_id else 'org-wide',
+        len(state.models_meta),
+        len(state.agents_meta)
+    )
+    
+    return state
 
 
 def get_context_status(organization_id: Optional[str], team_id: Optional[str]) -> Dict[str, any]:
@@ -304,11 +348,72 @@ def get_context_status(organization_id: Optional[str], team_id: Optional[str]) -
     }
 
 
-async def initialize_deployments(prewarm_global: bool = True) -> None:
-    """Initialize deployment manager on application startup."""
+async def prewarm_user_context(organization_id: str, team_id: Optional[str] = None) -> None:
+    """Prewarm deployment for a specific user's organization context.
+    
+    This is called on first authenticated request to eagerly load the user's
+    organization deployments.
+    """
+    from database.connection import get_db_connection
+    
+    # Check if already loaded
+    context_key = context_tuple(organization_id, team_id)
+    if context_key in _states and _states[context_key].status == 'ready':
+        logger.debug(f"Context already loaded for org={organization_id[:8]}... team={team_id[:8] if team_id else 'org-wide'}")
+        return
+    
+    try:
+        # Find all team contexts for this organization
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    SELECT DISTINCT organization_id, team_id 
+                    FROM (
+                        SELECT organization_id, team_id FROM models WHERE organization_id = %(org_id)s
+                        UNION
+                        SELECT organization_id, team_id FROM agents WHERE organization_id = %(org_id)s
+                        UNION
+                        SELECT organization_id, team_id FROM providers WHERE organization_id = %(org_id)s
+                    ) AS configs
+                    ORDER BY team_id
+                """, {'org_id': organization_id})
+                contexts = await cur.fetchall()
+        
+        if not contexts:
+            logger.debug(f"No configuration found for org={organization_id[:8]}...")
+            return
+        
+        logger.info(f"Prewarming {len(contexts)} context(s) for org={organization_id[:8]}...")
+        
+        # Prewarm each context for this organization
+        for ctx in contexts:
+            org_id = ctx['organization_id']
+            team_id_db = ctx['team_id']
+            
+            try:
+                await deploy_context(org_id, team_id_db, force=False)
+                status = get_context_status(org_id, team_id_db)
+                
+                models_count = len(status.get('models', []))
+                agents_count = len(status.get('agents', []))
+                
+                logger.info(
+                    f"  ✓ Loaded org={org_id[:8]}... team={team_id_db[:8] if team_id_db else 'org-wide'}: "
+                    f"{models_count} models, {agents_count} agents"
+                )
+            except Exception as exc:
+                logger.warning(f"  ✗ Failed to prewarm org={org_id} team={team_id_db}: {exc}")
+        
+    except Exception as exc:
+        logger.warning(f"Failed to prewarm user context: {exc}")
 
-    if prewarm_global:
-        await deploy_context(None, None, force=True)
+
+async def initialize_deployments(prewarm_global: bool = True) -> None:
+    """Initialize deployment manager on application startup.
+    
+    Deployments are now loaded on-demand when users first authenticate.
+    """
+    logger.info("✅ Deployment manager ready (will prewarm on first user login)")
 
 
 def list_deployments() -> List[Dict[str, any]]:
@@ -316,5 +421,57 @@ def list_deployments() -> List[Dict[str, any]]:
         get_context_status(org_id, team_id)
         for (org_id, team_id) in _states.keys()
     ]
+
+
+def list_endpoints() -> List[Dict[str, any]]:
+    """List all available agent/model endpoints across all deployed contexts."""
+    endpoints = []
+    
+    for (org_id, team_id), state in _states.items():
+        # Determine endpoint status based on deployment state
+        endpoint_status = 'ready' if state.status == 'ready' else state.status
+            
+        # Create endpoints for each agent/model combination
+        for agent_key, agent_meta in state.agents_meta.items():
+            # Show all agents, but mark disabled ones
+            agent_enabled = agent_meta.get('enabled', True)
+            allowed_models = agent_meta.get('allowed_models') or None
+            allowed_set = set(allowed_models) if allowed_models else None
+                
+            for model_key, model_meta in state.models_meta.items():
+                # Show all models, but mark disabled ones
+                model_enabled = model_meta.get('enabled', True)
+
+                if allowed_set is not None and model_key not in allowed_set:
+                    continue
+                
+                # Determine final status
+                if not agent_enabled or not model_enabled:
+                    final_status = 'disabled'
+                else:
+                    final_status = endpoint_status
+                    
+                endpoints.append({
+                    'context': {
+                        'organization_id': org_id if org_id != '__global__' else None,
+                        'team_id': team_id if team_id != '__global__' else None,
+                    },
+                    'agent': {
+                        'type': agent_key,
+                        'name': agent_meta.get('name', agent_key),
+                        'description': agent_meta.get('description'),
+                        'enabled': agent_enabled,
+                    },
+                    'model': {
+                        'key': model_key,
+                        'provider': model_meta.get('provider'),
+                        'display_name': model_meta.get('display_name'),
+                        'enabled': model_enabled,
+                    },
+                    'status': final_status,
+                    'endpoint': f'/agent/{agent_key}/{model_key}',
+                })
+    
+    return endpoints
 
 

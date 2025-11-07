@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
+import { useEffect, useState, useCallback, useRef, memo } from 'react';
 import React from 'react';
 import type { FC, CSSProperties } from 'react';
 import { CopilotKit } from '@copilotkit/react-core';
-import { useStorage, debug } from '@extension/shared';
-import { sessionStorage, preferencesStorage } from '@extension/storage';
+import { useStorage, debug, useSessionStorageDB, sessionStorageDBWrapper } from '@extension/shared';
+import { preferencesStorage } from '@extension/storage';
 import { StatusBar } from './components/StatusBar';
 import { ChatInner } from './components/ChatInner';
 import { useContentRefresh } from './hooks/useContentRefresh';
@@ -19,8 +19,8 @@ interface ChatSessionProps {
 }
 
 export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicApiKey, isActive = true }) => {
-  const { sessions } = useStorage(sessionStorage);
-  const { showSuggestions } = useStorage(preferencesStorage);
+  const { sessions } = useSessionStorageDB();
+  const { showSuggestions, showThoughtBlocks } = useStorage(preferencesStorage);
   const [currentMessages, setCurrentMessages] = useState<any[]>([]);
   const [headlessMessagesCount, setHeadlessMessagesCount] = useState<number>(0); // Track messages from useCopilotChatHeadless_c
   const [isLoading, setIsLoading] = useState(true);
@@ -80,24 +80,81 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
     restoreMessagesRef
   });
   
-  // Load stored agent step state for this session
-  const initialAgentStepState = useMemo(() => {
-    const storedState = sessionStorage.getAgentStepState(sessionId);
-    if (storedState) {
-      return storedState;
+  const currentSession = sessions.find((s) => s.id === sessionId);
+  const [selectedAgent, setSelectedAgent] = useState(currentSession?.selectedAgent || '');
+  const [selectedModel, setSelectedModel] = useState(currentSession?.selectedModel || '');
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadSessionMetadata = async () => {
+      try {
+        const metadata = await sessionStorageDBWrapper.getSession(sessionId);
+        if (!metadata || isCancelled) return;
+
+        if (metadata.selectedAgent !== undefined && metadata.selectedAgent !== selectedAgent) {
+          setSelectedAgent(metadata.selectedAgent);
+        }
+
+        if (metadata.selectedModel !== undefined && metadata.selectedModel !== selectedModel) {
+          setSelectedModel(metadata.selectedModel);
+        }
+      } catch (error) {
+        console.error('[ChatSession] Failed to load session metadata from DB:', error);
+      }
+    };
+
+    loadSessionMetadata();
+
+    return () => {
+      isCancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+  const [initialAgentStepState, setInitialAgentStepState] = useState<{ steps: any[] }>({ steps: [] });
+  const [currentAgentStepState, setCurrentAgentStepState] = useState<{ steps: any[] }>({ steps: [] });
+
+  useEffect(() => {
+    if (!currentSession) {
+      return;
     }
-    return {
-      steps: [],
+
+    if (currentSession.selectedAgent !== undefined && currentSession.selectedAgent !== selectedAgent) {
+      setSelectedAgent(currentSession.selectedAgent);
+    }
+
+    if (currentSession.selectedModel !== undefined && currentSession.selectedModel !== selectedModel) {
+      setSelectedModel(currentSession.selectedModel);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSession?.selectedAgent, currentSession?.selectedModel, currentSession?.id]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadAgentState = async () => {
+      try {
+        const storedState = await sessionStorageDBWrapper.getAgentStepStateAsync(sessionId);
+        if (!isCancelled && storedState) {
+          setInitialAgentStepState(storedState as { steps: any[] });
+          setCurrentAgentStepState(storedState as { steps: any[] });
+        }
+      } catch (error) {
+        console.error('[ChatSession] Failed to load agent state from IndexedDB:', error);
+      }
+    };
+
+    loadAgentState();
+
+    return () => {
+      isCancelled = true;
     };
   }, [sessionId]);
-  
-  // Track current agent step state
-  const [currentAgentStepState, setCurrentAgentStepState] = useState(initialAgentStepState);
   
   // Save agent step state to storage whenever it changes
   useEffect(() => {
     if (currentAgentStepState) {
-      sessionStorage.updateAgentStepState(sessionId, currentAgentStepState);
+      sessionStorageDBWrapper.updateAgentStepState(sessionId, currentAgentStepState);
     }
   }, [sessionId, currentAgentStepState]);
   
@@ -202,8 +259,6 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
   // Current approach: Keep all chat sessions mounted but hidden to preserve state
   // Future: Use CopilotKit's built-in persistence layer for better memory management
   
-  // Get the current session
-  const currentSession = sessions.find(s => s.id === sessionId);
   const sessionTitle = currentSession?.title || 'New Session';
 
   // Function to fetch fresh page content with intelligent caching and stale-while-revalidate pattern
@@ -933,6 +988,7 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
             resetChatRef={resetChatRef}
             setIsAgentLoading={setIsAgentLoading}
             showSuggestions={showSuggestions}
+            showThoughtBlocks={showThoughtBlocks}
             initialAgentStepState={initialAgentStepState}
             onAgentStepStateChange={setCurrentAgentStepState}
           />

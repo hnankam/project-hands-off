@@ -1,6 +1,6 @@
 import { cn } from '../utils';
-import { useStorage, generateSessionName } from '@extension/shared';
-import { sessionStorage, type SessionType } from '@extension/storage';
+import { useSessionStorageDB, sessionStorageDBWrapper, generateSessionName } from '@extension/shared';
+import type { SessionMetadata } from '@extension/shared';
 import { useEffect, useRef, useState, useCallback } from 'react';
 
 interface SessionTabsProps {
@@ -9,7 +9,7 @@ interface SessionTabsProps {
 }
 
 export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
-  const { sessions, currentSessionId } = useStorage(sessionStorage);
+  const { sessions, currentSessionId } = useSessionStorageDB();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const previousCurrentSessionId = useRef(currentSessionId);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -19,16 +19,21 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
   const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const handleSessionClick = (sessionId: string) => {
-    sessionStorage.setActiveSession(sessionId);
+    // Don't trigger setActiveSession if the session is already active
+    // This prevents unnecessary re-renders and counter resets
+    if (sessionId === currentSessionId) {
+      return;
+    }
+    sessionStorageDBWrapper.setActiveSession(sessionId);
   };
 
   const handleCloseSession = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    sessionStorage.closeSession(sessionId);
+    sessionStorageDBWrapper.closeSession(sessionId);
   };
 
   const handleNewSession = () => {
-    sessionStorage.addSession(generateSessionName());
+    sessionStorageDBWrapper.addSession(generateSessionName());
   };
 
   const handleDoubleClick = (sessionId: string, currentTitle: string) => {
@@ -38,7 +43,7 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
 
   const handleEditSubmit = () => {
     if (editingSessionId && editValue.trim()) {
-      sessionStorage.updateSessionTitle(editingSessionId, editValue.trim());
+      sessionStorageDBWrapper.updateSessionTitle(editingSessionId, editValue.trim());
     }
     setEditingSessionId(null);
     setEditValue('');

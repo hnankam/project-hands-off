@@ -70,15 +70,16 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
         </svg>
       </button>
 
-      {isOpen && (
-        <div
-          className={cn(
-            'absolute bottom-full right-0 mb-1 w-64 rounded-md border shadow-lg z-[9999]',
-            isLight
-              ? 'bg-gray-50 border-gray-200'
-              : 'bg-[#151C24] border-gray-700'
-          )}
-        >
+      {/* Dropdown - Always mounted, visibility controlled with CSS */}
+      <div
+        className={cn(
+          'absolute bottom-full right-0 mb-1 w-64 rounded-md border shadow-lg z-[9999] transition-opacity',
+          isLight
+            ? 'bg-gray-50 border-gray-200'
+            : 'bg-[#151C24] border-gray-700',
+          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        )}
+      >
           {/* Header */}
           <div
             className={cn(
@@ -368,8 +369,7 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
             </svg>
             More Settings
           </button>
-        </div>
-      )}
+      </div>
     </div>
   );
 };

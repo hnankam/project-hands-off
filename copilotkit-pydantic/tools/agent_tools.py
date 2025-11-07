@@ -16,10 +16,25 @@ def register_agent_tools(agent: Agent) -> None:
     Args:
         agent: The agent instance to register tools on
     """
+    import logging
+    logger = logging.getLogger(__name__)
     
     # Load and register MCP server toolsets
-    for toolset in load_mcp_toolsets():
-        agent._user_toolsets.append(toolset)
+    mcp_toolsets = load_mcp_toolsets()
+    successful_toolsets = []
+    
+    for toolset in mcp_toolsets:
+        try:
+            agent._user_toolsets.append(toolset)
+            successful_toolsets.append(getattr(toolset, 'id', 'unknown'))
+            logger.debug(f"✓ Registered MCP toolset: {getattr(toolset, 'id', 'unknown')}")
+        except Exception as e:
+            logger.warning(f"Failed to register MCP toolset {getattr(toolset, 'id', 'unknown')}: {e}")
+    
+    if successful_toolsets:
+        logger.info(f"Registered {len(successful_toolsets)} MCP toolset(s): {', '.join(successful_toolsets)}")
+    else:
+        logger.warning("No MCP toolsets were successfully registered")
 
     @agent.tool(sequential=True, retries=0)
     async def create_plan(ctx: RunContext[StateDeps[AgentState]], steps: list[str]) -> StateSnapshotEvent:

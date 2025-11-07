@@ -45,22 +45,22 @@ export default function UserMenu({ isLight, onGoAdmin, onGoToSessions }: UserMen
           {user.name?.charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase()}
         </button>
 
-        {/* Dropdown Menu */}
+        {/* Backdrop */}
         {isOpen && (
-          <>
-            {/* Backdrop */}
-            <div
-              className="fixed inset-0 z-40"
-              onClick={() => setIsOpen(false)}
-            />
-            
-            {/* Menu */}
-            <div
-              className={cn(
-                'absolute right-0 top-full mt-1 w-64 rounded-md border shadow-lg z-50',
-                isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700'
-              )}
-            >
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setIsOpen(false)}
+          />
+        )}
+        
+        {/* Menu - Keep mounted but control visibility */}
+        <div
+          className={cn(
+            'absolute right-0 top-full mt-1 w-64 rounded-md border shadow-lg z-50 transition-opacity',
+            isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700',
+            isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          )}
+        >
               {/* User Info */}
               <div
                 className={cn(
@@ -180,9 +180,7 @@ export default function UserMenu({ isLight, onGoAdmin, onGoToSessions }: UserMen
                   Sign Out
                 </button>
               </div>
-            </div>
-          </>
-        )}
+        </div>
       </div>
     </>
   );

@@ -1,19 +1,21 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
 import type { FC, CSSProperties } from 'react';
 import { CopilotKit } from '@copilotkit/react-core';
-import { useStorage, debug } from '@extension/shared';
-import { sessionStorage, preferencesStorage } from '@extension/storage';
+import { useStorage, useSessionStorageDB, sessionStorageDBWrapper, debug } from '@extension/shared';
+import type { SessionMetadata } from '@extension/shared';
+import { preferencesStorage } from '@extension/storage';
 import { StatusBar } from './StatusBar';
 import { ChatInner } from './ChatInner';
 import { SelectorsBar } from './SelectorsBar';
 import { SettingsModal } from './SettingsModal';
 import { UsagePopup } from './UsagePopup';
+import type { AgentStepState } from './TaskProgressCard';
 import { useContentManager, type ContentState } from './ContentManager';
 import { useTabManager } from './TabManager';
 import { useMessagePersistence } from '../hooks/useMessagePersistence';
 import { usePanelVisibility } from '../hooks/usePanelVisibility';
 import { useContentRefresh } from '../hooks/useContentRefresh';
-import { useUsageStream } from '../hooks/useUsageStream';
+import { useUsageStream, type UsageData } from '../hooks/useUsageStream';
 import { useEmbeddingWorker } from '../hooks/useEmbeddingWorker';
 import { usePageContentEmbedding } from '../hooks/usePageContentEmbedding';
 import { useDOMUpdateEmbedding } from '../hooks/useDOMUpdateEmbedding';
@@ -22,6 +24,13 @@ import { useAutoSave } from '../hooks/useAutoSave';
 import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG } from '../constants';
 import { ts } from '../utils/logging';
 import { useAuth } from '../context/AuthContext';
+
+type UsageTotals = {
+  request: number;
+  response: number;
+  total: number;
+  requestCount: number;
+};
 
 interface ChatSessionContainerProps {
   sessionId: string;
@@ -32,6 +41,7 @@ interface ChatSessionContainerProps {
   onMessagesCountChange?: (sessionId: string, count: number) => void;
   onRegisterResetFunction?: (sessionId: string, resetFn: () => void) => void;
   onReady?: (sessionId: string) => void;
+  onMessagesLoadingChange?: (sessionId: string, isLoading: boolean) => void;
 }
 
 /**
@@ -51,8 +61,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     onMessagesCountChange,
     onRegisterResetFunction,
     onReady,
+    onMessagesLoadingChange,
   }) => {
-  const { sessions } = useStorage(sessionStorage);
+  const { sessions } = useSessionStorageDB();
   const { showAgentCursor, showSuggestions, showThoughtBlocks } = useStorage(preferencesStorage);
   const { organization, activeTeam } = useAuth();
   const [currentMessages, setCurrentMessages] = useState<any[]>([]);
@@ -63,8 +74,28 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const [themeColor, setThemeColor] = useState('#e5e7eb');
   // Track if initial message count has been reported to prevent flickering after skeleton disappears
   const hasReportedInitialCountRef = useRef(false);
+  const hydrationReadyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isUsagePopupOpen, setIsUsagePopupOpen] = useState(false);
+  
+  // Track previous session ID to detect changes
+  const prevSessionIdRef = useRef<string | null>(null);
+  
+  // Reset message count when session changes
+  useEffect(() => {
+    if (hydrationReadyTimeoutRef.current) {
+      clearTimeout(hydrationReadyTimeoutRef.current);
+      hydrationReadyTimeoutRef.current = null;
+    }
+
+    if (prevSessionIdRef.current && prevSessionIdRef.current !== sessionId) {
+      console.log(`[ChatSessionContainer] Session changed from ${prevSessionIdRef.current.slice(0, 8)} to ${sessionId.slice(0, 8)}, resetting message count`);
+      setHeadlessMessagesCount(0);
+      setIsCounterReady(false);
+      hasReportedInitialCountRef.current = false;
+    }
+    prevSessionIdRef.current = sessionId;
+  }, [sessionId]);
   
   // Progress bar state
   const [hasProgressBar, setHasProgressBar] = useState(false);
@@ -87,6 +118,100 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   // Initialize with saved values from session, or empty strings (selectors will provide defaults)
   const [selectedAgent, setSelectedAgent] = useState(currentSession?.selectedAgent || '');
   const [selectedModel, setSelectedModel] = useState(currentSession?.selectedModel || '');
+
+  // Track the last loaded session to prevent duplicate loads
+  const lastLoadedSessionRef = useRef<string | null>(null);
+  const isLoadingRef = useRef<boolean>(false);
+  
+  // Log only when session actually changes (not on every render)
+  useEffect(() => {
+    console.log(`[AGENT_MODEL_SYNC] 🎬 Session mounted/switched: ${sessionId}`);
+  }, [sessionId]);
+  
+  useEffect(() => {
+    // Only load metadata if this session is actually active
+    if (!isActive) {
+      console.log(`[AGENT_MODEL_SYNC] ⏭️ Session ${sessionId} is not active, skipping load`);
+      return;
+    }
+    
+    let isCancelled = false;
+    let enableSavesTimeoutId: NodeJS.Timeout | null = null;
+    isLoadingRef.current = true;
+
+    const loadSessionMetadata = async () => {
+      console.log(`[AGENT_MODEL_SYNC] 📥 Loading metadata from DB for session ${sessionId}...`);
+      try {
+        const metadata = await sessionStorageDBWrapper.getSession(sessionId);
+        if (!metadata) {
+          console.warn(`[AGENT_MODEL_SYNC] ⚠️ No metadata found in DB for session ${sessionId}`);
+          isLoadingRef.current = false;
+          return;
+        }
+        if (isCancelled) {
+          console.log(`[AGENT_MODEL_SYNC] ❌ Load cancelled for session ${sessionId}`);
+          isLoadingRef.current = false;
+          return;
+        }
+
+        console.log(`[AGENT_MODEL_SYNC] ✅ Loaded metadata from DB for session ${sessionId}:`, {
+          dbAgent: metadata.selectedAgent,
+          dbModel: metadata.selectedModel,
+          currentLocalAgent: selectedAgent,
+          currentLocalModel: selectedModel,
+        });
+
+        // Apply the loaded agent/model to state
+        if (metadata.selectedAgent !== undefined && metadata.selectedAgent !== selectedAgent) {
+          console.log(`[AGENT_MODEL_SYNC] 🔄 Updating agent for session ${sessionId}: ${selectedAgent} → ${metadata.selectedAgent}`);
+          setSelectedAgent(metadata.selectedAgent);
+        } else {
+          console.log(`[AGENT_MODEL_SYNC] ⏭️ Agent unchanged for session ${sessionId}: ${metadata.selectedAgent}`);
+        }
+
+        if (metadata.selectedModel !== undefined && metadata.selectedModel !== selectedModel) {
+          console.log(`[AGENT_MODEL_SYNC] 🔄 Updating model for session ${sessionId}: ${selectedModel} → ${metadata.selectedModel}`);
+          setSelectedModel(metadata.selectedModel);
+        } else {
+          console.log(`[AGENT_MODEL_SYNC] ⏭️ Model unchanged for session ${sessionId}: ${metadata.selectedModel}`);
+        }
+
+        // Mark this session as loaded
+        lastLoadedSessionRef.current = sessionId;
+        // Reset the hasLoadedInitialData flag for the save useEffect
+        hasLoadedInitialData.current = false;
+        
+        // Wait a bit for state updates to settle before allowing saves
+        // Use a longer delay to ensure React state updates have propagated
+        enableSavesTimeoutId = setTimeout(() => {
+          if (!isCancelled) {
+            isLoadingRef.current = false;
+            console.log(`[AGENT_MODEL_SYNC] ✅ Load complete for session ${sessionId}, saves now enabled`);
+          }
+        }, 200);
+      } catch (error) {
+        console.error(`[AGENT_MODEL_SYNC] ❌ Failed to load session metadata from DB for session ${sessionId}:`, error);
+        isLoadingRef.current = false;
+      }
+    };
+
+    loadSessionMetadata();
+
+    return () => {
+      console.log(`[AGENT_MODEL_SYNC] 🧹 Cleanup for session ${sessionId}`);
+      isCancelled = true;
+      // Clear the timeout if it's still pending
+      if (enableSavesTimeoutId) {
+        clearTimeout(enableSavesTimeoutId);
+      }
+      isLoadingRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, isActive]);
+
+  // This useEffect is now REMOVED - we only load from DB in the first useEffect above
+  // The currentSession prop will update from DB notifications, but we shouldn't sync back
+  // from it as that creates a feedback loop with our save operation
   
   // Log agent/model state when session becomes active
   useEffect(() => {
@@ -295,94 +420,235 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   const readySignalTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasSignaledReadyRef = useRef(false);
 
+  // Notify parent when messages are loading
   useEffect(() => {
+    if (onMessagesLoadingChange) {
+      onMessagesLoadingChange(sessionId, isHydrating);
+    }
+  }, [sessionId, isHydrating, onMessagesLoadingChange]);
+
+  // Handle session ID changes gracefully without full remount
+  useEffect(() => {
+    const prevSessionId = prevSessionIdRef.current;
+    const sessionChanged = prevSessionId && prevSessionId !== sessionId;
+    
+    if (sessionChanged) {
+      console.log(`[ChatSessionContainer] Session changed from ${prevSessionId} to ${sessionId}, loading messages...`);
+      
+      // Trigger message reload for the new session
+      if (isActive) {
+        handleLoadMessages();
+      }
+      
+      // Update agent/model from new session metadata
+      const newSession = sessions.find(s => s.id === sessionId);
+      if (newSession) {
+        setSelectedAgent(newSession.selectedAgent || '');
+        setSelectedModel(newSession.selectedModel || '');
+    }
+    
+      // Only reset these when session actually changes
+    prevSessionIdRef.current = sessionId;
     hasSignaledReadyRef.current = false;
-    hasReportedInitialCountRef.current = false; // Reset when session changes
+      hasReportedInitialCountRef.current = false;
     setIsCounterReady(false); // Reset counter visibility for new session
     if (readySignalTimeoutRef.current) {
       clearTimeout(readySignalTimeoutRef.current);
       readySignalTimeoutRef.current = null;
     }
-  }, [sessionId, isActive]);
+    } else if (!prevSessionId) {
+      // Initial mount - set the sessionId
+      prevSessionIdRef.current = sessionId;
+    }
+  }, [sessionId, isActive, sessions]);
 
   useEffect(() => {
     if (!onReady || !isActive) {
-      if (readySignalTimeoutRef.current) {
-        clearTimeout(readySignalTimeoutRef.current);
-        readySignalTimeoutRef.current = null;
+      if (hydrationReadyTimeoutRef.current) {
+        clearTimeout(hydrationReadyTimeoutRef.current);
+        hydrationReadyTimeoutRef.current = null;
       }
-      return;
-    }
-
-    // Wait for counter to be stable before signaling ready
-    // This ensures no 0 → N flicker is visible when skeleton disappears
-    if (!isCounterReady) {
-      if (readySignalTimeoutRef.current) {
-        clearTimeout(readySignalTimeoutRef.current);
-        readySignalTimeoutRef.current = null;
-      }
-      hasSignaledReadyRef.current = false;
       return;
     }
 
     if (hasSignaledReadyRef.current) {
+      if (hydrationReadyTimeoutRef.current) {
+        clearTimeout(hydrationReadyTimeoutRef.current);
+        hydrationReadyTimeoutRef.current = null;
+      }
       return;
     }
 
-    // Counter is now stable, hide skeleton immediately
-    // No additional delay needed since counter stability already ensures everything is ready
-    console.log(`🎉 [ChatSessionContainer] Counter stable for session ${sessionId}, hiding skeleton now!`);
-    hasSignaledReadyRef.current = true;
-    onReady(sessionId);
+    const signalReady = (reason: 'counter' | 'hydration') => {
+      if (hasSignaledReadyRef.current) {
+        return;
+      }
+      if (hydrationReadyTimeoutRef.current) {
+        clearTimeout(hydrationReadyTimeoutRef.current);
+        hydrationReadyTimeoutRef.current = null;
+      }
+      hasSignaledReadyRef.current = true;
+      if (reason === 'hydration' && !isCounterReady) {
+        setIsCounterReady(true);
+      }
+      console.log(
+        `[ChatSessionContainer] Signaling session ready via ${reason === 'counter' ? 'stable counter' : 'hydration fallback'} for ${sessionId}`,
+      );
+      onReady(sessionId);
+    };
+
+    if (isCounterReady) {
+      signalReady('counter');
+      return;
+    }
+
+    if (hydrationCompleted) {
+      if (!hydrationReadyTimeoutRef.current) {
+        hydrationReadyTimeoutRef.current = setTimeout(() => {
+          hydrationReadyTimeoutRef.current = null;
+          signalReady('hydration');
+        }, HYDRATION_READY_FALLBACK_DELAY);
+      }
+    } else if (hydrationReadyTimeoutRef.current) {
+      clearTimeout(hydrationReadyTimeoutRef.current);
+      hydrationReadyTimeoutRef.current = null;
+    }
 
     return () => {
-      if (readySignalTimeoutRef.current) {
-        clearTimeout(readySignalTimeoutRef.current);
-        readySignalTimeoutRef.current = null;
+      if (!hasSignaledReadyRef.current && hydrationReadyTimeoutRef.current && !isCounterReady && !hydrationCompleted) {
+        clearTimeout(hydrationReadyTimeoutRef.current);
+        hydrationReadyTimeoutRef.current = null;
       }
     };
-  }, [onReady, isActive, isCounterReady, sessionId]);
+  }, [onReady, isActive, isCounterReady, hydrationCompleted, sessionId]);
 
   // Note: Message loading is handled automatically by useMessagePersistence's auto-restore
   // No need to explicitly call handleLoadMessages here as it would cause double renders
   // The auto-restore triggers 500ms after session becomes active, allowing CopilotKit to initialize
   
-  // Load stored usage stats for this session
+  // State for stored usage and agent state
+  const HYDRATION_READY_FALLBACK_DELAY = 120; // milliseconds
+  const DEFAULT_USAGE = useMemo<UsageTotals>(
+    () => ({ request: 0, response: 0, total: 0, requestCount: 0 }),
+    [],
+  );
+
+  const [usageCache, setUsageCache] = useState<Record<string, UsageTotals>>({});
+  const [lastUsageCache, setLastUsageCache] = useState<Record<string, UsageData | null>>({});
+  const isUsageHydratingRef = useRef<boolean>(false);
+
+  // Derive initial usage for the current session - only recompute when sessionId changes
+  // DO NOT include usageCache in deps to avoid infinite loop
   const initialUsage = useMemo(() => {
-    const storedUsage = sessionStorage.getUsageStats(sessionId);
-    if (storedUsage) {
-      return storedUsage;
+    if (!sessionId) {
+      return DEFAULT_USAGE;
     }
-    return {
-      request: 0,
-      response: 0,
-      total: 0,
-      requestCount: 0,
-    };
-  }, [sessionId]);
-  
-  // Load stored agent step state for this session
-  const initialAgentStepState = useMemo(() => {
-    const storedState = sessionStorage.getAgentStepState(sessionId);
-    if (storedState) {
-      return storedState;
+    return usageCache[sessionId] ?? DEFAULT_USAGE;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, DEFAULT_USAGE]);
+
+  const initialLastUsage = useMemo(() => {
+    if (!sessionId) {
+      return null;
     }
-    return {
-      steps: [],
-    };
+    return lastUsageCache[sessionId] ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
-  
-  // Track current agent step state
-  const [currentAgentStepState, setCurrentAgentStepState] = useState(initialAgentStepState);
-  
-  // Usage streaming via WebSocket
+
   const {
     lastUsage,
     cumulativeUsage,
     isConnected: isUsageConnected,
     error: usageError,
-      resetCumulative,
-  } = useUsageStream(sessionId, isActive, 'ws://localhost:8001', initialUsage);
+    resetCumulative,
+    setCumulative,
+    setLastUsage,
+  } = useUsageStream(sessionId, isActive, 'ws://localhost:8001', initialUsage, initialLastUsage);
+
+  const [currentAgentStepState, setCurrentAgentStepState] = useState<AgentStepState>({
+    steps: [],
+  });
+  
+  // Load stored usage stats and agent state for this session
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+
+    let isCancelled = false;
+    isUsageHydratingRef.current = true;
+
+    setUsageCache(prev => {
+      if (prev[sessionId]) {
+        return prev;
+      }
+      return { ...prev, [sessionId]: DEFAULT_USAGE };
+    });
+
+    setLastUsageCache(prev => {
+      if (sessionId in prev) {
+        return prev;
+      }
+      return { ...prev, [sessionId]: null };
+    });
+
+    setCurrentAgentStepState({ steps: [] });
+
+    const loadStoredData = async () => {
+      try {
+        // Load usage stats
+        const storedUsage = await sessionStorageDBWrapper.getUsageStatsAsync(sessionId);
+        if (!isCancelled) {
+          const normalizedUsage: UsageTotals = storedUsage
+            ? {
+                request: storedUsage.request ?? 0,
+                response: storedUsage.response ?? 0,
+                total: storedUsage.total ?? 0,
+                requestCount: storedUsage.requestCount ?? 0,
+              }
+            : DEFAULT_USAGE;
+
+          const normalizedLastUsage: UsageData | null = storedUsage?.lastUsage
+            ? {
+                session_id: sessionId,
+                agent_type: storedUsage.lastUsage.agentType ?? 'unknown',
+                model: storedUsage.lastUsage.model ?? 'unknown',
+                request_tokens: storedUsage.lastUsage.requestTokens ?? 0,
+                response_tokens: storedUsage.lastUsage.responseTokens ?? 0,
+                total_tokens:
+                  storedUsage.lastUsage.totalTokens ??
+                  (storedUsage.lastUsage.requestTokens ?? 0) + (storedUsage.lastUsage.responseTokens ?? 0),
+                timestamp: storedUsage.lastUsage.timestamp ?? new Date().toISOString(),
+              }
+            : null;
+
+          setUsageCache(prev => ({ ...prev, [sessionId]: normalizedUsage }));
+          setLastUsageCache(prev => ({ ...prev, [sessionId]: normalizedLastUsage }));
+          setCumulative(normalizedUsage);
+          setLastUsage(normalizedLastUsage);
+        }
+
+        // Load agent state
+        const storedState = await sessionStorageDBWrapper.getAgentStepStateAsync(sessionId);
+        if (!isCancelled && storedState) {
+          setCurrentAgentStepState(storedState);
+        }
+      } catch (error) {
+        console.error('[ChatSessionContainer] Failed to load stored data:', error);
+      } finally {
+        if (!isCancelled) {
+          isUsageHydratingRef.current = false;
+        }
+      }
+    };
+
+    loadStoredData();
+
+    return () => {
+      isCancelled = true;
+      isUsageHydratingRef.current = false;
+    };
+  }, [sessionId, DEFAULT_USAGE, setCumulative, setLastUsage]);
   
   // Embedding worker for page content
   const {
@@ -404,15 +670,84 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   
   // Save cumulative usage to storage whenever it changes
   useEffect(() => {
-    if (cumulativeUsage) {
-      sessionStorage.updateUsageStats(sessionId, cumulativeUsage);
+    if (!sessionId || !cumulativeUsage || isUsageHydratingRef.current) {
+      return;
     }
+
+    const lastUsageRecord = lastUsage
+      ? {
+          requestTokens: lastUsage.request_tokens ?? 0,
+          responseTokens: lastUsage.response_tokens ?? 0,
+          totalTokens:
+            lastUsage.total_tokens ??
+            (lastUsage.request_tokens ?? 0) + (lastUsage.response_tokens ?? 0),
+          timestamp: lastUsage.timestamp,
+          agentType: lastUsage.agent_type,
+          model: lastUsage.model,
+        }
+      : null;
+
+    sessionStorageDBWrapper.updateUsageStats(sessionId, {
+      request: cumulativeUsage.request,
+      response: cumulativeUsage.response,
+      total: cumulativeUsage.total,
+      requestCount: cumulativeUsage.requestCount,
+      lastUsage: lastUsageRecord,
+    });
+  }, [sessionId, cumulativeUsage, lastUsage]);
+
+  useEffect(() => {
+    if (!sessionId || !cumulativeUsage) {
+      return;
+    }
+
+    setUsageCache(prev => {
+      const existing = prev[sessionId];
+      if (
+        existing &&
+        existing.request === cumulativeUsage.request &&
+        existing.response === cumulativeUsage.response &&
+        existing.total === cumulativeUsage.total &&
+        existing.requestCount === cumulativeUsage.requestCount
+      ) {
+        return prev;
+      }
+      return { ...prev, [sessionId]: { ...cumulativeUsage } };
+    });
   }, [sessionId, cumulativeUsage]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+
+    setLastUsageCache(prev => {
+      const existing = prev[sessionId];
+      if (!lastUsage && !existing) {
+        return prev;
+      }
+
+      if (
+        existing &&
+        lastUsage &&
+        existing.request_tokens === lastUsage.request_tokens &&
+        existing.response_tokens === lastUsage.response_tokens &&
+        existing.total_tokens === lastUsage.total_tokens &&
+        existing.timestamp === lastUsage.timestamp &&
+        existing.agent_type === lastUsage.agent_type &&
+        existing.model === lastUsage.model
+      ) {
+        return prev;
+      }
+
+      return { ...prev, [sessionId]: lastUsage ?? null };
+    });
+  }, [sessionId, lastUsage]);
   
   // Save agent step state to storage whenever it changes
   useEffect(() => {
     if (currentAgentStepState) {
-      sessionStorage.updateAgentStepState(sessionId, currentAgentStepState);
+      sessionStorageDBWrapper.updateAgentStepState(sessionId, currentAgentStepState);
     }
   }, [sessionId, currentAgentStepState]);
   
@@ -509,9 +844,57 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       saveMessagesToStorage,
     });
   
+  // Track if we've completed initial load to prevent saving during mount
+  const hasLoadedInitialData = useRef(false);
+  
+  // Track if this is a user-initiated change vs a load from DB
+  const isUserChange = useRef(false);
+  
+  // Memoize agent/model change handlers
+  const handleAgentChange = useCallback((agent: string) => {
+    console.log(`[AGENT_MODEL_SYNC] 👤 User changed agent to: ${agent}`);
+    isUserChange.current = true; // Mark as user-initiated
+    hasLoadedInitialData.current = true; // Ensure saves are enabled for this session
+    setSelectedAgent(agent);
+  }, []);
+  
+  const handleModelChange = useCallback((model: string) => {
+    console.log(`[AGENT_MODEL_SYNC] 🤖 User changed model to: ${model}`);
+    isUserChange.current = true; // Mark as user-initiated
+    hasLoadedInitialData.current = true; // Ensure saves are enabled for this session
+    setSelectedModel(model);
+  }, []);
+  
   // Save agent/model selection to storage whenever they change (including when cleared)
+  // But skip the initial save during component mount or while loading from DB
   useEffect(() => {
-    sessionStorage.updateSessionAgentAndModel(sessionId, selectedAgent, selectedModel);
+    // Skip saving during initial load - only save user-initiated changes
+    if (!hasLoadedInitialData.current) {
+      console.log(`[AGENT_MODEL_SYNC] ⏭️ Skipping save during initial load for session ${sessionId}`);
+      hasLoadedInitialData.current = true;
+      return;
+    }
+    
+    // Skip saving if we're currently loading from DB, UNLESS it's a user-initiated change
+    if (isLoadingRef.current && !isUserChange.current) {
+      console.log(`[AGENT_MODEL_SYNC] ⏭️ Skipping save while loading for session ${sessionId} (not user change)`);
+      return;
+    }
+    
+    console.log(`[AGENT_MODEL_SYNC] 💾 Saving agent/model to DB for session ${sessionId}:`, {
+      agent: selectedAgent,
+      model: selectedModel,
+      isUserChange: isUserChange.current,
+      isLoading: isLoadingRef.current,
+    });
+    
+    // Debounce the save operation
+    const timeoutId = setTimeout(() => {
+      sessionStorageDBWrapper.updateSessionAgentAndModel(sessionId, selectedAgent, selectedModel);
+      isUserChange.current = false; // Reset after save
+    }, 300); // 300ms debounce
+    
+    return () => clearTimeout(timeoutId);
   }, [selectedAgent, selectedModel, sessionId]);
   
   // Content refresh hook
@@ -711,9 +1094,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
 
       {/* Chat container */}
         <div className="relative flex flex-1 flex-col overflow-hidden">
-        {/* Agent switching overlay */}
+        {/* Agent switching overlay - positioned above everything including skeletons */}
         <div 
-          className={`absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm transition-all duration-500 ${
+          className={`fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-sm transition-all duration-500 ${
               isSwitchingAgent ? 'opacity-100' : 'pointer-events-none opacity-0'
             } ${isLight ? 'bg-white/70' : 'bg-gray-900/70'}`}>
             <div
@@ -921,7 +1304,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
               showSuggestions={showSuggestions}
               showThoughtBlocks={showThoughtBlocks}
               onProgressBarStateChange={handleProgressBarStateChange}
-              initialAgentStepState={initialAgentStepState}
+              initialAgentStepState={currentAgentStepState}
               onAgentStepStateChange={setCurrentAgentStepState}
                 contextMenuMessage={contextMenuMessage}
                 triggerManualRefresh={triggerManualRefreshWithEmbeddingWait}
@@ -942,8 +1325,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           showAgentCursor={showAgentCursor}
           showSuggestions={showSuggestions}
           showThoughtBlocks={showThoughtBlocks}
-          onAgentChange={setSelectedAgent}
-          onModelChange={setSelectedModel}
+          onAgentChange={handleAgentChange}
+          onModelChange={handleModelChange}
             onShowAgentCursorChange={show => preferencesStorage.setShowAgentCursor(show)}
           onShowSuggestionsChange={show => preferencesStorage.setShowSuggestions(show)}
           onShowThoughtBlocksChange={show => preferencesStorage.setShowThoughtBlocks(show)}
@@ -985,6 +1368,18 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     </div>
   );
   },
+  // Custom comparison function to prevent unnecessary re-renders
+  (prevProps, nextProps) => {
+    // Only re-render if these specific props change
+    return (
+      prevProps.sessionId === nextProps.sessionId &&
+      prevProps.isLight === nextProps.isLight &&
+      prevProps.publicApiKey === nextProps.publicApiKey &&
+      prevProps.isActive === nextProps.isActive &&
+      prevProps.contextMenuMessage === nextProps.contextMenuMessage
+      // Note: We intentionally don't compare callback props as they're stable
+    );
+  }
 );
 
 ChatSessionContainer.displayName = 'ChatSessionContainer';

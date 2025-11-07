@@ -9,7 +9,7 @@ load_dotenv()
 
 # Debug mode configuration
 # Explicit and predictable: enable only when DEBUG env is truthy
-DEBUG = True #os.getenv("DEBUG", "false").lower() in {"1", "true", "yes"}
+DEBUG = False #os.getenv("DEBUG", "false").lower() in {"1", "true", "yes"}
 
 # Logger configuration (supports plain or JSON based on LOG_FORMAT)
 logger = logging.getLogger("copilotkit-agent")

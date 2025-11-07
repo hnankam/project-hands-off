@@ -1,12 +1,14 @@
 /**
- * Hook to initialize DB Worker Client for embeddings storage
+ * Hook to initialize DB Worker Client for embeddings storage AND session storage
  * This must be called at the app root level to ensure the worker is available
  */
 import { useEffect, useState } from 'react';
-import { embeddingsStorage } from '@extension/shared';
+import { embeddingsStorage, sessionStorageDB, migrateSessionStorage } from '@extension/shared';
 import { DBWorkerClient } from '@extension/shared/lib/db/db-worker-client';
 
 let globalWorkerClient: DBWorkerClient | null = null;
+let embeddingsWorkerClient: DBWorkerClient | null = null;
+let sessionWorkerClient: DBWorkerClient | null = null;
 let initializationPromise: Promise<void> | null = null;
 
 export function useDBWorkerClient() {
@@ -15,7 +17,7 @@ export function useDBWorkerClient() {
 
   useEffect(() => {
     // If already initialized globally, just mark as ready
-    if (globalWorkerClient) {
+    if (sessionWorkerClient && embeddingsWorkerClient) {
       setIsReady(true);
       return;
     }
@@ -31,21 +33,29 @@ export function useDBWorkerClient() {
     // Start new initialization
     initializationPromise = (async () => {
       try {
-        console.log('[useDBWorkerClient] Initializing DB worker...');
+        console.log('[useDBWorkerClient] Initializing DB workers...');
         
-        // Create worker client - constructor will auto-resolve worker path
-        globalWorkerClient = new DBWorkerClient();
+        // Create separate worker clients for embeddings (memory) and sessions (IndexedDB)
+        embeddingsWorkerClient = new DBWorkerClient({ defaultDbName: 'embeddings_db' });
+        sessionWorkerClient = new DBWorkerClient({ defaultDbName: 'sessions_db' });
+        globalWorkerClient = sessionWorkerClient; // Preserve legacy getter behaviour
 
-        // Set the worker client on the singleton
-        embeddingsStorage.setWorkerClient(globalWorkerClient);
+        // Set the worker clients on the respective singletons
+        embeddingsStorage.setWorkerClient(embeddingsWorkerClient);
+        sessionStorageDB.setWorker(sessionWorkerClient);
 
-        // Initialize the worker
-        await embeddingsStorage.initialize(true); // Use memory mode by default
+        // Initialize workers (memory for embeddings, IndexedDB for sessions)
+        await embeddingsWorkerClient.initialize(true, 'embeddings_db');
+        await sessionWorkerClient.initialize(false, 'sessions_db');
 
-        console.log('[useDBWorkerClient] ✅ DB worker initialized successfully');
+        // Run migration from chrome.storage.local to IndexedDB
+        console.log('[useDBWorkerClient] Running session storage migration...');
+        await migrateSessionStorage(sessionStorageDB);
+
+        console.log('[useDBWorkerClient] ✅ DB workers initialized successfully');
         setIsReady(true);
       } catch (err) {
-        console.error('[useDBWorkerClient] ❌ Failed to initialize DB worker:', err);
+        console.error('[useDBWorkerClient] ❌ Failed to initialize DB workers:', err);
         setError(err as Error);
         initializationPromise = null; // Reset to allow retry
         throw err;
@@ -57,17 +67,13 @@ export function useDBWorkerClient() {
     });
   }, []); // Empty deps - only run once
 
-  return { isReady, error, workerClient: globalWorkerClient };
+  return { isReady, error, workerClient: sessionWorkerClient };
 }
 
-/**
- * Get the global worker client instance
- * Throws if not initialized
- */
 export function getGlobalWorkerClient(): DBWorkerClient {
-  if (!globalWorkerClient) {
-    throw new Error('[useDBWorkerClient] Worker client not initialized. Ensure useDBWorkerClient() is called at app root.');
+  if (!sessionWorkerClient) {
+    throw new Error('[useDBWorkerClient] Session worker client not initialized. Ensure useDBWorkerClient() is called at app root.');
   }
-  return globalWorkerClient;
+  return sessionWorkerClient;
 }
 

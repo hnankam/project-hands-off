@@ -49,13 +49,13 @@ export const UsagePopup: FC<UsagePopupProps> = ({
     };
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
   return (
     <>
-      {/* Compact Popup */}
+      {/* Compact Popup - Always mounted, visibility controlled with CSS */}
       <div 
-        className="fixed top-10 left-3 z-50 animate-slideDown"
+        className={`fixed top-10 left-3 z-50 transition-opacity ${
+          isOpen ? 'opacity-100 pointer-events-auto animate-slideDown' : 'opacity-0 pointer-events-none'
+        }`}
         style={{ maxWidth: '300px' }}
       >
         <div
@@ -109,7 +109,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
             {lastUsage && (
               <div
                 className={`rounded p-2 text-[11px] ${
-                  isLight ? 'bg-gray-50 border border-gray-200' : 'bg-gray-800 border border-gray-700'
+                  isLight ? 'bg-gray-50' : 'bg-gray-800'
                 }`}
               >
                 <div className={`font-medium mb-1.5 ${isLight ? 'text-gray-900' : 'text-white'}`}>
@@ -138,7 +138,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
             {cumulativeUsage.requestCount > 1 && (
               <div
                 className={`rounded p-2 text-[11px] ${
-                  isLight ? 'bg-blue-50 border border-blue-200' : 'bg-blue-900/20 border border-blue-700'
+                  isLight ? 'bg-blue-50' : 'bg-blue-900/20'
                 }`}
               >
                 <div className={`font-medium mb-1.5 ${isLight ? 'text-blue-900' : 'text-blue-300'}`}>
@@ -158,14 +158,11 @@ export const UsagePopup: FC<UsagePopupProps> = ({
             {/* Reset Button */}
             {onReset && cumulativeUsage.total > 0 && (
               <button
-                onClick={() => {
-                  onReset();
-                  onClose();
-                }}
-                className={`w-full px-2 py-1.5 rounded text-[11px] font-medium transition-colors ${
+                disabled
+                className={`w-full px-2 py-1.5 rounded text-[11px] font-medium cursor-not-allowed opacity-50 ${
                   isLight
-                    ? 'text-red-600 hover:bg-red-50 border border-red-200'
-                    : 'text-red-400 hover:bg-red-900/30 border border-red-700'
+                    ? 'text-red-600 bg-red-50'
+                    : 'text-red-400 bg-red-900/30'
                 }`}
               >
                 Reset Counters

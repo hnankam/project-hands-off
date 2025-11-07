@@ -1,12 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { debug as baseDebug } from '@extension/shared';
+import { debug as baseDebug, sessionStorageDBWrapper } from '@extension/shared';
 import type { CopilotMessage } from '@extension/storage';
-import { STORAGE_CONSTANTS, TIMING_CONSTANTS } from '../constants';
-
-// Interface for stored chat data (stores ALL messages, not filtered)
-interface StoredChatData {
-  [sessionId: string]: CopilotMessage[];
-}
+import { TIMING_CONSTANTS } from '../constants';
 
 // Message data structure returned by saveMessagesRef
 export interface MessageData {
@@ -205,14 +200,35 @@ export const useMessagePersistence = ({
           debug.warn(`⚠️ Filtered out ${messagesToSave.length - validMessages.length} undefined/null messages`);
         }
 
-        const result = await chrome.storage.local.get([STORAGE_CONSTANTS.CHAT_STORAGE_KEY]);
-        const storedData: StoredChatData = result[STORAGE_CONSTANTS.CHAT_STORAGE_KEY] || {};
-        storedData[sessionId] = validMessages;
-        await chrome.storage.local.set({ [STORAGE_CONSTANTS.CHAT_STORAGE_KEY]: storedData });
-        setStoredMessages(validMessages);
-        setStoredFilteredMessagesCount(countFilteredMessages(validMessages));
+        // Sanitize messages to remove non-serializable data (functions, React components, etc.)
+        // Uses JSON round-trip which is more reliable than Blob serialization for Chrome storage
+        const sanitizedMessages = validMessages.map((msg: any) => {
+          try {
+            // Deep clone through JSON to remove non-serializable data
+            // This preserves: primitives, plain objects, arrays, dates, regex
+            // This removes: functions, React components, circular refs, symbols
+            return JSON.parse(JSON.stringify(msg));
+          } catch (error) {
+            debug.error('Failed to sanitize message, using basic copy:', error);
+            // Fallback: copy only serializable properties
+            return {
+              id: msg.id,
+              role: msg.role,
+              content: typeof msg.content === 'string' ? msg.content : String(msg.content || ''),
+              createdAt: msg.createdAt,
+              // Preserve toolCalls if present and serializable
+              ...(msg.toolCalls && { toolCalls: msg.toolCalls }),
+              // Preserve metadata if present
+              ...(msg.metadata && { metadata: msg.metadata }),
+            };
+          }
+        });
+
+        await sessionStorageDBWrapper.updateAllMessages(sessionId, sanitizedMessages);
+        setStoredMessages(sanitizedMessages);
+        setStoredFilteredMessagesCount(countFilteredMessages(sanitizedMessages));
         debug.log(
-          `✅ [useMessagePersistence] Successfully saved ${validMessages.length} messages (${countFilteredMessages(validMessages)} filtered) for session ${sessionId}`,
+          `✅ [useMessagePersistence] Successfully saved ${sanitizedMessages.length} messages (${countFilteredMessages(sanitizedMessages)} filtered) for session ${sessionId}`,
         );
       } catch (error) {
         debug.error('❌ [useMessagePersistence] Failed to save messages to storage:', error);
@@ -293,14 +309,35 @@ export const useMessagePersistence = ({
         );
       }
 
-      // Save ALL messages to Chrome storage (not just filtered ones)
-      const result = await chrome.storage.local.get([STORAGE_CONSTANTS.CHAT_STORAGE_KEY]);
-      const storedData: StoredChatData = result[STORAGE_CONSTANTS.CHAT_STORAGE_KEY] || {};
-      storedData[sessionId] = validMessages;
-      await chrome.storage.local.set({ [STORAGE_CONSTANTS.CHAT_STORAGE_KEY]: storedData });
+      // Sanitize messages to remove non-serializable data (functions, React components, etc.)
+      // Uses JSON round-trip which is more reliable than Blob serialization for Chrome storage
+      const sanitizedMessages = validMessages.map((msg: any) => {
+        try {
+          // Deep clone through JSON to remove non-serializable data
+          // This preserves: primitives, plain objects, arrays, dates, regex
+          // This removes: functions, React components, circular refs, symbols
+          return JSON.parse(JSON.stringify(msg));
+        } catch (error) {
+          debug.error('Failed to sanitize message, using basic copy:', error);
+          // Fallback: copy only serializable properties
+          return {
+            id: msg.id,
+            role: msg.role,
+            content: typeof msg.content === 'string' ? msg.content : String(msg.content || ''),
+            createdAt: msg.createdAt,
+            // Preserve toolCalls if present and serializable
+            ...(msg.toolCalls && { toolCalls: msg.toolCalls }),
+            // Preserve metadata if present
+            ...(msg.metadata && { metadata: msg.metadata }),
+          };
+        }
+      });
 
-      // Update local state
-      setStoredMessages(validMessages);
+      // Save ALL messages to Chrome storage (not just filtered ones)
+      await sessionStorageDBWrapper.updateAllMessages(sessionId, sanitizedMessages);
+
+      // Update local state with sanitized messages
+      setStoredMessages(sanitizedMessages);
       setStoredFilteredMessagesCount(filteredMessages.length);
       debug.log('✅ [useMessagePersistence] Messages saved successfully');
     } catch (error) {
@@ -329,9 +366,7 @@ export const useMessagePersistence = ({
     debug.log('[useMessagePersistence] Reset restore attempts counter for fresh load');
 
     try {
-      const result = await chrome.storage.local.get([STORAGE_CONSTANTS.CHAT_STORAGE_KEY]);
-      const storedData: StoredChatData = result[STORAGE_CONSTANTS.CHAT_STORAGE_KEY] || {};
-      const messages = storedData[sessionId] || [];
+      const messages = await sessionStorageDBWrapper.getAllMessagesAsync(sessionId);
 
       debug.log('[useMessagePersistence] Messages to load:', messages.length);
 
@@ -361,6 +396,18 @@ export const useMessagePersistence = ({
 
       if (messages.length === 0) {
         debug.log(`[useMessagePersistence] No messages to load for session ${sessionId}`);
+
+        // Ensure local state reflects an empty session immediately
+        setStoredMessages([]);
+        setStoredFilteredMessagesCount(0);
+        if (restoreMessagesRef.current) {
+          try {
+            restoreMessagesRef.current([]);
+          } catch (restoreError) {
+            debug.warn('[useMessagePersistence] Failed to clear messages via restore ref:', restoreError);
+          }
+        }
+
         clearHydrationFallback();
         setIsHydrating(false);
         setHydrationCompleted(true);

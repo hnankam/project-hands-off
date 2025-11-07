@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { FC } from 'react';
-import { LoadingSpinner } from '@extension/ui';
+import { LoadingSpinner, cn } from '@extension/ui';
 
 interface SkeletonProps {
   className?: string;
@@ -8,7 +8,20 @@ interface SkeletonProps {
   height?: string | number;
   rounded?: boolean;
   animate?: boolean;
+  isLight?: boolean;
 }
+
+const seededRandom = (seed: string): number => {
+  let h = 1779033703 ^ seed.length;
+  for (let i = 0; i < seed.length; i += 1) {
+    h = Math.imul(h ^ seed.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  h = Math.imul(h ^ (h >>> 16), 2246822507);
+  h = Math.imul(h ^ (h >>> 13), 3266489909);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+};
 
 /**
  * Skeleton Component
@@ -20,9 +33,15 @@ export const Skeleton: FC<SkeletonProps> = ({
   width = '100%', 
   height = '1rem', 
   rounded = false,
-  animate = true 
+  animate = true,
+  isLight,
 }) => {
-  const baseClasses = 'bg-gray-200 dark:bg-gray-700';
+  const baseClasses =
+    typeof isLight === 'boolean'
+      ? isLight
+        ? 'bg-gray-200'
+        : 'bg-gray-700'
+      : 'bg-gray-200 dark:bg-gray-700';
   const roundedClasses = rounded ? 'rounded-full' : 'rounded';
   const animateClasses = animate ? 'animate-pulse' : '';
   
@@ -39,19 +58,174 @@ export const Skeleton: FC<SkeletonProps> = ({
  * 
  * Skeleton for individual chat messages
  */
-export const ChatMessageSkeleton: FC<{ isUser?: boolean }> = ({ isUser = false }) => {
+interface ChatMessageSkeletonProps {
+  seed?: string;
+  isLight?: boolean;
+}
+
+const buildLineWidths = (seed: string, count: number): string[] => {
+  const widths: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const rand = seededRandom(`${seed}-line-${i}`);
+    const width = 0.6 + rand * 0.35; // 60% → 95%
+    widths.push(`${Math.round(width * 100)}%`);
+  }
+  return widths;
+};
+
+const buildFooterWidth = (seed: string): string => {
+  const width = 0.35 + seededRandom(`${seed}-footer-width`) * 0.3; // 35% → 65%
+  return `${Math.round(width * 100)}%`;
+};
+
+export const ChatMessageSkeleton: FC<ChatMessageSkeletonProps> = ({ seed, isLight = true }) => {
+  const resolvedSeed = seed ?? 'message-default';
+  const lineCount = 4;
+  const lineWidths = useMemo(() => buildLineWidths(resolvedSeed, lineCount), [resolvedSeed, lineCount]);
+  const showFooter = useMemo(() => seededRandom(`${resolvedSeed}-footer`) > 0.4, [resolvedSeed]);
+  const footerWidth = useMemo(() => buildFooterWidth(resolvedSeed), [resolvedSeed]);
+
   return (
-    <div className={`flex gap-3 mb-4 ${isUser ? 'flex-row-reverse' : ''}`}>
-      {/* Avatar skeleton */}
-      <Skeleton width={32} height={32} rounded className="flex-shrink-0" />
-      
-      {/* Message content skeleton */}
-      <div className={`flex-1 max-w-[80%] ${isUser ? 'items-end' : ''}`}>
-        <div className="space-y-2">
-          {/* Message text lines */}
-          <Skeleton height={16} width="85%" />
-          <Skeleton height={16} width="60%" />
-          {Math.random() > 0.5 && <Skeleton height={16} width="75%" />}
+    <div
+      className={cn(
+        'relative w-full rounded-xl border px-4 py-3 shadow-sm transition-colors duration-200',
+        'ring-1 ring-black/0 backdrop-blur-[1px]',
+        isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#0C1117]',
+      )}
+    >
+      <div className="space-y-2">
+        {lineWidths.map((width, index) => (
+          <Skeleton key={index} height={12} width={width} isLight={isLight} />
+        ))}
+        {showFooter && <Skeleton height={10} width={footerWidth} className="opacity-70" isLight={isLight} />}
+      </div>
+    </div>
+  );
+};
+
+const TaskProgressSkeleton: FC<{ seed?: string; isLight?: boolean }> = ({ seed = 'task-progress', isLight = true }) => {
+  const stepWidths = useMemo(
+    () => Array.from({ length: 3 }, (_, index) => `${Math.round((0.55 + seededRandom(`${seed}-step-${index}`) * 0.35) * 100)}%`),
+    [seed],
+  );
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border px-4 py-3 shadow-sm',
+        isLight ? 'border-blue-200/70 bg-blue-50/70' : 'border-blue-900/50 bg-blue-900/15',
+      )}
+    >
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <Skeleton height={12} width="45%" isLight={isLight} />
+        <Skeleton height={10} width="18%" className="opacity-70" isLight={isLight} />
+      </div>
+      <div className="space-y-2">
+        {stepWidths.map((width, index) => (
+          <div key={index} className="flex items-center gap-3">
+            <Skeleton width={18} height={18} rounded isLight={isLight} />
+            <Skeleton height={10} width={width} isLight={isLight} />
+          </div>
+        ))}
+      </div>
+      <div className="mt-3">
+        <Skeleton height={8} width="100%" className="rounded-full opacity-40" animate={false} isLight={isLight} />
+        <Skeleton
+          height={8}
+          width={`${Math.round((0.45 + seededRandom(`${seed}-progress`) * 0.4) * 100)}%`}
+          className="-mt-2 rounded-full"
+          isLight={isLight}
+        />
+      </div>
+    </div>
+  );
+};
+
+const ComposerSkeleton: FC<{ isLight?: boolean }> = ({ isLight = true }) => {
+  return (
+    <div className={cn('border-t', isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#0C1117]')}>
+      <div className="px-3 pt-3 pt-2 mb-5">
+        <Skeleton height={85} className="rounded-xl" isLight={isLight} />
+      </div>
+    </div>
+  );
+};
+
+export const SelectorsBarSkeleton: FC<{ isLight?: boolean }> = ({ isLight = true }) => {
+  return (
+    <div
+      className={cn(
+        'flex items-center justify-between gap-2 border-t px-2 py-1.5',
+        isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
+      )}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <Skeleton width={150} height={32} className="rounded-lg" isLight={isLight} />
+        <Skeleton width={150} height={32} className="rounded-lg" isLight={isLight} />
+      </div>
+      <Skeleton width={120} height={32} className="rounded-lg" isLight={isLight} />
+    </div>
+  );
+};
+
+/**
+ * StatusBarSkeleton Component
+ * 
+ * Skeleton for the status bar
+ */
+export const StatusBarSkeleton: FC<{ isLight?: boolean }> = ({ isLight = true }) => {
+  return (
+    <div
+      className={cn(
+        'flex h-[34px] items-center justify-between gap-2 border-b px-2 py-1',
+        isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
+      )}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <div className="flex flex-col gap-1 text-[10px] leading-tight">
+          <Skeleton width={60} height={10} isLight={isLight} />
+          <Skeleton width={70} height={10} className="opacity-70" isLight={isLight} />
+        </div>
+        <div className={cn('h-6 w-px', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+        <div className="flex-1">
+          <Skeleton height={12} className="w-full" isLight={isLight} />
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        <Skeleton width={26} height={26} className="rounded-md" isLight={isLight} />
+        <Skeleton width={26} height={26} className="rounded-md" isLight={isLight} />
+        <Skeleton width={26} height={26} className="rounded-md" isLight={isLight} />
+      </div>
+    </div>
+  );
+};
+
+/**
+ * MessagesOnlySkeleton Component
+ * 
+ * Skeleton for just the messages area (no status bar, no selectors)
+ * This should match the messages section of ChatSkeleton for consistency
+ */
+export const MessagesOnlySkeleton: FC<{ isLight?: boolean }> = ({ isLight }) => {
+  const resolvedIsLight = typeof isLight === 'boolean' ? isLight : !document.documentElement.classList.contains('dark');
+
+  return (
+    <div className={cn('flex h-full flex-col overflow-hidden', resolvedIsLight ? 'bg-white' : 'bg-[#0C1117]')}>
+      <div className="relative flex flex-1 flex-col overflow-hidden">
+        <div className="flex-1 overflow-hidden">
+          <div className="flex h-full flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-hidden px-3 pb-6 pt-4">
+              <div className="flex h-full flex-col gap-4">
+                <TaskProgressSkeleton isLight={resolvedIsLight} />
+                <ChatMessageSkeleton seed="message-1" isLight={resolvedIsLight} />
+                <ChatMessageSkeleton seed="message-2" isLight={resolvedIsLight} />
+                <ChatMessageSkeleton seed="message-3" isLight={resolvedIsLight} />
+                <ChatMessageSkeleton seed="message-4" isLight={resolvedIsLight} />
+                <ChatMessageSkeleton seed="message-5" isLight={resolvedIsLight} />
+              </div>
+            </div>
+            <ComposerSkeleton isLight={resolvedIsLight} />
+          </div>
         </div>
       </div>
     </div>
@@ -63,70 +237,30 @@ export const ChatMessageSkeleton: FC<{ isUser?: boolean }> = ({ isUser = false }
  * 
  * Complete chat interface skeleton
  */
-export const ChatSkeleton: FC = () => {
+export const ChatSkeleton: FC<{ isLight?: boolean }> = ({ isLight }) => {
+  const resolvedIsLight = typeof isLight === 'boolean' ? isLight : !document.documentElement.classList.contains('dark');
+
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-[#0C1117]">
-      {/* Top tabs area */}
-      <div className="flex items-center gap-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#151C24] px-3 py-2">
-        <div className="flex items-center gap-2 overflow-hidden">
-          <Skeleton width={110} height={26} className="rounded-full" />
-          <Skeleton width={120} height={26} className="rounded-full opacity-80" />
-          <Skeleton width={18} height={18} rounded />
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <Skeleton width={22} height={22} rounded />
-          <Skeleton width={22} height={22} rounded />
-          <Skeleton width={22} height={22} rounded />
-        </div>
-      </div>
-
-      {/* Message list */}
-      <div className="flex-1 overflow-hidden bg-white dark:bg-[#0C1117]">
-        <div className="h-full overflow-hidden px-4 py-3 space-y-6">
-          <div className="space-y-3">
-            <Skeleton width={110} height={10} className="ml-1 opacity-60" />
-            <ChatMessageSkeleton />
-            <ChatMessageSkeleton />
-          </div>
-
-          <div className="space-y-3">
-            <Skeleton width={120} height={10} className="opacity-60" />
-            <ChatMessageSkeleton isUser />
-          </div>
-
-          <div className="space-y-3">
-            <Skeleton width={94} height={5} className="ml-1 opacity-60" />
-            <ChatMessageSkeleton />
-            <ChatMessageSkeleton />
-          </div>
-
-          <div className="space-y-3">
-            <Skeleton width={94} height={5} className="ml-1 opacity-60" />
-            <ChatMessageSkeleton />
-            <ChatMessageSkeleton />
-          </div>
-
-        </div>
-      </div>
-
-      {/* Composer */}
-      <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0C1117]">
-        <div className="px-4 pt-3 pb-2">
-          <Skeleton height={90} className="rounded-2xl" />
-        </div>
-        <div className="px-4 pb-3 flex items-center gap-3">
-          <div className="flex items-center gap-2 flex-1">
-            <Skeleton width={22} height={22} rounded />
-            <Skeleton width={22} height={22} rounded />
-            <Skeleton width={22} height={22} rounded />
-            <Skeleton width={22} height={22} rounded />
-          </div>
-          <div className="flex items-center gap-2">
-            <Skeleton width={70} height={28} className="rounded-full" />
-            <Skeleton width={32} height={32} rounded />
+    <div className={cn('flex h-full flex-col overflow-hidden', resolvedIsLight ? 'bg-white' : 'bg-[#0C1117]')}>
+      <StatusBarSkeleton isLight={resolvedIsLight} />
+      <div className="relative flex flex-1 flex-col overflow-hidden">
+        <div className="flex-1 overflow-hidden">
+          <div className="flex h-full flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-hidden px-3 pb-6 pt-4">
+              <div className="flex h-full flex-col gap-4">
+                <TaskProgressSkeleton isLight={resolvedIsLight} />
+                <ChatMessageSkeleton seed="message-1" isLight={resolvedIsLight} />
+                <ChatMessageSkeleton seed="message-2" isLight={resolvedIsLight} />
+                <ChatMessageSkeleton seed="message-3" isLight={resolvedIsLight} />
+                <ChatMessageSkeleton seed="message-4" isLight={resolvedIsLight} />
+                <ChatMessageSkeleton seed="message-5" isLight={resolvedIsLight} />
+              </div>
+            </div>
+            <ComposerSkeleton isLight={resolvedIsLight} />
           </div>
         </div>
       </div>
+      <SelectorsBarSkeleton isLight={resolvedIsLight} />
     </div>
   );
 };
@@ -136,33 +270,17 @@ export const ChatSkeleton: FC = () => {
  * 
  * Skeleton for session tabs
  */
-export const SessionTabsSkeleton: FC = () => {
+export const SessionTabsSkeleton: FC<{ isLight?: boolean }> = ({ isLight = true }) => {
   return (
-    <div className="flex gap-2 p-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#151C24]">
-      <Skeleton width={80} height={28} className="rounded-full" />
-      <Skeleton width={100} height={28} className="rounded-full" />
-      <Skeleton width={90} height={28} className="rounded-full" />
-    </div>
-  );
-};
-
-/**
- * StatusBarSkeleton Component
- * 
- * Skeleton for the status bar
- */
-export const StatusBarSkeleton: FC = () => {
-  return (
-    <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#151C24]">
-      <div className="flex items-center gap-4 flex-1">
-        <Skeleton width={40} height={12} />
-        <Skeleton width={120} height={12} />
-      </div>
-      <div className="flex items-center gap-2">
-        <Skeleton width={24} height={24} rounded />
-        <Skeleton width={24} height={24} rounded />
-        <Skeleton width={24} height={24} rounded />
-      </div>
+    <div
+      className={cn(
+        'flex gap-2 border-t p-2',
+        isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
+      )}
+    >
+      <Skeleton width={80} height={28} className="rounded-full" isLight={isLight} />
+      <Skeleton width={100} height={28} className="rounded-full" isLight={isLight} />
+      <Skeleton width={90} height={28} className="rounded-full" isLight={isLight} />
     </div>
   );
 };

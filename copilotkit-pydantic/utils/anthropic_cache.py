@@ -274,10 +274,10 @@ class AnthropicModelWithCache(AnthropicModel):
                     final_msg = {**msg, 'content': new_content}
                     final_messages.append(final_msg)
                     # Log summary of the message content
-                    image_count = sum(1 for c in new_content if isinstance(c, dict) and c.get('type') == 'image')
-                    doc_count = sum(1 for c in new_content if isinstance(c, dict) and c.get('type') == 'document')
-                    text_count = sum(1 for c in new_content if isinstance(c, dict) and c.get('type') == 'text')
-                    logger.info(f"[anthropic_cache] Final message {idx}: {text_count} text, {image_count} images, {doc_count} docs")
+                    # image_count = sum(1 for c in new_content if isinstance(c, dict) and c.get('type') == 'image')
+                    # doc_count = sum(1 for c in new_content if isinstance(c, dict) and c.get('type') == 'document')
+                    # text_count = sum(1 for c in new_content if isinstance(c, dict) and c.get('type') == 'text')
+                    # logger.info(f"[anthropic_cache] Final message {idx}: {text_count} text, {image_count} images, {doc_count} docs")
                 else:
                     final_messages.append(msg)
             else:

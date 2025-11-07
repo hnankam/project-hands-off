@@ -125,14 +125,15 @@ export async function getAgentsHandler(req, res, next) {
       teamId: context.teamId,
     });
     
-    // Format for side panel AgentSelector: { id, label, enabled }
+    // Format for side panel AgentSelector: { id, label, enabled, allowedModels }
     // Include all agents (enabled and disabled) for UI display
     const agents = config.agents
       .map(agent => ({
         id: agent.type,        // e.g., "general", "wiki", "jira"
         label: agent.name,     // e.g., "General Agent", "Wiki Agent"
         description: agent.description || '',
-        enabled: agent.enabled !== false,  // Default to true if not specified
+        enabled: Boolean(agent.enabled),  // Explicitly convert to boolean (null/undefined → false)
+        allowedModels: agent.allowed_models || null,  // Array of model keys or null for all models
         organization_id: agent.organization_id || null,
         team_id: agent.team_id || null
       }));
@@ -185,7 +186,7 @@ export async function getModelsHandler(req, res, next) {
         id: model.key,                                          // e.g., "claude-4.5-haiku"
         label: model.name,                                      // e.g., "Claude 4.5 Haiku"
         provider: providerDisplayNames[model.provider] || model.provider,  // e.g., "Anthropic"
-        enabled: model.enabled !== false,  // Default to true if not specified
+        enabled: Boolean(model.enabled),  // Explicitly convert to boolean (null/undefined → false)
         organization_id: model.organization_id || null,
         team_id: model.team_id || null
       }));
@@ -277,13 +278,14 @@ export async function getCompleteConfigHandler(req, res, next) {
     };
     
     res.json({
-      // Format for AgentSelector: { id, label, description }
+      // Format for AgentSelector: { id, label, description, allowedModels }
       agents: agentsConfig.agents
         .filter(agent => agent.enabled)
         .map(agent => ({
           id: agent.type,
           label: agent.name,
-          description: agent.description || ''
+          description: agent.description || '',
+          allowedModels: agent.allowed_models || null
         })),
       // Format for ModelSelector: { id, label, provider }
       models: modelsConfig.models

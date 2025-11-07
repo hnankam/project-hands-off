@@ -33,6 +33,26 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
   onShowThoughtBlocksChange,
   onExpandSettingsClick,
 }) => {
+  const [agents, setAgents] = React.useState<Array<{ id: string; allowedModels?: string[] | null }>>([]);
+  
+  // Fetch agents to get their allowed models
+  React.useEffect(() => {
+    const fetchAgents = async () => {
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/config/agents`, {
+          credentials: 'include',
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setAgents(data.agents || []);
+        }
+      } catch (error) {
+        console.error('[SelectorsBar] Failed to fetch agents:', error);
+      }
+    };
+    fetchAgents();
+  }, []);
+  
   return (
     <div 
       className={cn(
@@ -53,6 +73,8 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
           isLight={isLight}
           selectedModel={selectedModel}
           onModelChange={onModelChange}
+          selectedAgent={selectedAgent}
+          agents={agents}
         />
       </div>
 

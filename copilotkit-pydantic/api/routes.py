@@ -1,6 +1,6 @@
 """API route handlers for agent endpoints."""
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -19,6 +19,8 @@ from services import (
     restart_context,
     get_context_status,
     list_deployments,
+    list_endpoints,
+    prewarm_user_context,
 )
 from services.deployment_manager import DeploymentError
 from pydantic_ai.ag_ui import handle_ag_ui_request
@@ -28,6 +30,10 @@ class DeploymentRequest(BaseModel):
     organization_id: str
     team_id: str
     force: bool = False
+
+
+# Track which organizations have been prewarmed to avoid redundant work
+_prewarmed_orgs = set()
 
 
 def _make_not_found(message: str) -> JSONResponse:
@@ -45,7 +51,7 @@ def register_agent_routes(app: FastAPI) -> None:
         logger.info("Registering agent endpoint with dynamic context resolution")
 
     @app.post("/agent/{agent_type}/{model}")
-    async def run_agent(agent_type: str, model: str, request: Request):
+    async def run_agent(agent_type: str, model: str, request: Request, background_tasks: BackgroundTasks):
         # Enforce authentication context propagated from runtime
         session_id = request.headers.get("x-copilot-session-id")
         thread_id = request.headers.get("x-copilot-thread-id")
@@ -64,6 +70,11 @@ def register_agent_routes(app: FastAPI) -> None:
                 conversation_id,
                 session_id,
             )
+
+        # Prewarm organization deployments on first authenticated request
+        if organization_id not in _prewarmed_orgs:
+            _prewarmed_orgs.add(organization_id)
+            background_tasks.add_task(prewarm_user_context, organization_id, None)
 
         try:
             await ensure_agent_ready(organization_id, team_id, agent_type, model)
@@ -279,13 +290,65 @@ def register_info_routes(app: FastAPI) -> None:
         return get_context_status(organization_id, team_id)
 
     @app.get("/deployments")
-    async def list_deployments_endpoint():
+    async def list_deployments_endpoint(request: Request, background_tasks: BackgroundTasks):
+        # Try to get authentication context for prewarming
+        organization_id = request.headers.get("x-copilot-organization-id")
+        team_id = request.headers.get("x-copilot-team-id")
+        
+        logger.debug(
+            "[Deployments] Request headers: org_id=%s team_id=%s",
+            organization_id[:8] if organization_id else None,
+            team_id[:8] if team_id else None,
+        )
+        
+        # Prewarm organization deployments on first authenticated request
+        if organization_id and organization_id not in _prewarmed_orgs:
+            logger.info(
+                "[Deployments] 🚀 Triggering prewarm for organization: %s",
+                organization_id[:8],
+            )
+            _prewarmed_orgs.add(organization_id)
+            background_tasks.add_task(prewarm_user_context, organization_id, None)
+        elif organization_id:
+            logger.debug("[Deployments] Organization %s already prewarmed", organization_id[:8])
+        else:
+            logger.debug("[Deployments] No organization_id in request headers")
+        
         return {
             'deployments': list_deployments()
         }
     
+    @app.get("/deployments/endpoints")
+    async def list_endpoints_endpoint(request: Request, background_tasks: BackgroundTasks):
+        # Try to get authentication context for prewarming
+        organization_id = request.headers.get("x-copilot-organization-id")
+        team_id = request.headers.get("x-copilot-team-id")
+        
+        logger.debug(
+            "[Endpoints] Request headers: org_id=%s team_id=%s",
+            organization_id[:8] if organization_id else None,
+            team_id[:8] if team_id else None,
+        )
+        
+        # Prewarm organization deployments on first authenticated request
+        if organization_id and organization_id not in _prewarmed_orgs:
+            logger.info(
+                "[Endpoints] 🚀 Triggering prewarm for organization: %s",
+                organization_id[:8],
+            )
+            _prewarmed_orgs.add(organization_id)
+            background_tasks.add_task(prewarm_user_context, organization_id, None)
+        elif organization_id:
+            logger.debug("[Endpoints] Organization %s already prewarmed", organization_id[:8])
+        else:
+            logger.debug("[Endpoints] No organization_id in request headers")
+        
+        return {
+            'endpoints': list_endpoints()
+        }
+    
     @app.get("/tools/{agent_type}/{model}")
-    async def list_agent_tools(agent_type: str, model: str, request: Request):
+    async def list_agent_tools(agent_type: str, model: str, request: Request, background_tasks: BackgroundTasks):
         """List all tools available for a specific agent and model.
         
         Args:
@@ -302,6 +365,11 @@ def register_info_routes(app: FastAPI) -> None:
         
         if not organization_id or not team_id:
             return _make_unauthorized("Missing authentication context")
+        
+        # Prewarm organization deployments on first authenticated request
+        if organization_id not in _prewarmed_orgs:
+            _prewarmed_orgs.add(organization_id)
+            background_tasks.add_task(prewarm_user_context, organization_id, None)
         
         try:
             # Ensure agent is ready before fetching tools

@@ -15,6 +15,7 @@ interface Agent {
   icon: React.ReactNode;
   description?: string;
   enabled?: boolean;
+  allowedModels?: string[] | null;
 }
 
 // Icon mapping for agents
@@ -142,7 +143,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
         setMissingContext(false);
 
         // Add icons to the fetched agents
-        const agentsWithIcons = data.agents.map((agent: { id: string; label: string; description?: string; enabled?: boolean }) => ({
+        const agentsWithIcons = data.agents.map((agent: { id: string; label: string; description?: string; enabled?: boolean; allowedModels?: string[] | null }) => ({
           ...agent,
           icon: getAgentIcon(agent.id),
         }));
@@ -281,16 +282,17 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
         </svg>
       </button>
 
-      {isOpen && (
-        <div
-          className={cn(
-            'absolute bottom-full left-0 mb-1 w-full min-w-[180px] rounded-md border shadow-lg z-[9999]',
-            isLight
-              ? 'bg-gray-50 border-gray-200'
-              : 'bg-[#151C24] border-gray-700'
-          )}
-        >
-          {agents.map(agent => (
+      {/* Dropdown - Always mounted, visibility controlled with CSS */}
+      <div
+        className={cn(
+          'absolute bottom-full left-0 mb-1 w-full min-w-[180px] rounded-md border shadow-lg z-[9999] transition-opacity',
+          isLight
+            ? 'bg-gray-50 border-gray-200'
+            : 'bg-[#151C24] border-gray-700',
+          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        )}
+      >
+        {agents.map(agent => (
             <button
               key={agent.id}
               onClick={() => {
@@ -332,8 +334,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
               )}
             </button>
           ))}
-        </div>
-      )}
+      </div>
     </div>
   );
 };

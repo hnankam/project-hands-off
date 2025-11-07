@@ -60,17 +60,50 @@ export const useAgentSwitching = ({
   // Track previous values to detect changes
   const previousAgentRef = useRef(selectedAgent);
   const previousModelRef = useRef(selectedModel);
+  const previousSessionIdRef = useRef(sessionId);
   // Token to cancel an in-flight switch sequence when inputs change again
   const switchRunIdRef = useRef(0);
+
+  // Reset switching state when the active session changes to prevent carry-over
+  // NOTE: Only depends on sessionId - NOT on selectedAgent/selectedModel
+  // to avoid resetting the switching state when user changes agent/model
+  // NOTE: Do NOT update previousSessionIdRef here - let the switching effect detect session changes
+  useEffect(() => {
+    console.log(ts(), '[useAgentSwitching] Session changed, resetting switching state:', {
+      sessionId: sessionId?.slice(0, 8),
+      selectedAgent,
+      selectedModel,
+    });
+    switchRunIdRef.current++;
+    // Don't update previousAgentRef/previousModelRef here - they will be updated by switching effect
+    // This allows the switching effect to see the old values and detect session-based changes
+    setActiveAgent(selectedAgent);
+    setActiveModel(selectedModel);
+    setIsSwitchingAgent(false);
+    setSwitchingStep(1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   // Agent switching logic - handles the 3-step process with cancellation and precise timing
   useEffect(() => {
     const agentChanged = previousAgentRef.current !== selectedAgent;
     const modelChanged = previousModelRef.current !== selectedModel;
+    const sessionChanged = previousSessionIdRef.current !== sessionId;
 
     if (!(agentChanged || modelChanged)) {
       previousAgentRef.current = selectedAgent;
       previousModelRef.current = selectedModel;
+      return;
+    }
+
+    // Don't trigger switching modal when session changed - agent/model values update due to new session
+    if (sessionChanged) {
+      console.log(ts(), '[useAgentSwitching] Agent/Model changed due to session switch, skipping switch process');
+      previousAgentRef.current = selectedAgent;
+      previousModelRef.current = selectedModel;
+      previousSessionIdRef.current = sessionId;
+      setActiveAgent(selectedAgent);
+      setActiveModel(selectedModel);
       return;
     }
 
@@ -159,8 +192,9 @@ export const useAgentSwitching = ({
 
     previousAgentRef.current = selectedAgent;
     previousModelRef.current = selectedModel;
+    previousSessionIdRef.current = sessionId;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAgent, selectedModel]);
+  }, [selectedAgent, selectedModel, sessionId]);
 
   return {
     activeAgent,
@@ -169,4 +203,3 @@ export const useAgentSwitching = ({
     switchingStep,
   };
 };
-

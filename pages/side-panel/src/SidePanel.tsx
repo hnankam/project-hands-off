@@ -4,10 +4,10 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   PROJECT_URL_OBJECT,
   useStorage,
+  useSessionStorageDB,
   withErrorBoundary,
-  withSuspense,
 } from '@extension/shared';
-import { exampleThemeStorage, sessionStorage } from '@extension/storage';
+import { exampleThemeStorage } from '@extension/storage';
 import {
   cn,
   ErrorDisplay,
@@ -41,7 +41,19 @@ const SidePanel = () => {
   }
 
   const { isLight, theme } = useStorage(exampleThemeStorage);
-  const { sessions, currentSessionId } = useStorage(sessionStorage);
+  const { sessions, currentSessionId, isLoading: sessionsLoading } = useSessionStorageDB();
+
+  // Debug: Log state to understand what's blocking
+  useEffect(() => {
+    console.log('[SidePanel] State:', { 
+      authLoading, 
+      dbWorkerReady, 
+      dbWorkerError: dbWorkerError?.message,
+      sessionsCount: sessions.length,
+      currentSessionId,
+      isAuthenticated
+    });
+  }, [authLoading, dbWorkerReady, dbWorkerError, sessions.length, currentSessionId, isAuthenticated]);
 
   // Simple in-panel navigation between Home, Sessions, and Admin
   const [activePage, setActivePage] = useState<'home' | 'sessions' | 'admin'>('sessions');
@@ -254,11 +266,29 @@ const SidePanel = () => {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [aboutOpen]);
 
-  // Show loading while checking authentication
-  if (authLoading) {
+  // Show error if DB worker failed
+  if (dbWorkerError) {
+    return (
+      <div className={cn('h-screen flex items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+        <div className="text-center p-4">
+          <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">Database Initialization Failed</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{dbWorkerError.message}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Reload Extension
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while checking authentication OR DB initialization
+  if (authLoading || !dbWorkerReady) {
     return (
       <div className={cn('h-screen', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
-        <ChatSkeleton />
+        <ChatSkeleton isLight={isLight} />
       </div>
     );
   }
@@ -293,6 +323,7 @@ const SidePanel = () => {
               isLight={isLight}
               sessions={sessions}
               currentSessionId={currentSessionId}
+              sessionsLoading={sessionsLoading}
               publicApiKey={copilotKitConfig.publicApiKey}
               contextMenuMessage={contextMenuMessage}
               onGoHome={navigateToHome}
@@ -396,4 +427,6 @@ const SidePanel = () => {
   );
 };
 
-export default withErrorBoundary(withSuspense(SidePanel, <ChatSkeleton />), ErrorDisplay);
+// Removed withSuspense because we handle loading states internally
+// The useSessionStorageDB hook now uses proper loading states instead of React Suspense
+export default withErrorBoundary(SidePanel, ErrorDisplay);

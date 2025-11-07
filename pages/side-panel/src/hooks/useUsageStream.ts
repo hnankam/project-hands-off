@@ -30,257 +30,474 @@ export interface UseUsageStreamReturn {
   error: string | null;
   resetCumulative: () => void;
   setCumulative: (usage: CumulativeUsage) => void;
+  setLastUsage: (usage: UsageData | null) => void;
 }
 
+type ConnectionSnapshot = {
+  lastUsage: UsageData | null;
+  cumulativeUsage: CumulativeUsage;
+  isConnected: boolean;
+  error: string | null;
+};
+
+interface ConnectionEntry {
+  key: string;
+  sessionId: string;
+  wsUrl: string;
+  ws: WebSocket | null;
+  listeners: Set<(snapshot: ConnectionSnapshot) => void>;
+  enabledCount: number;
+  reconnectAttempts: number;
+  reconnectTimeout: NodeJS.Timeout | null;
+  immediateFailureCount: number;
+  connectionOpenedAt: number;
+  hasReceivedMessage: boolean;
+  lastUsage: UsageData | null;
+  cumulativeUsage: CumulativeUsage;
+  isConnected: boolean;
+  error: string | null;
+  pingInterval: NodeJS.Timeout | null;
+  initializedFromStorage: boolean;
+}
+
+const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;
+
+const connectionPool = new Map<string, ConnectionEntry>();
+
+const createEmptyCumulative = (): CumulativeUsage => ({
+  request: 0,
+  response: 0,
+  total: 0,
+  requestCount: 0,
+});
+
+const normalizeWsUrl = (url: string): string => {
+  if (!url) {
+    return '';
+  }
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+};
+
+const cloneCumulative = (usage?: CumulativeUsage): CumulativeUsage => ({
+  request: usage?.request ?? 0,
+  response: usage?.response ?? 0,
+  total: usage?.total ?? 0,
+  requestCount: usage?.requestCount ?? 0,
+});
+
+const createSnapshot = (entry: ConnectionEntry): ConnectionSnapshot => ({
+  lastUsage: entry.lastUsage,
+  cumulativeUsage: cloneCumulative(entry.cumulativeUsage),
+  isConnected: entry.isConnected,
+  error: entry.error,
+});
+
+const notifyListeners = (entry: ConnectionEntry) => {
+  const snapshot = createSnapshot(entry);
+  entry.listeners.forEach(listener => {
+    try {
+      listener(snapshot);
+    } catch (e) {
+      err('Listener error in useUsageStream:', e);
+    }
+  });
+};
+
+const cleanupEntryIfIdle = (entry: ConnectionEntry) => {
+  if (entry.enabledCount > 0 || entry.listeners.size > 0) {
+    return;
+  }
+
+  log(`🧹 [useUsageStream] Cleaning up entry for session ${entry.sessionId}`);
+
+  if (entry.reconnectTimeout) {
+    clearTimeout(entry.reconnectTimeout);
+    entry.reconnectTimeout = null;
+  }
+
+  if (entry.pingInterval) {
+    clearInterval(entry.pingInterval);
+    entry.pingInterval = null;
+  }
+
+  if (entry.ws) {
+    try {
+      entry.ws.close();
+    } catch {}
+    entry.ws = null;
+  }
+
+  connectionPool.delete(entry.key);
+};
+
+const scheduleReconnect = (entry: ConnectionEntry) => {
+  if (entry.enabledCount <= 0) {
+    cleanupEntryIfIdle(entry);
+    return;
+  }
+
+  if (entry.reconnectAttempts >= DEFAULT_MAX_RECONNECT_ATTEMPTS) {
+    entry.error = 'Max reconnection attempts reached';
+    notifyListeners(entry);
+    return;
+  }
+
+  entry.reconnectAttempts += 1;
+  const delay = Math.min(1000 * Math.pow(2, entry.reconnectAttempts), 30000);
+  log(
+    `🔄 [useUsageStream] Reconnecting session ${entry.sessionId} in ${delay}ms ` +
+      `(attempt ${entry.reconnectAttempts}/${DEFAULT_MAX_RECONNECT_ATTEMPTS})`,
+  );
+
+  if (entry.reconnectTimeout) {
+    clearTimeout(entry.reconnectTimeout);
+  }
+
+  entry.reconnectTimeout = setTimeout(() => {
+    entry.reconnectTimeout = null;
+    ensureConnection(entry);
+  }, delay);
+};
+
+const ensureConnection = (entry: ConnectionEntry) => {
+  if (entry.enabledCount <= 0) {
+    log(`[useUsageStream] Skipping connection for session ${entry.sessionId} (no enabled listeners)`);
+    return;
+  }
+
+  if (
+    entry.ws &&
+    (entry.ws.readyState === WebSocket.OPEN || entry.ws.readyState === WebSocket.CONNECTING)
+  ) {
+    return;
+  }
+
+  if (entry.reconnectTimeout) {
+    clearTimeout(entry.reconnectTimeout);
+    entry.reconnectTimeout = null;
+  }
+
+  if (entry.ws) {
+    try {
+      entry.ws.close();
+    } catch {}
+    entry.ws = null;
+  }
+
+  const baseUrl = entry.wsUrl || 'ws://localhost:8001';
+  const url = `${baseUrl}/ws/usage/${entry.sessionId}`;
+
+  log(`🔌 [useUsageStream] Opening WebSocket for session ${entry.sessionId}: ${url}`);
+
+  try {
+    const ws = new WebSocket(url);
+    entry.ws = ws;
+    entry.connectionOpenedAt = 0;
+    entry.hasReceivedMessage = false;
+
+    ws.onopen = () => {
+      log(`✅ [useUsageStream] WebSocket connected for session ${entry.sessionId}`);
+      entry.isConnected = true;
+      entry.error = null;
+      entry.reconnectAttempts = 0;
+      entry.connectionOpenedAt = Date.now();
+      entry.immediateFailureCount = 0;
+      notifyListeners(entry);
+
+      if (entry.pingInterval) {
+        clearInterval(entry.pingInterval);
+      }
+
+      entry.pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send('ping');
+        }
+      }, 30000);
+    };
+
+    ws.onmessage = event => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'pong') {
+          return;
+        }
+
+        const requestTokens = Number(data.request_tokens) || 0;
+        const responseTokens = Number(data.response_tokens) || 0;
+        const totalTokens = Number(data.total_tokens) || requestTokens + responseTokens;
+
+        entry.lastUsage = data;
+        entry.cumulativeUsage = {
+          request: entry.cumulativeUsage.request + requestTokens,
+          response: entry.cumulativeUsage.response + responseTokens,
+          total: entry.cumulativeUsage.total + totalTokens,
+          requestCount: entry.cumulativeUsage.requestCount + 1,
+        };
+
+        entry.hasReceivedMessage = true;
+        notifyListeners(entry);
+      } catch (e) {
+        err('❌ [useUsageStream] Failed to parse WebSocket message:', e);
+      }
+    };
+
+    ws.onerror = event => {
+      err('❌ [useUsageStream] WebSocket error:', event);
+      entry.error = 'WebSocket connection error';
+      notifyListeners(entry);
+    };
+
+    ws.onclose = event => {
+      const duration = entry.connectionOpenedAt ? Date.now() - entry.connectionOpenedAt : 0;
+      log('🔌 [useUsageStream] WebSocket closed', {
+        sessionId: entry.sessionId,
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean,
+        duration,
+      });
+
+      entry.isConnected = false;
+      notifyListeners(entry);
+
+      if (entry.pingInterval) {
+        clearInterval(entry.pingInterval);
+        entry.pingInterval = null;
+      }
+
+      entry.ws = null;
+
+      const neverOpened = entry.connectionOpenedAt === 0;
+      const closedImmediately =
+        entry.connectionOpenedAt > 0 && duration < 200 && !entry.hasReceivedMessage;
+      const immediateFailure = neverOpened || closedImmediately;
+
+      if (immediateFailure) {
+        entry.immediateFailureCount += 1;
+        log(
+          `⚠️ [useUsageStream] Immediate failure for session ${entry.sessionId} ` +
+            `(${entry.immediateFailureCount}/3)`,
+        );
+
+        if (entry.immediateFailureCount >= 3) {
+          entry.error = 'Connection rejected by server (limit may be reached)';
+          notifyListeners(entry);
+          return;
+        }
+      } else {
+        entry.immediateFailureCount = 0;
+      }
+
+      if (entry.enabledCount > 0) {
+        scheduleReconnect(entry);
+      } else {
+        cleanupEntryIfIdle(entry);
+      }
+    };
+  } catch (error) {
+    err('❌ [useUsageStream] Error creating WebSocket:', error);
+    entry.error = error instanceof Error ? error.message : 'Connection failed';
+    notifyListeners(entry);
+    scheduleReconnect(entry);
+  }
+};
+
+const getOrCreateEntry = (
+  sessionId: string,
+  wsUrl: string,
+  initialCumulative?: CumulativeUsage,
+  initialLastUsage?: UsageData | null,
+): ConnectionEntry => {
+  const normalizedUrl = normalizeWsUrl(wsUrl || 'ws://localhost:8001');
+  const key = `${normalizedUrl}::${sessionId}`;
+  const existing = connectionPool.get(key);
+
+  if (existing) {
+    const hasInitialData = Boolean(initialCumulative) || Boolean(initialLastUsage);
+    if (hasInitialData && !existing.initializedFromStorage) {
+      if (initialCumulative) {
+        existing.cumulativeUsage = cloneCumulative(initialCumulative);
+      }
+      if (initialLastUsage) {
+        existing.lastUsage = initialLastUsage;
+      }
+      existing.initializedFromStorage = true;
+      notifyListeners(existing);
+    }
+    return existing;
+  }
+
+  const entry: ConnectionEntry = {
+    key,
+    sessionId,
+    wsUrl: normalizedUrl,
+    ws: null,
+    listeners: new Set(),
+    enabledCount: 0,
+    reconnectAttempts: 0,
+    reconnectTimeout: null,
+    immediateFailureCount: 0,
+    connectionOpenedAt: 0,
+    hasReceivedMessage: false,
+    lastUsage: initialLastUsage ?? null,
+    cumulativeUsage: cloneCumulative(initialCumulative),
+    isConnected: false,
+    error: null,
+    pingInterval: null,
+    initializedFromStorage: Boolean(initialCumulative || initialLastUsage),
+  };
+
+  connectionPool.set(key, entry);
+  return entry;
+};
+
+const incrementEnabled = (entry: ConnectionEntry) => {
+  entry.enabledCount += 1;
+  ensureConnection(entry);
+};
+
+const decrementEnabled = (entry: ConnectionEntry) => {
+  if (entry.enabledCount > 0) {
+    entry.enabledCount -= 1;
+  }
+
+  if (entry.enabledCount === 0) {
+    if (entry.reconnectTimeout) {
+      clearTimeout(entry.reconnectTimeout);
+      entry.reconnectTimeout = null;
+    }
+
+    if (entry.ws) {
+      try {
+        entry.ws.close();
+      } catch {}
+    } else {
+      cleanupEntryIfIdle(entry);
+    }
+  }
+};
+
 /**
- * Custom hook to stream usage statistics via WebSocket
- * Connects to the backend WebSocket endpoint and receives real-time token usage updates
+ * Custom hook to stream usage statistics via WebSocket.
+ * Ensures only one underlying WebSocket connection per session, shared across all hook consumers.
  */
 export function useUsageStream(
   sessionId: string | null,
   enabled: boolean = true,
   wsUrl: string = 'ws://localhost:8001',
   initialCumulative?: CumulativeUsage,
+  initialLastUsage?: UsageData | null,
 ): UseUsageStreamReturn {
-  const [lastUsage, setLastUsage] = useState<UsageData | null>(null);
-  const [cumulativeUsage, setCumulativeUsage] = useState<CumulativeUsage>(
-    initialCumulative || {
-      request: 0,
-      response: 0,
-      total: 0,
-      requestCount: 0,
-    },
-  );
-  const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<ConnectionSnapshot>(() => ({
+    lastUsage: initialLastUsage ?? null,
+    cumulativeUsage: cloneCumulative(initialCumulative),
+    isConnected: false,
+    error: null,
+  }));
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 5;
-  const connectionOpenedAtRef = useRef<number>(0);
-  const immediateFailureCountRef = useRef(0);
-  const hasReceivedMessageRef = useRef(false);
+  const entryRef = useRef<ConnectionEntry | null>(null);
+  const enabledRef = useRef<boolean>(false);
 
-  const resetCumulative = useCallback(() => {
-    // Always reset to zeros, not to initial values
-    setCumulativeUsage({
-      request: 0,
-      response: 0,
-      total: 0,
-      requestCount: 0,
-    });
-  }, []);
-
-  const connect = useCallback(() => {
-    if (!sessionId || !enabled) {
-      return;
-    }
-
-    // If an existing socket is for a different session, close it to force reconnect
-    if (wsRef.current && (wsRef.current as any)._sessionId && (wsRef.current as any)._sessionId !== sessionId) {
-      try {
-        wsRef.current.close();
-      } catch {}
-      wsRef.current = null;
-      // Reset failure counters when switching sessions
-      immediateFailureCountRef.current = 0;
-      reconnectAttemptsRef.current = 0;
-    }
-
-    // Prevent duplicate connections for the same session
-    if (
-      wsRef.current &&
-      (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)
-    ) {
-      log('useUsageStream: WebSocket already open or connecting for session', (wsRef.current as any)._sessionId);
-      return;
-    }
-
-    // Clear any existing reconnect timeout
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-
-    // Close existing connection if any
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-
-    try {
-      log(`🔌 Connecting to usage WebSocket for session: ${sessionId}`);
-      const ws = new WebSocket(`${wsUrl}/ws/usage/${sessionId}`);
-      wsRef.current = ws;
-      (ws as any)._sessionId = sessionId;
-      hasReceivedMessageRef.current = false;
-
-      ws.onopen = () => {
-        log('✅ WebSocket connected');
-        setIsConnected(true);
-        setError(null);
-        reconnectAttemptsRef.current = 0;
-        connectionOpenedAtRef.current = Date.now();
-        immediateFailureCountRef.current = 0; // Reset on successful connection
-      };
-
-      ws.onmessage = event => {
-        try {
-          const data = JSON.parse(event.data);
-
-          // Ignore pong messages
-          if (data.type === 'pong') {
-            return;
-          }
-
-          // Update last usage
-          setLastUsage(data);
-
-          // Accumulate tokens
-          setCumulativeUsage(prev => ({
-            request: prev.request + (data.request_tokens || 0),
-            response: prev.response + (data.response_tokens || 0),
-            total: prev.total + (data.total_tokens || 0),
-            requestCount: prev.requestCount + 1,
-          }));
-
-          log('📊 Usage update:', {
-            request: data.request_tokens,
-            response: data.response_tokens,
-            total: data.total_tokens,
-          });
-
-          hasReceivedMessageRef.current = true;
-        } catch (e) {
-          err('❌ Error parsing WebSocket message:', e);
-        }
-      };
-
-      ws.onerror = event => {
-        err('❌ WebSocket error:', event);
-        setError('WebSocket connection error');
-        // Close to trigger onclose reconnection path
-        try {
-          ws.close();
-        } catch {}
-      };
-
-      ws.onclose = (event) => {
-        const connectionDuration = Date.now() - connectionOpenedAtRef.current;
-        log('🔌 WebSocket disconnected', { 
-          code: event.code, 
-          reason: event.reason,
-          wasClean: event.wasClean,
-          connectionDuration: `${connectionDuration}ms`,
-          sessionId: (ws as any)._sessionId
-        });
-        setIsConnected(false);
-        // Clear ping interval immediately on close
-        if ((ws as any)._pingInterval) {
-          clearInterval((ws as any)._pingInterval);
-        }
-        wsRef.current = null;
-
-        // Only treat as "immediate failure" if connection never opened OR closed within 100ms
-        // This indicates a server rejection (connection limit reached)
-        // Normal disconnects after successful operation should not trigger immediate failure logic
-        const neverOpened = connectionOpenedAtRef.current === 0;
-        const closedImmediately =
-          connectionOpenedAtRef.current > 0 && connectionDuration < 200 && !hasReceivedMessageRef.current;
-        const isImmediateFailure = neverOpened || closedImmediately;
-        
-        if (isImmediateFailure) {
-          immediateFailureCountRef.current++;
-          log(
-            `⚠️ Immediate connection failure detected (${immediateFailureCountRef.current}/3) - connection ${
-              neverOpened ? 'never opened' : 'closed in ' + connectionDuration + 'ms'
-            }, hasReceivedMessage=${hasReceivedMessageRef.current}`,
-          );
-          
-          // If we've had 3+ immediate failures, stop reconnecting - likely server rejection
-          if (immediateFailureCountRef.current >= 3) {
-            log('❌ Multiple immediate failures detected - stopping reconnection (likely server connection limit reached)');
-            setError('Connection rejected by server (limit may be reached)');
-            return;
-          }
-        } else {
-          // Reset immediate failure counter for normal disconnects
-          immediateFailureCountRef.current = 0;
-          log(
-            `ℹ️ Normal disconnect after ${connectionDuration}ms (hasReceivedMessage=${hasReceivedMessageRef.current}) - will not count as immediate failure`,
-          );
-        }
-
-        // Attempt to reconnect if enabled and haven't exceeded max attempts
-        if (enabled && reconnectAttemptsRef.current < maxReconnectAttempts) {
-          reconnectAttemptsRef.current++;
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
-          log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
-
-          reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
-          }, delay);
-        } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-          setError('Max reconnection attempts reached');
-        }
-      };
-
-      // Send periodic pings to keep connection alive
-      const pingInterval = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send('ping');
-        }
-      }, 30000); // 30 seconds
-
-      // Store interval ID for cleanup
-      (ws as any)._pingInterval = pingInterval;
-    } catch (error) {
-      err('❌ Error creating WebSocket:', error);
-      setError(error instanceof Error ? error.message : 'Connection failed');
-    }
-  }, [sessionId, enabled, wsUrl]);
-
-  // Connect when sessionId, enabled, or wsUrl changes
   useEffect(() => {
-    log(`📍 useUsageStream effect triggered:`, { sessionId, enabled, hasExistingConnection: !!wsRef.current });
-    
-    if (sessionId && enabled) {
-      connect();
-    } else if (!enabled && wsRef.current) {
-      log(`⏸️ Disabled - closing existing WebSocket connection for session ${sessionId}`);
+    if (!sessionId) {
+      setSnapshot({
+        lastUsage: null,
+        cumulativeUsage: cloneCumulative(initialCumulative),
+        isConnected: false,
+        error: null,
+      });
+      const previousEntry = entryRef.current;
+      if (previousEntry && enabledRef.current) {
+        decrementEnabled(previousEntry);
+      }
+      entryRef.current = null;
+      enabledRef.current = false;
+      return;
     }
 
-    // Cleanup on unmount or when dependencies change
+    const entry = getOrCreateEntry(sessionId, wsUrl, initialCumulative, initialLastUsage);
+    entryRef.current = entry;
+
+    const listener = (state: ConnectionSnapshot) => {
+      setSnapshot(state);
+    };
+
+    entry.listeners.add(listener);
+    listener(createSnapshot(entry));
+
+    if (enabled) {
+      incrementEnabled(entry);
+      enabledRef.current = true;
+    } else {
+      enabledRef.current = false;
+    }
+
     return () => {
-      log(`🧹 useUsageStream cleanup triggered for session ${sessionId}, enabled was: ${enabled}`);
-      
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
+      entry.listeners.delete(listener);
+
+      if (enabledRef.current) {
+        decrementEnabled(entry);
+        enabledRef.current = false;
       }
 
-      if (wsRef.current) {
-        const ws = wsRef.current;
+      cleanupEntryIfIdle(entry);
 
-        // Clear ping interval
-        if ((ws as any)._pingInterval) {
-          clearInterval((ws as any)._pingInterval);
-        }
-
-        log(`🛑 Closing WebSocket in cleanup for session ${(ws as any)._sessionId}`);
-        ws.close();
-        wsRef.current = null;
+      if (entryRef.current === entry) {
+        entryRef.current = null;
       }
     };
-  }, [connect, sessionId, enabled]);
+    // Re-run when any dependency changes to update subscription/connection state
+  }, [sessionId, wsUrl, enabled, initialCumulative, initialLastUsage]);
+
+  const resetCumulative = useCallback(() => {
+    const entry = entryRef.current;
+    if (entry) {
+      entry.cumulativeUsage = createEmptyCumulative();
+      entry.lastUsage = null;
+      notifyListeners(entry);
+    } else {
+      setSnapshot(prev => ({
+        ...prev,
+        lastUsage: null,
+        cumulativeUsage: createEmptyCumulative(),
+      }));
+    }
+  }, []);
+
+  const setCumulative = useCallback((usage: CumulativeUsage) => {
+    const entry = entryRef.current;
+    if (entry) {
+      entry.cumulativeUsage = cloneCumulative(usage);
+      notifyListeners(entry);
+    } else {
+      setSnapshot(prev => ({
+        ...prev,
+        cumulativeUsage: cloneCumulative(usage),
+      }));
+    }
+  }, []);
+
+  const setLastUsage = useCallback((usage: UsageData | null) => {
+    const entry = entryRef.current;
+    if (entry) {
+      entry.lastUsage = usage;
+      notifyListeners(entry);
+    } else {
+      setSnapshot(prev => ({
+        ...prev,
+        lastUsage: usage,
+      }));
+    }
+  }, []);
 
   return {
-    lastUsage,
-    cumulativeUsage,
-    isConnected,
-    error,
+    lastUsage: snapshot.lastUsage,
+    cumulativeUsage: snapshot.cumulativeUsage,
+    isConnected: snapshot.isConnected,
+    error: snapshot.error,
     resetCumulative,
-    setCumulative: setCumulativeUsage,
+    setCumulative,
+    setLastUsage,
   };
 }

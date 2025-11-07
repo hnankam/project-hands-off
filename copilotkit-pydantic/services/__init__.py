@@ -9,7 +9,9 @@ from .deployment_manager import (
     restart_context,
     get_context_status,
     list_deployments,
+    list_endpoints,
     initialize_deployments,
+    prewarm_user_context,
 )
 
 __all__ = [
@@ -24,6 +26,8 @@ __all__ = [
     'restart_context',
     'get_context_status',
     'list_deployments',
+    'list_endpoints',
     'initialize_deployments',
+    'prewarm_user_context',
 ]
 

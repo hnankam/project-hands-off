@@ -55,7 +55,7 @@ export const UsageDisplay: FC<UsageDisplayProps> = ({
   return (
     <div
       className={`rounded p-2.5 ${
-        isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-gray-800'
+        isLight ? 'bg-gray-50' : 'bg-[#0B121C]'
       }`}>
       {/* Header */}
       <div className="mb-2 flex items-center justify-between">

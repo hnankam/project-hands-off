@@ -163,12 +163,13 @@ export default function OrganizationSelector({ isLight = true }: OrganizationSel
           </svg>
         </button>
 
-        {isOpen && (
-          <div className={cn(
-            'absolute top-full left-0 right-0 mt-2 border rounded-md shadow-lg z-50 max-h-96 overflow-y-auto',
-            isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700'
-          )}>
-            {isLoading ? (
+        {/* Dropdown - Always mounted, visibility controlled with CSS */}
+        <div className={cn(
+          'absolute top-full left-0 right-0 mt-2 border rounded-md shadow-lg z-50 max-h-96 overflow-y-auto transition-opacity',
+          isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700',
+          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        )}>
+          {isLoading ? (
               <div className="p-4 text-center">
                 <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto"></div>
               </div>
@@ -214,8 +215,7 @@ export default function OrganizationSelector({ isLight = true }: OrganizationSel
                 ))}
               </>
             )}
-          </div>
-        )}
+        </div>
       </div>
     </>
   );

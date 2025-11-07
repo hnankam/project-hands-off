@@ -1,10 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { ChatSessionContainer } from '../components/ChatSessionContainer';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { ChatSkeleton } from '../components/LoadingStates';
-import type { SessionType } from '@extension/storage';
-import { sessionStorage } from '@extension/storage';
-import { generateSessionName } from '@extension/shared';
+import { ChatSkeleton, MessagesOnlySkeleton, StatusBarSkeleton, SelectorsBarSkeleton } from '../components/LoadingStates';
+import type { SessionMetadata } from '@extension/shared';
+import { sessionStorageDBWrapper, generateSessionName } from '@extension/shared';
 import { useAuth } from '../context/AuthContext';
 import UserMenu from '../components/UserMenu';
 import {
@@ -20,8 +19,9 @@ import {
 
 interface SessionsPageProps {
   isLight: boolean;
-  sessions: SessionType[];
+  sessions: SessionMetadata[];
   currentSessionId: string | null;
+  sessionsLoading?: boolean;
   publicApiKey: string;
   contextMenuMessage: string | null;
   onGoHome: () => void;
@@ -34,6 +34,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   isLight,
   sessions,
   currentSessionId,
+  sessionsLoading = false,
   publicApiKey,
   contextMenuMessage,
   onGoHome,
@@ -55,6 +56,12 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const [sessionMessageCounts, setSessionMessageCounts] = useState<Record<string, number>>({});
   const [clearSessionsConfirmOpen, setClearSessionsConfirmOpen] = useState(false);
   const [copiedSessionId, setCopiedSessionId] = useState(false);
+  // Track if messages are currently loading for the active session
+  const [isMessagesLoading, setIsMessagesLoading] = useState(false);
+  // Track when skeleton started showing to enforce minimum display time
+  const skeletonStartTimeRef = React.useRef<number | null>(null);
+  const MIN_SKELETON_DISPLAY_TIME = 100; // milliseconds
+  const SKELETON_FALLBACK_TIMEOUT = 900; // milliseconds
   
   // Ref to store reset functions per session
   const resetFunctionsRef = React.useRef<Record<string, () => void>>({});
@@ -62,6 +69,12 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
 
   // Initialize with a default session if none exist
   useEffect(() => {
+    // Don't check for sessions while still loading from database
+    if (sessionsLoading) {
+      console.log('[SessionsPage] Sessions still loading, waiting...');
+      return;
+    }
+
     if (sessions.length > 0) {
       hasAttemptedInitialSessionRef.current = true;
       return;
@@ -75,18 +88,20 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     hasAttemptedInitialSessionRef.current = true;
 
     const ensureInitialSession = async () => {
+      console.log('[SessionsPage] Starting ensureInitialSession, setting isEnsuringInitialSession = true');
       setIsEnsuringInitialSession(true);
       try {
-        await sessionStorage.addSession(generateSessionName());
+        await sessionStorageDBWrapper.addSession(generateSessionName());
+        console.log('[SessionsPage] ✅ Initial session created successfully');
       } catch (error) {
-        console.error('[SessionsPage] Failed to ensure initial session:', error);
+        console.error('[SessionsPage] ❌ Failed to ensure initial session:', error);
         if (!isCancelled) {
           hasAttemptedInitialSessionRef.current = false;
         }
       } finally {
-        if (!isCancelled) {
-          setIsEnsuringInitialSession(false);
-        }
+        console.log('[SessionsPage] ensureInitialSession finally block, always resetting isEnsuringInitialSession');
+        // Always reset, even if cancelled - the session was created, UI needs to update
+        setIsEnsuringInitialSession(false);
       }
     };
 
@@ -95,7 +110,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [sessions.length, isEnsuringInitialSession]);
+  }, [sessions.length, isEnsuringInitialSession, sessionsLoading]);
 
   // Callback to receive live message counts from ChatSessionContainer
   const handleMessagesCountChange = useCallback((sessionId: string, count: number) => {
@@ -117,9 +132,44 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     resetFunctionsRef.current[sessionId] = resetFn;
   }, []);
 
+  // Callback to track when messages are loading
+  const handleMessagesLoadingChange = useCallback(
+    (sessionId: string, isLoading: boolean) => {
+      if (sessionId !== currentSessionId) {
+        console.log(
+          `[MSG_SKELETON] 🚫 Ignoring messages loading change for inactive session ${sessionId} (current: ${currentSessionId})`,
+        );
+        return;
+      }
+
+      console.log(`[MSG_SKELETON] 📨 Messages loading change: ${isLoading} for session ${sessionId}`);
+      
+      // When messages finish loading, enforce minimum display time
+      if (!isLoading && skeletonStartTimeRef.current) {
+        const now = Date.now();
+        const elapsed = now - skeletonStartTimeRef.current;
+        const remaining = MIN_SKELETON_DISPLAY_TIME - elapsed;
+        
+        if (remaining > 0) {
+          console.log(`[MSG_SKELETON] ⏱️  Messages loaded fast, waiting ${remaining}ms more for minimum display time`);
+          setTimeout(() => {
+            console.log('[MSG_SKELETON] ✅ Setting isMessagesLoading = false (after minimum display time)');
+            setIsMessagesLoading(false);
+          }, remaining);
+          return;
+        }
+      }
+      
+      setIsMessagesLoading(isLoading);
+    },
+    [currentSessionId, MIN_SKELETON_DISPLAY_TIME],
+  );
+
   const handleSessionReady = useCallback(
     (sessionId: string) => {
+      console.log('[SessionsPage] handleSessionReady called:', { sessionId, currentSessionId });
       if (!currentSessionId || sessionId !== currentSessionId) {
+        console.log('[SessionsPage] Session ID mismatch, ignoring ready signal');
         return;
       }
 
@@ -128,34 +178,67 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         sessionReadyTimeoutRef.current = null;
       }
 
+      // Enforce minimum skeleton display time
+      const now = Date.now();
+      const skeletonStartTime = skeletonStartTimeRef.current;
+      
+      if (skeletonStartTime) {
+        const elapsed = now - skeletonStartTime;
+        const remaining = MIN_SKELETON_DISPLAY_TIME - elapsed;
+        
+        if (remaining > 0) {
+          console.log(`[MSG_SKELETON] ⏱️  Enforcing minimum display time: waiting ${remaining}ms more`);
+          setTimeout(() => {
+            console.log('[SessionsPage] ✅ Setting isSessionReady = true (after minimum display time)');
+            setIsSessionReady(true);
+            skeletonStartTimeRef.current = null;
+          }, remaining);
+          return;
+        }
+      }
+
+      console.log('[SessionsPage] ✅ Setting isSessionReady = true');
       setIsSessionReady(true);
+      skeletonStartTimeRef.current = null;
     },
-    [currentSessionId],
+    [currentSessionId, MIN_SKELETON_DISPLAY_TIME],
   );
 
   useEffect(() => {
+    console.log('[MSG_SKELETON] 🔄 Session ready effect triggered:', { currentSessionId, isSessionReady });
     if (!currentSessionId) {
+      console.log('[MSG_SKELETON] ❌ No currentSessionId, setting isSessionReady = true and isMessagesLoading = false');
       if (sessionReadyTimeoutRef.current) {
         clearTimeout(sessionReadyTimeoutRef.current);
         sessionReadyTimeoutRef.current = null;
       }
       setIsSessionReady(true);
+      setIsMessagesLoading(false);
+      skeletonStartTimeRef.current = null;
       return;
     }
 
+    console.log('[MSG_SKELETON] ✅ Setting isSessionReady = false and isMessagesLoading = true for session:', currentSessionId.slice(0, 8));
+    // Record when skeleton starts showing
+    skeletonStartTimeRef.current = Date.now();
+    console.log('[MSG_SKELETON] 🎬 Skeleton display started at:', skeletonStartTimeRef.current);
+    
     setIsSessionReady(false);
+    // Immediately show message skeleton when switching sessions
+    setIsMessagesLoading(true);
 
     if (sessionReadyTimeoutRef.current) {
       clearTimeout(sessionReadyTimeoutRef.current);
     }
 
-    // Fallback timeout: 1000ms (1s max skeleton time)
-    // This is longer than the ChatSessionContainer's onReady signal (~750ms)
-    // to ensure the signal has time to fire before we force the skeleton to disappear
+    // Fallback timeout: ensure skeleton can't linger if ready signal is missed
+    console.log('[MSG_SKELETON] ⏰ Setting fallback timeout for session:', currentSessionId.slice(0, 8));
     sessionReadyTimeoutRef.current = setTimeout(() => {
+      console.log('[MSG_SKELETON] ⏰ Fallback timeout fired, setting isSessionReady = true');
       sessionReadyTimeoutRef.current = null;
       setIsSessionReady(true);
-    }, 1000);
+      skeletonStartTimeRef.current = null;
+    }, SKELETON_FALLBACK_TIMEOUT);
 
     return () => {
       if (sessionReadyTimeoutRef.current) {
@@ -166,12 +249,12 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   }, [currentSessionId]);
 
   const handleNewSession = () => {
-    sessionStorage.addSession(generateSessionName());
+    sessionStorageDBWrapper.addSession(generateSessionName());
   };
 
   const handleCloseSession = () => {
     if (currentSessionId) {
-      sessionStorage.closeSession(currentSessionId);
+      sessionStorageDBWrapper.closeSession(currentSessionId);
     }
   };
 
@@ -203,6 +286,39 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const hasSessions = sessions.length > 0;
   const isWaitingForFirstSession = !hasSessions && !hasAttemptedInitialSessionRef.current;
   const shouldShowSkeleton = isEnsuringInitialSession || isWaitingForFirstSession || (!!currentSessionId && !isSessionReady);
+  // Full skeleton overlay only for initial loading states (not for session transitions)
+  const shouldShowSkeletonOverlay = Boolean(activeSession) && (isEnsuringInitialSession || isWaitingForFirstSession);
+  const shouldShowStandaloneSkeleton = !activeSession && shouldShowSkeleton;
+
+  // Debug skeleton visibility - only log when skeleton state actually changes
+  useEffect(() => {
+    console.log('[MSG_SKELETON] 👁️ Skeleton visibility state:', {
+      shouldShowSkeleton,
+      shouldShowSkeletonOverlay,
+      isEnsuringInitialSession,
+      isWaitingForFirstSession,
+      currentSessionId: currentSessionId?.slice(0, 8),
+      isSessionReady,
+      hasSessions,
+      isMessagesLoading,
+      activeSession: !!activeSession,
+    });
+  }, [shouldShowSkeleton, shouldShowSkeletonOverlay, isEnsuringInitialSession, isWaitingForFirstSession, currentSessionId, isSessionReady, hasSessions, isMessagesLoading, activeSession]);
+
+  // Log when full skeleton overlay is shown/hidden
+  useEffect(() => {
+    if (shouldShowSkeletonOverlay) {
+      console.log('[MSG_SKELETON] 🎭 Rendering FULL skeleton overlay (z-20)');
+    }
+  }, [shouldShowSkeletonOverlay]);
+
+  // Log when message skeleton is shown/hidden
+  useEffect(() => {
+    const shouldShowMessageSkeleton = activeSession && shouldShowSkeleton && !shouldShowSkeletonOverlay;
+    if (shouldShowMessageSkeleton) {
+      console.log('[MSG_SKELETON] 🎬 Rendering MESSAGE skeleton (z-[15]) - tied to session transition timing');
+    }
+  }, [activeSession, shouldShowSkeleton, shouldShowSkeletonOverlay]);
 
 
   const handleResetSession = () => {
@@ -245,21 +361,14 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   };
 
   const handleConfirmClearMessages = async () => {
-    const CHAT_STORAGE_KEY = 'copilot-chat-messages';
     try {
       if (!currentSessionId) {
         console.error('[SessionsPage] No current session to clear messages from');
         return;
       }
 
-      // Clear messages from Chrome local storage for the current session only
-      const result = await chrome.storage.local.get([CHAT_STORAGE_KEY]);
-      const storedData = result[CHAT_STORAGE_KEY] || {};
-      delete storedData[currentSessionId];
-      await chrome.storage.local.set({ [CHAT_STORAGE_KEY]: storedData });
-
       // Clear allMessages from the current session in sessionStorage
-      await sessionStorage.updateAllMessages(currentSessionId, []);
+      await sessionStorageDBWrapper.updateAllMessages(currentSessionId, []);
 
       // Reload the page to reflect changes
       window.location.reload();
@@ -358,20 +467,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       // Fallback: Build static HTML from stored messages when DOM content not available
       if (!exportedInnerHTML || exportedInnerHTML.replace(/\s+/g, '').length < 20) {
         console.log('[SessionsPage] Falling back to messages serialization...');
-        let all = (sessionStorage.getAllMessages(currentSessionId) as any[]) || [];
-        if (!all || all.length === 0) {
-          try {
-            const CHAT_STORAGE_KEY = 'copilot-chat-messages';
-            const result = await chrome.storage.local.get([CHAT_STORAGE_KEY]);
-            const stored = result[CHAT_STORAGE_KEY] || {};
-            if (stored && stored[currentSessionId] && Array.isArray(stored[currentSessionId])) {
-              all = stored[currentSessionId];
-              console.log('[SessionsPage] Loaded messages from chrome.storage:', all.length);
-            }
-          } catch (err) {
-            console.warn('[SessionsPage] chrome.storage fallback failed:', err);
-          }
-        }
+        let all = (await sessionStorageDBWrapper.getAllMessagesAsync(currentSessionId)) || [];
         const escapeHtml = (s: string) =>
           s
             .replace(/&/g, '&amp;')
@@ -639,10 +735,10 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     }
   };
 
-  const handleExportSessionAsPDF = () => {
+  const handleExportSessionAsPDF = async () => {
     if (!currentSessionId) return;
     const current = sessions.find(s => s.id === currentSessionId);
-    const messages = sessionStorage.getAllMessages(currentSessionId);
+    const messages = await sessionStorageDBWrapper.getAllMessagesAsync(currentSessionId);
     const doc = window.open('', '_blank');
     if (!doc) return;
     doc.document.write(
@@ -734,29 +830,17 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
 
   const handleConfirmClearSessions = async () => {
     try {
-      const CHAT_STORAGE_KEY = 'copilot-chat-messages';
-
       // Snapshot session IDs to avoid mutation during deletion
       const sessionIds = sessions.map(s => s.id);
 
-      // Purge messages for all sessions from Chrome storage
-      const result = await chrome.storage.local.get([CHAT_STORAGE_KEY]);
-      const storedData = result[CHAT_STORAGE_KEY] || {};
-      for (const id of sessionIds) {
-        if (storedData[id]) {
-          delete storedData[id];
-        }
-      }
-      await chrome.storage.local.set({ [CHAT_STORAGE_KEY]: storedData });
-
       // Delete all sessions sequentially to avoid race conditions
       for (const id of sessionIds) {
-        await sessionStorage.deleteSession(id);
+        await sessionStorageDBWrapper.deleteSession(id);
       }
 
       // Create a fresh session immediately so the UI can recover without reload
       try {
-        await sessionStorage.addSession(generateSessionName());
+        await sessionStorageDBWrapper.addSession(generateSessionName());
         hasAttemptedInitialSessionRef.current = true;
       } catch (createError) {
         // If session creation fails, allow the ensureInitialSession effect to retry
@@ -964,10 +1048,8 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
 
       {/* Session Content Area */}
       <div className="relative flex-1 overflow-hidden">
-        {shouldShowSkeleton ? (
-          <ChatSkeleton />
-        ) : activeSession ? (
-          <div className={cn('absolute inset-0 flex flex-col overflow-hidden animate-fadeIn')}>
+        {activeSession ? (
+          <div className={cn('absolute inset-0 z-0 flex flex-col overflow-hidden animate-fadeIn')}>
             <ErrorBoundary
               level="component"
               fallback={
@@ -980,19 +1062,21 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   </div>
                 </div>
               }>
-              <ChatSessionContainer
-                key={activeSession.id}
-                sessionId={activeSession.id}
-                isLight={isLight}
-                publicApiKey={publicApiKey}
-                isActive
-                contextMenuMessage={contextMenuMessage}
-                onMessagesCountChange={handleMessagesCountChange}
-                onRegisterResetFunction={handleRegisterResetFunction}
-                onReady={handleSessionReady}
-              />
+                <ChatSessionContainer
+                  sessionId={activeSession.id}
+                  isLight={isLight}
+                  publicApiKey={publicApiKey}
+                  isActive
+                  contextMenuMessage={contextMenuMessage}
+                  onMessagesCountChange={handleMessagesCountChange}
+                  onRegisterResetFunction={handleRegisterResetFunction}
+                  onReady={handleSessionReady}
+                  onMessagesLoadingChange={handleMessagesLoadingChange}
+                />
             </ErrorBoundary>
           </div>
+        ) : shouldShowStandaloneSkeleton ? (
+          <ChatSkeleton isLight={isLight} />
         ) : hasSessions ? (
           <div className="flex flex-1 items-center justify-center overflow-hidden">
             <div className="text-center text-gray-500 dark:text-gray-400">
@@ -1008,6 +1092,33 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
             </div>
           </div>
         )}
+
+        {/* Full skeleton overlay when session is loading */}
+        {shouldShowSkeletonOverlay && (
+            <div className="pointer-events-auto absolute inset-0 z-20 flex flex-col overflow-hidden">
+              <ChatSkeleton isLight={isLight} />
+            </div>
+        )}
+        
+        {/* Individual skeletons during session transitions (covers all three sections) */}
+        {activeSession && shouldShowSkeleton && !shouldShowSkeletonOverlay && (
+          <>
+            {/* Status Bar Skeleton - positioned at top, h-[34px] */}
+            <div className="pointer-events-auto absolute left-0 right-0 top-0 z-[15]">
+              <StatusBarSkeleton isLight={isLight} />
+            </div>
+            
+            {/* Messages Skeleton - positioned in middle (between status bar and selectors bar) */}
+            <div className="pointer-events-auto absolute bottom-[48px] left-0 right-0 top-[34px] z-[15] flex flex-col overflow-hidden">
+              <MessagesOnlySkeleton isLight={isLight} />
+            </div>
+            
+            {/* Selectors Bar Skeleton - positioned at bottom, approximately h-[48px] */}
+            <div className="pointer-events-auto absolute bottom-0 left-0 right-0 z-[15]">
+              <SelectorsBarSkeleton isLight={isLight} />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Session List - Fixed at bottom */}
@@ -1020,16 +1131,22 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       </div>
 
       {/* Clear Messages Confirmation Modal */}
-      {clearMessagesConfirmOpen && (
-        <>
-          {/* Backdrop */}
+      <>
+        {/* Backdrop - conditionally rendered */}
+        {clearMessagesConfirmOpen && (
           <div
             className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
             onClick={() => setClearMessagesConfirmOpen(false)}
           />
+        )}
 
-          {/* Modal */}
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
+        {/* Modal - Always mounted, visibility controlled with CSS */}
+        <div 
+          className={cn(
+            'fixed inset-0 z-[10001] flex items-center justify-center p-4 transition-opacity',
+            clearMessagesConfirmOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          )}
+        >
             <div
               className={cn(
                 'w-full max-w-sm rounded-lg shadow-xl',
@@ -1123,21 +1240,26 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                 </button>
               </div>
             </div>
-          </div>
-        </>
-      )}
+        </div>
+      </>
 
       {/* Reset Session Confirmation Modal */}
-      {resetSessionConfirmOpen && (
-        <>
-          {/* Backdrop */}
+      <>
+        {/* Backdrop - conditionally rendered */}
+        {resetSessionConfirmOpen && (
           <div
             className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
             onClick={() => setResetSessionConfirmOpen(false)}
           />
+        )}
 
-          {/* Modal */}
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
+        {/* Modal - Always mounted, visibility controlled with CSS */}
+        <div 
+          className={cn(
+            'fixed inset-0 z-[10001] flex items-center justify-center p-4 transition-opacity',
+            resetSessionConfirmOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          )}
+        >
             <div
               className={cn(
                 'w-full max-w-sm rounded-lg shadow-xl',
@@ -1231,21 +1353,26 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                 </button>
               </div>
             </div>
-          </div>
-        </>
-      )}
+        </div>
+      </>
 
       {/* Clear Sessions Confirmation Modal */}
-      {clearSessionsConfirmOpen && (
-        <>
-          {/* Backdrop */}
+      <>
+        {/* Backdrop - conditionally rendered */}
+        {clearSessionsConfirmOpen && (
           <div
             className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
             onClick={() => setClearSessionsConfirmOpen(false)}
           />
+        )}
 
-          {/* Modal */}
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
+        {/* Modal - Always mounted, visibility controlled with CSS */}
+        <div 
+          className={cn(
+            'fixed inset-0 z-[10001] flex items-center justify-center p-4 transition-opacity',
+            clearSessionsConfirmOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          )}
+        >
             <div
               className={cn(
                 'w-full max-w-sm rounded-lg shadow-xl',
@@ -1337,9 +1464,8 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                 </button>
               </div>
             </div>
-          </div>
-        </>
-      )}
+        </div>
+      </>
     </>
   );
 };

@@ -541,32 +541,31 @@ export const useMessageSanitization = (
    */
   useEffect(() => {
     restoreMessagesRef.current = (messagesToRestore: any[]) => {
-      if (messagesToRestore && messagesToRestore.length > 0) {
-        const result = sanitizeMessages(messagesToRestore);
-        
-        // Guard: only update if content actually changed compared to current state
-        const currentSig = computeMessagesSignature(messages || []);
-        const nextSig = computeMessagesSignature(result.messages || []);
-        
-        if (result.hasChanges || currentSig !== nextSig) {
-          setMessages(result.messages);
+      const safeMessages = Array.isArray(messagesToRestore) ? messagesToRestore : [];
+      const result = sanitizeMessages(safeMessages);
 
-          // Auto-close all ThinkingBlock instances immediately after restore
-          try {
-            window.dispatchEvent(new CustomEvent('thinking-close-all'));
-            if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
-              requestAnimationFrame(() => {
-                window.dispatchEvent(new CustomEvent('thinking-close-all'));
-              });
-            } else {
-              setTimeout(() => {
-                window.dispatchEvent(new CustomEvent('thinking-close-all'));
-              }, 0);
-            }
-          } catch {}
-        }
-        // No-op when nothing changed
+      // Guard: only update if content actually changed compared to current state
+      const currentSig = computeMessagesSignature(messages || []);
+      const nextSig = computeMessagesSignature(result.messages || []);
+
+      if (result.hasChanges || currentSig !== nextSig) {
+        setMessages(result.messages);
+
+        // Auto-close all ThinkingBlock instances immediately after restore
+        try {
+          window.dispatchEvent(new CustomEvent('thinking-close-all'));
+          if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
+            requestAnimationFrame(() => {
+              window.dispatchEvent(new CustomEvent('thinking-close-all'));
+            });
+          } else {
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('thinking-close-all'));
+            }, 0);
+          }
+        } catch {}
       }
+      // No-op when nothing changed
     };
   }, [setMessages, restoreMessagesRef, messages, sanitizeMessages, computeMessagesSignature]);
 

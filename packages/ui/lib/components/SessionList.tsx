@@ -1,6 +1,6 @@
 import { cn } from '../utils';
-import { useStorage } from '@extension/shared';
-import { sessionStorage, type SessionType } from '@extension/storage';
+import { useSessionStorageDB, sessionStorageDBWrapper } from '@extension/shared';
+import type { SessionMetadata } from '@extension/shared';
 import { useState, useEffect } from 'react';
 
 interface SessionListProps {
@@ -9,7 +9,7 @@ interface SessionListProps {
 }
 
 export const SessionList = ({ className, isLight = true }: SessionListProps) => {
-  const { sessions, currentSessionId } = useStorage(sessionStorage);
+  const { sessions, currentSessionId } = useSessionStorageDB();
   const [isExpanded, setIsExpanded] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; title: string } | null>(null);
@@ -27,7 +27,12 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
   };
 
   const handleSessionClick = (sessionId: string) => {
-    sessionStorage.setActiveSession(sessionId);
+    // Don't trigger setActiveSession if the session is already active
+    // This prevents unnecessary re-renders and counter resets
+    if (sessionId === currentSessionId) {
+      return;
+    }
+    sessionStorageDBWrapper.setActiveSession(sessionId);
   };
 
   const handleDeleteSession = (sessionId: string, title: string, e: React.MouseEvent) => {
@@ -38,14 +43,14 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
 
   const handleConfirmDelete = () => {
     if (sessionToDelete) {
-      sessionStorage.deleteSession(sessionToDelete.id);
+      sessionStorageDBWrapper.deleteSession(sessionToDelete.id);
       setDeleteConfirmOpen(false);
       setSessionToDelete(null);
     }
   };
 
   const handleViewAll = () => {
-    sessionStorage.openAllSessions();
+    sessionStorageDBWrapper.openAllSessions();
   };
 
   // Close on escape key

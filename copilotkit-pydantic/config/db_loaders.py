@@ -83,7 +83,7 @@ async def fetch_context_bundle(
     context = make_context_key(organization_id, team_id)
     last_error: Optional[Exception] = None
 
-    for attempt in range(2):
+    for attempt in range(3):
         providers: Dict[str, Dict[str, Any]] = {}
         provider_ranks: Dict[str, int] = {}
 
@@ -180,22 +180,36 @@ async def fetch_context_bundle(
 
                     # Agents
                     agent_where, agent_params = _build_scope_condition(
-                        "organization_id", "team_id", organization_id, team_id
+                        "a.organization_id", "a.team_id", organization_id, team_id
                     )
                     await cur.execute(
                         f"""
-                        SELECT agent_type,
-                               agent_name,
-                               description,
-                               prompt_template,
-                               organization_id,
-                               team_id,
-                               enabled,
-                               updated_at,
-                               created_at
-                          FROM agents
+                        SELECT a.id,
+                               a.agent_type,
+                               a.agent_name,
+                               a.description,
+                               a.prompt_template,
+                               a.organization_id,
+                               a.team_id,
+                               a.enabled,
+                               a.updated_at,
+                               a.created_at,
+                               array_remove(array_agg(DISTINCT m.model_key), NULL) AS model_keys
+                          FROM agents a
+                          LEFT JOIN agent_model_mappings amm ON amm.agent_id = a.id
+                          LEFT JOIN models m ON m.id = amm.model_id
                          WHERE {agent_where}
-                         ORDER BY enabled DESC, agent_type
+                         GROUP BY a.id,
+                                  a.agent_type,
+                                  a.agent_name,
+                                  a.description,
+                                  a.prompt_template,
+                                  a.organization_id,
+                                  a.team_id,
+                                  a.enabled,
+                                  a.updated_at,
+                                  a.created_at
+                         ORDER BY a.enabled DESC, a.agent_type
                         """,
                         agent_params,
                     )
@@ -204,12 +218,16 @@ async def fetch_context_bundle(
                         rank = _scope_rank(row['organization_id'], row['team_id'], organization_id, team_id)
                         existing_rank = agent_ranks.get(row['agent_type'])
                         if existing_rank is None or rank < existing_rank:
+                            model_keys = row['model_keys'] or []
+                            allowed_models = [key for key in model_keys if key] if model_keys else []
                             agents_map[row['agent_type']] = {
+                                'id': row['id'],
                                 'type': row['agent_type'],
                                 'name': row['agent_name'],
                                 'description': row['description'] or '',
                                 'prompt': row['prompt_template'],
                                 'enabled': row['enabled'],
+                                'allowed_models': allowed_models if allowed_models else None,
                             }
                             agent_ranks[row['agent_type']] = rank
                         max_version = _max_timestamp(max_version, row.get('updated_at') or row.get('created_at'))
@@ -246,10 +264,14 @@ async def fetch_context_bundle(
         except psycopg.OperationalError as exc:
             last_error = exc
             logger.warning(
-                "[DB] OperationalError while fetching context bundle (attempt %s/2) -- retrying",
+                "[DB] OperationalError while fetching context bundle (attempt %s/3) -- retrying",
                 attempt + 1,
                 exc_info=True,
             )
+            # Exponential backoff: wait longer on each retry
+            wait_time = 0.5 * (2 ** attempt)
+            logger.debug(f"[DB] Waiting {wait_time}s before retry...")
+            await asyncio.sleep(wait_time)
             continue
 
         providers_cfg = {
@@ -279,13 +301,16 @@ async def fetch_context_bundle(
 
         agents_cfg = []
         for data in agents_map.values():
-            agents_cfg.append({
+            agent_entry = {
                 'type': data['type'],
                 'name': data['name'],
                 'description': data['description'],
                 'prompt': data['prompt'],
                 'enabled': data['enabled'],
-            })
+            }
+            if data.get('allowed_models'):
+                agent_entry['allowed_models'] = data['allowed_models']
+            agents_cfg.append(agent_entry)
 
         base_instructions_cfg = {
             key: value['value'] for key, value in instructions_map.items()

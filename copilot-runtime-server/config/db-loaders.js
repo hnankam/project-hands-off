@@ -146,16 +146,28 @@ export async function loadAgentsFromDb() {
   
   const result = await query(`
     SELECT 
-      agent_type,
-      agent_name,
-      description,
-      prompt_template,
-      endpoint_pattern,
-      organization_id,
-      team_id,
-      enabled
-    FROM agents
-    ORDER BY enabled DESC, agent_type
+      a.agent_type,
+      a.agent_name,
+      a.description,
+      a.prompt_template,
+      a.endpoint_pattern,
+      a.organization_id,
+      a.team_id,
+      a.enabled,
+      array_remove(array_agg(DISTINCT m.model_key), NULL) AS model_keys
+    FROM agents a
+    LEFT JOIN agent_model_mappings amm ON amm.agent_id = a.id
+    LEFT JOIN models m ON m.id = amm.model_id
+    GROUP BY
+      a.agent_type,
+      a.agent_name,
+      a.description,
+      a.prompt_template,
+      a.endpoint_pattern,
+      a.organization_id,
+      a.team_id,
+      a.enabled
+    ORDER BY a.enabled DESC, a.agent_type
   `);
   
   for (const row of result.rows) {
@@ -167,7 +179,8 @@ export async function loadAgentsFromDb() {
       endpoint_pattern: row.endpoint_pattern || '/agent/{agent_type}/{model}',
       organization_id: row.organization_id,
       team_id: row.team_id,
-      enabled: row.enabled
+      enabled: row.enabled,
+      allowed_models: Array.isArray(row.model_keys) && row.model_keys.length > 0 ? row.model_keys.filter(Boolean) : null
     });
   }
   
@@ -301,28 +314,41 @@ export async function getAgentsConfigFromDb({ organizationId = null, teamId = nu
   const params = [];
   let whereClause = '';
   if (teamId !== null && organizationId !== null) {
-    whereClause = 'WHERE organization_id = $1 AND team_id = $2';
+    whereClause = 'WHERE a.organization_id = $1 AND a.team_id = $2';
     params.push(organizationId, teamId);
   } else if (organizationId !== null) {
-    whereClause = 'WHERE organization_id = $1 AND team_id IS NULL';
+    whereClause = 'WHERE a.organization_id = $1 AND a.team_id IS NULL';
     params.push(organizationId);
   }
 
     const { rows: agentRows } = await query(
       `
       SELECT 
-        agent_type,
-        agent_name,
-        description,
-        prompt_template,
-        organization_id,
-        team_id,
-        enabled,
-        updated_at,
-        created_at
-      FROM agents
+        a.agent_type,
+        a.agent_name,
+        a.description,
+        a.prompt_template,
+        a.organization_id,
+        a.team_id,
+        a.enabled,
+        a.updated_at,
+        a.created_at,
+        array_remove(array_agg(DISTINCT m.model_key), NULL) AS model_keys
+      FROM agents a
+      LEFT JOIN agent_model_mappings amm ON amm.agent_id = a.id
+      LEFT JOIN models m ON m.id = amm.model_id
       ${whereClause}
-      ORDER BY enabled DESC, agent_type
+      GROUP BY
+        a.agent_type,
+        a.agent_name,
+        a.description,
+        a.prompt_template,
+        a.organization_id,
+        a.team_id,
+        a.enabled,
+        a.updated_at,
+        a.created_at
+      ORDER BY a.enabled DESC, a.agent_type
       `,
       params,
     );
@@ -347,7 +373,8 @@ export async function getAgentsConfigFromDb({ organizationId = null, teamId = nu
       team_id: row.team_id,
       enabled: row.enabled,
       updated_at: row.updated_at,
-      created_at: row.created_at
+      created_at: row.created_at,
+      allowed_models: Array.isArray(row.model_keys) && row.model_keys.length > 0 ? row.model_keys.filter(Boolean) : null
     }));
 
     const config = {

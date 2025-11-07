@@ -42,18 +42,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     return () => document.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
-        onClick={onClose}
-      />
+      {/* Backdrop - conditionally rendered */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
+          onClick={onClose}
+        />
+      )}
 
-      {/* Modal */}
-      <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
+      {/* Modal - Always mounted, visibility controlled with CSS */}
+      <div 
+        className={cn(
+          'fixed inset-0 z-[10001] flex items-center justify-center p-4 transition-opacity',
+          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        )}
+      >
         <div
           className={cn(
             'w-full max-w-sm rounded-lg shadow-xl',
