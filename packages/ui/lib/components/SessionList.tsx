@@ -108,7 +108,7 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
         </div>
 
         {isExpanded && (
-          <div className="space-y-0">
+          <div className="space-y-0 max-h-[200px] overflow-y-auto">
             {sessions.map((session, index) => (
               <div
                 key={session.id}

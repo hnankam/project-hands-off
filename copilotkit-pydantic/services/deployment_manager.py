@@ -12,6 +12,7 @@ from config import logger
 from config.db_loaders import fetch_context_bundle
 from config.models import store_models_for_context
 from config.prompts import store_prompts_for_context
+from config.tools import store_tools_for_context
 from core.agent_factory import clear_agent_cache, get_agent
 from utils.context import ContextKey, context_tuple, make_context_key
 
@@ -55,6 +56,7 @@ class DeploymentState:
     providers_meta: Dict[str, Dict[str, any]] = field(default_factory=dict)
     models_meta: Dict[str, Dict[str, any]] = field(default_factory=dict)
     agents_meta: Dict[str, Dict[str, any]] = field(default_factory=dict)
+    tools_meta: Dict[str, Dict[str, any]] = field(default_factory=dict)
     last_error: Optional[str] = None
     next_version_check: float = field(default_factory=lambda: time.time())
 
@@ -139,6 +141,14 @@ async def _refresh_context(
                     'base_instructions': bundle.base_instructions,
                 },
             )
+            store_tools_for_context(
+                organization_id,
+                team_id,
+                {
+                    'tools': bundle.tools,
+                    'mcp_servers': bundle.mcp_servers,
+                },
+            )
 
             # Reset agent cache for this context to ensure new settings take effect
             clear_agent_cache(organization_id, team_id)
@@ -165,13 +175,24 @@ async def _refresh_context(
                     'description': agent.get('description', ''),
                     'enabled': agent.get('enabled', True),
                     'allowed_models': agent.get('allowed_models') or None,
+                    'allowed_tools': agent.get('allowed_tools') or None,
                 }
                 for agent in bundle.agents
+            }
+            tools_meta = {
+                key: {
+                    'name': value.get('name', key),
+                    'type': value.get('type'),
+                    'enabled': value.get('enabled', True),
+                    'readonly': value.get('readonly', False),
+                }
+                for key, value in bundle.tools.items()
             }
 
             state.providers_meta = providers_meta
             state.models_meta = models_meta
             state.agents_meta = agents_meta
+            state.tools_meta = tools_meta
             state.version = bundle.version
             state.last_refresh = time.time()
             state.next_version_check = state.last_refresh + DEPLOYMENT_REFRESH_INTERVAL_SECONDS
@@ -333,6 +354,19 @@ def get_context_status(organization_id: Optional[str], team_id: Optional[str]) -
             })
         return items
 
+    def _summarize_tools() -> List[Dict[str, any]]:
+        items = []
+        for key, meta in state.tools_meta.items():
+            items.append({
+                'key': key,
+                'name': meta.get('name', key),
+                'type': meta.get('type'),
+                'enabled': meta.get('enabled', True),
+                'status': 'ready' if meta.get('enabled', True) else 'disabled',
+                'readonly': meta.get('readonly', False),
+            })
+        return items
+
     return {
         'context': {
             'organization_id': organization_id,
@@ -345,6 +379,7 @@ def get_context_status(organization_id: Optional[str], team_id: Optional[str]) -
         'models': _summarize_models(),
         'agents': _summarize_agents(),
         'providers': _summarize_providers(),
+        'tools': _summarize_tools(),
     }
 
 
@@ -363,19 +398,40 @@ async def prewarm_user_context(organization_id: str, team_id: Optional[str] = No
         return
     
     try:
-        # Find all team contexts for this organization
+        # Find all team contexts for this organization using junction tables
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute("""
-                    SELECT DISTINCT organization_id, team_id 
+                    SELECT DISTINCT %(org_id)s AS organization_id, team_id 
                     FROM (
-                        SELECT organization_id, team_id FROM models WHERE organization_id = %(org_id)s
+                        SELECT mt.team_id FROM model_teams mt
+                        JOIN models m ON m.id = mt.model_id
+                        WHERE m.organization_id = %(org_id)s
                         UNION
-                        SELECT organization_id, team_id FROM agents WHERE organization_id = %(org_id)s
+                        SELECT at.team_id FROM agent_teams at
+                        JOIN agents a ON a.id = at.agent_id
+                        WHERE a.organization_id = %(org_id)s
                         UNION
-                        SELECT organization_id, team_id FROM providers WHERE organization_id = %(org_id)s
+                        SELECT pt.team_id FROM provider_teams pt
+                        JOIN providers p ON p.id = pt.provider_id
+                        WHERE p.organization_id = %(org_id)s
+                        UNION
+                        -- Also include org-wide resources (no team association)
+                        SELECT NULL AS team_id
+                        WHERE EXISTS (
+                            SELECT 1 FROM models WHERE organization_id = %(org_id)s
+                            AND NOT EXISTS (SELECT 1 FROM model_teams WHERE model_id = models.id)
+                        )
+                        OR EXISTS (
+                            SELECT 1 FROM agents WHERE organization_id = %(org_id)s
+                            AND NOT EXISTS (SELECT 1 FROM agent_teams WHERE agent_id = agents.id)
+                        )
+                        OR EXISTS (
+                            SELECT 1 FROM providers WHERE organization_id = %(org_id)s
+                            AND NOT EXISTS (SELECT 1 FROM provider_teams WHERE provider_id = providers.id)
+                        )
                     ) AS configs
-                    ORDER BY team_id
+                    ORDER BY team_id NULLS FIRST
                 """, {'org_id': organization_id})
                 contexts = await cur.fetchall()
         

@@ -134,8 +134,8 @@ export async function getAgentsHandler(req, res, next) {
         description: agent.description || '',
         enabled: Boolean(agent.enabled),  // Explicitly convert to boolean (null/undefined → false)
         allowedModels: agent.allowed_models || null,  // Array of model keys or null for all models
-        organization_id: agent.organization_id || null,
-        team_id: agent.team_id || null
+        allowedTools: agent.allowed_tools || null,
+        organization_id: agent.organization_id || null
       }));
     
     res.json({
@@ -187,8 +187,7 @@ export async function getModelsHandler(req, res, next) {
         label: model.name,                                      // e.g., "Claude 4.5 Haiku"
         provider: providerDisplayNames[model.provider] || model.provider,  // e.g., "Anthropic"
         enabled: Boolean(model.enabled),  // Explicitly convert to boolean (null/undefined → false)
-        organization_id: model.organization_id || null,
-        team_id: model.team_id || null
+        organization_id: model.organization_id || null
       }));
     
     res.json({
@@ -285,7 +284,8 @@ export async function getCompleteConfigHandler(req, res, next) {
           id: agent.type,
           label: agent.name,
           description: agent.description || '',
-          allowedModels: agent.allowed_models || null
+          allowedModels: agent.allowed_models || null,
+          allowedTools: agent.allowed_tools || null
         })),
       // Format for ModelSelector: { id, label, provider }
       models: modelsConfig.models

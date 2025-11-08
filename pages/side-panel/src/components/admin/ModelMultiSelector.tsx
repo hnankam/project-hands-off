@@ -6,7 +6,6 @@ interface ModelOption {
   name: string;
   enabled?: boolean;
   modelKey?: string;
-  teamId?: string | null;
 }
 
 interface ModelMultiSelectorProps {
@@ -39,7 +38,9 @@ export const ModelMultiSelector: React.FC<ModelMultiSelectorProps> = ({
   loading = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -53,6 +54,18 @@ export const ModelMultiSelector: React.FC<ModelMultiSelectorProps> = ({
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
     return undefined;
+  }, [isOpen]);
+
+  // Detect if dropdown should open upward
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const buttonRect = buttonRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const spaceBelow = viewportHeight - buttonRect.bottom;
+      const dropdownHeight = 240; // Max height of dropdown
+      
+      setOpenUpward(spaceBelow < dropdownHeight && buttonRect.top > dropdownHeight);
+    }
   }, [isOpen]);
 
   if (loading) {
@@ -100,6 +113,7 @@ export const ModelMultiSelector: React.FC<ModelMultiSelectorProps> = ({
   return (
     <div className="relative" ref={dropdownRef}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
@@ -169,7 +183,8 @@ export const ModelMultiSelector: React.FC<ModelMultiSelectorProps> = ({
       {isOpen && (
         <div
           className={cn(
-            'absolute top-full left-0 mt-1 w-full min-w-[180px] rounded-md border shadow-lg z-[9999] max-h-[240px] overflow-y-auto',
+            'absolute left-0 w-full min-w-[180px] rounded-md border shadow-lg z-[9999] max-h-[240px] overflow-y-auto',
+            openUpward ? 'bottom-full mb-1' : 'top-full mt-1',
             isLight
               ? 'bg-white border-gray-200'
               : 'bg-[#151C24] border-gray-700'

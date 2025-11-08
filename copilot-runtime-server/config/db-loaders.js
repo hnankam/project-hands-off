@@ -24,37 +24,55 @@ export function invalidateCache() {
 export async function loadProvidersFromDb({ organizationId = null, teamId = null } = {}) {
   const providerMap = new Map();
 
-  const useScopedFilter = organizationId !== null || teamId !== null;
-
   const params = [];
   let whereClause = '';
-  if (useScopedFilter) {
-    whereClause = 'WHERE (organization_id IS NULL OR organization_id = $1) AND (team_id IS NULL OR team_id = $2)';
-    params.push(organizationId, teamId);
+  let teamClause = '';
+  
+  if (organizationId !== null) {
+    whereClause = 'WHERE p.organization_id = $1';
+    params.push(organizationId);
+    
+    if (teamId !== null) {
+      // Filter providers that are either org-wide or assigned to this team
+      teamClause = `AND (
+        NOT EXISTS (SELECT 1 FROM provider_teams pt WHERE pt.provider_id = p.id)
+        OR EXISTS (SELECT 1 FROM provider_teams pt WHERE pt.provider_id = p.id AND pt.team_id = $2)
+      )`;
+      params.push(teamId);
+    } else {
+      // Only org-wide providers (no team assignments)
+      teamClause = `AND NOT EXISTS (SELECT 1 FROM provider_teams pt WHERE pt.provider_id = p.id)`;
+    }
   }
 
   const result = await query(
     `
     SELECT 
-      provider_key,
-      provider_type,
-      credentials,
-      model_settings,
-      bedrock_model_settings,
-      organization_id,
-      team_id,
-      enabled,
-      updated_at,
-      created_at
-    FROM providers
-    ${whereClause}
-    ORDER BY enabled DESC, provider_key
+      p.provider_key,
+      p.provider_type,
+      p.credentials,
+      p.model_settings,
+      p.bedrock_model_settings,
+      p.organization_id,
+      p.enabled,
+      p.updated_at,
+      p.created_at,
+      COALESCE(
+        (SELECT json_agg(json_build_object('id', pt.team_id))
+         FROM provider_teams pt WHERE pt.provider_id = p.id),
+        '[]'::json
+      ) as teams
+    FROM providers p
+    ${whereClause} ${teamClause}
+    ORDER BY p.enabled DESC, p.provider_key
     `,
     params,
   );
 
   for (const row of result.rows) {
-    const specificity = (row.team_id ? 2 : row.organization_id ? 1 : 0);
+    // Providers with team assignments are more specific than org-wide providers
+    const hasTeams = row.teams && Array.isArray(row.teams) && row.teams.length > 0;
+    const specificity = (hasTeams ? 2 : row.organization_id ? 1 : 0);
     const existing = providerMap.get(row.provider_key);
     if (!existing || specificity > existing.specificity) {
       providerMap.set(row.provider_key, {
@@ -73,7 +91,7 @@ export async function loadProvidersFromDb({ organizationId = null, teamId = null
       credentials: row.credentials || {},
       default_settings: row.model_settings || { prompt_caching: { enabled: true, debug: false } },
       organization_id: row.organization_id,
-      team_id: row.team_id,
+      teams: row.teams || [],
       bedrock_model_settings: row.bedrock_model_settings || null,
       updated_at: row.updated_at,
       created_at: row.created_at,
@@ -102,12 +120,16 @@ export async function loadModelsFromDb() {
       m.description,
       m.model_settings_override,
       m.organization_id,
-      m.team_id,
       m.enabled,
       m.updated_at,
       m.created_at,
       p.provider_key,
-      p.provider_type
+      p.provider_type,
+      COALESCE(
+        (SELECT json_agg(json_build_object('id', mt.team_id))
+         FROM model_teams mt WHERE mt.model_id = m.id),
+        '[]'::json
+      ) as teams
     FROM models m
     JOIN providers p ON m.provider_id = p.id
     ORDER BY m.enabled DESC, m.model_key
@@ -122,7 +144,7 @@ export async function loadModelsFromDb() {
       enabled: row.enabled,
       description: row.description || '',
       organization_id: row.organization_id,
-      team_id: row.team_id,
+      teams: row.teams || [],
       updated_at: row.updated_at,
       created_at: row.created_at
     };
@@ -146,26 +168,34 @@ export async function loadAgentsFromDb() {
   
   const result = await query(`
     SELECT 
+      a.id,
       a.agent_type,
       a.agent_name,
       a.description,
       a.prompt_template,
       a.endpoint_pattern,
       a.organization_id,
-      a.team_id,
       a.enabled,
-      array_remove(array_agg(DISTINCT m.model_key), NULL) AS model_keys
+      array_remove(array_agg(DISTINCT m.model_key), NULL) AS model_keys,
+      array_remove(array_agg(DISTINCT tl.tool_key), NULL) AS tool_keys,
+      COALESCE(
+        (SELECT json_agg(json_build_object('id', at.team_id))
+         FROM agent_teams at WHERE at.agent_id = a.id),
+        '[]'::json
+      ) as teams
     FROM agents a
     LEFT JOIN agent_model_mappings amm ON amm.agent_id = a.id
     LEFT JOIN models m ON m.id = amm.model_id
+    LEFT JOIN agent_tool_mappings atm ON atm.agent_id = a.id
+    LEFT JOIN tools tl ON tl.id = atm.tool_id
     GROUP BY
+      a.id,
       a.agent_type,
       a.agent_name,
       a.description,
       a.prompt_template,
       a.endpoint_pattern,
       a.organization_id,
-      a.team_id,
       a.enabled
     ORDER BY a.enabled DESC, a.agent_type
   `);
@@ -178,9 +208,10 @@ export async function loadAgentsFromDb() {
       prompt: row.prompt_template, // For compatibility
       endpoint_pattern: row.endpoint_pattern || '/agent/{agent_type}/{model}',
       organization_id: row.organization_id,
-      team_id: row.team_id,
+      teams: row.teams || [],
       enabled: row.enabled,
-      allowed_models: Array.isArray(row.model_keys) && row.model_keys.length > 0 ? row.model_keys.filter(Boolean) : null
+      allowed_models: Array.isArray(row.model_keys) && row.model_keys.length > 0 ? row.model_keys.filter(Boolean) : null,
+      allowed_tools: Array.isArray(row.tool_keys) && row.tool_keys.length > 0 ? row.tool_keys.filter(Boolean) : null
     });
   }
   
@@ -223,12 +254,23 @@ export async function getModelsConfigFromDb({ organizationId = null, teamId = nu
   try {
   const params = [];
   let whereClause = '';
-  if (teamId !== null && organizationId !== null) {
-    whereClause = 'WHERE m.organization_id = $1 AND m.team_id = $2';
-    params.push(organizationId, teamId);
-  } else if (organizationId !== null) {
-    whereClause = 'WHERE m.organization_id = $1 AND m.team_id IS NULL';
+  let teamClause = '';
+  
+  if (organizationId !== null) {
+    whereClause = 'WHERE m.organization_id = $1';
     params.push(organizationId);
+    
+    if (teamId !== null) {
+      // Filter models that are either org-wide or assigned to this team
+      teamClause = `AND (
+        NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id)
+        OR EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id AND mt.team_id = $2)
+      )`;
+      params.push(teamId);
+    } else {
+      // Only org-wide models (no team assignments)
+      teamClause = `AND NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id)`;
+    }
   }
 
     const { rows: modelRows } = await query(
@@ -240,15 +282,19 @@ export async function getModelsConfigFromDb({ organizationId = null, teamId = nu
         m.description,
         m.model_settings_override,
         m.organization_id,
-        m.team_id,
         m.enabled,
         m.updated_at,
         m.created_at,
         p.provider_key,
-        p.provider_type
+        p.provider_type,
+        COALESCE(
+          (SELECT json_agg(json_build_object('id', mt.team_id))
+           FROM model_teams mt WHERE mt.model_id = m.id),
+          '[]'::json
+        ) as teams
       FROM models m
       JOIN providers p ON m.provider_id = p.id
-      ${whereClause}
+      ${whereClause} ${teamClause}
       ORDER BY m.enabled DESC, m.model_key
       `,
       params,
@@ -258,7 +304,9 @@ export async function getModelsConfigFromDb({ organizationId = null, teamId = nu
     const scopedModels = new Map();
     for (const row of modelRows) {
       const key = row.model_key;
-      const specificity = (row.team_id ? 2 : row.organization_id ? 1 : 0);
+      // Models with team assignments are more specific than org-wide models
+      const hasTeams = row.teams && Array.isArray(row.teams) && row.teams.length > 0;
+      const specificity = (hasTeams ? 2 : row.organization_id ? 1 : 0);
       const existing = scopedModels.get(key);
       if (!existing || specificity > existing.specificity) {
         scopedModels.set(key, { row, specificity });
@@ -273,7 +321,7 @@ export async function getModelsConfigFromDb({ organizationId = null, teamId = nu
       enabled: row.enabled,
       description: row.description || '',
       organization_id: row.organization_id,
-      team_id: row.team_id,
+      teams: row.teams || [],
       model_settings: row.model_settings_override || null,
       updated_at: row.updated_at,
       created_at: row.created_at
@@ -313,38 +361,57 @@ export async function getAgentsConfigFromDb({ organizationId = null, teamId = nu
   try {
   const params = [];
   let whereClause = '';
-  if (teamId !== null && organizationId !== null) {
-    whereClause = 'WHERE a.organization_id = $1 AND a.team_id = $2';
-    params.push(organizationId, teamId);
-  } else if (organizationId !== null) {
-    whereClause = 'WHERE a.organization_id = $1 AND a.team_id IS NULL';
+  let teamClause = '';
+  
+  if (organizationId !== null) {
+    whereClause = 'WHERE a.organization_id = $1';
     params.push(organizationId);
+    
+    if (teamId !== null) {
+      // Filter agents that are either org-wide or assigned to this team
+      teamClause = `AND (
+        NOT EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id)
+        OR EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id AND at.team_id = $2)
+      )`;
+      params.push(teamId);
+    } else {
+      // Only org-wide agents (no team assignments)
+      teamClause = `AND NOT EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id)`;
+    }
   }
 
     const { rows: agentRows } = await query(
       `
       SELECT 
+        a.id,
         a.agent_type,
         a.agent_name,
         a.description,
         a.prompt_template,
         a.organization_id,
-        a.team_id,
         a.enabled,
         a.updated_at,
         a.created_at,
-        array_remove(array_agg(DISTINCT m.model_key), NULL) AS model_keys
+        array_remove(array_agg(DISTINCT m.model_key), NULL) AS model_keys,
+        array_remove(array_agg(DISTINCT tl.tool_key), NULL) AS tool_keys,
+        COALESCE(
+          (SELECT json_agg(json_build_object('id', at.team_id))
+           FROM agent_teams at WHERE at.agent_id = a.id),
+          '[]'::json
+        ) as teams
       FROM agents a
       LEFT JOIN agent_model_mappings amm ON amm.agent_id = a.id
       LEFT JOIN models m ON m.id = amm.model_id
-      ${whereClause}
+      LEFT JOIN agent_tool_mappings atm ON atm.agent_id = a.id
+      LEFT JOIN tools tl ON tl.id = atm.tool_id
+      ${whereClause} ${teamClause}
       GROUP BY
+        a.id,
         a.agent_type,
         a.agent_name,
         a.description,
         a.prompt_template,
         a.organization_id,
-        a.team_id,
         a.enabled,
         a.updated_at,
         a.created_at
@@ -356,7 +423,9 @@ export async function getAgentsConfigFromDb({ organizationId = null, teamId = nu
     const scopedAgents = new Map();
     for (const row of agentRows) {
       const key = row.agent_type;
-      const specificity = (row.team_id ? 2 : row.organization_id ? 1 : 0);
+      // Agents with team assignments are more specific than org-wide agents
+      const hasTeams = row.teams && Array.isArray(row.teams) && row.teams.length > 0;
+      const specificity = (hasTeams ? 2 : row.organization_id ? 1 : 0);
       const existing = scopedAgents.get(key);
       if (!existing || specificity > existing.specificity) {
         scopedAgents.set(key, { row, specificity });
@@ -370,11 +439,12 @@ export async function getAgentsConfigFromDb({ organizationId = null, teamId = nu
       prompt: row.prompt_template,
       endpoint_pattern: '/agent/{agent_type}/{model}',
       organization_id: row.organization_id,
-      team_id: row.team_id,
+      teams: row.teams || [],
       enabled: row.enabled,
       updated_at: row.updated_at,
       created_at: row.created_at,
-      allowed_models: Array.isArray(row.model_keys) && row.model_keys.length > 0 ? row.model_keys.filter(Boolean) : null
+      allowed_models: Array.isArray(row.model_keys) && row.model_keys.length > 0 ? row.model_keys.filter(Boolean) : null,
+      allowed_tools: Array.isArray(row.tool_keys) && row.tool_keys.length > 0 ? row.tool_keys.filter(Boolean) : null
     }));
 
     const config = {

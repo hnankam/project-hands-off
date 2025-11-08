@@ -48,6 +48,7 @@ import {
   agentsRouter,
   baseInstructionsRouter,
   usageRouter,
+  toolsRouter,
 } from './routes/index.js';
 
 // Create Express app
@@ -126,6 +127,7 @@ app.use('/api', apiRateLimiter);
     app.use('/api/admin/models', modelsRouter);
     app.use('/api/admin/agents', agentsRouter);
     app.use('/api/admin/base-instructions', baseInstructionsRouter);
+    app.use('/api/admin/tools', toolsRouter);
     app.use('/api/admin/usage', usageRouter);
 
     // Configuration endpoints for side panel
@@ -147,7 +149,7 @@ app.use('/api', apiRateLimiter);
       log(`   Health check: http://0.0.0.0:${PORT}/health`);
       log(`   Authentication: http://0.0.0.0:${PORT}/api/auth/*`);
       log(`   Invitations: http://0.0.0.0:${PORT}/api/invitations/*`);
-      log(`   Admin: http://0.0.0.0:${PORT}/api/admin/{providers,models}`);
+      log(`   Admin: http://0.0.0.0:${PORT}/api/admin/{providers,models,tools}`);
       log(`   CopilotKit endpoint: http://0.0.0.0:${PORT}/api/copilotkit`);
       log(`   Configuration endpoints:`);
       log(`     - GET http://0.0.0.0:${PORT}/api/config (complete config)`);

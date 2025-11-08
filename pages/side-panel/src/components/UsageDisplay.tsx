@@ -54,12 +54,12 @@ export const UsageDisplay: FC<UsageDisplayProps> = ({
   // Full view - compact version
   return (
     <div
-      className={`rounded p-2.5 ${
-        isLight ? 'bg-gray-50' : 'bg-[#0B121C]'
+      className={`rounded border p-2.5 ${
+        isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
       }`}>
       {/* Header */}
       <div className="mb-2 flex items-center justify-between">
-        <h3 className={`text-[11px] font-semibold ${isLight ? 'text-gray-900' : 'text-white'}`}>Session Tokens</h3>
+        <h3 className={`text-[11px] font-semibold ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>Session Tokens</h3>
         <div className="flex items-center gap-1.5">
           <div
             className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-400'}`}
@@ -74,33 +74,33 @@ export const UsageDisplay: FC<UsageDisplayProps> = ({
       {/* Stats Grid */}
       <div className="mb-2 grid grid-cols-2 gap-2">
         {/* Total Tokens */}
-        <div className={`rounded p-2 ${isLight ? 'bg-blue-50' : 'bg-blue-900/20'}`}>
-          <div className={`mb-1 text-[10px] ${isLight ? 'text-blue-600' : 'text-blue-400'}`}>Total</div>
-          <div className={`font-mono text-base font-bold ${isLight ? 'text-blue-700' : 'text-blue-300'}`}>
+        <div className={`rounded p-2 ${isLight ? 'bg-gray-50' : 'bg-[#0C1117]'}`}>
+          <div className={`mb-1 text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Total</div>
+          <div className={`font-mono text-base font-bold ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>
             {cumulativeUsage.total.toLocaleString()}
           </div>
         </div>
 
         {/* Request Count */}
-        <div className={`rounded p-2 ${isLight ? 'bg-purple-50' : 'bg-purple-900/20'}`}>
-          <div className={`mb-1 text-[10px] ${isLight ? 'text-purple-600' : 'text-purple-400'}`}>Requests</div>
-          <div className={`font-mono text-base font-bold ${isLight ? 'text-purple-700' : 'text-purple-300'}`}>
+        <div className={`rounded p-2 ${isLight ? 'bg-gray-50' : 'bg-[#0C1117]'}`}>
+          <div className={`mb-1 text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Requests</div>
+          <div className={`font-mono text-base font-bold ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>
             {cumulativeUsage.requestCount}
           </div>
         </div>
 
         {/* Input Tokens */}
-        <div className={`rounded p-2 ${isLight ? 'bg-green-50' : 'bg-green-900/20'}`}>
-          <div className={`mb-1 text-[10px] ${isLight ? 'text-green-600' : 'text-green-400'}`}>Input</div>
-          <div className={`font-mono text-xs ${isLight ? 'text-green-700' : 'text-green-300'}`}>
+        <div className={`rounded p-2 ${isLight ? 'bg-gray-50' : 'bg-[#0C1117]'}`}>
+          <div className={`mb-1 text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Input</div>
+          <div className={`font-mono text-xs ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>
             {cumulativeUsage.request.toLocaleString()}
           </div>
         </div>
 
         {/* Output Tokens */}
-        <div className={`rounded p-2 ${isLight ? 'bg-orange-50' : 'bg-orange-900/20'}`}>
-          <div className={`mb-1 text-[10px] ${isLight ? 'text-orange-600' : 'text-orange-400'}`}>Output</div>
-          <div className={`font-mono text-xs ${isLight ? 'text-orange-700' : 'text-orange-300'}`}>
+        <div className={`rounded p-2 ${isLight ? 'bg-gray-50' : 'bg-[#0C1117]'}`}>
+          <div className={`mb-1 text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Output</div>
+          <div className={`font-mono text-xs ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>
             {cumulativeUsage.response.toLocaleString()}
           </div>
         </div>

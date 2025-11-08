@@ -418,7 +418,14 @@ export class SessionStorageDB {
       );
     }
 
+    // Update session timestamp to reflect latest activity
+    await worker.query(
+      'UPDATE session_metadata SET timestamp = $timestamp WHERE sessionId = $id OR id = $id;',
+      { id: sessionId, timestamp: Date.now() }
+    );
+
     this.notify({ type: 'messagesUpdated', sessionId });
+    this.notify({ type: 'sessionsUpdated' });
     log(`[SessionStorageDB] ✅ Updated ${messages.length} messages for session:`, sessionId);
   }
 
@@ -468,6 +475,14 @@ export class SessionStorageDB {
         { id: sessionId, ...payload }
       );
     }
+
+    // Update session timestamp to reflect latest activity
+    await worker.query(
+      'UPDATE session_metadata SET timestamp = $timestamp WHERE sessionId = $id OR id = $id;',
+      { id: sessionId, timestamp: Date.now() }
+    );
+
+    this.notify({ type: 'sessionsUpdated' });
   }
 
   // ========================================

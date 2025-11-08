@@ -50,7 +50,7 @@ interface AgentOption {
   id: string;
   name: string;
   code?: string;
-  team_id?: string | null;
+  team_ids?: string[];
 }
 
 interface ModelOption {
@@ -58,7 +58,7 @@ interface ModelOption {
   name: string;
   code?: string;
   provider?: string;
-  team_id?: string | null;
+  team_ids?: string[];
 }
 
 interface UserOption {
@@ -2393,8 +2393,16 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
             </div>
           )}
         </div>
-        <div className="max-h-80 overflow-auto recent-sessions-scroll">
-          <table className={cn('min-w-full divide-y text-xs', isLight ? 'divide-gray-200' : 'divide-gray-700')}>
+        <div
+          className="max-h-80 w-full overflow-auto recent-sessions-scroll"
+          style={{ '--table-scroll-bg': isLight ? '#FFFFFF' : '#151C24' } as React.CSSProperties}
+        >
+          <table
+            className={cn(
+              'min-w-full w-full border-collapse divide-y text-xs',
+              isLight ? 'divide-gray-200' : 'divide-gray-700',
+            )}
+          >
             <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
               <tr>
                 <th

@@ -2,9 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
 import { OrganizationSelector } from './OrganizationSelector';
-import { TeamSelector, SingleTeamSelector } from './TeamSelector';
+import { TeamSelector } from './TeamSelector';
+import { TeamMultiSelector } from './TeamMultiSelector';
 import { Radio, Checkbox } from './FormControls';
 import { ModelMultiSelector } from './ModelMultiSelector';
+import ToolMultiSelector from './ToolMultiSelector';
 
 interface Organization {
   id: string;
@@ -25,8 +27,24 @@ interface ModelSummary {
   id: string;
   modelKey: string;
   name: string;
-  teamId: string | null;
+  teams: Array<{ id: string; name: string }>;
   enabled: boolean;
+}
+
+interface ToolSummary {
+  id: string;
+  toolKey: string;
+  name: string;
+  type: 'frontend' | 'backend' | 'builtin' | 'mcp';
+  teams: Array<{ id: string; name: string }>;
+  enabled: boolean;
+  readonly: boolean;
+  mcpServer?: {
+    id: string;
+    serverKey: string;
+    displayName: string;
+    transport: string;
+  } | null;
 }
 
 interface BaseInstruction {
@@ -48,13 +66,13 @@ interface AgentRecord {
   description: string | null;
   promptTemplate: string;
   organizationId: string;
-  teamId: string | null;
-  teamName: string | null;
+  teams: Array<{ id: string; name: string }>; // Multi-team support
   enabled: boolean;
   metadata: Record<string, any> | null;
   createdAt: string;
   updatedAt: string;
   modelIds: string[];
+  toolIds: string[];
 }
 
 type AgentScope = 'organization' | 'team';
@@ -65,11 +83,13 @@ interface AgentFormState {
   description: string;
   promptTemplate: string;
   scope: AgentScope;
-  teamId: string;
+  teamIds: string[]; // Multi-team support
   metadata: string;
   enabled: boolean;
   modelMode: 'all' | 'custom';
   modelIds: string[];
+  toolMode: 'all' | 'custom';
+  toolIds: string[];
 }
 
 interface AgentsTabProps {
@@ -86,11 +106,13 @@ const INITIAL_FORM: AgentFormState = {
   description: '',
   promptTemplate: '',
   scope: 'organization',
-  teamId: '',
+  teamIds: [], // Multi-team support
   metadata: '{}',
   enabled: true,
   modelMode: 'all',
   modelIds: [],
+  toolMode: 'all',
+  toolIds: [],
 };
 
 const MAX_FETCH_RETRIES = 3;
@@ -306,8 +328,12 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   const [selectedOrgId, setSelectedOrgId] = useState(preselectedOrgId || '');
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamFilterIds, setTeamFilterIds] = useState<string[]>([]);
+  const [modelFilterIds, setModelFilterIds] = useState<string[]>([]);
+  const [toolFilterIds, setToolFilterIds] = useState<string[]>([]);
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [toolsList, setToolsList] = useState<ToolSummary[]>([]);
+  const [toolsLoading, setToolsLoading] = useState(false);
   const teamFilterIdsRef = useRef(teamFilterIds);
   useEffect(() => {
     teamFilterIdsRef.current = teamFilterIds;
@@ -321,28 +347,58 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [saveTemplateDialogOpen, setSaveTemplateDialogOpen] = useState(false);
   const [saveTemplateFor, setSaveTemplateFor] = useState<'create' | 'edit' | null>(null);
-  const [templateForm, setTemplateForm] = useState({ key: '', description: '', scope: 'organization' as 'organization' | 'team', teamId: '' });
+  const [templateForm, setTemplateForm] = useState({ key: '', description: '', scope: 'organization' as 'organization' | 'team', teamIds: [] as string[] });
   const [expandedInstructions, setExpandedInstructions] = useState<Set<string>>(new Set());
+  const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
 
   const initialLoadCompleteRef = useRef(false);
 
   const resolveModelsForScope = useCallback(
-    (scope: AgentScope, teamId: string) => {
-      const effectiveTeamId = (teamId || '').trim();
+    (scope: AgentScope, teamIds: string[]) => {
+      const effectiveTeamIds = teamIds.filter(id => id && id.trim() !== '');
 
       return models.filter(model => {
+        const modelTeamIds = model.teams.map(t => t.id);
+        
         if (scope === 'organization') {
-          return model.teamId === null;
+          // Organization scope: only show org-wide models (no team restrictions)
+          return modelTeamIds.length === 0;
         }
 
-        if (!effectiveTeamId) {
-          return model.teamId === null;
+        if (effectiveTeamIds.length === 0) {
+          // Team scope but no teams selected: only show org-wide models
+          return modelTeamIds.length === 0;
         }
 
-        return model.teamId === null || model.teamId === effectiveTeamId;
+        // Team scope with teams selected: show org-wide models OR models that share at least one team
+        return modelTeamIds.length === 0 || modelTeamIds.some(mtId => effectiveTeamIds.includes(mtId));
       });
     },
     [models],
+  );
+
+  const resolveToolsForScope = useCallback(
+    (scope: AgentScope, teamIds: string[]) => {
+      const effectiveTeamIds = teamIds.filter(id => id && id.trim() !== '');
+
+      return toolsList.filter(tool => {
+        const toolTeamIds = tool.teams.map(t => t.id);
+        
+        if (scope === 'organization') {
+          // Organization scope: only show org-wide tools (no team restrictions)
+          return toolTeamIds.length === 0;
+        }
+
+        if (effectiveTeamIds.length === 0) {
+          // Team scope but no teams selected: only show org-wide tools
+          return toolTeamIds.length === 0;
+        }
+
+        // Team scope with teams selected: show org-wide tools OR tools that share at least one team
+        return toolTeamIds.length === 0 || toolTeamIds.some(ttId => effectiveTeamIds.includes(ttId));
+      });
+    },
+    [toolsList],
   );
 
   useEffect(() => {
@@ -355,7 +411,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     if (preselectedOrgId && preselectedOrgId !== selectedOrgId) {
       setSelectedOrgId(preselectedOrgId);
     }
-  }, [preselectedOrgId, selectedOrgId]);
+  }, [preselectedOrgId]); // Only react to parent changes, not user selections
 
   useEffect(() => {
     setCreateForm(prev => {
@@ -363,7 +419,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         return prev;
       }
 
-      const allowedIds = new Set(resolveModelsForScope(prev.scope, prev.teamId).map(model => model.id));
+      const allowedIds = new Set(resolveModelsForScope(prev.scope, prev.teamIds).map(model => model.id));
       const filtered = prev.modelIds.filter(id => allowedIds.has(id));
       if (filtered.length === prev.modelIds.length) {
         return prev;
@@ -376,38 +432,90 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         return prev;
       }
 
-      const allowedIds = new Set(resolveModelsForScope(prev.scope, prev.teamId).map(model => model.id));
+      const allowedIds = new Set(resolveModelsForScope(prev.scope, prev.teamIds).map(model => model.id));
       const filtered = prev.modelIds.filter(id => allowedIds.has(id));
       if (filtered.length === prev.modelIds.length) {
         return prev;
       }
       return { ...prev, modelIds: filtered };
     });
-  }, [models, resolveModelsForScope, createForm.scope, createForm.teamId, editForm?.scope, editForm?.teamId]);
+  }, [models, resolveModelsForScope, createForm.scope, createForm.teamIds, editForm?.scope, editForm?.teamIds]);
+
+  useEffect(() => {
+    setCreateForm(prev => {
+      if (prev.toolIds.length === 0) {
+        return prev;
+      }
+
+      const allowedIds = new Set(resolveToolsForScope(prev.scope, prev.teamIds).map(tool => tool.id));
+      const filtered = prev.toolIds.filter(id => allowedIds.has(id));
+      if (filtered.length === prev.toolIds.length) {
+        return prev;
+      }
+      return { ...prev, toolIds: filtered };
+    });
+
+    setEditForm(prev => {
+      if (!prev || prev.toolIds.length === 0) {
+        return prev;
+      }
+
+      const allowedIds = new Set(resolveToolsForScope(prev.scope, prev.teamIds).map(tool => tool.id));
+      const filtered = prev.toolIds.filter(id => allowedIds.has(id));
+      if (filtered.length === prev.toolIds.length) {
+        return prev;
+      }
+      return { ...prev, toolIds: filtered };
+    });
+  }, [toolsList, resolveToolsForScope, createForm.scope, createForm.teamIds, editForm?.scope, editForm?.teamIds]);
 
   const availableCreateModels = useMemo(
-    () => resolveModelsForScope(createForm.scope, createForm.teamId),
-    [resolveModelsForScope, createForm.scope, createForm.teamId],
+    () => resolveModelsForScope(createForm.scope, createForm.teamIds),
+    [resolveModelsForScope, createForm.scope, createForm.teamIds],
   );
 
   const availableEditModels = useMemo(
-    () => (editForm ? resolveModelsForScope(editForm.scope, editForm.teamId) : []),
-    [resolveModelsForScope, editForm?.scope, editForm?.teamId],
+    () => (editForm ? resolveModelsForScope(editForm.scope, editForm.teamIds) : []),
+    [resolveModelsForScope, editForm?.scope, editForm?.teamIds],
+  );
+
+  const availableCreateTools = useMemo(
+    () => resolveToolsForScope(createForm.scope, createForm.teamIds),
+    [resolveToolsForScope, createForm.scope, createForm.teamIds],
+  );
+
+  const availableEditTools = useMemo(
+    () => (editForm ? resolveToolsForScope(editForm.scope, editForm.teamIds) : []),
+    [resolveToolsForScope, editForm?.scope, editForm?.teamIds],
   );
 
   const createModelsDisabled = !modelsLoading && availableCreateModels.length === 0;
   const createModelsPlaceholder = createModelsDisabled
-    ? createForm.scope === 'team' && !createForm.teamId
-      ? 'Select a team to choose team-scoped models'
+    ? createForm.scope === 'team' && createForm.teamIds.length === 0
+      ? 'Select teams to choose team-scoped models'
       : 'No models available for this scope'
     : 'Select models';
 
   const editModelsDisabled = !modelsLoading && availableEditModels.length === 0;
   const editModelsPlaceholder = editModelsDisabled
-    ? editForm && editForm.scope === 'team' && !editForm.teamId
-      ? 'Select a team to choose team-scoped models'
+    ? editForm && editForm.scope === 'team' && editForm.teamIds.length === 0
+      ? 'Select teams to choose team-scoped models'
       : 'No models available for this scope'
     : 'Select models';
+
+  const createToolsDisabled = !toolsLoading && availableCreateTools.length === 0;
+  const createToolsPlaceholder = createToolsDisabled
+    ? createForm.scope === 'team' && createForm.teamIds.length === 0
+      ? 'Select teams to choose team-scoped tools'
+      : 'No tools available for this scope'
+    : 'Select tools';
+
+  const editToolsDisabled = !toolsLoading && availableEditTools.length === 0;
+  const editToolsPlaceholder = editToolsDisabled
+    ? editForm && editForm.scope === 'team' && editForm.teamIds.length === 0
+      ? 'Select teams to choose team-scoped tools'
+      : 'No tools available for this scope'
+    : 'Select tools';
 
   const loadTeams = useCallback(async (orgId: string): Promise<Team[]> => {
     setTeamsLoading(true);
@@ -467,6 +575,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       const agentList: AgentRecord[] = (data.agents || []).map((agent: any) => ({
         ...agent,
         modelIds: Array.isArray(agent?.modelIds) ? agent.modelIds : [],
+        toolIds: Array.isArray(agent?.toolIds) ? agent.toolIds : [],
       }));
       return agentList;
     },
@@ -521,10 +630,40 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         id: model.id,
         modelKey: model.modelKey,
         name: model.displayName || model.modelName || model.modelKey,
-        teamId: model.teamId || null,
+        teams: model.teams || [],
         enabled: Boolean(model.enabled),
       }));
       return modelsList;
+    },
+    [baseURL],
+  );
+
+  const fetchTools = useCallback(
+    async (orgId: string, signal?: AbortSignal): Promise<ToolSummary[]> => {
+      const params = new URLSearchParams({ organizationId: orgId });
+
+      const response = await fetch(`${baseURL}/api/admin/tools?${params.toString()}`, {
+        credentials: 'include',
+        signal,
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload?.error || `Failed to fetch tools (${response.status})`);
+      }
+
+      const data = await response.json();
+      const toolsList: ToolSummary[] = (data.tools || []).map((tool: any) => ({
+        id: tool.id,
+        toolKey: tool.toolKey,
+        name: tool.toolName || tool.toolKey,
+        type: tool.toolType,
+        teams: tool.teams || [],
+        enabled: Boolean(tool.enabled),
+        readonly: Boolean(tool.readonly),
+        mcpServer: tool.mcpServer || null,
+      }));
+      return toolsList;
     },
     [baseURL],
   );
@@ -553,6 +692,32 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       return controller;
     },
     [fetchModels],
+  );
+
+  const refreshTools = useCallback(
+    async (orgId: string) => {
+      setToolsLoading(true);
+      const controller = new AbortController();
+
+      try {
+        const fetched = await fetchTools(orgId, controller.signal);
+        if (!controller.signal.aborted) {
+          setToolsList(fetched);
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError' && !controller.signal.aborted) {
+          console.error('[AgentsTab] Failed to fetch tools:', err);
+          setToolsList([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setToolsLoading(false);
+        }
+      }
+
+      return controller;
+    },
+    [fetchTools],
   );
 
   const fetchBaseInstructions = useCallback(
@@ -609,6 +774,8 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       setTeams([]);
       setModels([]);
       setModelsLoading(false);
+      setToolsList([]);
+      setToolsLoading(false);
       initialLoadCompleteRef.current = false;
       return;
     }
@@ -626,10 +793,11 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         if (aborted) return;
 
         const modelsController = await refreshModels(selectedOrgId);
+        const toolsController = await refreshTools(selectedOrgId);
         const activeTeamId = teamFilterIdsRef.current[0] || null;
         const agentsController = await refreshAgents(selectedOrgId, activeTeamId, { suppressLoading: true });
         const instructionsController = await refreshBaseInstructions(selectedOrgId, activeTeamId);
-        controllers.push(modelsController, agentsController, instructionsController);
+        controllers.push(modelsController, toolsController, agentsController, instructionsController);
 
         if (!aborted) {
           initialLoadCompleteRef.current = true;
@@ -652,7 +820,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       aborted = true;
       controllers.forEach(ctrl => ctrl.abort());
     };
-  }, [selectedOrgId, loadTeams, refreshAgents]);
+  }, [selectedOrgId, loadTeams, refreshAgents, refreshModels, refreshBaseInstructions, refreshTools]);
 
   useEffect(() => {
     if (!selectedOrgId || !initialLoadCompleteRef.current) {
@@ -699,8 +867,8 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       return;
     }
 
-    if (createForm.scope === 'team' && !createForm.teamId) {
-      onError('Select a team for team-scoped agents');
+    if (createForm.scope === 'team' && createForm.teamIds.length === 0) {
+      onError('Select at least one team for team-scoped agents');
       return;
     }
 
@@ -709,10 +877,15 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       return;
     }
 
+    if (createForm.toolMode === 'custom' && createForm.toolIds.length === 0) {
+      onError('Select at least one tool when restricting tool availability');
+      return;
+    }
+
     try {
       const payload = {
         organizationId: selectedOrgId,
-        teamId: createForm.scope === 'team' ? createForm.teamId || null : null,
+        teamIds: createForm.scope === 'team' ? createForm.teamIds : [],
         agentType: createForm.agentType.trim(),
         agentName: createForm.agentName.trim(),
         description: createForm.description.trim() || null,
@@ -721,6 +894,9 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         metadata: sanitizeJsonText(createForm.metadata, 'Metadata'),
         modelIds: createForm.modelMode === 'custom' ? createForm.modelIds : [],
       };
+      if (createForm.toolMode === 'custom') {
+        (payload as any).toolIds = createForm.toolIds;
+      }
 
       const response = await fetch(`${baseURL}/api/admin/agents`, {
         method: 'POST',
@@ -753,12 +929,14 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       agentName: agent.agentName,
       description: agent.description || '',
       promptTemplate: agent.promptTemplate,
-      scope: agent.teamId ? 'team' : 'organization',
-      teamId: agent.teamId || '',
+      scope: agent.teams.length > 0 ? 'team' : 'organization',
+      teamIds: agent.teams.map(t => t.id),
       metadata: stringifyJson(agent.metadata),
       enabled: agent.enabled,
       modelMode: agent.modelIds && agent.modelIds.length > 0 ? 'custom' : 'all',
       modelIds: Array.isArray(agent.modelIds) ? agent.modelIds : [],
+      toolMode: agent.toolIds && agent.toolIds.length > 0 ? 'custom' : 'all',
+      toolIds: Array.isArray(agent.toolIds) ? agent.toolIds : [],
     });
   };
 
@@ -785,8 +963,8 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       return;
     }
 
-    if (editForm.scope === 'team' && !editForm.teamId) {
-      onError('Select a team for team-scoped agents');
+    if (editForm.scope === 'team' && editForm.teamIds.length === 0) {
+      onError('Select at least one team for team-scoped agents');
       return;
     }
 
@@ -795,10 +973,15 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       return;
     }
 
+    if (editForm.toolMode === 'custom' && editForm.toolIds.length === 0) {
+      onError('Select at least one tool when restricting tool availability');
+      return;
+    }
+
     try {
       const payload = {
         organizationId: selectedOrgId,
-        teamId: editForm.scope === 'team' ? editForm.teamId || null : null,
+        teamIds: editForm.scope === 'team' ? editForm.teamIds : [],
         agentType: editForm.agentType.trim(),
         agentName: editForm.agentName.trim(),
         description: editForm.description.trim() || null,
@@ -807,6 +990,11 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         metadata: sanitizeJsonText(editForm.metadata, 'Metadata'),
         modelIds: editForm.modelMode === 'custom' ? editForm.modelIds : [],
       };
+      if (editForm.toolMode === 'custom') {
+        (payload as any).toolIds = editForm.toolIds;
+      } else {
+        (payload as any).toolIds = [];
+      }
 
       const response = await fetch(`${baseURL}/api/admin/agents/${agentId}`, {
         method: 'PUT',
@@ -838,7 +1026,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     try {
       const payload = {
         organizationId: selectedOrgId,
-        teamId: agent.teamId,
+        teamIds: agent.teams.map(t => t.id),
         agentType: agent.agentType,
         agentName: agent.agentName,
         description: agent.description,
@@ -898,12 +1086,24 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
 
   const openSaveTemplateDialog = (source: 'create' | 'edit') => {
     setSaveTemplateFor(source);
-    setTemplateForm({ key: '', description: '', scope: 'organization', teamId: '' });
+    setTemplateForm({ key: '', description: '', scope: 'organization', teamIds: [] });
     setSaveTemplateDialogOpen(true);
   };
 
   const toggleInstructions = (agentId: string) => {
     setExpandedInstructions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(agentId)) {
+        newSet.delete(agentId);
+      } else {
+        newSet.add(agentId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleTools = (agentId: string) => {
+    setExpandedTools(prev => {
       const newSet = new Set(prev);
       if (newSet.has(agentId)) {
         newSet.delete(agentId);
@@ -929,15 +1129,15 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       return;
     }
 
-    if (templateForm.scope === 'team' && !templateForm.teamId) {
-      onError('Select a team for team-scoped templates');
+    if (templateForm.scope === 'team' && templateForm.teamIds.length === 0) {
+      onError('Select at least one team for team-scoped templates');
       return;
     }
 
     try {
       const payload = {
         organizationId: selectedOrgId,
-        teamId: templateForm.scope === 'team' ? templateForm.teamId || null : null,
+        teamIds: templateForm.scope === 'team' ? templateForm.teamIds : [],
         instructionKey: templateForm.key.trim(),
         instructionValue: instructionValue.trim(),
         description: templateForm.description.trim() || null,
@@ -966,16 +1166,21 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   };
 
   const renderScopeBadge = (agent: AgentRecord) => {
-    if (agent.teamId) {
+    if (agent.teams.length > 0) {
       return (
-        <span
-          className={cn(
-            'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-            isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
-          )}
-        >
-          Team{agent.teamName ? `: ${agent.teamName}` : ''}
-        </span>
+        <div className="flex flex-wrap gap-1">
+          {agent.teams.map(team => (
+            <span
+              key={team.id}
+              className={cn(
+                'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
+              )}
+            >
+              Team · {team.name}
+            </span>
+          ))}
+        </div>
       );
     }
     return (
@@ -998,15 +1203,44 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     return mapping;
   }, [models]);
 
-  const filteredAgents = useMemo(() => {
-    if (teamFilterIds.length === 0) {
-      return agents;
+  const toolLookup = useMemo(() => {
+    const mapping: Record<string, ToolSummary> = {};
+    for (const tool of toolsList) {
+      mapping[tool.id] = tool;
     }
+    return mapping;
+  }, [toolsList]);
+
+  const filteredAgents = useMemo(() => {
     return agents.filter(agent => {
-      if (!agent.teamId) return true;
-      return teamFilterIds.includes(agent.teamId);
+      // Filter by team
+      if (teamFilterIds.length > 0) {
+        if (agent.teams.length === 0) {
+          // Org-wide agent, pass team filter
+        } else if (!agent.teams.some(t => teamFilterIds.includes(t.id))) {
+          return false;
+        }
+      }
+
+      // Filter by model
+      if (modelFilterIds.length > 0 && agent.modelIds.length > 0) {
+        // Agent has specific models, check if any match the filter
+        if (!agent.modelIds.some(modelId => modelFilterIds.includes(modelId))) {
+          return false;
+        }
+      }
+
+      // Filter by tool
+      if (toolFilterIds.length > 0 && agent.toolIds.length > 0) {
+        // Agent has specific tools, check if any match the filter
+        if (!agent.toolIds.some(toolId => toolFilterIds.includes(toolId))) {
+          return false;
+        }
+      }
+
+      return true;
     });
-  }, [agents, teamFilterIds]);
+  }, [agents, teamFilterIds, modelFilterIds, toolFilterIds]);
 
   return (
     <div className="space-y-4">
@@ -1022,6 +1256,8 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
             onOrgChange={orgId => {
               setSelectedOrgId(orgId);
               setTeamFilterIds([]);
+              setModelFilterIds([]);
+              setToolFilterIds([]);
               cancelEditAgent();
               setShowCreateForm(false);
             }}
@@ -1047,6 +1283,54 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
               selectedTeamIds={teamFilterIds}
               onTeamChange={handleTeamFilterChange}
               placeholder="All teams"
+              allowEmpty
+            />
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={cn('block text-xs font-medium mb-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
+            Filter by Model
+          </label>
+          {modelsLoading && models.length === 0 ? (
+            <div
+              className={cn(
+                'h-[34px] w-full rounded-md border animate-pulse',
+                isLight ? 'border-gray-200 bg-gray-100' : 'border-gray-700 bg-gray-800',
+              )}
+            />
+          ) : (
+            <ModelMultiSelector
+              isLight={isLight}
+              models={models.map(m => ({ id: m.id, name: m.name, enabled: m.enabled }))}
+              selectedModelIds={modelFilterIds}
+              onChange={setModelFilterIds}
+              placeholder="All models"
+              allowEmpty
+            />
+          )}
+        </div>
+
+        <div>
+          <label className={cn('block text-xs font-medium mb-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
+            Filter by Tool
+          </label>
+          {toolsLoading && toolsList.length === 0 ? (
+            <div
+              className={cn(
+                'h-[34px] w-full rounded-md border animate-pulse',
+                isLight ? 'border-gray-200 bg-gray-100' : 'border-gray-700 bg-gray-800',
+              )}
+            />
+          ) : (
+            <ToolMultiSelector
+              isLight={isLight}
+              tools={toolsList.map(t => ({ id: t.id, name: t.name, enabled: t.enabled, type: t.type }))}
+              selectedToolIds={toolFilterIds}
+              onChange={setToolFilterIds}
+              placeholder="All tools"
               allowEmpty
             />
           )}
@@ -1150,10 +1434,10 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                   rows={2}
                   value={createForm.description}
                   onChange={e => setCreateForm(prev => ({ ...prev, description: e.target.value }))}
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
+                className={cn(
+                    'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
                     isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                  )}
+                )}
                 />
               </div>
 
@@ -1176,7 +1460,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                   placeholder="You are a helpful AI assistant..."
                   required
                   className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 agents-tab-scrollbar',
+                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea agents-tab-scrollbar',
                     isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
                   )}
                 />
@@ -1191,7 +1475,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                   value={createForm.metadata}
                   onChange={e => setCreateForm(prev => ({ ...prev, metadata: e.target.value }))}
                   className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
+                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
                     isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
                   )}
                 />
@@ -1223,16 +1507,15 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                 </div>
                 <div>
                   <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                    Team (optional)
+                    Teams (optional)
                   </label>
-                  <SingleTeamSelector
+                  <TeamMultiSelector
                     isLight={isLight}
                     teams={teams}
-                    selectedTeamId={createForm.teamId}
-                    onTeamChange={value => setCreateForm(prev => ({ ...prev, teamId: value }))}
-                    placeholder="Select team"
+                    selectedTeamIds={createForm.teamIds}
+                    onTeamChange={(value: string[]) => setCreateForm(prev => ({ ...prev, teamIds: value }))}
+                    placeholder="Select teams"
                     disabled={createForm.scope !== 'team'}
-                    allowEmpty={false}
                   />
                 </div>
               </div>
@@ -1277,9 +1560,58 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                     />
                     {createModelsDisabled && (
                       <p className={cn('text-[11px]', isLight ? 'text-red-500' : 'text-red-400')}>
-                        {createForm.scope === 'team' && !createForm.teamId
-                          ? 'Select a team to see team-scoped models.'
+                        {createForm.scope === 'team' && createForm.teamIds.length === 0
+                          ? 'Select teams to see team-scoped models.'
                           : 'No models available for this scope.'}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                    Tool Availability
+                  </label>
+                  <span className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    {createForm.toolMode === 'all' ? 'All tools allowed' : `${createForm.toolIds.length} selected`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <Radio
+                    name="create-agent-tool-mode"
+                    value="all"
+                    checked={createForm.toolMode === 'all'}
+                    onChange={() => setCreateForm(prev => ({ ...prev, toolMode: 'all', toolIds: [] }))}
+                    label="All tools"
+                    isLight={isLight}
+                  />
+                  <Radio
+                    name="create-agent-tool-mode"
+                    value="custom"
+                    checked={createForm.toolMode === 'custom'}
+                    onChange={() => setCreateForm(prev => ({ ...prev, toolMode: 'custom' }))}
+                    label="Specific tools"
+                    isLight={isLight}
+                  />
+                </div>
+                {createForm.toolMode === 'custom' && (
+                  <>
+                    <ToolMultiSelector
+                      isLight={isLight}
+                      tools={availableCreateTools}
+                      selectedToolIds={createForm.toolIds}
+                      onChange={ids => setCreateForm(prev => ({ ...prev, toolIds: ids }))}
+                      loading={toolsLoading}
+                      disabled={createToolsDisabled}
+                      placeholder={createToolsPlaceholder}
+                    />
+                    {createToolsDisabled && (
+                      <p className={cn('text-[11px]', isLight ? 'text-red-500' : 'text-red-400')}>
+                        {createForm.scope === 'team' && createForm.teamIds.length === 0
+                          ? 'Select teams to see team-scoped tools.'
+                          : 'No tools available for this scope.'}
                       </p>
                     )}
                   </>
@@ -1406,7 +1738,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                             value={editForm.description}
                             onChange={e => setEditForm(prev => (prev ? { ...prev, description: e.target.value } : prev))}
                             className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
+                              'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
                               isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
                             )}
                           />
@@ -1429,7 +1761,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                             value={editForm.promptTemplate}
                             onChange={e => setEditForm(prev => (prev ? { ...prev, promptTemplate: e.target.value } : prev))}
                             className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 agents-tab-scrollbar',
+                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea agents-tab-scrollbar',
                               isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
                             )}
                           />
@@ -1444,7 +1776,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                             value={editForm.metadata}
                             onChange={e => setEditForm(prev => (prev ? { ...prev, metadata: e.target.value } : prev))}
                             className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
+                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
                               isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
                             )}
                           />
@@ -1476,16 +1808,15 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                           </div>
                           <div>
                             <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                              Team (optional)
+                              Teams (optional)
                             </label>
-                            <SingleTeamSelector
+                            <TeamMultiSelector
                               isLight={isLight}
                               teams={teams}
-                              selectedTeamId={editForm.teamId}
-                              onTeamChange={value => setEditForm(prev => (prev ? { ...prev, teamId: value } : prev))}
-                              placeholder="Select team"
+                              selectedTeamIds={editForm.teamIds}
+                              onTeamChange={(value: string[]) => setEditForm(prev => (prev ? { ...prev, teamIds: value } : prev))}
+                              placeholder="Select teams"
                               disabled={editForm.scope !== 'team'}
-                              allowEmpty={false}
                             />
                           </div>
                         </div>
@@ -1530,9 +1861,58 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                               />
                               {editModelsDisabled && (
                                 <p className={cn('text-[11px]', isLight ? 'text-red-500' : 'text-red-400')}>
-                                  {editForm.scope === 'team' && !editForm.teamId
-                                    ? 'Select a team to see team-scoped models.'
+                                  {editForm.scope === 'team' && editForm.teamIds.length === 0
+                                    ? 'Select teams to see team-scoped models.'
                                     : 'No models available for this scope.'}
+                                </p>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                              Tool Availability
+                            </label>
+                            <span className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {editForm.toolMode === 'all' ? 'All tools allowed' : `${editForm.toolIds.length} selected`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <Radio
+                              name={`edit-agent-tool-mode-${agent.id}`}
+                              value="all"
+                              checked={editForm.toolMode === 'all'}
+                              onChange={() => setEditForm(prev => (prev ? { ...prev, toolMode: 'all', toolIds: [] } : prev))}
+                              label="All tools"
+                              isLight={isLight}
+                            />
+                            <Radio
+                              name={`edit-agent-tool-mode-${agent.id}`}
+                              value="custom"
+                              checked={editForm.toolMode === 'custom'}
+                              onChange={() => setEditForm(prev => (prev ? { ...prev, toolMode: 'custom' } : prev))}
+                              label="Specific tools"
+                              isLight={isLight}
+                            />
+                          </div>
+                          {editForm.toolMode === 'custom' && (
+                            <>
+                              <ToolMultiSelector
+                                isLight={isLight}
+                                tools={availableEditTools}
+                                selectedToolIds={editForm.toolIds}
+                                onChange={ids => setEditForm(prev => (prev ? { ...prev, toolIds: ids } : prev))}
+                                loading={toolsLoading}
+                                disabled={editToolsDisabled}
+                                placeholder={editToolsPlaceholder}
+                              />
+                              {editToolsDisabled && (
+                                <p className={cn('text-[11px]', isLight ? 'text-red-500' : 'text-red-400')}>
+                                  {editForm.scope === 'team' && editForm.teamIds.length === 0
+                                    ? 'Select teams to see team-scoped tools.'
+                                    : 'No tools available for this scope.'}
                                 </p>
                               )}
                             </>
@@ -1655,6 +2035,155 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                             })
                           ) : (
                             <span className={cn(isLight ? 'text-gray-500' : 'text-gray-400')}>All models</span>
+                          )}
+                        </div>
+
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => toggleTools(agent.id)}
+                            className={cn(
+                              'flex items-center justify-between w-full text-xs font-medium mb-1 transition-colors',
+                              isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-gray-100'
+                            )}>
+                            <span>
+                              Tools
+                              {agent.toolIds && agent.toolIds.length > 0 ? (() => {
+                                const categorizedTools = {
+                                  frontend: 0,
+                                  backend: 0,
+                                  builtin: 0,
+                                  mcp: 0,
+                                };
+                                agent.toolIds.forEach(toolId => {
+                                  const tool = toolLookup[toolId];
+                                  if (tool) {
+                                    categorizedTools[tool.type]++;
+                                  }
+                                });
+                                const stats = [];
+                                if (categorizedTools.frontend > 0) stats.push(`Frontend: ${categorizedTools.frontend}`);
+                                if (categorizedTools.backend > 0) stats.push(`Backend: ${categorizedTools.backend}`);
+                                if (categorizedTools.builtin > 0) stats.push(`Built-in: ${categorizedTools.builtin}`);
+                                if (categorizedTools.mcp > 0) stats.push(`MCP: ${categorizedTools.mcp}`);
+                                return stats.length > 0 ? ` (${stats.join(', ')})` : '';
+                              })() : ' (All tools)'}
+                            </span>
+                            <svg
+                              className={cn('w-4 h-4 transition-transform', expandedTools.has(agent.id) && 'rotate-180')}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          {expandedTools.has(agent.id) && (
+                            <div className={cn('text-xs p-2 rounded max-h-48 overflow-auto agents-tab-scrollbar', isLight ? 'bg-gray-50' : 'bg-gray-900/40')}>
+                              {(agent.toolIds && agent.toolIds.length > 0) ? (() => {
+                                const categorizedTools: Record<string, ToolSummary[]> = {
+                                  frontend: [],
+                                  backend: [],
+                                  builtin: [],
+                                  mcp: [],
+                                };
+                                agent.toolIds.forEach(toolId => {
+                                  const tool = toolLookup[toolId];
+                                  if (tool) {
+                                    categorizedTools[tool.type].push(tool);
+                                  }
+                                });
+
+                                return (
+                                  <div className="space-y-3">
+                                    {categorizedTools.frontend.length > 0 && (
+                                      <div>
+                                        <div className={cn('font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                          Frontend Tools ({categorizedTools.frontend.length})
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {categorizedTools.frontend.map(tool => (
+                                            <span
+                                              key={`${agent.id}-tool-${tool.id}`}
+                                              className={cn(
+                                                'inline-flex items-center gap-1 px-2 py-1 rounded font-medium',
+                                                isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-300'
+                                              )}
+                                            >
+                                              {tool.name}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {categorizedTools.backend.length > 0 && (
+                                      <div>
+                                        <div className={cn('font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                          Backend Tools ({categorizedTools.backend.length})
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {categorizedTools.backend.map(tool => (
+                                            <span
+                                              key={`${agent.id}-tool-${tool.id}`}
+                                              className={cn(
+                                                'inline-flex items-center gap-1 px-2 py-1 rounded font-medium',
+                                                isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-300'
+                                              )}
+                                            >
+                                              {tool.name}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {categorizedTools.builtin.length > 0 && (
+                                      <div>
+                                        <div className={cn('font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                          Built-in Tools ({categorizedTools.builtin.length})
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {categorizedTools.builtin.map(tool => (
+                                            <span
+                                              key={`${agent.id}-tool-${tool.id}`}
+                                              className={cn(
+                                                'inline-flex items-center gap-1 px-2 py-1 rounded font-medium',
+                                                isLight ? 'bg-orange-100 text-orange-700' : 'bg-orange-900/30 text-orange-300'
+                                              )}
+                                            >
+                                              {tool.name}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {categorizedTools.mcp.length > 0 && (
+                                      <div>
+                                        <div className={cn('font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                          MCP Tools ({categorizedTools.mcp.length})
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {categorizedTools.mcp.map(tool => (
+                                            <span
+                                              key={`${agent.id}-tool-${tool.id}`}
+                                              className={cn(
+                                                'inline-flex items-center gap-1 px-2 py-1 rounded font-medium',
+                                                isLight ? 'bg-green-100 text-green-700' : 'bg-green-900/30 text-green-300'
+                                              )}
+                                            >
+                                              {tool.name}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })() : (
+                                <div className={cn(isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                  All tools are available for this agent
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
 
@@ -1871,7 +2400,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                     value={templateForm.description}
                     onChange={e => setTemplateForm(prev => ({ ...prev, description: e.target.value }))}
                     className={cn(
-                      'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
+                      'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
                       isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
                     )}
                   />
@@ -1903,16 +2432,15 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                   </div>
                   <div>
                     <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                      Team (optional)
+                      Teams (optional)
                     </label>
-                    <SingleTeamSelector
+                    <TeamMultiSelector
                       isLight={isLight}
                       teams={teams}
-                      selectedTeamId={templateForm.teamId}
-                      onTeamChange={value => setTemplateForm(prev => ({ ...prev, teamId: value }))}
-                      placeholder="Select team"
+                      selectedTeamIds={templateForm.teamIds}
+                      onTeamChange={(value: string[]) => setTemplateForm(prev => ({ ...prev, teamIds: value }))}
+                      placeholder="Select teams"
                       disabled={templateForm.scope !== 'team'}
-                      allowEmpty={false}
                     />
                   </div>
                 </div>

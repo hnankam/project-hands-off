@@ -104,22 +104,27 @@ def register_agent_routes(app: FastAPI) -> None:
                 async with conn.cursor() as cur:
                     await cur.execute(
                         """
-                        SELECT id
-                          FROM agents
-                         WHERE agent_type = %s
-                           AND (organization_id IS NULL OR organization_id = %s)
-                           AND (team_id IS NULL OR team_id = %s)
-                         ORDER BY
-                           CASE
-                             WHEN team_id = %s THEN 0
-                             WHEN team_id IS NULL AND organization_id = %s THEN 1
-                             WHEN organization_id IS NULL THEN 2
+                        SELECT a.id,
+                               CASE
+                                 WHEN EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id AND at.team_id = %s) 
+                                      AND a.organization_id = %s THEN 0
+                                 WHEN NOT EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id) 
+                                      AND a.organization_id = %s THEN 1
+                                 WHEN a.organization_id IS NULL 
+                                      AND NOT EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id) THEN 2
                              ELSE 3
-                           END,
-                           created_at DESC
+                               END as priority
+                          FROM agents a
+                         WHERE a.agent_type = %s
+                           AND (a.organization_id IS NULL OR a.organization_id = %s)
+                           AND (
+                               NOT EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id)
+                               OR EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id AND at.team_id = %s)
+                           )
+                         ORDER BY priority, a.created_at DESC
                          LIMIT 1
                         """,
-                        (agent_type, organization_id, team_id, team_id, organization_id),
+                        (team_id, organization_id, organization_id, agent_type, organization_id, team_id),
                     )
                     agent_row = await cur.fetchone()
                     if agent_row:
@@ -127,22 +132,27 @@ def register_agent_routes(app: FastAPI) -> None:
 
                     await cur.execute(
                         """
-                        SELECT id
-                          FROM models
-                         WHERE model_key = %s
-                           AND (organization_id IS NULL OR organization_id = %s)
-                           AND (team_id IS NULL OR team_id = %s)
-                         ORDER BY
-                           CASE
-                             WHEN team_id = %s THEN 0
-                             WHEN team_id IS NULL AND organization_id = %s THEN 1
-                             WHEN organization_id IS NULL THEN 2
+                        SELECT m.id,
+                               CASE
+                                 WHEN EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id AND mt.team_id = %s) 
+                                      AND m.organization_id = %s THEN 0
+                                 WHEN NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id) 
+                                      AND m.organization_id = %s THEN 1
+                                 WHEN m.organization_id IS NULL 
+                                      AND NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id) THEN 2
                              ELSE 3
-                           END,
-                           created_at DESC
+                               END as priority
+                          FROM models m
+                         WHERE m.model_key = %s
+                           AND (m.organization_id IS NULL OR m.organization_id = %s)
+                           AND (
+                               NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id)
+                               OR EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id AND mt.team_id = %s)
+                           )
+                         ORDER BY priority, m.created_at DESC
                          LIMIT 1
                         """,
-                        (model, organization_id, team_id, team_id, organization_id),
+                        (team_id, organization_id, organization_id, model, organization_id, team_id),
                     )
                     model_row = await cur.fetchone()
                     if model_row:

@@ -14,6 +14,7 @@ import { TeamsTab } from '../components/admin/TeamsTab';
 import { UsersTab } from '../components/admin/UsersTab';
 import { ProvidersTab } from '../components/admin/ProvidersTab';
 import ModelsTab from '@src/components/admin/ModelsTab';
+import ToolsTab from '@src/components/admin/ToolsTab';
 import AgentsTab from '@src/components/admin/AgentsTab';
 import { DeploymentsTab } from '../components/admin/DeploymentsTab';
 import { UsageTab } from '../components/admin/UsageTab';
@@ -36,6 +37,7 @@ type AdminTabKey =
   | 'usage'
   | 'providers'
   | 'models'
+  | 'tools'
   | 'agents'
   | 'deployments';
 
@@ -211,7 +213,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
   const [activeTab, setActiveTab] = useState<AdminTabKey>(() => {
     try {
       const stored = localStorage.getItem('adminPageActiveTab');
-      const validTabs: AdminTabKey[] = ['organizations', 'teams', 'users', 'usage', 'providers', 'models', 'agents', 'deployments'];
+      const validTabs: AdminTabKey[] = ['organizations', 'teams', 'users', 'usage', 'providers', 'models', 'tools', 'agents', 'deployments'];
       if (stored && validTabs.includes(stored as AdminTabKey)) {
         return stored as AdminTabKey;
       }
@@ -267,12 +269,12 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
     }
   }, [initialTab]);
 
-  // Preselect active organization when component mounts or organization changes
+  // Preselect active organization when component mounts or organization ID changes
   useEffect(() => {
     if (organization?.id && !selectedOrgForTeams) {
       setSelectedOrgForTeams(organization.id);
     }
-  }, [organization]);
+  }, [organization?.id]); // Only trigger when the ID changes, not the object reference
 
   const loadOrganizations = async () => {
     try {
@@ -387,10 +389,10 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
           isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700',
         )}>
         <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0 session-tabs-scroll">
-          {(['organizations', 'teams', 'users', 'usage', 'providers', 'models', 'agents', 'deployments'] as const)
+          {(['organizations', 'teams', 'users', 'usage', 'providers', 'models', 'tools', 'agents', 'deployments'] as const)
             .filter(tab => {
-              // Hide providers, models, and agents tabs for member users
-              if (['providers', 'models', 'agents', 'deployments'].includes(tab) && !isOwnerOrAdmin) {
+              // Hide providers, models, tools, and agents tabs for member users
+              if (['providers', 'models', 'tools', 'agents', 'deployments'].includes(tab) && !isOwnerOrAdmin) {
                 return false;
               }
               return true;
@@ -615,6 +617,28 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
           isOwnerOrAdmin ? (
             <div className="animate-fadeIn">
               <ModelsTab
+                isLight={isLight}
+                organizations={organizations}
+                preselectedOrgId={selectedOrgForTeams}
+                onError={setError}
+                onSuccess={setSuccess}
+              />
+            </div>
+          ) : (
+            <div className={cn('flex-1 flex items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
+              <div className="text-center">
+                <p className={cn('text-sm', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                  You need owner or admin permissions to access this section.
+                </p>
+              </div>
+            </div>
+          )
+        )}
+
+        {activeTab === 'tools' && (
+          isOwnerOrAdmin ? (
+            <div className="animate-fadeIn">
+              <ToolsTab
                 isLight={isLight}
                 organizations={organizations}
                 preselectedOrgId={selectedOrgForTeams}

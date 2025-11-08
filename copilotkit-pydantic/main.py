@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import DEBUG, HOST, PORT, logger
 from database.connection import init_connection_pool
 from middleware import agent_model_middleware
-from api import register_agent_routes, register_info_routes, register_websocket_routes
+from api import register_agent_routes, register_info_routes, register_websocket_routes, register_admin_routes
 from services import initialize_deployments
 
 # Optional: Logfire integration
@@ -83,6 +83,7 @@ app.middleware("http")(agent_model_middleware)
 register_agent_routes(app)
 register_info_routes(app)
 register_websocket_routes(app)
+register_admin_routes(app)
 
 # Run server if executed directly
 if __name__ == "__main__":

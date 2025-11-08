@@ -1,5 +1,36 @@
 # Database Migration Summary
 
+**Latest Migration Date:** 2025-11-07  
+**Latest Migration Script:** `007_add_tools_tables.sql`  
+**Status:** ✅ **COMPLETED SUCCESSFULLY**
+
+---
+
+## Recent Changes (Tools Management)
+
+### 1. Tool Registry Added
+- Created `tools` table with support for tool types (`frontend`, `backend`, `builtin`, `mcp`)
+- Added scope-aware uniqueness (organization/team) and metadata/config blobs
+- Seeded default entries for backend, built-in, and frontend Copilot actions
+
+### 2. MCP Server Registry
+- Created `mcp_servers` table with transport details and environment configuration
+- Enabled soft scoping per organization/team
+- Added automatic updated-at trigger
+
+### 3. Agent Tool Assignments
+- Created `agent_tool_mappings` join table for many-to-many agent ↔ tool relationships
+- Supports contextual tool enablement per agent
+
+### 4. Data Seeding
+- Inserted default backend tools (`create_plan`, `update_plan_step`, `get_weather`)
+- Registered built-in Pydantic tools with metadata for runtime instantiation
+- Added readonly frontend tools matching current Copilot action names
+
+---
+
+## Previous Migration (Multi-Tenancy Baseline)
+
 **Migration Date:** 2025-10-31  
 **Migration Script:** `001_add_multi_tenancy_and_rename_usage.sql`  
 **Status:** ✅ **COMPLETED SUCCESSFULLY**

@@ -28,59 +28,56 @@ def mcp_log_handler(level: str, data: Any, logger: str | None = None) -> None:
         print(f"[MCP {logger or 'unknown'}] DEBUG: {data}", file=sys.stderr)
 
 
-def load_mcp_toolsets() -> list:
-    """Load MCP server toolsets defined in the local configuration file.
-    
-    Filters out servers with "disabled": true before loading them.
-    
+def load_mcp_toolsets(server_configs: dict | None = None) -> list:
+    """Load MCP server toolsets either from provided config or local file.
+
+    Args:
+        server_configs: Optional mapping of server key -> config dictionary. When
+            provided, the on-disk configuration file is ignored.
+
     Returns:
         List of MCP server toolsets (MCPServerStdio, MCPServerSSE, etc.)
     """
     try:
-        # Read and parse the config file
-        config_data = json.loads(MCP_CONFIG_PATH.read_text())
-        
-        # Filter out disabled servers
-        mcp_servers = config_data.get("mcpServers", {})
+        if server_configs is None:
+            config_data = json.loads(MCP_CONFIG_PATH.read_text())
+            raw_servers = config_data.get("mcpServers", {})
+        else:
+            raw_servers = server_configs
+
         disabled_servers = []
         enabled_servers = {}
-        
-        for server_id, server_config in mcp_servers.items():
+
+        for server_id, server_config in raw_servers.items():
             if server_config.get("disabled", False):
                 disabled_servers.append(server_id)
-            else:
-                # Remove the 'disabled' field if present (not part of MCP schema)
-                server_config_clean = {k: v for k, v in server_config.items() if k != "disabled"}
-                enabled_servers[server_id] = server_config_clean
-        
-        # Log disabled servers
+                continue
+            server_config_clean = {k: v for k, v in server_config.items() if k != "disabled"}
+            enabled_servers[server_id] = server_config_clean
+
         for server_id in disabled_servers:
             print(f"⊘ Skipping disabled MCP server: {server_id}")
-        
-        # If all servers are disabled, return empty list
+
         if not enabled_servers:
             print("⚠️ All MCP servers are disabled")
             return []
-        
-        # Create temporary config with only enabled servers
+
         filtered_config = {"mcpServers": enabled_servers}
-        
-        # Write to temporary file and load
+
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp_file:
             json.dump(filtered_config, tmp_file)
             tmp_path = Path(tmp_file.name)
-        
+
         try:
             toolsets = load_mcp_servers(tmp_path)
         finally:
-            # Clean up temp file
             tmp_path.unlink(missing_ok=True)
-            
+
     except FileNotFoundError:
         print(f"⚠️ MCP config not found at {MCP_CONFIG_PATH}, continuing without MCP servers")
         return []
     except ValidationError as exc:
-        print(f"⚠️ Failed to parse MCP config at {MCP_CONFIG_PATH}: {exc}")
+        print(f"⚠️ Failed to parse MCP config: {exc}")
         return []
     except Exception as exc:
         print(f"⚠️ Error loading MCP config: {exc}")
@@ -98,7 +95,8 @@ def load_mcp_toolsets() -> list:
             if hasattr(toolset, 'max_retries'):
                 toolset.max_retries = max_retries
     
-    print(f"🔌 Loaded {len(toolsets)} MCP server(s) from {MCP_CONFIG_PATH}")
+    source = MCP_CONFIG_PATH if server_configs is None else 'runtime configuration'
+    print(f"🔌 Loaded {len(toolsets)} MCP server(s) from {source}")
     if disabled_servers:
         print(f"   (Skipped {len(disabled_servers)} disabled server(s))")
     

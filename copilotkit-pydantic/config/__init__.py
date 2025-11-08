@@ -23,6 +23,12 @@ from .prompts import (
     store_prompts_for_context,
     clear_context_prompts,
 )
+from .tools import (
+    get_tools_for_context,
+    get_mcp_servers_for_context,
+    store_tools_for_context,
+    clear_context_tools,
+)
 
 # Lazy-loaded MODELS and AGENT_PROMPTS
 def __getattr__(name):
@@ -61,6 +67,10 @@ __all__ = [
     'get_agent_info_for_context',
     'store_prompts_for_context',
     'clear_context_prompts',
+    'get_tools_for_context',
+    'get_mcp_servers_for_context',
+    'store_tools_for_context',
+    'clear_context_tools',
     'AGENT_PROMPTS',
     'agent_types',
 ]

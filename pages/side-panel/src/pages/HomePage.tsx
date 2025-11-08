@@ -172,7 +172,7 @@ const SettingsButton: React.FC<{ isLight: boolean; theme: string; onOpenSettings
           className={cn(
             'absolute bottom-full right-0 mb-1 w-64 rounded-md border shadow-lg z-[9999]',
             isLight
-              ? 'bg-gray-50 border-gray-200'
+              ? 'bg-white border-gray-200'
               : 'bg-[#151C24] border-gray-700'
           )}
         >
@@ -306,6 +306,8 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const [activeTeamName, setActiveTeamName] = useState<string | null>(null);
   const [teamsRefreshKey, setTeamsRefreshKey] = useState(0);
   const [currentTipIndex, setCurrentTipIndex] = useState(0);
+  const [sessionsPage, setSessionsPage] = useState(1);
+  const sessionsPerPage = 10;
   
   // Initialize activeHomeTab from localStorage
   const [activeHomeTab, setActiveHomeTab] = useState<'sessions' | 'usage' | 'insights'>(() => {
@@ -472,7 +474,12 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     return [...sessions].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }, [sessions]);
 
-  const recentSessions = useMemo(() => sortedSessions.slice(0, 6), [sortedSessions]);
+  const totalSessionPages = useMemo(() => Math.ceil(sortedSessions.length / sessionsPerPage), [sortedSessions.length, sessionsPerPage]);
+
+  const paginatedSessions = useMemo(() => {
+    const startIndex = (sessionsPage - 1) * sessionsPerPage;
+    return sortedSessions.slice(startIndex, startIndex + sessionsPerPage);
+  }, [sortedSessions, sessionsPage, sessionsPerPage]);
 
   const totalSessions = sessions.length;
   const activeSessionsCount = useMemo(() => sessions.filter(session => session.isActive).length, [sessions]);
@@ -550,6 +557,20 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     }
   }, [creatingSession, onGoToSessions]);
 
+  const handleGoToSession = useCallback(async (sessionId: string) => {
+    if (!canAccessSessions) {
+      return;
+    }
+
+    try {
+      await sessionStorageDBWrapper.setActiveSession(sessionId);
+      onGoToSessions();
+    } catch (error) {
+      console.error('[HomePage] Failed to switch to session:', error);
+      setActionMessage({ type: 'error', text: 'Failed to open session. Please try again.' });
+    }
+  }, [canAccessSessions, onGoToSessions]);
+
   const handleRefreshMetrics = useCallback(() => {
     setMetricsRefreshKey(previous => previous + 1);
   }, []);
@@ -592,8 +613,8 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
       case 'team':
       default:
         return (
-          <svg className={baseClasses} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path d="M12 12c2.21 0 4-1.79 4-4S14.21 4 12 4s-4 1.79-4 4 1.79 4 4 4zm6 8v-1c0-2.21-1.79-4-4-4H10c-2.21 0-4 1.79-4 4v1" strokeLinecap="round" strokeLinejoin="round" />
+          <svg className={baseClasses} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
         );
     }
@@ -704,8 +725,8 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
               className={cn(
                 'relative overflow-hidden rounded-xl border px-4 py-5 max-w-4xl mx-auto',
                 isLight
-                  ? 'border-gray-200 bg-gradient-to-br from-white via-gray-50 to-blue-50/40'
-                  : 'border-gray-800 bg-gradient-to-br from-[#111827] via-[#111b29] to-[#0f172a]'
+                  ? 'bg-white border-gray-200'
+                  : 'bg-[#151C24] border-gray-700'
               )}
             >
               <div className="space-y-4">
@@ -779,7 +800,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                       'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold transition-colors border',
                       creatingSession
                         ? isLight ? 'bg-gray-200 text-gray-400 cursor-wait border-gray-300' : 'bg-gray-700 text-gray-400 cursor-wait border-gray-600'
-                        : isLight ? 'bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200' : 'bg-purple-900/20 text-purple-300 hover:bg-purple-900/30 border-purple-800/50'
+                        : isLight ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200' : 'bg-blue-900/20 text-blue-300 hover:bg-blue-900/30 border-blue-800/50'
                     )}
                   >
                     {creatingSession ? (
@@ -861,23 +882,20 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                     <div
                       key={card.key}
                       className={cn(
-                        'rounded-lg p-4 transition-colors',
-                        card.key === 'totalSessions' && (isLight ? 'bg-blue-50 text-blue-700' : 'bg-blue-900/30 text-blue-300'),
-                        card.key === 'activeSessions' && (isLight ? 'bg-green-50 text-green-700' : 'bg-green-900/20 text-green-300'),
-                        card.key === 'tokensUsed' && (isLight ? 'bg-purple-50 text-purple-700' : 'bg-purple-900/30 text-purple-300'),
-                        card.key === 'agents' && (isLight ? 'bg-amber-50 text-amber-700' : 'bg-amber-900/30 text-amber-300')
+                        'rounded-lg border p-3 transition-colors',
+                        isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
                       )}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide opacity-80">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           {card.label}
           </div>
                         {renderIcon(card.icon)}
                       </div>
-                      <div className="mt-2 text-2xl font-semibold">
+                      <div className={cn('text-2xl font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                         {card.value}
                       </div>
-                      <div className="mt-1 text-xs leading-snug opacity-80">
+                      <div className={cn('mt-1 text-xs leading-snug', isLight ? 'text-gray-600' : 'text-gray-400')}>
                         {card.description}
                       </div>
                     </div>
@@ -887,36 +905,87 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                 {/* Recent Sessions */}
                 <div
                   className={cn(
-                    'rounded-xl border',
-                    isLight ? 'border-gray-200 bg-white' : 'border-gray-800 bg-[#101720]'
+                    'rounded-lg border overflow-hidden',
+                    isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
                   )}
                 >
                   <div
                     className={cn(
-                      'flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between',
-                      isLight ? 'border-gray-200' : 'border-gray-800'
+                      'border-b',
+                      isLight ? 'border-gray-200' : 'border-gray-700'
                     )}
                   >
-                    <div>
+                    {/* Header Row */}
+                    <div className="flex items-center justify-between px-4 py-2">
                       <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                         Recent Sessions
                       </h3>
-                      <p className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                        Track the latest conversations across your organization.
-                      </p>
+                      <button
+                        onClick={() => onGoToSessions()}
+                        className={cn(
+                          'inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide',
+                          isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-300 hover:text-blue-200'
+                        )}
+                      >
+                        View all sessions
+                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
                     </div>
-                    <button
-                      onClick={() => onGoToSessions()}
-                      className={cn(
-                        'inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide',
-                        isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-300 hover:text-blue-200'
-                      )}
-                    >
-                      View all sessions
-                      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                        <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
+                    
+                    {/* Pagination Row */}
+                    {sortedSessions.length > 0 && (
+                      <div className={cn('flex items-center justify-end gap-3 px-4 pb-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                        <span className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                          {sortedSessions.length === 0
+                            ? 'No sessions'
+                            : `${((sessionsPage - 1) * sessionsPerPage) + 1}-${Math.min(
+                                sessionsPage * sessionsPerPage,
+                                sortedSessions.length,
+                              )} of ${sortedSessions.length}`}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setSessionsPage(p => Math.max(1, p - 1))}
+                            disabled={sessionsPage === 1}
+                            className={cn(
+                              'rounded p-1 transition-colors',
+                              sessionsPage === 1
+                                ? 'cursor-not-allowed opacity-40'
+                                : isLight
+                                ? 'hover:bg-gray-100 text-gray-600'
+                                : 'hover:bg-gray-700 text-gray-200',
+                            )}
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                            </svg>
+                          </button>
+                          <span className={cn('text-xs px-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                            {sessionsPage} / {totalSessionPages || 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSessionsPage(p => Math.min(totalSessionPages, p + 1))}
+                            disabled={sessionsPage >= totalSessionPages}
+                            className={cn(
+                              'rounded p-1 transition-colors',
+                              sessionsPage >= totalSessionPages
+                                ? 'cursor-not-allowed opacity-40'
+                                : isLight
+                                ? 'hover:bg-gray-100 text-gray-600'
+                                : 'hover:bg-gray-700 text-gray-200',
+                            )}
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   {sessionsLoading ? (
                     <div className={cn('space-y-3 px-4 py-4', isLight ? 'text-gray-500' : 'text-gray-500')}>
@@ -926,24 +995,29 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         ))}
                       </div>
                     </div>
-                  ) : recentSessions.length === 0 ? (
-                    <div className={cn('px-4 py-8 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                  ) : sortedSessions.length === 0 ? (
+                    <div className={cn('px-4 py-8 text-center text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                       No sessions yet. Create a new session to see activity appear here.
                     </div>
                   ) : (
-                    <div className="overflow-auto max-h-[400px] recent-sessions-scroll">
-                      <table className="w-full" style={{ minWidth: '800px' }}>
-                        <thead className="sticky top-0 z-10">
-                          <tr className={cn(isLight ? 'bg-gray-50 text-gray-500' : 'bg-[#0B121D] text-gray-400')}>
-                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide">Session</th>
-                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide">Agent · Model</th>
-                            <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide">Tokens</th>
-                            <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide">Status</th>
-                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide">Created</th>
+                    <div
+                      className="max-h-80 w-full overflow-auto recent-sessions-scroll"
+                      style={{ '--table-scroll-bg': isLight ? '#FFFFFF' : '#151C24' } as React.CSSProperties}
+                    >
+                      <table className={cn('min-w-full w-full border-collapse divide-y text-xs', isLight ? 'divide-gray-200' : 'divide-gray-700')}>
+                        <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
+                          <tr>
+                            <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Session</th>
+                            <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Agent</th>
+                            <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Model</th>
+                            <th className={cn('px-3 py-2 text-right text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Request</th>
+                            <th className={cn('px-3 py-2 text-right text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Response</th>
+                            <th className={cn('px-3 py-2 text-right text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Status</th>
+                            <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Updated</th>
                           </tr>
                         </thead>
-                        <tbody className={cn(isLight ? 'divide-y divide-gray-100' : 'divide-gray-800/80')}>
-                          {recentSessions.map(session => {
+                        <tbody className={cn('divide-y', isLight ? 'divide-gray-100' : 'divide-gray-700')}>
+                          {paginatedSessions.map(session => {
                             const usage = usageBySession[session.id];
                             const meta = getStatusMeta(session);
                             const createdTimestamp = getSessionCreatedTimestamp(session.id);
@@ -952,47 +1026,40 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                                 key={session.id}
                                 className={cn(
                                   'transition-colors',
-                                  isLight ? 'hover:bg-gray-50' : 'hover:bg-gray-900/60'
+                                  isLight ? 'hover:bg-gray-50' : 'hover:bg-gray-900/40'
                                 )}
                               >
-                                <td className="px-4 py-3 align-top">
-                                  <div className="flex flex-col gap-1">
+                                <td className={cn('px-3 py-2 truncate max-w-[200px]')}>
                                     <div className="flex items-center gap-2">
-                                      <span className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                                    <button
+                                      onClick={() => handleGoToSession(session.id)}
+                                      className={cn(
+                                        'truncate text-left hover:underline cursor-pointer',
+                                        isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300'
+                                      )}
+                                    >
                                         {session.title || 'Untitled session'}
-                                      </span>
+                                      </button>
                                       {session.id === currentSessionId && (
-                                        <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-300')}>
+                                      <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold flex-shrink-0', isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-300')}>
                                           Current
                                         </span>
                                       )}
-                                    </div>
-                                    <div className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                                      Updated {formatRelativeTime(session.timestamp)}
-                                    </div>
                                   </div>
                                 </td>
-                                <td className="px-4 py-3 align-top text-xs">
-                                  <div className="flex flex-col gap-1">
-                                    <span className={cn(isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-900' : 'text-gray-100')}>
                                       {prettifyLabel(session.selectedAgent)}
-                                    </span>
-                                    <span className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                                </td>
+                                <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-700' : 'text-gray-300')}>
                                       {prettifyLabel(session.selectedModel)}
-                                    </span>
-                                  </div>
                                 </td>
-                                <td className="px-4 py-3 align-top text-right text-xs">
-                                  <div className={cn('font-mono', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                                    {usage ? formatNumber(usage.total) : '—'}
-                                  </div>
-                                  {usage && (
-                                    <div className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                                      {usage.requestCount} requests
-                                    </div>
-                                  )}
+                                <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                    {usage ? formatNumber(usage.request) : '—'}
                                 </td>
-                                <td className="px-4 py-3 align-top text-right">
+                                <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                    {usage ? formatNumber(usage.response) : '—'}
+                                </td>
+                                <td className="px-3 py-2 text-right">
                                   <span
                                     className={cn(
                                       'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold',
@@ -1003,11 +1070,8 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                                     {meta.label}
                                   </span>
                                 </td>
-                                <td className="px-4 py-3 align-top text-xs">
-                                  <div className={cn('flex flex-col gap-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                    <span>{formatTimestamp(createdTimestamp)}</span>
-                                    <span className="text-[11px] opacity-70">{formatRelativeTime(createdTimestamp)}</span>
-                                  </div>
+                                <td className={cn('px-3 py-2 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                  {formatRelativeTime(session.timestamp)}
                                 </td>
                               </tr>
                             );
@@ -1026,17 +1090,16 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                 <div
                   className={cn(
                     'rounded-xl border',
-                    isLight ? 'border-gray-200 bg-white' : 'border-gray-800 bg-[#101720]'
+                    isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
                   )}
                 >
                   <div
                     className={cn(
                       'relative border-b px-4 py-3',
-                      isLight ? 'border-gray-200' : 'border-gray-800'
+                      isLight ? 'border-gray-200' : 'border-gray-700'
                     )}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
+                    <div className="pr-32">
                         <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                           Usage Overview
                         </h3>
@@ -1044,25 +1107,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                           Workspace-wide token consumption at a glance.
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleRefreshMetrics}
-                        disabled={usageLoading}
-                        className={cn(
-                          'flex items-center justify-center w-8 h-8 rounded border transition-colors flex-shrink-0',
-                          isLight
-                            ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                            : 'bg-[#151C24] border-gray-700 text-gray-200 hover:bg-gray-800',
-                        )}
-                        title="Refresh usage metrics"
-                      >
-                        <svg className={cn('w-4 h-4', usageLoading ? 'animate-spin' : '')} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2}>
-                          <path d="M4 4v4h4M16 16v-4h-4" />
-                          <path d="M5.636 5.636A7 7 0 0117 10M14.364 14.364A7 7 0 013 10" />
-                        </svg>
-                      </button>
-                    </div>
-                    <div className="mt-2 sm:hidden">
+                    <div className="absolute right-4 top-3 flex items-center gap-2">
                       <button
                         onClick={() => onGoAdmin?.('usage')}
                         className={cn(
@@ -1075,19 +1120,24 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                           <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </button>
-                    </div>
                     <button
-                      onClick={() => onGoAdmin?.('usage')}
+                        type="button"
+                        onClick={handleRefreshMetrics}
+                        disabled={usageLoading}
                       className={cn(
-                        'hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide absolute right-14 top-[18px]',
-                        isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-300 hover:text-blue-200'
+                          'flex items-center justify-center w-8 h-8 rounded border transition-colors flex-shrink-0',
+                          isLight
+                            ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                            : 'bg-[#151C24] border-gray-700 text-gray-200 hover:bg-gray-800',
                       )}
-                    >
-                      View all usage
-                      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                        <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+                        title="Refresh usage metrics"
+                      >
+                        <svg className={cn('w-4 h-4', usageLoading ? 'animate-spin' : '')} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path d="M4 4v4h4M16 16v-4h-4" />
+                          <path d="M5.636 5.636A7 7 0 0117 10M14.364 14.364A7 7 0 013 10" />
                       </svg>
                     </button>
+                    </div>
                   </div>
                   <div className="space-y-4 px-4 py-4">
                     <UsageDisplay
@@ -1099,55 +1149,55 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                     />
                     <div className="grid gap-3 text-xs grid-cols-2">
                       <div
-                        className={cn('rounded-lg px-3 py-2', isLight ? 'bg-gray-50' : 'bg-[#0B121C]')}>
-                        <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                        className={cn('rounded-lg border px-3 py-2', isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700')}>
+                        <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           Prompt Tokens
                         </div>
-                        <div className={cn('mt-1 text-lg font-semibold', isLight ? 'text-gray-800' : 'text-gray-100')}>
+                        <div className={cn('mt-1 text-lg font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                           {formatNumber(aggregatedUsage.request)}
                         </div>
-                        <div className="mt-2 h-2 rounded-full bg-gray-200 dark:bg-gray-800">
+                        <div className={cn('mt-2 h-2 rounded-full', isLight ? 'bg-gray-200' : 'bg-gray-700')}>
                           <div
-                            className={cn('h-2 rounded-full bg-blue-500 transition-all', isLight ? 'bg-blue-500' : 'bg-blue-400')}
+                            className={cn('h-2 rounded-full transition-all', isLight ? 'bg-blue-500' : 'bg-blue-400')}
                             style={{ width: `${promptShare}%` }}
                           />
                         </div>
                       </div>
-                      <div className={cn('rounded-lg px-3 py-2', isLight ? 'bg-gray-50' : 'bg-[#0B121C]')}>
-                        <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                      <div className={cn('rounded-lg border px-3 py-2', isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700')}>
+                        <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           Completion Tokens
                         </div>
-                        <div className={cn('mt-1 text-lg font-semibold', isLight ? 'text-gray-800' : 'text-gray-100')}>
+                        <div className={cn('mt-1 text-lg font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                           {formatNumber(aggregatedUsage.response)}
                         </div>
-                        <div className="mt-2 h-2 rounded-full bg-gray-200 dark:bg-gray-800">
+                        <div className={cn('mt-2 h-2 rounded-full', isLight ? 'bg-gray-200' : 'bg-gray-700')}>
                           <div
-                            className={cn('h-2 rounded-full', isLight ? 'bg-emerald-500' : 'bg-emerald-400')}
+                            className={cn('h-2 rounded-full transition-all', isLight ? 'bg-emerald-500' : 'bg-emerald-400')}
                             style={{ width: `${completionShare}%` }}
                           />
                         </div>
                       </div>
-                      <div className={cn('rounded-lg px-3 py-2', isLight ? 'bg-gray-50' : 'bg-[#0B121C]')}>
-                        <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                      <div className={cn('rounded-lg border px-3 py-2', isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700')}>
+                        <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           Requests Logged
                         </div>
-                        <div className={cn('mt-1 text-lg font-semibold', isLight ? 'text-gray-800' : 'text-gray-100')}>
+                        <div className={cn('mt-1 text-lg font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                           {formatNumber(aggregatedUsage.requestCount)}
                         </div>
-                        <div className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                        <div className={cn('text-[11px]', isLight ? 'text-gray-600' : 'text-gray-400')}>
                           {aggregatedUsage.requestCount > 0
                             ? `${formatNumber(averageTokensPerRequest)} tokens on average`
                             : 'Usage updates when requests begin.'}
                         </div>
                       </div>
-                      <div className={cn('rounded-lg px-3 py-2', isLight ? 'bg-gray-50' : 'bg-[#0B121C]')}>
-                        <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                      <div className={cn('rounded-lg border px-3 py-2', isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700')}>
+                        <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           Sessions Tracked
                         </div>
-                        <div className={cn('mt-1 text-lg font-semibold', isLight ? 'text-gray-800' : 'text-gray-100')}>
+                        <div className={cn('mt-1 text-lg font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                           {formatNumber(sessionsWithUsageCount)}
                         </div>
-                        <div className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                        <div className={cn('text-[11px]', isLight ? 'text-gray-600' : 'text-gray-400')}>
                           Last synced {lastMetricsRefresh ? formatRelativeTime(lastMetricsRefresh) : 'just now'}
                         </div>
                       </div>
@@ -1163,13 +1213,13 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                 <div
                   className={cn(
                     'rounded-xl border',
-                    isLight ? 'border-gray-200 bg-white' : 'border-gray-800 bg-[#101720]'
+                    isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
                   )}
                 >
                   <div
                     className={cn(
                       'border-b px-4 py-3',
-                      isLight ? 'border-gray-200' : 'border-gray-800'
+                      isLight ? 'border-gray-200' : 'border-gray-700'
                     )}
                   >
                     <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
@@ -1337,7 +1387,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
             <div
               className={cn(
                 'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
+                isLight ? 'bg-white border-gray-200 border' : 'bg-[#151C24] border-gray-700 border',
               )}
               onClick={e => e.stopPropagation()}>
               {/* Header */}

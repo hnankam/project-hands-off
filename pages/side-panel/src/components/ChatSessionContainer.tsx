@@ -1356,6 +1356,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         isConnected={isUsageConnected}
         isLight={isLight}
         onReset={resetCumulative}
+        sessionId={sessionId}
       />
       
       {/* Display chat history if available */}

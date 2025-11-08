@@ -66,6 +66,7 @@ def _build_agent_prompts(config: Dict[str, Any]) -> tuple[Dict[str, str], List[s
             'description': agent_cfg.get('description', ''),
             'enabled': agent_cfg.get('enabled', True),
             'allowed_models': agent_cfg.get('allowed_models') or None,
+            'allowed_tools': agent_cfg.get('allowed_tools') or None,
         }
 
     return prompts, agent_types, agent_info

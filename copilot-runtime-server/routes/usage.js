@@ -114,13 +114,17 @@ async function fetchAgentsForScope(pool, organizationId, accessibleTeamIds, role
   if (role === 'owner') {
     const { rows } = await pool.query(
       `
-        SELECT id::text AS id,
-               agent_name AS name,
-               agent_type AS code,
-               COALESCE(team_id::text, NULL) AS team_id
-        FROM agents
-        WHERE organization_id = $1
-        ORDER BY agent_name ASC
+        SELECT a.id::text AS id,
+               a.agent_name AS name,
+               a.agent_type AS code,
+               COALESCE(
+                 (SELECT json_agg(at.team_id::text)
+                  FROM agent_teams at WHERE at.agent_id = a.id),
+                 '[]'::json
+               ) AS team_ids
+        FROM agents a
+        WHERE a.organization_id = $1
+        ORDER BY a.agent_name ASC
       `,
       [organizationId],
     );
@@ -134,14 +138,21 @@ async function fetchAgentsForScope(pool, organizationId, accessibleTeamIds, role
   const params = [organizationId, accessibleTeamIds];
   const { rows } = await pool.query(
     `
-      SELECT id::text AS id,
-             agent_name AS name,
-             agent_type AS code,
-             COALESCE(team_id::text, NULL) AS team_id
-      FROM agents
-      WHERE organization_id = $1
-        AND (team_id IS NULL OR team_id::text = ANY($2::text[]))
-      ORDER BY agent_name ASC
+      SELECT a.id::text AS id,
+             a.agent_name AS name,
+             a.agent_type AS code,
+             COALESCE(
+               (SELECT json_agg(at.team_id::text)
+                FROM agent_teams at WHERE at.agent_id = a.id),
+               '[]'::json
+             ) AS team_ids
+      FROM agents a
+      WHERE a.organization_id = $1
+        AND (
+          NOT EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id)
+          OR EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id AND at.team_id::text = ANY($2::text[]))
+        )
+      ORDER BY a.agent_name ASC
     `,
     params,
   );
@@ -161,7 +172,11 @@ async function fetchModelsForScope(pool, organizationId, accessibleTeamIds, role
                COALESCE(m.display_name, m.model_name, m.model_key) AS name,
                m.model_key AS code,
                p.provider_type AS provider,
-               COALESCE(m.team_id::text, NULL) AS team_id
+               COALESCE(
+                 (SELECT json_agg(mt.team_id::text)
+                  FROM model_teams mt WHERE mt.model_id = m.id),
+                 '[]'::json
+               ) AS team_ids
         FROM models m
         LEFT JOIN providers p ON p.id = m.provider_id
         WHERE m.organization_id = $1
@@ -183,11 +198,18 @@ async function fetchModelsForScope(pool, organizationId, accessibleTeamIds, role
              COALESCE(m.display_name, m.model_name, m.model_key) AS name,
              m.model_key AS code,
              p.provider_type AS provider,
-             COALESCE(m.team_id::text, NULL) AS team_id
+             COALESCE(
+               (SELECT json_agg(mt.team_id::text)
+                FROM model_teams mt WHERE mt.model_id = m.id),
+               '[]'::json
+             ) AS team_ids
       FROM models m
       LEFT JOIN providers p ON p.id = m.provider_id
       WHERE m.organization_id = $1
-        AND (m.team_id IS NULL OR m.team_id::text = ANY($2::text[]))
+        AND (
+          NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id)
+          OR EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id AND mt.team_id::text = ANY($2::text[]))
+        )
       ORDER BY name ASC
     `,
     params,
@@ -280,6 +302,7 @@ function buildUsageConditions({
   userId,
   agentId,
   modelId,
+  sessionId,
   includeOrgLevelWithTeam = true,
   paramOffset = 0,
 }) {
@@ -321,6 +344,11 @@ function buildUsageConditions({
   if (modelId) {
     params.push(modelId);
     clauses.push(`u.model_id = $${params.length + paramOffset}`);
+  }
+
+  if (sessionId) {
+    params.push(sessionId);
+    clauses.push(`u.session_id = $${params.length + paramOffset}`);
   }
 
   return {
@@ -413,6 +441,7 @@ router.get('/', async (req, res, next) => {
     const requestedUserId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
     const requestedAgentId = typeof req.query.agentId === 'string' ? req.query.agentId.trim() : '';
     const requestedModelId = typeof req.query.modelId === 'string' ? req.query.modelId.trim() : '';
+    const requestedSessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : '';
 
     let effectiveTeamId = null;
     let includeOrgLevelWithTeam = true;
@@ -492,6 +521,7 @@ router.get('/', async (req, res, next) => {
       userId: effectiveUserId,
       agentId: effectiveAgentId,
       modelId: effectiveModelId,
+      sessionId: requestedSessionId || null,
       includeOrgLevelWithTeam,
     });
     const whereClause = `WHERE ${clause}`;
@@ -504,6 +534,7 @@ router.get('/', async (req, res, next) => {
       userId: effectiveUserId,
       agentId: effectiveAgentId,
       modelId: effectiveModelId,
+      sessionId: requestedSessionId || null,
       includeOrgLevelWithTeam,
       paramOffset: 1,
     });

@@ -751,9 +751,15 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
   };
 
   // Agent filter dropdown component
-  const AgentFilterDropdown = () => {
+  const AgentFilterDropdown = ({ disabled = false }: { disabled?: boolean }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      if (disabled) {
+        setIsOpen(false);
+      }
+    }, [disabled]);
 
     useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
@@ -769,12 +775,14 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
     }, [isOpen]);
 
     const toggleAgent = (agentType: string) => {
+      if (disabled) return;
       setSelectedAgentTypes(prev =>
         prev.includes(agentType) ? prev.filter(t => t !== agentType) : [...prev, agentType]
       );
     };
 
     const removeAgent = (agentType: string, e: React.MouseEvent) => {
+      if (disabled) return;
       e.stopPropagation();
       setSelectedAgentTypes(prev => prev.filter(t => t !== agentType));
     };
@@ -785,12 +793,17 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => !disabled && setIsOpen(!isOpen)}
+          disabled={disabled}
           className={cn(
             'flex items-start gap-1.5 px-2 py-1.5 text-xs rounded-md min-h-[32px] min-w-0 w-full border',
-            isLight
-              ? 'text-gray-700 hover:bg-gray-100 border-gray-300 bg-white'
-              : 'text-gray-200 hover:bg-gray-700 border-gray-600 bg-[#151C24]',
+            disabled
+              ? isLight
+                ? 'text-gray-400 border-gray-200 bg-gray-50 cursor-not-allowed'
+                : 'text-gray-500 border-gray-700 bg-gray-800/50 cursor-not-allowed'
+              : isLight
+                ? 'text-gray-700 hover:bg-gray-100 border-gray-300 bg-white'
+                : 'text-gray-200 hover:bg-gray-700 border-gray-600 bg-[#151C24]',
           )}
         >
           {selectedAgents.length > 0 ? (
@@ -832,36 +845,42 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
               isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
             )}
           >
-            {uniqueAgents.map(agent => (
-              <button
-                key={agent.type}
-                type="button"
-                onClick={() => toggleAgent(agent.type)}
-                className={cn(
-                  'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors',
-                  selectedAgentTypes.includes(agent.type)
-                    ? isLight
-                      ? 'bg-blue-50 text-blue-700 font-medium'
-                      : 'bg-blue-900/30 text-blue-300 font-medium'
-                    : isLight
-                    ? 'text-gray-700 hover:bg-gray-100'
-                    : 'text-gray-200 hover:bg-gray-700',
-                )}
-              >
-                <span className="flex-shrink-0">
-                  {selectedAgentTypes.includes(agent.type) ? (
-                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : (
-                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <rect x="3" y="3" width="18" height="18" rx="2" />
-                    </svg>
+            {uniqueAgents.length === 0 ? (
+              <div className={cn('px-3 py-2 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                No agents available
+              </div>
+            ) : (
+              uniqueAgents.map(agent => (
+                <button
+                  key={agent.type}
+                  type="button"
+                  onClick={() => toggleAgent(agent.type)}
+                  className={cn(
+                    'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors',
+                    selectedAgentTypes.includes(agent.type)
+                      ? isLight
+                        ? 'bg-blue-50 text-blue-700 font-medium'
+                        : 'bg-blue-900/30 text-blue-300 font-medium'
+                      : isLight
+                      ? 'text-gray-700 hover:bg-gray-100'
+                      : 'text-gray-200 hover:bg-gray-700',
                   )}
-                </span>
-                <span className="truncate flex-1 text-left">{agent.name}</span>
-              </button>
-            ))}
+                >
+                  <span className="flex-shrink-0">
+                    {selectedAgentTypes.includes(agent.type) ? (
+                      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                      </svg>
+                    )}
+                  </span>
+                  <span className="truncate flex-1 text-left">{agent.name}</span>
+                </button>
+              ))
+            )}
           </div>
         )}
       </div>
@@ -869,9 +888,15 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
   };
 
   // Model filter dropdown component
-  const ModelFilterDropdown = () => {
+  const ModelFilterDropdown = ({ disabled = false }: { disabled?: boolean }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      if (disabled) {
+        setIsOpen(false);
+      }
+    }, [disabled]);
 
     useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
@@ -887,12 +912,14 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
     }, [isOpen]);
 
     const toggleModel = (modelKey: string) => {
+      if (disabled) return;
       setSelectedModelKeys(prev =>
         prev.includes(modelKey) ? prev.filter(k => k !== modelKey) : [...prev, modelKey]
       );
     };
 
     const removeModel = (modelKey: string, e: React.MouseEvent) => {
+      if (disabled) return;
       e.stopPropagation();
       setSelectedModelKeys(prev => prev.filter(k => k !== modelKey));
     };
@@ -903,12 +930,17 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => !disabled && setIsOpen(!isOpen)}
+          disabled={disabled}
           className={cn(
             'flex items-start gap-1.5 px-2 py-1.5 text-xs rounded-md min-h-[32px] min-w-0 w-full border',
-            isLight
-              ? 'text-gray-700 hover:bg-gray-100 border-gray-300 bg-white'
-              : 'text-gray-200 hover:bg-gray-700 border-gray-600 bg-[#151C24]',
+            disabled
+              ? isLight
+                ? 'text-gray-400 border-gray-200 bg-gray-50 cursor-not-allowed'
+                : 'text-gray-500 border-gray-700 bg-gray-800/50 cursor-not-allowed'
+              : isLight
+                ? 'text-gray-700 hover:bg-gray-100 border-gray-300 bg-white'
+                : 'text-gray-200 hover:bg-gray-700 border-gray-600 bg-[#151C24]',
           )}
         >
           {selectedModels.length > 0 ? (
@@ -950,36 +982,42 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
               isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
             )}
           >
-            {uniqueModels.map(model => (
-              <button
-                key={model.key}
-                type="button"
-                onClick={() => toggleModel(model.key)}
-                className={cn(
-                  'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors',
-                  selectedModelKeys.includes(model.key)
-                    ? isLight
-                      ? 'bg-blue-50 text-blue-700 font-medium'
-                      : 'bg-blue-900/30 text-blue-300 font-medium'
-                    : isLight
-                    ? 'text-gray-700 hover:bg-gray-100'
-                    : 'text-gray-200 hover:bg-gray-700',
-                )}
-              >
-                <span className="flex-shrink-0">
-                  {selectedModelKeys.includes(model.key) ? (
-                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : (
-                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <rect x="3" y="3" width="18" height="18" rx="2" />
-                    </svg>
+            {uniqueModels.length === 0 ? (
+              <div className={cn('px-3 py-2 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                No models available
+              </div>
+            ) : (
+              uniqueModels.map(model => (
+                <button
+                  key={model.key}
+                  type="button"
+                  onClick={() => toggleModel(model.key)}
+                  className={cn(
+                    'flex items-center gap-2 w-full px-2.5 py-1.5 text-xs transition-colors',
+                    selectedModelKeys.includes(model.key)
+                      ? isLight
+                        ? 'bg-blue-50 text-blue-700 font-medium'
+                        : 'bg-blue-900/30 text-blue-300 font-medium'
+                      : isLight
+                      ? 'text-gray-700 hover:bg-gray-100'
+                      : 'text-gray-200 hover:bg-gray-700',
                   )}
-                </span>
-                <span className="truncate flex-1 text-left">{model.displayName}</span>
-              </button>
-            ))}
+                >
+                  <span className="flex-shrink-0">
+                    {selectedModelKeys.includes(model.key) ? (
+                      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                      </svg>
+                    )}
+                  </span>
+                  <span className="truncate flex-1 text-left">{model.displayName}</span>
+                </button>
+              ))
+            )}
           </div>
         )}
       </div>
@@ -1033,9 +1071,25 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
         </div>
           </div>
 
+      {/* Model and Agent Filters */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={cn('block text-xs font-medium mb-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
+            Filter by Model
+          </label>
+          <ModelFilterDropdown disabled={viewMode === 'contexts'} />
+        </div>
+        <div>
+          <label className={cn('block text-xs font-medium mb-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
+            Filter by Agent
+          </label>
+          <AgentFilterDropdown disabled={viewMode === 'contexts'} />
+        </div>
+      </div>
+
       {/* Endpoint/Context Toggle, Auto-refresh, and Refresh Controls */}
       <div className="flex items-center justify-between gap-2">
-          <div className={cn('flex items-center gap-1 text-xs border rounded', isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]')}>
+          <div className={cn('flex items-center text-xs border rounded', isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]')}>
             <button
               type="button"
               onClick={() => setViewMode('endpoints')}
@@ -1120,23 +1174,6 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
             } 
           />
         </div>
-
-        {viewMode === 'endpoints' && (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={cn('block text-xs font-medium mb-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                Filter by Agent
-              </label>
-              <AgentFilterDropdown />
-            </div>
-            <div>
-              <label className={cn('block text-xs font-medium mb-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                Filter by Model
-              </label>
-              <ModelFilterDropdown />
-            </div>
-          </div>
-        )}
 
         <div className={cn('flex items-center gap-2 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
           <span className="flex-shrink-0">Status:</span>

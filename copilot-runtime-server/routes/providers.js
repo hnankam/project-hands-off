@@ -3,6 +3,7 @@ import { auth } from '../auth/index.js';
 import { getPool } from '../config/database.js';
 import { log } from '../utils/logger.js';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { syncTeamAssociations } from '../lib/team-helpers.js';
 
 const router = express.Router();
 
@@ -326,8 +327,7 @@ const toCamelProvider = (row) => ({
   providerKey: row.provider_key,
   providerType: row.provider_type,
   organizationId: row.organization_id,
-  teamId: row.team_id,
-  teamName: row.team_name || null,
+  teams: row.teams || [], // Array of {id, name} objects from the view
   credentials: row.credentials || {},
   modelSettings: row.model_settings || {},
   bedrockModelSettings: row.bedrock_model_settings || null,
@@ -397,27 +397,49 @@ router.get('/', async (req, res, next) => {
     const session = await ensureAuthenticated(req, res);
     if (!session) return;
 
-    const { organizationId, teamId } = req.query;
+    const { organizationId, teamIds: teamIdsParam = null } = req.query;
+    // Handle both single teamIds param and array of teamIds params
+    const teamIds = Array.isArray(teamIdsParam) ? teamIdsParam : (teamIdsParam ? [teamIdsParam] : []);
     const pool = getPool();
 
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    if (teamId) {
-      const teamIsValid = await validateTeamBelongsToOrg(pool, organizationId, teamId);
-      if (!teamIsValid) {
-        return res.status(404).json({ error: 'Team not found in organization' });
-      }
+    const params = [organizationId];
+    let teamFilter = '';
+    
+    // If teamIds are specified, filter to show only providers that:
+    // 1. Are organization-wide (no team restrictions), OR
+    // 2. Include at least one of the specified teams
+    if (teamIds.length > 0) {
+      teamFilter = `
+        AND (
+          NOT EXISTS (SELECT 1 FROM provider_teams pt WHERE pt.provider_id = p.id)
+          OR EXISTS (
+            SELECT 1 FROM provider_teams pt 
+            WHERE pt.provider_id = p.id AND pt.team_id = ANY($2::text[])
+          )
+        )
+      `;
+      params.push(teamIds);
     }
 
-    const params = [organizationId, teamId || null];
+    // Get all providers for the organization with their teams (filtered by org and optionally by team)
     const { rows } = await pool.query(
-      `SELECT p.*, t.name AS team_name
+      `SELECT 
+         p.*,
+         COALESCE(
+           (SELECT json_agg(json_build_object('id', team.id, 'name', team.name) ORDER BY team.name)
+            FROM provider_teams pt
+            JOIN team ON team.id = pt.team_id
+            WHERE pt.provider_id = p.id
+              AND team."organizationId" = $1),
+           '[]'::json
+         ) as teams
        FROM providers p
-       LEFT JOIN team t ON p.team_id = t.id
        WHERE p.organization_id = $1
-         AND ($2::text IS NULL OR p.team_id = $2 OR p.team_id IS NULL)
-       ORDER BY p.team_id IS NULL DESC, p.created_at DESC`,
+         ${teamFilter}
+       ORDER BY p.created_at DESC`,
       params,
     );
 
@@ -434,7 +456,7 @@ router.post('/', async (req, res, next) => {
 
     const {
       organizationId,
-      teamId = null,
+      teamIds = [], // Array of team IDs for multi-team support
       providerKey,
       providerType,
       enabled = true,
@@ -461,10 +483,14 @@ router.post('/', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    if (teamId) {
-      const teamIsValid = await validateTeamBelongsToOrg(pool, organizationId, teamId);
-      if (!teamIsValid) {
-        return res.status(404).json({ error: 'Team not found in organization' });
+    // Validate teams if provided
+    if (teamIds.length > 0) {
+      const { rows } = await pool.query(
+        'SELECT id FROM team WHERE id = ANY($1::text[]) AND "organizationId" = $2',
+        [teamIds, organizationId],
+      );
+      if (rows.length !== teamIds.length) {
+        return res.status(404).json({ error: 'One or more teams not found in organization' });
       }
     }
 
@@ -479,19 +505,17 @@ router.post('/', async (req, res, next) => {
          provider_type,
          credentials,
          organization_id,
-         team_id,
          model_settings,
          bedrock_model_settings,
          metadata,
          enabled
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING *`,
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id`,
       [
         providerKey,
         providerType,
         credentialsJSON,
         organizationId,
-        teamId,
         modelSettingsJSON,
         bedrockSettingsJSON,
         metadataJSON,
@@ -499,7 +523,17 @@ router.post('/', async (req, res, next) => {
       ],
     );
 
-    const provider = toCamelProvider(insertResult.rows[0]);
+    const providerId = insertResult.rows[0].id;
+
+    // Associate with teams if provided
+    if (teamIds.length > 0) {
+      await syncTeamAssociations(pool, 'provider_teams', 'provider_id', providerId, teamIds);
+    }
+
+    // Fetch the created provider with teams
+    const { rows } = await pool.query('SELECT * FROM providers_with_teams WHERE id = $1', [providerId]);
+    const provider = toCamelProvider(rows[0]);
+    
     log('[Providers API] Created provider', { providerId: provider.id, providerKey });
 
     res.status(201).json({ provider });
@@ -522,7 +556,7 @@ router.put('/:providerId', async (req, res, next) => {
     const { providerId } = req.params;
     const {
       organizationId,
-      teamId = null,
+      teamIds = [], // Array of team IDs for multi-team support
       providerKey,
       providerType,
       enabled,
@@ -541,10 +575,14 @@ router.put('/:providerId', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    if (teamId) {
-      const teamIsValid = await validateTeamBelongsToOrg(pool, organizationId, teamId);
-      if (!teamIsValid) {
-        return res.status(404).json({ error: 'Team not found in organization' });
+    // Validate teams if provided
+    if (teamIds.length > 0) {
+      const { rows } = await pool.query(
+        'SELECT id FROM team WHERE id = ANY($1::text[]) AND "organizationId" = $2',
+        [teamIds, organizationId],
+      );
+      if (rows.length !== teamIds.length) {
+        return res.status(404).json({ error: 'One or more teams not found in organization' });
       }
     }
 
@@ -575,26 +613,23 @@ router.put('/:providerId', async (req, res, next) => {
         ? null
         : sanitizeJSON(bedrockModelSettings, existing.bedrock_model_settings || {});
 
-    const updateResult = await pool.query(
+    await pool.query(
       `UPDATE providers SET
          provider_key = $1,
          provider_type = $2,
          credentials = $3,
          organization_id = $4,
-         team_id = $5,
-         model_settings = $6,
-         bedrock_model_settings = $7,
-         metadata = $8,
-         enabled = $9,
+         model_settings = $5,
+         bedrock_model_settings = $6,
+         metadata = $7,
+         enabled = $8,
          updated_at = NOW()
-       WHERE id = $10
-       RETURNING *`,
+       WHERE id = $9`,
       [
         providerKeyValue,
         providerTypeValue,
         credentialsJSON,
         organizationId,
-        teamId,
         modelSettingsJSON,
         bedrockSettingsJSON,
         metadataJSON,
@@ -603,7 +638,15 @@ router.put('/:providerId', async (req, res, next) => {
       ],
     );
 
-    const provider = toCamelProvider(updateResult.rows[0]);
+    // Update team associations (always sync when teamIds is provided in request)
+    if (teamIds !== undefined) {
+      await syncTeamAssociations(pool, 'provider_teams', 'provider_id', providerId, teamIds);
+    }
+
+    // Fetch the updated provider with teams
+    const { rows } = await pool.query('SELECT * FROM providers_with_teams WHERE id = $1', [providerId]);
+    const provider = toCamelProvider(rows[0]);
+    
     log('[Providers API] Updated provider', { providerId });
 
     res.json({ provider });
@@ -626,7 +669,7 @@ router.post('/:providerId/test', async (req, res, next) => {
     const { providerId } = req.params;
     const {
       organizationId,
-      teamId = null,
+      teamIds = [],
       providerType,
       credentials,
       modelSettings,
@@ -643,10 +686,14 @@ router.post('/:providerId/test', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    if (teamId) {
-      const teamIsValid = await validateTeamBelongsToOrg(pool, organizationId, teamId);
-      if (!teamIsValid) {
-        return res.status(404).json({ error: 'Team not found in organization' });
+    // Validate teams if provided
+    if (teamIds.length > 0) {
+      const { rows } = await pool.query(
+        'SELECT id FROM team WHERE id = ANY($1::text[]) AND "organizationId" = $2',
+        [teamIds, organizationId],
+      );
+      if (rows.length !== teamIds.length) {
+        return res.status(404).json({ error: 'One or more teams not found in organization' });
       }
     }
 
@@ -709,6 +756,67 @@ router.post('/:providerId/test', async (req, res, next) => {
       log('[Providers API] Provider connectivity test failed', {
         providerId,
         providerType: providerTypeValue,
+        error: err.message,
+      });
+      res.status(502).json({ error: err.message || 'Provider connectivity test failed' });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/test-new', async (req, res, next) => {
+  try {
+    const session = await ensureAuthenticated(req, res);
+    if (!session) return;
+
+    const {
+      organizationId,
+      providerType,
+      credentials,
+      modelSettings,
+      bedrockModelSettings,
+      metadata,
+    } = req.body || {};
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'organizationId is required' });
+    }
+
+    if (!providerType) {
+      return res.status(400).json({ error: 'providerType is required' });
+    }
+
+    const pool = getPool();
+
+    const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
+    if (!roles) return;
+
+    let credentialsJSON;
+    let modelSettingsJSON;
+    let metadataJSON;
+    let bedrockSettingsJSON;
+
+    try {
+      credentialsJSON = sanitizeJSON(credentials, {});
+      modelSettingsJSON = sanitizeJSON(modelSettings, {});
+      metadataJSON = sanitizeJSON(metadata, {});
+      bedrockSettingsJSON = bedrockModelSettings ? sanitizeJSON(bedrockModelSettings, {}) : null;
+    } catch (err) {
+      return res.status(400).json({ error: err.message || 'Invalid JSON payload' });
+    }
+
+    try {
+      const result = await testProviderConnectivity(providerType, credentialsJSON, bedrockSettingsJSON, {
+        modelSettings: modelSettingsJSON,
+        metadata: metadataJSON,
+      });
+
+      log('[Providers API] New provider connectivity test succeeded', { providerType });
+      res.json({ ok: true, result });
+    } catch (err) {
+      log('[Providers API] New provider connectivity test failed', {
+        providerType,
         error: err.message,
       });
       res.status(502).json({ error: err.message || 'Provider connectivity test failed' });

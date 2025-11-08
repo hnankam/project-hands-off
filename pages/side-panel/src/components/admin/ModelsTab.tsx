@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
 import { OrganizationSelector } from './OrganizationSelector';
-import { TeamSelector, SingleTeamSelector } from './TeamSelector';
+import { TeamSelector } from './TeamSelector';
+import { TeamMultiSelector } from './TeamMultiSelector';
 import { Radio, Checkbox } from './FormControls';
 
 interface Organization {
@@ -24,8 +25,7 @@ interface ProviderSummary {
   id: string;
   providerKey: string;
   providerType: string;
-  teamId: string | null;
-  teamName: string | null;
+  teams: Array<{ id: string; name: string }>;
   enabled: boolean;
 }
 
@@ -38,10 +38,8 @@ interface ModelRecord {
   providerId: string;
   providerKey: string;
   providerType: string;
-  providerTeamId: string | null;
   organizationId: string;
-  teamId: string | null;
-  teamName: string | null;
+  teams: Array<{ id: string; name: string }>; // Multi-team support
   enabled: boolean;
   modelSettingsOverride: Record<string, any> | null;
   metadata: Record<string, any> | null;
@@ -58,7 +56,7 @@ interface ModelFormState {
   description: string;
   providerId: string;
   scope: ModelScope;
-  teamId: string;
+  teamIds: string[]; // Multi-team support
   modelSettings: string;
   metadata: string;
   enabled: boolean;
@@ -79,7 +77,7 @@ const INITIAL_FORM: ModelFormState = {
   description: '',
   providerId: '',
   scope: 'organization',
-  teamId: '',
+  teamIds: [], // Multi-team support
   modelSettings: '{}',
   metadata: '{}',
   enabled: true,
@@ -277,7 +275,7 @@ const ProviderDropdown: React.FC<ProviderDropdownProps> = ({
                 <div className="truncate font-medium">{provider.providerKey}</div>
                 <div className={cn('truncate text-[11px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
                   {provider.providerType}
-                  {provider.teamName ? ` · Team ${provider.teamName}` : ''}
+                  {provider.teams.length > 0 ? ` · ${provider.teams.map(t => t.name).join(', ')}` : ''}
                 </div>
               </div>
               {selectedProviderId === provider.id && (
@@ -350,6 +348,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; modelKey: string } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [testStatus, setTestStatus] = useState<{ state: 'idle' | 'loading' | 'success' | 'error'; message?: string }>({ state: 'idle' });
+  const [testStatusClosing, setTestStatusClosing] = useState(false);
 
   const initialLoadCompleteRef = useRef(false);
 
@@ -363,7 +362,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     if (preselectedOrgId && preselectedOrgId !== selectedOrgId) {
       setSelectedOrgId(preselectedOrgId);
     }
-  }, [preselectedOrgId, selectedOrgId]);
+  }, [preselectedOrgId]); // Only react to parent changes, not user selections
 
   const loadTeams = useCallback(async (orgId: string): Promise<Team[]> => {
     setTeamsLoading(true);
@@ -391,6 +390,22 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
       setTeamsLoading(false);
     }
   }, []);
+
+  // Auto-dismiss test status after timeout
+  useEffect(() => {
+    if (testStatus.state === 'idle' || testStatus.state === 'loading') return;
+
+    const timeout = testStatus.state === 'success' ? 5000 : 8000;
+    const timer = setTimeout(() => {
+      setTestStatusClosing(true);
+      setTimeout(() => {
+        setTestStatus({ state: 'idle' });
+        setTestStatusClosing(false);
+      }, 300);
+    }, timeout);
+
+    return () => clearTimeout(timer);
+  }, [testStatus.state]);
 
   const fetchProvidersForOrg = useCallback(
     async (orgId: string, signal?: AbortSignal, attempt = 1): Promise<ProviderSummary[]> => {
@@ -424,8 +439,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
         id: provider.id,
         providerKey: provider.providerKey,
         providerType: provider.providerType,
-        teamId: provider.teamId || null,
-        teamName: provider.teamName || null,
+        teams: provider.teams || [],
         enabled: provider.enabled,
       }));
       return items;
@@ -458,11 +472,12 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
   );
 
   const fetchModels = useCallback(
-    async (orgId: string, teamId: string | null, signal?: AbortSignal, attempt = 1): Promise<ModelRecord[]> => {
+    async (orgId: string, teamIds: string[], signal?: AbortSignal, attempt = 1): Promise<ModelRecord[]> => {
       const params = new URLSearchParams({ organizationId: orgId });
-      if (teamId) {
-        params.append('teamId', teamId);
-      }
+      // Add all selected teams for filtering
+      teamIds.forEach(teamId => {
+        if (teamId) params.append('teamIds', teamId);
+      });
 
       const response = await fetch(`${baseURL}/api/admin/models?${params.toString()}`, {
         credentials: 'include',
@@ -477,7 +492,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
           : 500 * attempt;
 
         await waitFor(retryDelayMs, signal);
-        return fetchModels(orgId, teamId, signal, attempt + 1);
+        return fetchModels(orgId, teamIds, signal, attempt + 1);
       }
 
       if (!response.ok) {
@@ -495,13 +510,13 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
   );
 
   const refreshModels = useCallback(
-    async (orgId: string, teamId: string | null, { signal, suppressLoading = false }: { signal?: AbortSignal; suppressLoading?: boolean } = {}) => {
+    async (orgId: string, teamIds: string[], { signal, suppressLoading = false }: { signal?: AbortSignal; suppressLoading?: boolean } = {}) => {
       if (!suppressLoading) {
         setListLoading(true);
       }
 
       try {
-        const items = await fetchModels(orgId, teamId, signal);
+        const items = await fetchModels(orgId, teamIds, signal);
         if (!signal || !signal.aborted) {
           setModels(items);
         }
@@ -553,9 +568,9 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
       if (cancelled) return;
 
       const currentFilterIds = teamFilterIdsRef.current;
-      const activeTeamId = currentFilterIds.find(id => teamsForOrg.some(team => team.id === id)) || null;
+      const activeTeamIds = currentFilterIds.filter(id => teamsForOrg.some(team => team.id === id));
 
-      await refreshModels(selectedOrgId, activeTeamId, { signal: controller.signal, suppressLoading: true });
+      await refreshModels(selectedOrgId, activeTeamIds, { signal: controller.signal, suppressLoading: true });
       if (!cancelled) {
         setListLoading(false);
         initialLoadCompleteRef.current = true;
@@ -576,8 +591,8 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     }
 
     const controller = new AbortController();
-    const activeTeamId = teamFilterIds.find(id => teamMap.has(id)) || null;
-    refreshModels(selectedOrgId, activeTeamId, { signal: controller.signal });
+    const activeTeamIds = teamFilterIds.filter(id => teamMap.has(id));
+    refreshModels(selectedOrgId, activeTeamIds, { signal: controller.signal });
 
     return () => {
       controller.abort();
@@ -600,33 +615,40 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     }
     const activeTeamId = teamFilterIds.find(id => teamMap.has(id));
     if (!activeTeamId) {
-      return models.filter(model => !model.teamId);
+      return models.filter(model => model.teams.length === 0);
     }
-    return models.filter(model => !model.teamId || model.teamId === activeTeamId);
+    return models.filter(model => model.teams.length === 0 || model.teams.some(t => t.id === activeTeamId));
   }, [models, teamFilterIds, teamMap]);
 
-  const providerOptionsForForm = (scope: ModelScope, teamId: string) => {
+  const providerOptionsForForm = (scope: ModelScope, teamIds: string[]) => {
     if (scope === 'organization') {
-      return providers.filter(provider => provider.teamId === null);
+      return providers.filter(provider => provider.teams.length === 0);
     }
-    return providers.filter(provider => provider.teamId === null || (teamId && provider.teamId === teamId));
+    const effectiveTeamIds = teamIds.filter(id => id && id.trim() !== '');
+    if (effectiveTeamIds.length === 0) {
+      return providers.filter(provider => provider.teams.length === 0);
+    }
+    return providers.filter(provider => {
+      const providerTeamIds = provider.teams.map(t => t.id);
+      return providerTeamIds.length === 0 || providerTeamIds.some(ptId => effectiveTeamIds.includes(ptId));
+    });
   };
 
   useEffect(() => {
     if (!createForm.providerId) return;
-    const options = providerOptionsForForm(createForm.scope, createForm.teamId);
+    const options = providerOptionsForForm(createForm.scope, createForm.teamIds);
     if (!options.some(provider => provider.id === createForm.providerId)) {
       setCreateForm(prev => ({ ...prev, providerId: '' }));
     }
-  }, [createForm.scope, createForm.teamId, providers, createForm.providerId]);
+  }, [createForm.scope, createForm.teamIds, providers, createForm.providerId]);
 
   useEffect(() => {
     if (!editForm?.providerId) return;
-    const options = providerOptionsForForm(editForm.scope, editForm.teamId);
+    const options = providerOptionsForForm(editForm.scope, editForm.teamIds);
     if (!options.some(provider => provider.id === editForm.providerId)) {
       setEditForm(prev => (prev ? { ...prev, providerId: '' } : prev));
     }
-  }, [editForm?.scope, editForm?.teamId, providers, editForm?.providerId]);
+  }, [editForm?.scope, editForm?.teamIds, providers, editForm?.providerId]);
 
   const handleTeamFilterChange = (teamIds: string[]) => {
     if (teamIds.length === 0) {
@@ -664,12 +686,12 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
       return;
     }
 
-    if (createForm.scope === 'team' && !createForm.teamId) {
-      onError('Select a team for team-scoped models');
+    if (createForm.scope === 'team' && createForm.teamIds.length === 0) {
+      onError('Select at least one team for team-scoped models');
       return;
     }
 
-    const allowedProviders = providerOptionsForForm(createForm.scope, createForm.teamId);
+    const allowedProviders = providerOptionsForForm(createForm.scope, createForm.teamIds);
     if (!allowedProviders.some(provider => provider.id === createForm.providerId)) {
       onError('Selected provider is not valid for the chosen scope');
       return;
@@ -678,7 +700,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     try {
       const payload = {
         organizationId: selectedOrgId,
-        teamId: createForm.scope === 'team' ? createForm.teamId || null : null,
+        teamIds: createForm.scope === 'team' ? createForm.teamIds : [],
         providerId: createForm.providerId,
         modelKey: createForm.modelKey.trim(),
         modelName: createForm.modelName.trim(),
@@ -705,8 +727,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
       onSuccess(`Model "${data.model?.modelKey || createForm.modelKey}" created successfully`);
       setShowCreateForm(false);
       resetCreateForm();
-      const activeTeamId = teamFilterIds[0] || null;
-      await refreshModels(selectedOrgId, activeTeamId);
+      await refreshModels(selectedOrgId, teamFilterIds);
     } catch (err: any) {
       console.error('[ModelsTab] Failed to create model:', err);
       onError(err.message || 'Failed to create model');
@@ -721,8 +742,8 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
       displayName: model.displayName || '',
       description: model.description || '',
       providerId: model.providerId,
-      scope: model.teamId ? 'team' : 'organization',
-      teamId: model.teamId || '',
+      scope: model.teams.length > 0 ? 'team' : 'organization',
+      teamIds: model.teams.map(t => t.id),
       modelSettings: stringifyJson(model.modelSettingsOverride),
       metadata: stringifyJson(model.metadata),
       enabled: model.enabled,
@@ -758,12 +779,12 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
       return;
     }
 
-    if (editForm.scope === 'team' && !editForm.teamId) {
-      onError('Select a team for team-scoped models');
+    if (editForm.scope === 'team' && editForm.teamIds.length === 0) {
+      onError('Select at least one team for team-scoped models');
       return;
     }
 
-    const allowedProviders = providerOptionsForForm(editForm.scope, editForm.teamId);
+    const allowedProviders = providerOptionsForForm(editForm.scope, editForm.teamIds);
     if (!allowedProviders.some(provider => provider.id === editForm.providerId)) {
       onError('Selected provider is not valid for the chosen scope');
       return;
@@ -772,7 +793,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     try {
       const payload = {
         organizationId: selectedOrgId,
-        teamId: editForm.scope === 'team' ? editForm.teamId || null : null,
+        teamIds: editForm.scope === 'team' ? editForm.teamIds : [],
         providerId: editForm.providerId,
         modelKey: editForm.modelKey.trim(),
         modelName: editForm.modelName.trim(),
@@ -800,8 +821,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
       setEditingModelId(null);
       setEditForm(null);
       setTestStatus({ state: 'idle' });
-      const activeTeamId = teamFilterIds[0] || null;
-      await refreshModels(selectedOrgId, activeTeamId);
+      await refreshModels(selectedOrgId, teamFilterIds);
     } catch (err: any) {
       console.error('[ModelsTab] Failed to update model:', err);
       onError(err.message || 'Failed to update model');
@@ -843,11 +863,71 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           organizationId: selectedOrgId,
-          teamId: editForm.scope === 'team' ? editForm.teamId || null : null,
           providerId: editForm.providerId,
           modelKey: editForm.modelKey.trim(),
           modelName: editForm.modelName.trim(),
           displayName: editForm.displayName?.trim() || null,
+          modelSettings: modelSettingsJSON,
+          metadata: metadataJSON,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Model connectivity test failed');
+      }
+
+      setTestStatus({
+        state: 'success',
+        message: payload?.result?.message || 'Model connectivity test succeeded',
+      });
+    } catch (err: any) {
+      console.error('[ModelsTab] Model connectivity test failed:', err);
+      setTestStatus({ state: 'error', message: err.message || 'Model connectivity test failed' });
+    }
+  };
+
+  const handleTestNewModel = async () => {
+    if (!selectedOrgId) {
+      return;
+    }
+
+    if (!createForm.modelName.trim()) {
+      setTestStatus({ state: 'error', message: 'Model name is required to test connectivity' });
+      return;
+    }
+
+    if (!createForm.providerId) {
+      setTestStatus({ state: 'error', message: 'Select a provider before testing connectivity' });
+      return;
+    }
+
+    let modelSettingsJSON: Record<string, any> = {};
+    let metadataJSON: Record<string, any> = {};
+
+    try {
+      modelSettingsJSON = sanitizeJsonText(createForm.modelSettings, 'Model settings');
+      metadataJSON = sanitizeJsonText(createForm.metadata, 'Metadata');
+    } catch (err: any) {
+      setTestStatus({ state: 'error', message: err.message || 'Invalid JSON payload' });
+      return;
+    }
+
+    setTestStatus({ state: 'loading' });
+
+    try {
+      // Use a temporary endpoint or the same endpoint with a placeholder ID
+      const response = await fetch(`${baseURL}/api/admin/models/test-new`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationId: selectedOrgId,
+          providerId: createForm.providerId,
+          modelKey: createForm.modelKey.trim(),
+          modelName: createForm.modelName.trim(),
+          displayName: createForm.displayName?.trim() || null,
           modelSettings: modelSettingsJSON,
           metadata: metadataJSON,
         }),
@@ -875,7 +955,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     try {
       const payload = {
         organizationId: selectedOrgId,
-        teamId: model.teamId,
+        teamIds: model.teams.map(t => t.id),
         providerId: model.providerId,
         modelKey: model.modelKey,
         modelName: model.modelName,
@@ -924,8 +1004,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
       onSuccess(`Model "${deleteConfirm.modelKey}" deleted successfully`);
       setDeleteDialogOpen(false);
       setDeleteConfirm(null);
-      const activeTeamId = teamFilterIds[0] || null;
-      await refreshModels(selectedOrgId, activeTeamId);
+      await refreshModels(selectedOrgId, teamFilterIds);
     } catch (err: any) {
       console.error('[ModelsTab] Failed to delete model:', err);
       onError(err.message || 'Failed to delete model');
@@ -935,16 +1014,21 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
   };
 
   const renderScopeBadge = (model: ModelRecord) => {
-    if (model.teamId) {
+    if (model.teams.length > 0) {
       return (
-        <span
-          className={cn(
-            'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-            isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
-          )}
-        >
-          Team · {model.teamName || 'Unknown'}
-        </span>
+        <div className="flex flex-wrap gap-1">
+          {model.teams.map(team => (
+            <span
+              key={team.id}
+              className={cn(
+                'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
+              )}
+            >
+              Team · {team.name}
+            </span>
+          ))}
+        </div>
       );
     }
 
@@ -971,8 +1055,8 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     </span>
   );
 
-  const providerOptionsForEdit = (currentProviderId: string, scope: ModelScope, teamId: string) => {
-    const baseOptions = providerOptionsForForm(scope, teamId);
+  const providerOptionsForEdit = (currentProviderId: string, scope: ModelScope, teamIds: string[]) => {
+    const baseOptions = providerOptionsForForm(scope, teamIds);
     if (baseOptions.some(provider => provider.id === currentProviderId)) {
       return baseOptions;
     }
@@ -1113,7 +1197,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                   ) : (
                     <ProviderDropdown
                       isLight={isLight}
-                      providers={providerOptionsForForm(createForm.scope, createForm.teamId)}
+                      providers={providerOptionsForForm(createForm.scope, createForm.teamIds)}
                       selectedProviderId={createForm.providerId}
                       onChange={value => setCreateForm(prev => ({ ...prev, providerId: value }))}
                       placeholder="Select provider"
@@ -1165,41 +1249,40 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                   value={createForm.description}
                   onChange={e => setCreateForm(prev => ({ ...prev, description: e.target.value }))}
                   className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
+                    'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
                     isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
                   )}
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                    Model Settings JSON
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={createForm.modelSettings}
-                    onChange={e => setCreateForm(prev => ({ ...prev, modelSettings: e.target.value }))}
-                    className={cn(
-                      'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
-                      isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                    )}
-                  />
-                </div>
-                <div>
-                  <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                    Metadata JSON
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={createForm.metadata}
-                    onChange={e => setCreateForm(prev => ({ ...prev, metadata: e.target.value }))}
-                    className={cn(
-                      'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
-                      isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                    )}
-                  />
-                </div>
+              <div>
+                <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                  Model Settings JSON
+                </label>
+                <textarea
+                  rows={4}
+                  value={createForm.modelSettings}
+                  onChange={e => setCreateForm(prev => ({ ...prev, modelSettings: e.target.value }))}
+                  className={cn(
+                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
+                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                  )}
+                />
+              </div>
+
+              <div>
+                <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                  Metadata JSON
+                </label>
+                <textarea
+                  rows={4}
+                  value={createForm.metadata}
+                  onChange={e => setCreateForm(prev => ({ ...prev, metadata: e.target.value }))}
+                  className={cn(
+                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
+                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                  )}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1228,16 +1311,15 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                 </div>
                 <div>
                   <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                    Team (optional)
+                    Teams (optional)
                   </label>
-                  <SingleTeamSelector
+                  <TeamMultiSelector
                     isLight={isLight}
                     teams={teams}
-                    selectedTeamId={createForm.teamId}
-                    onTeamChange={value => setCreateForm(prev => ({ ...prev, teamId: value }))}
-                    placeholder="Select team"
+                    selectedTeamIds={createForm.teamIds}
+                    onTeamChange={(value: string[]) => setCreateForm(prev => ({ ...prev, teamIds: value }))}
+                    placeholder="Select teams"
                     disabled={createForm.scope !== 'team'}
-                    allowEmpty={false}
                   />
                 </div>
               </div>
@@ -1249,30 +1331,115 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                 isLight={isLight}
               />
 
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  className={cn(
-                    'flex-1 px-4 py-1.5 text-xs rounded font-medium transition-colors',
-                    isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-500 text-white hover:bg-blue-600',
-                  )}
-                >
-                  Create Model
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowCreateForm(false);
-                    resetCreateForm();
-                  }}
+                  onClick={() => handleTestNewModel()}
                   className={cn(
-                    'px-4 py-1.5 text-xs rounded font-medium transition-colors',
-                    isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-900/30 text-red-400 hover:bg-red-900/50',
+                    'px-3 py-1.5 text-xs rounded font-medium transition-colors border',
+                    testStatus.state === 'loading'
+                      ? 'opacity-50 cursor-not-allowed'
+                      : isLight
+                        ? 'border-blue-200 text-blue-600 hover:bg-blue-50'
+                        : 'border-blue-800 text-blue-300 hover:bg-blue-900/20',
+                  )}
+                  disabled={testStatus.state === 'loading'}
+                >
+                  {testStatus.state === 'loading' ? 'Testing…' : 'Test Connectivity'}
+                </button>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="submit"
+                    className={cn(
+                      'px-4 py-1.5 text-xs rounded font-medium transition-colors',
+                      isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-500 text-white hover:bg-blue-600',
+                    )}
+                  >
+                    Create Model
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateForm(false);
+                      resetCreateForm();
+                    }}
+                    className={cn(
+                      'px-4 py-1.5 text-xs rounded font-medium transition-colors',
+                      isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-900/30 text-red-400 hover:bg-red-900/50',
+                    )}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+
+              {testStatus.state !== 'idle' && (
+                <div
+                  className={cn(
+                    'p-3 rounded-lg text-xs flex items-start justify-between gap-3 transform transition-all duration-300 ease-out',
+                    isLight
+                      ? testStatus.state === 'success'
+                        ? 'bg-green-50 text-green-700'
+                        : testStatus.state === 'error'
+                          ? 'bg-red-50 text-red-700'
+                          : 'bg-blue-50 text-blue-600'
+                      : testStatus.state === 'success'
+                        ? 'bg-green-900/20 text-green-400'
+                        : testStatus.state === 'error'
+                          ? 'bg-red-900/20 text-red-400'
+                          : 'bg-blue-900/20 text-blue-300',
+                    testStatusClosing ? 'opacity-0 scale-95' : 'opacity-100 scale-100',
                   )}
                 >
-                  Cancel
-                </button>
-              </div>
+                  <div className="flex items-start gap-2 flex-1 min-w-0">
+                    {testStatus.state === 'success' ? (
+                      <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                          fillRule="evenodd"
+                          d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    ) : testStatus.state === 'error' ? (
+                      <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                          fillRule="evenodd"
+                          d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4 flex-shrink-0 mt-0.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                    )}
+                    <p className="break-words flex-1">{testStatus.message}</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setTestStatusClosing(true);
+                      setTimeout(() => {
+                        setTestStatus({ state: 'idle' });
+                        setTestStatusClosing(false);
+                      }, 300);
+                    }}
+                    className={cn(
+                      'flex-shrink-0 p-0.5 rounded hover:bg-black/5 transition-colors',
+                      isLight ? 'hover:bg-black/5' : 'hover:bg-white/10',
+                    )}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </form>
           )}
 
@@ -1292,12 +1459,12 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                   stroke="currentColor"
                   viewBox="0 0 24 24"
                   strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M4 7h16M4 7a2 2 0 012-2h12a2 2 0 012 2M4 7v10a2 2 0 002 2h3m10-12v10a2 2 0 01-2 2h-3m-6 0a2 2 0 002-2v-4a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 002 2m-6 0h6"
-                  />
+                  <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
+                  <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                  <line x1="12" y1="22.08" x2="12" y2="12" />
                 </svg>
                 <p className={cn('text-sm font-medium', isLight ? 'text-gray-600' : 'text-gray-400')}>
                   No models configured
@@ -1309,7 +1476,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
             ) : (
               filteredModels.map(model => {
                 const isEditing = editingModelId === model.id;
-                const providerOptions = providerOptionsForEdit(model.providerId, isEditing && editForm ? editForm.scope : model.teamId ? 'team' : 'organization', isEditing && editForm ? editForm.teamId : model.teamId || '');
+                const providerOptions = providerOptionsForEdit(model.providerId, isEditing && editForm ? editForm.scope : model.teams.length > 0 ? 'team' : 'organization', isEditing && editForm ? editForm.teamIds : model.teams.map(t => t.id));
 
                 return (
                   <div
@@ -1391,41 +1558,40 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                             value={editForm.description}
                             onChange={e => setEditForm(prev => (prev ? { ...prev, description: e.target.value } : prev))}
                             className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
+                              'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
                               isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
                             )}
                           />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                              Model Settings JSON
-                            </label>
-                            <textarea
-                              rows={3}
-                              value={editForm.modelSettings}
-                              onChange={e => setEditForm(prev => (prev ? { ...prev, modelSettings: e.target.value } : prev))}
-                              className={cn(
-                                'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
-                                isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                              )}
-                            />
-                          </div>
-                          <div>
-                            <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                              Metadata JSON
-                            </label>
-                            <textarea
-                              rows={3}
-                              value={editForm.metadata}
-                              onChange={e => setEditForm(prev => (prev ? { ...prev, metadata: e.target.value } : prev))}
-                              className={cn(
-                                'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500',
-                                isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                              )}
-                            />
-                          </div>
+                        <div>
+                          <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                            Model Settings JSON
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={editForm.modelSettings}
+                            onChange={e => setEditForm(prev => (prev ? { ...prev, modelSettings: e.target.value } : prev))}
+                            className={cn(
+                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
+                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                            )}
+                          />
+                        </div>
+
+                        <div>
+                          <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                            Metadata JSON
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={editForm.metadata}
+                            onChange={e => setEditForm(prev => (prev ? { ...prev, metadata: e.target.value } : prev))}
+                            className={cn(
+                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
+                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                            )}
+                          />
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
@@ -1454,16 +1620,15 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                           </div>
                           <div>
                             <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                              Team (optional)
+                              Teams (optional)
                             </label>
-                            <SingleTeamSelector
+                            <TeamMultiSelector
                               isLight={isLight}
                               teams={teams}
-                              selectedTeamId={editForm.teamId}
-                              onTeamChange={value => setEditForm(prev => (prev ? { ...prev, teamId: value } : prev))}
-                              placeholder="Select team"
+                              selectedTeamIds={editForm.teamIds}
+                              onTeamChange={(value: string[]) => setEditForm(prev => (prev ? { ...prev, teamIds: value } : prev))}
+                              placeholder="Select teams"
                               disabled={editForm.scope !== 'team'}
-                              allowEmpty={false}
                             />
                           </div>
                         </div>
@@ -1518,76 +1683,77 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                           {testStatus.state !== 'idle' && (
                             <div
                               className={cn(
-                                'flex items-start gap-2 rounded-lg px-3 py-2 text-xs shadow-sm transition-colors',
-                                testStatus.state === 'success'
-                                  ? isLight
+                                'p-3 rounded-lg text-xs flex items-start justify-between gap-3 transform transition-all duration-300 ease-out',
+                                isLight
+                                  ? testStatus.state === 'success'
                                     ? 'bg-green-50 text-green-700'
-                                    : 'bg-green-900/20 text-green-300'
-                                  : testStatus.state === 'error'
-                                    ? isLight
+                                    : testStatus.state === 'error'
                                       ? 'bg-red-50 text-red-700'
-                                      : 'bg-red-900/20 text-red-300'
-                                    : isLight
-                                      ? 'bg-blue-50 text-blue-600'
+                                      : 'bg-blue-50 text-blue-600'
+                                  : testStatus.state === 'success'
+                                    ? 'bg-green-900/20 text-green-400'
+                                    : testStatus.state === 'error'
+                                      ? 'bg-red-900/20 text-red-400'
                                       : 'bg-blue-900/20 text-blue-300',
+                                testStatusClosing ? 'opacity-0 scale-95' : 'opacity-100 scale-100',
                               )}
                             >
-                              <span
-                                className={cn(
-                                  'mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center',
-                                  testStatus.state === 'success'
-                                    ? isLight
-                                      ? 'text-green-500'
-                                      : 'text-green-300'
-                                    : testStatus.state === 'error'
-                                      ? isLight
-                                        ? 'text-red-500'
-                                        : 'text-red-300'
-                                      : isLight
-                                        ? 'text-blue-500'
-                                        : 'text-blue-300',
-                                )}
-                              >
-                                {testStatus.state === 'success' && (
-                                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                              <div className="flex-1 flex items-start gap-2">
+                                <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                  {testStatus.state === 'success' && (
                                     <path
                                       fillRule="evenodd"
-                                      d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0L3.293 9.207a1 1 0 011.414-1.414l3.043 3.043 6.543-6.543a1 1 0 011.414 0z"
+                                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
                                       clipRule="evenodd"
                                     />
-                                  </svg>
-                                )}
-                                {testStatus.state === 'error' && (
-                                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                                  )}
+                                  {testStatus.state === 'error' && (
                                     <path
                                       fillRule="evenodd"
-                                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm2.707-10.707a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293a1 1 0 10-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293z"
+                                      d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
                                       clipRule="evenodd"
                                     />
-                                  </svg>
-                                )}
-                                {testStatus.state === 'loading' && (
-                                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                                  </svg>
-                                )}
-                              </span>
-
-                              <div className="flex-1">
-                                <div className="font-medium">
-                                  {testStatus.state === 'success'
-                                    ? 'Connectivity test succeeded'
-                                    : testStatus.state === 'loading'
-                                      ? 'Testing model connectivity…'
-                                      : 'Connectivity test failed'}
-                                </div>
-                                {testStatus.message && (
-                                  <div className="mt-0.5 leading-snug">
-                                    {testStatus.message}
+                                  )}
+                                  {testStatus.state === 'loading' && (
+                                    <>
+                                      <circle className="opacity-25" cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="2" fill="none" />
+                                      <path className="opacity-75" fill="currentColor" d="M2 10a8 8 0 018-8v2a6 6 0 00-6 6H2z" />
+                                    </>
+                                  )}
+                                </svg>
+                                <div>
+                                  <div className="font-medium">
+                                    {testStatus.state === 'success'
+                                      ? 'Connectivity test succeeded'
+                                      : testStatus.state === 'loading'
+                                        ? 'Testing model connectivity…'
+                                        : 'Connectivity test failed'}
                                   </div>
-                                )}
+                                  {testStatus.message && <div className="mt-0.5">{testStatus.message}</div>}
+                                </div>
                               </div>
+                              <button
+                                onClick={() => setTestStatus({ state: 'idle' })}
+                                className={cn(
+                                  'flex-shrink-0 p-0.5 rounded transition-colors',
+                                  isLight
+                                    ? testStatus.state === 'success'
+                                      ? 'text-green-500 hover:bg-green-100'
+                                      : testStatus.state === 'error'
+                                        ? 'text-red-500 hover:bg-red-100'
+                                        : 'text-blue-500 hover:bg-blue-100'
+                                    : testStatus.state === 'success'
+                                      ? 'text-green-400 hover:bg-green-900/40'
+                                      : testStatus.state === 'error'
+                                        ? 'text-red-400 hover:bg-red-900/40'
+                                        : 'text-blue-300 hover:bg-blue-900/40',
+                                )}
+                                title="Dismiss"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
                             </div>
                           )}
                         </div>

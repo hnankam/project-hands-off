@@ -15,7 +15,8 @@ from pydantic_ai.builtin_tools import (
 from pydantic_ai.ag_ui import StateDeps
 
 from config.models import get_models_for_context
-from config.prompts import get_agent_prompts_for_context
+from config.prompts import get_agent_prompts_for_context, get_agent_info_for_context
+from config.tools import get_tools_for_context, get_mcp_servers_for_context
 from config import logger
 from core.models import AgentState
 from utils.context import context_tuple
@@ -25,6 +26,14 @@ if TYPE_CHECKING:
 
 # Agent cache for reusing agent instances scoped by organization/team
 _agent_cache: Dict[Tuple[str, str, str, str], Agent] = {}
+
+BUILTIN_TOOL_REGISTRY = {
+    'builtin_web_search': WebSearchTool,
+    'builtin_code_execution': CodeExecutionTool,
+    'builtin_image_generation': ImageGenerationTool,
+    'builtin_memory': MemoryTool,
+    'builtin_url_context': UrlContextTool,
+}
 
 
 def clear_agent_cache(organization_id: str | None = None, team_id: str | None = None) -> None:
@@ -73,19 +82,74 @@ def create_agent(
     model = model_entry['model']
     model_settings = model_entry['model_settings']
 
+    tool_definitions = get_tools_for_context(organization_id, team_id)
+    mcp_servers = get_mcp_servers_for_context(organization_id, team_id)
+    agent_info = get_agent_info_for_context(agent_type, organization_id, team_id) or {}
+
+    allowed_tool_keys = agent_info.get('allowed_tools')
+    if allowed_tool_keys is None:
+        allowed_tool_keys = [
+            key
+            for key, data in tool_definitions.items()
+            if data.get('enabled', True) and data.get('type') in {'backend', 'builtin', 'mcp'}
+        ]
+    else:
+        allowed_tool_keys = [
+            key
+            for key in allowed_tool_keys
+            if key in tool_definitions and tool_definitions[key].get('enabled', True)
+        ]
+
+    # Preserve order while removing duplicates
+    seen_keys = set()
+    filtered_keys: list[str] = []
+    for key in allowed_tool_keys:
+        if key not in seen_keys:
+            filtered_keys.append(key)
+            seen_keys.add(key)
+    allowed_tool_keys = filtered_keys
+
+    builtin_tool_instances = []
+    allowed_backend_keys: list[str] = []
+    allowed_mcp_keys: list[str] = []
+
+    for key in allowed_tool_keys:
+        tool_cfg = tool_definitions.get(key)
+        if not tool_cfg:
+            logger.warning(
+                "Tool '%s' referenced by agent '%s' is not defined for org=%s team=%s",
+                key,
+                agent_type,
+                organization_id,
+                team_id,
+            )
+            continue
+
+        tool_type = tool_cfg.get('type')
+        if tool_type == 'builtin':
+            cls = BUILTIN_TOOL_REGISTRY.get(key)
+            if not cls:
+                logger.warning(
+                    "No builtin tool class registered for key '%s' (agent=%s)", key, agent_type
+                )
+                continue
+            try:
+                builtin_tool_instances.append(cls())
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Failed to instantiate builtin tool '%s': %s", key, exc)
+        elif tool_type == 'backend':
+            allowed_backend_keys.append(key)
+        elif tool_type == 'mcp':
+            allowed_mcp_keys.append(key)
+        # frontend tools are handled entirely in the extension and ignored here
+
     agent = Agent(
         model,
         instructions=instructions,
         deps_type=StateDeps[AgentState],
         model_settings=model_settings,
         history_processors=[process_message_attachments, keep_recent_messages],
-        builtin_tools=[
-            # WebSearchTool(),
-            # CodeExecutionTool(),
-            # ImageGenerationTool(),
-            # UrlContextTool(),
-            # MemoryTool(),
-        ],
+        builtin_tools=builtin_tool_instances,
         retries=3,
     )
 
@@ -93,7 +157,16 @@ def create_agent(
     
     # Import here to avoid circular import
     from tools.agent_tools import register_agent_tools
-    register_agent_tools(agent)
+    register_agent_tools(
+        agent,
+        agent_type=agent_type,
+        organization_id=organization_id,
+        team_id=team_id,
+        tool_definitions=tool_definitions,
+        mcp_servers=mcp_servers,
+        allowed_backend_tools=set(allowed_backend_keys),
+        allowed_mcp_tools=set(allowed_mcp_keys),
+    )
 
     return agent
 

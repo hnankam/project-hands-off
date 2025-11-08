@@ -5,6 +5,7 @@ import { getPool } from '../config/database.js';
 import { invalidateCache as invalidateDbCache } from '../config/db-loaders.js';
 import { invalidateCache as invalidateLoaderCache } from '../config/loader.js';
 import { log } from '../utils/logger.js';
+import { syncTeamAssociations } from '../lib/team-helpers.js';
 
 const router = express.Router();
 
@@ -332,12 +333,10 @@ const toCamelModel = row => ({
   description: row.description,
   enabled: row.enabled,
   organizationId: row.organization_id,
-  teamId: row.team_id,
-  teamName: row.team_name || null,
+  teams: row.teams || [], // Array of {id, name} objects from the view
   providerId: row.provider_id,
   providerKey: row.provider_key,
   providerType: row.provider_type,
-  providerTeamId: row.provider_team_id || null,
   modelSettingsOverride: row.model_settings_override || null,
   metadata: row.metadata || null,
   createdAt: row.created_at,
@@ -401,10 +400,9 @@ async function validateTeamBelongsToOrg(pool, organizationId, teamId) {
 
 async function fetchModelById(pool, id, organizationId) {
   const { rows } = await pool.query(
-    `SELECT m.*, p.provider_key, p.provider_type, p.team_id AS provider_team_id, t.name AS team_name
-     FROM models m
+    `SELECT m.*, p.provider_key, p.provider_type
+     FROM models_with_teams m
      JOIN providers p ON m.provider_id = p.id
-     LEFT JOIN team t ON m.team_id = t.id
      WHERE m.id = $1 AND m.organization_id = $2`,
     [id, organizationId],
   );
@@ -422,28 +420,52 @@ router.get('/', async (req, res, next) => {
     const session = await ensureAuthenticated(req, res);
     if (!session) return;
 
-    const { organizationId, teamId } = req.query;
+    const { organizationId, teamIds: teamIdsParam = null } = req.query;
+    // Handle both single teamIds param and array of teamIds params
+    const teamIds = Array.isArray(teamIdsParam) ? teamIdsParam : (teamIdsParam ? [teamIdsParam] : []);
 
     const pool = getPool();
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    if (teamId) {
-      const teamIsValid = await validateTeamBelongsToOrg(pool, organizationId, teamId);
-      if (!teamIsValid) {
-        return res.status(404).json({ error: 'Team not found in organization' });
-      }
+    const params = [organizationId];
+    let teamFilter = '';
+    
+    // If teamIds are specified, filter to show only models that:
+    // 1. Are organization-wide (no team restrictions), OR
+    // 2. Include at least one of the specified teams
+    if (teamIds.length > 0) {
+      teamFilter = `
+        AND (
+          NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id)
+          OR EXISTS (
+            SELECT 1 FROM model_teams mt 
+            WHERE mt.model_id = m.id AND mt.team_id = ANY($2::text[])
+          )
+        )
+      `;
+      params.push(teamIds);
     }
 
-    const params = [organizationId, teamId || null];
+    // Get all models for the organization with their teams (filtered by org and optionally by team)
     const { rows } = await pool.query(
-      `SELECT m.*, p.provider_key, p.provider_type, p.team_id AS provider_team_id, t.name AS team_name
+      `SELECT 
+         m.*,
+         p.provider_key,
+         p.provider_type,
+         COALESCE(
+           (SELECT json_agg(json_build_object('id', team.id, 'name', team.name) ORDER BY team.name)
+            FROM model_teams mt
+            JOIN team ON team.id = mt.team_id
+            WHERE mt.model_id = m.id
+              AND team."organizationId" = $1),
+           '[]'::json
+         ) as teams
        FROM models m
        JOIN providers p ON m.provider_id = p.id
-       LEFT JOIN team t ON m.team_id = t.id
        WHERE m.organization_id = $1
-         AND ($2::text IS NULL OR m.team_id = $2 OR m.team_id IS NULL)
-       ORDER BY m.team_id IS NULL DESC, m.created_at DESC`,
+         ${teamFilter}
+       ORDER BY m.created_at DESC`,
       params,
     );
 
@@ -460,7 +482,7 @@ router.post('/', async (req, res, next) => {
 
     const {
       organizationId,
-      teamId = null,
+      teamIds = [], // Array of team IDs for multi-team support
       providerId,
       providerKey,
       modelKey,
@@ -489,10 +511,14 @@ router.post('/', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    if (teamId) {
-      const teamIsValid = await validateTeamBelongsToOrg(pool, organizationId, teamId);
-      if (!teamIsValid) {
-        return res.status(404).json({ error: 'Team not found in organization' });
+    // Validate teams if provided
+    if (teamIds.length > 0) {
+      const { rows } = await pool.query(
+        'SELECT id FROM team WHERE id = ANY($1::text[]) AND "organizationId" = $2',
+        [teamIds, organizationId],
+      );
+      if (rows.length !== teamIds.length) {
+        return res.status(404).json({ error: 'One or more teams not found in organization' });
       }
     }
 
@@ -502,8 +528,8 @@ router.post('/', async (req, res, next) => {
     }
 
     const providerQuery = providerId
-      ? ['SELECT id, team_id FROM providers WHERE id = $1 AND organization_id = $2', [providerId, organizationId]]
-      : ['SELECT id, team_id FROM providers WHERE provider_key = $1 AND organization_id = $2', [providerKey, organizationId]];
+      ? ['SELECT id FROM providers WHERE id = $1 AND organization_id = $2', [providerId, organizationId]]
+      : ['SELECT id FROM providers WHERE provider_key = $1 AND organization_id = $2', [providerKey, organizationId]];
 
     const providerResult = await pool.query(providerQuery[0], providerQuery[1]);
     if (providerResult.rows.length === 0) {
@@ -511,9 +537,6 @@ router.post('/', async (req, res, next) => {
     }
 
     const providerRow = providerResult.rows[0];
-    if (providerRow.team_id && providerRow.team_id !== teamId) {
-      return res.status(400).json({ error: 'Team-scoped provider can only be used for same team models' });
-    }
 
     const modelSettingsJSON = sanitizeJSON(modelSettings, {});
     const metadataJSON = sanitizeJSON(metadata, {});
@@ -527,10 +550,9 @@ router.post('/', async (req, res, next) => {
          description,
          model_settings_override,
          organization_id,
-         team_id,
          enabled,
          metadata
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id`,
       [
         providerRow.id,
@@ -540,15 +562,21 @@ router.post('/', async (req, res, next) => {
         description?.trim() || null,
         Object.keys(modelSettingsJSON).length > 0 ? modelSettingsJSON : null,
         organizationId,
-        teamId || null,
         Boolean(enabled),
         metadataJSON,
       ],
     );
 
+    const modelId = insertResult.rows[0].id;
+
+    // Associate with teams if provided
+    if (teamIds.length > 0) {
+      await syncTeamAssociations(pool, 'model_teams', 'model_id', modelId, teamIds);
+    }
+
     invalidateConfigCaches();
 
-    const createdModel = await fetchModelById(pool, insertResult.rows[0].id, organizationId);
+    const createdModel = await fetchModelById(pool, modelId, organizationId);
     res.status(201).json({ model: createdModel });
   } catch (err) {
     next(err);
@@ -563,7 +591,7 @@ router.put('/:modelId', async (req, res, next) => {
     const { modelId } = req.params;
     const {
       organizationId,
-      teamId = null,
+      teamIds = [], // Array of team IDs for multi-team support
       providerId,
       providerKey,
       modelKey,
@@ -584,10 +612,14 @@ router.put('/:modelId', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    if (teamId) {
-      const teamIsValid = await validateTeamBelongsToOrg(pool, organizationId, teamId);
-      if (!teamIsValid) {
-        return res.status(404).json({ error: 'Team not found in organization' });
+    // Validate teams if provided
+    if (teamIds.length > 0) {
+      const { rows } = await pool.query(
+        'SELECT id FROM team WHERE id = ANY($1::text[]) AND "organizationId" = $2',
+        [teamIds, organizationId],
+      );
+      if (rows.length !== teamIds.length) {
+        return res.status(404).json({ error: 'One or more teams not found in organization' });
       }
     }
 
@@ -600,9 +632,9 @@ router.put('/:modelId', async (req, res, next) => {
 
     const providerQuery = providerId || providerKey
       ? providerId
-        ? ['SELECT id, team_id FROM providers WHERE id = $1 AND organization_id = $2', [providerId, organizationId]]
-        : ['SELECT id, team_id FROM providers WHERE provider_key = $1 AND organization_id = $2', [providerKey, organizationId]]
-      : ['SELECT id, team_id FROM providers WHERE id = $1 AND organization_id = $2', [existingModel.providerId, organizationId]];
+        ? ['SELECT id FROM providers WHERE id = $1 AND organization_id = $2', [providerId, organizationId]]
+        : ['SELECT id FROM providers WHERE provider_key = $1 AND organization_id = $2', [providerKey, organizationId]]
+      : ['SELECT id FROM providers WHERE id = $1 AND organization_id = $2', [existingModel.providerId, organizationId]];
 
     const providerResult = await pool.query(providerQuery[0], providerQuery[1]);
     if (providerResult.rows.length === 0) {
@@ -610,9 +642,6 @@ router.put('/:modelId', async (req, res, next) => {
     }
 
     const providerRow = providerResult.rows[0];
-    if (providerRow.team_id && providerRow.team_id !== teamId) {
-      return res.status(400).json({ error: 'Team-scoped provider can only be used for same team models' });
-    }
 
     const modelSettingsJSON = sanitizeJSON(modelSettings, {});
     const metadataJSON = sanitizeJSON(metadata, {});
@@ -626,11 +655,10 @@ router.put('/:modelId', async (req, res, next) => {
          display_name = $4,
          description = $5,
          model_settings_override = $6,
-         team_id = $7,
-         enabled = $8,
-         metadata = $9,
+         enabled = $7,
+         metadata = $8,
          updated_at = NOW()
-       WHERE id = $10 AND organization_id = $11`,
+       WHERE id = $9 AND organization_id = $10`,
       [
         providerRow.id,
         modelKey ? modelKey.trim() : existingModel.modelKey,
@@ -638,13 +666,17 @@ router.put('/:modelId', async (req, res, next) => {
         displayName?.trim() || null,
         description?.trim() || null,
         Object.keys(modelSettingsJSON).length > 0 ? modelSettingsJSON : null,
-        teamId || null,
         Boolean(enabled),
         metadataJSON,
         modelId,
         organizationId,
       ],
     );
+
+    // Update team associations (always sync when teamIds is provided in request)
+    if (teamIds !== undefined) {
+      await syncTeamAssociations(pool, 'model_teams', 'model_id', modelId, teamIds);
+    }
 
     invalidateConfigCaches();
 
@@ -690,13 +722,23 @@ router.post('/:modelId/test', async (req, res, next) => {
       `SELECT m.id,
               m.model_key,
               m.model_name,
-              m.team_id,
+              COALESCE(
+                (SELECT json_agg(mt.team_id)
+                 FROM model_teams mt 
+                 WHERE mt.model_id = m.id),
+                '[]'::json
+              ) as model_teams,
               p.id AS provider_id,
               p.provider_key,
               p.provider_type,
               p.credentials,
               p.bedrock_model_settings,
-              p.team_id AS provider_team_id
+              COALESCE(
+                (SELECT json_agg(pt.team_id)
+                 FROM provider_teams pt 
+                 WHERE pt.provider_id = p.id),
+                '[]'::json
+              ) as provider_teams
          FROM models m
          JOIN providers p ON m.provider_id = p.id
         WHERE m.id = $1 AND m.organization_id = $2`,
@@ -715,12 +757,19 @@ router.post('/:modelId/test', async (req, res, next) => {
       provider_type: modelRow.provider_type,
       credentials: modelRow.credentials || {},
       bedrock_model_settings: modelRow.bedrock_model_settings || null,
-      team_id: modelRow.provider_team_id || null,
+      teams: modelRow.provider_teams || [],
     };
 
     if (providerIdOverride && providerIdOverride !== modelRow.provider_id) {
       const providerResult = await pool.query(
-        'SELECT id, provider_key, provider_type, credentials, bedrock_model_settings, team_id FROM providers WHERE id = $1 AND organization_id = $2',
+        `SELECT id, provider_key, provider_type, credentials, bedrock_model_settings,
+                COALESCE(
+                  (SELECT json_agg(pt.team_id)
+                   FROM provider_teams pt 
+                   WHERE pt.provider_id = id),
+                  '[]'::json
+                ) as teams
+         FROM providers WHERE id = $1 AND organization_id = $2`,
         [providerIdOverride, organizationId],
       );
 
@@ -731,10 +780,16 @@ router.post('/:modelId/test', async (req, res, next) => {
       providerRow = providerResult.rows[0];
     }
 
-    const effectiveTeamId = teamId === undefined ? modelRow.team_id : (teamId || null);
-
-    if (providerRow.team_id && providerRow.team_id !== effectiveTeamId) {
-      return res.status(400).json({ error: 'Team-scoped provider can only be used for same team models' });
+    // Validate provider-model team compatibility
+    const modelTeams = modelRow.model_teams || [];
+    const providerTeams = providerRow.teams || [];
+    
+    if (modelTeams.length > 0 && providerTeams.length > 0) {
+      // Both have team restrictions - must have at least one team in common
+      const hasCommonTeam = modelTeams.some(mt => providerTeams.includes(mt));
+      if (!hasCommonTeam) {
+        return res.status(400).json({ error: 'Team-scoped provider must share at least one team with team-scoped model' });
+      }
     }
 
     try {
@@ -772,6 +827,91 @@ router.post('/:modelId/test', async (req, res, next) => {
 
     log('[Models API] Model connectivity test succeeded', {
       modelId,
+      providerId: providerRow.id,
+      providerType: providerRow.provider_type,
+      organizationId,
+    });
+
+    res.json({ ok: true, result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/test-new', async (req, res, next) => {
+  try {
+    const session = await ensureAuthenticated(req, res);
+    if (!session) return;
+
+    const {
+      organizationId,
+      providerId,
+      modelKey,
+      modelName,
+      modelSettings = undefined,
+      metadata = undefined,
+    } = req.body || {};
+
+    if (!organizationId) {
+      return res.status(400).json({ error: 'organizationId is required' });
+    }
+
+    if (!providerId) {
+      return res.status(400).json({ error: 'providerId is required' });
+    }
+
+    if (!modelName || !modelName.trim()) {
+      return res.status(400).json({ error: 'modelName is required' });
+    }
+
+    const pool = getPool();
+    const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
+    if (!roles) return;
+
+    const providerResult = await pool.query(
+      'SELECT id, provider_key, provider_type, credentials, bedrock_model_settings FROM providers WHERE id = $1 AND organization_id = $2',
+      [providerId, organizationId],
+    );
+
+    if (providerResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Provider not found for organization' });
+    }
+
+    const providerRow = providerResult.rows[0];
+
+    try {
+      if (modelSettings !== undefined) {
+        sanitizeJSON(modelSettings, {});
+      }
+      if (metadata !== undefined) {
+        sanitizeJSON(metadata, {});
+      }
+    } catch (err) {
+      return res.status(400).json({ error: err.message || 'Invalid JSON payload' });
+    }
+
+    const finalModelName = modelName.trim();
+    const finalModelKey = typeof modelKey === 'string' && modelKey.trim() ? modelKey.trim() : finalModelName;
+
+    let result;
+    try {
+      result = await testModelConnectivity(
+        providerRow.provider_type,
+        providerRow.credentials || {},
+        finalModelName,
+        finalModelKey,
+      );
+    } catch (err) {
+      log('[Models API] New model connectivity test failed', {
+        providerId: providerRow.id,
+        providerType: providerRow.provider_type,
+        organizationId,
+        error: err?.message,
+      });
+      return res.status(502).json({ error: err?.message || 'Model connectivity test failed' });
+    }
+
+    log('[Models API] New model connectivity test succeeded', {
       providerId: providerRow.id,
       providerType: providerRow.provider_type,
       organizationId,

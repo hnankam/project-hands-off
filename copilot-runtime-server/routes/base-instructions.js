@@ -31,8 +31,6 @@ const toCamelInstruction = row => ({
   instructionValue: row.instruction_value,
   description: row.description,
   organizationId: row.organization_id,
-  teamId: row.team_id,
-  teamName: row.team_name || null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -79,24 +77,11 @@ async function ensureOrgAdmin(pool, organizationId, userId, res) {
   return roles;
 }
 
-async function validateTeamBelongsToOrg(pool, organizationId, teamId) {
-  if (!teamId) {
-    return true;
-  }
-
-  const teamResult = await pool.query(
-    'SELECT id FROM team WHERE id = $1 AND "organizationId" = $2',
-    [teamId, organizationId],
-  );
-
-  return teamResult.rows.length > 0;
-}
 
 async function fetchInstructionById(pool, id, organizationId) {
   const { rows } = await pool.query(
-    `SELECT bi.*, t.name AS team_name
+    `SELECT bi.*
      FROM base_instructions bi
-     LEFT JOIN team t ON bi.team_id = t.id
      WHERE bi.id = $1 AND bi.organization_id = $2`,
     [id, organizationId],
   );
@@ -109,28 +94,18 @@ router.get('/', async (req, res, next) => {
     const session = await ensureAuthenticated(req, res);
     if (!session) return;
 
-    const { organizationId, teamId } = req.query;
+    const { organizationId } = req.query;
 
     const pool = getPool();
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    if (teamId) {
-      const teamIsValid = await validateTeamBelongsToOrg(pool, organizationId, teamId);
-      if (!teamIsValid) {
-        return res.status(404).json({ error: 'Team not found in organization' });
-      }
-    }
-
-    const params = [organizationId, teamId || null];
     const { rows } = await pool.query(
-      `SELECT bi.*, t.name AS team_name
+      `SELECT bi.*
        FROM base_instructions bi
-       LEFT JOIN team t ON bi.team_id = t.id
        WHERE bi.organization_id = $1
-         AND ($2::text IS NULL OR bi.team_id = $2 OR bi.team_id IS NULL)
-       ORDER BY bi.team_id IS NULL DESC, bi.created_at DESC`,
-      params,
+       ORDER BY bi.created_at DESC`,
+      [organizationId],
     );
 
     res.json({ instructions: rows.map(toCamelInstruction), count: rows.length });
@@ -146,7 +121,6 @@ router.post('/', async (req, res, next) => {
 
     const {
       organizationId,
-      teamId = null,
       instructionKey,
       instructionValue,
       description,
@@ -169,21 +143,14 @@ router.post('/', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    if (teamId) {
-      const teamIsValid = await validateTeamBelongsToOrg(pool, organizationId, teamId);
-      if (!teamIsValid) {
-        return res.status(404).json({ error: 'Team not found in organization' });
-      }
-    }
-
     // Check for duplicate instruction_key
     const duplicateCheck = await pool.query(
-      'SELECT id FROM base_instructions WHERE instruction_key = $1 AND organization_id = $2 AND ($3::text IS NULL OR team_id = $3)',
-      [instructionKey.trim(), organizationId, teamId || null],
+      'SELECT id FROM base_instructions WHERE instruction_key = $1 AND organization_id = $2',
+      [instructionKey.trim(), organizationId],
     );
 
     if (duplicateCheck.rows.length > 0) {
-      return res.status(409).json({ error: 'Instruction key already exists in this scope' });
+      return res.status(409).json({ error: 'Instruction key already exists in this organization' });
     }
 
     const insertResult = await pool.query(
@@ -191,16 +158,14 @@ router.post('/', async (req, res, next) => {
          instruction_key,
          instruction_value,
          description,
-         organization_id,
-         team_id
-       ) VALUES ($1, $2, $3, $4, $5)
+         organization_id
+       ) VALUES ($1, $2, $3, $4)
        RETURNING id`,
       [
         instructionKey.trim(),
         instructionValue.trim(),
         description?.trim() || null,
         organizationId,
-        teamId || null,
       ],
     );
 
@@ -219,7 +184,6 @@ router.put('/:instructionId', async (req, res, next) => {
     const { instructionId } = req.params;
     const {
       organizationId,
-      teamId = null,
       instructionKey,
       instructionValue,
       description,
@@ -234,13 +198,6 @@ router.put('/:instructionId', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    if (teamId) {
-      const teamIsValid = await validateTeamBelongsToOrg(pool, organizationId, teamId);
-      if (!teamIsValid) {
-        return res.status(404).json({ error: 'Team not found in organization' });
-      }
-    }
-
     const existingInstruction = await fetchInstructionById(pool, instructionId, organizationId);
     if (!existingInstruction) {
       return res.status(404).json({ error: 'Base instruction not found' });
@@ -249,12 +206,12 @@ router.put('/:instructionId', async (req, res, next) => {
     // Check for duplicate instruction_key if it's being changed
     if (instructionKey && instructionKey.trim() !== existingInstruction.instructionKey) {
       const duplicateCheck = await pool.query(
-        'SELECT id FROM base_instructions WHERE instruction_key = $1 AND organization_id = $2 AND ($3::text IS NULL OR team_id = $3) AND id != $4',
-        [instructionKey.trim(), organizationId, teamId || null, instructionId],
+        'SELECT id FROM base_instructions WHERE instruction_key = $1 AND organization_id = $2 AND id != $3',
+        [instructionKey.trim(), organizationId, instructionId],
       );
 
       if (duplicateCheck.rows.length > 0) {
-        return res.status(409).json({ error: 'Instruction key already exists in this scope' });
+        return res.status(409).json({ error: 'Instruction key already exists in this organization' });
       }
     }
 
@@ -264,14 +221,12 @@ router.put('/:instructionId', async (req, res, next) => {
          instruction_key = $1,
          instruction_value = $2,
          description = $3,
-         team_id = $4,
          updated_at = NOW()
-       WHERE id = $5 AND organization_id = $6`,
+       WHERE id = $4 AND organization_id = $5`,
       [
         instructionKey ? instructionKey.trim() : existingInstruction.instructionKey,
         instructionValue ? instructionValue.trim() : existingInstruction.instructionValue,
         description?.trim() || null,
-        teamId || null,
         instructionId,
         organizationId,
       ],
