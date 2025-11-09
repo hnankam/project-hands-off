@@ -52,7 +52,7 @@ def clear_agent_cache(organization_id: str | None = None, team_id: str | None = 
         _agent_cache.pop(key, None)
 
 
-def create_agent(
+async def create_agent(
     agent_type: str,
     model_name: str,
     organization_id: str | None,
@@ -87,18 +87,34 @@ def create_agent(
     agent_info = get_agent_info_for_context(agent_type, organization_id, team_id) or {}
 
     allowed_tool_keys = agent_info.get('allowed_tools')
-    if allowed_tool_keys is None:
+    logger.debug(
+        "Agent '%s' allowed_tools from DB: %s (type: %s)",
+        agent_type,
+        allowed_tool_keys,
+        type(allowed_tool_keys).__name__ if allowed_tool_keys is not None else 'None'
+    )
+    logger.debug(
+        "Available tool_definitions: %d tools - %s",
+        len(tool_definitions),
+        list(tool_definitions.keys())[:10] if tool_definitions else []
+    )
+    
+    # Handle None or empty list - default to all enabled tools
+    if not allowed_tool_keys:
+        logger.debug("No specific tools configured for agent '%s', defaulting to all enabled tools", agent_type)
         allowed_tool_keys = [
             key
             for key, data in tool_definitions.items()
-            if data.get('enabled', True) and data.get('type') in {'backend', 'builtin', 'mcp'}
+            if data.get('enabled', True) and data.get('tool_type') in {'backend', 'builtin', 'mcp', 'frontend'}
         ]
     else:
+        # Filter to only include tools that exist and are enabled
         allowed_tool_keys = [
             key
             for key in allowed_tool_keys
             if key in tool_definitions and tool_definitions[key].get('enabled', True)
         ]
+        logger.debug("Agent '%s' has %d allowed tools configured", agent_type, len(allowed_tool_keys))
 
     # Preserve order while removing duplicates
     seen_keys = set()
@@ -108,10 +124,18 @@ def create_agent(
             filtered_keys.append(key)
             seen_keys.add(key)
     allowed_tool_keys = filtered_keys
+    
+    logger.debug(
+        "Agent '%s' final tool list after deduplication: %d tools - %s",
+        agent_type,
+        len(allowed_tool_keys),
+        allowed_tool_keys[:10] if allowed_tool_keys else []
+    )
 
     builtin_tool_instances = []
     allowed_backend_keys: list[str] = []
     allowed_mcp_keys: list[str] = []
+    frontend_tool_keys: list[str] = []
 
     for key in allowed_tool_keys:
         tool_cfg = tool_definitions.get(key)
@@ -125,7 +149,7 @@ def create_agent(
             )
             continue
 
-        tool_type = tool_cfg.get('type')
+        tool_type = tool_cfg.get('tool_type')
         if tool_type == 'builtin':
             cls = BUILTIN_TOOL_REGISTRY.get(key)
             if not cls:
@@ -141,24 +165,41 @@ def create_agent(
             allowed_backend_keys.append(key)
         elif tool_type == 'mcp':
             allowed_mcp_keys.append(key)
+        elif tool_type == 'frontend':
+            frontend_tool_keys.append(key)
         # frontend tools are handled entirely in the extension and ignored here
 
-    agent = Agent(
-        model,
-        instructions=instructions,
-        deps_type=StateDeps[AgentState],
-        model_settings=model_settings,
-        history_processors=[process_message_attachments, keep_recent_messages],
-        builtin_tools=builtin_tool_instances,
-        retries=3,
+    # Log tool configuration before agent creation
+    logger.info(
+        "Creating agent '%s' with model '%s' for org=%s team=%s",
+        agent_type,
+        model_name,
+        organization_id or 'global',
+        team_id or 'default'
     )
-
-    agent.sequential_tool_calls()
+    logger.info(
+        "Tool configuration: builtin=%d, backend=%d, mcp=%d, frontend=%d",
+        len(builtin_tool_instances),
+        len(allowed_backend_keys),
+        len(allowed_mcp_keys),
+        len(frontend_tool_keys)
+    )
+    
+    if builtin_tool_instances:
+        builtin_names = [type(tool).__name__ for tool in builtin_tool_instances]
+        logger.debug("Builtin tools: %s", ", ".join(builtin_names))
+    if allowed_backend_keys:
+        logger.debug("Backend tools: %s", ", ".join(allowed_backend_keys))
+    if allowed_mcp_keys:
+        logger.debug("MCP tools: %s", ", ".join(allowed_mcp_keys))
+    if frontend_tool_keys:
+        logger.debug("Frontend tools: %s", ", ".join(frontend_tool_keys))
     
     # Import here to avoid circular import
-    from tools.agent_tools import register_agent_tools
-    register_agent_tools(
-        agent,
+    from tools.agent_tools import get_agent_tools
+    
+    logger.debug("Getting backend and MCP tools for agent '%s'", agent_type)
+    backend_tools, mcp_toolsets = await get_agent_tools(
         agent_type=agent_type,
         organization_id=organization_id,
         team_id=team_id,
@@ -167,11 +208,25 @@ def create_agent(
         allowed_backend_tools=set(allowed_backend_keys),
         allowed_mcp_tools=set(allowed_mcp_keys),
     )
+    
+    agent = Agent(
+        model,
+        instructions=instructions,
+        deps_type=StateDeps[AgentState],
+        model_settings=model_settings,
+        history_processors=[process_message_attachments, keep_recent_messages],
+        builtin_tools=builtin_tool_instances,
+        tools=backend_tools,  # Backend callable functions
+        toolsets=mcp_toolsets,  # MCP toolsets loaded from static config (TESTING)
+        retries=3,
+    )
+
+    agent.sequential_tool_calls()
 
     return agent
 
 
-def get_agent(
+async def get_agent(
     agent_type: str,
     model_name: str,
     organization_id: str | None,
@@ -190,7 +245,7 @@ def get_agent(
             organization_id,
             team_id,
         )
-        _agent_cache[cache_key] = create_agent(agent_type, model_name, organization_id, team_id)
+        _agent_cache[cache_key] = await create_agent(agent_type, model_name, organization_id, team_id)
 
     return _agent_cache[cache_key]
 

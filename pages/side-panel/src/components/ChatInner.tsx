@@ -37,15 +37,15 @@ import {
   useCopilotChat,
   useCoAgent,
   useCoAgentStateRender,
-  useCopilotAction,
   useCopilotReadable,
   useCopilotChatHeadless_c,
   useFrontendTool,
   useHumanInTheLoop,
+  useDefaultTool,
   useRenderToolCall,
   useCopilotContext,
 } from '@copilotkit/react-core';
-import { ComponentsMap, CopilotChat, useCopilotChatSuggestions } from '@copilotkit/react-ui';
+import { CopilotChat, useCopilotChatSuggestions } from '@copilotkit/react-ui';
 
 // Extension Utilities & Storage
 import { debug, useStorage, cosineSimilarity, embeddingService } from '@extension/shared';
@@ -107,9 +107,7 @@ import {
 } from '../actions/copilot/navigationActions';
 import { createTakeScreenshotAction } from '../actions/copilot/screenshotActions';
 import { createGetWeatherAction } from '../actions/copilot/weatherActions';
-import { createJiraActions } from '../actions/copilot/jiraActions';
 import { createWaitAction } from '../actions/copilot/utilityActions';
-import { useGenericTools, createGenericToolActions } from '../actions/copilot/genericToolActions';
 
 // Types & Libraries
 import { AgentState } from '../lib/types';
@@ -132,19 +130,31 @@ import {
   handleGetSelectorsAtPoints,
 } from '../actions';
 
-// ==============================================================================
-// Helper Components
-// ==============================================================================
-
-interface CopilotActionRegistrarProps {
-  action: any;
-  deps?: any[];
-}
-
-const CopilotActionRegistrar: FC<CopilotActionRegistrarProps> = ({ action, deps = [] }) => {
-  useCopilotAction(action as any, deps);
-  return null;
-};
+const DefaultToolIcon: React.FC = () => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ flexShrink: 0, marginRight: 6 }}
+  >
+    <defs>
+      <linearGradient id="defaultToolGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style={{ stopColor: '#3B82F6', stopOpacity: 1 }} />
+        <stop offset="100%" style={{ stopColor: '#1E40AF', stopOpacity: 1 }} />
+      </linearGradient>
+    </defs>
+    <path
+      stroke="url(#defaultToolGradient)"
+      fill="none"
+      d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+    />
+    <circle cx="12" cy="12" r="3" stroke="url(#defaultToolGradient)" fill="none" />
+  </svg>
+);
 
 // ================================================================================
 // TYPES & INTERFACES
@@ -402,6 +412,58 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
 
   const yesNo = React.useCallback((b: any) => (b ? 'yes' : 'no'), []);
 
+  const defaultToolRender = React.useCallback(
+    (props: any) => {
+      const { name, status, args, result } = props;
+      const error = props?.error ?? (typeof result === 'object' && result ? (result as any)?.error : undefined);
+      const formatName = (value: string) => {
+        const cleaned = value
+          .replace(/^(mcp_|builtin_)/, '')
+          .split(/[_-]/)
+          .filter(Boolean)
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+        return cleaned || value || 'Tool';
+      };
+
+      const displayName = formatName(typeof name === 'string' ? name : 'Tool');
+      let argsSummary = '';
+      try {
+        if (args && Object.keys(args).length > 0) {
+          argsSummary = clipText(JSON.stringify(args), 80);
+        }
+      } catch (err) {
+        argsSummary = '';
+      }
+
+      const baseMessage = argsSummary ? `${displayName} (${argsSummary})` : displayName;
+
+      const messages = {
+        pending: `Starting ${baseMessage}...`,
+        inProgress: `${baseMessage} in progress...`,
+        complete: error
+          ? `${displayName} failed: ${clipText(String(error), 60)}`
+          : `${displayName} complete`,
+      };
+
+      return (
+        <ActionStatus
+          toolName={displayName}
+          status={status as any}
+          isLight={isLight}
+          icon={<DefaultToolIcon />}
+          messages={messages}
+          args={args}
+          result={result}
+          error={error}
+        />
+      );
+    },
+    [clipText, isLight]
+  );
+
+  useDefaultTool({ render: defaultToolRender }, [defaultToolRender]);
+
   // ================================================================================
   // COPILOTKIT ACTIONS
   // ================================================================================
@@ -420,92 +482,47 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   }), [searchManager, isLight, clipText, yesNo, currentPageContent, pageDataRef, themeColor]);
   
   // --- THEME ACTIONS ---
-  useCopilotAction(createSetThemeColorAction(setThemeColor) as any, [setThemeColor]);
+  useFrontendTool(createSetThemeColorAction(setThemeColor) as any, [setThemeColor]);
 
   // --- SEARCH ACTIONS ---
-  useCopilotAction(createSearchPageContentAction(actionDeps) as any, [actionDeps]);
-  useCopilotAction(createSearchFormDataAction(actionDeps) as any, [actionDeps]);
-  useCopilotAction(createSearchDOMUpdatesAction(actionDeps) as any, [actionDeps]);
-  useCopilotAction(createSearchClickableElementsAction(actionDeps) as any, [actionDeps]);
+  useFrontendTool(createSearchPageContentAction(actionDeps) as any, [actionDeps]);
+  useFrontendTool(createSearchFormDataAction(actionDeps) as any, [actionDeps]);
+  useFrontendTool(createSearchDOMUpdatesAction(actionDeps) as any, [actionDeps]);
+  useFrontendTool(createSearchClickableElementsAction(actionDeps) as any, [actionDeps]);
 
   // --- DATA RETRIEVAL ACTIONS ---
   const retrievalDeps = React.useMemo(() => ({ currentPageContent, isLight }), [currentPageContent, isLight]);
-  useCopilotAction(createGetHtmlChunksByRangeAction(retrievalDeps) as any, [retrievalDeps]);
-  useCopilotAction(createGetFormChunksByRangeAction(retrievalDeps) as any, [retrievalDeps]);
-  useCopilotAction(createGetClickableChunksByRangeAction(retrievalDeps) as any, [retrievalDeps]);
+  useFrontendTool(createGetHtmlChunksByRangeAction(retrievalDeps) as any, [retrievalDeps]);
+  useFrontendTool(createGetFormChunksByRangeAction(retrievalDeps) as any, [retrievalDeps]);
+  useFrontendTool(createGetClickableChunksByRangeAction(retrievalDeps) as any, [retrievalDeps]);
 
   // --- DOM MANIPULATION ACTIONS ---
   const domDeps = React.useMemo(() => ({ isLight, clipText, pageDataRef, triggerManualRefresh }), [isLight, clipText, pageDataRef, triggerManualRefresh]);
-  useCopilotAction(createMoveCursorToElementAction({ isLight, clipText }) as any, [domDeps]);
-  useCopilotAction(createRefreshPageContentAction({ isLight, pageDataRef, triggerManualRefresh }) as any, [domDeps]);
-  useCopilotAction(createCleanupExtensionUIAction({ isLight }) as any, [isLight]);
-  useCopilotAction(createClickElementAction({ isLight, clipText }) as any, [domDeps]);
-  useCopilotAction(createVerifySelectorAction({ isLight, clipText }) as any, [domDeps]);
-  useCopilotAction(createGetSelectorAtPointAction({ isLight }) as any, [isLight]);
-  useCopilotAction(createGetSelectorsAtPointsAction({ isLight }) as any, [isLight]);
-  useCopilotAction(createSendKeystrokesAction({ isLight, clipText }) as any, [domDeps]);
+  useFrontendTool(createMoveCursorToElementAction({ isLight, clipText }) as any, [domDeps]);
+  useFrontendTool(createRefreshPageContentAction({ isLight, pageDataRef, triggerManualRefresh }) as any, [domDeps]);
+  useFrontendTool(createCleanupExtensionUIAction({ isLight }) as any, [isLight]);
+  useFrontendTool(createClickElementAction({ isLight, clipText }) as any, [domDeps]);
+  useFrontendTool(createVerifySelectorAction({ isLight, clipText }) as any, [domDeps]);
+  useFrontendTool(createGetSelectorAtPointAction({ isLight }) as any, [isLight]);
+  useFrontendTool(createGetSelectorsAtPointsAction({ isLight }) as any, [isLight]);
+  useFrontendTool(createSendKeystrokesAction({ isLight, clipText }) as any, [domDeps]);
 
   // --- FORM ACTIONS ---
-  useCopilotAction(createInputDataAction({ isLight, clipText }) as any, [isLight, clipText]);
+  useFrontendTool(createInputDataAction({ isLight, clipText }) as any, [isLight, clipText]);
 
   // --- NAVIGATION ACTIONS ---
-  useCopilotAction(createOpenNewTabAction({ isLight, clipText }) as any, [isLight, clipText]);
-  useCopilotAction(createScrollAction({ isLight, clipText, yesNo }) as any, [isLight, clipText, yesNo]);
-  useCopilotAction(createDragAndDropAction({ isLight, clipText }) as any, [isLight, clipText]);
+  useFrontendTool(createOpenNewTabAction({ isLight, clipText }) as any, [isLight, clipText]);
+  useFrontendTool(createScrollAction({ isLight, clipText, yesNo }) as any, [isLight, clipText, yesNo]);
+  useFrontendTool(createDragAndDropAction({ isLight, clipText }) as any, [isLight, clipText]);
 
   // --- SCREENSHOT ACTIONS ---
-  useCopilotAction(createTakeScreenshotAction({ isLight }) as any);
+  useFrontendTool(createTakeScreenshotAction({ isLight }) as any);
 
   // --- WEATHER ACTIONS ---
-  useCopilotAction(createGetWeatherAction({ themeColor }) as any, [themeColor]);
-
-  // --- JIRA MCP ACTIONS ---
-  const jiraActions = useMemo(() => createJiraActions({ isLight }), [isLight]);
-
-  // --- GENERIC TOOL ACTIONS ---
-  // Dynamically fetch and register all backend tools not covered by specific actions
-  const genericTools = useGenericTools({
-    isLight,
-    agentType,
-    model: modelType,
-    organizationId,
-    teamId,
-  });
-  
-  const genericToolActions = useMemo(
-    () => createGenericToolActions(genericTools, isLight),
-    [genericTools, isLight]
-  );
-  
-  // Log the structure of actions before attempting to register
-  useEffect(() => {
-    console.log(`[ChatInner] Generic tool actions array:`, genericToolActions);
-    console.log(`[ChatInner] Is array?`, Array.isArray(genericToolActions));
-    console.log(`[ChatInner] Length:`, genericToolActions?.length);
-    
-    if (genericToolActions && genericToolActions.length > 0) {
-      console.log(`[ChatInner] First action structure:`, {
-        name: genericToolActions[0]?.name,
-        description: genericToolActions[0]?.description,
-        available: genericToolActions[0]?.available,
-        hasRender: typeof genericToolActions[0]?.render === 'function',
-        hasParameters: Array.isArray(genericToolActions[0]?.parameters),
-        paramCount: genericToolActions[0]?.parameters?.length,
-      });
-    }
-  }, [genericToolActions]);
-  
-  const safeGenericActions = useMemo(() => {
-    if (Array.isArray(genericToolActions)) {
-      console.log(`[ChatInner] Prepared ${genericToolActions.length} generic tool actions for registration`);
-      return genericToolActions;
-    }
-    console.error(`[ChatInner] genericToolActions is not an array:`, typeof genericToolActions, genericToolActions);
-    return [];
-  }, [genericToolActions]);
+  useFrontendTool(createGetWeatherAction({ themeColor }) as any, [themeColor]);
 
   // --- UTILITY ACTIONS ---
-  useCopilotAction(createWaitAction({ isLight }) as any, [isLight]);
+  useFrontendTool(createWaitAction({ isLight }) as any, [isLight]);
 
   // ================================================================================
   // AGENT STATE MANAGEMENT
@@ -613,14 +630,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     
     return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Register Jira and generic tool actions without violating hook rules */}
-      {jiraActions.map((action) => (
-        <CopilotActionRegistrar key={`jira-${action.name}`} action={action} deps={[isLight]} />
-      ))}
-      {safeGenericActions.map((action) => (
-        <CopilotActionRegistrar key={`generic-${action.name}`} action={action} deps={[action.name, isLight]} />
-      ))}
-
       {/* CopilotChat with inline historical cards and floating progress card */}
       <div className={cn("copilot-chat-wrapper relative min-h-0 flex-1", !isAgentAndModelSelected && "chat-input-disabled")}>
         {/* Floating TaskProgressCard - sticks to top and floats above messages */}

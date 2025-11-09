@@ -243,10 +243,13 @@ async def fetch_context_bundle(
                                a.enabled,
                                a.updated_at,
                                a.created_at,
-                               array_remove(array_agg(DISTINCT m.model_key), NULL) AS model_keys
+                               array_remove(array_agg(DISTINCT m.model_key), NULL) AS model_keys,
+                               array_remove(array_agg(DISTINCT t.tool_key), NULL) AS tool_keys
                           FROM agents a
                           LEFT JOIN agent_model_mappings amm ON amm.agent_id = a.id
                           LEFT JOIN models m ON m.id = amm.model_id
+                          LEFT JOIN agent_tool_mappings atm ON atm.agent_id = a.id
+                          LEFT JOIN tools t ON t.id = atm.tool_id
                          WHERE {agent_org_condition}
                            {agent_team_condition}
                          GROUP BY a.id,
@@ -298,7 +301,8 @@ async def fetch_context_bundle(
                         AND NOT EXISTS (SELECT 1 FROM mcp_server_teams mst WHERE mst.mcp_server_id = ms.id)
                         """
                     
-                    server_org_condition = "ms.organization_id = %(organization_id)s" if organization_id else "ms.organization_id IS NULL"
+                    # Allow global MCP servers (organization_id IS NULL) to be inherited by all organizations
+                    server_org_condition = "(ms.organization_id IS NULL OR ms.organization_id = %(organization_id)s)" if organization_id else "ms.organization_id IS NULL"
                     
                     await cur.execute(
                         f"""
@@ -362,7 +366,8 @@ async def fetch_context_bundle(
                         AND NOT EXISTS (SELECT 1 FROM tool_teams tt WHERE tt.tool_id = t.id)
                         """
                     
-                    tools_org_condition = "t.organization_id = %(organization_id)s" if organization_id else "(t.organization_id IS NULL OR t.organization_id = %(organization_id)s)"
+                    # Allow global tools (organization_id IS NULL) to be inherited by all organizations
+                    tools_org_condition = "(t.organization_id IS NULL OR t.organization_id = %(organization_id)s)" if organization_id else "t.organization_id IS NULL"
                     
                     await cur.execute(
                         f"""
@@ -450,6 +455,17 @@ async def fetch_context_bundle(
             models = list(models_map.values())
             agents = list(agents_map.values())
             base_instructions = {k: v['value'] for k, v in instructions_map.items()}
+            
+            # Log what was fetched
+            logger.debug(
+                "[DB Fetch] org=%s team=%s: %d tools, %d mcp_servers",
+                organization_id[:8] if organization_id else 'global',
+                team_id[:8] if team_id else 'org-wide',
+                len(tools_map),
+                len(servers_map)
+            )
+            if tools_map:
+                logger.debug("[DB Fetch] Tool keys: %s", list(tools_map.keys())[:10])
             
             # Add MCP server info to tools
             for tool_key, tool_data in tools_map.items():

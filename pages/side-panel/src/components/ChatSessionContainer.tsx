@@ -1341,6 +1341,10 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         showAgentCursor={showAgentCursor}
         showSuggestions={showSuggestions}
         showThoughtBlocks={showThoughtBlocks}
+        agentType={activeAgent}
+        modelType={activeModel}
+        organizationId={organization?.id || undefined}
+        teamId={activeTeam || undefined}
         onClose={() => setIsSettingsOpen(false)}
           onShowAgentCursorChange={show => preferencesStorage.setShowAgentCursor(show)}
           onShowSuggestionsChange={show => preferencesStorage.setShowSuggestions(show)}

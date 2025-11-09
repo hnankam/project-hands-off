@@ -91,12 +91,14 @@ async def _refresh_context(
             bundle = await fetch_context_bundle(organization_id, team_id)
             
             logger.info(
-                "[Refresh] 📦 Fetched from DB for org=%s team=%s: %d providers, %d models, %d agents (version=%s, force=%s)",
+                "[Refresh] 📦 Fetched from DB for org=%s team=%s: %d providers, %d models, %d agents, %d tools, %d mcp_servers (version=%s, force=%s)",
                 organization_id[:8] if organization_id else 'global',
                 team_id[:8] if team_id else 'org-wide',
                 len(bundle.providers),
                 len(bundle.models),
                 len(bundle.agents),
+                len(bundle.tools),
+                len(bundle.mcp_servers),
                 bundle.version.isoformat() if bundle.version else 'none',
                 force
             )
@@ -141,6 +143,16 @@ async def _refresh_context(
                     'base_instructions': bundle.base_instructions,
                 },
             )
+            logger.debug(
+                "[Deployment] Storing %d tools and %d MCP servers for org=%s team=%s",
+                len(bundle.tools),
+                len(bundle.mcp_servers),
+                organization_id[:8] if organization_id else 'global',
+                team_id[:8] if team_id else 'org-wide'
+            )
+            if bundle.tools:
+                logger.debug("[Deployment] Tool keys being stored: %s", list(bundle.tools.keys())[:10])
+            
             store_tools_for_context(
                 organization_id,
                 team_id,
@@ -181,8 +193,8 @@ async def _refresh_context(
             }
             tools_meta = {
                 key: {
-                    'name': value.get('name', key),
-                    'type': value.get('type'),
+                    'name': value.get('tool_name', key),
+                    'type': value.get('tool_type'),
                     'enabled': value.get('enabled', True),
                     'readonly': value.get('readonly', False),
                 }
@@ -271,7 +283,7 @@ async def ensure_agent_ready(
         raise EndpointDisabledError(f"Model '{model_key}' is disabled for this context")
 
     # Touch the agent cache to ensure it can be created without error.
-    get_agent(agent_type, model_key, organization_id, team_id)
+    await get_agent(agent_type, model_key, organization_id, team_id)
 
 
 async def deploy_context(

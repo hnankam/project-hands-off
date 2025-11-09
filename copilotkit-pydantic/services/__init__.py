@@ -2,7 +2,7 @@
 
 from .session_manager import get_or_create_session_state, cleanup_session, session_states
 from .websocket_manager import ConnectionManager, manager
-from .usage_tracker import create_usage_tracking_callback
+from .usage_tracker import create_usage_tracking_callback, log_usage_failure
 from .deployment_manager import (
     ensure_agent_ready,
     deploy_context,
@@ -21,6 +21,7 @@ __all__ = [
     'ConnectionManager',
     'manager',
     'create_usage_tracking_callback',
+    'log_usage_failure',
     'ensure_agent_ready',
     'deploy_context',
     'restart_context',

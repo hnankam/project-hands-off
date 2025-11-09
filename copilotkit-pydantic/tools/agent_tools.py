@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+import asyncio
+from typing import Any, Dict, List
+from collections import defaultdict
 
-from pydantic_ai import Agent, RunContext
-from pydantic_ai.ag_ui import StateDeps
-from ag_ui.core import EventType, StateSnapshotEvent
-
-from core.models import AgentState, Step, StepStatus
 from tools.mcp_loader import load_mcp_toolsets
+from tools.backend_tools import get_backend_tool
+from config import logger
 
 
-def register_agent_tools(
-    agent: Agent,
+async def get_agent_tools(
     *,
     agent_type: str,
     organization_id: str | None,
@@ -22,22 +20,40 @@ def register_agent_tools(
     mcp_servers: Dict[str, Dict[str, Any]],
     allowed_backend_tools: set[str],
     allowed_mcp_tools: set[str],
-) -> None:
-    """Register backend and MCP tools for the given agent based on configuration."""
+) -> tuple[List[Any], List[Any]]:
+    """Get backend and MCP tools for the agent based on configuration.
+    
+    Returns:
+        Tuple of (tools, toolsets) where:
+        - tools: List of callable functions for Agent(tools=[...])
+        - toolsets: List of MCP toolsets for Agent(toolsets=[...])
+    """
 
-    import logging
-    from collections import defaultdict
-
-    logger = logging.getLogger(__name__)
+    logger.info("=" * 80)
+    logger.info("🔧 get_agent_tools() called for agent '%s'", agent_type)
+    logger.info("=" * 80)
 
     allowed_backend_tools = set(allowed_backend_tools or set())
     allowed_mcp_tools = set(allowed_mcp_tools or set())
+    
+    logger.info("📊 Input: allowed_backend_tools=%d, allowed_mcp_tools=%d", len(allowed_backend_tools), len(allowed_mcp_tools))
+    logger.info("📊 Input: mcp_servers=%d, tool_definitions=%d", len(mcp_servers) if mcp_servers else 0, len(tool_definitions))
+
+    # Track all registered tools for logging
+    registered_tools = {
+        'backend': [],
+        'mcp': [],
+        'total_count': 0
+    }
+    
+    # List to accumulate all tools
+    all_tools = []
 
     def _is_backend_enabled(key: str) -> bool:
         cfg = tool_definitions.get(key)
         return (
             cfg is not None
-            and cfg.get('type') == 'backend'
+            and cfg.get('tool_type') == 'backend'
             and cfg.get('enabled', True)
         )
 
@@ -45,76 +61,111 @@ def register_agent_tools(
         cfg = tool_definitions.get(key)
         return (
             cfg is not None
-            and cfg.get('type') == 'mcp'
+            and cfg.get('tool_type') == 'mcp'
             and cfg.get('enabled', True)
             and cfg.get('mcp_server_id') is not None
             and cfg.get('remote_tool_name') is not None
         )
 
-    if 'create_plan' in allowed_backend_tools and _is_backend_enabled('create_plan'):
-        @agent.tool(sequential=True, retries=0)
-        async def create_plan(ctx: RunContext[StateDeps[AgentState]], steps: list[str]) -> StateSnapshotEvent:
-            """Create a plan with multiple steps."""
-            print(f"📝 Creating plan with {len(steps)} steps")
-            print(f"   Current state before: steps={len(ctx.deps.state.steps)}")
-            ctx.deps.state.steps = [Step(description=step) for step in steps]
-            print(f"   State after: steps={len(ctx.deps.state.steps)}")
-            state_dict = ctx.deps.state.model_dump()
-            print(f"   Returning snapshot: {state_dict}")
-            return StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=state_dict,
-            )
-    else:
-        if 'create_plan' in allowed_backend_tools:
-            logger.warning("Backend tool 'create_plan' is not enabled for agent %s", agent_type)
+    # ========== Backend Tools ==========
+    
+    # Register backend tools from the backend_tools module
+    for tool_key in allowed_backend_tools:
+        if not _is_backend_enabled(tool_key):
+            logger.warning("Backend tool '%s' is not enabled for agent %s", tool_key, agent_type)
+            continue
+        
+        tool_func = get_backend_tool(tool_key)
+        if tool_func is None:
+            logger.warning("Backend tool '%s' not found in backend_tools module for agent %s", tool_key, agent_type)
+            continue
+        
+        all_tools.append(tool_func)
+        registered_tools['backend'].append(tool_key)
+        registered_tools['total_count'] += 1
 
-    if 'update_plan_step' in allowed_backend_tools and _is_backend_enabled('update_plan_step'):
-        @agent.tool(sequential=True, retries=0)
-        async def update_plan_step(
-            ctx: RunContext[StateDeps[AgentState]],
-            index: int,
-            description: str | None = None,
-            status: StepStatus | None = None
-        ) -> StateSnapshotEvent:
-            """Update the plan with new steps or changes."""
-            print(f"🔄 Updating step {index}: description={description}, status={status}")
-            print(f"   Current state: {len(ctx.deps.state.steps)} steps")
+    # Log backend tools
+    if registered_tools['backend']:
+        logger.info(
+            "Registered %d backend tool(s) for agent %s: %s",
+            len(registered_tools['backend']),
+            agent_type,
+            ", ".join(registered_tools['backend'])
+        )
 
-            if not ctx.deps.state.steps or index >= len(ctx.deps.state.steps):
-                error_msg = f"Step at index {index} does not exist. Current steps count: {len(ctx.deps.state.steps)}"
-                print(f"   ❌ ERROR: {error_msg}")
-                print(f"   Current steps: {[s.description for s in ctx.deps.state.steps]}")
-                raise ValueError(error_msg)
+    # ========== MCP Tools ==========
+    
+    logger.info("🔍 DEBUG: allowed_mcp_tools = %s (count: %d)", list(allowed_mcp_tools), len(allowed_mcp_tools))
+    logger.info("🔍 DEBUG: mcp_servers available = %s (count: %d)", list(mcp_servers.keys()) if mcp_servers else [], len(mcp_servers) if mcp_servers else 0)
 
-            if description is not None:
-                ctx.deps.state.steps[index].description = description
-            if status is not None:
-                ctx.deps.state.steps[index].status = status
-
-            state_dict = ctx.deps.state.model_dump()
-            print(f"   ✅ Updated step {index}, returning full snapshot: {state_dict}")
-
-            return StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=state_dict,
-            )
-    else:
-        if 'update_plan_step' in allowed_backend_tools:
-            logger.warning("Backend tool 'update_plan_step' is not enabled for agent %s", agent_type)
-
-    if 'get_weather' in allowed_backend_tools and _is_backend_enabled('get_weather'):
-        @agent.tool(sequential=True, retries=0)
-        def get_weather(_: RunContext[StateDeps[AgentState]], location: str) -> str:
-            """Get the weather for a given location."""
-            return f"The weather in {location} is sunny."
-    else:
-        if 'get_weather' in allowed_backend_tools:
-            logger.warning("Backend tool 'get_weather' is not enabled for agent %s", agent_type)
+    # TEMPORARILY DISABLED: Skip if no MCP tools to test filtering issue
+    # if not allowed_mcp_tools:
+    #     logger.info(
+    #         "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: 0)",
+    #         agent_type,
+    #         registered_tools['total_count'],
+    #         len(registered_tools['backend'])
+    #     )
+    #     return (all_tools, [])
+    
+    # 🧪 TEMPORARY: Load all MCP servers without filtering to test
+    if not mcp_servers:
+        logger.warning("No MCP servers available in context")
+        return (all_tools, [])
 
     if not allowed_mcp_tools:
-        return
+        logger.warning("⚠️ No MCP tools in allowed list - will load all servers without filtering for testing")
+        # Build configs for ALL servers
+        server_configs = {}
+        for server_key, server in mcp_servers.items():
+            if not server.get('enabled', True):
+                continue
+            
+            config_entry = {
+                'transport': server.get('transport', 'stdio'),
+            }
+            if server.get('command'):
+                config_entry['command'] = server['command']
+            if server.get('args'):
+                config_entry['args'] = server['args']
+            if server.get('env'):
+                config_entry['env'] = server['env']
+            if server.get('url'):
+                config_entry['url'] = server['url']
+            metadata = server.get('metadata') or {}
+            if isinstance(metadata, dict) and 'max_retries' in metadata:
+                config_entry['max_retries'] = metadata['max_retries']
+            
+            server_configs[server_key] = config_entry
+        
+        logger.info("🔧 Loading %d MCP server(s) WITHOUT filtering for testing", len(server_configs))
+        mcp_toolsets = load_mcp_toolsets(server_configs)
+        
+        logger.info(
+            "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: %d unfiltered)",
+            agent_type,
+            registered_tools['total_count'],
+            len(registered_tools['backend']),
+            len(mcp_toolsets)
+        )
+        logger.info("=" * 80)
+        logger.info("✅ get_agent_tools() returning UNFILTERED: backend_tools=%d, mcp_toolsets=%d", len(all_tools), len(mcp_toolsets))
+        logger.info("=" * 80)
+        return (all_tools, mcp_toolsets)
 
+    # Create a reverse mapping from server ID to server_key for MCP server lookup
+    server_id_to_key = {}
+    for server_key, server_data in mcp_servers.items():
+        if server_data.get('id'):
+            server_id_to_key[server_data['id']] = server_key
+    
+    logger.debug(
+        "Built server_id_to_key mapping with %d entries for agent '%s'",
+        len(server_id_to_key),
+        agent_type
+    )
+
+    # Group MCP tools by server
     grouped_tools = defaultdict(lambda: {'tool_keys': [], 'remote_names': set()})
 
     for key in allowed_mcp_tools:
@@ -124,35 +175,47 @@ def register_agent_tools(
         cfg = tool_definitions[key]
         server_id = cfg['mcp_server_id']
         remote_name = cfg['remote_tool_name']
-        server_cfg = mcp_servers.get(server_id)
-        if not server_cfg or not server_cfg.get('enabled', True):
+        
+        # Look up the server_key from the server_id
+        server_key = server_id_to_key.get(server_id)
+        if not server_key:
             logger.warning(
-                "MCP server '%s' required for tool '%s' is not available for agent %s",
+                "MCP server ID '%s' required for tool '%s' is not found for agent %s",
                 server_id,
                 key,
                 agent_type,
             )
             continue
-        grouped_tools[server_id]['tool_keys'].append(key)
-        grouped_tools[server_id]['remote_names'].add(remote_name)
+        
+        server_cfg = mcp_servers.get(server_key)
+        if not server_cfg or not server_cfg.get('enabled', True):
+            logger.warning(
+                "MCP server '%s' required for tool '%s' is not enabled for agent %s",
+                server_key,
+                key,
+                agent_type,
+            )
+            continue
+        grouped_tools[server_key]['tool_keys'].append(key)
+        grouped_tools[server_key]['remote_names'].add(remote_name)
 
     if not grouped_tools:
         logger.warning("No MCP toolsets available for agent %s after filtering", agent_type)
-        return
+        logger.info(
+            "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: 0)",
+            agent_type,
+            registered_tools['total_count'],
+            len(registered_tools['backend'])
+        )
+        return (all_tools, [])
 
+    # Build server configs for MCP loader
     server_configs = {}
-    allowed_remote_names_by_key: Dict[str, set[str]] = {}
+    allowed_remote_names_by_key = {}
 
-    for server_id, data in grouped_tools.items():
-        server = mcp_servers.get(server_id)
-        if not server:
-            continue
-        server_key = server.get('server_key')
-        if not server_key:
-            logger.warning("MCP server without server_key encountered (id=%s)", server_id)
-            continue
-
-        config_entry: Dict[str, Any] = {
+    for server_key, data in grouped_tools.items():
+        server = mcp_servers[server_key]
+        config_entry = {
             'transport': server.get('transport', 'stdio'),
         }
         if server.get('command'):
@@ -169,58 +232,122 @@ def register_agent_tools(
 
         server_configs[server_key] = config_entry
         allowed_remote_names_by_key[server_key] = data['remote_names']
+        
+        logger.debug(
+            "Configured MCP server '%s' with %d tools for agent '%s'",
+            server_key,
+            len(data['remote_names']),
+            agent_type
+        )
 
     if not server_configs:
         logger.warning("No MCP server configurations available for agent %s", agent_type)
-        return
+        logger.info(
+            "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: 0)",
+            agent_type,
+            registered_tools['total_count'],
+            len(registered_tools['backend'])
+        )
+        return (all_tools, [])
 
-    class FilteredToolset:
-        def __init__(self, base_toolset, allowed_names: set[str]):
-            self._base = base_toolset
-            self._allowed = set(allowed_names)
-
-        async def list_tools(self):
-            tools = await self._base.list_tools()
-            return [tool for tool in tools if getattr(tool, 'name', None) in self._allowed]
-
-        async def call_tool(self, name, *args, **kwargs):
-            if name not in self._allowed:
-                raise ValueError(f"Tool '{name}' is not permitted for this agent")
-            return await self._base.call_tool(name, *args, **kwargs)
-
-        def __getattr__(self, item):
-            return getattr(self._base, item)
-
+    # Load MCP toolsets using JSON-based configuration
+    # The toolsets are loaded via load_mcp_servers which is more stable and avoids timeouts
+    logger.info("🔧 Loading %d MCP server(s) via JSON configuration for agent '%s'", len(server_configs), agent_type)
+    logger.debug("MCP server configs: %s", list(server_configs.keys()))
     mcp_toolsets = load_mcp_toolsets(server_configs)
-    successful_toolsets = []
+    
+    if not mcp_toolsets:
+        logger.warning("No MCP toolsets were loaded from configuration")
+        logger.info(
+            "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: 0)",
+            agent_type,
+            registered_tools['total_count'],
+            len(registered_tools['backend'])
+        )
+        return (all_tools, [])
+    
+    logger.info("✅ Successfully loaded %d MCP toolset(s), now filtering by allowed tools", len(mcp_toolsets))
+    toolset_ids = [getattr(ts, 'id', 'NO_ID') for ts in mcp_toolsets]
+    logger.debug("MCP toolset IDs: %s", toolset_ids)
+    logger.debug("Allowed remote names by key: %s", {k: sorted(list(v)) for k, v in allowed_remote_names_by_key.items()})
 
+    filtered_mcp_toolsets: List[Any] = []
     for toolset in mcp_toolsets:
         server_key = getattr(toolset, 'id', None)
-        if not server_key or server_key not in allowed_remote_names_by_key:
+        if not server_key:
+            logger.warning("MCP toolset missing 'id' attribute, skipping")
             continue
-        allowed_names = allowed_remote_names_by_key[server_key]
-        if not allowed_names:
+
+        allowed_remote_names = allowed_remote_names_by_key.get(server_key)
+        if not allowed_remote_names:
+            logger.debug("MCP server '%s' has no allowed tools, skipping", server_key)
             continue
-        filtered_toolset = FilteredToolset(toolset, allowed_names)
+
+        # Pydantic prefixes tool names with the toolset id (e.g. 'corp-github_add_issue_comment').
+        # Build a set that includes both the raw remote names and the prefixed variants so that
+        # tool_def.name comparisons succeed regardless of prefix handling.
+        prefixed_names = {f"{server_key}_{name}" for name in allowed_remote_names}
+        allowed_name_set = set(allowed_remote_names) | prefixed_names
+
+        logger.debug(
+            "Filtering MCP toolset '%s' with allowed names (raw=%s, prefixed=%s)",
+            server_key,
+            sorted(allowed_remote_names),
+            sorted(prefixed_names)
+        )
+
         try:
-            agent._user_toolsets.append(filtered_toolset)
-            successful_toolsets.append(server_key)
-            logger.debug("✓ Registered MCP toolset %s for agent %s", server_key, agent_type)
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(
-                "Failed to register MCP toolset %s for agent %s: %s",
+            filtered_toolset = toolset.filtered(
+                lambda ctx, tool_def, allowed=allowed_name_set: tool_def.name in allowed
+            )
+            filtered_mcp_toolsets.append(filtered_toolset)
+
+            for tool_name in allowed_remote_names:
+                registered_tools['mcp'].append(f"{server_key}:{tool_name}")
+                registered_tools['total_count'] += 1
+
+            logger.debug(
+                "✓ Configured MCP toolset '%s' with %d filtered tools",
                 server_key,
-                agent_type,
-                exc,
+                len(allowed_remote_names)
             )
 
-    if successful_toolsets:
+        except Exception as exc:
+            logger.warning("Failed to filter MCP toolset '%s': %s", server_key, str(exc))
+
+    # Count unique MCP servers from registered tools for logging purposes
+    mcp_servers_used = set()
+    for tool_key in registered_tools['mcp']:
+        if ':' in tool_key:
+            server_key = tool_key.split(':', 1)[0]
+            mcp_servers_used.add(server_key)
+
+    if filtered_mcp_toolsets:
         logger.info(
-            "Registered %d MCP toolset(s) for agent %s: %s",
-            len(successful_toolsets),
+            "Registered %d MCP tool(s) from %d server(s) for agent %s: %s",
+            len(registered_tools['mcp']),
+            len(mcp_servers_used),
             agent_type,
-            ", ".join(successful_toolsets),
+            ", ".join(sorted(mcp_servers_used)),
         )
     else:
-        logger.warning("No MCP toolsets were successfully registered for agent %s", agent_type)
+        logger.warning("No MCP tools were successfully registered for agent %s after filtering", agent_type)
 
+    logger.info(
+        "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: %d from %d server(s))",
+        agent_type,
+        registered_tools['total_count'],
+        len(registered_tools['backend']),
+        len(registered_tools['mcp']),
+        len(mcp_servers_used)
+    )
+
+    if registered_tools['backend'] or registered_tools['mcp']:
+        logger.debug(
+            "Tool breakdown for agent '%s':\n  Backend tools: %s\n  MCP tools: %s",
+            agent_type,
+            registered_tools['backend'] if registered_tools['backend'] else "none",
+            registered_tools['mcp'] if registered_tools['mcp'] else "none"
+        )
+
+    return (all_tools, filtered_mcp_toolsets)

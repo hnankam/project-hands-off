@@ -1074,7 +1074,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
               <>
                 <span
                   className={cn(
-                    'text-xs px-2 py-1 rounded-full transition-colors',
+                    'text-xs px-2 py-1 rounded transition-colors',
                     isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
                   )}
                 >
@@ -1082,7 +1082,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
           </span>
                 <span
                   className={cn(
-                    'text-xs px-2 py-1 rounded-full transition-colors',
+                    'text-xs px-2 py-1 rounded transition-colors',
                     isLight ? 'bg-gray-100 text-gray-600' : 'bg-gray-800 text-gray-300',
                   )}
                 >

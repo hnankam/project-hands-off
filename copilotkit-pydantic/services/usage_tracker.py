@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from typing import Any, Callable, Awaitable, Optional
+from typing import Any, Callable, Awaitable, Optional, Union
 
 from pydantic_ai.run import AgentRunResult
 
@@ -20,12 +20,15 @@ async def _persist_usage_event(
     user_id: Optional[str],
     request_tokens: int,
     response_tokens: int,
+    status: str,
+    error_message: Optional[str],
     auth_session_id: Optional[str],
     usage_details: Optional[dict],
+    metadata: Optional[dict] = None,
 ) -> None:
     """Insert a usage event into the database."""
 
-    metadata: dict[str, Any] = {}
+    metadata = dict(metadata or {})
     if auth_session_id:
         metadata["auth_session_id"] = auth_session_id
 
@@ -46,10 +49,12 @@ async def _persist_usage_event(
                         team_id,
                         request_tokens,
                         response_tokens,
+                        status,
+                        error_message,
                         usage_details,
                         metadata
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         agent_id,
@@ -60,6 +65,8 @@ async def _persist_usage_event(
                         team_id,
                         request_tokens,
                         response_tokens,
+                        status,
+                        error_message,
                         usage_details_json,
                         metadata_json,
                     ),
@@ -198,6 +205,8 @@ def create_usage_tracking_callback(
             "response_tokens": res_tokens,
             "total_tokens": total_tokens,
             "timestamp": None,
+            "status": "success",
+            "error_message": None,
         }
         if auth_session_id:
             usage_data["auth_session_id"] = auth_session_id
@@ -214,8 +223,11 @@ def create_usage_tracking_callback(
                 team_id=team_id,
                 request_tokens=req_tokens,
                 response_tokens=res_tokens,
+                status="success",
+                error_message=None,
                 auth_session_id=auth_session_id,
                 usage_details=details_dict,
+                metadata={"event": "completion"},
             )
         )
 
@@ -234,4 +246,72 @@ def create_usage_tracking_callback(
         await broadcast_func(session_id, usage_data)
 
     return on_complete_usage_tracking
+
+
+async def log_usage_failure(
+    *,
+    session_id: str,
+    agent_id: str,
+    model_id: str,
+    agent_label: str,
+    model_label: str,
+    error_message: Union[str, Exception],
+    broadcast_func: Callable[[str, dict], Awaitable[None]],
+    organization_id: Optional[str] = None,
+    team_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    auth_session_id: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
+) -> None:
+    """Record a failed agent invocation for debugging and analytics."""
+
+    metadata = dict(metadata or {})
+    metadata.setdefault("event", "failure")
+
+    error_text = str(error_message)
+    if not isinstance(error_message, str):
+        metadata.setdefault("error_type", type(error_message).__name__)
+    elif "error_type" in metadata and metadata["error_type"] is None:
+        metadata.pop("error_type", None)
+
+    asyncio.create_task(
+        _persist_usage_event(
+            session_id=session_id,
+            agent_id=agent_id,
+            model_id=model_id,
+            user_id=user_id,
+            organization_id=organization_id,
+            team_id=team_id,
+            request_tokens=0,
+            response_tokens=0,
+            status="error",
+            error_message=error_text,
+            auth_session_id=auth_session_id,
+            usage_details=None,
+            metadata=metadata,
+        )
+    )
+
+    payload = {
+        "session_id": session_id,
+        "agent_id": str(agent_id) if agent_id else None,
+        "model_id": str(model_id) if model_id else None,
+        "agent_type": agent_label,
+        "model": model_label,
+        "request_tokens": 0,
+        "response_tokens": 0,
+        "total_tokens": 0,
+        "status": "error",
+        "error_message": error_text,
+        "timestamp": None,
+    }
+    if auth_session_id:
+        payload["auth_session_id"] = auth_session_id
+    if metadata:
+        payload["metadata"] = metadata
+
+    try:
+        await broadcast_func(session_id, payload)
+    except Exception as exc:
+        logger.warning("Failed to broadcast usage failure for session=%s: %s", session_id, exc)
 

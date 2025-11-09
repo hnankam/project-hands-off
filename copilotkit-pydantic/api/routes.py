@@ -14,6 +14,7 @@ from services import (
     session_states,
     manager,
     create_usage_tracking_callback,
+    log_usage_failure,
     ensure_agent_ready,
     deploy_context,
     restart_context,
@@ -86,6 +87,24 @@ def register_agent_routes(app: FastAPI) -> None:
                 agent_type,
                 model,
                 exc,
+            )
+            await log_usage_failure(
+                session_id=conversation_id,
+                agent_id=agent_type,
+                model_id=model,
+                agent_label=agent_type,
+                model_label=model,
+                error_message=exc,
+                broadcast_func=manager.broadcast_to_session,
+                organization_id=organization_id,
+                team_id=team_id,
+                user_id=user_id,
+                auth_session_id=session_id,
+                metadata={
+                    "stage": "ensure_agent_ready",
+                    "thread_id": thread_id,
+                    "error_type": type(exc).__name__,
+                },
             )
             return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
 
@@ -187,12 +206,41 @@ def register_agent_routes(app: FastAPI) -> None:
             team_id=team_id,
         )
 
-        response = await handle_ag_ui_request(
-            agent=get_agent(agent_type, model, organization_id, team_id),
-            request=request,
-            deps=state_deps,
-            on_complete=usage_callback,
-        )
+        try:
+            response = await handle_ag_ui_request(
+                agent=await get_agent(agent_type, model, organization_id, team_id),
+                request=request,
+                deps=state_deps,
+                on_complete=usage_callback,
+            )
+        except Exception as exc:
+            logger.exception(
+                "Agent invocation failed session=%s org=%s team=%s agent=%s model=%s",
+                conversation_id,
+                organization_id,
+                team_id,
+                agent_type,
+                model,
+            )
+            await log_usage_failure(
+                session_id=conversation_id,
+                agent_id=agent_db_id or agent_type,
+                model_id=model_db_id or model,
+                agent_label=agent_type,
+                model_label=model,
+                error_message=exc,
+                broadcast_func=manager.broadcast_to_session,
+                organization_id=organization_id,
+                team_id=team_id,
+                user_id=user_id,
+                auth_session_id=session_id,
+                metadata={
+                    "stage": "agent_execution",
+                    "thread_id": thread_id,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            raise
 
         if DEBUG:
             logger.info(
@@ -397,106 +445,229 @@ def register_info_routes(app: FastAPI) -> None:
                 return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
             
             # Get the agent instance
-            agent = get_agent(agent_type, model, organization_id, team_id)
+            agent = await get_agent(agent_type, model, organization_id, team_id)
             
-            # Extract tool information
-            tools = []
+            # Get tool definitions and agent info for context
+            from config.tools import get_tools_for_context, get_mcp_servers_for_context
+            from config.prompts import get_agent_info_for_context
             
-            # Get custom tools registered with @agent.tool
+            tool_definitions = get_tools_for_context(organization_id, team_id)
+            mcp_servers = get_mcp_servers_for_context(organization_id, team_id)
+            mcp_servers_by_id: dict[str, dict] = {}
+            for server_key, server_data in mcp_servers.items():
+                if not isinstance(server_data, dict):
+                    continue
+                server_id = server_data.get('id')
+                if server_id is not None:
+                    mcp_servers_by_id[str(server_id)] = server_data
+                # Also allow lookup by server key for completeness
+                if server_key:
+                    mcp_servers_by_id.setdefault(str(server_key), server_data)
+            agent_info = get_agent_info_for_context(agent_type, organization_id, team_id) or {}
+            allowed_tool_keys = agent_info.get('allowed_tools')
+            
+            # If no allowed_tools specified (None or empty list), include all enabled tools
+            if not allowed_tool_keys:
+                logger.debug(
+                    "No specific tools for agent %s, defaulting to all enabled tools from %d definitions",
+                    agent_type,
+                    len(tool_definitions)
+                )
+                allowed_tool_keys = [
+                    key for key, data in tool_definitions.items()
+                    if data.get('enabled', True)
+                ]
+            else:
+                logger.debug("Agent %s has %d allowed tools configured", agent_type, len(allowed_tool_keys))
+            
+            # Extract tool information drawn from configuration and runtime
+            tools: list[dict] = []
+            tools_by_key: dict[str, dict] = {}
+            
+            def _extract_parameters(config_entry: dict | None) -> list[dict]:
+                params: list[dict] = []
+                if not isinstance(config_entry, dict):
+                    return params
+                param_list = config_entry.get('parameters')
+                if isinstance(param_list, list):
+                    for param in param_list:
+                        if not isinstance(param, dict):
+                            continue
+                        params.append(
+                            {
+                                'name': param.get('name', ''),
+                                'type': param.get('type', 'any'),
+                                'required': param.get('required', False),
+                                'description': param.get('description', ''),
+                            }
+                        )
+                return params
+            
+            # Build entries from database tool definitions
+            for tool_key in allowed_tool_keys:
+                tool_cfg = tool_definitions.get(tool_key)
+                if not tool_cfg:
+                    continue
+                
+                tool_type = (tool_cfg.get('tool_type') or 'custom').lower()
+                name = tool_cfg.get('tool_name') or tool_key
+                entry = {
+                    'name': name,
+                    'description': tool_cfg.get('description', ''),
+                    'parameters': _extract_parameters(tool_cfg.get('config')),
+                    'source': tool_type,
+                    'available': 'enabled' if tool_cfg.get('enabled', True) else 'disabled',
+                    'metadata': tool_cfg.get('metadata', {}),
+                }
+                
+                if tool_type == 'mcp':
+                    server_id = tool_cfg.get('mcp_server_id')
+                    entry['mcp_server_id'] = server_id
+                    entry['remote_tool_name'] = tool_cfg.get('remote_tool_name')
+                    server_info = None
+                    if server_id is not None:
+                        server_info = mcp_servers_by_id.get(str(server_id))
+                    # Fall back to lookup by server key if present in tool config
+                    if server_info is None:
+                        server_key = tool_cfg.get('mcp_server_key') or tool_cfg.get('mcp_server')
+                        if server_key:
+                            server_info = mcp_servers_by_id.get(str(server_key)) or mcp_servers.get(server_key)
+                    if server_info:
+                        entry['mcp_server'] = server_info.get('display_name') or server_info.get('server_key') or server_id
+                        entry['mcp_server_key'] = server_info.get('server_key')
+                
+                tools_by_key[tool_key] = entry
+            
+            # Preserve original ordering from allowed_tool_keys
+            for tool_key in allowed_tool_keys:
+                if tool_key in tools_by_key:
+                    tools.append(tools_by_key[tool_key])
+            
+            # Include runtime-registered tools that may not be present in config (custom, builtin, etc.)
+            seen_runtime = {(item.get('source'), item.get('name')) for item in tools}
+            
+            # Custom @agent.tool registrations
             if hasattr(agent, '_function_tools') and agent._function_tools:
+                import inspect
+                
                 for tool_name, tool_def in agent._function_tools.items():
-                    tool_info = {
-                        'name': tool_name,
-                        'description': tool_def.description or '',
-                        'parameters': [],
-                        'source': 'custom',
-                    }
+                    identifier = ('custom', tool_name)
+                    if identifier in seen_runtime:
+                        continue
                     
-                    # Extract parameter information from the function
+                    params: list[dict] = []
                     if hasattr(tool_def, 'function'):
-                        import inspect
                         sig = inspect.signature(tool_def.function)
                         for param_name, param in sig.parameters.items():
-                            if param_name == 'ctx':  # Skip context parameter
+                            if param_name == 'ctx':
                                 continue
-                            
-                            param_info = {
+                            params.append(
+                                {
                                 'name': param_name,
                                 'required': param.default == inspect.Parameter.empty,
                                 'type': str(param.annotation) if param.annotation != inspect.Parameter.empty else 'any',
                             }
-                            tool_info['parameters'].append(param_info)
+                            )
                     
-                    tools.append(tool_info)
+                    tools.append(
+                        {
+                            'name': tool_name,
+                            'description': tool_def.description or '',
+                            'parameters': params,
+                            'source': 'custom',
+                        }
+                    )
+                    seen_runtime.add(identifier)
             
-            # Get MCP toolset tools
-            if hasattr(agent, '_user_toolsets') and agent._user_toolsets:
-                logger.debug(f"Found {len(agent._user_toolsets)} toolset(s)")
-                for toolset in agent._user_toolsets:
-                    logger.debug(f"Processing toolset: {type(toolset).__name__}")
-                    # Check if this is an MCP toolset
-                    if hasattr(toolset, 'id') and hasattr(toolset, 'tool_prefix'):
-                        logger.info(f"Found MCP toolset: {toolset.id} (prefix: {toolset.tool_prefix})")
-                        # MCP tools need to be fetched asynchronously
-                        try:
-                            # Start the MCP server connection if not already started
-                            if hasattr(toolset, '__aenter__'):
-                                await toolset.__aenter__()
-                            
-                            # For MCP toolsets, we need to list the available tools
-                            # The tools are dynamically loaded from the MCP server
-                            if hasattr(toolset, 'list_tools'):
-                                # Use list_tools method if available
-                                logger.debug(f"Calling list_tools() on {toolset.id}")
-                                tool_list = await toolset.list_tools()
-                                logger.info(f"Found {len(tool_list)} tools from {toolset.id}")
-                                
-                                for mcp_tool in tool_list:
-                                    tool_name = mcp_tool.name if hasattr(mcp_tool, 'name') else str(mcp_tool)
-                                    tool_desc = mcp_tool.description if hasattr(mcp_tool, 'description') else ''
-                                    
-                                    tool_info = {
-                                        'name': f"{toolset.tool_prefix}_{tool_name}",
-                                        'description': tool_desc or '',
-                                        'parameters': [],
-                                        'source': 'mcp',
-                                        'mcp_server': toolset.id,
-                                    }
-                                    
-                                    # Extract parameters from MCP tool schema
-                                    if hasattr(mcp_tool, 'inputSchema'):
-                                        schema = mcp_tool.inputSchema
-                                        if isinstance(schema, dict):
-                                            properties = schema.get('properties', {})
-                                            required = schema.get('required', [])
-                                            
-                                            for prop_name, prop_schema in properties.items():
-                                                param_info = {
-                                                    'name': prop_name,
-                                                    'required': prop_name in required,
-                                                    'type': prop_schema.get('type', 'any'),
-                                                    'description': prop_schema.get('description', ''),
-                                                }
-                                                tool_info['parameters'].append(param_info)
-                                    
-                                    tools.append(tool_info)
-                                    logger.debug(f"Added tool: {tool_info['name']}")
-                            else:
-                                logger.warning(f"Toolset {toolset.id} has no list_tools method")
-                        except Exception as e:
-                            logger.error(f"Failed to extract MCP tools from {toolset.id}: {e}", exc_info=True)
-            
-            # Get built-in tools
+            # Built-in tools instantiated at runtime
             if hasattr(agent, '_builtin_tools') and agent._builtin_tools:
                 for builtin_tool in agent._builtin_tools:
                     tool_name = type(builtin_tool).__name__
-                    tool_info = {
-                        'name': tool_name.replace('Tool', '').lower(),  # e.g., WebSearchTool -> websearch
-                        'description': f"Built-in {tool_name}",
-                        'parameters': [],
-                        'source': 'builtin',
-                    }
-                    tools.append(tool_info)
+                    normalized_name = tool_name.replace('Tool', '').lower()
+                    identifier = ('builtin', normalized_name)
+                    if identifier in seen_runtime:
+                        continue
+                    
+                    tools.append(
+                        {
+                            'name': normalized_name,
+                            'description': f"Built-in {tool_name}",
+                            'parameters': [],
+                            'source': 'builtin',
+                        }
+                    )
+                    seen_runtime.add(identifier)
+            
+            # MCP toolsets loaded at runtime (may expose additional metadata)
+            if hasattr(agent, '_user_toolsets') and agent._user_toolsets:
+                for toolset in agent._user_toolsets:
+                    if not hasattr(toolset, 'tool_prefix'):
+                        continue
+                    
+                    try:
+                        if hasattr(toolset, '__aenter__'):
+                            await toolset.__aenter__()
+                        
+                        if not hasattr(toolset, 'list_tools'):
+                            continue
+                        
+                        tool_list = await toolset.list_tools()
+                        for mcp_tool in tool_list:
+                            tool_name = mcp_tool.name if hasattr(mcp_tool, 'name') else str(mcp_tool)
+                            display_name = f"{toolset.tool_prefix}_{tool_name}"
+                            identifier = ('mcp', display_name)
+                            if identifier in seen_runtime:
+                                continue
+                            
+                            parameters: list[dict] = []
+                            if hasattr(mcp_tool, 'inputSchema'):
+                                schema = mcp_tool.inputSchema
+                                if isinstance(schema, dict):
+                                    properties = schema.get('properties', {})
+                                    required = schema.get('required', [])
+                                    for prop_name, prop_schema in properties.items():
+                                        parameters.append(
+                                            {
+                                                'name': prop_name,
+                                                'required': prop_name in required,
+                                                'type': prop_schema.get('type', 'any'),
+                                                'description': prop_schema.get('description', ''),
+                                            }
+                                        )
+                            
+                            tools.append(
+                                {
+                                    'name': display_name,
+                                    'description': getattr(mcp_tool, 'description', '') or '',
+                                    'parameters': parameters,
+                                    'source': 'mcp',
+                                    'mcp_server': getattr(toolset, 'id', None),
+                                }
+                            )
+                            seen_runtime.add(identifier)
+                    except Exception as exc:  # pragma: no cover
+                        logger.error("Failed to extract MCP tools from %s: %s", getattr(toolset, 'id', 'unknown'), exc, exc_info=True)
+            
+            # Compute breakdown for logging
+            source_counts = {
+                'frontend': len([t for t in tools if t.get('source') == 'frontend']),
+                'backend': len([t for t in tools if t.get('source') == 'backend']),
+                'builtin': len([t for t in tools if t.get('source') == 'builtin']),
+                'mcp': len([t for t in tools if t.get('source') == 'mcp']),
+                'custom': len([t for t in tools if t.get('source') == 'custom']),
+            }
+            
+            logger.info(
+                "Returning %d tools for agent %s/%s (frontend=%d, backend=%d, builtin=%d, mcp=%d, custom=%d)",
+                len(tools),
+                agent_type,
+                model,
+                source_counts['frontend'],
+                source_counts['backend'],
+                source_counts['builtin'],
+                source_counts['mcp'],
+                source_counts['custom'],
+            )
             
             return {
                 'agent_type': agent_type,

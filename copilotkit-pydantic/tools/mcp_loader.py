@@ -1,4 +1,4 @@
-"""MCP server loading utilities."""
+"""MCP server loading utilities using dynamic JSON configuration."""
 
 from __future__ import annotations
 
@@ -8,10 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from pydantic import ValidationError
 from pydantic_ai.mcp import load_mcp_servers
-
-MCP_CONFIG_PATH = Path(__file__).with_name("mcp_config.json")
 
 
 def mcp_log_handler(level: str, data: Any, logger: str | None = None) -> None:
@@ -20,85 +17,128 @@ def mcp_log_handler(level: str, data: Any, logger: str | None = None) -> None:
     This prevents MCP server debug messages from interfering with JSON-RPC communication.
     """
     # Write to stderr to avoid breaking JSON-RPC protocol on stdout
+    # Filter out JSON parsing errors as they're often caused by MCP server debug output
+    data_str = str(data)
+    
+    # Suppress common non-critical JSON-RPC parsing errors
+    if "Failed to parse JSONRPC message" in data_str:
+        return
+    if "Invalid JSON" in data_str and "pydantic_core" in data_str:
+        return
+    
     # Only log warnings and errors to reduce noise
     if level in ("warning", "error"):
         print(f"[MCP {logger or 'unknown'}] {level.upper()}: {data}", file=sys.stderr)
     elif level == "debug":
-        # Log debug messages for troubleshooting MCP server issues
-        print(f"[MCP {logger or 'unknown'}] DEBUG: {data}", file=sys.stderr)
+        # Suppress debug messages by default (too noisy)
+        pass
 
 
 def load_mcp_toolsets(server_configs: dict | None = None) -> list:
-    """Load MCP server toolsets either from provided config or local file.
+    """Load MCP server toolsets using dynamic JSON configuration generated from DB.
 
     Args:
-        server_configs: Optional mapping of server key -> config dictionary. When
-            provided, the on-disk configuration file is ignored.
+        server_configs: Mapping of server key -> config dictionary from DB
 
     Returns:
-        List of MCP server toolsets (MCPServerStdio, MCPServerSSE, etc.)
+        List of MCP server toolset instances loaded via load_mcp_servers.
     """
-    try:
-        if server_configs is None:
-            config_data = json.loads(MCP_CONFIG_PATH.read_text())
-            raw_servers = config_data.get("mcpServers", {})
-        else:
-            raw_servers = server_configs
+    if not server_configs:
+        print("⚠️ No MCP server configurations provided")
+        return []
+    
+    # Build JSON configuration for MCP servers from DB config
+    mcpServers = {}
+    
+    for server_key, server_config in server_configs.items():
+        transport = server_config.get('transport', 'stdio')
 
-        disabled_servers = []
-        enabled_servers = {}
+        mcp_entry = {}
 
-        for server_id, server_config in raw_servers.items():
-            if server_config.get("disabled", False):
-                disabled_servers.append(server_id)
+        if transport == "stdio":
+            command = server_config.get('command')
+            if not command:
+                print(f"⚠️ MCP server '{server_key}': command is required for stdio transport")
                 continue
-            server_config_clean = {k: v for k, v in server_config.items() if k != "disabled"}
-            enabled_servers[server_id] = server_config_clean
 
-        for server_id in disabled_servers:
-            print(f"⊘ Skipping disabled MCP server: {server_id}")
+            args = server_config.get('args', [])
+            env = server_config.get('env', {}) or {}
 
-        if not enabled_servers:
-            print("⚠️ All MCP servers are disabled")
-            return []
+            # Ensure environment variables suppress debug output that breaks JSON-RPC
+            env = dict(env)  # Make a copy so we don't mutate the original
 
-        filtered_config = {"mcpServers": enabled_servers}
+            # Set environment variables to suppress verbose output
+            env.setdefault('NODE_ENV', 'production')
+            env.setdefault('DEBUG', '')  # Disable debug output
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp_file:
-            json.dump(filtered_config, tmp_file)
-            tmp_path = Path(tmp_file.name)
+            mcp_entry['command'] = command
+            if args:
+                mcp_entry['args'] = args
+            if env:
+                mcp_entry['env'] = env
 
-        try:
-            toolsets = load_mcp_servers(tmp_path)
-        finally:
-            tmp_path.unlink(missing_ok=True)
+        elif transport in ("sse", "http"):
+            url = server_config.get('url')
+            if not url:
+                print(f"⚠️ MCP server '{server_key}': url is required for {transport} transport")
+                continue
 
-    except FileNotFoundError:
-        print(f"⚠️ MCP config not found at {MCP_CONFIG_PATH}, continuing without MCP servers")
+            mcp_entry['url'] = url
+
+        else:
+            print(f"⚠️ MCP server '{server_key}': unsupported transport type '{transport}'")
+            continue
+
+        # Add max_retries if specified
+        max_retries = server_config.get('max_retries')
+        if max_retries is not None:
+            mcp_entry['max_retries'] = max_retries
+
+        mcpServers[server_key] = mcp_entry
+    
+    if not mcpServers:
+        print("⚠️ No valid MCP server configurations after validation")
         return []
-    except ValidationError as exc:
-        print(f"⚠️ Failed to parse MCP config: {exc}")
-        return []
-    except Exception as exc:
-        print(f"⚠️ Error loading MCP config: {exc}")
-        return []
 
-    # Configure logging and retries for each MCP server
-    for toolset in toolsets:
-        if hasattr(toolset, 'log_handler'):
-            toolset.log_handler = mcp_log_handler
+    # Create the dynamic JSON config from DB
+    dynamic_config = {"mcpServers": mcpServers}
+
+    # Write dynamic config to temporary JSON file
+    with tempfile.NamedTemporaryFile(
+        mode='w',
+        suffix='.json',
+        delete=False,
+        prefix='mcp_config_db_'
+    ) as tmp_file:
+        json.dump(dynamic_config, tmp_file, indent=2)
+        tmp_path = tmp_file.name
+    
+    try:
+        print(f"🔌 Loading {len(mcpServers)} MCP server(s) from DB-generated configuration")
         
-        # Set max_retries from the original config (before filtering)
-        server_id = getattr(toolset, 'id', None)
-        if server_id and server_id in enabled_servers:
-            max_retries = enabled_servers[server_id].get('max_retries', 1)
-            if hasattr(toolset, 'max_retries'):
-                toolset.max_retries = max_retries
-    
-    source = MCP_CONFIG_PATH if server_configs is None else 'runtime configuration'
-    print(f"🔌 Loaded {len(toolsets)} MCP server(s) from {source}")
-    if disabled_servers:
-        print(f"   (Skipped {len(disabled_servers)} disabled server(s))")
-    
-    return toolsets
+        # Load MCP servers using the standard load_mcp_servers function
+        toolsets = load_mcp_servers(Path(tmp_path))
+        
+        # Ensure each toolset has proper id and tool_prefix
+        for toolset in toolsets:
+            if hasattr(toolset, 'id') and toolset.id:
+                if not hasattr(toolset, 'tool_prefix') or not toolset.tool_prefix:
+                    toolset.tool_prefix = toolset.id
+            else:
+                print(f"⚠️ MCP toolset loaded without ID, this may cause issues")
+        
+        print(f"✅ Successfully loaded {len(toolsets)} MCP server toolset(s) from DB config")
+        return toolsets
+        
+    except Exception as exc:
+        print(f"❌ Error loading MCP servers from DB-generated JSON config: {exc}")
+        import traceback
+        traceback.print_exc()
+        return []
 
+    finally:
+        # Clean up temp file
+        try:
+            Path(tmp_path).unlink()
+        except Exception:
+            pass

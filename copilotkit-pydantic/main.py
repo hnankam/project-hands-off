@@ -6,14 +6,16 @@ multiple model options, along with WebSocket support for real-time usage trackin
 
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from config import DEBUG, HOST, PORT, logger
 from database.connection import init_connection_pool
-from middleware import agent_model_middleware
+from middleware import agent_error_middleware, agent_model_middleware
 from api import register_agent_routes, register_info_routes, register_websocket_routes, register_admin_routes
 from services import initialize_deployments
+from pydantic_ai.exceptions import AgentRunError, ModelHTTPError
 
 # Optional: Logfire integration
 # import logfire
@@ -76,8 +78,49 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# Register middleware
+# Register middleware (outermost first)
+app.middleware("http")(agent_error_middleware)
 app.middleware("http")(agent_model_middleware)
+
+
+@app.exception_handler(ModelHTTPError)
+async def handle_model_http_error(request: Request, exc: ModelHTTPError) -> JSONResponse:
+    """Return a structured response for model-related HTTP errors."""
+    logger.error(
+        "[%s] ModelHTTPError handled via exception handler: model=%s status=%s",
+        getattr(request.state, "req_id", "unknown"),
+        exc.model_name,
+        exc.status_code,
+        exc_info=exc,
+    )
+    return JSONResponse(
+        status_code=exc.status_code or 502,
+        content={
+            "error": "model_http_error",
+            "message": str(exc),
+            "model": exc.model_name,
+            "details": exc.body,
+            "request_id": getattr(request.state, "req_id", None),
+        },
+    )
+
+
+@app.exception_handler(AgentRunError)
+async def handle_agent_run_error(request: Request, exc: AgentRunError) -> JSONResponse:
+    """Return a structured response for unexpected agent errors."""
+    logger.error(
+        "[%s] AgentRunError handled via exception handler",
+        getattr(request.state, "req_id", "unknown"),
+        exc_info=exc,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "agent_run_error",
+            "message": str(exc),
+            "request_id": getattr(request.state, "req_id", None),
+        },
+    )
 
 # Register routes (routes will warm cache on first access if needed)
 register_agent_routes(app)

@@ -2,9 +2,24 @@
 
 import uuid
 from fastapi import Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import DEBUG, logger
+from pydantic_ai.exceptions import AgentRunError, ModelHTTPError
+
+
+def _model_http_error_response(request: Request, exc: ModelHTTPError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code or 502,
+        content={
+            "error": "model_http_error",
+            "message": str(exc),
+            "model": exc.model_name,
+            "details": exc.body,
+            "request_id": getattr(request.state, "req_id", None),
+        },
+    )
 
 
 async def agent_model_middleware(request: Request, call_next):
@@ -106,4 +121,34 @@ async def agent_model_middleware(request: Request, call_next):
     
     response = await call_next(request)
     return response
+
+
+async def agent_error_middleware(request: Request, call_next):
+    """Middleware to catch agent execution errors and return structured responses."""
+
+    try:
+        return await call_next(request)
+    except ModelHTTPError as exc:
+        logger.error(
+            "[%s] ModelHTTPError while processing request: model=%s status=%s",
+            getattr(request.state, "req_id", "unknown"),
+            exc.model_name,
+            exc.status_code,
+            exc_info=exc,
+        )
+        return _model_http_error_response(request, exc)
+    except AgentRunError as exc:
+        logger.error(
+            "[%s] AgentRunError while processing request",
+            getattr(request.state, "req_id", "unknown"),
+            exc_info=exc,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "agent_run_error",
+                "message": str(exc),
+                "request_id": getattr(request.state, "req_id", None),
+            },
+        )
 

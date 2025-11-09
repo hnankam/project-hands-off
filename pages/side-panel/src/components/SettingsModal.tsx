@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
@@ -9,10 +9,30 @@ interface SettingsModalProps {
   showAgentCursor: boolean;
   showSuggestions: boolean;
   showThoughtBlocks: boolean;
+  agentType?: string;
+  modelType?: string;
+  organizationId?: string;
+  teamId?: string;
   onClose: () => void;
   onShowAgentCursorChange: (show: boolean) => void;
   onShowSuggestionsChange: (show: boolean) => void;
   onShowThoughtBlocksChange: (show: boolean) => void;
+}
+
+interface ToolParameter {
+  name: string;
+  type: string;
+  description?: string;
+  required?: boolean;
+}
+
+interface ToolDefinition {
+  name: string;
+  description?: string;
+  source?: string;
+  available?: string;
+  parameters?: ToolParameter[];
+  mcp_server?: string;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -21,12 +41,79 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   showAgentCursor,
   showSuggestions,
   showThoughtBlocks,
+  agentType,
+  modelType,
+  organizationId,
+  teamId,
   onClose,
   onShowAgentCursorChange,
   onShowSuggestionsChange,
   onShowThoughtBlocksChange,
 }) => {
   const { theme } = useStorage(exampleThemeStorage);
+  const [toolsExpanded, setToolsExpanded] = useState(false);
+  const [categoryExpanded, setCategoryExpanded] = useState<Record<string, boolean>>({
+    frontend: false,
+    backend: false,
+    builtin: false,
+    mcp: false,
+    custom: false,
+  });
+  const [toolsLoading, setToolsLoading] = useState(false);
+  const [toolsError, setToolsError] = useState<string | null>(null);
+  const [tools, setTools] = useState<ToolDefinition[]>([]);
+  const [hasFetchedTools, setHasFetchedTools] = useState(false);
+
+  const canFetchTools = Boolean(agentType && modelType && organizationId && teamId);
+
+  const backendUrl = useMemo(() => import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001', []);
+
+  const fetchTools = useCallback(async () => {
+    if (!agentType || !modelType || !organizationId || !teamId) {
+      return;
+    }
+    setToolsLoading(true);
+    setToolsError(null);
+    try {
+      const response = await fetch(`${backendUrl}/tools/${agentType}/${modelType}`, {
+        headers: {
+          'x-copilot-organization-id': organizationId,
+          'x-copilot-team-id': teamId,
+        },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `Failed to load tools (${response.status})`);
+      }
+
+      const data = await response.json();
+      const fetchedTools = Array.isArray(data?.tools) ? data.tools : [];
+      setTools(fetchedTools);
+    } catch (err) {
+      console.error('[SettingsModal] Failed to load tools', err);
+      setToolsError(err instanceof Error ? err.message : 'Failed to load available tools');
+    } finally {
+      setToolsLoading(false);
+      setHasFetchedTools(true);
+    }
+  }, [agentType, backendUrl, modelType, organizationId, teamId]);
+
+  useEffect(() => {
+    setTools([]);
+    setToolsError(null);
+    setHasFetchedTools(false);
+    setCategoryExpanded({});
+  }, [agentType, modelType, organizationId, teamId]);
+
+  useEffect(() => {
+    if (isOpen && canFetchTools && !hasFetchedTools) {
+      fetchTools().catch(() => {
+        /* handled above */
+      });
+    }
+  }, [canFetchTools, fetchTools, hasFetchedTools, isOpen]);
 
   // Close on escape key
   useEffect(() => {
@@ -41,6 +128,74 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
+
+  const groupedTools = useMemo(() => {
+    return tools.reduce<Record<string, ToolDefinition[]>>((acc, tool) => {
+      const key = (tool?.source || 'custom').toLowerCase();
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(tool);
+      return acc;
+    }, {});
+  }, [tools]);
+
+  const totalToolCount = tools.length;
+
+  const sourceStyles = useCallback(
+    (source?: string) => {
+      const normalized = (source || 'custom').toLowerCase();
+      switch (normalized) {
+        case 'mcp':
+          return {
+            label: 'MCP',
+            className: isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-300',
+          };
+        case 'builtin':
+          return {
+            label: 'Built-in',
+            className: isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-900/30 text-amber-300',
+          };
+        case 'backend':
+          return {
+            label: 'Backend',
+            className: isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-300',
+          };
+        case 'frontend':
+          return {
+            label: 'Frontend',
+            className: isLight ? 'bg-green-100 text-green-700' : 'bg-green-900/30 text-green-300',
+          };
+        default:
+          return {
+            label: 'Custom',
+            className: isLight ? 'bg-gray-200 text-gray-700' : 'bg-gray-800 text-gray-300',
+          };
+      }
+    },
+    [isLight],
+  );
+
+  const formatToolName = useCallback((value: string) => {
+    if (!value) return 'Untitled Tool';
+    const cleaned = value.replace(/^(corp-|mcp_|builtin_)/, '').replace(/_/g, ' ').trim();
+    if (!cleaned) return value;
+    return cleaned
+      .split(' ')
+      .filter(Boolean)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }, []);
+
+  const handleToggleTools = useCallback(() => {
+    const next = !toolsExpanded;
+    setToolsExpanded(next);
+    if (next && canFetchTools && !hasFetchedTools) {
+      fetchTools().catch(() => {
+        /* handled above */
+      });
+    }
+  }, [canFetchTools, fetchTools, hasFetchedTools, toolsExpanded]);
 
   return (
     <>
@@ -316,6 +471,289 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </button>
             </div>
+
+            {/* Divider */}
+            <div className={cn('border-t', isLight ? 'border-gray-200' : 'border-gray-700')} />
+
+            {/* Available Tools Accordion */}
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <label
+                  htmlFor="available-tools-toggle"
+                  className={cn(
+                    'text-xs font-medium cursor-pointer',
+                    isLight ? 'text-gray-900' : 'text-gray-100'
+                  )}
+                >
+                  Available Tools
+                </label>
+                <p
+                  className={cn(
+                    'text-xs mt-0.5',
+                    isLight ? 'text-gray-500' : 'text-gray-400'
+                  )}
+                >
+                  Tools registered for the selected agent and model
+                </p>
+              </div>
+              <button
+                id="available-tools-toggle"
+                type="button"
+                onClick={handleToggleTools}
+                className={cn(
+                  'flex items-center gap-2 ml-3 transition-colors',
+                  isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-white',
+                )}
+              >
+                {toolsLoading ? (
+                  <svg className="h-4 w-4 animate-spin text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                ) : (
+                  <span
+                    className={cn(
+                      'text-[10px] font-medium px-1.5 py-0.5 rounded',
+                      isLight ? 'bg-gray-200 text-gray-700' : 'bg-gray-800 text-gray-300',
+                    )}
+                  >
+                    {totalToolCount}
+                  </span>
+                )}
+                <svg
+                  className={cn(
+                    'h-4 w-4 flex-shrink-0 transition-transform duration-300 ease-in-out',
+                    toolsExpanded && 'rotate-180',
+                  )}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+            </div>
+
+            {toolsExpanded && (
+              <div className="mt-3">
+                {!canFetchTools ? (
+                  <p className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                    Select an agent, model, organization, and team to view available tools.
+                  </p>
+                ) : toolsLoading ? (
+                  <div className="flex items-center gap-2 text-blue-500 text-xs">
+                    <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                    Loading tools...
+                  </div>
+                ) : toolsError ? (
+                  <div className={cn('rounded-md border px-3 py-2 text-xs', isLight ? 'border-red-200 bg-red-50 text-red-700' : 'border-red-800 bg-red-900/20 text-red-300')}>
+                    {toolsError}
+                  </div>
+                ) : totalToolCount === 0 ? (
+                  <p className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                    No tools are currently registered for this agent.
+                  </p>
+                ) : (
+                    <div
+                      className="max-h-64 overflow-y-auto pr-1 space-y-3"
+                      style={{
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
+                      }}
+                    >
+                      {Object.entries(groupedTools).map(([source, sourceTools]) => {
+                        const { label } = sourceStyles(source);
+                        const isCategoryExpanded = categoryExpanded[source] ?? false;
+                        return (
+                          <div key={source} className="space-y-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCategoryExpanded(prev => {
+                                  const isCurrentlyExpanded = prev[source] ?? false;
+                                  // If closing current category, just close it
+                                  if (isCurrentlyExpanded) {
+                                    return {
+                                      ...prev,
+                                      [source]: false,
+                                    };
+                                  }
+                                  // If opening, close all others and open this one
+                                  return {
+                                    frontend: false,
+                                    backend: false,
+                                    builtin: false,
+                                    mcp: false,
+                                    custom: false,
+                                    [source]: true,
+                                  };
+                                })
+                              }
+                              className={cn(
+                                'flex w-full items-center justify-between px-2 py-1.5 text-left transition-colors',
+                                isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-200 hover:text-white',
+                              )}
+                            >
+                              <div className="flex items-center gap-2">
+                                <svg
+                                  className={cn(
+                                    'h-3.5 w-3.5 flex-shrink-0 transition-transform duration-200',
+                                    isCategoryExpanded && 'rotate-90',
+                                  )}
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  strokeWidth={2}
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                </svg>
+                                <span className={cn('text-[11px] font-semibold uppercase', isLight ? 'text-gray-800' : 'text-gray-200')}>
+                                  {label}
+                                </span>
+                              </div>
+                              <span className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                {sourceTools.length} {sourceTools.length === 1 ? 'tool' : 'tools'}
+                              </span>
+                            </button>
+
+                            <div
+                              className={cn(
+                                'transition-all ease-in-out',
+                                isCategoryExpanded ? 'max-h-[400px] opacity-100 duration-500' : 'max-h-0 opacity-0 duration-300 overflow-hidden',
+                                isCategoryExpanded && 'overflow-visible',
+                              )}
+                            >
+                              <div
+                                className={cn(
+                                  'transition-all ease-in-out',
+                                  isCategoryExpanded ? 'translate-y-0 duration-300 delay-75' : '-translate-y-2 duration-200',
+                                )}
+                              >
+                                <div
+                                  className={cn(
+                                    'overflow-x-auto overflow-y-auto rounded border max-h-[300px] transition-opacity ease-in-out',
+                                    isLight ? 'border-gray-200' : 'border-gray-700',
+                                    isCategoryExpanded ? 'opacity-100 duration-400 delay-150' : 'opacity-0 duration-150',
+                                  )}
+                                  style={{
+                                    scrollbarWidth: 'thin',
+                                    scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
+                                  }}
+                                >
+                                <table className="w-full text-xs border-collapse">
+                                  <thead
+                                    className={cn(
+                                      'sticky top-0 z-10',
+                                      isLight ? 'bg-gray-50 text-gray-600' : 'bg-[#151C24] text-gray-400',
+                                    )}
+                                  >
+                                    <tr className="text-[11px] font-medium">
+                                      <th className={cn('px-3 py-2 text-center w-20', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                                        Enabled
+                                      </th>
+                                      {source === 'mcp' && (
+                                        <th className={cn('px-3 py-2 text-left border-l w-32', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                                          Server
+                                        </th>
+                                      )}
+                                      <th className={cn('px-3 py-2 text-left border-l w-48', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                                        Name
+                                      </th>
+                                      <th className={cn('px-3 py-2 text-left border-l', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                                        Description
+                                      </th>
+                                    </tr>
+                                    <tr>
+                                      <th colSpan={source === 'mcp' ? 4 : 3} className="p-0">
+                                        <div className={cn('h-px', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody
+                                    className={cn(
+                                      'divide-y',
+                                      isLight ? 'divide-gray-200' : 'divide-gray-800',
+                                    )}
+                                  >
+                                    {sourceTools.map((tool, index) => (
+                                      <tr
+                                        key={`${tool.name}-${index}`}
+                                        className={cn(
+                                          'transition-colors',
+                                          isLight ? 'hover:bg-gray-50' : 'hover:bg-gray-900/30',
+                                        )}
+                                      >
+                                        <td className={cn('px-3 py-2 text-center border-r', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                                          <input
+                                            type="checkbox"
+                                            checked={true}
+                                            disabled
+                                            readOnly
+                                            className={cn(
+                                              'h-3.5 w-3.5 rounded border cursor-not-allowed opacity-60',
+                                              isLight
+                                                ? 'border-gray-300 text-blue-600'
+                                                : 'border-gray-600 bg-gray-700 text-blue-500',
+                                            )}
+                                          />
+                                        </td>
+                                        {source === 'mcp' && (
+                                          <td className={cn('px-3 py-2 border-r whitespace-nowrap', isLight ? 'border-gray-200 text-gray-700' : 'border-gray-700 text-gray-300')}>
+                                            <span className="text-[11px]">
+                                              {tool.mcp_server || '—'}
+                                            </span>
+                                          </td>
+                                        )}
+                                        <td className={cn('px-3 py-2 border-r whitespace-nowrap', isLight ? 'border-gray-200 text-gray-900' : 'border-gray-700 text-gray-100')}>
+                                          <span className="text-[12px] font-medium">
+                                            {formatToolName(tool.name)}
+                                          </span>
+                                        </td>
+                                        <td className={cn('px-3 py-2', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                          <span className="text-[11px] whitespace-nowrap overflow-hidden text-ellipsis block">
+                                            {tool.description || '—'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+              </div>
+            )}
           </div>
 
           {/* Footer */}
