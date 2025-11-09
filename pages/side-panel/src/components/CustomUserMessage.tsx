@@ -396,8 +396,8 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                     alignItems: 'center',
                     gap: '3px',
                     padding: '1px 4px',
-                    borderRadius: 9999,
-                    background: isLight ? 'rgba(59,130,246,0.10)' : 'rgba(255,255,255,0.07)',
+                    borderRadius: '6px',
+                    background: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.07)',
                     fontSize: 9,
                     color: isLight ? '#0C1117' : '#e5e7eb',
                     fontWeight: isLight ? 500 : 400,
@@ -449,15 +449,15 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
             visibility: isHovered ? 'visible' : 'hidden',
             transition: 'opacity 0.2s ease-in-out, visibility 0.2s ease-in-out',
             zIndex: 10000,
-            // Add background with left-side fade
+            // Add background with left-side fade - match user message background
             background: isLight
-              ? 'linear-gradient(to right, rgba(229, 231, 235, 0) 0%, rgba(229, 231, 235, 0.8) 20%, rgba(229, 231, 235, 0.95) 40%, rgb(229, 231, 235) 60%)'
+              ? 'linear-gradient(to right, rgba(249, 250, 251, 0) 0%, rgba(249, 250, 251, 0.8) 20%, rgba(249, 250, 251, 0.95) 40%, rgb(249, 250, 251) 60%)'
               : 'linear-gradient(to right, rgba(21, 28, 36, 0) 0%, rgba(21, 28, 36, 0.8) 20%, rgba(21, 28, 36, 0.95) 40%, rgb(21, 28, 36) 60%)',
             paddingLeft: '3rem',
             paddingRight: '0.5rem',
             paddingTop: '0.35rem',
             // paddingBottom: '-0.25rem',
-            borderRadius: '6px',
+            borderRadius: '0 10px 10px 0',
             marginRight: '-0.5rem',
           }}>
           {/* Copy Button */}

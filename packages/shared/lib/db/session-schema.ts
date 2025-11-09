@@ -62,6 +62,11 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
       DEFINE FIELD IF NOT EXISTS sessionId ON current_session TYPE option<string>;
     `);
 
+    // Clean up any legacy records that may have stored NULL in lastUsage
+    await worker.query(`
+      UPDATE session_usage SET lastUsage = NONE WHERE type::is::null(lastUsage);
+    `);
+
     // Backfill sessionId for existing records if missing
     await worker.query(`
       UPDATE session_metadata SET sessionId = (

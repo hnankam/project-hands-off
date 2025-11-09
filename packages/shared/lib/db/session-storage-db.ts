@@ -461,19 +461,42 @@ export class SessionStorageDB {
       res: stats.response,
       tot: stats.total,
       cnt: stats.requestCount,
-      last: stats.lastUsage ?? null,
+    } as {
+      req: number;
+      res: number;
+      tot: number;
+      cnt: number;
+      last?: SessionUsageStats['lastUsage'];
     };
+    const hasLastUsage = stats.lastUsage != null;
+    if (hasLastUsage) {
+      payload.last = stats.lastUsage!;
+    }
 
     if (existing[0]?.length > 0) {
+      if (hasLastUsage) {
       await worker.query(
         'UPDATE session_usage SET request = $req, response = $res, total = $tot, requestCount = $cnt, lastUsage = $last WHERE sessionId = $id;',
         { id: sessionId, ...payload }
       );
     } else {
+        await worker.query(
+          'UPDATE session_usage SET request = $req, response = $res, total = $tot, requestCount = $cnt, lastUsage = NONE WHERE sessionId = $id;',
+          { id: sessionId, ...payload }
+        );
+      }
+    } else {
+      if (hasLastUsage) {
       await worker.query(
         'CREATE session_usage CONTENT { sessionId: $id, request: $req, response: $res, total: $tot, requestCount: $cnt, lastUsage: $last };',
         { id: sessionId, ...payload }
       );
+      } else {
+        await worker.query(
+          'CREATE session_usage CONTENT { sessionId: $id, request: $req, response: $res, total: $tot, requestCount: $cnt };',
+          { id: sessionId, ...payload }
+        );
+      }
     }
 
     // Update session timestamp to reflect latest activity

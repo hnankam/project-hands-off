@@ -739,7 +739,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
                 alignItems: 'center',
                 gap: '5px',
                 padding: '2px 6px',
-                borderRadius: '9999px',
+                borderRadius: '6px',
                 background: bgCol,
                 fontSize: '11px',
                 color: isLight ? '#0C1117' : '#e5e7eb',

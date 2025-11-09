@@ -52,7 +52,9 @@ def register_agent_routes(app: FastAPI) -> None:
         logger.info("Registering agent endpoint with dynamic context resolution")
 
     @app.post("/agent/{agent_type}/{model}")
-    async def run_agent(agent_type: str, model: str, request: Request, background_tasks: BackgroundTasks):
+    async def run_agent(
+        agent_type: str, model: str, request: Request, background_tasks: BackgroundTasks
+    ):
         # Enforce authentication context propagated from runtime
         session_id = request.headers.get("x-copilot-session-id")
         thread_id = request.headers.get("x-copilot-thread-id")
@@ -106,7 +108,9 @@ def register_agent_routes(app: FastAPI) -> None:
                     "error_type": type(exc).__name__,
                 },
             )
-            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+            return JSONResponse(
+                status_code=exc.status_code, content={"error": str(exc)}
+            )
 
         state_deps = get_or_create_session_state(
             conversation_id,
@@ -143,7 +147,14 @@ def register_agent_routes(app: FastAPI) -> None:
                          ORDER BY priority, a.created_at DESC
                          LIMIT 1
                         """,
-                        (team_id, organization_id, organization_id, agent_type, organization_id, team_id),
+                        (
+                            team_id,
+                            organization_id,
+                            organization_id,
+                            agent_type,
+                            organization_id,
+                            team_id,
+                        ),
                     )
                     agent_row = await cur.fetchone()
                     if agent_row:
@@ -171,7 +182,14 @@ def register_agent_routes(app: FastAPI) -> None:
                          ORDER BY priority, m.created_at DESC
                          LIMIT 1
                         """,
-                        (team_id, organization_id, organization_id, model, organization_id, team_id),
+                        (
+                            team_id,
+                            organization_id,
+                            organization_id,
+                            model,
+                            organization_id,
+                            team_id,
+                        ),
                     )
                     model_row = await cur.fetchone()
                     if model_row:
@@ -245,7 +263,7 @@ def register_agent_routes(app: FastAPI) -> None:
         if DEBUG:
             logger.info(
                 "[%s] Completed agent call session=%s org=%s team=%s",
-                getattr(request.state, 'req_id', 'unknown'),
+                getattr(request.state, "req_id", "unknown"),
                 conversation_id,
                 organization_id,
                 team_id,
@@ -257,11 +275,11 @@ def register_agent_routes(app: FastAPI) -> None:
 
 def register_info_routes(app: FastAPI) -> None:
     """Register information and session management routes.
-    
+
     Args:
         app: The FastAPI application instance
     """
-    
+
     @app.get("/")
     async def root():
         """Root endpoint with server info."""
@@ -272,9 +290,9 @@ def register_info_routes(app: FastAPI) -> None:
                 "agents": "POST /agent/{agent_type}/{model}",
                 "websocket": "WS /ws/usage/{session_id}",
                 "sessions": "GET /sessions",
-                "cleanup": "POST /sessions/{session_id}/cleanup"
+                "cleanup": "POST /sessions/{session_id}/cleanup",
             },
-            "usage_streaming": "Connect via WebSocket to receive real-time usage updates"
+            "usage_streaming": "Connect via WebSocket to receive real-time usage updates",
         }
 
     @app.get("/healthz")
@@ -300,10 +318,10 @@ def register_info_routes(app: FastAPI) -> None:
     @app.post("/sessions/{session_id}/cleanup")
     async def cleanup_session_endpoint(session_id: str):
         """Clean up a specific session's state.
-        
+
         Args:
             session_id: The session ID to clean up
-            
+
         Returns:
             Success status message
         """
@@ -313,7 +331,7 @@ def register_info_routes(app: FastAPI) -> None:
     @app.get("/sessions")
     async def list_sessions():
         """List all active sessions and their WebSocket connections.
-        
+
         Returns:
             Dictionary with session information
         """
@@ -323,19 +341,21 @@ def register_info_routes(app: FastAPI) -> None:
             sessions[session_id] = {
                 "agents": list(states.keys()),
                 "agent_count": len(states),
-                "websocket_connections": ws_connections
+                "websocket_connections": ws_connections,
             }
         return {
-            "sessions": sessions, 
+            "sessions": sessions,
             "total_sessions": len(session_states),
             "total_websocket_connections": sum(
                 len(conns) for conns in manager.active_connections.values()
-            )
+            ),
         }
 
     @app.post("/deployments/context")
     async def deploy_context_endpoint(payload: DeploymentRequest):
-        await deploy_context(payload.organization_id, payload.team_id, force=payload.force)
+        await deploy_context(
+            payload.organization_id, payload.team_id, force=payload.force
+        )
         return get_context_status(payload.organization_id, payload.team_id)
 
     @app.post("/deployments/context/restart")
@@ -348,17 +368,19 @@ def register_info_routes(app: FastAPI) -> None:
         return get_context_status(organization_id, team_id)
 
     @app.get("/deployments")
-    async def list_deployments_endpoint(request: Request, background_tasks: BackgroundTasks):
+    async def list_deployments_endpoint(
+        request: Request, background_tasks: BackgroundTasks
+    ):
         # Try to get authentication context for prewarming
         organization_id = request.headers.get("x-copilot-organization-id")
         team_id = request.headers.get("x-copilot-team-id")
-        
+
         logger.debug(
             "[Deployments] Request headers: org_id=%s team_id=%s",
             organization_id[:8] if organization_id else None,
             team_id[:8] if team_id else None,
         )
-        
+
         # Prewarm organization deployments on first authenticated request
         if organization_id and organization_id not in _prewarmed_orgs:
             logger.info(
@@ -368,26 +390,28 @@ def register_info_routes(app: FastAPI) -> None:
             _prewarmed_orgs.add(organization_id)
             background_tasks.add_task(prewarm_user_context, organization_id, None)
         elif organization_id:
-            logger.debug("[Deployments] Organization %s already prewarmed", organization_id[:8])
+            logger.debug(
+                "[Deployments] Organization %s already prewarmed", organization_id[:8]
+            )
         else:
             logger.debug("[Deployments] No organization_id in request headers")
-        
-        return {
-            'deployments': list_deployments()
-        }
-    
+
+        return {"deployments": list_deployments()}
+
     @app.get("/deployments/endpoints")
-    async def list_endpoints_endpoint(request: Request, background_tasks: BackgroundTasks):
+    async def list_endpoints_endpoint(
+        request: Request, background_tasks: BackgroundTasks
+    ):
         # Try to get authentication context for prewarming
         organization_id = request.headers.get("x-copilot-organization-id")
         team_id = request.headers.get("x-copilot-team-id")
-        
+
         logger.debug(
             "[Endpoints] Request headers: org_id=%s team_id=%s",
             organization_id[:8] if organization_id else None,
             team_id[:8] if team_id else None,
         )
-        
+
         # Prewarm organization deployments on first authenticated request
         if organization_id and organization_id not in _prewarmed_orgs:
             logger.info(
@@ -397,38 +421,40 @@ def register_info_routes(app: FastAPI) -> None:
             _prewarmed_orgs.add(organization_id)
             background_tasks.add_task(prewarm_user_context, organization_id, None)
         elif organization_id:
-            logger.debug("[Endpoints] Organization %s already prewarmed", organization_id[:8])
+            logger.debug(
+                "[Endpoints] Organization %s already prewarmed", organization_id[:8]
+            )
         else:
             logger.debug("[Endpoints] No organization_id in request headers")
-        
-        return {
-            'endpoints': list_endpoints()
-        }
-    
+
+        return {"endpoints": list_endpoints()}
+
     @app.get("/tools/{agent_type}/{model}")
-    async def list_agent_tools(agent_type: str, model: str, request: Request, background_tasks: BackgroundTasks):
+    async def list_agent_tools(
+        agent_type: str, model: str, request: Request, background_tasks: BackgroundTasks
+    ):
         """List all tools available for a specific agent and model.
-        
+
         Args:
             agent_type: The type of agent (e.g., 'planner')
             model: The model identifier (e.g., 'gpt-4')
             request: The FastAPI request object
-            
+
         Returns:
             List of tool definitions with their signatures
         """
         # Enforce authentication context
         organization_id = request.headers.get("x-copilot-organization-id")
         team_id = request.headers.get("x-copilot-team-id")
-        
+
         if not organization_id or not team_id:
             return _make_unauthorized("Missing authentication context")
-        
+
         # Prewarm organization deployments on first authenticated request
         if organization_id not in _prewarmed_orgs:
             _prewarmed_orgs.add(organization_id)
             background_tasks.add_task(prewarm_user_context, organization_id, None)
-        
+
         try:
             # Ensure agent is ready before fetching tools
             try:
@@ -442,243 +468,276 @@ def register_info_routes(app: FastAPI) -> None:
                     model,
                     exc,
                 )
-                return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
-            
+                return JSONResponse(
+                    status_code=exc.status_code, content={"error": str(exc)}
+                )
+
             # Get the agent instance
             agent = await get_agent(agent_type, model, organization_id, team_id)
-            
+
             # Get tool definitions and agent info for context
             from config.tools import get_tools_for_context, get_mcp_servers_for_context
             from config.prompts import get_agent_info_for_context
-            
+
             tool_definitions = get_tools_for_context(organization_id, team_id)
             mcp_servers = get_mcp_servers_for_context(organization_id, team_id)
             mcp_servers_by_id: dict[str, dict] = {}
             for server_key, server_data in mcp_servers.items():
                 if not isinstance(server_data, dict):
                     continue
-                server_id = server_data.get('id')
+                server_id = server_data.get("id")
                 if server_id is not None:
                     mcp_servers_by_id[str(server_id)] = server_data
                 # Also allow lookup by server key for completeness
                 if server_key:
                     mcp_servers_by_id.setdefault(str(server_key), server_data)
-            agent_info = get_agent_info_for_context(agent_type, organization_id, team_id) or {}
-            allowed_tool_keys = agent_info.get('allowed_tools')
-            
+            agent_info = (
+                get_agent_info_for_context(agent_type, organization_id, team_id) or {}
+            )
+            allowed_tool_keys = agent_info.get("allowed_tools")
+
             # If no allowed_tools specified (None or empty list), include all enabled tools
             if not allowed_tool_keys:
                 logger.debug(
                     "No specific tools for agent %s, defaulting to all enabled tools from %d definitions",
                     agent_type,
-                    len(tool_definitions)
+                    len(tool_definitions),
                 )
                 allowed_tool_keys = [
-                    key for key, data in tool_definitions.items()
-                    if data.get('enabled', True)
+                    key
+                    for key, data in tool_definitions.items()
+                    if data.get("enabled", True)
                 ]
             else:
-                logger.debug("Agent %s has %d allowed tools configured", agent_type, len(allowed_tool_keys))
-            
+                logger.debug(
+                    "Agent %s has %d allowed tools configured",
+                    agent_type,
+                    len(allowed_tool_keys),
+                )
+
             # Extract tool information drawn from configuration and runtime
             tools: list[dict] = []
             tools_by_key: dict[str, dict] = {}
-            
+
             def _extract_parameters(config_entry: dict | None) -> list[dict]:
                 params: list[dict] = []
                 if not isinstance(config_entry, dict):
                     return params
-                param_list = config_entry.get('parameters')
+                param_list = config_entry.get("parameters")
                 if isinstance(param_list, list):
                     for param in param_list:
                         if not isinstance(param, dict):
                             continue
                         params.append(
                             {
-                                'name': param.get('name', ''),
-                                'type': param.get('type', 'any'),
-                                'required': param.get('required', False),
-                                'description': param.get('description', ''),
+                                "name": param.get("name", ""),
+                                "type": param.get("type", "any"),
+                                "required": param.get("required", False),
+                                "description": param.get("description", ""),
                             }
                         )
                 return params
-            
+
             # Build entries from database tool definitions
             for tool_key in allowed_tool_keys:
                 tool_cfg = tool_definitions.get(tool_key)
                 if not tool_cfg:
                     continue
-                
-                tool_type = (tool_cfg.get('tool_type') or 'custom').lower()
-                name = tool_cfg.get('tool_name') or tool_key
+
+                tool_type = (tool_cfg.get("tool_type") or "custom").lower()
+                name = tool_cfg.get("tool_name") or tool_key
                 entry = {
-                    'name': name,
-                    'description': tool_cfg.get('description', ''),
-                    'parameters': _extract_parameters(tool_cfg.get('config')),
-                    'source': tool_type,
-                    'available': 'enabled' if tool_cfg.get('enabled', True) else 'disabled',
-                    'metadata': tool_cfg.get('metadata', {}),
+                    "name": name,
+                    "description": tool_cfg.get("description", ""),
+                    "parameters": _extract_parameters(tool_cfg.get("config")),
+                    "source": tool_type,
+                    "available": "enabled"
+                    if tool_cfg.get("enabled", True)
+                    else "disabled",
+                    "metadata": tool_cfg.get("metadata", {}),
                 }
-                
-                if tool_type == 'mcp':
-                    server_id = tool_cfg.get('mcp_server_id')
-                    entry['mcp_server_id'] = server_id
-                    entry['remote_tool_name'] = tool_cfg.get('remote_tool_name')
+
+                if tool_type == "mcp":
+                    server_id = tool_cfg.get("mcp_server_id")
+                    entry["mcp_server_id"] = server_id
+                    entry["remote_tool_name"] = tool_cfg.get("remote_tool_name")
                     server_info = None
                     if server_id is not None:
                         server_info = mcp_servers_by_id.get(str(server_id))
                     # Fall back to lookup by server key if present in tool config
                     if server_info is None:
-                        server_key = tool_cfg.get('mcp_server_key') or tool_cfg.get('mcp_server')
+                        server_key = tool_cfg.get("mcp_server_key") or tool_cfg.get(
+                            "mcp_server"
+                        )
                         if server_key:
-                            server_info = mcp_servers_by_id.get(str(server_key)) or mcp_servers.get(server_key)
+                            server_info = mcp_servers_by_id.get(
+                                str(server_key)
+                            ) or mcp_servers.get(server_key)
                     if server_info:
-                        entry['mcp_server'] = server_info.get('display_name') or server_info.get('server_key') or server_id
-                        entry['mcp_server_key'] = server_info.get('server_key')
-                
+                        entry["mcp_server"] = (
+                            server_info.get("display_name")
+                            or server_info.get("server_key")
+                            or server_id
+                        )
+                        entry["mcp_server_key"] = server_info.get("server_key")
+
                 tools_by_key[tool_key] = entry
-            
+
             # Preserve original ordering from allowed_tool_keys
             for tool_key in allowed_tool_keys:
                 if tool_key in tools_by_key:
                     tools.append(tools_by_key[tool_key])
-            
+
             # Include runtime-registered tools that may not be present in config (custom, builtin, etc.)
-            seen_runtime = {(item.get('source'), item.get('name')) for item in tools}
-            
+            seen_runtime = {(item.get("source"), item.get("name")) for item in tools}
+
             # Custom @agent.tool registrations
-            if hasattr(agent, '_function_tools') and agent._function_tools:
+            if hasattr(agent, "_function_tools") and agent._function_tools:
                 import inspect
-                
+
                 for tool_name, tool_def in agent._function_tools.items():
-                    identifier = ('custom', tool_name)
+                    identifier = ("custom", tool_name)
                     if identifier in seen_runtime:
                         continue
-                    
+
                     params: list[dict] = []
-                    if hasattr(tool_def, 'function'):
+                    if hasattr(tool_def, "function"):
                         sig = inspect.signature(tool_def.function)
                         for param_name, param in sig.parameters.items():
-                            if param_name == 'ctx':
+                            if param_name == "ctx":
                                 continue
                             params.append(
                                 {
-                                'name': param_name,
-                                'required': param.default == inspect.Parameter.empty,
-                                'type': str(param.annotation) if param.annotation != inspect.Parameter.empty else 'any',
-                            }
+                                    "name": param_name,
+                                    "required": param.default
+                                    == inspect.Parameter.empty,
+                                    "type": str(param.annotation)
+                                    if param.annotation != inspect.Parameter.empty
+                                    else "any",
+                                }
                             )
-                    
+
                     tools.append(
                         {
-                            'name': tool_name,
-                            'description': tool_def.description or '',
-                            'parameters': params,
-                            'source': 'custom',
+                            "name": tool_name,
+                            "description": tool_def.description or "",
+                            "parameters": params,
+                            "source": "custom",
                         }
                     )
                     seen_runtime.add(identifier)
-            
+
             # Built-in tools instantiated at runtime
-            if hasattr(agent, '_builtin_tools') and agent._builtin_tools:
+            if hasattr(agent, "_builtin_tools") and agent._builtin_tools:
                 for builtin_tool in agent._builtin_tools:
                     tool_name = type(builtin_tool).__name__
-                    normalized_name = tool_name.replace('Tool', '').lower()
-                    identifier = ('builtin', normalized_name)
+                    normalized_name = tool_name.replace("Tool", "").lower()
+                    identifier = ("builtin", normalized_name)
                     if identifier in seen_runtime:
                         continue
-                    
+
                     tools.append(
                         {
-                            'name': normalized_name,
-                            'description': f"Built-in {tool_name}",
-                            'parameters': [],
-                            'source': 'builtin',
+                            "name": normalized_name,
+                            "description": f"Built-in {tool_name}",
+                            "parameters": [],
+                            "source": "builtin",
                         }
                     )
                     seen_runtime.add(identifier)
-            
+
             # MCP toolsets loaded at runtime (may expose additional metadata)
-            if hasattr(agent, '_user_toolsets') and agent._user_toolsets:
+            if hasattr(agent, "_user_toolsets") and agent._user_toolsets:
                 for toolset in agent._user_toolsets:
-                    if not hasattr(toolset, 'tool_prefix'):
+                    if not hasattr(toolset, "tool_prefix"):
                         continue
-                    
+
                     try:
-                        if hasattr(toolset, '__aenter__'):
+                        if hasattr(toolset, "__aenter__"):
                             await toolset.__aenter__()
-                        
-                        if not hasattr(toolset, 'list_tools'):
+
+                        if not hasattr(toolset, "list_tools"):
                             continue
-                        
+
                         tool_list = await toolset.list_tools()
                         for mcp_tool in tool_list:
-                            tool_name = mcp_tool.name if hasattr(mcp_tool, 'name') else str(mcp_tool)
+                            tool_name = (
+                                mcp_tool.name
+                                if hasattr(mcp_tool, "name")
+                                else str(mcp_tool)
+                            )
                             display_name = f"{toolset.tool_prefix}_{tool_name}"
-                            identifier = ('mcp', display_name)
+                            identifier = ("mcp", display_name)
                             if identifier in seen_runtime:
                                 continue
-                            
+
                             parameters: list[dict] = []
-                            if hasattr(mcp_tool, 'inputSchema'):
+                            if hasattr(mcp_tool, "inputSchema"):
                                 schema = mcp_tool.inputSchema
                                 if isinstance(schema, dict):
-                                    properties = schema.get('properties', {})
-                                    required = schema.get('required', [])
+                                    properties = schema.get("properties", {})
+                                    required = schema.get("required", [])
                                     for prop_name, prop_schema in properties.items():
                                         parameters.append(
                                             {
-                                                'name': prop_name,
-                                                'required': prop_name in required,
-                                                'type': prop_schema.get('type', 'any'),
-                                                'description': prop_schema.get('description', ''),
+                                                "name": prop_name,
+                                                "required": prop_name in required,
+                                                "type": prop_schema.get("type", "any"),
+                                                "description": prop_schema.get(
+                                                    "description", ""
+                                                ),
                                             }
                                         )
-                            
+
                             tools.append(
                                 {
-                                    'name': display_name,
-                                    'description': getattr(mcp_tool, 'description', '') or '',
-                                    'parameters': parameters,
-                                    'source': 'mcp',
-                                    'mcp_server': getattr(toolset, 'id', None),
+                                    "name": display_name,
+                                    "description": getattr(mcp_tool, "description", "")
+                                    or "",
+                                    "parameters": parameters,
+                                    "source": "mcp",
+                                    "mcp_server": getattr(toolset, "id", None),
                                 }
                             )
                             seen_runtime.add(identifier)
                     except Exception as exc:  # pragma: no cover
-                        logger.error("Failed to extract MCP tools from %s: %s", getattr(toolset, 'id', 'unknown'), exc, exc_info=True)
-            
+                        logger.error(
+                            "Failed to extract MCP tools from %s: %s",
+                            getattr(toolset, "id", "unknown"),
+                            exc,
+                            exc_info=True,
+                        )
+
             # Compute breakdown for logging
             source_counts = {
-                'frontend': len([t for t in tools if t.get('source') == 'frontend']),
-                'backend': len([t for t in tools if t.get('source') == 'backend']),
-                'builtin': len([t for t in tools if t.get('source') == 'builtin']),
-                'mcp': len([t for t in tools if t.get('source') == 'mcp']),
-                'custom': len([t for t in tools if t.get('source') == 'custom']),
+                "frontend": len([t for t in tools if t.get("source") == "frontend"]),
+                "backend": len([t for t in tools if t.get("source") == "backend"]),
+                "builtin": len([t for t in tools if t.get("source") == "builtin"]),
+                "mcp": len([t for t in tools if t.get("source") == "mcp"]),
+                "custom": len([t for t in tools if t.get("source") == "custom"]),
             }
-            
+
             logger.info(
                 "Returning %d tools for agent %s/%s (frontend=%d, backend=%d, builtin=%d, mcp=%d, custom=%d)",
                 len(tools),
                 agent_type,
                 model,
-                source_counts['frontend'],
-                source_counts['backend'],
-                source_counts['builtin'],
-                source_counts['mcp'],
-                source_counts['custom'],
+                source_counts["frontend"],
+                source_counts["backend"],
+                source_counts["builtin"],
+                source_counts["mcp"],
+                source_counts["custom"],
             )
-            
+
             return {
-                'agent_type': agent_type,
-                'model': model,
-                'tools': tools,
-                'total_tools': len(tools),
+                "agent_type": agent_type,
+                "model": model,
+                "tools": tools,
+                "total_tools": len(tools),
             }
-            
+
         except Exception as e:
             logger.error(f"Error listing tools for agent {agent_type}/{model}: {e}")
             return JSONResponse(
-                status_code=500,
-                content={"error": f"Failed to list tools: {str(e)}"}
+                status_code=500, content={"error": f"Failed to list tools: {str(e)}"}
             )
