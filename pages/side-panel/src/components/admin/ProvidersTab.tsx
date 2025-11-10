@@ -265,6 +265,9 @@ const ProviderTypeSelector: React.FC<ProviderTypeSelectorProps> = ({ isLight, va
 export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError, onSuccess }: ProvidersTabProps) {
   const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+
   // Add custom scrollbar styles for this component
   React.useEffect(() => {
     const style = document.createElement('style');
@@ -999,7 +1002,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                   d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"
                 />
               </svg>
-              <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+              <h3 className={cn('text-sm font-semibold', mainTextColor)}>
                 Providers{' '}
                 <span className={cn('text-xs font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>
                   ({filteredProviders.length})
@@ -1072,7 +1075,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                     required
                     className={cn(
                       'w-full px-3 py-1.5 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
-                      isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white',
+                      isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                     )}
                   />
                 </div>
@@ -1138,7 +1141,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                   onChange={e => setCreateForm(prev => ({ ...prev, credentials: e.target.value }))}
                   className={cn(
                     'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                   )}
                 />
               </div>
@@ -1165,7 +1168,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                   onChange={e => setCreateForm(prev => ({ ...prev, modelSettings: e.target.value }))}
                   className={cn(
                     'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                   )}
                 />
               </div>
@@ -1180,7 +1183,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                   onChange={e => setCreateForm(prev => ({ ...prev, metadata: e.target.value }))}
                   className={cn(
                     'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                   )}
                 />
               </div>
@@ -1196,7 +1199,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                   placeholder="{}"
                   className={cn(
                     'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                   )}
                 />
               </div>
@@ -1362,7 +1365,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                               onChange={e => setEditForm(prev => prev ? ({ ...prev, providerKey: e.target.value }) : prev)}
                               className={cn(
                                 'w-full px-3 py-1.5 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
-                                isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white',
+                                isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                               )}
                             />
                           </div>
@@ -1457,7 +1460,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                             readOnly={!showEditCredentials}
                             className={cn(
                               'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                               !showEditCredentials && 'opacity-90'
                             )}
                           />
@@ -1473,7 +1476,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                             onChange={e => setEditForm(prev => prev ? ({ ...prev, modelSettings: e.target.value }) : prev)}
                             className={cn(
                               'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                             )}
                           />
                         </div>
@@ -1488,7 +1491,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                             onChange={e => setEditForm(prev => prev ? ({ ...prev, metadata: e.target.value }) : prev)}
                             className={cn(
                               'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                             )}
                           />
                         </div>
@@ -1503,7 +1506,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                             onChange={e => setEditForm(prev => prev ? ({ ...prev, bedrockModelSettings: e.target.value }) : prev)}
                             className={cn(
                               'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                             )}
                           />
                         </div>
@@ -1637,7 +1640,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                       <div className="flex flex-col gap-3">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                            <div className={cn('text-sm font-semibold', mainTextColor)}>
                               {provider.providerKey}
                             </div>
                             <div className="flex items-center gap-2 mt-1">
@@ -1758,7 +1761,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                               htmlFor={`provider-enabled-${provider.id}`}
                               className={cn(
                                 'text-xs font-medium cursor-pointer block',
-                                isLight ? 'text-gray-900' : 'text-gray-100'
+                                mainTextColor
                               )}
                             >
                               Provider Enabled
@@ -1823,7 +1826,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                   isLight ? 'border-gray-200' : 'border-gray-700',
                 )}
               >
-                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
                   Delete Provider
                 </h2>
                 <button
@@ -1849,7 +1852,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                     </svg>
                   </div>
                   <div className="flex-1">
-                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                    <p className={cn('text-sm font-medium', mainTextColor)}>
                       Delete provider "{deleteConfirm.providerKey}"?
                     </p>
                     <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>

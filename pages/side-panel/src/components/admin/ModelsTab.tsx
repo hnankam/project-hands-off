@@ -298,6 +298,9 @@ const ProviderDropdown: React.FC<ProviderDropdownProps> = ({
 export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, onSuccess }: ModelsTabProps) {
   const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+
   React.useEffect(() => {
     const style = document.createElement('style');
     style.textContent = `
@@ -1129,7 +1132,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                 <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
                 <line x1="12" y1="22.08" x2="12" y2="12" />
               </svg>
-              <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+              <h3 className={cn('text-sm font-semibold', mainTextColor)}>
                 Models{' '}
                 <span className={cn('text-xs font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>
                   ({filteredModels.length})
@@ -1179,7 +1182,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                     required
                     className={cn(
                       'w-full px-3 py-1.5 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
-                      isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white',
+                      isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                     )}
                   />
                 </div>
@@ -1219,7 +1222,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                     required
                     className={cn(
                       'w-full px-3 py-1.5 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
-                      isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white',
+                      isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                     )}
                   />
                 </div>
@@ -1234,7 +1237,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                     placeholder="Gemini 2.5 Flash Lite"
                     className={cn(
                       'w-full px-3 py-1.5 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
-                      isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white',
+                      isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                     )}
                   />
                 </div>
@@ -1250,7 +1253,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                   onChange={e => setCreateForm(prev => ({ ...prev, description: e.target.value }))}
                   className={cn(
                     'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                   )}
                 />
               </div>
@@ -1265,7 +1268,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                   onChange={e => setCreateForm(prev => ({ ...prev, modelSettings: e.target.value }))}
                   className={cn(
                     'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                   )}
                 />
               </div>
@@ -1280,7 +1283,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                   onChange={e => setCreateForm(prev => ({ ...prev, metadata: e.target.value }))}
                   className={cn(
                     'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                   )}
                 />
               </div>
@@ -1499,7 +1502,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                               onChange={e => setEditForm(prev => (prev ? { ...prev, modelKey: e.target.value } : prev))}
                               className={cn(
                                 'w-full px-3 py-1.5 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
-                                isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white',
+                                isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                               )}
                             />
                           </div>
@@ -1529,7 +1532,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                               onChange={e => setEditForm(prev => (prev ? { ...prev, modelName: e.target.value } : prev))}
                               className={cn(
                                 'w-full px-3 py-1.5 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
-                                isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white',
+                                isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                               )}
                             />
                           </div>
@@ -1543,7 +1546,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                               onChange={e => setEditForm(prev => (prev ? { ...prev, displayName: e.target.value } : prev))}
                               className={cn(
                                 'w-full px-3 py-1.5 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
-                                isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white',
+                                isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                               )}
                             />
                           </div>
@@ -1559,7 +1562,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                             onChange={e => setEditForm(prev => (prev ? { ...prev, description: e.target.value } : prev))}
                             className={cn(
                               'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                             )}
                           />
                         </div>
@@ -1574,7 +1577,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                             onChange={e => setEditForm(prev => (prev ? { ...prev, modelSettings: e.target.value } : prev))}
                             className={cn(
                               'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                             )}
                           />
                         </div>
@@ -1589,7 +1592,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                             onChange={e => setEditForm(prev => (prev ? { ...prev, metadata: e.target.value } : prev))}
                             className={cn(
                               'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
+                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
                             )}
                           />
                         </div>
@@ -1762,7 +1765,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                       <div className="flex flex-col gap-3">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                            <div className={cn('text-sm font-semibold', mainTextColor)}>
                               {model.displayName || model.modelKey}
                             </div>
                             <div className={cn('text-xs mt-0.5', isLight ? 'text-gray-500' : 'text-gray-400')}>
@@ -1832,7 +1835,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                           <div className="flex-1 pr-3">
                             <label
                               htmlFor={`model-enabled-${model.id}`}
-                              className={cn('text-xs font-medium cursor-pointer block', isLight ? 'text-gray-900' : 'text-gray-100')}
+                              className={cn('text-xs font-medium cursor-pointer block', mainTextColor)}
                             >
                               Model Enabled
                             </label>
@@ -1890,7 +1893,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                   isLight ? 'border-gray-200' : 'border-gray-700',
                 )}
               >
-                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
                   Delete Model
                 </h2>
                 <button
@@ -1916,7 +1919,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                     </svg>
                   </div>
                   <div className="flex-1">
-                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                    <p className={cn('text-sm font-medium', mainTextColor)}>
                       Delete model "{deleteConfirm.modelKey}"?
                     </p>
                     <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>

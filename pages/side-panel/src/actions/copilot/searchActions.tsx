@@ -54,16 +54,14 @@ export const createSearchPageContentAction = ({ searchManager, isLight, clipText
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        style={{ flexShrink: 0, marginRight: 6 }}>
-        <defs>
-          <linearGradient id="searchContentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" style={{ stopColor: '#3B82F6', stopOpacity: 1 }} />
-            <stop offset="100%" style={{ stopColor: '#8B5CF6', stopOpacity: 1 }} />
-          </linearGradient>
-        </defs>
-        <circle stroke="url(#searchContentGradient)" cx="11" cy="11" r="8" />
-        <path stroke="url(#searchContentGradient)" d="M21 21l-4.35-4.35" />
-        <path stroke="url(#searchContentGradient)" strokeWidth="1.5" d="M8 11h6M8 8h4" opacity="0.5" />
+        style={{ 
+          flexShrink: 0, 
+          marginRight: 6,
+          color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+        }}>
+        <circle stroke="currentColor" cx="11" cy="11" r="8" />
+        <path stroke="currentColor" d="M21 21l-4.35-4.35" />
+        <path stroke="currentColor" strokeWidth="1.5" d="M8 11h6M8 8h4" opacity="0.5" />
       </svg>
     );
     
@@ -127,18 +125,16 @@ export const createSearchFormDataAction = ({ searchManager, isLight, clipText }:
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        style={{ flexShrink: 0, marginRight: 6 }}>
-        <defs>
-          <linearGradient id="searchFormGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" style={{ stopColor: '#10B981', stopOpacity: 1 }} />
-            <stop offset="100%" style={{ stopColor: '#06B6D4', stopOpacity: 1 }} />
-          </linearGradient>
-        </defs>
-        <circle stroke="url(#searchFormGradient)" cx="11" cy="11" r="8" />
-        <path stroke="url(#searchFormGradient)" d="M21 21l-4.35-4.35" />
-        <rect stroke="url(#searchFormGradient)" strokeWidth="1.5" x="7.5" y="8.5" width="2" height="2" opacity="0.5" />
-        <rect stroke="url(#searchFormGradient)" strokeWidth="1.5" x="7.5" y="11.5" width="2" height="2" opacity="0.5" />
-        <path stroke="url(#searchFormGradient)" strokeWidth="1.5" d="M11 9h2M11 12h2" opacity="0.5" />
+        style={{ 
+          flexShrink: 0, 
+          marginRight: 6,
+          color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+        }}>
+        <circle stroke="currentColor" cx="11" cy="11" r="8" />
+        <path stroke="currentColor" d="M21 21l-4.35-4.35" />
+        <rect stroke="currentColor" strokeWidth="1.5" x="7.5" y="8.5" width="2" height="2" opacity="0.5" />
+        <rect stroke="currentColor" strokeWidth="1.5" x="7.5" y="11.5" width="2" height="2" opacity="0.5" />
+        <path stroke="currentColor" strokeWidth="1.5" d="M11 9h2M11 12h2" opacity="0.5" />
       </svg>
     );
     
@@ -252,16 +248,14 @@ export const createSearchClickableElementsAction = ({ searchManager, isLight, cl
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        style={{ flexShrink: 0, marginRight: 6 }}>
-        <defs>
-          <linearGradient id="searchClickableGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" style={{ stopColor: '#F59E0B', stopOpacity: 1 }} />
-            <stop offset="100%" style={{ stopColor: '#EF4444', stopOpacity: 1 }} />
-          </linearGradient>
-        </defs>
-        <circle stroke="url(#searchClickableGradient)" cx="11" cy="11" r="8" />
-        <path stroke="url(#searchClickableGradient)" d="M21 21l-4.35-4.35" />
-        <path stroke="url(#searchClickableGradient)" strokeWidth="1.5" d="M7.5 11.5l2.5 2.5 5-5" opacity="0.6" />
+        style={{ 
+          flexShrink: 0, 
+          marginRight: 6,
+          color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+        }}>
+        <circle stroke="currentColor" cx="11" cy="11" r="8" />
+        <path stroke="currentColor" d="M21 21l-4.35-4.35" />
+        <path stroke="currentColor" strokeWidth="1.5" d="M7.5 11.5l2.5 2.5 5-5" opacity="0.6" />
       </svg>
     );
     

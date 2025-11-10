@@ -224,6 +224,9 @@ const TransportSelector: React.FC<TransportSelectorProps> = ({ isLight, value, o
 const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselectedOrgId, onError, onSuccess }) => {
   const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+
   const [selectedOrgId, setSelectedOrgId] = useState<string>(() => preselectedOrgId || organizations[0]?.id || '');
   const [teamFilterIds, setTeamFilterIds] = useState<string[]>([]);
 
@@ -1063,7 +1066,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
             <div className="text-left">
-              <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+              <h3 className={cn('text-sm font-semibold', mainTextColor)}>
                 {title}
               </h3>
             <p className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>{description}</p>
@@ -1103,8 +1106,8 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                     ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                     : 'bg-blue-900/30 text-blue-400 hover:bg-blue-900/50'
                   : isLight
-                  ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800',
+                  ? 'text-gray-600 hover:text-gray-700 hover:bg-gray-100'
+                  : 'text-gray-400 hover:text-[#bcc1c7] hover:bg-gray-800',
               )}
               title={isEditing ? 'Exit edit mode' : 'Edit scope'}
             >

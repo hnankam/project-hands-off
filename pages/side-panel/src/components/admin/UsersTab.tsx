@@ -88,6 +88,9 @@ const UserSkeletonCard: React.FC<{ isLight: boolean }> = ({ isLight }) => (
 );
 
 export function UsersTab({ isLight, organizations, preselectedOrgId, onError, onSuccess }: UsersTabProps) {
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -663,7 +666,7 @@ useEffect(() => {
               <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
-              <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+              <h3 className={cn('text-sm font-semibold', mainTextColor)}>
                 Users <span className={cn('text-xs font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>({totalUsersCount})</span>
               </h3>
             </div>
@@ -823,7 +826,7 @@ useEffect(() => {
                           </svg>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className={cn('text-sm font-medium truncate', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                          <div className={cn('text-sm font-medium truncate', mainTextColor)}>
                             Invited User
                           </div>
                           <div className={cn('text-xs truncate', isLight ? 'text-gray-600' : 'text-gray-400')}>
@@ -1065,7 +1068,7 @@ useEffect(() => {
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className={cn('text-sm font-medium truncate', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                          <div className={cn('text-sm font-medium truncate', mainTextColor)}>
                             {member.user.name || 'Unknown User'}
                           </div>
                           <div className={cn('text-xs truncate', isLight ? 'text-gray-500' : 'text-gray-400')}>
@@ -1171,7 +1174,7 @@ useEffect(() => {
                   'flex items-center justify-between border-b px-3 py-2',
                   isLight ? 'border-gray-200' : 'border-gray-700',
                 )}>
-                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
                   Remove User
                 </h2>
                   <button
@@ -1212,7 +1215,7 @@ useEffect(() => {
                   </div>
 
                   <div className="flex-1">
-                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                    <p className={cn('text-sm font-medium', mainTextColor)}>
                       Permanently remove "{userToDelete.email}"?
                     </p>
                     <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
@@ -1276,7 +1279,7 @@ useEffect(() => {
                   'flex items-center justify-between border-b px-3 py-2',
                   isLight ? 'border-gray-200' : 'border-gray-700',
                 )}>
-                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
                   Cancel Invitation
                 </h2>
                 <button
@@ -1317,7 +1320,7 @@ useEffect(() => {
                   </div>
 
                   <div className="flex-1">
-                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                    <p className={cn('text-sm font-medium', mainTextColor)}>
                       Cancel invitation for "{inviteToCancel.email}"?
                     </p>
                     <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>

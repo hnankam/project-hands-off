@@ -25,15 +25,19 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
       DEFINE FIELD IF NOT EXISTS id ON session_metadata TYPE string;
       DEFINE FIELD IF NOT EXISTS title ON session_metadata TYPE string;
       DEFINE FIELD IF NOT EXISTS timestamp ON session_metadata TYPE number;
+      DEFINE FIELD IF NOT EXISTS createdAt ON session_metadata TYPE number;
+      DEFINE FIELD IF NOT EXISTS userId ON session_metadata TYPE string;
       DEFINE FIELD IF NOT EXISTS isActive ON session_metadata TYPE bool;
       DEFINE FIELD IF NOT EXISTS isOpen ON session_metadata TYPE bool;
       DEFINE FIELD IF NOT EXISTS sessionId ON session_metadata TYPE string;
       DEFINE FIELD IF NOT EXISTS selectedAgent ON session_metadata TYPE option<string>;
       DEFINE FIELD IF NOT EXISTS selectedModel ON session_metadata TYPE option<string>;
       DEFINE INDEX IF NOT EXISTS idx_session_sessionId ON session_metadata FIELDS sessionId;
+      DEFINE INDEX IF NOT EXISTS idx_session_userId ON session_metadata FIELDS userId;
       DEFINE INDEX IF NOT EXISTS idx_session_active ON session_metadata FIELDS isActive;
       DEFINE INDEX IF NOT EXISTS idx_session_open ON session_metadata FIELDS isOpen;
       DEFINE INDEX IF NOT EXISTS idx_session_timestamp ON session_metadata FIELDS timestamp;
+      DEFINE INDEX IF NOT EXISTS idx_session_createdAt ON session_metadata FIELDS createdAt;
 
       -- Session Messages Table (heavy data, rarely accessed all at once)
       DEFINE TABLE IF NOT EXISTS session_messages SCHEMALESS;
@@ -73,6 +77,38 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
         IF type::is::object(id) THEN id.id ELSE id END
       ) WHERE sessionId = NONE;
     `);
+
+    // Backfill createdAt for existing sessions using their current timestamp
+    const sessionsWithoutCreatedAt = await worker.query<any[]>(`
+      SELECT * FROM session_metadata WHERE createdAt = NONE;
+    `);
+    
+    if (sessionsWithoutCreatedAt && sessionsWithoutCreatedAt[0]?.length > 0) {
+      log('[SessionSchema] Backfilling createdAt for', sessionsWithoutCreatedAt[0].length, 'sessions...');
+      for (const session of sessionsWithoutCreatedAt[0]) {
+        const sessionId = typeof session.id === 'object' ? session.id.id : session.id;
+        const createdAt = session.timestamp || Date.now();
+        await worker.query(`
+          UPDATE session_metadata SET createdAt = $createdAt WHERE sessionId = $sessionId;
+        `, { sessionId, createdAt });
+      }
+      log('[SessionSchema] ✅ createdAt backfill completed');
+    }
+
+    // Migration: Delete sessions without userId (no backward compatibility)
+    const sessionsWithoutUserId = await worker.query<any[]>(`
+      SELECT * FROM session_metadata WHERE userId = NONE;
+    `);
+    
+    if (sessionsWithoutUserId && sessionsWithoutUserId[0]?.length > 0) {
+      log('[SessionSchema] ⚠️  Found', sessionsWithoutUserId[0].length, 'sessions without userId - deleting them (no backward compatibility)');
+      await worker.query(`
+        DELETE FROM session_metadata WHERE userId = NONE;
+      `);
+      log('[SessionSchema] ✅ Deleted sessions without userId');
+    } else {
+      log('[SessionSchema] ℹ️  No sessions without userId found');
+    }
  
     log('[SessionSchema] ✅ Session storage schema initialized successfully');
   } catch (error) {
@@ -87,7 +123,9 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
 export interface SessionMetadata {
   id: string;
   title: string;
-  timestamp: number;
+  timestamp: number; // Last updated timestamp
+  createdAt: number; // Creation timestamp (used for ordering)
+  userId: string; // User ID (required - all sessions must belong to a user)
   isActive: boolean;
   isOpen: boolean;
   selectedAgent?: string;

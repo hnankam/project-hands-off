@@ -700,7 +700,11 @@ const SummaryCard: React.FC<{
   label: string;
   value: string;
   description: string;
-}> = ({ isLight, label, value, description }) => (
+}> = ({ isLight, label, value, description }) => {
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+  
+  return (
   <div
     className={cn(
       'rounded-lg border px-3 py-2.5 transition-colors',
@@ -710,7 +714,7 @@ const SummaryCard: React.FC<{
     <div className={cn('text-xs font-medium', isLight ? 'text-gray-500' : 'text-gray-400')}>
       {label}
     </div>
-    <div className={cn('mt-1 text-xl font-bold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+      <div className={cn('mt-1 text-xl font-bold', mainTextColor)}>
       {value}
     </div>
     <div className={cn('mt-0.5 text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
@@ -718,6 +722,7 @@ const SummaryCard: React.FC<{
     </div>
   </div>
 );
+};
 
 type ModelChartType = 'area-step' | 'stacked-area' | 'line' | 'line-dots' | 'bar';
 type TokenMetricType = 'total' | 'request' | 'response';
@@ -754,6 +759,9 @@ const TimeseriesCard: React.FC<{
   rangeKey: string;
   series: ModelTimeseriesSeries[];
 }> = ({ isLight, title, rangeKey, series }) => {
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+
   const [chartType, setChartType] = useState<ModelChartType>('area-step');
   const [tokenMetric, setTokenMetric] = useState<TokenMetricType>('total');
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -850,7 +858,7 @@ const TimeseriesCard: React.FC<{
                     {labelMap[String(entry.dataKey)] || ''}
                   </span>
                 </div>
-                <span className={cn('text-xs font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                <span className={cn('text-xs font-medium', mainTextColor)}>
                   {numberFormatter.format(Number(entry.value) || 0)}
                 </span>
               </div>
@@ -998,7 +1006,7 @@ const TimeseriesCard: React.FC<{
       )}
     >
       <div className={cn('flex items-center justify-between px-4 py-2 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
-        <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>{title}</h3>
+        <h3 className={cn('text-sm font-semibold', mainTextColor)}>{title}</h3>
         <div className="flex items-center gap-2">
           {/* Token Metric Selector */}
           <div className="relative">
@@ -1067,7 +1075,8 @@ const TimeseriesCard: React.FC<{
             )}
           </div>
 
-          {/* Chart Type Selector */}
+          {/* Chart Type Selector - Hidden for now */}
+          {false && (
           <div className="relative">
             <button
               type="button"
@@ -1137,6 +1146,7 @@ const TimeseriesCard: React.FC<{
               </>
             )}
           </div>
+          )}
         </div>
       </div>
 
@@ -1180,7 +1190,11 @@ const BreakdownCard: React.FC<{
   isLight: boolean;
   title: string;
   data: BreakdownItem[];
-}> = ({ isLight, title, data }) => (
+}> = ({ isLight, title, data }) => {
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+
+  return (
   <div
     className={cn(
       'rounded-lg border transition-colors',
@@ -1188,7 +1202,7 @@ const BreakdownCard: React.FC<{
     )}
   >
     <div className={cn('px-4 py-2 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
-      <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+        <h3 className={cn('text-sm font-semibold', mainTextColor)}>
         {title}
       </h3>
     </div>
@@ -1246,7 +1260,7 @@ const BreakdownCard: React.FC<{
                               Total tokens
                             </span>
                           </div>
-                          <span className={cn('text-xs font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                          <span className={cn('text-xs font-medium', mainTextColor)}>
                             {numberFormatter.format(entry.value as number)}
                           </span>
                         </div>
@@ -1268,8 +1282,12 @@ const BreakdownCard: React.FC<{
     </div>
   </div>
 );
+};
 
 export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, preselectedOrgId, onError, onSuccess }) => {
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+
   const [usageData, setUsageData] = useState<UsageResponse | null>(null);
   const [filters, setFilters] = useState<UsageFilters>(DEFAULT_FILTERS);
   const [loading, setLoading] = useState(true);
@@ -1653,7 +1671,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
             'flex items-center justify-center rounded-lg border p-2 transition-colors flex-shrink-0',
             isLight
               ? 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-              : 'border-gray-700 bg-[#151C24] text-gray-200 hover:bg-gray-800',
+              : 'border-gray-700 bg-[#151C24] text-[#bcc1c7] hover:bg-gray-800',
           )}
           disabled={loading || refreshing}
           title="Refresh"
@@ -1705,12 +1723,12 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
       >
         <div className="space-y-3">
           <div className={cn('flex items-center justify-between px-4 py-2 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
-            <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+            <h3 className={cn('text-sm font-semibold', mainTextColor)}>
               Overall Token Usage
             </h3>
             
-            {/* Chart Type Selector - only show when there's data */}
-            {chartData.length > 0 && (
+            {/* Chart Type Selector - Hidden for now */}
+            {false && chartData.length > 0 && (
               <div className="relative">
                 <button
                   type="button"
@@ -1942,7 +1960,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                                        entry.name === 'responseTokens' ? 'Response tokens' : entry.name}
                                     </span>
                                   </div>
-                                  <span className={cn('text-xs font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                                  <span className={cn('text-xs font-medium', mainTextColor)}>
                                     {numberFormatter.format(entry.value as number)}
                                   </span>
                                 </div>
@@ -2330,7 +2348,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
         )}
       >
         <div className={cn('flex items-center justify-between border-b px-4 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
-          <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+          <h3 className={cn('text-sm font-semibold', mainTextColor)}>
             Usage Activity
           </h3>
           {usageData?.recent.pagination && (
@@ -2480,10 +2498,10 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                       minute: '2-digit',
                     })}
                   </td>
-                  <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                  <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
                     {row.agent}
                   </td>
-                  <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                  <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
                     {row.model}
                   </td>
                   <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -2495,7 +2513,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                   <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
                     {numberFormatter.format(row.responseTokens)}
                   </td>
-                  <td className={cn('px-3 py-2 text-right tabular-nums font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                  <td className={cn('px-3 py-2 text-right tabular-nums font-medium', mainTextColor)}>
                     {numberFormatter.format(row.totalTokens)}
                   </td>
                 </tr>

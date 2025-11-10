@@ -32,6 +32,7 @@ export interface UsageStats {
 }
 
 export interface AgentStepState {
+  sessionId?: string;
   steps: {
     description: string;
     status: "pending" | "running" | "completed" | "failed" | "deleted";

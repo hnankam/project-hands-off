@@ -186,7 +186,7 @@ const SettingsButton: React.FC<{ isLight: boolean; theme: string; onOpenSettings
             <label
               className={cn(
                 'text-xs font-medium block mb-2',
-                isLight ? 'text-gray-900' : 'text-gray-100'
+                isLight ? 'text-gray-700' : 'text-[#bcc1c7]'
               )}
             >
               Theme
@@ -296,6 +296,9 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const { organization, activeTeam, user } = useAuth();
   const { sessions, currentSessionId, isLoading: sessionsLoading } = useSessionStorageDB();
   const canAccessSessions = !!(organization && activeTeam);
+
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
 
   const [creatingSession, setCreatingSession] = useState(false);
   const [actionMessage, setActionMessage] = useState<ActionMessage | null>(null);
@@ -755,7 +758,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                       {teamLabel}
                     </span>
                   </div>
-                  <h1 className={cn('text-xl font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                  <h1 className={cn('text-xl font-semibold', mainTextColor)}>
                     {heroName ? `Welcome back, ${heroName.split(' ')[0]}!` : 'Welcome back!'}
                   </h1>
                   <p className={cn('text-sm', isLight ? 'text-gray-600' : 'text-gray-400')}>
@@ -784,7 +787,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
               className={cn(
                       'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold transition-colors',
                 canAccessSessions
-                        ? isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-500 text-white hover:bg-blue-400'
+                        ? isLight ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-blue-600 text-white hover:bg-blue-500'
                         : isLight ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-gray-800 text-gray-500 cursor-not-allowed'
                     )}
                   >
@@ -800,7 +803,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                       'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold transition-colors border',
                       creatingSession
                         ? isLight ? 'bg-gray-200 text-gray-400 cursor-wait border-gray-300' : 'bg-gray-700 text-gray-400 cursor-wait border-gray-600'
-                        : isLight ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200' : 'bg-blue-900/20 text-blue-300 hover:bg-blue-900/30 border-blue-800/50'
+                        : isLight ? 'bg-white text-gray-600 hover:bg-gray-50 border-blue-300' : 'bg-[#151C24] text-gray-300 hover:bg-[#1a2330] border-blue-700'
                     )}
                   >
                     {creatingSession ? (
@@ -819,7 +822,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                 onClick={() => onGoAdmin('organizations')}
                 className={cn(
                           'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold transition-colors border',
-                          isLight ? 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-300' : 'bg-gray-800/40 text-gray-300 hover:bg-gray-800/60 border-gray-700'
+                          isLight ? 'bg-white text-gray-600 hover:bg-gray-50 border-gray-300' : 'bg-[#151C24] text-gray-300 hover:bg-[#1a2330] border-gray-700'
                         )}
                       >
                         <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -861,11 +864,11 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                       'flex-shrink-0 px-3 py-1 text-xs font-medium rounded transition-colors capitalize',
                       activeHomeTab === tab
                         ? isLight
-                          ? 'bg-gray-200 text-gray-900'
-                          : 'bg-gray-700 text-gray-100'
+                          ? 'bg-gray-200 text-gray-700'
+                          : 'bg-gray-700 text-[#bcc1c7]'
                         : isLight
-                        ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                        : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                        ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-[#bcc1c7]',
                     )}>
                     {tab === 'insights' ? 'Insights & Highlights' : tab}
               </button>
@@ -892,7 +895,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
           </div>
                         {renderIcon(card.icon)}
                       </div>
-                      <div className={cn('text-2xl font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                      <div className={cn('text-2xl font-semibold', mainTextColor)}>
                         {card.value}
                       </div>
                       <div className={cn('mt-1 text-xs leading-snug', isLight ? 'text-gray-600' : 'text-gray-400')}>
@@ -917,7 +920,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                   >
                     {/* Header Row */}
                     <div className="flex items-center justify-between px-4 py-2">
-                      <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                      <h3 className={cn('text-sm font-semibold', mainTextColor)}>
                         Recent Sessions
                       </h3>
                       <button
@@ -1047,7 +1050,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                                       )}
                                   </div>
                                 </td>
-                                <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                                <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
                                       {prettifyLabel(session.selectedAgent)}
                                 </td>
                                 <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -1100,7 +1103,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                     )}
                   >
                     <div className="pr-32">
-                        <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                        <h3 className={cn('text-sm font-semibold', mainTextColor)}>
                           Usage Overview
                         </h3>
                         <p className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-500')}>
@@ -1128,7 +1131,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                           'flex items-center justify-center w-8 h-8 rounded border transition-colors flex-shrink-0',
                           isLight
                             ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                            : 'bg-[#151C24] border-gray-700 text-gray-200 hover:bg-gray-800',
+                            : 'bg-[#151C24] border-gray-700 text-[#bcc1c7] hover:bg-gray-800',
                       )}
                         title="Refresh usage metrics"
                       >
@@ -1153,7 +1156,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           Prompt Tokens
                         </div>
-                        <div className={cn('mt-1 text-lg font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                        <div className={cn('mt-1 text-lg font-semibold', mainTextColor)}>
                           {formatNumber(aggregatedUsage.request)}
                         </div>
                         <div className={cn('mt-2 h-2 rounded-full', isLight ? 'bg-gray-200' : 'bg-gray-700')}>
@@ -1167,7 +1170,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           Completion Tokens
                         </div>
-                        <div className={cn('mt-1 text-lg font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                        <div className={cn('mt-1 text-lg font-semibold', mainTextColor)}>
                           {formatNumber(aggregatedUsage.response)}
                         </div>
                         <div className={cn('mt-2 h-2 rounded-full', isLight ? 'bg-gray-200' : 'bg-gray-700')}>
@@ -1181,7 +1184,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           Requests Logged
                         </div>
-                        <div className={cn('mt-1 text-lg font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                        <div className={cn('mt-1 text-lg font-semibold', mainTextColor)}>
                           {formatNumber(aggregatedUsage.requestCount)}
                         </div>
                         <div className={cn('text-[11px]', isLight ? 'text-gray-600' : 'text-gray-400')}>
@@ -1194,7 +1197,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           Sessions Tracked
                         </div>
-                        <div className={cn('mt-1 text-lg font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                        <div className={cn('mt-1 text-lg font-semibold', mainTextColor)}>
                           {formatNumber(sessionsWithUsageCount)}
                         </div>
                         <div className={cn('text-[11px]', isLight ? 'text-gray-600' : 'text-gray-400')}>
@@ -1222,7 +1225,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                       isLight ? 'border-gray-200' : 'border-gray-700'
                     )}
                   >
-                    <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                    <h3 className={cn('text-sm font-semibold', mainTextColor)}>
                       Insights & Highlights
                     </h3>
                     <p className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-500')}>
@@ -1238,7 +1241,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         <ul className="space-y-1.5">
                           {uniqueAgents.slice(0, 3).map(([agent, count]) => (
                             <li key={agent} className="flex items-center justify-between">
-                              <span className={cn(isLight ? 'text-gray-700' : 'text-gray-200')}>
+                              <span className={mainTextColor}>
                                 {prettifyLabel(agent)}
                               </span>
                               <span className={cn('font-mono', isLight ? 'text-gray-500' : 'text-gray-400')}>
@@ -1261,7 +1264,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         <ul className="space-y-1.5">
                           {uniqueModels.slice(0, 3).map(([model, count]) => (
                             <li key={model} className="flex items-center justify-between">
-                              <span className={cn(isLight ? 'text-gray-700' : 'text-gray-200')}>
+                              <span className={mainTextColor}>
                                 {prettifyLabel(model)}
                               </span>
                               <span className={cn('font-mono', isLight ? 'text-gray-500' : 'text-gray-400')}>
@@ -1396,7 +1399,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                   'flex items-center justify-between border-b px-3 py-2',
                   isLight ? 'border-gray-200' : 'border-gray-700',
                 )}>
-                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
                   Preferences
                 </h2>
                 <button
@@ -1426,7 +1429,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
               <label
                 className={cn(
                   'text-xs font-medium block mb-2',
-                  isLight ? 'text-gray-900' : 'text-gray-100'
+                  mainTextColor
                 )}
               >
                 Theme

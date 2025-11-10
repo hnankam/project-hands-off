@@ -39,17 +39,17 @@ export const WaitCountdown: React.FC<WaitCountdownProps> = ({ seconds, status, i
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ flexShrink: 0, marginRight: 6, display: 'inline-block', verticalAlign: 'middle' }}>
-      <defs>
-        <linearGradient id="waitIconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style={{ stopColor: '#8B5CF6', stopOpacity: 1 }} />
-          <stop offset="100%" style={{ stopColor: '#EC4899', stopOpacity: 1 }} />
-        </linearGradient>
-      </defs>
+      style={{ 
+        flexShrink: 0, 
+        marginRight: 6, 
+        display: 'inline-block', 
+        verticalAlign: 'middle',
+        color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+      }}>
       {/* Clock circle */}
-      <circle stroke="url(#waitIconGradient)" cx="12" cy="12" r="10" />
+      <circle stroke="currentColor" cx="12" cy="12" r="10" />
       {/* Clock hands */}
-      <path stroke="url(#waitIconGradient)" d="M12 6v6l4 2" />
+      <path stroke="currentColor" d="M12 6v6l4 2" />
     </svg>
   );
 

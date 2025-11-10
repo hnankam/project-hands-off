@@ -26,6 +26,12 @@ const RedFailIcon = () => (
 );
 
 export interface AgentStepState {
+  /**
+   * Session identifier that owns this task progress. Used to scope progress
+   * cards and prevent cross-session bleed when multiple chats share the same
+   * Copilot agent name.
+   */
+  sessionId?: string;
   steps: {
     description: string;
     status: "pending" | "running" | "completed" | "failed" | "deleted";
@@ -321,6 +327,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     return (
       <div
         ref={cardRef as any}
+        data-session-id={state.sessionId ?? ''}
         className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded text-[11px] ${
           isLight
             ? 'bg-gray-50 text-gray-700 border border-gray-200'
@@ -374,6 +381,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     <div
       ref={cardRef as any}
       data-testid="task-progress"
+      data-session-id={state.sessionId ?? ''}
       className={`w-full rounded-lg p-2 text-[11px] ${
         isLight
           ? "bg-white text-gray-800 border border-gray-200"
@@ -479,6 +487,22 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
            const isDragSource = draggingIndex === index;
            const isDragOver = dragOverIndex === index && draggingIndex !== index;
 
+          const containerClasses = (() => {
+            if (isDeleted) {
+              return isLight
+                ? 'bg-gray-100 border border-gray-300 opacity-60'
+                : 'bg-gray-800/50 border border-gray-600 opacity-60';
+            }
+            if (isHistorical) {
+              return isLight
+                ? 'bg-gray-50 border border-gray-200 opacity-80'
+                : 'bg-gray-800/40 border border-gray-600 opacity-80';
+            }
+            return isLight
+              ? 'bg-white border border-gray-200'
+              : 'bg-gray-800/40 border border-gray-700';
+          })();
+
           return (
             <div
               key={index}
@@ -488,26 +512,10 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
               onDrop={(e) => draggableEnabled && handleDrop(e, index)}
               onDragEnd={handleDragEnd}
               className={`group flex items-center gap-1.5 px-1.5 py-1 rounded transition-all ${
-                isDeleted
-                  ? isLight
-                    ? "bg-gray-100 border border-gray-300 opacity-60"
-                    : "bg-gray-800/50 border border-gray-600 opacity-60"
-                  : isCompleted
-                    ? isLight
-                      ? "bg-green-50 border border-green-200"
-                      : "bg-green-500/10 border border-green-500/30"
-                    : isRunning
-                      ? isLight
-                        ? "bg-blue-50 border border-blue-200"
-                        : "bg-blue-500/10 border border-blue-500/30"
-                    : isFailed
-                      ? isLight
-                        ? "bg-red-50 border border-red-200"
-                        : "bg-red-500/10 border border-red-500/30"
-                      : isLight
-                        ? "bg-gray-50/50 border border-gray-200/50"
-                        : "bg-gray-600/10 border border-gray-600/30"
-              } ${draggableEnabled ? 'cursor-grab active:cursor-grabbing' : ''} ${isDragSource ? (isLight ? 'opacity-70' : 'opacity-70') : ''} ${isDragOver ? (isLight ? 'ring-1 ring-blue-300' : 'ring-1 ring-blue-500/50') : ''}`}
+                containerClasses
+              } ${draggableEnabled ? 'cursor-grab active:cursor-grabbing' : ''} ${
+                isDragSource ? 'opacity-70' : ''
+              } ${isDragOver ? (isLight ? 'ring-1 ring-blue-300' : 'ring-1 ring-blue-500/50') : ''}`}
             >
                {/* Status Icon - matching model switch overlay */}
                {isDeleted ? (
@@ -544,22 +552,8 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                 <div
                   data-testid="task-step-text"
                   className={`flex-1 min-w-0 text-[10px] ${isDeleted ? 'line-through' : ''} ${
-                    isDeleted
-                      ? isLight
-                        ? 'text-gray-500'
-                        : 'text-gray-500'
-                      : isCompleted
-                        ? 'text-green-600 font-medium'
-                        : isRunning
-                          ? isLight
-                            ? 'text-gray-700 font-medium'
-                            : 'text-gray-200 font-medium'
-                          : isFailed
-                            ? 'text-red-600 font-medium'
-                            : isLight
-                              ? 'text-gray-500'
-                              : 'text-gray-400'
-                  }`}
+                    isLight ? 'text-gray-700' : 'text-gray-200'
+                  } ${isRunning || isCompleted || isFailed ? 'font-medium' : ''}`}
                 >
                   {step.description}
                 </div>

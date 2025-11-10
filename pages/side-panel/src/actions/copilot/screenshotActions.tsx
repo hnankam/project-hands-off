@@ -66,7 +66,7 @@ export const createTakeScreenshotAction = ({ isLight }: ScreenshotActionDependen
       completeMessage += ` • ${width}×${height}px, ${sizeKB}KB`;
     }
     
-    // Camera icon with colorful gradient
+    // Camera icon
     const cameraIcon = (
       <svg
         width="14"
@@ -76,23 +76,15 @@ export const createTakeScreenshotAction = ({ isLight }: ScreenshotActionDependen
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        style={{ flexShrink: 0, marginRight: 6 }}
+        style={{ 
+          flexShrink: 0, 
+          marginRight: 6,
+          color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+        }}
       >
-        <defs>
-          <linearGradient id="cameraBodyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" style={{ stopColor: '#4A90E2', stopOpacity: 1 }} />
-            <stop offset="50%" style={{ stopColor: '#7B68EE', stopOpacity: 1 }} />
-            <stop offset="100%" style={{ stopColor: '#9370DB', stopOpacity: 1 }} />
-          </linearGradient>
-          <linearGradient id="cameraLensGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" style={{ stopColor: '#FF6B6B', stopOpacity: 1 }} />
-            <stop offset="50%" style={{ stopColor: '#FFA500', stopOpacity: 1 }} />
-            <stop offset="100%" style={{ stopColor: '#FFD700', stopOpacity: 1 }} />
-          </linearGradient>
-        </defs>
-        {/* Camera body in cool blue-purple gradient, lens in warm red-orange-gold gradient */}
-        <path stroke="url(#cameraBodyGradient)" d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-        <circle stroke="url(#cameraLensGradient)" cx="12" cy="13" r="3" />
+        {/* Camera body and lens */}
+        <path stroke="currentColor" d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+        <circle stroke="currentColor" cx="12" cy="13" r="3" />
       </svg>
     );
     

@@ -349,8 +349,8 @@ export const ToolMultiSelector: React.FC<ToolMultiSelectorProps> = ({
                 className={cn(
                   'w-full pl-7 pr-2 py-1.5 text-xs rounded border outline-none focus:ring-2 focus:ring-blue-500',
                   isLight
-                    ? 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400'
-                    : 'bg-[#0D1117] border-gray-600 text-gray-100 placeholder-gray-500'
+                    ? 'bg-gray-50 border-gray-300 text-gray-700 placeholder-gray-400'
+                    : 'bg-[#0D1117] border-gray-600 text-[#bcc1c7] placeholder-gray-500'
                 )}
               />
             </div>
@@ -416,7 +416,7 @@ export const ToolMultiSelector: React.FC<ToolMultiSelectorProps> = ({
                           onClick={() => toggleCategory(type)}
                           className={cn(
                             'flex items-center gap-1.5 flex-1 text-xs font-medium transition-colors text-left',
-                            isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-gray-100'
+                            isLight ? 'text-gray-700 hover:text-gray-700' : 'text-gray-300 hover:text-[#bcc1c7]'
                           )}
                         >
                           <svg

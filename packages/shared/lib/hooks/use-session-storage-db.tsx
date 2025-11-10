@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useSyncExternalStore } from 'react';
 import { sessionStorageDB } from '../db/session-storage-db.js';
-import type { SessionMetadata, SessionUsageStats } from '../db/session-schema.js';
+import type { SessionAgentState, SessionMetadata, SessionUsageStats } from '../db/session-schema.js';
 
 /**
  * Session storage state (matches old interface)
@@ -31,10 +31,19 @@ function createSessionStore() {
       console.log('[SessionStore] DB changed, refetching data...', event);
       // Refetch data and notify listeners
       fetchData()
+        .then(() => {
+          console.log('[SessionStore] Data refetched successfully, notifying listeners');
+          listeners.forEach(listener => {
+            try {
+              listener();
+            } catch (err) {
+              console.error('[SessionStore] Listener error:', err);
+            }
+          });
+        })
         .catch(error => {
           console.error('[SessionStore] Failed to refetch after change:', error);
-        })
-        .then(() => {
+          // Still notify listeners even on error so UI can update
           listeners.forEach(listener => {
             try {
               listener();
@@ -54,12 +63,24 @@ function createSessionStore() {
         sessionStorageDB.getCurrentSessionId(),
       ]);
 
-      console.log('[useSessionStorageDB] ✅ Fetched data:', { sessionsCount: sessions.length, currentSessionId, firstSession: sessions[0] });
-      cache = { sessions, currentSessionId };
+      // Ensure sessions is always an array
+      const validSessions = Array.isArray(sessions) ? sessions : [];
+      
+      console.log('[useSessionStorageDB] ✅ Fetched data:', { 
+        sessionsCount: validSessions.length, 
+        currentSessionId, 
+        firstSession: validSessions[0],
+        sessionsIsArray: Array.isArray(sessions)
+      });
+      
+      cache = { sessions: validSessions, currentSessionId };
       return cache;
     } catch (error) {
       console.error('[useSessionStorageDB] ❌ Failed to fetch data:', error);
-      throw error;
+      // Return empty state on error instead of throwing
+      const emptyState = { sessions: [], currentSessionId: null };
+      cache = emptyState;
+      return emptyState;
     }
   };
 
@@ -144,8 +165,21 @@ export const useSessionStorageDB = (): SessionStorageState => {
 export const sessionStorageDBWrapper = {
   /**
    * Add a new session
+   * Requires userId to be set via setCurrentUserId() first
    */
   async addSession(title: string): Promise<void> {
+    console.log('[sessionStorageDBWrapper:addSession] 📝 Creating session:', title);
+    
+    // Verify userId is set
+    const userId = sessionStorageDB.getCurrentUserId();
+    if (!userId) {
+      const error = new Error('[sessionStorageDBWrapper:addSession] ❌ Cannot create session: No user is logged in. Call setCurrentUserId() first.');
+      console.error(error.message);
+      throw error;
+    }
+
+    console.log('[sessionStorageDBWrapper:addSession] ℹ️  User ID verified:', userId);
+
     // Find the last selected agent and model from existing sessions
     const sessions = await sessionStorageDB.getAllSessions();
     let lastSelectedAgent = 'general';
@@ -159,15 +193,20 @@ export const sessionStorageDBWrapper = {
         lastSelectedAgent = sessionWithModel.selectedAgent || lastSelectedAgent;
         lastSelectedModel = sessionWithModel.selectedModel || lastSelectedModel;
       }
+      
+      console.log('[sessionStorageDBWrapper:addSession] ℹ️  Using last selected:', { lastSelectedAgent, lastSelectedModel });
     }
 
     await sessionStorageDB.addSession({
       title,
+      userId, // Explicitly pass userId
       isActive: true,
       isOpen: true,
       selectedAgent: lastSelectedAgent,
       selectedModel: lastSelectedModel,
     });
+    
+    console.log('[sessionStorageDBWrapper:addSession] ✅ Session created successfully');
   },
 
   /**
@@ -279,14 +318,14 @@ export const sessionStorageDBWrapper = {
   /**
    * Update agent step state
    */
-  async updateAgentStepState(sessionId: string, state: { steps: any[] }): Promise<void> {
-    await sessionStorageDB.updateAgentState(sessionId, state);
+  async updateAgentStepState(sessionId: string, state: SessionAgentState): Promise<void> {
+    await sessionStorageDB.updateAgentState(sessionId, { steps: state.steps });
   },
 
   /**
    * Get agent step state
    */
-  getAgentStepState(sessionId: string): { steps: any[] } | null {
+  getAgentStepState(sessionId: string): SessionAgentState | null {
     // Note: Synchronous version - will need to be replaced with async
     console.warn('[useSessionStorageDB] getAgentStepState called synchronously - returning null. Use async version.');
     return null;
@@ -295,8 +334,28 @@ export const sessionStorageDBWrapper = {
   /**
    * Async version of getAgentStepState
    */
-  async getAgentStepStateAsync(sessionId: string): Promise<{ steps: any[] } | null> {
+  async getAgentStepStateAsync(sessionId: string): Promise<SessionAgentState | null> {
     return await sessionStorageDB.getAgentState(sessionId);
+  },
+
+  /**
+   * Set the current user ID for session filtering
+   * Required for multi-user support - must be called when user logs in
+   * Only sessions belonging to this user will be returned
+   */
+  setCurrentUserId(userId: string | null): void {
+    console.log('[sessionStorageDBWrapper:setCurrentUserId] 🔐 Setting user ID:', userId || 'null');
+    sessionStorageDB.setCurrentUserId(userId);
+    console.log('[sessionStorageDBWrapper:setCurrentUserId] ✅ User ID set successfully');
+  },
+
+  /**
+   * Get the current user ID
+   */
+  getCurrentUserId(): string | null {
+    const userId = sessionStorageDB.getCurrentUserId();
+    console.log('[sessionStorageDBWrapper:getCurrentUserId] Current user ID:', userId || 'null');
+    return userId;
   },
 };
 

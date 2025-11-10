@@ -65,10 +65,10 @@ export default function UserMenu({ isLight, onGoAdmin, onGoToSessions }: UserMen
               <div
                 className={cn(
                   'px-3 py-2 border-b text-xs',
-                  isLight ? 'border-gray-200 bg-gray-50 text-gray-700' : 'border-gray-700 bg-[#1A2332] text-gray-200'
+                  isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#1A2332]'
                 )}
               >
-                <p className="font-semibold truncate">
+                <p className="font-semibold truncate" style={{ color: isLight ? '#374151' : '#bcc1c7' }}>
                   {user.name}
                 </p>
                 <p className={cn('truncate', isLight ? 'text-gray-500' : 'text-gray-400')}>

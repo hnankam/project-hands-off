@@ -75,6 +75,20 @@ interface DeploymentsTabProps {
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001';
 const AUTO_REFRESH_INTERVAL_MS = 30000;
 
+const AgentIcon = () => (
+  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+  </svg>
+);
+
+const ModelIcon = () => (
+  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
+    <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+    <line x1="12" y1="22.08" x2="12" y2="12" />
+  </svg>
+);
+
 const DeploymentSkeleton: React.FC<{ isLight: boolean }> = ({ isLight }) => (
   <div className="space-y-4 animate-pulse">
     {/* Stats Cards Skeleton */}
@@ -200,6 +214,9 @@ const relativeTime = (timestamp?: number | null) => {
 };
 
 export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organizations, onError, onSuccess }) => {
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
   const [endpoints, setEndpoints] = useState<EndpointInfo[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -806,6 +823,7 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
                 : 'text-gray-200 hover:bg-gray-700 border-gray-600 bg-[#151C24]',
           )}
         >
+          <AgentIcon />
           {selectedAgents.length > 0 ? (
             <div className="flex flex-wrap gap-1 flex-1 min-w-0">
               {selectedAgents.map(agent => (
@@ -943,6 +961,7 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
                 : 'text-gray-200 hover:bg-gray-700 border-gray-600 bg-[#151C24]',
           )}
         >
+          <ModelIcon />
           {selectedModels.length > 0 ? (
             <div className="flex flex-wrap gap-1 flex-1 min-w-0">
               {selectedModels.map(model => (
@@ -1144,7 +1163,7 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
               'flex items-center justify-center w-8 h-8 rounded border transition-colors',
               isLight
                 ? 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                : 'bg-[#151C24] border-gray-700 text-gray-200 hover:bg-gray-800',
+                : 'bg-[#151C24] border-gray-700 text-[#bcc1c7] hover:bg-gray-800',
             )}
             disabled={refreshing}
             title="Refresh deployments"
@@ -1255,7 +1274,7 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
                             </div>
                             
                             <div className="flex items-center gap-2 text-xs flex-wrap">
-                              <span className={cn('font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                              <span className={cn('font-medium', mainTextColor)}>
                                 {endpoint.agent.name}
                               </span>
                               <span className={cn(isLight ? 'text-gray-400' : 'text-gray-500')}>×</span>
@@ -1333,7 +1352,7 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
                       <div className="flex items-start justify-between gap-2">
                         <div className="space-y-1 flex-1 min-w-0">
                           <div className="flex items-center gap-2 text-sm font-semibold">
-                            <span className={cn(isLight ? 'text-gray-900' : 'text-gray-100')}>{orgLabel}</span>
+                            <span className={cn(mainTextColor)}>{orgLabel}</span>
                             <svg className={cn('w-3.5 h-3.5', isLight ? 'text-gray-400' : 'text-gray-500')} viewBox="0 0 20 20" fill="currentColor">
                               <path d="M3 10h14M3 10l4-4m-4 4l4 4" />
                             </svg>
@@ -1430,18 +1449,31 @@ interface StatCardProps {
   tone: 'default' | 'info' | 'success' | 'warn' | 'error';
 }
 
-const StatCard: React.FC<StatCardProps> = ({ isLight, label, value, tone }) => (
-  <div
-    className={cn(
-      'rounded-lg p-3 flex flex-col gap-1',
-      tone === 'success' && (isLight ? 'bg-green-50 text-green-700' : 'bg-green-900/20 text-green-300'),
-      tone === 'info' && (isLight ? 'bg-blue-50 text-blue-700' : 'bg-blue-900/30 text-blue-300'),
-      tone === 'warn' && (isLight ? 'bg-amber-50 text-amber-700' : 'bg-amber-900/30 text-amber-300'),
-      tone === 'error' && (isLight ? 'bg-red-50 text-red-700' : 'bg-red-900/30 text-red-300'),
-      tone === 'default' && (isLight ? 'bg-gray-100 text-gray-700' : 'bg-[#151C24] text-gray-200'),
-    )}
-  >
-    <span className="text-[11px] uppercase tracking-wide font-semibold opacity-80">{label}</span>
-    <span className="text-xl font-semibold">{value}</span>
-  </div>
-);
+const StatCard: React.FC<StatCardProps> = ({ isLight, label, value, tone }) => {
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+  
+  // Get tone-specific color for the value only
+  const valueColor = 
+    tone === 'success' ? (isLight ? 'text-green-600' : 'text-green-400') :
+    tone === 'info' ? (isLight ? 'text-blue-600' : 'text-blue-400') :
+    tone === 'warn' ? (isLight ? 'text-amber-600' : 'text-amber-400') :
+    tone === 'error' ? (isLight ? 'text-red-600' : 'text-red-400') :
+    mainTextColor;
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border px-3 py-2.5 transition-colors',
+        isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+      )}
+    >
+      <div className={cn('text-xs font-medium', isLight ? 'text-gray-500' : 'text-gray-400')}>
+        {label}
+      </div>
+      <div className={cn('mt-1 text-xl font-bold', valueColor)}>
+        {value}
+      </div>
+    </div>
+  );
+};

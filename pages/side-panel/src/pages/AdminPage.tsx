@@ -73,8 +73,8 @@ const SettingsButton: React.FC<{ isLight: boolean; theme: string; onOpenSettings
         className={cn(
           'p-1 rounded transition-colors',
           isLight
-            ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
+            ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
+            : 'text-gray-400 hover:bg-gray-700 hover:text-[#bcc1c7]',
         )}
         title="Settings">
         <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -102,7 +102,7 @@ const SettingsButton: React.FC<{ isLight: boolean; theme: string; onOpenSettings
             <label
               className={cn(
                 'text-xs font-medium block mb-2',
-                isLight ? 'text-gray-900' : 'text-gray-100'
+                isLight ? 'text-gray-700' : 'text-[#bcc1c7]'
               )}
             >
               Theme
@@ -208,6 +208,9 @@ const SettingsButton: React.FC<{ isLight: boolean; theme: string; onOpenSettings
 export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organizations' }: AdminPageProps) {
   const { user, organization, activeTeam, member } = useAuth();
   const { isLight, theme } = useStorage(exampleThemeStorage);
+
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
   
   // Initialize activeTab from localStorage, fallback to initialTab
   const [activeTab, setActiveTab] = useState<AdminTabKey>(() => {
@@ -351,7 +354,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
           isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
         )}>
         <div className="flex items-center min-w-0 flex-1">
-          <h1 className={cn('text-sm font-semibold truncate', isLight ? 'text-gray-900' : 'text-gray-100')}>
+          <h1 className={cn('text-sm font-semibold truncate', mainTextColor)}>
             Administration
           </h1>
         </div>
@@ -405,11 +408,11 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
                   'flex-shrink-0 px-3 py-1 text-xs font-medium rounded transition-colors capitalize',
                   activeTab === tab
                     ? isLight
-                      ? 'bg-gray-200 text-gray-900'
-                      : 'bg-gray-700 text-gray-100'
+                      ? 'bg-gray-200 text-gray-700'
+                      : 'bg-gray-700 text-[#bcc1c7]'
                     : isLight
-                    ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                    : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                    ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-[#bcc1c7]',
                 )}>
                 {tab}
               </button>
@@ -761,7 +764,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
                   'flex items-center justify-between border-b px-3 py-2',
                   isLight ? 'border-gray-200' : 'border-gray-700',
                 )}>
-                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
                   Preferences
                 </h2>
                 <button
@@ -791,7 +794,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
               <label
                 className={cn(
                   'text-xs font-medium block mb-2',
-                  isLight ? 'text-gray-900' : 'text-gray-100'
+                  mainTextColor
                 )}
               >
                 Theme

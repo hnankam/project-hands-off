@@ -43,22 +43,42 @@ export const useProgressBarState = (
   }, []);
 
   // Track previous state for change detection
-  const prevStateRef = useRef({ hasProgressBar: false, showProgressBar: true });
+  const prevStateRef = useRef<{ hasProgressBar: boolean; showProgressBar: boolean } | null>(null);
+  const prevHasProgressRef = useRef<boolean>(hasProgressData);
+
+  // When progress data disappears, force-hide the progress bar
+  useEffect(() => {
+    if (!hasProgressData && showProgressBar) {
+      setShowProgressBar(false);
+    }
+  }, [hasProgressData, showProgressBar]);
+
+  // When progress data reappears after being absent, reset visibility to true
+  useEffect(() => {
+    if (hasProgressData && !prevHasProgressRef.current) {
+      setShowProgressBar(true);
+    }
+    prevHasProgressRef.current = hasProgressData;
+  }, [hasProgressData]);
 
   /**
    * Effect: Notify parent component of state changes
    * Only triggers when values actually change to prevent unnecessary updates
    */
   useEffect(() => {
-    // Only notify if values actually changed
+    if (!onProgressBarStateChange) {
+      return;
+    }
+
+    const previous = prevStateRef.current;
     if (
-      onProgressBarStateChange &&
-      (prevStateRef.current.hasProgressBar !== hasProgressData ||
-       prevStateRef.current.showProgressBar !== showProgressBar)
+      !previous ||
+      previous.hasProgressBar !== hasProgressData ||
+      previous.showProgressBar !== showProgressBar
     ) {
       prevStateRef.current = { 
         hasProgressBar: hasProgressData, 
-        showProgressBar 
+        showProgressBar,
       };
       onProgressBarStateChange(hasProgressData, showProgressBar, toggleProgressBar);
     }

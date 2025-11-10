@@ -64,23 +64,15 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ flexShrink: 0, marginRight: 6 }}
+      style={{ 
+        flexShrink: 0, 
+        marginRight: 6,
+        color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+      }}
     >
-      <defs>
-        <linearGradient id="wandGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style={{ stopColor: '#FFD700', stopOpacity: 1 }} />
-          <stop offset="50%" style={{ stopColor: '#FFA500', stopOpacity: 1 }} />
-          <stop offset="100%" style={{ stopColor: '#FF69B4', stopOpacity: 1 }} />
-        </linearGradient>
-        <linearGradient id="sparkleGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style={{ stopColor: '#87CEEB', stopOpacity: 1 }} />
-          <stop offset="50%" style={{ stopColor: '#9370DB', stopOpacity: 1 }} />
-          <stop offset="100%" style={{ stopColor: '#FF69B4', stopOpacity: 1 }} />
-        </linearGradient>
-      </defs>
-      {/* Magic wand with sparkles - wand in warm gradient, sparkles in cool gradient */}
-      <path stroke="url(#wandGradient)" d="M3 21l9-9" />
-      <path stroke="url(#sparkleGradient)" d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8 19 13M17.8 6.2 19 5M12.2 6.2 11 5" />
+      {/* Magic wand with sparkles */}
+      <path stroke="currentColor" d="M3 21l9-9" />
+      <path stroke="currentColor" d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8 19 13M17.8 6.2 19 5M12.2 6.2 11 5" />
     </svg>
   );
 

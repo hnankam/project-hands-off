@@ -72,6 +72,10 @@ async function markMigrationComplete(): Promise<void> {
 
 /**
  * Migrate session data from chrome.storage.local to IndexedDB
+ * 
+ * NOTE: Since userId is now required and legacy sessions don't have userId,
+ * this migration will skip importing old sessions. Users must be logged in
+ * to create new sessions.
  */
 export async function migrateSessionStorage(db: SessionStorageDB): Promise<void> {
   log('[Migration] Starting session storage migration...');
@@ -89,86 +93,36 @@ export async function migrateSessionStorage(db: SessionStorageDB): Promise<void>
     const oldMessages: Record<string, any[]> = result[OLD_CHAT_MESSAGES_KEY] || {};
 
     if (!oldState || !oldState.sessions || oldState.sessions.length === 0) {
-      log('[Migration] No existing session data found, creating default session');
+      log('[Migration] No existing session data found');
+      log('[Migration] ⚠️  NOTE: userId is now required. User must log in before creating sessions.');
       
-      // Create a default session
-      const defaultSession = await db.addSession({
-        title: 'Quick Start',
-        isActive: true,
-        isOpen: true,
-        selectedAgent: 'general',
-        selectedModel: 'claude-4.5-haiku',
-      });
-
+      // Don't create default session - user must be logged in
       await markMigrationComplete();
-      log('[Migration] ✅ Created default session:', defaultSession.id);
+      log('[Migration] ✅ Migration complete (no sessions to migrate)');
       return;
     }
 
-    log(`[Migration] Found ${oldState.sessions.length} sessions to migrate`);
+    log(`[Migration] Found ${oldState.sessions.length} legacy sessions`);
+    log('[Migration] ⚠️  Skipping legacy session migration - userId is now required');
+    log('[Migration] ℹ️  Users must log in to create new sessions');
 
-    // Migrate each session
-    for (const oldSession of oldState.sessions) {
-      log(`[Migration] Migrating session: ${oldSession.id} (${oldSession.title})`);
-
-      // 1. Migrate session metadata
-      await db.addSession({
-        title: oldSession.title,
-        isActive: oldSession.isActive,
-        isOpen: oldSession.isOpen,
-        selectedAgent: oldSession.selectedAgent,
-        selectedModel: oldSession.selectedModel,
-      });
-
-      // Override the generated ID with the old one to maintain compatibility
-      // This is a bit hacky but ensures continuity
-      const worker = (db as any).getWorker();
-      await worker.query(
-        'UPDATE session_metadata SET id = $newId WHERE id = $oldId;',
-        { oldId: `session-${Date.now()}`, newId: oldSession.id }
-      );
-
-      // 2. Migrate messages
-      // Messages can come from oldSession.allMessages or from the separate messages storage
-      let messages: any[] = [];
-      
-      if (oldSession.allMessages && oldSession.allMessages.length > 0) {
-        messages = oldSession.allMessages;
-      } else if (oldMessages[oldSession.id] && oldMessages[oldSession.id].length > 0) {
-        messages = oldMessages[oldSession.id];
-      }
-
-      if (messages.length > 0) {
-        await db.updateMessages(oldSession.id, messages);
-        log(`[Migration] ✅ Migrated ${messages.length} messages for session ${oldSession.id}`);
-      }
-
-      // 3. Migrate usage stats if present
-      if (oldSession.usageStats) {
-        await db.updateUsageStats(oldSession.id, oldSession.usageStats);
-        log(`[Migration] ✅ Migrated usage stats for session ${oldSession.id}`);
-      }
-
-      // 4. Migrate agent state if present
-      if (oldSession.agentStepState) {
-        await db.updateAgentState(oldSession.id, oldSession.agentStepState);
-        log(`[Migration] ✅ Migrated agent state for session ${oldSession.id}`);
-      }
-    }
-
-    // Set the current session
-    if (oldState.currentSessionId) {
-      await db.setActiveSession(oldState.currentSessionId);
-      log(`[Migration] ✅ Set current session: ${oldState.currentSessionId}`);
-    }
+    // Skip migration of legacy sessions since they don't have userId
+    // and we've removed backward compatibility
+    
+    // Note: If you want to migrate legacy sessions, you would need to:
+    // 1. Have a default "migration" userId, OR
+    // 2. Prompt user to log in before migration, OR
+    // 3. Assign sessions to the first user who logs in
+    
+    // For now, we'll just mark migration as complete and let users start fresh
 
     // Mark migration as complete
     await markMigrationComplete();
 
     log('[Migration] ✅ Session storage migration completed successfully');
     log('[Migration] 📊 Migration summary:', {
-      totalSessions: oldState.sessions.length,
-      currentSessionId: oldState.currentSessionId,
+      legacySessionsSkipped: oldState.sessions.length,
+      note: 'Users must log in to create new sessions',
     });
 
   } catch (error) {

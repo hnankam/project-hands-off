@@ -41,16 +41,14 @@ export const createGetHtmlChunksByRangeAction = ({ currentPageContent, isLight }
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        style={{ flexShrink: 0, marginRight: 6 }}>
-        <defs>
-          <linearGradient id="htmlPaginationGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" style={{ stopColor: '#3B82F6', stopOpacity: 1 }} />
-            <stop offset="100%" style={{ stopColor: '#8B5CF6', stopOpacity: 1 }} />
-          </linearGradient>
-        </defs>
-        <path stroke="url(#htmlPaginationGradient)" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <path stroke="url(#htmlPaginationGradient)" d="M14 2v6h6" />
-        <path stroke="url(#htmlPaginationGradient)" strokeWidth="1.5" d="M16 13H8M16 17H8M10 9H8" opacity="0.5" />
+        style={{ 
+          flexShrink: 0, 
+          marginRight: 6,
+          color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+        }}>
+        <path stroke="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path stroke="currentColor" d="M14 2v6h6" />
+        <path stroke="currentColor" strokeWidth="1.5" d="M16 13H8M16 17H8M10 9H8" opacity="0.5" />
       </svg>
     );
     
@@ -110,16 +108,14 @@ export const createGetFormChunksByRangeAction = ({ currentPageContent, isLight }
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        style={{ flexShrink: 0, marginRight: 6 }}>
-        <defs>
-          <linearGradient id="formPaginationGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" style={{ stopColor: '#10B981', stopOpacity: 1 }} />
-            <stop offset="100%" style={{ stopColor: '#06B6D4', stopOpacity: 1 }} />
-          </linearGradient>
-        </defs>
-        <path stroke="url(#formPaginationGradient)" d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
-        <path stroke="url(#formPaginationGradient)" d="M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z" />
-        <path stroke="url(#formPaginationGradient)" strokeWidth="1.5" d="M9 12h6M9 16h6" opacity="0.5" />
+        style={{ 
+          flexShrink: 0, 
+          marginRight: 6,
+          color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+        }}>
+        <path stroke="currentColor" d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+        <path stroke="currentColor" d="M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z" />
+        <path stroke="currentColor" strokeWidth="1.5" d="M9 12h6M9 16h6" opacity="0.5" />
       </svg>
     );
     
@@ -179,15 +175,13 @@ export const createGetClickableChunksByRangeAction = ({ currentPageContent, isLi
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        style={{ flexShrink: 0, marginRight: 6 }}>
-        <defs>
-          <linearGradient id="clickablePaginationGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" style={{ stopColor: '#F59E0B', stopOpacity: 1 }} />
-            <stop offset="100%" style={{ stopColor: '#EF4444', stopOpacity: 1 }} />
-          </linearGradient>
-        </defs>
-        <path stroke="url(#clickablePaginationGradient)" d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-        <path stroke="url(#clickablePaginationGradient)" d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+        style={{ 
+          flexShrink: 0, 
+          marginRight: 6,
+          color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+        }}>
+        <path stroke="currentColor" d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+        <path stroke="currentColor" d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
       </svg>
     );
     

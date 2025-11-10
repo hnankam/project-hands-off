@@ -101,41 +101,20 @@ input:focus {
    ========================================================== */
 /* Session tabs scrollbar - ultra-minimal horizontal scrollbar */
 .session-tabs-scroll {
-  scrollbar-width: 1px !important; /* Hide scrollbar in Firefox */
-  -ms-overflow-style: 1px !important; /* Hide scrollbar in IE/Edge */
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE and Edge */
 }
 
-/* Show a minimal scrollbar only on hover for webkit browsers */
-.session-tabs-scroll::-webkit-scrollbar {
-  width: 0px !important;
-  height: 0px !important;
-}
-
-.session-tabs-scroll:hover::-webkit-scrollbar {
-  width: 1px !important;
-  height: 1px !important;
-}
-
-.session-tabs-scroll::-webkit-scrollbar-track {
+.session-tabs-scroll::-webkit-scrollbar,
+.session-tabs-scroll::-webkit-scrollbar-track,
+.session-tabs-scroll::-webkit-scrollbar-track-piece,
+.session-tabs-scroll::-webkit-scrollbar-thumb,
+.session-tabs-scroll::-webkit-scrollbar-button,
+.session-tabs-scroll::-webkit-scrollbar-corner {
+  display: none !important; /* Chrome, Safari, Opera */
+  width: 0 !important;
+  height: 0 !important;
   background: transparent !important;
-}
-
-.session-tabs-scroll::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.3) !important;
-  border-radius: 1px !important;
-}
-
-.session-tabs-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.5) !important;
-}
-
-/* Dark theme session tabs scrollbar */
-.dark .session-tabs-scroll::-webkit-scrollbar-thumb {
-  background: rgba(75, 85, 99, 0.3) !important;
-}
-
-.dark .session-tabs-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(75, 85, 99, 0.5) !important;
 }
 
 /* ==========================================================
@@ -170,32 +149,25 @@ input:focus {
 
 /* ==========================================================
    ADMIN PAGE SCROLLBAR
-   Thin scrollbar for admin page content (2px)
+   Hidden scrollbar (scrolling still works)
    ========================================================== */
+.admin-page-scroll {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE and Edge */
+}
+
 .admin-page-scroll::-webkit-scrollbar {
-  width: 2px;
+  display: none !important; /* Chrome, Safari, Opera */
+  width: 0 !important;
+  height: 0 !important;
 }
 
 .admin-page-scroll::-webkit-scrollbar-track {
-  background: transparent;
+  display: none !important;
 }
 
 .admin-page-scroll::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.3);
-  border-radius: 1px;
-}
-
-.admin-page-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.5);
-}
-
-/* Dark theme admin page scrollbar */
-.dark .admin-page-scroll::-webkit-scrollbar-thumb {
-  background: rgba(75, 85, 99, 0.3);
-}
-
-.dark .admin-page-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(75, 85, 99, 0.5);
+  display: none !important;
 }
 
 /* ==========================================================
@@ -310,9 +282,9 @@ input:focus {
   --copilot-kit-response-background-color: #f9fafb;
   --copilot-kit-response-border-color: #e5e7eb;
   --copilot-kit-separator-color: #e5e7eb;
-  --copilot-kit-text-color: #0C1117;
+  --copilot-kit-text-color: #374151; /* gray-700 - dark grey instead of black */
   --copilot-kit-text-muted-color: #6b7280;
-  --copilot-kit-contrast-color: #0C1117 !important;
+  --copilot-kit-contrast-color: #374151 !important; /* gray-700 - dark grey instead of black */
 } 
 
 .dark {
@@ -325,12 +297,12 @@ input:focus {
   --copilot-kit-border-color: #374151 !important; /* gray-700 to match border */
   --copilot-kit-input-background-color: #151C24 !important; /* gray-800 */
   --copilot-kit-response-background-color: #151C24 !important; /* gray-800 - match status bar */
-  --copilot-kit-response-border-color: #ffffff !important;
+  --copilot-kit-response-border-color: #bcc1c7 !important; /* gray-350 - softer border */
   --copilot-kit-separator-color: #374151 !important; /* gray-700 to match border */
-  --copilot-kit-text-color: #f9fafb !important;
+  --copilot-kit-text-color: #bcc1c7 !important; /* gray-350 - slightly greyer */
   --copilot-kit-text-muted-color: #9ca3af !important;
-  --copilot-kit-contrast-color: #ffffff !important; /* gray-800 */
-  --copilot-kit-secondary-contrast-color: #ffffff !important; /* gray-800 */
+  --copilot-kit-contrast-color: #bcc1c7 !important; /* gray-350 - slightly greyer */
+  --copilot-kit-secondary-contrast-color: #bcc1c7 !important; /* gray-350 - slightly greyer */
 }
 
 /* ==========================================================
@@ -447,11 +419,36 @@ input:focus {
   box-sizing: border-box !important;
   scrollbar-gutter: stable !important;
   scrollbar-width: thin !important;
+  scrollbar-color: transparent transparent !important;
   overflow-y: auto !important;
 }
 
+.copilotKitMessages:hover,
+.copilotKitMessages:active {
+  scrollbar-color: rgba(156, 163, 175, 0.3) transparent !important;
+}
+
+.dark .copilotKitMessages {
+  scrollbar-color: transparent transparent !important;
+}
+
+.dark .copilotKitMessages:hover,
+.dark .copilotKitMessages:active {
+  scrollbar-color: rgba(75, 85, 99, 0.3) transparent !important;
+}
+
 .copilotKitMessages::-webkit-scrollbar {
-  width: 4px !important;
+  width: 3px !important;
+  background: transparent !important;
+}
+
+.copilotKitMessages::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+.dark .copilotKitMessages::-webkit-scrollbar,
+.dark .copilotKitMessages::-webkit-scrollbar-corner {
+  background: transparent !important;
 }
 
 .copilotKitMessages::-webkit-scrollbar-track {
@@ -459,12 +456,29 @@ input:focus {
 }
 
 .copilotKitMessages::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.3) !important;
+  background: transparent !important;
   border-radius: 3px !important;
+  transition: background 0.3s ease !important;
+}
+
+/* Show scrollbar thumb only while scrolling */
+.copilotKitMessages:hover::-webkit-scrollbar-thumb,
+.copilotKitMessages:active::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3) !important;
 }
 
 .copilotKitMessages::-webkit-scrollbar-thumb:hover {
   background: rgba(156, 163, 175, 0.5) !important;
+}
+
+/* Dark mode scrollbar */
+.dark .copilotKitMessages:hover::-webkit-scrollbar-thumb,
+.dark .copilotKitMessages:active::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3) !important;
+}
+
+.dark .copilotKitMessages::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5) !important;
 }
 
 /* ==========================================================
@@ -492,6 +506,7 @@ input:focus {
 :not(.dark) .copilotKitUserMessage {
   background-color: #f9fafb !important; /* bg-gray-50 - matches status bar */
   border-color: #e5e7eb !important; /* border-gray-200 - matches status bar */
+  color: #374151 !important; /* gray-700 - dark grey instead of black */
 }
 
 /* Dark mode user message */
@@ -499,12 +514,14 @@ input:focus {
 .copilot-chat-container.dark .copilotKitUserMessage {
   background-color: var(--copilot-kit-secondary-color) !important;
   border-color: var(--copilot-kit-border-color) !important;
+  color: #bcc1c7 !important; /* gray-350 - slightly greyer text */
 }
 
 .copilotKitAssistantMessage {
   max-width: 100% !important; /* Allow full width instead of 80% */
   width: 100% !important; /* Force full width */
-  padding-right: 0px !important;
+  padding-right: 12px !important;
+  padding-left: 12px !important;
   position: relative !important; /* Ensure controls position relative to message */
   overflow: visible !important; /* Allow controls to overflow outside message bounds */
 }
@@ -541,7 +558,7 @@ input:focus {
 }
 
 .copilotKitMessageControlButton {
-  color: black !important;
+  color: #4b5563 !important; /* gray-600 for light mode (matches tool display text) */
   margin-bottom: 0.75rem !important;
   transition: all 0.2s ease !important;
 }
@@ -565,7 +582,7 @@ input:focus {
 }
 
 .dark .copilotKitMessageControlButton {
-  color: #ffffff !important;
+  color: #6b7280 !important; /* gray-500 for dark mode (matches tool display text) */
   margin-bottom: 0.75rem !important;
 }
 
@@ -584,12 +601,12 @@ input:focus {
 }
 
 .copilotKitActivityDot {
-  background-color: black !important;
+  background-color: #4b5563 !important; /* gray-600 - matches main text colors */
   margin-top: 0.5rem !important;
 }
 
 .dark .copilotKitActivityDot{
-  background-color: #ffffff !important;
+  background-color: #6b7280 !important; /* gray-500 - matches main text colors */
   margin-top: 0.5rem !important;
 }
 
@@ -1263,7 +1280,7 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 
 /* Light mode - secondary button icon colors */
 .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) svg {
-  color: #374151 !important;
+  color: #4b5563 !important; /* gray-600 - matches main text colors */
 }
 
 /* Light mode - primary button (send/stop) colors */
@@ -1282,7 +1299,7 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 
 /* Dark mode - secondary button icon colors */
 .dark .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) svg {
-  color: #d1d5db !important;
+  color: #6b7280 !important; /* gray-500 - matches main text colors */
 }
 
 /* Dark mode - primary button (send/stop) colors */
@@ -1330,6 +1347,19 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 
 .dark .copilotKitPushToTalkRecording svg {
   color: #f87171 !important;
+}
+
+/* Input placeholder colors - matches main text colors */
+.copilotKitInputTextarea::placeholder,
+.copilotKitInput textarea::placeholder {
+  color: #4b5563 !important; /* gray-600 for light mode */
+  opacity: 0.6 !important;
+}
+
+.dark .copilotKitInputTextarea::placeholder,
+.dark .copilotKitInput textarea::placeholder {
+  color: #6b7280 !important; /* gray-500 for dark mode */
+  opacity: 0.6 !important;
 }
 
 /* ---------------------------------------- */

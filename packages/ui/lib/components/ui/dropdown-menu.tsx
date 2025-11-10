@@ -158,10 +158,11 @@ export const DropdownMenuItem = ({ children, onClick, onMouseDown, className, sh
             ? "cursor-not-allowed text-gray-400 opacity-50"
             : "cursor-not-allowed text-gray-500 opacity-50"
           : isLight
-            ? "text-gray-700 hover:bg-gray-100"
-            : "text-gray-200 hover:bg-gray-700/50",
+            ? "hover:bg-gray-100"
+            : "hover:bg-gray-700/50",
         className
       )}
+      style={!disabled ? { color: isLight ? '#374151' : '#bcc1c7' } : undefined}
       onClick={disabled ? undefined : onClick}
       onMouseDown={disabled ? undefined : onMouseDown}
       disabled={disabled}
@@ -228,8 +229,9 @@ export const DropdownSubmenu = ({ label, children, align = 'right', isLight = tr
       <button
         className={cn(
           "flex w-full items-center justify-between px-3 py-2 text-xs font-medium transition-colors text-left",
-          effectiveLight ? "text-gray-700 hover:bg-gray-100" : "text-gray-200 hover:bg-gray-700/50"
+          effectiveLight ? "hover:bg-gray-100" : "hover:bg-gray-700/50"
         )}
+        style={{ color: effectiveLight ? '#374151' : '#bcc1c7' }}
         onClick={toggle}
       >
         <span>{label}</span>

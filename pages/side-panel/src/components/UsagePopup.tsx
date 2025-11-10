@@ -168,7 +168,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
               isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700'
             }`}
           >
-            <h3 className={`text-sm font-semibold ${isLight ? 'text-gray-900' : 'text-white'}`}>
+            <h3 className={`text-sm font-semibold ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>
               Token Usage
             </h3>
             <button
@@ -213,7 +213,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
               >
                 {/* Header with Legend */}
                 <div className="mb-2 flex items-center justify-between">
-                  <h4 className={cn('text-[11px] font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                  <h4 className={cn('text-[11px] font-semibold', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
                     30-Day Usage Trend
                   </h4>
                   <div className="flex items-center gap-3">
@@ -408,7 +408,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
                   isLight ? 'bg-gray-50' : 'bg-gray-800'
                 }`}
               >
-                <div className={`font-medium mb-1.5 ${isLight ? 'text-gray-900' : 'text-white'}`}>
+                <div className={`font-medium mb-1.5 ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>
                   Last Request
                 </div>
                 <div className={`space-y-1 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>

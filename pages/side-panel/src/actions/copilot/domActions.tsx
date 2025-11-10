@@ -309,7 +309,7 @@ export const createSendKeystrokesAction = ({ isLight, clipText }: Omit<DOMAction
     // Build messages with keys
     const keysMsg = formattedKeys ? ` (${clipText(formattedKeys, 60)})` : '';
     
-    // Keyboard icon with gradient
+    // Keyboard icon
     const keyboardIcon = (
       <svg
         width="14"
@@ -319,24 +319,21 @@ export const createSendKeystrokesAction = ({ isLight, clipText }: Omit<DOMAction
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        style={{ flexShrink: 0, marginRight: 6 }}
+        style={{ 
+          flexShrink: 0, 
+          marginRight: 6,
+          color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+        }}
       >
-        <defs>
-          <linearGradient id="keyboardGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" style={{ stopColor: '#8B5CF6', stopOpacity: 1 }} />
-            <stop offset="50%" style={{ stopColor: '#EC4899', stopOpacity: 1 }} />
-            <stop offset="100%" style={{ stopColor: '#F59E0B', stopOpacity: 1 }} />
-          </linearGradient>
-        </defs>
         {/* Keyboard body */}
-        <rect stroke="url(#keyboardGradient)" x="2" y="6" width="20" height="12" rx="2" />
+        <rect stroke="currentColor" x="2" y="6" width="20" height="12" rx="2" />
         {/* Keys */}
-        <line stroke="url(#keyboardGradient)" strokeWidth="1.5" x1="6" y1="10" x2="6" y2="10" opacity="0.7" />
-        <line stroke="url(#keyboardGradient)" strokeWidth="1.5" x1="10" y1="10" x2="10" y2="10" opacity="0.7" />
-        <line stroke="url(#keyboardGradient)" strokeWidth="1.5" x1="14" y1="10" x2="14" y2="10" opacity="0.7" />
-        <line stroke="url(#keyboardGradient)" strokeWidth="1.5" x1="18" y1="10" x2="18" y2="10" opacity="0.7" />
+        <line stroke="currentColor" strokeWidth="1.5" x1="6" y1="10" x2="6" y2="10" opacity="0.7" />
+        <line stroke="currentColor" strokeWidth="1.5" x1="10" y1="10" x2="10" y2="10" opacity="0.7" />
+        <line stroke="currentColor" strokeWidth="1.5" x1="14" y1="10" x2="14" y2="10" opacity="0.7" />
+        <line stroke="currentColor" strokeWidth="1.5" x1="18" y1="10" x2="18" y2="10" opacity="0.7" />
         {/* Spacebar */}
-        <line stroke="url(#keyboardGradient)" strokeWidth="1.5" x1="8" y1="14" x2="16" y2="14" opacity="0.7" />
+        <line stroke="currentColor" strokeWidth="1.5" x1="8" y1="14" x2="16" y2="14" opacity="0.7" />
       </svg>
     );
     

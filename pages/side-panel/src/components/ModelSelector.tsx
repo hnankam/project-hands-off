@@ -247,8 +247,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
         className={cn(
           'flex h-[26px] min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs',
           isLight 
-            ? selectedModelData ? 'text-gray-700' : 'text-gray-500'
-            : selectedModelData ? 'text-gray-200' : 'text-gray-400',
+            ? selectedModelData ? 'text-gray-600' : 'text-gray-500'
+            : selectedModelData ? 'text-gray-500' : 'text-gray-400',
         )}>
         <svg
           width="12"
@@ -320,8 +320,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
                     ? 'bg-blue-50 text-blue-700'
                     : 'bg-blue-900/30 text-blue-300'
                   : isLight
-                    ? 'text-gray-700 hover:bg-gray-100'
-                    : 'text-gray-200 hover:bg-gray-700',
+                    ? 'text-gray-600 hover:bg-gray-100'
+                    : 'text-gray-500 hover:bg-gray-700',
               )}>
               <div className="flex w-full items-center justify-between">
                 <span className={cn(selectedModel === model.id && 'font-medium')}>{model.label}</span>

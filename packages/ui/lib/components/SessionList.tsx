@@ -74,14 +74,17 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
         <div className="flex items-center justify-between px-2 py-1.5">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className={cn(
-              "flex items-center gap-1.5 text-xs font-medium",
-              isLight
-                ? "text-gray-700 hover:text-gray-900"
-                : "text-gray-300 hover:text-gray-100"
-            )}
+            className="flex items-center gap-1.5 text-xs"
           >
-            <span>Past Sessions</span>
+            <span
+              className={cn(
+                "transition-colors",
+                isLight ? "hover:text-gray-900" : "hover:text-gray-100"
+            )}
+              style={{ color: isLight ? '#4b5563' : '#6b7280', fontWeight: 500 }}
+            >
+              Past Sessions
+            </span>
             <svg
               className={cn(
                 "h-3 w-3 transition-transform",
@@ -99,9 +102,10 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
             className={cn(
               "text-xs",
               isLight
-                ? "text-gray-500 hover:text-gray-700"
-                : "text-gray-400 hover:text-gray-300"
+                ? "hover:text-gray-700"
+                : "hover:text-gray-300"
             )}
+            style={{ color: isLight ? '#4b5563' : '#6b7280' }}
           >
             View All
           </button>
@@ -121,18 +125,25 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
                       ? "bg-gray-200 text-gray-900"
                       : "bg-gray-800/60 text-gray-100"
                     : isLight
-                      ? "text-gray-700 hover:bg-gray-100"
-                      : "text-gray-300 hover:bg-gray-700/50"
+                      ? "text-gray-600 hover:bg-gray-100"
+                      : "text-gray-500 hover:bg-gray-700/50"
                 )}
+                style={session.id !== currentSessionId ? { color: isLight ? '#4b5563' : '#6b7280' } : undefined}
               >
-                <div className="flex-1 min-w-0 truncate pr-2">
+                <div
+                  className="flex-1 min-w-0 truncate pr-2 transition-colors"
+                  style={session.id !== currentSessionId ? { color: isLight ? '#4b5563' : '#6b7280' } : undefined}
+                >
                   {session.title}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className={cn(
+                  <span 
+                    className={cn(
                     "text-xs",
-                    isLight ? "text-gray-500" : "text-gray-400"
-                  )}>
+                      isLight ? "hover:text-gray-700" : "hover:text-gray-300"
+                    )}
+                    style={{ color: isLight ? '#4b5563' : '#6b7280' }}
+                  >
                     {formatTimestamp(session.timestamp)}
                   </span>
                   <button

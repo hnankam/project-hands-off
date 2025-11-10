@@ -59,7 +59,7 @@ export const UsageDisplay: FC<UsageDisplayProps> = ({
       }`}>
       {/* Header */}
       <div className="mb-2 flex items-center justify-between">
-        <h3 className={`text-[11px] font-semibold ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>Session Tokens</h3>
+        <h3 className={`text-[11px] font-semibold ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>Session Tokens</h3>
         <div className="flex items-center gap-1.5">
           <div
             className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-400'}`}
@@ -76,7 +76,7 @@ export const UsageDisplay: FC<UsageDisplayProps> = ({
         {/* Total Tokens */}
         <div className={`rounded p-2 ${isLight ? 'bg-gray-50' : 'bg-[#0C1117]'}`}>
           <div className={`mb-1 text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Total</div>
-          <div className={`font-mono text-base font-bold ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>
+          <div className={`font-mono text-base font-bold ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>
             {cumulativeUsage.total.toLocaleString()}
           </div>
         </div>
@@ -84,7 +84,7 @@ export const UsageDisplay: FC<UsageDisplayProps> = ({
         {/* Request Count */}
         <div className={`rounded p-2 ${isLight ? 'bg-gray-50' : 'bg-[#0C1117]'}`}>
           <div className={`mb-1 text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Requests</div>
-          <div className={`font-mono text-base font-bold ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>
+          <div className={`font-mono text-base font-bold ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>
             {cumulativeUsage.requestCount}
           </div>
         </div>
@@ -92,7 +92,7 @@ export const UsageDisplay: FC<UsageDisplayProps> = ({
         {/* Input Tokens */}
         <div className={`rounded p-2 ${isLight ? 'bg-gray-50' : 'bg-[#0C1117]'}`}>
           <div className={`mb-1 text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Input</div>
-          <div className={`font-mono text-xs ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>
+          <div className={`font-mono text-xs ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>
             {cumulativeUsage.request.toLocaleString()}
           </div>
         </div>
@@ -100,7 +100,7 @@ export const UsageDisplay: FC<UsageDisplayProps> = ({
         {/* Output Tokens */}
         <div className={`rounded p-2 ${isLight ? 'bg-gray-50' : 'bg-[#0C1117]'}`}>
           <div className={`mb-1 text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Output</div>
-          <div className={`font-mono text-xs ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>
+          <div className={`font-mono text-xs ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>
             {cumulativeUsage.response.toLocaleString()}
           </div>
         </div>

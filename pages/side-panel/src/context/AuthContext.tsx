@@ -7,6 +7,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authClient, Session, User, Organization, Member } from '../lib/auth-client';
 import { API_CONFIG } from '../constants';
+import { sessionStorageDBWrapper } from '@extension/shared';
 
 interface AuthContextType {
   // State
@@ -105,6 +106,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('[AuthContext] loadSession - activeTeamId:', activeTeamId);
         
         const currentUserId = sessionResult.data.user?.id || null;
+        
+        // Set userId for session storage (required for multi-user support)
+        if (currentUserId) {
+          console.log('[AuthContext] 🔐 Setting userId for session storage:', currentUserId);
+          sessionStorageDBWrapper.setCurrentUserId(currentUserId);
+        } else {
+          console.log('[AuthContext] ⚠️  No userId found, clearing session storage userId');
+          sessionStorageDBWrapper.setCurrentUserId(null);
+        }
 
         // If we have an active org, fetch its details
         if (activeOrgId) {
@@ -235,6 +245,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setOrganization(null);
         setMember(null);
         setActiveTeamState(null);
+        
+        // Clear userId from session storage
+        console.log('[AuthContext] No session found, clearing session storage userId');
+        sessionStorageDBWrapper.setCurrentUserId(null);
       }
     } catch (error) {
       console.error('[AuthContext] Error loading session:', error);
@@ -243,6 +257,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setOrganization(null);
       setMember(null);
       setActiveTeamState(null);
+      
+      // Clear userId from session storage on error
+      console.log('[AuthContext] Error loading session, clearing session storage userId');
+      sessionStorageDBWrapper.setCurrentUserId(null);
     } finally {
       setIsLoading(false);
     }
@@ -298,6 +316,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const signOut = async () => {
     try {
+      console.log('[AuthContext] Signing out user');
       await authClient.signOut();
       setSession(null);
       setUser(null);
@@ -305,8 +324,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setMember(null);
       setActiveTeamState(null);
       setMember(null);
+      
+      // Clear userId from session storage
+      console.log('[AuthContext] Clearing session storage userId on sign out');
+      sessionStorageDBWrapper.setCurrentUserId(null);
     } catch (error) {
-      console.error('Sign out error:', error);
+      console.error('[AuthContext] Sign out error:', error);
+      // Still clear userId even if sign out fails
+      sessionStorageDBWrapper.setCurrentUserId(null);
     }
   };
 

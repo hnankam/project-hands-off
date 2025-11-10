@@ -38,7 +38,7 @@ export const Radio: React.FC<RadioProps> = ({ name, value, checked, onChange, la
       <span
         className={cn(
           'text-xs select-none',
-          isLight ? 'text-gray-700 group-hover:text-gray-900' : 'text-gray-300 group-hover:text-gray-100',
+          isLight ? 'text-gray-700 group-hover:text-gray-700' : 'text-gray-300 group-hover:text-[#bcc1c7]',
         )}
       >
         {label}
@@ -88,7 +88,7 @@ export const Checkbox: React.FC<CheckboxProps> = ({ name, checked, onChange, lab
         <span
           className={cn(
             'text-xs select-none',
-            isLight ? 'text-gray-700 group-hover:text-gray-900' : 'text-gray-300 group-hover:text-gray-100',
+            isLight ? 'text-gray-700 group-hover:text-gray-700' : 'text-gray-300 group-hover:text-[#bcc1c7]',
             disabled && 'group-hover:text-gray-700 dark:group-hover:text-gray-300',
           )}
         >

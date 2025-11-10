@@ -16,6 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownSubmenu,
 } from '@extension/ui';
+import { SessionRuntimeProvider } from '../context/SessionRuntimeContext';
 
 interface SessionsPageProps {
   isLight: boolean;
@@ -32,7 +33,7 @@ interface SessionsPageProps {
 
 export const SessionsPage: React.FC<SessionsPageProps> = ({
   isLight,
-  sessions,
+  sessions: sessionsProp,
   currentSessionId,
   sessionsLoading = false,
   publicApiKey,
@@ -42,8 +43,21 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   onOpenAbout,
   onGoAdmin,
 }) => {
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+
   // Auth
   const { user } = useAuth();
+  
+  // Ensure sessions is always an array (defensive programming)
+  const sessions = useMemo(() => {
+    const validSessions = Array.isArray(sessionsProp) ? sessionsProp : [];
+    console.log('[SessionsPage] Sessions validation:', { 
+      isArray: Array.isArray(sessionsProp), 
+      count: validSessions.length 
+    });
+    return validSessions;
+  }, [sessionsProp]);
   
   // Loading state for initial render
   const [isEnsuringInitialSession, setIsEnsuringInitialSession] = useState(false);
@@ -136,13 +150,13 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const handleMessagesLoadingChange = useCallback(
     (sessionId: string, isLoading: boolean) => {
       if (sessionId !== currentSessionId) {
-        console.log(
-          `[MSG_SKELETON] 🚫 Ignoring messages loading change for inactive session ${sessionId} (current: ${currentSessionId})`,
-        );
+        // console.log(
+        //   `[MSG_SKELETON] 🚫 Ignoring messages loading change for inactive session ${sessionId} (current: ${currentSessionId})`,
+        // );
         return;
       }
 
-      console.log(`[MSG_SKELETON] 📨 Messages loading change: ${isLoading} for session ${sessionId}`);
+      // console.log(`[MSG_SKELETON] 📨 Messages loading change: ${isLoading} for session ${sessionId}`);
       
       // When messages finish loading, enforce minimum display time
       if (!isLoading && skeletonStartTimeRef.current) {
@@ -151,9 +165,9 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         const remaining = MIN_SKELETON_DISPLAY_TIME - elapsed;
         
         if (remaining > 0) {
-          console.log(`[MSG_SKELETON] ⏱️  Messages loaded fast, waiting ${remaining}ms more for minimum display time`);
+          // console.log(`[MSG_SKELETON] ⏱️  Messages loaded fast, waiting ${remaining}ms more for minimum display time`);
           setTimeout(() => {
-            console.log('[MSG_SKELETON] ✅ Setting isMessagesLoading = false (after minimum display time)');
+            // console.log('[MSG_SKELETON] ✅ Setting isMessagesLoading = false (after minimum display time)');
             setIsMessagesLoading(false);
           }, remaining);
           return;
@@ -187,9 +201,9 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         const remaining = MIN_SKELETON_DISPLAY_TIME - elapsed;
         
         if (remaining > 0) {
-          console.log(`[MSG_SKELETON] ⏱️  Enforcing minimum display time: waiting ${remaining}ms more`);
+          // console.log(`[MSG_SKELETON] ⏱️  Enforcing minimum display time: waiting ${remaining}ms more`);
           setTimeout(() => {
-            console.log('[SessionsPage] ✅ Setting isSessionReady = true (after minimum display time)');
+            // console.log('[SessionsPage] ✅ Setting isSessionReady = true (after minimum display time)');
             setIsSessionReady(true);
             skeletonStartTimeRef.current = null;
           }, remaining);
@@ -205,9 +219,9 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   );
 
   useEffect(() => {
-    console.log('[MSG_SKELETON] 🔄 Session ready effect triggered:', { currentSessionId, isSessionReady });
+    // console.log('[MSG_SKELETON] 🔄 Session ready effect triggered:', { currentSessionId, isSessionReady });
     if (!currentSessionId) {
-      console.log('[MSG_SKELETON] ❌ No currentSessionId, setting isSessionReady = true and isMessagesLoading = false');
+      // console.log('[MSG_SKELETON] ❌ No currentSessionId, setting isSessionReady = true and isMessagesLoading = false');
       if (sessionReadyTimeoutRef.current) {
         clearTimeout(sessionReadyTimeoutRef.current);
         sessionReadyTimeoutRef.current = null;
@@ -218,10 +232,10 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       return;
     }
 
-    console.log('[MSG_SKELETON] ✅ Setting isSessionReady = false and isMessagesLoading = true for session:', currentSessionId.slice(0, 8));
+    // console.log('[MSG_SKELETON] ✅ Setting isSessionReady = false and isMessagesLoading = true for session:', currentSessionId.slice(0, 8));
     // Record when skeleton starts showing
     skeletonStartTimeRef.current = Date.now();
-    console.log('[MSG_SKELETON] 🎬 Skeleton display started at:', skeletonStartTimeRef.current);
+    // console.log('[MSG_SKELETON] 🎬 Skeleton display started at:', skeletonStartTimeRef.current);
     
     setIsSessionReady(false);
     // Immediately show message skeleton when switching sessions
@@ -232,9 +246,9 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     }
 
     // Fallback timeout: ensure skeleton can't linger if ready signal is missed
-    console.log('[MSG_SKELETON] ⏰ Setting fallback timeout for session:', currentSessionId.slice(0, 8));
+    // console.log('[MSG_SKELETON] ⏰ Setting fallback timeout for session:', currentSessionId.slice(0, 8));
     sessionReadyTimeoutRef.current = setTimeout(() => {
-      console.log('[MSG_SKELETON] ⏰ Fallback timeout fired, setting isSessionReady = true');
+      // console.log('[MSG_SKELETON] ⏰ Fallback timeout fired, setting isSessionReady = true');
       sessionReadyTimeoutRef.current = null;
       setIsSessionReady(true);
       skeletonStartTimeRef.current = null;
@@ -292,23 +306,23 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
 
   // Debug skeleton visibility - only log when skeleton state actually changes
   useEffect(() => {
-    console.log('[MSG_SKELETON] 👁️ Skeleton visibility state:', {
-      shouldShowSkeleton,
-      shouldShowSkeletonOverlay,
-      isEnsuringInitialSession,
-      isWaitingForFirstSession,
-      currentSessionId: currentSessionId?.slice(0, 8),
-      isSessionReady,
-      hasSessions,
-      isMessagesLoading,
-      activeSession: !!activeSession,
-    });
+    // console.log('[MSG_SKELETON] 👁️ Skeleton visibility state:', {
+    //   shouldShowSkeleton,
+    //   shouldShowSkeletonOverlay,
+    //   isEnsuringInitialSession,
+    //   isWaitingForFirstSession,
+    //   currentSessionId: currentSessionId?.slice(0, 8),
+    //   isSessionReady,
+    //   hasSessions,
+    //   isMessagesLoading,
+    //   activeSession: !!activeSession,
+    // });
   }, [shouldShowSkeleton, shouldShowSkeletonOverlay, isEnsuringInitialSession, isWaitingForFirstSession, currentSessionId, isSessionReady, hasSessions, isMessagesLoading, activeSession]);
 
   // Log when full skeleton overlay is shown/hidden
   useEffect(() => {
     if (shouldShowSkeletonOverlay) {
-      console.log('[MSG_SKELETON] 🎭 Rendering FULL skeleton overlay (z-20)');
+      // console.log('[MSG_SKELETON] 🎭 Rendering FULL skeleton overlay (z-20)');
     }
   }, [shouldShowSkeletonOverlay]);
 
@@ -316,7 +330,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   useEffect(() => {
     const shouldShowMessageSkeleton = activeSession && shouldShowSkeleton && !shouldShowSkeletonOverlay;
     if (shouldShowMessageSkeleton) {
-      console.log('[MSG_SKELETON] 🎬 Rendering MESSAGE skeleton (z-[15]) - tied to session transition timing');
+      // console.log('[MSG_SKELETON] 🎬 Rendering MESSAGE skeleton (z-[15]) - tied to session transition timing');
     }
   }, [activeSession, shouldShowSkeleton, shouldShowSkeletonOverlay]);
 
@@ -872,7 +886,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   }, [clearMessagesConfirmOpen, clearSessionsConfirmOpen, resetSessionConfirmOpen]);
 
   return (
-    <>
+    <SessionRuntimeProvider>
       {/* Sessions Page Header */}
       <div
         className={cn(
@@ -1159,7 +1173,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   'flex items-center justify-between border-b px-3 py-2',
                   isLight ? 'border-gray-200' : 'border-gray-700',
                 )}>
-                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
                   Clear All Session Messages
                 </h2>
                 <button
@@ -1202,7 +1216,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   </div>
 
                   <div className="flex-1">
-                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                    <p className={cn('text-sm font-medium', mainTextColor)}>
                       Permanently delete session messages?
                     </p>
                     <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
@@ -1225,9 +1239,11 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   className={cn(
                     'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
                     isLight
-                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
-                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
-                  )}>
+                      ? 'bg-gray-200 hover:bg-gray-300'
+                      : 'bg-gray-700 hover:bg-gray-600',
+                  )}
+                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
+                >
                   Cancel
                 </button>
                 <button
@@ -1272,7 +1288,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   'flex items-center justify-between border-b px-3 py-2',
                   isLight ? 'border-gray-200' : 'border-gray-700',
                 )}>
-                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
                   Reset Session
                 </h2>
                 <button
@@ -1315,7 +1331,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   </div>
 
                   <div className="flex-1">
-                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                    <p className={cn('text-sm font-medium', mainTextColor)}>
                       Clear all messages in this session?
                     </p>
                     <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
@@ -1338,9 +1354,11 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   className={cn(
                     'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
                     isLight
-                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
-                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
-                  )}>
+                      ? 'bg-gray-200 hover:bg-gray-300'
+                      : 'bg-gray-700 hover:bg-gray-600',
+                  )}
+                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
+                >
                   Cancel
                 </button>
                 <button
@@ -1385,7 +1403,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   'flex items-center justify-between border-b px-3 py-2',
                   isLight ? 'border-gray-200' : 'border-gray-700',
                 )}>
-                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
                   Clear All Sessions
                 </h2>
                 <button
@@ -1428,7 +1446,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   </div>
 
                   <div className="flex-1">
-                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                    <p className={cn('text-sm font-medium', mainTextColor)}>
                       Permanently delete all sessions?
                     </p>
                     <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
@@ -1449,9 +1467,11 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   className={cn(
                     'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
                     isLight
-                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
-                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
-                  )}>
+                      ? 'bg-gray-200 hover:bg-gray-300'
+                      : 'bg-gray-700 hover:bg-gray-600',
+                  )}
+                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
+                >
                   Cancel
                 </button>
                 <button
@@ -1466,7 +1486,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
             </div>
         </div>
       </>
-    </>
+    </SessionRuntimeProvider>
   );
 };
 

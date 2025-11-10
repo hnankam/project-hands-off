@@ -52,6 +52,9 @@ const OrganizationSkeletonCard: React.FC<{ isLight: boolean }> = ({ isLight }) =
 );
 
 export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeams }: OrganizationsTabProps) {
+  // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
+  const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+
   const { user } = useAuth();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [newOrgName, setNewOrgName] = useState('');
@@ -326,7 +329,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
           <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
           </svg>
-          <h2 className={cn('text-base font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+          <h2 className={cn('text-base font-semibold', mainTextColor)}>
             Organizations <span className={cn('text-sm font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>({organizations.length})</span>
           </h2>
         </div>
@@ -485,7 +488,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
               <div className="p-3">
                 {/* Row 1: Name + Actions */}
                 <div className="flex items-center justify-between gap-2 mb-1">
-                  <h4 className={cn('font-semibold text-xs truncate', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                  <h4 className={cn('font-semibold text-xs truncate', mainTextColor)}>
                     {org.name}
                   </h4>
                   <div className="flex items-center gap-1 flex-shrink-0">
@@ -607,7 +610,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
                                     <svg className="w-3 h-3 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                                       <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                                     </svg>
-                                    <span className={cn('truncate font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                                    <span className={cn('truncate font-medium', mainTextColor)}>
                                       {team.name}
                                     </span>
                                   </div>
@@ -678,7 +681,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
                   'flex items-center justify-between border-b px-3 py-2',
                   isLight ? 'border-gray-200' : 'border-gray-700',
                 )}>
-                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
                   Delete Organization
                 </h2>
                 <button
@@ -720,7 +723,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
                   </div>
 
                   <div className="flex-1">
-                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                    <p className={cn('text-sm font-medium', mainTextColor)}>
                       Permanently delete "{orgToDelete.name}"?
                     </p>
                     <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>

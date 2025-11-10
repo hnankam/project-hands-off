@@ -48,7 +48,7 @@ import {
 import { CopilotChat, useCopilotChatSuggestions } from '@copilotkit/react-ui';
 
 // Extension Utilities & Storage
-import { debug, useStorage, cosineSimilarity, embeddingService } from '@extension/shared';
+import { debug, useStorage, cosineSimilarity, embeddingService, sessionStorageDBWrapper } from '@extension/shared';
 import { embeddingsStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';
@@ -130,7 +130,7 @@ import {
   handleGetSelectorsAtPoints,
 } from '../actions';
 
-const DefaultToolIcon: React.FC = () => (
+const DefaultToolIcon: React.FC<{ isLight: boolean }> = ({ isLight }) => (
   <svg
     width="14"
     height="14"
@@ -139,20 +139,18 @@ const DefaultToolIcon: React.FC = () => (
     strokeWidth="2"
     strokeLinecap="round"
     strokeLinejoin="round"
-    style={{ flexShrink: 0, marginRight: 6 }}
+    style={{ 
+      flexShrink: 0, 
+      marginRight: 6,
+      color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+    }}
   >
-    <defs>
-      <linearGradient id="defaultToolGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" style={{ stopColor: '#3B82F6', stopOpacity: 1 }} />
-        <stop offset="100%" style={{ stopColor: '#1E40AF', stopOpacity: 1 }} />
-      </linearGradient>
-    </defs>
     <path
-      stroke="url(#defaultToolGradient)"
+      stroke="currentColor"
       fill="none"
       d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
     />
-    <circle cx="12" cy="12" r="3" stroke="url(#defaultToolGradient)" fill="none" />
+    <circle cx="12" cy="12" r="3" stroke="currentColor" fill="none" />
   </svg>
 );
 
@@ -243,6 +241,13 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   isAgentAndModelSelected = true,
 }) => {
   // ================================================================================
+  // RENDER TRACKING
+  // ================================================================================
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  // console.log(`[ChatInner:${sessionId.slice(0, 8)}] Render #${renderCountRef.current}`);
+
+  // ================================================================================
   // THEME & STORAGE
   // ================================================================================
   const { isLight } = useStorage(exampleThemeStorage);
@@ -284,10 +289,28 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   } = useCopilotContext();
   
   // Chat messages and loading state
-  const { messages, setMessages, isLoading, generateSuggestions, reloadMessages, reset } = useCopilotChatHeadless_c();
+  const {
+    messages,
+    setMessages,
+    isLoading,
+    generateSuggestions,
+    reloadMessages,
+    reset,
+    stopGeneration,
+  } = useCopilotChatHeadless_c();
+  
+  console.log(`[ChatInner:${sessionId.slice(0, 8)}] CopilotKit state:`, {
+    messagesCount: messages.length,
+    isLoading,
+  });
   
   // Track streaming state to avoid restoring messages after edits/deletes
   const wasStreamingRef = useRef(false);
+  const planDeletionInfoRef = useRef<{ deleted: boolean; lastAssistantId: string | null }>({
+    deleted: false,
+    lastAssistantId: null,
+  });
+  const latestAssistantMessageIdRef = useRef<string | null>(null);
   
   // Shared agent state for maintaining agent context across interactions
     const { state, setState } = useCoAgent<AgentState>({
@@ -319,6 +342,36 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
       wasStreamingRef.current = false;
     }
   }, [messages.length]);
+
+  const previousMessageCountRef = useRef(messages.length);
+
+  useEffect(() => {
+    const previousCount = previousMessageCountRef.current;
+    previousMessageCountRef.current = messages.length;
+
+    // Persist immediately when messages are removed (e.g., user deletion) to prevent
+    // the persistence layer from restoring stale copies from storage.
+    if (isLoading || messages.length >= previousCount) {
+      return;
+    }
+
+    try {
+      const data = saveMessagesRef?.current ? saveMessagesRef.current() : null;
+      const sanitizedMessages =
+        (data && Array.isArray(data.allMessages) && data.allMessages.length >= 0
+          ? data.allMessages
+          : messages) ?? [];
+
+      if (sanitizedMessages.length > 0) {
+        void saveMessagesToStorage(sanitizedMessages);
+      } else {
+        // When all messages are deleted, explicitly clear storage so nothing is restored.
+        void sessionStorageDBWrapper.updateAllMessages(sessionId, []);
+      }
+    } catch (error) {
+      debug.warn?.('[ChatInner] Failed to persist messages after deletion:', error);
+    }
+  }, [messages, isLoading, saveMessagesRef, saveMessagesToStorage, sessionId]);
   
   // Clear sanitization cache when session changes to prevent cross-session contamination
   useEffect(() => {
@@ -451,7 +504,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           toolName={displayName}
           status={status as any}
           isLight={isLight}
-          icon={<DefaultToolIcon />}
+          icon={<DefaultToolIcon isLight={isLight} />}
           messages={messages}
           args={args}
           result={result}
@@ -530,12 +583,126 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   
   // Dynamic agent state for progress tracking and step management
   // State is automatically synced to backend on next agent interaction
-  const { state: dynamicAgentState, setState: setDynamicAgentState } = useCoAgent<AgentStepState>({
+  const {
+    state: rawDynamicAgentState,
+    setState: setRawDynamicAgentState,
+  } = useCoAgent<AgentStepState>({
     name: 'dynamic_agent',
-    initialState: initialAgentStepState || {
+    initialState:
+      initialAgentStepState && initialAgentStepState.sessionId === sessionId
+        ? initialAgentStepState
+        : {
+            sessionId,
       steps: [],
     },
   });
+
+  const dynamicAgentState = React.useMemo<AgentStepState>(() => {
+    if (!rawDynamicAgentState) {
+      return { sessionId, steps: [] };
+    }
+    if (planDeletionInfoRef.current.deleted && (rawDynamicAgentState.steps?.length ?? 0) > 0) {
+      return { sessionId, steps: [] };
+    }
+    if (rawDynamicAgentState.sessionId && rawDynamicAgentState.sessionId !== sessionId) {
+      return { sessionId, steps: [] };
+    }
+    if (rawDynamicAgentState.sessionId === sessionId) {
+      return rawDynamicAgentState;
+    }
+    if (!rawDynamicAgentState.sessionId && Array.isArray(rawDynamicAgentState.steps)) {
+      return {
+        sessionId,
+        steps: rawDynamicAgentState.steps,
+      };
+    }
+    return { sessionId, steps: [] };
+  }, [rawDynamicAgentState, sessionId]);
+
+  const setDynamicAgentState = React.useCallback(
+    (nextState: AgentStepState) => {
+      const nextSteps = nextState?.steps ?? [];
+      if (nextSteps.length === 0) {
+        planDeletionInfoRef.current = {
+          deleted: true,
+          lastAssistantId: latestAssistantMessageIdRef.current,
+        };
+        setRawDynamicAgentState({
+          sessionId,
+          steps: [],
+        });
+        return;
+      }
+
+      planDeletionInfoRef.current = {
+        deleted: false,
+        lastAssistantId: latestAssistantMessageIdRef.current,
+      };
+      setRawDynamicAgentState({
+        ...nextState,
+        sessionId,
+      });
+    },
+    [sessionId, setRawDynamicAgentState],
+  );
+  
+  // If co-agent state arrives without a sessionId but with steps, proactively clear it
+  useEffect(() => {
+    if (
+      rawDynamicAgentState &&
+      !rawDynamicAgentState.sessionId &&
+      Array.isArray(rawDynamicAgentState.steps) &&
+      rawDynamicAgentState.steps.length > 0 &&
+      !planDeletionInfoRef.current.deleted
+    ) {
+      setRawDynamicAgentState({
+        ...rawDynamicAgentState,
+        sessionId,
+      });
+    }
+  }, [rawDynamicAgentState, sessionId, setRawDynamicAgentState]);
+
+  useEffect(() => {
+    const lastAssistant = [...messages].reverse().find(message => (message as any)?.role === 'assistant');
+    const latestAssistantId = (lastAssistant as any)?.id ?? null;
+    const previousAssistantId = latestAssistantMessageIdRef.current;
+    latestAssistantMessageIdRef.current = latestAssistantId;
+
+    if (
+      planDeletionInfoRef.current.deleted &&
+      planDeletionInfoRef.current.lastAssistantId !== null &&
+      latestAssistantId !== planDeletionInfoRef.current.lastAssistantId &&
+      latestAssistantId !== previousAssistantId
+    ) {
+      planDeletionInfoRef.current = {
+        deleted: false,
+        lastAssistantId: latestAssistantId,
+      };
+    }
+  }, [messages]);
+  
+  const initialScopedSteps = React.useMemo(() => {
+    if (!initialAgentStepState) {
+      return null;
+    }
+    if (initialAgentStepState.sessionId && initialAgentStepState.sessionId !== sessionId) {
+      return null;
+    }
+    return initialAgentStepState.steps ?? [];
+  }, [initialAgentStepState, sessionId]);
+
+  useEffect(() => {
+    if (!initialScopedSteps || initialScopedSteps.length === 0) {
+      return;
+    }
+    if (dynamicAgentState.sessionId === sessionId && (dynamicAgentState.steps?.length ?? 0) > 0) {
+      return;
+    }
+    setRawDynamicAgentState({
+      sessionId,
+      steps: [...initialScopedSteps],
+    });
+  }, [initialScopedSteps, dynamicAgentState.sessionId, dynamicAgentState.steps, sessionId, setRawDynamicAgentState]);
   
   // Notify parent component when agent step state changes
   useEffect(() => {
@@ -558,21 +725,37 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // Render inline progress cards with chat messages using useCoAgentStateRender
   useCoAgentStateRender<AgentStepState>({
     name: 'dynamic_agent',
-    render: ({ state }) => {
-      // Check if state has steps, if not return null
-      if (!state.steps || state.steps.length === 0) {
+    render: ({ state: scopedState }) => {
+      if (!scopedState?.steps || scopedState.steps.length === 0) {
         return null;
       }
       
-      //console.log('[useCoAgentStateRender] Rendering inline with state:', state);
+      // Render only if the plan belongs to this session.
+      if (scopedState.sessionId && scopedState.sessionId !== sessionId) {
+        return null;
+      }
+
+      // Plans created by the backend for the first time may have no sessionId yet—accept them.
+      if (!scopedState.sessionId && scopedState.steps.length > 0) {
+        scopedState = {
+          ...scopedState,
+          sessionId,
+        };
+      }
+
+      if (planDeletionInfoRef.current.deleted) {
+        return null;
+      }
       
-      // Render the TaskProgressCard inline (without controls - read-only)
-      // New cards start expanded and non-historical
-      // MutationObserver will collapse and mark older cards as historical
       return (
-        <div data-task-progress="true" data-timestamp={Date.now()} className="w-full pt-2">
+        <div
+          data-task-progress="true"
+          data-session-id={sessionId}
+          data-timestamp={Date.now()}
+          className="w-full pt-2"
+        >
           <TaskProgressCard 
-            state={state} 
+            state={{ ...scopedState, sessionId }}
             setState={setDynamicAgentState}
             isCollapsed={false}
             isHistorical={false}
@@ -635,6 +818,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         {/* Floating TaskProgressCard - sticks to top and floats above messages */}
         {dynamicAgentState.steps && dynamicAgentState.steps.length > 0 && showProgressBar && (
           <div 
+            data-session-id={sessionId}
             className="sticky top-0 z-10 px-2 pb-1 pt-2 backdrop-blur-sm"
             style={stickyStyle}>
             <TaskProgressCard 
@@ -859,6 +1043,11 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           }}
           onStopGeneration={() => {
             console.log('[ChatInner] ⏹️ Stop generation clicked');
+            try {
+              stopGeneration?.();
+            } catch (error) {
+              console.warn('[ChatInner] Failed to stop generation', error);
+            }
           }}
           onThumbsDown={() => {
             console.log('[ChatInner] 👎 Thumbs down clicked');

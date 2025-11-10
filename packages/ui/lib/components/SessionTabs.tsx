@@ -159,8 +159,8 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
                   ? "bg-gray-200 text-gray-900" 
                   : "bg-gray-700 text-gray-100"
                 : isLight
-                  ? "text-gray-700 hover:bg-gray-100"
-                  : "text-gray-300 hover:bg-gray-700"
+                  ? "text-gray-600 hover:bg-gray-100"
+                  : "text-gray-500 hover:bg-gray-700"
             )}
           >
             {editingSessionId === session.id ? (

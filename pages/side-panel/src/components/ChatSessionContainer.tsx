@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
 import type { FC, CSSProperties } from 'react';
-import { CopilotKit } from '@copilotkit/react-core';
 import { useStorage, useSessionStorageDB, sessionStorageDBWrapper, debug } from '@extension/shared';
 import type { SessionMetadata } from '@extension/shared';
 import { preferencesStorage } from '@extension/storage';
@@ -24,6 +23,7 @@ import { useAutoSave } from '../hooks/useAutoSave';
 import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG } from '../constants';
 import { ts } from '../utils/logging';
 import { useAuth } from '../context/AuthContext';
+import { SessionRuntimePortal, useSessionRuntimeState } from '../context/SessionRuntimeContext';
 
 type UsageTotals = {
   request: number;
@@ -63,6 +63,15 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     onReady,
     onMessagesLoadingChange,
   }) => {
+  // ================================================================================
+  // RENDER TRACKING
+  // ================================================================================
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  // console.log(`[ChatSessionContainer:${sessionId.slice(0, 8)}] Render #${renderCountRef.current}`, {
+  //   isActive,
+  // });
+
   const { sessions } = useSessionStorageDB();
   const { showAgentCursor, showSuggestions, showThoughtBlocks } = useStorage(preferencesStorage);
   const { organization, activeTeam } = useAuth();
@@ -77,6 +86,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   const hydrationReadyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isUsagePopupOpen, setIsUsagePopupOpen] = useState(false);
+  const runtimeState = useSessionRuntimeState(sessionId);
   
   // Track previous session ID to detect changes
   const prevSessionIdRef = useRef<string | null>(null);
@@ -93,6 +103,10 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       setHeadlessMessagesCount(0);
       setIsCounterReady(false);
       hasReportedInitialCountRef.current = false;
+      setCurrentAgentStepState({
+        sessionId,
+        steps: [],
+      });
     }
     prevSessionIdRef.current = sessionId;
   }, [sessionId]);
@@ -433,34 +447,123 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const sessionChanged = prevSessionId && prevSessionId !== sessionId;
     
     if (sessionChanged) {
-      console.log(`[ChatSessionContainer] Session changed from ${prevSessionId} to ${sessionId}, loading messages...`);
+      console.log(`[ChatSessionContainer] Session changed from ${prevSessionId} to ${sessionId}, handling hydration...`);
+      setHasProgressBar(false);
+      setShowProgressBar(false);
+      setToggleProgressBar(() => undefined);
       
-      // Trigger message reload for the new session
+      const runtimeHasMessages = Boolean(runtimeState?.messagesSignature);
+      
       if (isActive) {
+        if (runtimeHasMessages) {
+          console.log('[ChatSessionContainer] Runtime already has messages, skipping storage reload');
+          // Sync stored messages asynchronously to keep metadata accurate
+          setTimeout(() => {
+            const fn = saveMessagesRef.current;
+            if (!fn) {
+              return;
+            }
+            try {
+              const data = fn();
+              const allMessages = (data?.allMessages ?? []) as any[];
+              if (allMessages.length > 0) {
+                void saveMessagesToStorage(allMessages as any);
+              }
+            } catch (error) {
+              console.warn('[ChatSessionContainer] Failed to sync runtime messages to storage', error);
+            }
+          }, 0);
+        } else {
+          console.log('[ChatSessionContainer] Runtime empty, loading messages from storage');
         handleLoadMessages();
+        }
       }
       
-      // Update agent/model from new session metadata
       const newSession = sessions.find(s => s.id === sessionId);
       if (newSession) {
         setSelectedAgent(newSession.selectedAgent || '');
         setSelectedModel(newSession.selectedModel || '');
     }
     
-      // Only reset these when session actually changes
     prevSessionIdRef.current = sessionId;
     hasSignaledReadyRef.current = false;
       hasReportedInitialCountRef.current = false;
-    setIsCounterReady(false); // Reset counter visibility for new session
+      setIsCounterReady(false);
     if (readySignalTimeoutRef.current) {
       clearTimeout(readySignalTimeoutRef.current);
       readySignalTimeoutRef.current = null;
     }
     } else if (!prevSessionId) {
-      // Initial mount - set the sessionId
       prevSessionIdRef.current = sessionId;
     }
-  }, [sessionId, isActive, sessions]);
+  }, [
+    sessionId,
+    isActive,
+    sessions,
+    runtimeState?.messagesSignature,
+    handleLoadMessages,
+    saveMessagesToStorage,
+  ]);
+
+  useEffect(() => {
+    const signature = runtimeState?.messagesSignature;
+    if (!signature || isCounterReady) {
+      return;
+    }
+
+    if (!hydrationCompleted) {
+      console.log(
+        '[ChatSessionContainer] Runtime signature detected but hydration not complete; waiting before marking counter ready',
+        { sessionId: sessionId.slice(0, 8), signature },
+      );
+      return;
+    }
+
+    const awaitingCount = Boolean(onMessagesCountChange) && !hasReportedInitialCountRef.current;
+    if (awaitingCount) {
+      console.log(
+        '[ChatSessionContainer] Hydration complete but waiting for message count synchronization before marking ready',
+        { sessionId: sessionId.slice(0, 8) },
+      );
+      return;
+    }
+
+    console.log(
+      '[ChatSessionContainer] Hydration complete with runtime signature; marking counter ready',
+      { sessionId: sessionId.slice(0, 8) },
+    );
+    setIsCounterReady(true);
+  }, [
+    runtimeState?.messagesSignature,
+    isCounterReady,
+    hydrationCompleted,
+    onMessagesCountChange,
+    sessionId,
+  ]);
+
+  useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+
+    const signature = runtimeState?.messagesSignature;
+    if (!signature) {
+      return;
+    }
+
+    if (hydrationCompleted && hasReportedInitialCountRef.current) {
+      console.log(
+        '[ChatSessionContainer] Runtime reported messages update after hydration; ensuring skeleton is cleared',
+        { sessionId: sessionId.slice(0, 8), signature },
+      );
+      setIsCounterReady(true);
+    }
+  }, [
+    isActive,
+    runtimeState?.messagesSignature,
+    hydrationCompleted,
+    sessionId,
+  ]);
 
   useEffect(() => {
     if (!onReady || !isActive) {
@@ -566,6 +669,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   } = useUsageStream(sessionId, isActive, 'ws://localhost:8001', initialUsage, initialLastUsage);
 
   const [currentAgentStepState, setCurrentAgentStepState] = useState<AgentStepState>({
+    sessionId,
     steps: [],
   });
   
@@ -592,7 +696,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       return { ...prev, [sessionId]: null };
     });
 
-    setCurrentAgentStepState({ steps: [] });
+    setCurrentAgentStepState({ sessionId, steps: [] });
 
     const loadStoredData = async () => {
       try {
@@ -631,7 +735,10 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         // Load agent state
         const storedState = await sessionStorageDBWrapper.getAgentStepStateAsync(sessionId);
         if (!isCancelled && storedState) {
-          setCurrentAgentStepState(storedState);
+          setCurrentAgentStepState({
+            sessionId,
+            steps: storedState.steps ?? [],
+          });
         }
       } catch (error) {
         console.error('[ChatSessionContainer] Failed to load stored data:', error);
@@ -746,9 +853,16 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   
   // Save agent step state to storage whenever it changes
   useEffect(() => {
-    if (currentAgentStepState) {
-      sessionStorageDBWrapper.updateAgentStepState(sessionId, currentAgentStepState);
+    if (!currentAgentStepState) {
+      return;
     }
+    if (currentAgentStepState.sessionId && currentAgentStepState.sessionId !== sessionId) {
+      return;
+    }
+    sessionStorageDBWrapper.updateAgentStepState(sessionId, {
+      sessionId,
+      steps: currentAgentStepState.steps ?? [],
+    });
   }, [sessionId, currentAgentStepState]);
   
   // Log usage errors if any
@@ -1059,6 +1173,68 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
     }, [onRegisterResetFunction, sessionId, resetChatRef.current]);
 
+  const renderChatInner = useCallback(
+    () => (
+      <ChatInner
+        key={`chat-inner-${sessionId}-${activeAgent}-${activeModel}-${showSuggestions ? 'on' : 'off'}-${
+          showThoughtBlocks ? 'thought-on' : 'thought-off'
+        }`}
+        sessionId={sessionId}
+        sessionTitle={sessionTitle}
+        currentPageContent={currentPageContent}
+        pageContentEmbedding={pageContentEmbeddingRef.current}
+        latestDOMUpdate={latestDOMUpdate}
+        dbTotals={dbTotals}
+        themeColor={themeColor}
+        setThemeColor={setThemeColor}
+        setCurrentMessages={setCurrentMessages}
+        saveMessagesToStorage={saveMessagesToStorage}
+        setHeadlessMessagesCount={setHeadlessMessagesCount}
+        saveMessagesRef={saveMessagesRef}
+        restoreMessagesRef={restoreMessagesRef}
+        resetChatRef={resetChatRef}
+        setIsAgentLoading={setIsAgentLoading}
+        showSuggestions={showSuggestions}
+        showThoughtBlocks={showThoughtBlocks}
+        onProgressBarStateChange={handleProgressBarStateChange}
+        initialAgentStepState={currentAgentStepState}
+        onAgentStepStateChange={setCurrentAgentStepState}
+        contextMenuMessage={contextMenuMessage}
+        triggerManualRefresh={triggerManualRefreshWithEmbeddingWait}
+        isAgentAndModelSelected={selectedAgent !== '' && selectedModel !== ''}
+        agentType={activeAgent}
+        modelType={activeModel}
+        organizationId={organization?.id || undefined}
+        teamId={activeTeam || undefined}
+      />
+    ),
+    [
+      activeAgent,
+      activeModel,
+      activeTeam,
+      contextMenuMessage,
+      currentAgentStepState,
+      currentPageContent,
+      dbTotals,
+      handleProgressBarStateChange,
+      latestDOMUpdate,
+      organization?.id,
+      saveMessagesToStorage,
+      selectedAgent,
+      selectedModel,
+      sessionId,
+      sessionTitle,
+      setCurrentMessages,
+      setHeadlessMessagesCount,
+      setIsAgentLoading,
+      setThemeColor,
+      showSuggestions,
+      showThoughtBlocks,
+      themeColor,
+      triggerManualRefreshWithEmbeddingWait,
+    ],
+  );
+
   return (
       <div className="flex flex-1 flex-col overflow-hidden">
       {/* Save/Load buttons and Page Status - Fixed at top */}
@@ -1264,57 +1440,18 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                 filter: isSwitchingAgent ? 'blur(2px)' : 'none',
                 visibility: isCounterReady ? 'visible' : 'hidden',
               } as CSSProperties
-            }>
-          <CopilotKit 
-            key={`${sessionId}-${activeAgent}-${activeModel}`}
-            runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
-            agent="dynamic_agent"
-            headers={{
-              'x-copilot-agent-type': activeAgent,
-                'x-copilot-model-type': activeModel,
-                'x-copilot-thread-id': sessionId,
-            }}
-            // publicApiKey={COPIOLITKIT_CONFIG.PUBLIC_API_KEY}
-            publicLicenseKey={COPIOLITKIT_CONFIG.PUBLIC_API_KEY}
-            showDevConsole={false}
-            threadId={sessionId}
-            transcribeAudioUrl="/api/transcribe"
-            textToSpeechUrl="/api/tts"
-            onError={errorEvent => {
-              // Simple console logging for development
-                console.log('CopilotKit Event:', errorEvent);
-              }}>
-            <ChatInner
-            key={`chat-inner-${showSuggestions ? 'on' : 'off'}-${showThoughtBlocks ? 'thought-on' : 'thought-off'}`}
+          }
+        >
+          <SessionRuntimePortal
               sessionId={sessionId}
-              sessionTitle={sessionTitle}
-              currentPageContent={currentPageContent}
-              pageContentEmbedding={pageContentEmbeddingRef.current}
-              latestDOMUpdate={latestDOMUpdate}
-                dbTotals={dbTotals}
-              themeColor={themeColor}
-              setThemeColor={setThemeColor}
-              setCurrentMessages={setCurrentMessages}
-              saveMessagesToStorage={saveMessagesToStorage}
-              setHeadlessMessagesCount={setHeadlessMessagesCount}
-              saveMessagesRef={saveMessagesRef}
-              restoreMessagesRef={restoreMessagesRef}
-                resetChatRef={resetChatRef}
-              setIsAgentLoading={setIsAgentLoading}
-              showSuggestions={showSuggestions}
-              showThoughtBlocks={showThoughtBlocks}
-              onProgressBarStateChange={handleProgressBarStateChange}
-              initialAgentStepState={currentAgentStepState}
-              onAgentStepStateChange={setCurrentAgentStepState}
-                contextMenuMessage={contextMenuMessage}
-                triggerManualRefresh={triggerManualRefreshWithEmbeddingWait}
-                isAgentAndModelSelected={selectedAgent !== '' && selectedModel !== ''}
                 agentType={activeAgent}
                 modelType={activeModel}
                 organizationId={organization?.id || undefined}
                 teamId={activeTeam || undefined}
+            runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
+            publicApiKey={COPIOLITKIT_CONFIG.PUBLIC_API_KEY}
+            renderContent={renderChatInner}
             />
-          </CopilotKit>
         </div>
 
         {/* Agent and Model Selectors with Settings */}

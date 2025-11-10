@@ -240,8 +240,8 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
         className={cn(
           'flex items-center gap-1.5 px-2 py-1 text-xs rounded-md h-[26px] min-w-0',
           isLight
-            ? selectedAgentData ? 'text-gray-700' : 'text-gray-500'
-            : selectedAgentData ? 'text-gray-200' : 'text-gray-400'
+            ? selectedAgentData ? 'text-gray-600' : 'text-gray-500'
+            : selectedAgentData ? 'text-gray-500' : 'text-gray-400'
         )}
       >
         <span className="flex-shrink-0">
@@ -311,8 +311,8 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                     ? 'bg-blue-50 text-blue-700 font-medium'
                     : 'bg-blue-900/30 text-blue-300 font-medium'
                   : isLight
-                  ? 'text-gray-700 hover:bg-gray-100'
-                  : 'text-gray-200 hover:bg-gray-700'
+                  ? 'text-gray-600 hover:bg-gray-100'
+                  : 'text-gray-500 hover:bg-gray-700'
               )}
             >
               {agent.icon}
