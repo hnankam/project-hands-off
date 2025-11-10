@@ -895,6 +895,9 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
                       </svg>
                     )}
                   </span>
+                  <span className="flex-shrink-0">
+                    <AgentIcon />
+                  </span>
                   <span className="truncate flex-1 text-left">{agent.name}</span>
                 </button>
               ))
@@ -1032,6 +1035,9 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
                         <rect x="3" y="3" width="18" height="18" rx="2" />
                       </svg>
                     )}
+                  </span>
+                  <span className="flex-shrink-0">
+                    <ModelIcon />
                   </span>
                   <span className="truncate flex-1 text-left">{model.displayName}</span>
                 </button>

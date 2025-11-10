@@ -365,6 +365,7 @@ function mapBreakdownRow(row) {
     responseTokens: Number(row.response_tokens) || 0,
     totalTokens: Number(row.total_tokens) || 0,
     count: Number(row.call_count) || 0,
+    sessionCount: Number(row.session_count) || 0,
   };
 }
 
@@ -547,6 +548,7 @@ router.get('/', async (req, res, next) => {
           COALESCE(SUM(u.response_tokens), 0) AS response_tokens,
           COALESCE(SUM(u.request_tokens + u.response_tokens), 0) AS total_tokens,
           COUNT(*) AS call_count,
+          COUNT(DISTINCT u.session_id) AS session_count,
           COALESCE(SUM(u.cost), 0) AS total_cost,
           COALESCE(AVG(u.request_tokens + u.response_tokens), 0) AS avg_tokens
         FROM usage u
@@ -562,7 +564,8 @@ router.get('/', async (req, res, next) => {
           SUM(u.request_tokens) AS request_tokens,
           SUM(u.response_tokens) AS response_tokens,
           SUM(u.request_tokens + u.response_tokens) AS total_tokens,
-          COUNT(*) AS call_count
+          COUNT(*) AS call_count,
+          COUNT(DISTINCT u.session_id) AS session_count
         FROM usage u
         ${timeseriesWhereClause}
         GROUP BY bucket
@@ -579,7 +582,8 @@ router.get('/', async (req, res, next) => {
           SUM(u.request_tokens) AS request_tokens,
           SUM(u.response_tokens) AS response_tokens,
           SUM(u.request_tokens + u.response_tokens) AS total_tokens,
-          COUNT(*) AS call_count
+          COUNT(*) AS call_count,
+          COUNT(DISTINCT u.session_id) AS session_count
         FROM usage u
         LEFT JOIN models m ON m.id = u.model_id
         ${whereClause}
@@ -598,7 +602,8 @@ router.get('/', async (req, res, next) => {
           SUM(u.request_tokens) AS request_tokens,
           SUM(u.response_tokens) AS response_tokens,
           SUM(u.request_tokens + u.response_tokens) AS total_tokens,
-          COUNT(*) AS call_count
+          COUNT(*) AS call_count,
+          COUNT(DISTINCT u.session_id) AS session_count
         FROM usage u
         LEFT JOIN agents a ON a.id = u.agent_id
         ${whereClause}
@@ -617,7 +622,8 @@ router.get('/', async (req, res, next) => {
           SUM(u.request_tokens) AS request_tokens,
           SUM(u.response_tokens) AS response_tokens,
           SUM(u.request_tokens + u.response_tokens) AS total_tokens,
-          COUNT(*) AS call_count
+          COUNT(*) AS call_count,
+          COUNT(DISTINCT u.session_id) AS session_count
         FROM usage u
         LEFT JOIN team t ON t.id = u.team_id
         ${whereClause}
@@ -636,7 +642,8 @@ router.get('/', async (req, res, next) => {
           SUM(u.request_tokens) AS request_tokens,
           SUM(u.response_tokens) AS response_tokens,
           SUM(u.request_tokens + u.response_tokens) AS total_tokens,
-          COUNT(*) AS call_count
+          COUNT(*) AS call_count,
+          COUNT(DISTINCT u.session_id) AS session_count
         FROM usage u
         LEFT JOIN "user" u2 ON u2.id = u.user_id
         ${whereClause}
@@ -721,7 +728,9 @@ router.get('/', async (req, res, next) => {
             COALESCE(NULLIF(m.display_name, ''), m.model_name, m.model_key, u.model_id::text, 'Unspecified model') AS label,
             SUM(u.request_tokens) AS request_tokens,
             SUM(u.response_tokens) AS response_tokens,
-            SUM(u.request_tokens + u.response_tokens) AS total_tokens
+            SUM(u.request_tokens + u.response_tokens) AS total_tokens,
+            COUNT(*) AS call_count,
+            COUNT(DISTINCT u.session_id) AS session_count
           FROM usage u
           LEFT JOIN models m ON m.id = u.model_id
           ${timeseriesWhereClause}
@@ -751,6 +760,8 @@ router.get('/', async (req, res, next) => {
         requestTokens: Number(row.request_tokens) || 0,
         responseTokens: Number(row.response_tokens) || 0,
         totalTokens: Number(row.total_tokens) || 0,
+        callCount: Number(row.call_count) || 0,
+        sessionCount: Number(row.session_count) || 0,
       });
     }
 
@@ -772,7 +783,9 @@ router.get('/', async (req, res, next) => {
             COALESCE(NULLIF(a.agent_name, ''), a.agent_type, u.agent_id::text, 'Unspecified agent') AS label,
             SUM(u.request_tokens) AS request_tokens,
             SUM(u.response_tokens) AS response_tokens,
-            SUM(u.request_tokens + u.response_tokens) AS total_tokens
+            SUM(u.request_tokens + u.response_tokens) AS total_tokens,
+            COUNT(*) AS call_count,
+            COUNT(DISTINCT u.session_id) AS session_count
           FROM usage u
           LEFT JOIN agents a ON a.id = u.agent_id
           ${timeseriesWhereClause}
@@ -802,6 +815,8 @@ router.get('/', async (req, res, next) => {
         requestTokens: Number(row.request_tokens) || 0,
         responseTokens: Number(row.response_tokens) || 0,
         totalTokens: Number(row.total_tokens) || 0,
+        callCount: Number(row.call_count) || 0,
+        sessionCount: Number(row.session_count) || 0,
       });
     }
 
@@ -823,7 +838,9 @@ router.get('/', async (req, res, next) => {
             COALESCE(t.name, 'Organization-wide') AS label,
             SUM(u.request_tokens) AS request_tokens,
             SUM(u.response_tokens) AS response_tokens,
-            SUM(u.request_tokens + u.response_tokens) AS total_tokens
+            SUM(u.request_tokens + u.response_tokens) AS total_tokens,
+            COUNT(*) AS call_count,
+            COUNT(DISTINCT u.session_id) AS session_count
           FROM usage u
           LEFT JOIN team t ON t.id = u.team_id
           ${timeseriesWhereClause}
@@ -853,6 +870,8 @@ router.get('/', async (req, res, next) => {
         requestTokens: Number(row.request_tokens) || 0,
         responseTokens: Number(row.response_tokens) || 0,
         totalTokens: Number(row.total_tokens) || 0,
+        callCount: Number(row.call_count) || 0,
+        sessionCount: Number(row.session_count) || 0,
       });
     }
 
@@ -874,7 +893,9 @@ router.get('/', async (req, res, next) => {
             COALESCE(NULLIF(u2.name, ''), NULLIF(u2.email, ''), u.user_id::text, 'Unspecified user') AS label,
             SUM(u.request_tokens) AS request_tokens,
             SUM(u.response_tokens) AS response_tokens,
-            SUM(u.request_tokens + u.response_tokens) AS total_tokens
+            SUM(u.request_tokens + u.response_tokens) AS total_tokens,
+            COUNT(*) AS call_count,
+            COUNT(DISTINCT u.session_id) AS session_count
           FROM usage u
           LEFT JOIN "user" u2 ON u2.id = u.user_id
           ${timeseriesWhereClause}
@@ -904,6 +925,8 @@ router.get('/', async (req, res, next) => {
         requestTokens: Number(row.request_tokens) || 0,
         responseTokens: Number(row.response_tokens) || 0,
         totalTokens: Number(row.total_tokens) || 0,
+        callCount: Number(row.call_count) || 0,
+        sessionCount: Number(row.session_count) || 0,
       });
     }
 
@@ -948,6 +971,7 @@ router.get('/', async (req, res, next) => {
         responseTokens: Number(summaryRow.response_tokens) || 0,
         totalTokens: Number(summaryRow.total_tokens) || 0,
         callCount: Number(summaryRow.call_count) || 0,
+        sessionCount: Number(summaryRow.session_count) || 0,
         totalCost: Number(summaryRow.total_cost) || 0,
         avgTokens: Number(summaryRow.avg_tokens) || 0,
       },
@@ -957,6 +981,7 @@ router.get('/', async (req, res, next) => {
         responseTokens: Number(row.response_tokens) || 0,
         totalTokens: Number(row.total_tokens) || 0,
         callCount: Number(row.call_count) || 0,
+        sessionCount: Number(row.session_count) || 0,
       })),
       breakdowns: {
         models: modelsResult.rows.map(mapBreakdownRow),

@@ -71,6 +71,7 @@ interface UsageSummary {
   responseTokens: number;
   totalTokens: number;
   callCount: number;
+  sessionCount: number;
   totalCost: number;
   avgTokens: number;
 }
@@ -81,6 +82,7 @@ interface TimeseriesPoint {
   responseTokens: number;
   totalTokens: number;
   callCount: number;
+  sessionCount: number;
 }
 
 interface BreakdownItem {
@@ -90,6 +92,7 @@ interface BreakdownItem {
   responseTokens: number;
   totalTokens: number;
   count: number;
+  sessionCount: number;
 }
 
 interface ModelTimeseriesPoint {
@@ -97,6 +100,8 @@ interface ModelTimeseriesPoint {
   requestTokens: number;
   responseTokens: number;
   totalTokens: number;
+  callCount: number;
+  sessionCount: number;
 }
 
 interface ModelTimeseriesSeries {
@@ -309,6 +314,8 @@ const chartColors = {
   total: { light: '#9CA3AF', dark: '#6B7280' }, // Gray
   request: { light: '#3B82F6', dark: '#60A5FA' }, // Blue
   response: { light: '#10B981', dark: '#34D399' }, // Green
+  requests: { light: '#F59E0B', dark: '#FBBF24' }, // Amber
+  sessions: { light: '#8B5CF6', dark: '#C4B5FD' }, // Purple
 };
 
 const MODEL_COLOR_PALETTE = ['#3B82F6', '#10B981', '#6366F1', '#F59E0B', '#EC4899', '#A855F7', '#22D3EE'];
@@ -726,6 +733,13 @@ const SummaryCard: React.FC<{
 
 type ModelChartType = 'area-step' | 'stacked-area' | 'line' | 'line-dots' | 'bar';
 type TokenMetricType = 'total' | 'request' | 'response';
+type UsageMetricType = 'tokens' | 'requests' | 'sessions';
+
+const METRIC_OPTIONS: { value: UsageMetricType; label: string }[] = [
+  { value: 'tokens', label: 'Tokens' },
+  { value: 'requests', label: 'Requests' },
+  { value: 'sessions', label: 'Sessions' },
+];
 
 const MODEL_CHART_OPTIONS: { value: ModelChartType; label: string; icon: string }[] = [
   { value: 'area-step', label: 'Step Area', icon: '▭' },
@@ -758,7 +772,8 @@ const TimeseriesCard: React.FC<{
   title: string;
   rangeKey: string;
   series: ModelTimeseriesSeries[];
-}> = ({ isLight, title, rangeKey, series }) => {
+  metric: UsageMetricType;
+}> = ({ isLight, title, rangeKey, series, metric }) => {
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
 
@@ -771,6 +786,13 @@ const TimeseriesCard: React.FC<{
   useEffect(() => {
     setVisibleIds(series.map(s => s.id));
   }, [series]);
+
+  useEffect(() => {
+    if (metric !== 'tokens') {
+      setMetricDropdownOpen(false);
+      setTokenMetric('total');
+    }
+  }, [metric]);
 
   const colorMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -804,18 +826,27 @@ const TimeseriesCard: React.FC<{
       };
       series.forEach(item => {
         const point = item.points.find(p => p.bucket === bucket);
-        if (point) {
-          entry[item.id] = 
-            tokenMetric === 'total' ? point.totalTokens :
-            tokenMetric === 'request' ? point.requestTokens :
-            point.responseTokens;
-        } else {
+        if (!point) {
           entry[item.id] = 0;
+          return;
+        }
+
+        if (metric === 'tokens') {
+          entry[item.id] =
+            tokenMetric === 'total'
+              ? point.totalTokens
+              : tokenMetric === 'request'
+              ? point.requestTokens
+              : point.responseTokens;
+        } else if (metric === 'requests') {
+          entry[item.id] = point.callCount;
+        } else {
+          entry[item.id] = point.sessionCount;
         }
       });
       return entry;
     });
-  }, [buckets, rangeKey, series, tokenMetric]);
+  }, [buckets, metric, rangeKey, series, tokenMetric]);
 
   const visibleSet = useMemo(() => new Set(visibleIds), [visibleIds]);
   const visibleSeries = series.filter(item => visibleSet.has(item.id));
@@ -839,6 +870,9 @@ const TimeseriesCard: React.FC<{
         return null;
       }
 
+      const valueSuffix =
+        metric === 'tokens' ? 'tokens' : metric === 'requests' ? 'requests' : 'sessions';
+
       return (
         <div
           className={cn(
@@ -859,7 +893,7 @@ const TimeseriesCard: React.FC<{
                   </span>
                 </div>
                 <span className={cn('text-xs font-medium', mainTextColor)}>
-                  {numberFormatter.format(Number(entry.value) || 0)}
+                  {`${numberFormatter.format(Number(entry.value) || 0)} ${valueSuffix}`}
                 </span>
               </div>
             ))}
@@ -867,7 +901,7 @@ const TimeseriesCard: React.FC<{
         </div>
       );
     },
-    [isLight, labelMap, visibleSet],
+    [isLight, labelMap, metric, visibleSet],
   );
 
   const renderChart = () => {
@@ -1009,6 +1043,7 @@ const TimeseriesCard: React.FC<{
         <h3 className={cn('text-sm font-semibold', mainTextColor)}>{title}</h3>
         <div className="flex items-center gap-2">
           {/* Token Metric Selector */}
+          {metric === 'tokens' && (
           <div className="relative">
             <button
               type="button"
@@ -1074,6 +1109,7 @@ const TimeseriesCard: React.FC<{
               </>
             )}
           </div>
+          )}
 
           {/* Chart Type Selector - Hidden for now */}
           {false && (
@@ -1190,9 +1226,26 @@ const BreakdownCard: React.FC<{
   isLight: boolean;
   title: string;
   data: BreakdownItem[];
-}> = ({ isLight, title, data }) => {
+  metric: UsageMetricType;
+}> = ({ isLight, title, data, metric }) => {
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+  const valueKey =
+    metric === 'tokens' ? 'totalTokens' : metric === 'requests' ? 'count' : 'sessionCount';
+  const valueLabel =
+    metric === 'tokens' ? 'Total tokens' : metric === 'requests' ? 'Total requests' : 'Active sessions';
+  const barFill =
+    metric === 'tokens'
+      ? isLight
+        ? chartColors.total.light
+        : chartColors.total.dark
+      : metric === 'requests'
+      ? isLight
+        ? chartColors.requests.light
+        : chartColors.requests.dark
+      : isLight
+      ? chartColors.sessions.light
+      : chartColors.sessions.dark;
 
   return (
   <div
@@ -1239,6 +1292,8 @@ const BreakdownCard: React.FC<{
               content={({ active, payload }) => {
                 if (active && payload && payload.length) {
                   const entry = payload[0];
+                  const valueSuffix =
+                    metric === 'tokens' ? 'tokens' : metric === 'requests' ? 'requests' : 'sessions';
                   return (
                     <div
                       className={cn(
@@ -1257,11 +1312,11 @@ const BreakdownCard: React.FC<{
                               style={{ backgroundColor: entry.color }}
                             />
                             <span className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                              Total tokens
+                              {valueLabel}
                             </span>
                           </div>
                           <span className={cn('text-xs font-medium', mainTextColor)}>
-                            {numberFormatter.format(entry.value as number)}
+                            {`${numberFormatter.format(entry.value as number)} ${valueSuffix}`}
                           </span>
                         </div>
                       </div>
@@ -1272,8 +1327,8 @@ const BreakdownCard: React.FC<{
               }}
             />
             <Bar
-              dataKey="totalTokens"
-              fill={isLight ? chartColors.total.light : chartColors.total.dark}
+              dataKey={valueKey}
+              fill={barFill}
               radius={[0, 4, 4, 0]}
             />
           </BarChart>
@@ -1306,6 +1361,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
     requestTokens: true,
     responseTokens: true,
   });
+  const [metric, setMetric] = useState<UsageMetricType>('tokens');
 
   type ChartType = 'area' | 'line' | 'bar' | 'stacked-bar' | 'stacked-area' | 'area-spline' | 'step-line' | 'line-dots' | 'area-step';
   const [chartType, setChartType] = useState<ChartType>('area-step');
@@ -1516,6 +1572,24 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
     });
   }, [usageData]);
 
+  const mainChartTitle =
+    metric === 'tokens'
+      ? 'Overall Token Usage'
+      : metric === 'requests'
+      ? 'Overall Requests'
+      : 'Active Sessions';
+  const mainMetricKey = metric === 'requests' ? 'callCount' : 'sessionCount';
+  const mainMetricLabel = metric === 'requests' ? 'Requests' : 'Active sessions';
+  const mainMetricColor =
+    metric === 'requests'
+      ? isLight
+        ? chartColors.requests.light
+        : chartColors.requests.dark
+      : isLight
+      ? chartColors.sessions.light
+      : chartColors.sessions.dark;
+  const mainMetricGradientId = metric === 'requests' ? 'requestsMainGradient' : 'sessionsMainGradient';
+
   const modelsBreakdown = usageData?.breakdowns.models ?? [];
   const modelsTimeseries = usageData?.modelsTimeseries ?? [];
   const agentsBreakdown = usageData?.breakdowns.agents ?? [];
@@ -1526,6 +1600,156 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
   const usersTimeseries = usageData?.usersTimeseries ?? [];
 
   const summary = usageData?.summary;
+
+  const summaryCards = useMemo(() => {
+    const hasSummary = Boolean(summary);
+    const safeSummary: UsageSummary = summary ?? {
+      totalTokens: 0,
+      requestTokens: 0,
+      responseTokens: 0,
+      callCount: 0,
+      sessionCount: 0,
+      totalCost: 0,
+      avgTokens: 0,
+    };
+
+    const formatCount = (value: number, decimals = false) =>
+      hasSummary ? (decimals ? decimalFormatter.format(value) : numberFormatter.format(Math.max(value, 0))) : '—';
+
+    if (metric === 'tokens') {
+      return [
+        {
+          label: 'Total tokens',
+          value: formatCount(safeSummary.totalTokens),
+          description: 'Request + response',
+        },
+        {
+          label: 'Request tokens',
+          value: formatCount(safeSummary.requestTokens),
+          description: 'Prompt usage',
+        },
+        {
+          label: 'Response tokens',
+          value: formatCount(safeSummary.responseTokens),
+          description: 'Completion usage',
+        },
+        {
+          label: 'Avg tokens / call',
+          value: hasSummary ? numberFormatter.format(Math.round(safeSummary.avgTokens || 0)) : '—',
+          description: hasSummary
+            ? `${numberFormatter.format(safeSummary.callCount)} total calls`
+            : 'Call volume',
+        },
+      ];
+    }
+
+    if (metric === 'requests') {
+      const requestsPerSession =
+        safeSummary.sessionCount > 0 ? safeSummary.callCount / safeSummary.sessionCount : 0;
+      return [
+        {
+          label: 'Total requests',
+          value: formatCount(safeSummary.callCount),
+          description: 'Usage events',
+        },
+        {
+          label: 'Avg tokens / request',
+          value: formatCount(Math.round(safeSummary.avgTokens || 0)),
+          description: 'Tokens per call',
+        },
+        {
+          label: 'Active sessions',
+          value: formatCount(safeSummary.sessionCount),
+          description: 'Distinct sessions',
+        },
+        {
+          label: 'Requests / session',
+          value: formatCount(Math.round(requestsPerSession)),
+          description: 'Call distribution',
+        },
+      ];
+    }
+
+    // Sessions metric
+    const tokensPerSession =
+      safeSummary.sessionCount > 0 ? safeSummary.totalTokens / safeSummary.sessionCount : 0;
+    const requestsPerSession =
+      safeSummary.sessionCount > 0 ? safeSummary.callCount / safeSummary.sessionCount : 0;
+
+    return [
+      {
+        label: 'Active sessions',
+        value: formatCount(safeSummary.sessionCount),
+        description: 'Distinct session IDs',
+      },
+      {
+        label: 'Total requests',
+        value: formatCount(safeSummary.callCount),
+        description: 'Usage events',
+      },
+      {
+        label: 'Requests / session',
+        value: formatCount(Math.round(requestsPerSession)),
+        description: 'Average call load',
+      },
+      {
+        label: 'Tokens / session',
+        value: formatCount(tokensPerSession),
+        description: 'Average token usage',
+      },
+    ];
+  }, [metric, summary]);
+
+  const sessionAggregates = useMemo(() => {
+    if (!usageData?.recent?.data) {
+      return [];
+    }
+
+    const map = new Map<
+      string,
+      {
+        sessionId: string;
+        createdAt: string;
+        lastActivity: number;
+        agent: string;
+        model: string;
+        user: string;
+        requestCount: number;
+        totalTokens: number;
+      }
+    >();
+
+    usageData.recent.data.forEach(row => {
+      const sessionKey = row.sessionId || 'unknown';
+      const timestamp = new Date(row.createdAt).getTime();
+      const existing = map.get(sessionKey);
+
+      if (!existing) {
+        map.set(sessionKey, {
+          sessionId: sessionKey,
+          createdAt: row.createdAt,
+          lastActivity: timestamp,
+          agent: row.agent,
+          model: row.model,
+          user: row.user,
+          requestCount: 1,
+          totalTokens: row.totalTokens,
+        });
+      } else {
+        existing.requestCount += 1;
+        existing.totalTokens += row.totalTokens;
+        if (timestamp > existing.lastActivity) {
+          existing.lastActivity = timestamp;
+          existing.createdAt = row.createdAt;
+          existing.agent = row.agent;
+          existing.model = row.model;
+          existing.user = row.user;
+        }
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => b.lastActivity - a.lastActivity);
+  }, [usageData]);
 
   const scopeLabel = usageData
     ? (() => {
@@ -1609,19 +1833,53 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
         </div>
       </div>
 
-      {/* User Selector */}
-      <div className="mb-4">
-        <label className={cn('mb-2 block text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
-          Filter by User
-        </label>
-        <UserMultiSelector
-          isLight={isLight}
-          users={usageData?.filters.users.options ?? []}
-          selectedUserIds={filters.userIds}
-          onChange={handleUserIdsChange}
-          placeholder="All users"
-          allowEmpty={true}
-        />
+      {/* User and Metric Selectors */}
+      <div className="mb-4 grid grid-cols-2 gap-3">
+        <div>
+          <label className={cn('mb-2 block text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+            Filter by User
+          </label>
+          <UserMultiSelector
+            isLight={isLight}
+            users={usageData?.filters.users.options ?? []}
+            selectedUserIds={filters.userIds}
+            onChange={handleUserIdsChange}
+            placeholder="All users"
+            allowEmpty={true}
+          />
+        </div>
+
+        <div>
+          <label className={cn('mb-2 block text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+            Filter by Metric
+          </label>
+          <div
+            className={cn(
+              'flex items-center gap-1 rounded-lg p-1',
+              isLight ? 'bg-gray-100' : 'bg-[#151C24]',
+            )}
+          >
+            {METRIC_OPTIONS.map(option => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setMetric(option.value)}
+                className={cn(
+                  'flex-1 px-2 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap',
+                  metric === option.value
+                    ? isLight
+                      ? 'bg-white text-gray-900'
+                      : 'bg-gray-700 text-white'
+                    : isLight
+                    ? 'text-gray-600 hover:text-gray-900'
+                    : 'text-gray-400 hover:text-gray-200',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Range Selector and Refresh */}
@@ -1684,34 +1942,15 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <SummaryCard
-          isLight={isLight}
-          label="Total tokens"
-          value={summary ? numberFormatter.format(summary.totalTokens) : '—'}
-          description="Request + response"
-        />
-        <SummaryCard
-          isLight={isLight}
-          label="Request tokens"
-          value={summary ? numberFormatter.format(summary.requestTokens) : '—'}
-          description="Prompt usage"
-        />
-        <SummaryCard
-          isLight={isLight}
-          label="Response tokens"
-          value={summary ? numberFormatter.format(summary.responseTokens) : '—'}
-          description="Completion usage"
-        />
-        <SummaryCard
-          isLight={isLight}
-          label="Avg tokens / call"
-          value={summary ? numberFormatter.format(Math.round(summary.avgTokens || 0)) : '—'}
-          description={
-            summary
-              ? `${numberFormatter.format(summary.callCount)} total calls`
-              : 'Call volume'
-          }
-        />
+        {summaryCards.map(card => (
+          <SummaryCard
+            key={card.label}
+            isLight={isLight}
+            label={card.label}
+            value={card.value}
+            description={card.description}
+          />
+        ))}
       </div>
 
       {/* Time Series Chart */}
@@ -1724,7 +1963,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
         <div className="space-y-3">
           <div className={cn('flex items-center justify-between px-4 py-2 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
             <h3 className={cn('text-sm font-semibold', mainTextColor)}>
-              Overall Token Usage
+              {mainChartTitle}
             </h3>
             
             {/* Chart Type Selector - Hidden for now */}
@@ -1800,7 +2039,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
               </div>
             )}
           </div>
-          {chartData.length > 0 && (
+          {chartData.length > 0 && metric === 'tokens' && (
             <div className="flex items-center gap-4 px-4">
               <button
                 type="button"
@@ -1879,6 +2118,22 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
               </button>
             </div>
           )}
+          {chartData.length > 0 && metric !== 'tokens' && (
+            <div className="flex items-center gap-4 px-4">
+              <div
+                className={cn(
+                  'flex items-center gap-1.5 rounded px-2 py-1 text-[10px] uppercase',
+                  isLight ? 'text-gray-600' : 'text-gray-200',
+                )}
+              >
+                <div
+                  className="h-2 w-2"
+                  style={{ backgroundColor: mainMetricColor }}
+                />
+                <span>{mainMetricLabel}</span>
+              </div>
+            </div>
+          )}
         </div>
         <div className="h-64 w-full py-3">
           {loading && !usageData ? (
@@ -1889,6 +2144,80 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
             <div className={cn('flex h-full items-center justify-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
               No data available
             </div>
+          ) : metric !== 'tokens' ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                <defs>
+                  <linearGradient id={mainMetricGradientId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={mainMetricColor} stopOpacity={0.4} />
+                    <stop offset="95%" stopColor={mainMetricColor} stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke={isLight ? '#E5E7EB' : '#1F2937'}
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 10, fill: isLight ? '#6B7280' : '#9CA3AF' }}
+                  tickLine={false}
+                  axisLine={false}
+                  height={30}
+                />
+                <YAxis
+                  tickFormatter={value => compactNumberFormatter(value as number)}
+                  tick={{ fontSize: 10, fill: isLight ? '#6B7280' : '#9CA3AF' }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={60}
+                />
+                <Tooltip
+                  cursor={{ strokeDasharray: '3 3', stroke: isLight ? '#CBD5E1' : '#4B5563' }}
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      const value = Number(payload[0].value) || 0;
+                      const suffix = metric === 'requests' ? 'requests' : 'sessions';
+                      return (
+                        <div
+                          className={cn(
+                            'rounded-lg border shadow-lg overflow-hidden',
+                            isLight ? 'bg-white border-gray-200' : 'bg-[#1F2937] border-gray-700',
+                          )}
+                        >
+                          <p className={cn('text-xs font-medium px-3 pt-2 pb-2 border-b', isLight ? 'text-gray-900 border-gray-200' : 'text-gray-100 border-gray-700')}>
+                            {label}
+                          </p>
+                          <div className="px-3 py-2">
+                            <div className="flex items-center justify-between gap-4 py-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <div className="h-2 w-2" style={{ backgroundColor: mainMetricColor }} />
+                                <span className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                  {metric === 'requests' ? 'Requests' : 'Active sessions'}
+                                </span>
+                              </div>
+                              <span className={cn('text-xs font-medium', mainTextColor)}>
+                                {`${numberFormatter.format(value)} ${suffix}`}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Area
+                  type="step"
+                  dataKey={mainMetricKey}
+                  stroke={mainMetricColor}
+                  strokeWidth={2}
+                  fill={`url(#${mainMetricGradientId})`}
+                  dot={false}
+                  name={mainMetricLabel}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               {(() => {
@@ -2301,9 +2630,10 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
             title="Top Models"
             rangeKey={usageData?.filters.range.selected ?? DEFAULT_FILTERS.range}
             series={modelsTimeseries}
+            metric={metric}
           />
         ) : (
-          <BreakdownCard isLight={isLight} title="Top Models" data={modelsBreakdown} />
+          <BreakdownCard isLight={isLight} title="Top Models" data={modelsBreakdown} metric={metric} />
         )}
 
         {agentsTimeseries.length > 0 ? (
@@ -2312,9 +2642,10 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
             title="Top Agents"
             rangeKey={usageData?.filters.range.selected ?? DEFAULT_FILTERS.range}
             series={agentsTimeseries}
+            metric={metric}
           />
         ) : (
-          <BreakdownCard isLight={isLight} title="Top Agents" data={agentsBreakdown} />
+          <BreakdownCard isLight={isLight} title="Top Agents" data={agentsBreakdown} metric={metric} />
         )}
 
         {teamsTimeseries.length > 0 ? (
@@ -2323,9 +2654,10 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
             title="Teams"
             rangeKey={usageData?.filters.range.selected ?? DEFAULT_FILTERS.range}
             series={teamsTimeseries}
+            metric={metric}
           />
         ) : (
-          <BreakdownCard isLight={isLight} title="Teams" data={teamsBreakdown} />
+          <BreakdownCard isLight={isLight} title="Teams" data={teamsBreakdown} metric={metric} />
         )}
 
         {usersTimeseries.length > 0 ? (
@@ -2334,9 +2666,10 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
             title="Users"
             rangeKey={usageData?.filters.range.selected ?? DEFAULT_FILTERS.range}
             series={usersTimeseries}
+            metric={metric}
           />
         ) : (
-          <BreakdownCard isLight={isLight} title="Users" data={usersBreakdown} />
+          <BreakdownCard isLight={isLight} title="Users" data={usersBreakdown} metric={metric} />
         )}
       </div>
 
@@ -2455,72 +2788,191 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                 >
                   User
                 </th>
-                <th
-                  className={cn(
-                    'px-3 py-2 text-right text-xs font-semibold',
-                    isLight ? 'text-gray-600' : 'text-gray-300',
-                  )}
-                >
-                  Request
-                </th>
-                <th
-                  className={cn(
-                    'px-3 py-2 text-right text-xs font-semibold',
-                    isLight ? 'text-gray-600' : 'text-gray-300',
-                  )}
-                >
-                  Response
-                </th>
-                <th
-                  className={cn(
-                    'px-3 py-2 text-right text-xs font-semibold',
-                    isLight ? 'text-gray-600' : 'text-gray-300',
-                  )}
-                >
-                  Total
-                </th>
+                {(metric === 'requests' || metric === 'sessions') && (
+                  <th
+                    className={cn(
+                      'px-3 py-2 text-left text-xs font-semibold',
+                      isLight ? 'text-gray-600' : 'text-gray-300',
+                    )}
+                  >
+                    Session
+                  </th>
+                )}
+                {metric === 'tokens' ? (
+                  <>
+                    <th
+                      className={cn(
+                        'px-3 py-2 text-right text-xs font-semibold',
+                        isLight ? 'text-gray-600' : 'text-gray-300',
+                      )}
+                    >
+                      Request
+                    </th>
+                    <th
+                      className={cn(
+                        'px-3 py-2 text-right text-xs font-semibold',
+                        isLight ? 'text-gray-600' : 'text-gray-300',
+                      )}
+                    >
+                      Response
+                    </th>
+                    <th
+                      className={cn(
+                        'px-3 py-2 text-right text-xs font-semibold',
+                        isLight ? 'text-gray-600' : 'text-gray-300',
+                      )}
+                    >
+                      Total
+                    </th>
+                  </>
+                ) : (
+                  <>
+                    <th
+                      className={cn(
+                        'px-3 py-2 text-right text-xs font-semibold',
+                        isLight ? 'text-gray-600' : 'text-gray-300',
+                      )}
+                    >
+                      {metric === 'requests' ? 'Requests' : 'Requests'}
+                    </th>
+                    <th
+                      className={cn(
+                        'px-3 py-2 text-right text-xs font-semibold',
+                        isLight ? 'text-gray-600' : 'text-gray-300',
+                      )}
+                    >
+                      Tokens
+                    </th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody className={cn('divide-y', isLight ? 'divide-gray-100' : 'divide-gray-700')}>
-              {usageData?.recent.data.map(row => (
-                <tr
-                  key={row.id}
-                  className={cn(
-                    'transition-colors',
-                    isLight ? 'hover:bg-gray-50' : 'hover:bg-gray-900/40',
-                  )}
-                >
-                  <td className={cn('px-3 py-2 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                    {new Date(row.createdAt).toLocaleString([], {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </td>
-                  <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
-                    {row.agent}
-                  </td>
-                  <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
-                    {row.model}
-                  </td>
-                  <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                    {row.user}
-                  </td>
-                  <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                    {numberFormatter.format(row.requestTokens)}
-                  </td>
-                  <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                    {numberFormatter.format(row.responseTokens)}
-                  </td>
-                  <td className={cn('px-3 py-2 text-right tabular-nums font-medium', mainTextColor)}>
-                    {numberFormatter.format(row.totalTokens)}
-                  </td>
-                </tr>
-              ))}
-              {(!usageData?.recent || usageData.recent.data.length === 0) && (
+              {metric === 'tokens' &&
+                usageData?.recent.data.map(row => (
+                  <tr
+                    key={row.id}
+                    className={cn(
+                      'transition-colors',
+                      isLight ? 'hover:bg-gray-50' : 'hover:bg-gray-900/40',
+                    )}
+                  >
+                    <td className={cn('px-3 py-2 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      {new Date(row.createdAt).toLocaleString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </td>
+                    <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
+                      {row.agent}
+                    </td>
+                    <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
+                      {row.model}
+                    </td>
+                    <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                      {row.user}
+                    </td>
+                    <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                      {numberFormatter.format(row.requestTokens)}
+                    </td>
+                    <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                      {numberFormatter.format(row.responseTokens)}
+                    </td>
+                    <td className={cn('px-3 py-2 text-right tabular-nums font-medium', mainTextColor)}>
+                      {numberFormatter.format(row.totalTokens)}
+                    </td>
+                  </tr>
+                ))}
+
+              {metric === 'requests' &&
+                usageData?.recent.data.map(row => (
+                  <tr
+                    key={row.id}
+                    className={cn(
+                      'transition-colors',
+                      isLight ? 'hover:bg-gray-50' : 'hover:bg-gray-900/40',
+                    )}
+                  >
+                    <td className={cn('px-3 py-2 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      {new Date(row.createdAt).toLocaleString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </td>
+                    <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
+                      {row.agent || '—'}
+                    </td>
+                    <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
+                      {row.model || '—'}
+                    </td>
+                    <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                      {row.user || '—'}
+                    </td>
+                    <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      {row.sessionId ? row.sessionId : '—'}
+                    </td>
+                    <td className={cn('px-3 py-2 text-right tabular-nums font-medium', mainTextColor)}>
+                      1
+                    </td>
+                    <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                      {numberFormatter.format(row.totalTokens)}
+                    </td>
+                  </tr>
+                ))}
+
+              {metric === 'sessions' &&
+                sessionAggregates.map(row => (
+                  <tr
+                    key={row.sessionId}
+                    className={cn(
+                      'transition-colors',
+                      isLight ? 'hover:bg-gray-50' : 'hover:bg-gray-900/40',
+                    )}
+                  >
+                    <td className={cn('px-3 py-2 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      {new Date(row.createdAt).toLocaleString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </td>
+                    <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
+                      {row.agent || '—'}
+                    </td>
+                    <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
+                      {row.model || '—'}
+                    </td>
+                    <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                      {row.user || '—'}
+                    </td>
+                    <td className={cn('px-3 py-2 truncate max-w-[160px]', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      {row.sessionId === 'unknown' ? '—' : row.sessionId}
+                    </td>
+                    <td className={cn('px-3 py-2 text-right tabular-nums font-medium', mainTextColor)}>
+                      {numberFormatter.format(row.requestCount)}
+                    </td>
+                    <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                      {numberFormatter.format(row.totalTokens)}
+                    </td>
+                  </tr>
+                ))}
+
+              {((metric === 'sessions' && sessionAggregates.length === 0) ||
+                ((metric === 'tokens' || metric === 'requests') &&
+                  (!usageData?.recent || usageData.recent.data.length === 0))) && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-xs text-gray-500">
+                  <td
+                    colSpan={7}
+                    className={cn(
+                      'px-3 py-8 text-center text-xs',
+                      isLight ? 'text-gray-500' : 'text-gray-400',
+                    )}
+                  >
                     No recent activity
                   </td>
                 </tr>

@@ -100,6 +100,11 @@ export class SessionStorageDB {
     } else {
       log('[SessionStorageDB:setCurrentUserId] ℹ️  User ID set (no change):', userId || 'null');
     }
+
+    // When switching users, ensure the persisted current session belongs to the new user
+    if (previousUserId !== userId) {
+      void this.ensureCurrentSessionForActiveUser();
+    }
   }
 
   /**
@@ -264,12 +269,16 @@ export class SessionStorageDB {
    * Get all open sessions
    */
   async getOpenSessions(): Promise<SessionMetadata[]> {
-     const worker = this.getWorker();
-     const result = await worker.query<any[]>(
-       'SELECT * FROM session_metadata WHERE isOpen = true ORDER BY timestamp ASC;'
-     );
+    const worker = this.getWorker();
+    const query = this.currentUserId
+      ? 'SELECT * FROM session_metadata WHERE isOpen = true AND userId = $userId ORDER BY timestamp ASC;'
+      : 'SELECT * FROM session_metadata WHERE isOpen = true ORDER BY timestamp ASC;';
+    const params = this.currentUserId ? { userId: this.currentUserId } : {};
+    const result = await worker.query<any[]>(query, params);
     const rows = result[0] || [];
-    return rows.map((row: any) => this.normalizeSession(row));
+    return rows
+      .map((row: any) => this.normalizeSession(row))
+      .filter((session: SessionMetadata) => !this.currentUserId || session.userId === this.currentUserId);
   }
 
   /**
@@ -284,7 +293,35 @@ export class SessionStorageDB {
     const result = await worker.query<any[]>(
       'SELECT sessionId FROM current_session LIMIT 1;'
     );
-    return result[0]?.[0]?.sessionId || null;
+    const currentId = result[0]?.[0]?.sessionId || null;
+
+    if (!currentId || !this.currentUserId) {
+      return currentId || null;
+    }
+
+    const session = await this.getSession(currentId);
+    if (!session) {
+      log('[SessionStorageDB:getCurrentSessionId] ⚠️ Stored current session not found, clearing pointer');
+      await this.setCurrentSessionId(null);
+      return null;
+    }
+
+    if (session.userId !== this.currentUserId) {
+      log('[SessionStorageDB:getCurrentSessionId] ⚠️ Current session belongs to different user. Clearing and selecting fallback.', {
+        storedSessionId: currentId.slice(0, 12) + '...',
+        sessionUserId: session.userId,
+        currentUserId: this.currentUserId,
+      });
+      await this.setCurrentSessionId(null);
+      const sessions = await this.getAllSessions();
+      if (sessions.length > 0) {
+        await this.setActiveSession(sessions[0].id);
+        return sessions[0].id;
+      }
+      return null;
+    }
+
+    return session.id;
   }
 
   /**
@@ -704,6 +741,37 @@ export class SessionStorageDB {
       DELETE current_session;
       CREATE current_session CONTENT { sessionId: $sid };
     `, { sid: sessionId });
+  }
+
+  /**
+   * Ensure the persisted current session belongs to the active user.
+   * Runs asynchronously when the user context changes.
+   */
+  private async ensureCurrentSessionForActiveUser(): Promise<void> {
+    try {
+      if (!this.isInitialized) {
+        return;
+      }
+
+      const currentId = await this.getCurrentSessionId();
+      if (!currentId) {
+        return;
+      }
+
+      const session = await this.getSession(currentId);
+      if (!session || (this.currentUserId && session.userId !== this.currentUserId)) {
+        log('[SessionStorageDB] 🔁 ensureCurrentSessionForActiveUser detected mismatch, clearing current session');
+        await this.setCurrentSessionId(null);
+        if (this.currentUserId) {
+          const sessions = await this.getAllSessions();
+          if (sessions.length > 0) {
+            await this.setActiveSession(sessions[0].id);
+          }
+        }
+      }
+    } catch (error) {
+      log('[SessionStorageDB] ⚠️ Failed to ensure current session for active user:', error);
+    }
   }
 }
 
