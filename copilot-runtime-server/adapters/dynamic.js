@@ -19,10 +19,35 @@ export async function createDynamicServiceAdapter() {
   const defaultClaudeModel = 'claude-4.5-haiku';
   const defaultGPTModel = 'gpt-4o-mini';
   
-  // Create adapters with forced models (await since they're async now)
-  const openaiAdapter = await createAzureOpenAIAdapter(defaultGPTModel);
-  const googleAdapter = await createGeminiAdapter(defaultGeminiModel);
-  const anthropicHaikuAdapter = await createClaudeHaikuAdapter();
+  // Adapter cache per organization context
+  const adapterCache = new Map();
+  
+  const getOrCreateAdapter = async (type, model, context = {}) => {
+    const cacheKey = `${type}-${context.organizationId || 'global'}-${context.teamId || 'global'}`;
+    
+    if (!adapterCache.has(cacheKey)) {
+      log(`Creating ${type} adapter for context: org=${context.organizationId || 'null'} team=${context.teamId || 'null'}`);
+      let adapter;
+      
+      switch (type) {
+        case 'openai':
+          adapter = await createAzureOpenAIAdapter(model, context);
+          break;
+        case 'google':
+          adapter = await createGeminiAdapter(model, context);
+          break;
+        case 'anthropic':
+          adapter = await createClaudeHaikuAdapter(context);
+          break;
+        default:
+          throw new Error(`Unknown adapter type: ${type}`);
+      }
+      
+      adapterCache.set(cacheKey, adapter);
+    }
+    
+    return adapterCache.get(cacheKey);
+  };
 
   const processWithRetry = async (label, fn, retries = 2) => {
     let lastErr;
@@ -47,13 +72,20 @@ export async function createDynamicServiceAdapter() {
         || request?.forwardedParameters?.model
         || DEFAULT_MODEL);
       
+      // Extract context from request (should be set by middleware)
+      const context = {
+        organizationId: request?.context?.organizationId,
+        teamId: request?.context?.teamId,
+      };
+      
       // Get forced model from configuration (for cost optimization)
-      const forcedModel = await getForcedModel(requestedModel);
-      const modelConfig = await getModelConfig(requestedModel);
+      const forcedModel = await getForcedModel(requestedModel, context);
+      const modelConfig = await getModelConfig(requestedModel, context);
       
       
       if (isGeminiModel(requestedModel)) {
         const forcedGemini = modelConfig?.forced_model || defaultGeminiModel;
+        const googleAdapter = await getOrCreateAdapter('google', forcedGemini, context);
         return processWithRetry('google', () => googleAdapter.process({ ...request, model: forcedGemini }));
       }
       
@@ -83,15 +115,18 @@ export async function createDynamicServiceAdapter() {
         };
         
         const sanitizedMessages = sanitizeForAnthropic(request.messages);
-        return processWithRetry('anthropic', () => anthropicHaikuAdapter.process({ ...request, model: forcedClaude, messages: sanitizedMessages }));
+        const anthropicAdapter = await getOrCreateAdapter('anthropic', forcedClaude, context);
+        return processWithRetry('anthropic', () => anthropicAdapter.process({ ...request, model: forcedClaude, messages: sanitizedMessages }));
       }
       
       if (isGPTModel(requestedModel)) {
         const forcedGPT = modelConfig?.forced_model || defaultGPTModel;
+        const openaiAdapter = await getOrCreateAdapter('openai', forcedGPT, context);
         return processWithRetry('openai', () => openaiAdapter.process({ ...request, model: forcedGPT }));
       }
       
       // default to OpenAI-compatible (Azure OpenAI)
+      const openaiAdapter = await getOrCreateAdapter('openai', defaultGPTModel, context);
       return processWithRetry('openai-default', () => openaiAdapter.process(request));
     },
   };

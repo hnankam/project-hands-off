@@ -505,11 +505,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
               padding: '0.5rem',
               borderRadius: '6px',
               border: 'none',
-              backgroundColor: showCopyFeedback
-                ? isLight
-                  ? 'rgba(34, 197, 94, 0.15)'
-                  : 'rgba(34, 197, 94, 0.25)'
-                : 'transparent',
+            backgroundColor: 'transparent',
               color: showCopyFeedback ? '#22c55e' : isLight ? '#0C1117' : '#ffffff',
               cursor: 'pointer',
               display: 'flex',

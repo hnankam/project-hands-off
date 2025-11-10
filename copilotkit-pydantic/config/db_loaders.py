@@ -301,8 +301,8 @@ async def fetch_context_bundle(
                         AND NOT EXISTS (SELECT 1 FROM mcp_server_teams mst WHERE mst.mcp_server_id = ms.id)
                         """
                     
-                    # Allow global MCP servers (organization_id IS NULL) to be inherited by all organizations
-                    server_org_condition = "(ms.organization_id IS NULL OR ms.organization_id = %(organization_id)s)" if organization_id else "ms.organization_id IS NULL"
+                    # MCP servers must belong to a specific organization
+                    server_org_condition = "ms.organization_id = %(organization_id)s" if organization_id else "FALSE"
                     
                     await cur.execute(
                         f"""
@@ -385,16 +385,27 @@ async def fetch_context_bundle(
                                     WHERE tt.tool_id = t.id),
                                    ARRAY[]::text[]
                                ) as team_ids,
-                               t.enabled,
+                               CASE 
+                                   WHEN t.organization_id IS NULL THEN 
+                                       COALESCE(ots.enabled, t.enabled)
+                                   ELSE 
+                                       t.enabled
+                               END as enabled,
                                t.readonly,
                                t.mcp_server_id,
                                t.remote_tool_name,
                                t.updated_at,
                                t.created_at
                           FROM tools t
+                          LEFT JOIN organization_tool_settings ots ON ots.tool_id = t.id AND ots.organization_id = %(organization_id)s
                          WHERE {tools_org_condition}
                            {tools_team_condition}
-                         ORDER BY t.enabled DESC, t.tool_key
+                         ORDER BY (CASE 
+                                   WHEN t.organization_id IS NULL THEN 
+                                       COALESCE(ots.enabled, t.enabled)
+                                   ELSE 
+                                       t.enabled
+                               END) DESC, t.tool_key
                         """,
                         params,
                     )

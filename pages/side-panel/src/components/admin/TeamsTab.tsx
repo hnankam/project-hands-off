@@ -451,12 +451,12 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                   />
                 </div>
               </div>
-              <div className="flex gap-2 mt-3">
+              <div className="flex flex-wrap gap-2 justify-end mt-3">
                 <button
                   type="submit"
                   disabled={loading}
                   className={cn(
-                    'flex-1 px-4 py-1.5 text-xs rounded transition-colors font-medium',
+                    'px-4 py-1.5 text-xs rounded transition-colors font-medium',
                     isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-500 text-white hover:bg-blue-600',
                     loading && 'opacity-50 cursor-not-allowed',
                   )}>
@@ -467,7 +467,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                   onClick={() => setShowCreateTeamForm(false)}
                   className={cn(
                     'px-4 py-1.5 text-xs rounded transition-colors font-medium',
-                    isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-900/30 text-red-400 hover:bg-red-900/50',
+                    isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
                   )}>
                   Cancel
                 </button>
@@ -507,12 +507,12 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                         )}
                       />
                     </div>
-                    <div className="flex gap-2 mt-3">
+                    <div className="flex flex-wrap gap-2 justify-end mt-3">
                       <button
                         onClick={() => updateTeam(team.id)}
                         disabled={loading}
                         className={cn(
-                          'flex-1 px-4 py-1.5 text-xs rounded transition-colors font-medium',
+                          'px-4 py-1.5 text-xs rounded transition-colors font-medium',
                           isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-500 text-white hover:bg-blue-600',
                           loading && 'opacity-50 cursor-not-allowed',
                         )}>

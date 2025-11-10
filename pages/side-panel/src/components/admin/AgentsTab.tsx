@@ -361,6 +361,11 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       const effectiveTeamIds = teamIds.filter(id => id && id.trim() !== '');
 
       return models.filter(model => {
+        // Filter out disabled models
+        if (!model.enabled) {
+          return false;
+        }
+
         const modelTeamIds = model.teams.map(t => t.id);
         
         if (scope === 'organization') {
@@ -385,6 +390,11 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       const effectiveTeamIds = teamIds.filter(id => id && id.trim() !== '');
 
       return toolsList.filter(tool => {
+        // Filter out disabled tools
+        if (!tool.enabled) {
+          return false;
+        }
+
         const toolTeamIds = tool.teams.map(t => t.id);
         
         if (scope === 'organization') {

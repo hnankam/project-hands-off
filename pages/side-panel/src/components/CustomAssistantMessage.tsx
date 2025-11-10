@@ -1,8 +1,65 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { AssistantMessageProps } from '@copilotkit/react-ui';
 import { useChatContext, Markdown } from '@copilotkit/react-ui';
+import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
 import { useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
+
+const extractTextFromMessage = (msg: any): string => {
+  if (!msg) return '';
+  const rawContent = msg?.content;
+  if (!rawContent) return '';
+
+  if (typeof rawContent === 'string') {
+    return rawContent;
+  }
+
+  if (Array.isArray(rawContent)) {
+    return rawContent
+      .map((part: any) => {
+        if (!part) return '';
+        if (typeof part === 'string') return part;
+        if (typeof part.text === 'string') return part.text;
+        if (typeof part.content === 'string') return part.content;
+        if (typeof part.value === 'string') return part.value;
+        return '';
+      })
+      .filter(Boolean)
+      .join('');
+  }
+
+  if (typeof rawContent === 'object') {
+    if (typeof rawContent.text === 'string') {
+      return rawContent.text;
+    }
+    if (Array.isArray(rawContent.parts)) {
+      return rawContent.parts
+        .map((part: any) => {
+          if (!part) return '';
+          if (typeof part === 'string') return part;
+          if (typeof part.text === 'string') return part.text;
+          if (typeof part.content === 'string') return part.content;
+          return '';
+        })
+        .filter(Boolean)
+        .join('');
+    }
+    if (typeof rawContent.content === 'string') {
+      return rawContent.content;
+    }
+    try {
+      return JSON.stringify(rawContent);
+    } catch {
+      return '';
+    }
+  }
+
+  try {
+    return String(rawContent);
+  } catch {
+    return '';
+  }
+};
 
 /**
  * CustomAssistantMessage Component
@@ -24,18 +81,98 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
     markdownTagRenderers,
   } = props;
   const [copied, setCopied] = useState(false);
+  const { messages } = useCopilotChatHeadless_c();
 
-  const handleCopy = () => {
-    const content = message?.content || "";
-    if (content && onCopy) {
-      navigator.clipboard.writeText(content);
+  const { isLastInSeries, assistantSeries } = useMemo(() => {
+    if (!message) {
+      return { isLastInSeries: true, assistantSeries: [] as any[] };
+    }
+
+    if (!messages || messages.length === 0) {
+      return { isLastInSeries: true, assistantSeries: [message] };
+    }
+
+    const currentIndex = messages.findIndex((msg: any) => {
+      if (!msg) return false;
+      if (message?.id && msg?.id) {
+        return msg.id === message.id;
+      }
+      return msg === message;
+    });
+    if (currentIndex === -1) {
+      return { isLastInSeries: true, assistantSeries: [message] };
+    }
+
+    let prevUserIndex = -1;
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      const role = (messages[i] as any)?.role;
+      if (role === 'user') {
+        prevUserIndex = i;
+        break;
+      }
+    }
+
+    let nextUserIndex = messages.length;
+    for (let i = currentIndex + 1; i < messages.length; i++) {
+      const role = (messages[i] as any)?.role;
+      if (role === 'user') {
+        nextUserIndex = i;
+        break;
+      }
+    }
+
+    const assistantGroup: any[] = [];
+    for (let i = prevUserIndex + 1; i < nextUserIndex; i++) {
+      const candidate = messages[i];
+      if ((candidate as any)?.role === 'assistant') {
+        assistantGroup.push(candidate);
+      }
+    }
+
+    if (assistantGroup.length === 0) {
+      return { isLastInSeries: true, assistantSeries: [message] };
+    }
+
+    const lastAssistant = assistantGroup[assistantGroup.length - 1];
+    return {
+      isLastInSeries: lastAssistant?.id === message.id,
+      assistantSeries: assistantGroup,
+    };
+  }, [messages, message]);
+
+  const aggregatedSeriesContent = useMemo(() => {
+    if (!assistantSeries || assistantSeries.length === 0) {
+      return '';
+    }
+
+    const parts = assistantSeries
+      .map((msg: any) => extractTextFromMessage(msg))
+      .filter((value: string) => typeof value === 'string' && value.trim().length > 0);
+
+    if (parts.length === 0) {
+      return '';
+    }
+
+    return parts.join('\n\n').trim();
+  }, [assistantSeries]);
+
+  const handleCopy = async () => {
+    const textToCopy = aggregatedSeriesContent || extractTextFromMessage(message);
+    const safeText = textToCopy?.trim();
+
+    if (!safeText) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(safeText);
       setCopied(true);
-      onCopy(content);
+      if (onCopy) {
+        onCopy(safeText);
+      }
       setTimeout(() => setCopied(false), 2000);
-    } else if (content) {
-      navigator.clipboard.writeText(content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy assistant response:', error);
     }
   };
 
@@ -58,14 +195,24 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
   const LoadingIcon = () => <span>{icons.activityIcon}</span>;
   const content = message?.content || "";
   const subComponent = message?.generativeUI?.();
+  const shouldRenderControls = Boolean(content) && !isLoading && isLastInSeries;
+
+  const assistantMessageStyle = shouldRenderControls
+    ? {
+        marginBottom: '1rem',
+      }
+    : undefined;
 
   return (
     <>
       {content && (
-        <div className="copilotKitMessage copilotKitAssistantMessage">
+        <div
+          className="copilotKitMessage copilotKitAssistantMessage"
+          style={assistantMessageStyle}
+        >
           {content && <Markdown content={content} components={markdownTagRenderers} />}
 
-          {content && !isLoading && (
+          {shouldRenderControls && (
             <div
               className={`copilotKitMessageControls ${isCurrentMessage ? "currentMessage" : ""}`}
             >
@@ -88,11 +235,7 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
                   padding: '0.5rem',
                   borderRadius: '6px',
                   border: 'none',
-                  backgroundColor: copied
-                    ? isLight
-                      ? 'rgba(34, 197, 94, 0.15)'
-                      : 'rgba(34, 197, 94, 0.25)'
-                    : 'transparent',
+              backgroundColor: 'transparent',
                   color: copied ? '#22c55e' : isLight ? '#0C1117' : '#ffffff',
                   cursor: 'pointer',
                   display: 'flex',

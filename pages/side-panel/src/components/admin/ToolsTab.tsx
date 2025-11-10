@@ -510,7 +510,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
       // but the backend will handle them as global tools
       // For scoped tools (MCP), use their actual org/team IDs
       const isGlobalTool = !tool.organizationId && tool.teams.length === 0;
-      const organizationId = isGlobalTool ? selectedOrgId : tool.organizationId;
+      const organizationId = isGlobalTool ? selectedOrgId : (tool.organizationId || selectedOrgId);
       const teamIds = isGlobalTool ? [] : tool.teams.map(t => t.id);
 
       const response = await fetch(`${baseURL}/api/admin/tools/${tool.id}`, {
@@ -1411,12 +1411,12 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
         {renderToolAccordion(
           'frontend',
           'Frontend Tools',
-          'CopilotKit actions (non-deletable, toggle to enable/disable)'
+          'User Interface actions (non-deletable, toggle to enable/disable)'
         )}
         {renderToolAccordion(
           'builtin',
           'Built-in Tools',
-          'Pydantic-AI built-in tools (non-deletable, toggle to enable/disable)'
+          'Platform built-in tools (non-deletable, toggle to enable/disable)'
         )}
         {renderToolAccordion(
           'backend',

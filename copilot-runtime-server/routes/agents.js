@@ -166,6 +166,7 @@ const validateToolIds = async (pool, organizationId, teamIds, toolIds) => {
   }
 
   // Query tools with their team associations
+  // Use the same enabled logic as GET /api/admin/tools: check organization_tool_settings for global tools
   const { rows } = await pool.query(
     `
       SELECT 
@@ -176,17 +177,37 @@ const validateToolIds = async (pool, organizationId, teamIds, toolIds) => {
            FROM tool_teams tt 
            WHERE tt.tool_id = t.id),
           '[]'::json
-        ) as teams
+        ) as teams,
+        CASE 
+          WHEN t.organization_id IS NULL THEN 
+            COALESCE(ots.enabled, t.enabled)
+          ELSE 
+            t.enabled
+        END as effective_enabled
       FROM tools t
+      LEFT JOIN organization_tool_settings ots ON ots.tool_id = t.id AND ots.organization_id = $2
       WHERE t.id = ANY($1::uuid[])
         AND (t.organization_id IS NULL OR t.organization_id = $2)
-        AND t.enabled = true
+        AND (
+          CASE 
+            WHEN t.organization_id IS NULL THEN 
+              COALESCE(ots.enabled, t.enabled)
+            ELSE 
+              t.enabled
+          END
+        ) = true
     `,
     [toolIds, organizationId],
   );
 
   if (rows.length !== toolIds.length) {
-    throw new ValidationError('One or more selected tools were not found for this scope');
+    const foundIds = rows.map(r => r.id);
+    const missingIds = toolIds.filter(id => !foundIds.includes(id));
+    throw new ValidationError(
+      `One or more selected tools were not found for this scope. ` +
+      `Requested: ${toolIds.length}, Found: ${rows.length}. ` +
+      `Missing tool IDs: ${missingIds.join(', ')}`
+    );
   }
 
   // Validate scope constraints

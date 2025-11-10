@@ -118,11 +118,12 @@ interface RecentUsageRow {
   model: string;
   team: string;
   user: string;
-  requestTokens: number;
-  responseTokens: number;
+  requestTokens?: number;
+  responseTokens?: number;
+  requestCount?: number; // For aggregated session data
   totalTokens: number;
   cost: number | null;
-  status: string;
+  status?: string;
 }
 
 interface PaginationInfo {
@@ -1446,19 +1447,19 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
       params.set('range', effectiveFilters.range || '24h');
       params.set('page', effectivePage.toString());
       params.set('limit', '25');
-      // For now, we'll just use the first item if multiple are selected
-      // Backend currently supports single item filters
+      params.set('metric', metric);
+      // Send multiple IDs as comma-separated values
       if (effectiveFilters.teamIds.length > 0) {
-        params.set('teamId', effectiveFilters.teamIds[0]);
+        params.set('teamIds', effectiveFilters.teamIds.join(','));
       }
       if (effectiveFilters.userIds.length > 0) {
-        params.set('userId', effectiveFilters.userIds[0]);
+        params.set('userIds', effectiveFilters.userIds.join(','));
       }
       if (effectiveFilters.agentIds.length > 0) {
-        params.set('agentId', effectiveFilters.agentIds[0]);
+        params.set('agentIds', effectiveFilters.agentIds.join(','));
       }
       if (effectiveFilters.modelIds.length > 0) {
-        params.set('modelId', effectiveFilters.modelIds[0]);
+        params.set('modelIds', effectiveFilters.modelIds.join(','));
       }
 
       const queryString = params.toString();
@@ -1514,13 +1515,13 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
         setRefreshing(false);
       }
     },
-    [filters, currentPage, selectedOrgId, onError],
+    [filters, currentPage, selectedOrgId, metric, onError],
   );
 
-  // Reset to page 1 when filters change
+  // Reset to page 1 when filters or metric change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters.range, filters.teamIds, filters.userIds, filters.agentIds, filters.modelIds]);
+  }, [filters.range, filters.teamIds, filters.userIds, filters.agentIds, filters.modelIds, metric]);
 
   const handleFilterChange = (filterKey: string, value: any) => {
     const newFilters = { ...filters, [filterKey]: value };
@@ -1700,55 +1701,13 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
     ];
   }, [metric, summary]);
 
-  const sessionAggregates = useMemo(() => {
+  // For sessions metric, the backend already provides aggregated data
+  // For other metrics, we just pass through the data as-is
+  const activityData = useMemo(() => {
     if (!usageData?.recent?.data) {
       return [];
     }
-
-    const map = new Map<
-      string,
-      {
-        sessionId: string;
-        createdAt: string;
-        lastActivity: number;
-        agent: string;
-        model: string;
-        user: string;
-        requestCount: number;
-        totalTokens: number;
-      }
-    >();
-
-    usageData.recent.data.forEach(row => {
-      const sessionKey = row.sessionId || 'unknown';
-      const timestamp = new Date(row.createdAt).getTime();
-      const existing = map.get(sessionKey);
-
-      if (!existing) {
-        map.set(sessionKey, {
-          sessionId: sessionKey,
-          createdAt: row.createdAt,
-          lastActivity: timestamp,
-          agent: row.agent,
-          model: row.model,
-          user: row.user,
-          requestCount: 1,
-          totalTokens: row.totalTokens,
-        });
-      } else {
-        existing.requestCount += 1;
-        existing.totalTokens += row.totalTokens;
-        if (timestamp > existing.lastActivity) {
-          existing.lastActivity = timestamp;
-          existing.createdAt = row.createdAt;
-          existing.agent = row.agent;
-          existing.model = row.model;
-          existing.user = row.user;
-        }
-      }
-    });
-
-    return Array.from(map.values()).sort((a, b) => b.lastActivity - a.lastActivity);
+    return usageData.recent.data;
   }, [usageData]);
 
   const scopeLabel = usageData
@@ -2875,10 +2834,10 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                       {row.user}
                     </td>
                     <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                      {numberFormatter.format(row.requestTokens)}
+                      {numberFormatter.format(row.requestTokens || 0)}
                     </td>
                     <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                      {numberFormatter.format(row.responseTokens)}
+                      {numberFormatter.format(row.responseTokens || 0)}
                     </td>
                     <td className={cn('px-3 py-2 text-right tabular-nums font-medium', mainTextColor)}>
                       {numberFormatter.format(row.totalTokens)}
@@ -2925,20 +2884,18 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                 ))}
 
               {metric === 'sessions' &&
-                sessionAggregates.map(row => (
+                activityData.map(row => (
                   <tr
-                    key={row.sessionId}
+                    key={row.id}
                     className={cn(
                       'transition-colors',
                       isLight ? 'hover:bg-gray-50' : 'hover:bg-gray-900/40',
                     )}
                   >
                     <td className={cn('px-3 py-2 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      {new Date(row.createdAt).toLocaleString([], {
+                      {new Date(row.createdAt).toLocaleDateString([], {
                         month: 'short',
                         day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
                       })}
                     </td>
                     <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
@@ -2951,10 +2908,10 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                       {row.user || '—'}
                     </td>
                     <td className={cn('px-3 py-2 truncate max-w-[160px]', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      {row.sessionId === 'unknown' ? '—' : row.sessionId}
+                      {row.sessionId || '—'}
                     </td>
                     <td className={cn('px-3 py-2 text-right tabular-nums font-medium', mainTextColor)}>
-                      {numberFormatter.format(row.requestCount)}
+                      {numberFormatter.format(row.requestCount || 1)}
                     </td>
                     <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
                       {numberFormatter.format(row.totalTokens)}
@@ -2962,9 +2919,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                   </tr>
                 ))}
 
-              {((metric === 'sessions' && sessionAggregates.length === 0) ||
-                ((metric === 'tokens' || metric === 'requests') &&
-                  (!usageData?.recent || usageData.recent.data.length === 0))) && (
+              {(!usageData?.recent || usageData.recent.data.length === 0) && (
                 <tr>
                   <td
                     colSpan={7}

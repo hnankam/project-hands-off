@@ -51,11 +51,12 @@ export async function createOpenAIAdapter(modelKey = "gpt-5-mini", options = {})
  * For use with Azure OpenAI Service
  * 
  * @param {string} modelKey - Model key from configuration
+ * @param {object} context - Organization/team context for loading configuration
  * @returns {OpenAIAdapter} Azure OpenAI adapter instance
  */
-export async function createAzureOpenAIAdapter(modelKey = "gpt-4o-mini") {
-  const providerConfig = await getProviderConfig('azure_openai');
-  const modelConfig = await getModelConfig(modelKey);
+export async function createAzureOpenAIAdapter(modelKey = "gpt-4o-mini", context = {}) {
+  const providerConfig = await getProviderConfig('azure_openai', context);
+  const modelConfig = await getModelConfig(modelKey, context);
   
   if (!providerConfig?.credentials?.api_key) {
     throw new Error("Azure OpenAI API key not found in database configuration");

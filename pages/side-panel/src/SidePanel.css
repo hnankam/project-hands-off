@@ -538,7 +538,7 @@ input:focus {
 /* Move message controls to the bottom right and ensure they stay within viewport */
 .copilotKitMessage.copilotKitAssistantMessage .copilotKitMessageControls {
   position: absolute !important;
-  bottom: -1.53rem !important;
+  bottom: -2.3rem !important;
   right: 0px !important;
   top: auto !important;
   left: auto !important;
@@ -547,14 +547,8 @@ input:focus {
   z-index: 10000 !important;
 }
 
-/* Add background fade for assistant message controls - light mode */
-.copilot-chat-container:not(.dark) .copilotKitAssistantMessage .copilotKitMessageControls {
-  background: linear-gradient(to right, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.8) 20%, rgba(255, 255, 255, 0.95) 40%, rgb(255, 255, 255) 60%) !important;
-}
-
-/* Add background fade for assistant message controls - dark mode */
-.copilot-chat-container.dark .copilotKitAssistantMessage .copilotKitMessageControls {
-  background: linear-gradient(to right, rgba(12, 17, 23, 0) 0%, rgba(12, 17, 23, 0.8) 20%, rgba(12, 17, 23, 0.95) 40%, rgb(12, 17, 23) 60%) !important;
+.copilot-chat-container .copilotKitAssistantMessage .copilotKitMessageControls {
+  background: transparent !important;
 }
 
 .copilotKitMessageControlButton {
@@ -690,6 +684,14 @@ input:focus {
   pointer-events: auto !important;
 }
 
+/* Assistant controls should stay visible without hover */
+.copilot-chat-container .copilotKitAssistantMessage .copilotKitMessageControls {
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: flex !important;
+  pointer-events: auto !important;
+}
+
 
 /* Individual suggestion buttons - ABSOLUTELY NO WRAP OR SHRINK */
 footer div[class*="suggestions"] button {
@@ -749,7 +751,6 @@ footer div[class*="suggestions"] button {
 }
 
 /* Individual message containers - allow horizontal scroll when content overflows */
-.copilot-chat-container .copilotKitMessage,
 .copilot-chat-container .copilotKitUserMessage,
 .copilot-chat-container .copilotKitToolMessage,
 .copilot-chat-container [class*="copilotKitMessageBody"],
@@ -768,7 +769,6 @@ footer div[class*="suggestions"] button {
 }
 
 /* Match thin scrollbar styling for message-level horizontal scrollbars */
-.copilot-chat-container .copilotKitMessage::-webkit-scrollbar,
 .copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar,
 .copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar,
 .copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar,
@@ -776,7 +776,6 @@ footer div[class*="suggestions"] button {
   height: 6px;
 }
 
-.copilot-chat-container .copilotKitMessage::-webkit-scrollbar-thumb,
 .copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb,
 .copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar-thumb,
 .copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb,
@@ -785,7 +784,6 @@ footer div[class*="suggestions"] button {
   border-radius: 3px;
 }
 
-.copilot-chat-container .copilotKitMessage::-webkit-scrollbar-thumb:hover,
 .copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb:hover,
 .copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar-thumb:hover,
 .copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb:hover,
@@ -793,7 +791,6 @@ footer div[class*="suggestions"] button {
   background: rgba(156, 163, 175, 0.5);
 }
 
-.dark .copilot-chat-container .copilotKitMessage::-webkit-scrollbar-thumb,
 .dark .copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb,
 .dark .copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar-thumb,
 .dark .copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb,
@@ -801,7 +798,6 @@ footer div[class*="suggestions"] button {
   background: rgba(75, 85, 99, 0.3);
 }
 
-.dark .copilot-chat-container .copilotKitMessage::-webkit-scrollbar-thumb:hover,
 .dark .copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb:hover,
 .dark .copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar-thumb:hover,
 .dark .copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb:hover,

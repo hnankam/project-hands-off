@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
 import { OrganizationSelector } from './OrganizationSelector';
-import { TeamSelector } from './TeamSelector';
 import { TeamMultiSelector } from './TeamMultiSelector';
 import { Radio, Checkbox } from './FormControls';
 
@@ -616,11 +615,14 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     if (teamFilterIds.length === 0) {
       return models;
     }
-    const activeTeamId = teamFilterIds.find(id => teamMap.has(id));
-    if (!activeTeamId) {
+    const activeTeamIds = teamFilterIds.filter(id => teamMap.has(id));
+    if (activeTeamIds.length === 0) {
       return models.filter(model => model.teams.length === 0);
     }
-    return models.filter(model => model.teams.length === 0 || model.teams.some(t => t.id === activeTeamId));
+    return models.filter(
+      model =>
+        model.teams.length === 0 || model.teams.some(t => activeTeamIds.includes(t.id))
+    );
   }, [models, teamFilterIds, teamMap]);
 
   const providerOptionsForForm = (scope: ModelScope, teamIds: string[]) => {
@@ -654,12 +656,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
   }, [editForm?.scope, editForm?.teamIds, providers, editForm?.providerId]);
 
   const handleTeamFilterChange = (teamIds: string[]) => {
-    if (teamIds.length === 0) {
-      setTeamFilterIds([]);
-      return;
-    }
-    const lastSelected = teamIds[teamIds.length - 1];
-    setTeamFilterIds([lastSelected]);
+    setTeamFilterIds(teamIds);
   };
 
   const resetCreateForm = () => {
@@ -1103,13 +1100,12 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
               )}
             />
           ) : (
-            <TeamSelector
+            <TeamMultiSelector
               isLight={isLight}
               teams={teams}
               selectedTeamIds={teamFilterIds}
               onTeamChange={handleTeamFilterChange}
               placeholder="All teams"
-              allowEmpty
             />
           )}
         </div>

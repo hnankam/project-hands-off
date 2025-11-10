@@ -302,6 +302,10 @@ function buildUsageConditions({
   userId,
   agentId,
   modelId,
+  teamIds,
+  userIds,
+  agentIds,
+  modelIds,
   sessionId,
   includeOrgLevelWithTeam = true,
   paramOffset = 0,
@@ -321,29 +325,34 @@ function buildUsageConditions({
     clauses.push(`u.created_at >= $${params.length + paramOffset}`);
   }
 
-  if (teamId) {
-    params.push(teamId);
+  // Support both old single ID and new array format
+  const effectiveTeamIds = teamIds && teamIds.length > 0 ? teamIds : (teamId ? [teamId] : []);
+  if (effectiveTeamIds.length > 0) {
+    params.push(effectiveTeamIds);
     const placeholder = `$${params.length + paramOffset}`;
     if (includeOrgLevelWithTeam) {
-      clauses.push(`(u.team_id = ${placeholder} OR u.team_id IS NULL)`);
+      clauses.push(`(u.team_id::text = ANY(${placeholder}::text[]) OR u.team_id IS NULL)`);
     } else {
-      clauses.push(`u.team_id = ${placeholder}`);
+      clauses.push(`u.team_id::text = ANY(${placeholder}::text[])`);
     }
   }
 
-  if (userId) {
-    params.push(userId);
-    clauses.push(`u.user_id = $${params.length + paramOffset}`);
+  const effectiveUserIds = userIds && userIds.length > 0 ? userIds : (userId ? [userId] : []);
+  if (effectiveUserIds.length > 0) {
+    params.push(effectiveUserIds);
+    clauses.push(`u.user_id::text = ANY($${params.length + paramOffset}::text[])`);
   }
 
-  if (agentId) {
-    params.push(agentId);
-    clauses.push(`u.agent_id = $${params.length + paramOffset}`);
+  const effectiveAgentIds = agentIds && agentIds.length > 0 ? agentIds : (agentId ? [agentId] : []);
+  if (effectiveAgentIds.length > 0) {
+    params.push(effectiveAgentIds);
+    clauses.push(`u.agent_id::text = ANY($${params.length + paramOffset}::text[])`);
   }
 
-  if (modelId) {
-    params.push(modelId);
-    clauses.push(`u.model_id = $${params.length + paramOffset}`);
+  const effectiveModelIds = modelIds && modelIds.length > 0 ? modelIds : (modelId ? [modelId] : []);
+  if (effectiveModelIds.length > 0) {
+    params.push(effectiveModelIds);
+    clauses.push(`u.model_id::text = ANY($${params.length + paramOffset}::text[])`);
   }
 
   if (sessionId) {
@@ -438,90 +447,103 @@ router.get('/', async (req, res, next) => {
       userId,
     );
 
-    const requestedTeamId = typeof req.query.teamId === 'string' ? req.query.teamId.trim() : '';
-    const requestedUserId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
-    const requestedAgentId = typeof req.query.agentId === 'string' ? req.query.agentId.trim() : '';
-    const requestedModelId = typeof req.query.modelId === 'string' ? req.query.modelId.trim() : '';
+    // Parse filter IDs - support both single (teamId) and multiple (teamIds) formats
+    const parseIds = (singular, plural) => {
+      if (req.query[plural]) {
+        const value = typeof req.query[plural] === 'string' ? req.query[plural].trim() : '';
+        return value ? value.split(',').map(id => id.trim()).filter(Boolean) : [];
+      }
+      if (req.query[singular]) {
+        const value = typeof req.query[singular] === 'string' ? req.query[singular].trim() : '';
+        return value ? [value] : [];
+      }
+      return [];
+    };
+
+    const requestedTeamIds = parseIds('teamId', 'teamIds');
+    const requestedUserIds = parseIds('userId', 'userIds');
+    const requestedAgentIds = parseIds('agentId', 'agentIds');
+    const requestedModelIds = parseIds('modelId', 'modelIds');
     const requestedSessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : '';
 
-    let effectiveTeamId = null;
+    let effectiveTeamIds = [];
     let includeOrgLevelWithTeam = true;
 
     if (role === 'owner') {
-      if (requestedTeamId && requestedTeamId !== 'all') {
-        if (!accessibleTeams.some(team => team.id === requestedTeamId)) {
-          return res.status(404).json({ error: 'Team not found in organization' });
+      if (requestedTeamIds.length > 0 && !requestedTeamIds.includes('all')) {
+        // Validate all requested teams exist
+        const invalidTeams = requestedTeamIds.filter(id => !accessibleTeams.some(team => team.id === id));
+        if (invalidTeams.length > 0) {
+          return res.status(404).json({ error: `Teams not found in organization: ${invalidTeams.join(', ')}` });
         }
-        effectiveTeamId = requestedTeamId;
+        effectiveTeamIds = requestedTeamIds;
       }
     } else if (role === 'admin') {
       const fallbackTeamId = sessionTeamId || accessibleTeamIds[0] || null;
-      const candidateTeamId =
-        requestedTeamId && requestedTeamId !== 'all' ? requestedTeamId : fallbackTeamId;
+      const candidateTeamIds =
+        requestedTeamIds.length > 0 && !requestedTeamIds.includes('all') ? requestedTeamIds : (fallbackTeamId ? [fallbackTeamId] : []);
 
-      if (!candidateTeamId) {
+      if (candidateTeamIds.length === 0) {
         return res.status(403).json({ error: 'Team scope required for admin role' });
       }
 
-      if (!accessibleTeamIds.includes(candidateTeamId)) {
-        return res.status(403).json({ error: 'Forbidden: cannot access requested team' });
+      // Validate all requested teams are accessible
+      const inaccessibleTeams = candidateTeamIds.filter(id => !accessibleTeamIds.includes(id));
+      if (inaccessibleTeams.length > 0) {
+        return res.status(403).json({ error: `Forbidden: cannot access teams: ${inaccessibleTeams.join(', ')}` });
       }
 
-      effectiveTeamId = candidateTeamId;
+      effectiveTeamIds = candidateTeamIds;
     } else {
-      effectiveTeamId = null;
+      effectiveTeamIds = [];
     }
 
-    let effectiveUserId = null;
+    let effectiveUserIds = [];
     if (role === 'owner') {
-      if (requestedUserId && requestedUserId !== 'all') {
-        if (!accessibleUsers.some(user => user.id === requestedUserId)) {
-          return res.status(404).json({ error: 'User not found in organization' });
+      if (requestedUserIds.length > 0 && !requestedUserIds.includes('all')) {
+        const invalidUsers = requestedUserIds.filter(id => !accessibleUsers.some(user => user.id === id));
+        if (invalidUsers.length > 0) {
+          return res.status(404).json({ error: `Users not found in organization: ${invalidUsers.join(', ')}` });
         }
-        effectiveUserId = requestedUserId;
+        effectiveUserIds = requestedUserIds;
       }
     } else if (role === 'admin') {
-      if (requestedUserId && requestedUserId !== 'all') {
-        if (!accessibleUsers.some(user => user.id === requestedUserId)) {
-          return res.status(403).json({ error: 'Forbidden: cannot access requested user' });
+      if (requestedUserIds.length > 0 && !requestedUserIds.includes('all')) {
+        const inaccessibleUsers = requestedUserIds.filter(id => !accessibleUsers.some(user => user.id === id));
+        if (inaccessibleUsers.length > 0) {
+          return res.status(403).json({ error: `Forbidden: cannot access users: ${inaccessibleUsers.join(', ')}` });
         }
-        effectiveUserId = requestedUserId;
+        effectiveUserIds = requestedUserIds;
       }
     } else {
-      effectiveUserId = userId;
+      effectiveUserIds = [userId];
     }
 
-    let effectiveAgentId = null;
-    if (requestedAgentId) {
-      const canAccessAgent =
-        role === 'owner'
-          ? accessibleAgents.some(agent => agent.id === requestedAgentId)
-          : accessibleAgents.some(agent => agent.id === requestedAgentId);
-      if (!canAccessAgent) {
-        return res.status(403).json({ error: 'Forbidden: cannot access requested agent' });
+    let effectiveAgentIds = [];
+    if (requestedAgentIds.length > 0) {
+      const inaccessibleAgents = requestedAgentIds.filter(id => !accessibleAgents.some(agent => agent.id === id));
+      if (inaccessibleAgents.length > 0) {
+        return res.status(403).json({ error: `Forbidden: cannot access agents: ${inaccessibleAgents.join(', ')}` });
       }
-      effectiveAgentId = requestedAgentId;
+      effectiveAgentIds = requestedAgentIds;
     }
 
-    let effectiveModelId = null;
-    if (requestedModelId) {
-      const canAccessModel =
-        role === 'owner'
-          ? accessibleModels.some(model => model.id === requestedModelId)
-          : accessibleModels.some(model => model.id === requestedModelId);
-      if (!canAccessModel) {
-        return res.status(403).json({ error: 'Forbidden: cannot access requested model' });
+    let effectiveModelIds = [];
+    if (requestedModelIds.length > 0) {
+      const inaccessibleModels = requestedModelIds.filter(id => !accessibleModels.some(model => model.id === id));
+      if (inaccessibleModels.length > 0) {
+        return res.status(403).json({ error: `Forbidden: cannot access models: ${inaccessibleModels.join(', ')}` });
       }
-      effectiveModelId = requestedModelId;
+      effectiveModelIds = requestedModelIds;
     }
 
     const { clause, params } = buildUsageConditions({
       organizationId,
       startDate,
-      teamId: effectiveTeamId,
-      userId: effectiveUserId,
-      agentId: effectiveAgentId,
-      modelId: effectiveModelId,
+      teamIds: effectiveTeamIds,
+      userIds: effectiveUserIds,
+      agentIds: effectiveAgentIds,
+      modelIds: effectiveModelIds,
       sessionId: requestedSessionId || null,
       includeOrgLevelWithTeam,
     });
@@ -531,10 +553,10 @@ router.get('/', async (req, res, next) => {
     const { clause: timeseriesClause, params: timeseriesParams } = buildUsageConditions({
       organizationId,
       startDate,
-      teamId: effectiveTeamId,
-      userId: effectiveUserId,
-      agentId: effectiveAgentId,
-      modelId: effectiveModelId,
+      teamIds: effectiveTeamIds,
+      userIds: effectiveUserIds,
+      agentIds: effectiveAgentIds,
+      modelIds: effectiveModelIds,
       sessionId: requestedSessionId || null,
       includeOrgLevelWithTeam,
       paramOffset: 1,
@@ -658,43 +680,95 @@ router.get('/', async (req, res, next) => {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 25;
     const offset = (page - 1) * limit;
+    const metric = req.query.metric || 'tokens';
 
     // Get total count for pagination
-    const countPromise = pool.query(
-      `
-        SELECT COUNT(*) as total
-        FROM usage u
-        ${whereClause}
-      `,
-      params,
-    );
+    let countPromise;
+    let recentPromise;
 
-    const recentPromise = pool.query(
-      `
-        SELECT
-          u.id,
-          u.session_id,
-          u.created_at,
-          COALESCE(a.agent_name, a.agent_type, u.agent_id::text) AS agent_label,
-          COALESCE(m.display_name, m.model_name, m.model_key, u.model_id::text) AS model_label,
-          COALESCE(t.name, 'Organization') AS team_label,
-          COALESCE(u2.name, u2.email, u.user_id::text) AS user_label,
-          u.request_tokens,
-          u.response_tokens,
-          COALESCE(u.request_tokens, 0) + COALESCE(u.response_tokens, 0) AS total_tokens,
-          u.cost,
-          u.status
-        FROM usage u
-        LEFT JOIN agents a ON a.id = u.agent_id
-        LEFT JOIN models m ON m.id = u.model_id
-        LEFT JOIN team t ON t.id = u.team_id
-        LEFT JOIN "user" u2 ON u2.id = u.user_id
-        ${whereClause}
-        ORDER BY u.created_at DESC
-        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
-      `,
-      [...params, limit, offset],
-    );
+    if (metric === 'sessions') {
+      // For sessions, count and paginate by unique day + session + agent + model + user combinations
+      countPromise = pool.query(
+        `
+          SELECT COUNT(*) as total
+          FROM (
+            SELECT 
+              DATE(u.created_at) as day,
+              u.session_id,
+              u.agent_id,
+              u.model_id,
+              u.user_id
+            FROM usage u
+            ${whereClause}
+            GROUP BY day, u.session_id, u.agent_id, u.model_id, u.user_id
+          ) aggregated
+        `,
+        params,
+      );
+
+      recentPromise = pool.query(
+        `
+          SELECT
+            DATE(u.created_at) as day,
+            MAX(u.created_at) as created_at,
+            u.session_id,
+            MAX(COALESCE(a.agent_name, a.agent_type, u.agent_id::text)) AS agent_label,
+            MAX(COALESCE(m.display_name, m.model_name, m.model_key, u.model_id::text)) AS model_label,
+            MAX(COALESCE(t.name, 'Organization')) AS team_label,
+            MAX(COALESCE(u2.name, u2.email, u.user_id::text)) AS user_label,
+            COUNT(*) as request_count,
+            SUM(COALESCE(u.request_tokens, 0) + COALESCE(u.response_tokens, 0)) AS total_tokens,
+            SUM(u.cost) as cost
+          FROM usage u
+          LEFT JOIN agents a ON a.id = u.agent_id
+          LEFT JOIN models m ON m.id = u.model_id
+          LEFT JOIN team t ON t.id = u.team_id
+          LEFT JOIN "user" u2 ON u2.id = u.user_id
+          ${whereClause}
+          GROUP BY day, u.session_id, u.agent_id, u.model_id, u.user_id, u.team_id
+          ORDER BY MAX(u.created_at) DESC
+          LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+        `,
+        [...params, limit, offset],
+      );
+    } else {
+      // For tokens and requests, use the original non-aggregated query
+      countPromise = pool.query(
+        `
+          SELECT COUNT(*) as total
+          FROM usage u
+          ${whereClause}
+        `,
+        params,
+      );
+
+      recentPromise = pool.query(
+        `
+          SELECT
+            u.id,
+            u.session_id,
+            u.created_at,
+            COALESCE(a.agent_name, a.agent_type, u.agent_id::text) AS agent_label,
+            COALESCE(m.display_name, m.model_name, m.model_key, u.model_id::text) AS model_label,
+            COALESCE(t.name, 'Organization') AS team_label,
+            COALESCE(u2.name, u2.email, u.user_id::text) AS user_label,
+            u.request_tokens,
+            u.response_tokens,
+            COALESCE(u.request_tokens, 0) + COALESCE(u.response_tokens, 0) AS total_tokens,
+            u.cost,
+            u.status
+          FROM usage u
+          LEFT JOIN agents a ON a.id = u.agent_id
+          LEFT JOIN models m ON m.id = u.model_id
+          LEFT JOIN team t ON t.id = u.team_id
+          LEFT JOIN "user" u2 ON u2.id = u.user_id
+          ${whereClause}
+          ORDER BY u.created_at DESC
+          LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+        `,
+        [...params, limit, offset],
+      );
+    }
 
     const [
       summaryResult,
@@ -941,7 +1015,7 @@ router.get('/', async (req, res, next) => {
       scope: {
         role,
         organizationId,
-        enforcedTeamId: effectiveTeamId,
+        enforcedTeamId: effectiveTeamIds.length === 1 ? effectiveTeamIds[0] : null,
         enforcedUserId: role === 'member' ? userId : null,
       },
       filters: {
@@ -951,19 +1025,19 @@ router.get('/', async (req, res, next) => {
         },
         teams: {
           options: accessibleTeams,
-          selected: effectiveTeamId,
+          selected: effectiveTeamIds.length === 1 ? effectiveTeamIds[0] : null,
         },
         users: {
           options: accessibleUsers,
-          selected: effectiveUserId,
+          selected: effectiveUserIds.length === 1 ? effectiveUserIds[0] : null,
         },
         agents: {
           options: accessibleAgents,
-          selected: effectiveAgentId,
+          selected: effectiveAgentIds.length === 1 ? effectiveAgentIds[0] : null,
         },
         models: {
           options: accessibleModels,
-          selected: effectiveModelId,
+          selected: effectiveModelIds.length === 1 ? effectiveModelIds[0] : null,
         },
       },
       summary: {
@@ -994,20 +1068,39 @@ router.get('/', async (req, res, next) => {
       teamsTimeseries,
       usersTimeseries,
       recent: {
-        data: recentResult.rows.map(row => ({
-          id: row.id,
-          sessionId: row.session_id,
-          createdAt: row.created_at,
-          agent: row.agent_label,
-          model: row.model_label,
-          team: row.team_label,
-          user: row.user_label,
-          requestTokens: Number(row.request_tokens) || 0,
-          responseTokens: Number(row.response_tokens) || 0,
-          totalTokens: Number(row.total_tokens) || 0,
-          cost: row.cost != null ? Number(row.cost) : null,
-          status: row.status || 'completed',
-        })),
+        data: recentResult.rows.map(row => {
+          if (metric === 'sessions') {
+            // Aggregated session data
+            return {
+              id: `${row.day}-${row.session_id}`,
+              sessionId: row.session_id,
+              createdAt: row.created_at,
+              agent: row.agent_label,
+              model: row.model_label,
+              team: row.team_label,
+              user: row.user_label,
+              requestCount: Number(row.request_count) || 0,
+              totalTokens: Number(row.total_tokens) || 0,
+              cost: row.cost != null ? Number(row.cost) : null,
+            };
+          } else {
+            // Individual request data
+            return {
+              id: row.id,
+              sessionId: row.session_id,
+              createdAt: row.created_at,
+              agent: row.agent_label,
+              model: row.model_label,
+              team: row.team_label,
+              user: row.user_label,
+              requestTokens: Number(row.request_tokens) || 0,
+              responseTokens: Number(row.response_tokens) || 0,
+              totalTokens: Number(row.total_tokens) || 0,
+              cost: row.cost != null ? Number(row.cost) : null,
+              status: row.status || 'completed',
+            };
+          }
+        }),
         pagination: {
           page,
           limit,

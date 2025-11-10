@@ -11,10 +11,11 @@ import { getProviderConfig, getModelConfig } from '../config/loader.js';
  * Used for Gemini models
  * 
  * @param {string} modelKey - Model key from configuration (e.g., 'gemini-2.5-flash-lite')
+ * @param {object} context - Organization/team context for loading configuration
  */
-export async function createGeminiAdapter(modelKey = 'gemini-2.5-flash-lite') {
-  const modelConfig = await getModelConfig(modelKey);
-  const providerConfig = await getProviderConfig('google');
+export async function createGeminiAdapter(modelKey = 'gemini-2.5-flash-lite', context = {}) {
+  const modelConfig = await getModelConfig(modelKey, context);
+  const providerConfig = await getProviderConfig('google', context);
   
   if (!providerConfig?.credentials?.api_key) {
     throw new Error('Google API key not found in database configuration');

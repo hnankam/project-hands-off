@@ -159,6 +159,18 @@ router.get('/', async (req, res, next) => {
       params.push(teamIds);
     }
 
+    // Build team-level enabled state subquery
+    // When teamIds are provided, we aggregate the enabled states for those teams
+    let teamEnabledSubquery = 'NULL::jsonb';
+    if (teamIds.length > 0) {
+      teamEnabledSubquery = `
+        (SELECT jsonb_object_agg(tts.team_id, tts.enabled)
+         FROM team_tool_settings tts
+         WHERE tts.tool_id = t.id AND tts.team_id = ANY($${params.length + 1}::text[]))
+      `;
+      params.push(teamIds);
+    }
+
     const { rows } = await pool.query(
       `
         SELECT
@@ -173,9 +185,20 @@ router.get('/', async (req, res, next) => {
              WHERE tt.tool_id = t.id
                AND team."organizationId" = $1),
             '[]'::json
-          ) as teams
+          ) as teams,
+          -- Return team-specific enabled states as a JSON object
+          ${teamEnabledSubquery} as team_enabled_states,
+          -- For global/org tools, calculate effective enabled state
+          -- Priority: team settings > org settings > tool default
+          CASE 
+            WHEN t.organization_id IS NULL THEN 
+              COALESCE(ots.enabled, t.enabled)
+            ELSE 
+              t.enabled
+          END as enabled
         FROM tools t
         LEFT JOIN mcp_servers ms ON ms.id = t.mcp_server_id
+        LEFT JOIN organization_tool_settings ots ON ots.tool_id = t.id AND ots.organization_id = $1
         WHERE (t.organization_id IS NULL OR t.organization_id = $1)
           ${teamFilter}
         ORDER BY
@@ -359,6 +382,7 @@ router.put('/:toolId', async (req, res, next) => {
       metadata,
       config,
       enabled,
+      teamEnabledStates, // Object: { teamId: boolean, ... } for team-level control
       remoteToolName,
       mcpServerId,
     } = req.body || {};
@@ -436,31 +460,88 @@ router.put('/:toolId', async (req, res, next) => {
       }
     }
 
-    await pool.query(
-      `
-        UPDATE tools
-        SET
-          tool_name = $1,
-          description = $2,
-          metadata = $3,
-          config = $4,
-          enabled = COALESCE($5, enabled),
-          mcp_server_id = $6,
-          remote_tool_name = $7,
-          updated_at = NOW()
-        WHERE id = $8
-      `,
-      [
-        toolName ? toolName.trim() : existing.tool_name,
-        description !== undefined ? (description?.trim() || null) : existing.description,
-        metadataJSON,
-        configJSON,
-        enabled === undefined ? null : Boolean(enabled),
-        nextMcpServerId,
-        nextRemoteToolName,
-        toolId,
-      ],
-    );
+    // Handle team-level enabled states if provided
+    if (teamEnabledStates && typeof teamEnabledStates === 'object') {
+      const teamEntries = Object.entries(teamEnabledStates);
+      
+      for (const [teamId, teamEnabled] of teamEntries) {
+        // Validate that the team belongs to this organization
+        const teamCheck = await pool.query(
+          'SELECT id FROM team WHERE id = $1 AND "organizationId" = $2',
+          [teamId, organizationId]
+        );
+        
+        if (teamCheck.rows.length === 0) {
+          throw new ValidationError(`Invalid team id: ${teamId} for organization`);
+        }
+        
+        // Store team-specific enabled state
+        await pool.query(
+          `
+            INSERT INTO team_tool_settings (team_id, tool_id, enabled, updated_at)
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT (team_id, tool_id) 
+            DO UPDATE SET enabled = $3, updated_at = NOW()
+          `,
+          [teamId, toolId, Boolean(teamEnabled)]
+        );
+      }
+    }
+    
+    // Handle organization-level enabled state (if not overridden by team settings)
+    if (enabled !== undefined && isGlobalTool) {
+      // For global tools, store enabled state in organization_tool_settings
+      await pool.query(
+        `
+          INSERT INTO organization_tool_settings (organization_id, tool_id, enabled, updated_at)
+          VALUES ($1, $2, $3, NOW())
+          ON CONFLICT (organization_id, tool_id) 
+          DO UPDATE SET enabled = $3, updated_at = NOW()
+        `,
+        [organizationId, toolId, Boolean(enabled)]
+      );
+    } else {
+      // For scoped tools or when updating other fields, update the tool directly
+      const fieldsToUpdate = [];
+      const updateParams = [];
+      let paramCount = 1;
+      
+      if (toolName) {
+        fieldsToUpdate.push(`tool_name = $${paramCount++}`);
+        updateParams.push(toolName.trim());
+      }
+      if (description !== undefined) {
+        fieldsToUpdate.push(`description = $${paramCount++}`);
+        updateParams.push(description?.trim() || null);
+      }
+      fieldsToUpdate.push(`metadata = $${paramCount++}`);
+      updateParams.push(metadataJSON);
+      fieldsToUpdate.push(`config = $${paramCount++}`);
+      updateParams.push(configJSON);
+      
+      // Only update enabled on the tool itself if it's a scoped tool
+      if (enabled !== undefined && !isGlobalTool) {
+        fieldsToUpdate.push(`enabled = $${paramCount++}`);
+        updateParams.push(Boolean(enabled));
+      }
+      
+      if (existing.tool_type === 'mcp') {
+        fieldsToUpdate.push(`mcp_server_id = $${paramCount++}`);
+        updateParams.push(nextMcpServerId);
+        fieldsToUpdate.push(`remote_tool_name = $${paramCount++}`);
+        updateParams.push(nextRemoteToolName);
+      }
+      
+      fieldsToUpdate.push(`updated_at = NOW()`);
+      updateParams.push(toolId);
+      
+      if (fieldsToUpdate.length > 1) { // More than just updated_at
+        await pool.query(
+          `UPDATE tools SET ${fieldsToUpdate.join(', ')} WHERE id = $${paramCount}`,
+          updateParams
+        );
+      }
+    }
     
     // Sync team associations if provided
     if (teamIds !== undefined) {
@@ -508,12 +589,26 @@ router.put('/:toolId', async (req, res, next) => {
             (SELECT json_agg(json_build_object('id', tt.team_id))
              FROM tool_teams tt WHERE tt.tool_id = t.id),
             '[]'::json
-          ) as teams
+          ) as teams,
+          -- Return team-specific enabled states as a JSON object
+          (SELECT jsonb_object_agg(tts.team_id, tts.enabled)
+           FROM team_tool_settings tts
+           JOIN team tm ON tm.id = tts.team_id
+           WHERE tts.tool_id = t.id AND tm."organizationId" = $2
+          ) as team_enabled_states,
+          -- Return the effective enabled state for this organization
+          CASE 
+            WHEN t.organization_id IS NULL THEN 
+              COALESCE(ots.enabled, t.enabled)
+            ELSE 
+              t.enabled
+          END as enabled
         FROM tools t
         LEFT JOIN mcp_servers ms ON ms.id = t.mcp_server_id
+        LEFT JOIN organization_tool_settings ots ON ots.tool_id = t.id AND ots.organization_id = $2
         WHERE t.id = $1
       `,
-      [toolId],
+      [toolId, organizationId],
     );
 
     res.json({ tool: toCamelTool(updated.rows[0]) });
@@ -760,7 +855,7 @@ router.get('/mcp-servers', async (req, res, next) => {
             '[]'::json
           ) as teams
         FROM mcp_servers s
-        WHERE (s.organization_id IS NULL OR s.organization_id = $1)
+        WHERE s.organization_id = $1
           ${teamFilter}
         ORDER BY s.server_key
       `,
@@ -795,6 +890,10 @@ router.post('/mcp-servers', async (req, res, next) => {
       enabled = true,
     } = req.body || {};
 
+    if (!organizationId || typeof organizationId !== 'string') {
+      throw new ValidationError('organizationId is required');
+    }
+
     if (!serverKey || typeof serverKey !== 'string') {
       throw new ValidationError('serverKey is required');
     }
@@ -826,9 +925,9 @@ router.post('/mcp-servers', async (req, res, next) => {
     const duplicate = await pool.query(
       `SELECT 1 FROM mcp_servers
         WHERE server_key = $1
-         AND (organization_id IS NULL OR organization_id = $2)
+         AND organization_id = $2
        LIMIT 1`,
-      [serverKey.trim(), organizationId || null],
+      [serverKey.trim(), organizationId],
     );
 
     if (duplicate.rows.length > 0) {
@@ -864,7 +963,7 @@ router.post('/mcp-servers', async (req, res, next) => {
         envJSON,
         url?.trim() || null,
         metadataJSON,
-        organizationId || null,
+        organizationId,
         Boolean(enabled),
       ],
     );
@@ -930,8 +1029,8 @@ router.put('/mcp-servers/:serverId', async (req, res, next) => {
 
     const existingResult = await pool.query(
       `SELECT * FROM mcp_servers
-       WHERE id = $1 AND (organization_id IS NULL OR organization_id = $2)`,
-      [serverId, organizationId || null],
+       WHERE id = $1 AND organization_id = $2`,
+      [serverId, organizationId],
     );
 
     if (existingResult.rows.length === 0) {
@@ -1012,8 +1111,8 @@ router.delete('/mcp-servers/:serverId', async (req, res, next) => {
 
     const existingResult = await pool.query(
       `SELECT id FROM mcp_servers
-       WHERE id = $1 AND (organization_id IS NULL OR organization_id = $2)`,
-      [serverId, organizationId || null],
+       WHERE id = $1 AND organization_id = $2`,
+      [serverId, organizationId],
     );
 
     if (existingResult.rows.length === 0) {

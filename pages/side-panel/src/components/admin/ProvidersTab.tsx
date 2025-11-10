@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
 import { OrganizationSelector } from './OrganizationSelector';
-import { TeamSelector } from './TeamSelector';
 import { TeamMultiSelector } from './TeamMultiSelector';
 import { Radio, Checkbox } from './FormControls';
 
@@ -318,7 +317,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [testStatus, setTestStatus] = useState<{ state: 'idle' | 'loading' | 'success' | 'error'; message?: string }>({ state: 'idle' });
   const [testStatusClosing, setTestStatusClosing] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
+  const [expandedProviderIds, setExpandedProviderIds] = useState<Set<string>>(new Set());
   const initialLoadCompleteRef = useRef(false);
 
   // Auto-select organization if only one available
@@ -539,11 +538,14 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
     if (teamFilterIds.length === 0) {
       return providers;
     }
-    const activeTeamId = teamFilterIds.find(id => teamMap.has(id));
-    if (!activeTeamId) {
+    const activeTeamIds = teamFilterIds.filter(id => teamMap.has(id));
+    if (activeTeamIds.length === 0) {
       return providers.filter(provider => provider.teams.length === 0);
     }
-    return providers.filter(provider => provider.teams.length === 0 || provider.teams.some(t => t.id === activeTeamId));
+    return providers.filter(
+      provider =>
+        provider.teams.length === 0 || provider.teams.some(t => activeTeamIds.includes(t.id))
+    );
   }, [providers, teamFilterIds, teamMap]);
 
   const maskedEditCredentials = useMemo(() => {
@@ -569,12 +571,19 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
     : maskedEditCredentials;
 
   const handleTeamFilterChange = (teamIds: string[]) => {
-    if (teamIds.length === 0) {
-      setTeamFilterIds([]);
-      return;
-    }
-    const lastSelected = teamIds[teamIds.length - 1];
-    setTeamFilterIds([lastSelected]);
+    setTeamFilterIds(teamIds);
+  };
+
+  const toggleProviderDetails = (providerId: string) => {
+    setExpandedProviderIds(prev => {
+      const next = new Set(prev);
+      if (next.has(providerId)) {
+        next.delete(providerId);
+      } else {
+        next.add(providerId);
+      }
+      return next;
+    });
   };
 
   const resetCreateForm = () => {
@@ -972,13 +981,12 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
               )}
             />
           ) : (
-            <TeamSelector
+            <TeamMultiSelector
               isLight={isLight}
               teams={teams}
               selectedTeamIds={teamFilterIds}
               onTeamChange={handleTeamFilterChange}
               placeholder="All teams"
-              allowEmpty
             />
           )}
         </div>
@@ -1010,26 +1018,6 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
               </h3>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowDetails(prev => !prev)}
-                className={cn(
-                  'p-1.5 rounded border transition-colors',
-                  isLight
-                    ? 'text-gray-600 border-gray-200 hover:bg-gray-100'
-                    : 'text-gray-300 border-gray-700 hover:bg-gray-800',
-                )}
-                title={showDetails ? 'Show less details' : 'Show more details'}
-              >
-                {showDetails ? (
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                ) : (
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                )}
-              </button>
               {!showCreateForm && (
                 <button
                   onClick={() => {
@@ -1651,6 +1639,26 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
 
                           <div className="flex gap-1">
                             <button
+                              onClick={() => toggleProviderDetails(provider.id)}
+                              className={cn(
+                                'p-1 rounded border transition-colors',
+                                isLight
+                                  ? 'text-gray-600 border-gray-200 hover:bg-gray-100'
+                                  : 'text-gray-300 border-gray-700 hover:bg-gray-800',
+                              )}
+                              title={expandedProviderIds.has(provider.id) ? 'Show less details' : 'Show more details'}
+                            >
+                              {expandedProviderIds.has(provider.id) ? (
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              ) : (
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              )}
+                            </button>
+                            <button
                               onClick={() => startEditProvider(provider)}
                               className={cn(
                                 'p-1 rounded transition-colors',
@@ -1690,40 +1698,56 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                           </div>
                         </div>
 
-                        <div className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                          {showDetails && (
-                            <>
-                              <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                  <div className="flex items-center justify-between font-medium">
-                                    <span>Credentials</span>
-                                    <span
-                                      className={cn(
-                                        'text-[10px] font-normal uppercase tracking-wide',
-                                        isLight ? 'text-gray-400' : 'text-gray-500',
-                                      )}
-                                    >
-                                      Masked
-                                    </span>
-                                  </div>
-                                  <pre className="mt-1 h-28 overflow-auto rounded bg-black/5 p-2 font-mono text-[11px] providers-tab-scrollbar">
-                                    {JSON.stringify(maskedCredentials, null, 2)}
-                                  </pre>
-                                  <p
+                        <div
+                          className={cn(
+                            'overflow-hidden transition-all ease-in-out',
+                            expandedProviderIds.has(provider.id)
+                              ? 'max-h-[600px] opacity-100 mt-3 duration-500'
+                              : 'max-h-0 opacity-0 mt-0 duration-400',
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              'transition-all ease-in-out',
+                              expandedProviderIds.has(provider.id) ? 'translate-y-0 duration-300 delay-100' : '-translate-y-4 duration-200',
+                            )}
+                          >
+                            <div
+                              className={cn(
+                                'text-xs transition-opacity ease-in-out',
+                                isLight ? 'text-gray-600' : 'text-gray-400',
+                                expandedProviderIds.has(provider.id) ? 'opacity-100 duration-400 delay-200' : 'opacity-0 duration-150',
+                              )}
+                            >
+                              <div>
+                                <div className="flex items-center justify-between font-medium">
+                                  <span>Credentials</span>
+                                  <span
                                     className={cn(
-                                      'mt-1 text-[10px]',
+                                      'text-[10px] font-normal uppercase tracking-wide',
                                       isLight ? 'text-gray-400' : 'text-gray-500',
                                     )}
                                   >
-                                    Edit this provider to view or update credential values.
-                                  </p>
+                                    Masked
+                                  </span>
                                 </div>
-                                <div>
-                                  <div className="font-medium">Model Settings</div>
-                                  <pre className="mt-1 h-28 overflow-auto rounded bg-black/5 p-2 font-mono text-[11px] providers-tab-scrollbar">
-                                    {JSON.stringify(provider.modelSettings ?? {}, null, 2)}
-                                  </pre>
-                                </div>
+                                <pre className="mt-1 h-28 overflow-auto rounded bg-black/5 p-2 font-mono text-[11px] providers-tab-scrollbar">
+                                  {JSON.stringify(maskedCredentials, null, 2)}
+                                </pre>
+                                <p
+                                  className={cn(
+                                    'mt-1 text-[10px]',
+                                    isLight ? 'text-gray-400' : 'text-gray-500',
+                                  )}
+                                >
+                                  Edit this provider to view or update credential values.
+                                </p>
+                              </div>
+                              <div className="mt-3">
+                                <div className="font-medium">Model Settings</div>
+                                <pre className="mt-1 h-28 overflow-auto rounded bg-black/5 p-2 font-mono text-[11px] providers-tab-scrollbar">
+                                  {JSON.stringify(provider.modelSettings ?? {}, null, 2)}
+                                </pre>
                               </div>
                               {provider.bedrockModelSettings && (
                                 <div className="mt-3">
@@ -1741,11 +1765,11 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                                   </pre>
                                 </div>
                               )}
-                            </>
-                          )}
-                          <div className="mt-3 text-[11px] flex gap-3">
-                            <span>Created: {new Date(provider.createdAt).toLocaleString()}</span>
-                            <span>Updated: {new Date(provider.updatedAt).toLocaleString()}</span>
+                              <div className="mt-3 text-[11px] flex gap-3">
+                                <span>Created: {new Date(provider.createdAt).toLocaleString()}</span>
+                                <span>Updated: {new Date(provider.updatedAt).toLocaleString()}</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
 
