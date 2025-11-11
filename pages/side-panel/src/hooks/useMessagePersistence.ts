@@ -60,6 +60,15 @@ export const useMessagePersistence = ({
   const hydrationFallbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const storedMessagesRef = useRef<CopilotMessage[]>([]);
   const manualResetInProgressRef = useRef<boolean>(false);
+  const lastSavedSignatureRef = useRef<string | null>(null);
+  const computeMessageSignature = useCallback((msgs: CopilotMessage[] | any[]): string => {
+    try {
+      return JSON.stringify(msgs ?? []);
+    } catch (error) {
+      debug.warn('[useMessagePersistence] Failed to compute message signature, falling back to length', error);
+      return `len:${Array.isArray(msgs) ? msgs.length : 0}`;
+    }
+  }, [debug]);
 
   useEffect(() => {
     storedMessagesRef.current = storedMessages;
@@ -82,6 +91,7 @@ export const useMessagePersistence = ({
       // Clear stored messages immediately
       setStoredMessages([]);
       setStoredFilteredMessagesCount(0);
+      lastSavedSignatureRef.current = computeMessageSignature([]);
       
       // Re-enable stabilization after a delay (allow time for reset to complete)
       setTimeout(() => {
@@ -99,7 +109,7 @@ export const useMessagePersistence = ({
         resetChatRef.current = originalReset;
       }
     };
-  }, [resetChatRef, sessionId]); // Only re-run when resetChatRef or sessionId changes
+  }, [resetChatRef, sessionId, computeMessageSignature, debug]); // Only re-run when resetChatRef or sessionId changes
 
   const clearHydrationFallback = useCallback(() => {
     if (hydrationFallbackTimeoutRef.current) {
@@ -132,6 +142,91 @@ export const useMessagePersistence = ({
       return true;
     }).length;
   }, []);
+  const sanitizeNormalizedMessages = useCallback((messages: CopilotMessage[]): CopilotMessage[] => {
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return [];
+    }
+
+    const seenIds = new Set<string>();
+    const validRoles = new Set(['user', 'assistant', 'tool', 'system']);
+    let removedEmptyAssistants = 0;
+    let deduplicated = 0;
+    let removedInvalidRoles = 0;
+    let preservedStatefulAssistants = 0;
+    const sanitized: CopilotMessage[] = [];
+
+    for (const rawMessage of messages) {
+      const message = rawMessage as CopilotMessage;
+      if (!message || typeof message !== 'object') {
+        continue;
+      }
+
+      const id = typeof (message as any).id === 'string' ? (message as any).id : undefined;
+      const role = (message as any).role;
+      if (!validRoles.has(role)) {
+        removedInvalidRoles += 1;
+        continue;
+      }
+      const toolCalls = Array.isArray((message as any).toolCalls) ? (message as any).toolCalls : [];
+      const hasToolCalls = toolCalls.length > 0;
+      const statePayload = (message as any).state;
+      let hasState = false;
+      if (Array.isArray(statePayload)) {
+        hasState = statePayload.length > 0;
+      } else if (statePayload && typeof statePayload === 'object') {
+        hasState = Object.keys(statePayload).length > 0;
+      } else if (typeof statePayload === 'string') {
+        hasState = statePayload.trim().length > 0;
+      } else if (statePayload != null) {
+        hasState = Boolean(statePayload);
+      }
+
+      let hasContent = false;
+      const content = (message as any).content;
+      if (typeof content === 'string') {
+        hasContent = content.trim().length > 0;
+      } else if (Array.isArray(content)) {
+        hasContent = content.length > 0;
+      } else if (content && typeof content === 'object') {
+        hasContent = Object.keys(content).length > 0;
+      } else if (content != null) {
+        hasContent = true;
+      }
+
+      if (role === 'assistant' && !hasContent && !hasToolCalls) {
+        if (hasState) {
+          preservedStatefulAssistants += 1;
+        } else {
+          removedEmptyAssistants += 1;
+          continue;
+        }
+      }
+
+      if (id && seenIds.has(id)) {
+        deduplicated += 1;
+        continue;
+      }
+
+      if (id) {
+        seenIds.add(id);
+      }
+
+      sanitized.push(message);
+    }
+
+    if (removedEmptyAssistants > 0 || deduplicated > 0 || removedInvalidRoles > 0) {
+      debug.log('[useMessagePersistence] Sanitized messages before saving/loading:', {
+        before: messages.length,
+        after: sanitized.length,
+        removedEmptyAssistants,
+        deduplicated,
+        removedInvalidRoles,
+        preservedStatefulAssistants,
+      });
+    }
+
+    return sanitized;
+  }, [debug]);
 
   // PERFORMANCE OPTIMIZATION: Consolidated save function to avoid code duplication
   // Now stores ALL messages (including thinking messages)
@@ -224,17 +319,28 @@ export const useMessagePersistence = ({
           }
         });
 
-        await sessionStorageDBWrapper.updateAllMessages(sessionId, sanitizedMessages);
-        setStoredMessages(sanitizedMessages);
-        setStoredFilteredMessagesCount(countFilteredMessages(sanitizedMessages));
+        const normalizedMessages = sanitizeNormalizedMessages(sanitizedMessages as CopilotMessage[]);
+        const newSignature = computeMessageSignature(normalizedMessages);
+
+        if (lastSavedSignatureRef.current === newSignature) {
+          debug.log('[useMessagePersistence] 🔁 Skipping save - messages unchanged since last sync');
+          setStoredMessages(normalizedMessages);
+          setStoredFilteredMessagesCount(countFilteredMessages(normalizedMessages));
+          return;
+        }
+
+        await sessionStorageDBWrapper.updateAllMessages(sessionId, normalizedMessages);
+        setStoredMessages(normalizedMessages);
+        setStoredFilteredMessagesCount(countFilteredMessages(normalizedMessages));
+        lastSavedSignatureRef.current = newSignature;
         debug.log(
-          `✅ [useMessagePersistence] Successfully saved ${sanitizedMessages.length} messages (${countFilteredMessages(sanitizedMessages)} filtered) for session ${sessionId}`,
+          `✅ [useMessagePersistence] Successfully saved ${normalizedMessages.length} messages (${countFilteredMessages(normalizedMessages)} filtered) for session ${sessionId}`,
         );
       } catch (error) {
         debug.error('❌ [useMessagePersistence] Failed to save messages to storage:', error);
       }
     },
-    [sessionId, countFilteredMessages],
+    [sessionId, countFilteredMessages, computeMessageSignature, debug, sanitizeNormalizedMessages],
   );
 
   // Manual save function using CopilotKit API
@@ -333,23 +439,22 @@ export const useMessagePersistence = ({
         }
       });
 
-      // Save ALL messages to Chrome storage (not just filtered ones)
-      await sessionStorageDBWrapper.updateAllMessages(sessionId, sanitizedMessages);
+      const normalizedMessages = sanitizeNormalizedMessages(sanitizedMessages as CopilotMessage[]);
 
-      // Update local state with sanitized messages
-      setStoredMessages(sanitizedMessages);
-      setStoredFilteredMessagesCount(filteredMessages.length);
-      debug.log('✅ [useMessagePersistence] Messages saved successfully');
+      await saveMessagesToStorage(normalizedMessages as unknown as CopilotMessage[]);
     } catch (error) {
       debug.error('❌ [useMessagePersistence] Failed to save messages:', error);
     }
-  }, [sessionId, saveMessagesRef]);
+  }, [sessionId, saveMessagesRef, saveMessagesToStorage, sanitizeNormalizedMessages, debug]);
 
   // Manual load function using CopilotKit API
   const restoreAttemptsRef = useRef(0);
   const MAX_RESTORE_ATTEMPTS = 2; // initial + one retry
 
   const handleLoadMessages = useCallback(async () => {
+    console.log(`[useMessagePersistence] 📥 ========== LOAD MESSAGES START ==========`);
+    console.log(`[useMessagePersistence] Session: ${sessionId.slice(0, 8)}`);
+    console.log(`[useMessagePersistence] isActive: ${isActive}`);
     debug.log(`📥 [useMessagePersistence] handleLoadMessages called for session ${sessionId}`);
     setIsHydrating(true);
     scheduleHydrationFallback();
@@ -366,19 +471,27 @@ export const useMessagePersistence = ({
     debug.log('[useMessagePersistence] Reset restore attempts counter for fresh load');
 
     try {
-      const messages = await sessionStorageDBWrapper.getAllMessagesAsync(sessionId);
+      const rawMessages = await sessionStorageDBWrapper.getAllMessagesAsync(sessionId);
 
-      debug.log('[useMessagePersistence] Messages to load:', messages.length);
+      console.log(`[useMessagePersistence] 📦 Loaded ${rawMessages?.length || 0} messages from storage`);
+      debug.log('[useMessagePersistence] Messages to load:', rawMessages.length);
 
-      const computeStorageSignature = (msgs: CopilotMessage[]) => {
-        return JSON.stringify(
-          (msgs || []).map((m: any) => m?.id ?? `${m?.role || 'unknown'}-${typeof m?.content === 'string' ? m.content.length : 0}`),
-        );
-      };
+      const sanitizedFromStorage = sanitizeNormalizedMessages(rawMessages as CopilotMessage[] ?? []);
+      if (sanitizedFromStorage.length !== rawMessages.length) {
+        debug.log('[useMessagePersistence] 🧽 Cleaning invalid assistant/duplicate messages from storage', {
+          before: rawMessages.length,
+          after: sanitizedFromStorage.length,
+        });
+        try {
+          await sessionStorageDBWrapper.updateAllMessages(sessionId, sanitizedFromStorage);
+        } catch (persistError) {
+          debug.warn('[useMessagePersistence] Failed to persist cleaned messages:', persistError);
+        }
+      }
 
       const previousMessages = storedMessagesRef.current;
-      const previousSignature = computeStorageSignature(previousMessages as CopilotMessage[]);
-      const incomingSignature = computeStorageSignature(messages as CopilotMessage[]);
+      const previousSignature = computeMessageSignature(previousMessages as CopilotMessage[]);
+      const incomingSignature = computeMessageSignature(sanitizedFromStorage as CopilotMessage[]);
 
       const currentInMemoryMessagesCount = (() => {
         try {
@@ -394,14 +507,17 @@ export const useMessagePersistence = ({
       const signaturesMatch = previousSignature === incomingSignature;
       let shouldRestoreMessages = false;
 
-      if (messages.length === 0) {
+      if (sanitizedFromStorage.length === 0) {
+        console.log(`[useMessagePersistence] 📭 No messages to load for session ${sessionId.slice(0, 8)}`);
         debug.log(`[useMessagePersistence] No messages to load for session ${sessionId}`);
 
         // Ensure local state reflects an empty session immediately
         setStoredMessages([]);
         setStoredFilteredMessagesCount(0);
+        lastSavedSignatureRef.current = incomingSignature;
         if (restoreMessagesRef.current) {
           try {
+            console.log('[useMessagePersistence] 🧹 Clearing messages in UI');
             restoreMessagesRef.current([]);
           } catch (restoreError) {
             debug.warn('[useMessagePersistence] Failed to clear messages via restore ref:', restoreError);
@@ -411,6 +527,7 @@ export const useMessagePersistence = ({
         clearHydrationFallback();
         setIsHydrating(false);
         setHydrationCompleted(true);
+        console.log(`[useMessagePersistence] ✅ ========== LOAD COMPLETE (empty) ==========`);
         debug.log(`🎯 [useMessagePersistence] Hydration COMPLETED for session ${sessionId} (no messages)`);
         return;
       } else {
@@ -419,7 +536,7 @@ export const useMessagePersistence = ({
           debug.log('[useMessagePersistence] Detected different message signatures - will restore from storage');
         } else if (currentInMemoryMessagesCount !== null) {
           // When signatures match but in-memory state is empty (e.g., CopilotKit lost messages), force a restore
-          if (currentInMemoryMessagesCount === 0 && messages.length > 0) {
+          if (currentInMemoryMessagesCount === 0 && sanitizedFromStorage.length > 0) {
             shouldRestoreMessages = true;
             debug.warn(
               `[useMessagePersistence] Signatures match but in-memory messages are empty for session ${sessionId}; forcing restore`,
@@ -429,8 +546,9 @@ export const useMessagePersistence = ({
 
         if (!shouldRestoreMessages) {
           debug.log(`[useMessagePersistence] Messages unchanged in storage for session ${sessionId}, skipping restore`);
-          setStoredMessages(messages);
-          setStoredFilteredMessagesCount(countFilteredMessages(messages));
+          setStoredMessages(sanitizedFromStorage);
+          setStoredFilteredMessagesCount(countFilteredMessages(sanitizedFromStorage));
+          lastSavedSignatureRef.current = incomingSignature;
           clearHydrationFallback();
           setIsHydrating(false);
           setHydrationCompleted(true);
@@ -440,32 +558,17 @@ export const useMessagePersistence = ({
           return;
         }
 
-        // Validate messages before restoring to prevent "undefined role" errors
-        const validMessages = messages.filter((msg: any) => {
-          if (!msg || typeof msg !== 'object') return false;
-          // Ensure role property exists and is valid
-          if (!msg.role || typeof msg.role !== 'string' || !['user', 'assistant', 'tool', 'system'].includes(msg.role)) {
-            debug.warn('[useMessagePersistence] Filtering out message with invalid role during restore:', msg.role);
-            return false;
-          }
-          return true;
-        });
-        
-        if (validMessages.length < messages.length) {
-          debug.warn(`[useMessagePersistence] Filtered out ${messages.length - validMessages.length} invalid messages during restore`);
-        }
-        
-        // Restore ALL valid messages (including thinking messages) using ChatInner's setMessages
-        if (restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS && validMessages.length > 0) {
+        if (restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS && sanitizedFromStorage.length > 0) {
           restoreAttemptsRef.current += 1;
-          restoreMessagesRef.current(validMessages);
-        } else if (validMessages.length === 0) {
-          debug.warn('[useMessagePersistence] No valid messages to restore after filtering');
+          restoreMessagesRef.current(sanitizedFromStorage);
+        } else if (sanitizedFromStorage.length === 0) {
+          debug.warn('[useMessagePersistence] No messages to restore after sanitization');
         } else {
           debug.log('[useMessagePersistence] Skipping restore - max attempts reached');
         }
-        setStoredMessages(messages);
-        setStoredFilteredMessagesCount(countFilteredMessages(messages));
+        setStoredMessages(sanitizedFromStorage);
+        setStoredFilteredMessagesCount(countFilteredMessages(sanitizedFromStorage));
+        lastSavedSignatureRef.current = incomingSignature;
         debug.log('✅ [useMessagePersistence] Messages loaded successfully');
 
         clearHydrationFallback();
@@ -478,12 +581,12 @@ export const useMessagePersistence = ({
           // Check if we have access to the current messages through saveMessagesRef
           if (saveMessagesRef.current) {
             const currentMessageData = saveMessagesRef.current();
-            if (currentMessageData.allMessages.length === 0 && validMessages.length > 0) {
+            if (currentMessageData.allMessages.length === 0 && sanitizedFromStorage.length > 0) {
               if (restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS) {
                 debug.log('[useMessagePersistence] Messages cleared after restore, retrying once...');
                 restoreAttemptsRef.current += 1;
                 if (restoreMessagesRef.current) {
-                  restoreMessagesRef.current(validMessages);
+                  restoreMessagesRef.current(sanitizedFromStorage);
                   debug.log('[useMessagePersistence] Messages re-restored successfully');
                 }
               } else {
@@ -504,7 +607,7 @@ export const useMessagePersistence = ({
       clearHydrationFallback();
       setIsHydrating(false);
     }
-  }, [sessionId, restoreMessagesRef, saveMessagesRef, countFilteredMessages, scheduleHydrationFallback, clearHydrationFallback]);
+  }, [sessionId, restoreMessagesRef, saveMessagesRef, countFilteredMessages, scheduleHydrationFallback, clearHydrationFallback, computeMessageSignature, sanitizeNormalizedMessages]);
 
   // Auto-restore messages when session becomes active or panel is reopened
   const hasAutoRestoredRef = useRef(false);

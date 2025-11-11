@@ -80,24 +80,104 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   // Ref to store reset functions per session
   const resetFunctionsRef = React.useRef<Record<string, () => void>>({});
   const hasAttemptedInitialSessionRef = React.useRef(false);
+  const lastStorageUserIdRef = React.useRef<string | null>(null);
+  const hasSeenSessionsForCurrentUserRef = React.useRef<boolean>(false);
+  const renderCountRef = React.useRef(0);
+
+  // Track render count
+  renderCountRef.current += 1;
+  console.log(`[SessionsPage] 🔄 RENDER #${renderCountRef.current}`, {
+    sessionsCount: sessions.length,
+    currentSessionId: currentSessionId?.slice(0, 8),
+    sessionsLoading,
+    userId: user?.id?.slice(0, 8),
+    storageUserId: sessionStorageDBWrapper.getCurrentUserId()?.slice(0, 8),
+  });
+
+  // Track when the storage userId changes; require at least one sessions fetch after change
+  useEffect(() => {
+    const storageUserId = sessionStorageDBWrapper.getCurrentUserId();
+    console.log('[SessionsPage] 👤 User ID change check:', {
+      hasUser: !!user?.id,
+      storageUserId: storageUserId?.slice(0, 8),
+      lastUserId: lastStorageUserIdRef.current?.slice(0, 8),
+    });
+    
+    if (!user?.id || !storageUserId) {
+      return;
+    }
+    if (lastStorageUserIdRef.current !== storageUserId) {
+      console.log('[SessionsPage] 🔄 USER ID CHANGED - resetting session state', {
+        from: lastStorageUserIdRef.current?.slice(0, 8),
+        to: storageUserId?.slice(0, 8),
+      });
+      lastStorageUserIdRef.current = storageUserId;
+      hasSeenSessionsForCurrentUserRef.current = false;
+      // Also reset the initial-session attempt gate when user changes
+      hasAttemptedInitialSessionRef.current = false;
+    }
+  }, [user?.id]);
+
+  // Mark that we've observed at least one sessions snapshot for the current user
+  useEffect(() => {
+    const storageUserId = sessionStorageDBWrapper.getCurrentUserId();
+    console.log('[SessionsPage] 📸 Sessions snapshot effect:', {
+      hasUser: !!user?.id,
+      storageUserId: storageUserId?.slice(0, 8),
+      lastUserId: lastStorageUserIdRef.current?.slice(0, 8),
+      sessionsCount: sessions.length,
+      hasSeenSessions: hasSeenSessionsForCurrentUserRef.current,
+    });
+    
+    if (!user?.id || !storageUserId) {
+      return;
+    }
+    if (lastStorageUserIdRef.current === storageUserId) {
+      if (!hasSeenSessionsForCurrentUserRef.current) {
+        console.log('[SessionsPage] ✅ FIRST SESSIONS SNAPSHOT for current user observed');
+      }
+      hasSeenSessionsForCurrentUserRef.current = true;
+    }
+  }, [sessions, user?.id]);
 
   // Initialize with a default session if none exist
   useEffect(() => {
-    // Don't check for sessions while still loading from database
-    if (sessionsLoading) {
-      console.log('[SessionsPage] Sessions still loading, waiting...');
+    const storageUserId = sessionStorageDBWrapper.getCurrentUserId();
+
+    console.log('[SessionsPage] 🔍 Ensure initial session effect:', {
+      sessionsLoading,
+      hasUser: !!user?.id,
+      storageUserId: storageUserId?.slice(0, 8),
+      sessionsCount: sessions.length,
+      hasSeenSessions: hasSeenSessionsForCurrentUserRef.current,
+      hasAttempted: hasAttemptedInitialSessionRef.current,
+      isEnsuring: isEnsuringInitialSession,
+    });
+
+    // Don't check for sessions while still loading or before the user context is ready
+    if (sessionsLoading || !user?.id || !storageUserId) {
+      console.log('[SessionsPage] ⏸️  Sessions or user not ready, waiting...');
+      return;
+    }
+
+    // Require that we've seen at least one sessions snapshot for this user
+    if (!hasSeenSessionsForCurrentUserRef.current) {
+      console.log('[SessionsPage] ⏸️  Waiting for first sessions snapshot after user ID set');
       return;
     }
 
     if (sessions.length > 0) {
+      console.log('[SessionsPage] ✅ Sessions exist, no need to create initial session');
       hasAttemptedInitialSessionRef.current = true;
       return;
     }
 
     if (isEnsuringInitialSession || hasAttemptedInitialSessionRef.current) {
+      console.log('[SessionsPage] ⏸️  Already ensuring or attempted initial session');
       return;
     }
 
+    console.log('[SessionsPage] 🚀 NO SESSIONS FOUND - creating initial session');
     let isCancelled = false;
     hasAttemptedInitialSessionRef.current = true;
 
@@ -124,7 +204,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [sessions.length, isEnsuringInitialSession, sessionsLoading]);
+  }, [sessions.length, isEnsuringInitialSession, sessionsLoading, user?.id]);
 
   // Callback to receive live message counts from ChatSessionContainer
   const handleMessagesCountChange = useCallback((sessionId: string, count: number) => {
@@ -219,9 +299,13 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   );
 
   useEffect(() => {
-    // console.log('[MSG_SKELETON] 🔄 Session ready effect triggered:', { currentSessionId, isSessionReady });
+    console.log('[SessionsPage] 🎬 Session ready effect triggered:', { 
+      currentSessionId: currentSessionId?.slice(0, 8), 
+      isSessionReady 
+    });
+    
     if (!currentSessionId) {
-      // console.log('[MSG_SKELETON] ❌ No currentSessionId, setting isSessionReady = true and isMessagesLoading = false');
+      console.log('[SessionsPage] ❌ No currentSessionId, setting ready states');
       if (sessionReadyTimeoutRef.current) {
         clearTimeout(sessionReadyTimeoutRef.current);
         sessionReadyTimeoutRef.current = null;
@@ -232,10 +316,9 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       return;
     }
 
-    // console.log('[MSG_SKELETON] ✅ Setting isSessionReady = false and isMessagesLoading = true for session:', currentSessionId.slice(0, 8));
+    console.log('[SessionsPage] 🔄 Session changed, starting skeleton display for:', currentSessionId.slice(0, 8));
     // Record when skeleton starts showing
     skeletonStartTimeRef.current = Date.now();
-    // console.log('[MSG_SKELETON] 🎬 Skeleton display started at:', skeletonStartTimeRef.current);
     
     setIsSessionReady(false);
     // Immediately show message skeleton when switching sessions
@@ -246,9 +329,9 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     }
 
     // Fallback timeout: ensure skeleton can't linger if ready signal is missed
-    // console.log('[MSG_SKELETON] ⏰ Setting fallback timeout for session:', currentSessionId.slice(0, 8));
+    console.log('[SessionsPage] ⏰ Setting fallback timeout for session:', currentSessionId.slice(0, 8));
     sessionReadyTimeoutRef.current = setTimeout(() => {
-      // console.log('[MSG_SKELETON] ⏰ Fallback timeout fired, setting isSessionReady = true');
+      console.log('[SessionsPage] ⏰ FALLBACK TIMEOUT fired, forcing ready state');
       sessionReadyTimeoutRef.current = null;
       setIsSessionReady(true);
       skeletonStartTimeRef.current = null;

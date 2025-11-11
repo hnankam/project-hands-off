@@ -68,9 +68,10 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   // ================================================================================
   const renderCountRef = useRef(0);
   renderCountRef.current += 1;
-  // console.log(`[ChatSessionContainer:${sessionId.slice(0, 8)}] Render #${renderCountRef.current}`, {
-  //   isActive,
-  // });
+  console.log(`[ChatSessionContainer] 🔄 RENDER #${renderCountRef.current} for session ${sessionId.slice(0, 8)}`, {
+    isActive,
+    timestamp: new Date().toISOString(),
+  });
 
   const { sessions } = useSessionStorageDB();
   const { showAgentCursor, showSuggestions, showThoughtBlocks } = useStorage(preferencesStorage);
@@ -99,7 +100,10 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     }
 
     if (prevSessionIdRef.current && prevSessionIdRef.current !== sessionId) {
-      console.log(`[ChatSessionContainer] Session changed from ${prevSessionIdRef.current.slice(0, 8)} to ${sessionId.slice(0, 8)}, resetting message count`);
+      console.log(`[ChatSessionContainer] 🔄 ========== SESSION SWITCHED ==========`);
+      console.log(`[ChatSessionContainer] From: ${prevSessionIdRef.current.slice(0, 8)}`);
+      console.log(`[ChatSessionContainer] To: ${sessionId.slice(0, 8)}`);
+      console.log(`[ChatSessionContainer] Resetting message count and agent state`);
       setHeadlessMessagesCount(0);
       setIsCounterReady(false);
       hasReportedInitialCountRef.current = false;
@@ -107,24 +111,17 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         sessionId,
         steps: [],
       });
+      console.log(`[ChatSessionContainer] ✅ Session switch complete`);
+    } else if (!prevSessionIdRef.current) {
+      console.log(`[ChatSessionContainer] 🎬 ========== INITIAL SESSION MOUNT ==========`);
+      console.log(`[ChatSessionContainer] Session ID: ${sessionId.slice(0, 8)}`);
+      console.log(`[ChatSessionContainer] isActive: ${isActive}`);
     }
     prevSessionIdRef.current = sessionId;
   }, [sessionId]);
   
-  // Progress bar state
-  const [hasProgressBar, setHasProgressBar] = useState(false);
-  const [showProgressBar, setShowProgressBar] = useState(true);
-  const [toggleProgressBar, setToggleProgressBar] = useState<(() => void) | undefined>(undefined);
-  
     // Note: Embedding state (pageContentEmbeddingRef, isEmbedding, embeddingStatus, dbTotals)
     // is now provided by usePageContentEmbedding hook (see line ~396)
-  
-  // Stable callback for progress bar state changes
-  const handleProgressBarStateChange = useCallback((has: boolean, show: boolean, toggle: () => void) => {
-    setHasProgressBar(has);
-    setShowProgressBar(show);
-    setToggleProgressBar(() => toggle);
-  }, []);
   
   // Get current session to load saved agent/model
   const currentSession = sessions.find(s => s.id === sessionId);
@@ -448,9 +445,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     
     if (sessionChanged) {
       console.log(`[ChatSessionContainer] Session changed from ${prevSessionId} to ${sessionId}, handling hydration...`);
-      setHasProgressBar(false);
-      setShowProgressBar(false);
-      setToggleProgressBar(() => undefined);
       
       const runtimeHasMessages = Boolean(runtimeState?.messagesSignature);
       
@@ -1107,9 +1101,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         isConnected: isUsageConnected,
       }}
       onUsageClick={() => setIsUsagePopupOpen(true)}
-      hasProgressBar={hasProgressBar}
-      showProgressBar={showProgressBar}
-      onToggleProgressBar={toggleProgressBar}
     />
       ),
       [
@@ -1132,9 +1123,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     lastUsage,
     cumulativeUsage,
     isUsageConnected,
-    hasProgressBar,
-    showProgressBar,
-        toggleProgressBar,
       ],
     );
 
@@ -1196,7 +1184,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         setIsAgentLoading={setIsAgentLoading}
         showSuggestions={showSuggestions}
         showThoughtBlocks={showThoughtBlocks}
-        onProgressBarStateChange={handleProgressBarStateChange}
         initialAgentStepState={currentAgentStepState}
         onAgentStepStateChange={setCurrentAgentStepState}
         contextMenuMessage={contextMenuMessage}
@@ -1216,7 +1203,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       currentAgentStepState,
       currentPageContent,
       dbTotals,
-      handleProgressBarStateChange,
       latestDOMUpdate,
       organization?.id,
       saveMessagesToStorage,

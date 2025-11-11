@@ -2,25 +2,37 @@ import type { FC } from 'react';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
-import { useStorage } from '@extension/shared';
+import { useStorage, sessionStorageDBWrapper } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 
+// Persist expanded state across remounts per session
+const expandedStateBySession: Map<string, boolean> = new Map();
+
 // Icon Components - matching the agent/model switch overlay
-const SpinningLoader = () => (
-  <svg className="animate-spin h-3.5 w-3.5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+const SpinningLoader: FC<{ color?: string }> = ({ color }) => (
+  <svg className="animate-spin h-3.5 w-3.5 flex-shrink-0 block" style={{ color }} fill="none" viewBox="0 0 24 24">
     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
   </svg>
 );
 
+// Filled checkmark for completed steps
 const GreenCheckmark = () => (
-  <svg className="h-3.5 w-3.5 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+  <svg className="h-3.5 w-3.5 text-green-500 flex-shrink-0 block" fill="currentColor" viewBox="0 0 20 20">
     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
   </svg>
 );
 
-const RedFailIcon = () => (
-  <svg className="h-3.5 w-3.5 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+// Outlined checkmark for pending steps - same structure as GreenCheckmark but outlined
+const OutlinedCheckmark = () => (
+  <svg className="h-3.5 w-3.5 text-gray-400 flex-shrink-0 block" fill="none" stroke="currentColor" viewBox="0 0 20 20" strokeWidth="1.8">
+    <circle cx="10" cy="10" r="8" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13.293 8.293L9 12.586l-2.293-2.293" />
+  </svg>
+);
+
+const RedFailIcon: FC<{ color?: string }> = ({ color = '#ef4444' }) => (
+  <svg className="h-3.5 w-3.5 flex-shrink-0 block" style={{ color }} fill="currentColor" viewBox="0 0 20 20">
     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
   </svg>
 );
@@ -66,13 +78,26 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   const { isLight: isLightFromStorage } = useStorage(exampleThemeStorage);
   const theme = isLightFromStorage ? 'light' : 'dark';
   
-  const [isExpanded, setIsExpanded] = useState(!isCollapsed);
+  // Use a per-session sticky expanded state to avoid accidental collapses on remount
+  const sessionKey = state.sessionId ?? 'default';
+  const [isExpanded, setIsExpanded] = useState<boolean>(() => {
+    if (expandedStateBySession.has(sessionKey)) {
+      return expandedStateBySession.get(sessionKey) as boolean;
+    }
+    return !isCollapsed;
+  });
   const [isHistorical, setIsHistorical] = useState(initialHistorical);
   const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
   const cardRef = React.useRef<HTMLElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const addInputRef = React.useRef<HTMLInputElement>(null);
+  const editAreaRef = React.useRef<HTMLTextAreaElement>(null);
+  const [isEditWrapped, setIsEditWrapped] = useState(false);
+  const [hoveredStepIndex, setHoveredStepIndex] = useState<number | null>(null);
+  const [isHoverEditing, setIsHoverEditing] = useState(false);
+  const [hoverText, setHoverText] = useState<string>('');
+  const [hoverRect, setHoverRect] = useState<{ left: number; top: number } | null>(null);
 
   // Add-step state
   const [isAdding, setIsAdding] = useState(false);
@@ -100,6 +125,55 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
       });
     }
   }, [state, setState]);
+
+  // Detect wrapping in edit mode and optionally auto-grow textarea height
+  React.useEffect(() => {
+    if (editingStepIndex === null) return;
+    const el = editAreaRef.current;
+    if (!el) return;
+    // Auto-size to content height (up to a reasonable limit, still allows manual resize)
+    try {
+      el.style.height = 'auto';
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    } catch {}
+    // Consider wrapped if more than one line or explicit newlines exist
+    const wrapped = el.scrollHeight > el.clientHeight + 1 || el.value.includes('\n');
+    setIsEditWrapped(wrapped);
+  }, [editValue, editingStepIndex]);
+
+  // Load expanded state from database on mount (only for fixed card, not historical)
+  React.useEffect(() => {
+    if (!showControls || isHistorical) return; // Only for fixed card
+    
+    const loadExpandedState = async () => {
+      try {
+        const session = await sessionStorageDBWrapper.getSession(sessionKey);
+        if (session && session.planExpanded !== undefined) {
+          const savedExpanded = session.planExpanded;
+          expandedStateBySession.set(sessionKey, savedExpanded);
+          setIsExpanded(savedExpanded);
+        }
+      } catch (e) {
+        console.warn('[TaskProgressCard] Failed to load expanded state:', e);
+      }
+    };
+    
+    loadExpandedState();
+  }, [sessionKey, showControls, isHistorical]);
+
+  // Persist expanded state per session (in memory and database)
+  React.useEffect(() => {
+    if (!showControls || isHistorical) return; // Only for fixed card
+    
+    expandedStateBySession.set(sessionKey, isExpanded);
+    
+    // Debounce database save
+    const timeoutId = setTimeout(() => {
+      sessionStorageDBWrapper.updateSessionPlanExpanded(sessionKey, isExpanded);
+    }, 300);
+    
+    return () => clearTimeout(timeoutId);
+  }, [sessionKey, isExpanded, showControls, isHistorical]);
   
   // Check if this card is marked as historical via data attribute
   React.useEffect(() => {
@@ -150,6 +224,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
         ...newSteps[editingStepIndex],
         description: editValue.trim()
       };
+      console.log('[TASKCARD_SETSTATE] ✏️ EDIT step', editingStepIndex, '- calling setState with', newSteps.length, 'steps');
       setState({ ...state, steps: newSteps });
     }
     setEditingStepIndex(null);
@@ -181,6 +256,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   const handleAddSubmit = () => {
     if (setState && addValue.trim()) {
       const newSteps = [...state.steps, { description: addValue.trim(), status: 'pending' as const }];
+      console.log('[TASKCARD_SETSTATE] ➕ ADD step - calling setState with', newSteps.length, 'steps:', addValue.trim().substring(0, 30));
       setState({ ...state, steps: newSteps });
     }
     setIsAdding(false);
@@ -208,6 +284,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     const temp = newSteps[index - 1];
     newSteps[index - 1] = newSteps[index];
     newSteps[index] = temp;
+    console.log('[TASKCARD_SETSTATE] ⬆️ MOVE step', index, 'UP - calling setState');
     setState({ ...state, steps: newSteps });
   };
 
@@ -246,6 +323,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     let targetIndex = index;
     if (sourceIndex < index) targetIndex = index - 1;
     newSteps.splice(targetIndex, 0, moved);
+    console.log('[TASKCARD_SETSTATE] 🔄 DRAG-DROP step from', sourceIndex, 'to', targetIndex, '- calling setState');
     setState({ ...state, steps: newSteps });
     setDraggingIndex(null);
     setDragOverIndex(null);
@@ -267,7 +345,9 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   };
 
   // Delete plan - open modal
-  const handleOpenDeletePlan = () => {
+  const handleOpenDeletePlan = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
     setDeletePlanOpen(true);
   };
 
@@ -278,6 +358,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     setEditingStepIndex(null);
     setEditValue('');
     setDeletePlanOpen(false);
+    console.log('[TASKCARD_SETSTATE] 🗑️ DELETE PLAN - calling setState with empty steps');
     setState({ ...state, steps: [] });
   };
 
@@ -303,6 +384,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     const temp = newSteps[index + 1];
     newSteps[index + 1] = newSteps[index];
     newSteps[index] = temp;
+    console.log('[TASKCARD_SETSTATE] ⬇️ MOVE step', index, 'DOWN - calling setState');
     setState({ ...state, steps: newSteps });
   };
 
@@ -315,8 +397,104 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   const completedCount = activeSteps.filter((step) => step.status === "completed").length;
   const progressPercentage = activeSteps.length > 0 ? (completedCount / activeSteps.length) * 100 : 0;
   const isLight = theme === 'light';
+  const cardBackground = isLight ? '#ffffff' : '#151C24';
+  const cardBorderColor = isLight ? '#e5e7eb' : '#374151';
+  const cardBackgroundVar = `var(--copilot-kit-input-background-color, ${cardBackground})`;
+  const cardBorderVar = `var(--copilot-kit-separator-color, ${cardBorderColor})`;
+  // Custom border colors for rendered (historical) cards. Use CSS var so parent theme updates propagate.
+  const renderedBorderVar = `var(--task-progress-rendered-border-color, ${
+    isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151'
+  })`;
+  const effectiveBorderColor =
+    isHistorical && !showControls ? renderedBorderVar : cardBorderVar;
+  const mutedBackgroundVar = `var(--copilot-kit-muted-color, ${isLight ? '#f3f4f6' : '#1f2937'})`;
+  const secondaryBackgroundVar = `var(--copilot-kit-secondary-color, ${isLight ? '#f9fafb' : '#111827'})`;
   const hasPendingActive = activeSteps.some((step) => step.status === 'pending');
   const canRunPlan = hasPendingActive && !isChatLoading;
+  const progressFillColor = isLight ? '#9ca3af' : '#6b7280';
+  const progressTrackColor = isLight ? 'rgba(75, 85, 99, 0.18)' : 'rgba(148, 163, 184, 0.25)';
+  // Match CustomUserMessage gradient for controls fade
+  const controlFadeGradient = isLight
+    ? 'linear-gradient(to right, rgba(249, 250, 251, 0) 0%, rgba(249, 250, 251, 0.8) 20%, rgba(249, 250, 251, 0.95) 40%, rgb(249, 250, 251) 60%)'
+    : 'linear-gradient(to right, rgba(21, 28, 36, 0) 0%, rgba(21, 28, 36, 0.8) 20%, rgba(21, 28, 36, 0.95) 40%, rgb(21, 28, 36) 60%)';
+
+  // Auto-expand handler for add button
+  const handleAddAndExpand = () => {
+    setIsExpanded(true);
+    handleStartAdd();
+  };
+
+  // Pre-render delete modal so it can be shown from both collapsed and expanded views
+  const deleteModal = deletePlanOpen
+    ? createPortal(
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
+            onClick={handleCancelDeletePlan}
+          />
+          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
+            <div
+              className={`${
+                isLight ? 'bg-gray-50 border border-gray-200' : 'bg-[#151C24] border border-gray-700'
+              } w-full max-w-sm rounded-lg shadow-xl`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={`flex items-center justify-between px-3 py-2 border-b ${isLight ? 'border-gray-200' : 'border-gray-700'}`}>
+                <h2 className={`text-sm font-semibold ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>Delete Plan</h2>
+                <button
+                  type="button"
+                  onClick={handleCancelDeletePlan}
+                  className={`${isLight ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-100' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'} p-0.5 rounded-md transition-colors`}
+                >
+                  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="px-3 py-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className={`${isLight ? 'bg-red-100' : 'bg-red-900/30'} flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center`}>
+                    <svg className={`${isLight ? 'text-red-600' : 'text-red-400'} w-3.5 h-3.5`} fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className={`${isLight ? 'text-gray-900' : 'text-gray-100'} text-sm font-medium`}>
+                      Permanently delete plan?
+                    </p>
+                    <p className={`${isLight ? 'text-gray-600' : 'text-gray-400'} text-xs mt-1`}>
+                      This will remove the plan and its steps from the chat UI and cannot be recovered.
+                    </p>
+                    {state.steps.some((s) => s.status !== 'completed' && s.status !== 'deleted') && (
+                      <p className={`${isLight ? 'text-red-600' : 'text-red-400'} text-xs mt-2`}>
+                        Some steps are not completed or deleted. This action cannot be undone.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className={`flex items-center justify-end gap-2 px-3 py-2 border-t ${isLight ? 'border-gray-200' : 'border-gray-700'}`}>
+                <button
+                  type="button"
+                  onClick={handleCancelDeletePlan}
+                  className={`${isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-700 text-gray-100 hover:bg-gray-600'} px-3 py-1.5 text-xs font-medium rounded-md transition-colors`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeletePlan}
+                  className={`bg-red-600 text-white hover:bg-red-700 px-3 py-1.5 text-xs font-medium rounded-md transition-colors`}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
+      )
+    : null;
 
   // Collapsed view - compact single line
   if (!isExpanded) {
@@ -325,45 +503,24 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     const failedCount = state.steps.filter(s => s.status === 'failed').length;
     
     return (
+      <>
       <div
         ref={cardRef as any}
         data-session-id={state.sessionId ?? ''}
-        className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded text-[11px] ${
-          isLight
-            ? 'bg-gray-50 text-gray-700 border border-gray-200'
-            : 'bg-gray-800 text-gray-200 border border-gray-700'
-        } ${isHistorical ? 'opacity-60' : ''}`}
+        className={`w-full flex items-center gap-1.5 px-2 py-1.5 ${showControls ? 'rounded-t-lg border-b-0' : 'rounded-lg'} border text-[11px] transition-all duration-500 ease-in-out ${
+          isLight ? 'text-gray-700' : 'text-gray-200'
+        }`}
+        style={{
+          backgroundColor: cardBackgroundVar,
+          borderColor: effectiveBorderColor,
+          boxSizing: 'border-box',
+        }}
       >
-        {hasRunning ? (
-          <svg className="animate-spin h-2.5 w-2.5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        ) : hasFailed ? (
-          <svg className="h-2.5 w-2.5 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-          </svg>
-        ) : (
-          <svg className="w-3 h-3 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-          </svg>
-        )}
-        <span className="font-medium text-[10px]">Task:</span>
-        <span className={`${isLight ? 'text-gray-600' : 'text-gray-400'} text-[10px]`}>
-          {completedCount}/{activeSteps.length}
-          {failedCount > 0 && <span className="text-red-500 ml-1">({failedCount} failed)</span>}
-        </span>
-        <div className={`flex-1 h-1 rounded-full overflow-hidden min-w-[40px] ${isLight ? 'bg-gray-200' : 'bg-gray-700'}`}>
-          <div
-            className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
-            style={{ width: `${progressPercentage}%` }}
-          />
-        </div>
-        <button
+        <button type="button"
           onClick={() => setIsExpanded(true)}
-          className={`p-1 rounded transition-colors flex-shrink-0 ${
-            isLight 
-              ? 'text-gray-500 hover:bg-gray-100' 
+          className={`p-1 rounded transition-colors flex-shrink-0 inline-flex items-center justify-center ${
+          isLight
+              ? 'text-gray-500 hover:bg-gray-100'
               : 'text-gray-400 hover:bg-gray-700'
           }`}
           aria-label="Expand"
@@ -372,7 +529,90 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </button>
+        {hasRunning ? (
+          <svg className="animate-spin h-2.5 w-2.5 flex-shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        ) : hasFailed ? (
+          <svg className="h-2.5 w-2.5 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+          </svg>
+        ) : (
+          <svg className={`w-3 h-3 flex-shrink-0 ${isLight ? 'text-gray-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+        )}
+        <span className={`text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Task:</span>
+        <span className={`${isLight ? 'text-gray-600' : 'text-gray-400'} text-[10px]`}>
+          {completedCount}/{activeSteps.length}
+          {failedCount > 0 && <span className="text-red-500 ml-1">({failedCount} failed)</span>}
+        </span>
+        <div
+          className="flex-1 h-1 rounded-full overflow-hidden min-w-[40px]"
+          style={{ backgroundColor: progressTrackColor }}
+        >
+          <div
+            className="h-full transition-all duration-500 ease-in-out rounded-r-full"
+            style={{ width: `${progressPercentage}%`, backgroundColor: progressFillColor }}
+          />
+        </div>
+        {/* Task controls in collapsed view */}
+        {showControls && !isHistorical && (
+          <div className="flex items-center gap-1">
+            {setState && (
+              <button type="button"
+                onClick={handleAddAndExpand}
+                className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
+                  isLight 
+                    ? 'text-gray-500 hover:bg-gray-100' 
+                    : 'text-gray-400 hover:bg-gray-700'
+                }`}
+                aria-label="Add step"
+                title="Add step"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            )}
+            {canRunPlan && (
+        <button
+                onClick={handleRunPlan}
+                className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
+            isLight 
+              ? 'text-gray-500 hover:bg-gray-100' 
+              : 'text-gray-400 hover:bg-gray-700'
+          }`}
+                aria-label="Run/continue plan"
+                title="Run/continue plan"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
+          </svg>
+        </button>
+            )}
+            {setState && (
+        <button type="button"
+                onClick={handleOpenDeletePlan}
+                className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
+            isLight 
+              ? 'text-gray-500 hover:bg-gray-100' 
+              : 'text-gray-400 hover:bg-gray-700'
+          }`}
+                aria-label="Delete plan"
+                title="Delete plan"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+            )}
       </div>
+        )}
+      </div>
+      {deleteModal}
+      </>
     );
   }
 
@@ -382,20 +622,31 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
       ref={cardRef as any}
       data-testid="task-progress"
       data-session-id={state.sessionId ?? ''}
-      className={`w-full rounded-lg p-2 text-[11px] ${
-        isLight
-          ? "bg-white text-gray-800 border border-gray-200"
-          : "bg-[#151C24] text-white border border-gray-700"
-      }`}
+      className={`w-full ${showControls ? 'rounded-t-lg border-b-0' : 'rounded-lg'} p-2 text-[11px] border transition-all duration-500 ease-in-out ${isLight ? 'text-gray-800' : 'text-white'}`}
+      style={{
+        backgroundColor: cardBackgroundVar,
+        borderColor: effectiveBorderColor,
+        boxSizing: 'border-box',
+      }}
     >
       {/* Header */}
       <div className="mb-2">
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-1.5">
-            <svg className="w-3 h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            <button
+              onClick={() => setIsExpanded(false)}
+              className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
+                isLight 
+                  ? 'text-gray-500 hover:bg-gray-100' 
+                  : 'text-gray-400 hover:bg-gray-700'
+              }`}
+              aria-label="Collapse"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
             </svg>
-            <h3 className="font-semibold text-[11px]">Plan</h3>
+            </button>
+            <span className={`text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Plan</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className={`text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
@@ -404,7 +655,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
             {showControls && !isHistorical && setState && (
               <button
                 onClick={handleStartAdd}
-                className={`p-1 rounded transition-colors ${
+                className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
                   isLight 
                     ? 'text-gray-500 hover:bg-gray-100' 
                     : 'text-gray-400 hover:bg-gray-700'
@@ -420,7 +671,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
             {showControls && !isHistorical && canRunPlan && (
               <button
                 onClick={handleRunPlan}
-                className={`p-1 rounded transition-colors ${
+                className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
                   isLight 
                     ? 'text-gray-500 hover:bg-blue-100 hover:text-blue-600' 
                     : 'text-gray-400 hover:bg-blue-900/30 hover:text-blue-400'
@@ -435,8 +686,9 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
             )}
             {showControls && !isHistorical && setState && (
               <button
+                type="button"
                 onClick={handleOpenDeletePlan}
-                className={`p-1 rounded transition-colors ${
+                className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
                   isLight 
                     ? 'text-gray-500 hover:bg-red-100 hover:text-red-600' 
                     : 'text-gray-400 hover:bg-red-900/30 hover:text-red-400'
@@ -449,27 +701,17 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                 </svg>
               </button>
             )}
-            <button
-              onClick={() => setIsExpanded(false)}
-              className={`p-1 rounded transition-colors ${
-                isLight 
-                  ? 'text-gray-500 hover:bg-gray-100' 
-                  : 'text-gray-400 hover:bg-gray-700'
-              }`}
-              aria-label="Collapse"
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-              </svg>
-            </button>
           </div>
         </div>
 
         {/* Progress Bar */}
-        <div className={`h-1 rounded-full overflow-hidden ${isLight ? "bg-gray-200" : "bg-gray-700"}`}>
+        <div
+          className="h-1 rounded-full overflow-hidden"
+          style={{ backgroundColor: progressTrackColor }}
+        >
           <div
-            className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
-            style={{ width: `${progressPercentage}%` }}
+            className="h-full transition-all duration-500 ease-in-out rounded-r-full"
+            style={{ width: `${progressPercentage}%`, backgroundColor: progressFillColor }}
           />
         </div>
       </div>
@@ -487,21 +729,17 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
            const isDragSource = draggingIndex === index;
            const isDragOver = dragOverIndex === index && draggingIndex !== index;
 
-          const containerClasses = (() => {
+          const stateOpacityClass = isDeleted ? 'opacity-60' : isHistorical ? 'opacity-80' : '';
+          const containerStyle: React.CSSProperties = {
+            backgroundColor: cardBackgroundVar,
+            borderColor: effectiveBorderColor,
+          };
             if (isDeleted) {
-              return isLight
-                ? 'bg-gray-100 border border-gray-300 opacity-60'
-                : 'bg-gray-800/50 border border-gray-600 opacity-60';
-            }
-            if (isHistorical) {
-              return isLight
-                ? 'bg-gray-50 border border-gray-200 opacity-80'
-                : 'bg-gray-800/40 border border-gray-600 opacity-80';
-            }
-            return isLight
-              ? 'bg-white border border-gray-200'
-              : 'bg-gray-800/40 border border-gray-700';
-          })();
+            containerStyle.backgroundColor = mutedBackgroundVar;
+          } else if (isHistorical) {
+            // Historical (rendered) cards should blend into chat background
+            containerStyle.backgroundColor = 'transparent';
+          }
 
           return (
             <div
@@ -511,57 +749,93 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
               onDragOver={(e) => draggableEnabled && handleDragOver(e, index)}
               onDrop={(e) => draggableEnabled && handleDrop(e, index)}
               onDragEnd={handleDragEnd}
-              className={`group flex items-center gap-1.5 px-1.5 py-1 rounded transition-all ${
-                containerClasses
-              } ${draggableEnabled ? 'cursor-grab active:cursor-grabbing' : ''} ${
-                isDragSource ? 'opacity-70' : ''
-              } ${isDragOver ? (isLight ? 'ring-1 ring-blue-300' : 'ring-1 ring-blue-500/50') : ''}`}
+              className={`group relative flex items-center gap-1.5 px-1.5 py-1 rounded transition-all border ${
+                draggableEnabled ? 'cursor-grab active:cursor-grabbing' : ''
+              } ${stateOpacityClass} ${isDragSource ? 'opacity-70' : ''} ${
+                isDragOver ? (isLight ? 'ring-1 ring-blue-300' : 'ring-1 ring-blue-500/50') : ''
+              }`}
+              style={containerStyle}
             >
                {/* Status Icon - matching model switch overlay */}
                {isDeleted ? (
-                 <div className={`h-3.5 w-3.5 rounded-full flex-shrink-0 ${
-                   isLight ? 'bg-gray-400' : 'bg-gray-600'
-                 }`} />
+                 <div className={`h-3.5 w-3.5 rounded-full flex-shrink-0`} style={{ backgroundColor: cardBorderColor, opacity: 0.5 }} />
                ) : isCompleted ? (
                  <GreenCheckmark />
                ) : isRunning ? (
-                 <SpinningLoader />
+                 <SpinningLoader color={isLight ? '#3b82f6' : '#60a5fa'} />
                ) : isFailed ? (
                  <RedFailIcon />
                ) : (
-                 <div className={`h-3.5 w-3.5 rounded-full border-2 flex-shrink-0 ${
-                   isLight ? 'border-gray-300' : 'border-gray-600'
-                 }`} />
+                 <OutlinedCheckmark />
                )}
 
               {/* Step Content */}
               {editingStepIndex === index ? (
-                <input
-                  ref={inputRef}
-                  type="text"
+                <textarea
+                  ref={editAreaRef}
                   value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
+                  onChange={(e) => {
+                    setEditValue(e.target.value);
+                  }}
                   onBlur={handleEditSubmit}
                   onKeyDown={handleEditKeyDown}
-                  className={`flex-1 min-w-0 text-[10px] bg-transparent border-none outline-none px-1 ${
+                  onMouseEnter={showControls && !isHistorical ? (e) => {
+                    setHoveredStepIndex(index);
+                    setHoverText(editValue);
+                    setIsHoverEditing(true);
+                    try {
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setHoverRect({ left: r.left + r.width / 2, top: r.bottom });
+                    } catch {}
+                  } : undefined}
+                  onMouseLeave={showControls && !isHistorical ? () => {
+                    setHoveredStepIndex(null);
+                    setHoverRect(null);
+                  } : undefined}
+                  rows={2}
+                  className={`flex-1 min-w-0 text-[10px] bg-transparent border-none outline-none px-1 whitespace-pre-wrap leading-snug ${
                     isLight ? 'text-gray-900' : 'text-gray-100'
                   }`}
-                  style={{ width: '100%' }}
+                  style={{ width: '100%', resize: 'vertical', overflow: 'auto' }}
                 />
               ) : (
                 <div
                   data-testid="task-step-text"
-                  className={`flex-1 min-w-0 text-[10px] ${isDeleted ? 'line-through' : ''} ${
-                    isLight ? 'text-gray-700' : 'text-gray-200'
-                  } ${isRunning || isCompleted || isFailed ? 'font-medium' : ''}`}
+                  className={`flex-1 min-w-0 text-[10px] ${(!showControls || isHistorical) ? 'whitespace-pre-wrap break-words' : 'truncate'} ${isDeleted ? 'line-through' : ''} ${isLight ? 'text-gray-700' : 'text-gray-200'}`}
+                  aria-label={isHistorical ? undefined : step.description}
+                  onMouseEnter={showControls && !isHistorical ? (e) => {
+                    const el = e.currentTarget as HTMLElement;
+                    // Only show tooltip if actually truncated
+                    try {
+                      const isTruncated = (el.scrollWidth - el.clientWidth) > 1;
+                      if (!isTruncated) return;
+                      setHoveredStepIndex(index);
+                      setHoverText(step.description);
+                      setIsHoverEditing(false);
+                      const r = el.getBoundingClientRect();
+                      setHoverRect({ left: r.left + r.width / 2, top: r.bottom });
+                    } catch {
+                      // noop
+                    }
+                  } : undefined}
+                  onMouseLeave={showControls && !isHistorical ? () => {
+                    setHoveredStepIndex(null);
+                    setHoverRect(null);
+                  } : undefined}
                 >
                   {step.description}
                 </div>
               )}
 
-              {/* Action Buttons - non-deleted steps */}
+              {/* Per-step hover region handled above; tooltip rendered via portal below */}
+
+              {/* Action Buttons - non-deleted steps (overlay with fade) */}
               {showControls && !isHistorical && !isDeleted && editingStepIndex !== index && setState && (
-                <div className="flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div
+                  className="absolute inset-y-0 right-1 flex items-center pl-16 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                  style={{ background: controlFadeGradient }}
+                >
+                  <div className="flex items-center gap-0.5 ml-auto pointer-events-auto">
                   {/* Move up */}
                   <button
                     disabled={index === 0}
@@ -611,6 +885,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                           ...newSteps[index],
                           status: 'pending' as const
                         };
+                        console.log('[TASKCARD_SETSTATE] 🔁 RERUN step', index, '- calling setState');
                         setState({ ...state, steps: newSteps });
                       }}
                       className={`p-0.5 rounded transition-colors ${
@@ -658,6 +933,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                         ...newSteps[index],
                         status: 'deleted' as const
                       };
+                      console.log('[TASKCARD_SETSTATE] ❌ DELETE step', index, '- calling setState');
                       setState({ ...state, steps: newSteps });
                     }}
                     className={`p-0.5 rounded transition-colors ${
@@ -673,6 +949,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                     </svg>
                   </button>
                   )}
+                  </div>
                 </div>
               )}
 
@@ -687,6 +964,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                         ...newSteps[index],
                         status: 'pending' as const
                       };
+                      console.log('[TASKCARD_SETSTATE] ↩️ RESTORE step', index, '- calling setState');
                       setState({ ...state, steps: newSteps });
                     }}
                     className={`p-0.5 rounded transition-colors ${
@@ -706,6 +984,31 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
             </div>
           );
         })}
+        {/* Global tooltip via portal to avoid clipping and native title */}
+        {showControls && !isHistorical && hoveredStepIndex !== null && hoverRect && (!isHoverEditing || (isHoverEditing && isEditWrapped)) &&
+          createPortal(
+            <div
+              style={{
+                position: 'fixed',
+                left: hoverRect.left,
+                top: hoverRect.top + 6,
+                transform: 'translateX(-50%)',
+                zIndex: 100000,
+                pointerEvents: 'none',
+              }}
+            >
+              <div
+                className={`px-2 py-1.5 text-[11px] rounded-md border shadow-lg ${
+                  isLight ? 'bg-white border-gray-200 text-gray-800' : 'bg-[#151C24] border-gray-700 text-gray-100'
+                }`}
+                style={{ maxWidth: 520, whiteSpace: 'pre-wrap' }}
+              >
+                {hoverText}
+              </div>
+            </div>,
+            document.body
+          )
+        }
         {showControls && !isHistorical && isAdding && (
           <div
             className={`group flex items-center gap-1.5 px-1.5 py-1 rounded transition-all ${
@@ -733,71 +1036,8 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
           </div>
         )}
       </div>
-      {/* Delete Plan Modal (reuse style from SessionList) */}
-      {deletePlanOpen && createPortal((
-        <>
-          <div
-            className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
-            onClick={handleCancelDeletePlan}
-          />
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-            <div
-              className={`${
-                isLight ? 'bg-gray-50 border border-gray-200' : 'bg-[#151C24] border border-gray-700'
-              } w-full max-w-sm rounded-lg shadow-xl`}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className={`flex items-center justify-between px-3 py-2 border-b ${isLight ? 'border-gray-200' : 'border-gray-700'}`}>
-                <h2 className={`text-sm font-semibold ${isLight ? 'text-gray-900' : 'text-gray-100'}`}>Delete Plan</h2>
-                <button
-                  onClick={handleCancelDeletePlan}
-                  className={`${isLight ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-100' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'} p-0.5 rounded-md transition-colors`}
-                >
-                  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <div className="px-3 py-4 space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className={`${isLight ? 'bg-red-100' : 'bg-red-900/30'} flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center`}>
-                    <svg className={`${isLight ? 'text-red-600' : 'text-red-400'} w-3.5 h-3.5`} fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <p className={`${isLight ? 'text-gray-900' : 'text-gray-100'} text-sm font-medium`}>
-                      Permanently delete plan?
-                    </p>
-                    <p className={`${isLight ? 'text-gray-600' : 'text-gray-400'} text-xs mt-1`}>
-                      This will remove the plan and its steps from the chat UI and cannot be recovered.
-                    </p>
-                    {state.steps.some((s) => s.status !== 'completed' && s.status !== 'deleted') && (
-                      <p className={`${isLight ? 'text-red-600' : 'text-red-400'} text-xs mt-2`}>
-                        Some steps are not completed or deleted. This action cannot be undone.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className={`flex items-center justify-end gap-2 px-3 py-2 border-t ${isLight ? 'border-gray-200' : 'border-gray-700'}`}>
-                <button
-                  onClick={handleCancelDeletePlan}
-                  className={`${isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-700 text-gray-100 hover:bg-gray-600'} px-3 py-1.5 text-xs font-medium rounded-md transition-colors`}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmDeletePlan}
-                  className={`bg-red-600 text-white hover:bg-red-700 px-3 py-1.5 text-xs font-medium rounded-md transition-colors`}
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      ), document.body)}
+      {/* Delete Plan Modal (available in all views) */}
+      {deleteModal}
    </div>
   );
 };

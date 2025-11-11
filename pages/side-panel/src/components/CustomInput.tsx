@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { InputProps } from '@copilotkit/react-ui';
 import { useChatContext } from '@copilotkit/react-ui';
 import { useCopilotContext } from '@copilotkit/react-core';
@@ -7,6 +8,8 @@ import { ensureFirebase } from '../utils/firebaseStorage';
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { debug, useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
+import { TaskProgressCard, AgentStepState } from './TaskProgressCard';
+import { cn } from '@extension/ui';
 
 const MAX_NEWLINES = 6;
 
@@ -249,6 +252,21 @@ const CustomIcons = {
       <path d="M5 12h14" />
     </svg>
   ),
+  plan: (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round">
+      <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+      <path d="M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+      <path d="M9 14l2 2 4-4" />
+    </svg>
+  ),
   microphone: (
     <svg
       width="18"
@@ -275,6 +293,12 @@ interface CustomInputProps extends InputProps {
   // prefillText and onPrefillCleared removed - using custom events instead
   listenSessionId?: string; // Only handle events for this session
   isAgentAndModelSelected?: boolean;
+  // Task Progress Card props
+  taskProgressState?: AgentStepState;
+  onTaskProgressStateChange?: (state: AgentStepState) => void;
+  showTaskProgress?: boolean;
+  sessionId?: string;
+  onToggleTaskProgress?: () => void;
 }
 
 /**
@@ -303,11 +327,33 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   hideStopButton = false,
   listenSessionId,
   isAgentAndModelSelected = true,
+  taskProgressState,
+  onTaskProgressStateChange,
+  showTaskProgress = false,
+  sessionId,
+  onToggleTaskProgress,
 }) => {
   const context = useChatContext();
   const copilotContext = useCopilotContext();
   const { isLight } = useStorage(exampleThemeStorage);
+  const inputBackground = isLight ? '#ffffff' : '#151C24';
+  const inputBackgroundVar = `var(--copilot-kit-input-background-color, ${inputBackground})`;
+  const planHorizontalInset = 35;
   const isInputEnabled = Boolean(isAgentAndModelSelected);
+  
+  // Tooltip state for plan toggle button
+  const [showPlanTooltip, setShowPlanTooltip] = useState(false);
+  const [planTooltipRect, setPlanTooltipRect] = useState<{ left: number; top: number } | null>(null);
+  const planButtonRef = useRef<HTMLButtonElement>(null);
+  const planCardRef = useRef<HTMLDivElement>(null);
+  
+  // Force browser reflow when showTaskProgress changes to trigger animation
+  useEffect(() => {
+    if (planCardRef.current) {
+      // Trigger reflow
+      void planCardRef.current.offsetHeight;
+    }
+  }, [showTaskProgress]);
 
   // Log input enabled state changes
   useEffect(() => {
@@ -571,6 +617,17 @@ export const CustomInput: React.FC<CustomInputProps> = ({
     });
   };
 
+  const hasTaskProgress = Boolean(
+    taskProgressState?.steps?.some(step => step.status !== 'deleted')
+  );
+
+  const canToggleTaskProgress = hasTaskProgress && Boolean(onToggleTaskProgress);
+
+  const handleToggleTaskProgress = () => {
+    if (!canToggleTaskProgress || !onToggleTaskProgress) return;
+    onToggleTaskProgress();
+  };
+
   const formatSize = (bytes: number): string => {
     const kb = bytes / 1024;
     if (kb >= 1024) {
@@ -663,8 +720,61 @@ export const CustomInput: React.FC<CustomInputProps> = ({
     }
   };
 
+  const floatingCardOffset = 12;
+
   return (
-    <div className={`copilotKitInputContainer ${showPoweredBy ? 'poweredByContainer' : ''}`}>
+    <div
+      className={`copilotKitInputContainer ${showPoweredBy ? 'poweredByContainer' : ''}`}
+      style={{ position: 'relative', zIndex: 5 }}
+    >
+      {/* Task Progress Card - placed above chat input with slide animation */}
+      {taskProgressState?.steps && taskProgressState.steps.length > 0 && onTaskProgressStateChange && (
+        <div 
+          data-session-id={sessionId}
+          style={{
+            width: '100%',
+            paddingLeft: planHorizontalInset,
+            paddingRight: planHorizontalInset,
+            paddingBottom: 0,
+            boxSizing: 'border-box',
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: '100%',
+            zIndex: 10,
+          }}
+        >
+          <div
+            className={cn(
+              'overflow-hidden transition-all ease-in-out',
+              showTaskProgress 
+                ? 'max-h-[500px] opacity-100 duration-500' 
+                : 'max-h-0 opacity-0 duration-400'
+            )}
+            style={{
+              pointerEvents: showTaskProgress ? 'auto' : 'none',
+            }}
+          >
+            <div
+              ref={planCardRef}
+              className={cn(
+                'transition-all ease-in-out',
+                showTaskProgress 
+                  ? 'translate-y-0 duration-300 delay-100' 
+                  : '-translate-y-4 duration-200'
+              )}
+            >
+              <TaskProgressCard 
+                state={taskProgressState} 
+                setState={onTaskProgressStateChange}
+                isCollapsed={true} 
+                isHistorical={false}
+                showControls={true}
+              />
+            </div>
+          </div>
+        </div>
+      )}
       <div
         className="copilotKitInput"
         onClick={handleDivClick}
@@ -672,7 +782,15 @@ export const CustomInput: React.FC<CustomInputProps> = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        style={{ position: 'relative' }}
+        style={{ 
+          position: 'relative',
+          ...(taskProgressState?.steps && taskProgressState.steps.length > 0 && showTaskProgress && {
+            borderTopLeftRadius: '0',
+            borderTopRightRadius: '0',
+            // top border remains visible to preserve outline, so no borderTop override
+            marginTop: '0'
+          })
+        }}
       >
         {isDragActive && (
           <div
@@ -814,6 +932,35 @@ export const CustomInput: React.FC<CustomInputProps> = ({
             disabled={!isInputEnabled}
           />
           <button
+            ref={planButtonRef}
+            type="button"
+            onClick={handleToggleTaskProgress}
+            onMouseEnter={(e) => {
+              if (!canToggleTaskProgress) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              setPlanTooltipRect({ left: rect.left + rect.width / 2, top: rect.top });
+              setShowPlanTooltip(true);
+            }}
+            onMouseLeave={() => {
+              setShowPlanTooltip(false);
+            }}
+            className={`copilotKitInputControlButton ${
+              canToggleTaskProgress
+                ? showTaskProgress
+                  ? isLight
+                    ? 'text-blue-600 bg-blue-100 hover:bg-blue-200'
+                    : 'text-blue-400 bg-blue-900/50 hover:bg-blue-900/70'
+                  : isLight
+                    ? 'text-gray-600 hover:bg-gray-200'
+                    : 'text-gray-400 hover:bg-gray-700'
+                : 'opacity-40 cursor-not-allowed'
+            }`}
+            disabled={!canToggleTaskProgress}
+            aria-label={showTaskProgress ? 'Hide plan progress' : 'Show plan progress'}
+          >
+            {CustomIcons.plan}
+          </button>
+          <button
             onClick={openFilePicker}
             className="copilotKitInputControlButton"
             disabled={!isInputEnabled}
@@ -848,6 +995,27 @@ export const CustomInput: React.FC<CustomInputProps> = ({
         </div>
       </div>
       <PoweredByTag showPoweredBy={showPoweredBy} />
+      
+      {/* Custom tooltip for plan toggle button */}
+      {showPlanTooltip && planTooltipRect && canToggleTaskProgress && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: Math.max(80, Math.min(planTooltipRect.left, window.innerWidth - 80)),
+            top: planTooltipRect.top,
+            transform: 'translateX(-50%) translateY(32px)',
+            zIndex: 999999,
+            pointerEvents: 'none',
+          }}
+        >
+          <div className={`px-2 py-1.5 text-[11px] rounded-md border shadow-lg whitespace-nowrap ${
+            isLight ? 'bg-white border-gray-200 text-gray-800' : 'bg-[#151C24] border-gray-700 text-gray-100'
+          }`}>
+            {showTaskProgress ? 'Hide plan progress' : 'Show plan progress'}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

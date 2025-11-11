@@ -130,6 +130,7 @@ export interface SessionMetadata {
   isOpen: boolean;
   selectedAgent?: string;
   selectedModel?: string;
+  planExpanded?: boolean; // Task progress card expanded state
 }
 
 export interface SessionMessages {

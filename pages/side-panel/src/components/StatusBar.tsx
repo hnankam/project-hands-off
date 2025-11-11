@@ -35,10 +35,6 @@ export interface StatusBarProps {
     isConnected: boolean;
   } | null;
   onUsageClick?: () => void;
-  // Progress bar toggle
-  hasProgressBar?: boolean;
-  showProgressBar?: boolean;
-  onToggleProgressBar?: () => void;
 }
 
 export const StatusBar: FC<StatusBarProps> = memo(({
@@ -59,10 +55,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
   isEmbedding,
   embeddingStatus,
   usageData,
-  onUsageClick,
-  hasProgressBar,
-  showProgressBar,
-  onToggleProgressBar
+  onUsageClick
 }) => {
   return (
     <div 
@@ -248,26 +241,6 @@ export const StatusBar: FC<StatusBarProps> = memo(({
           )}
         </button>
         
-        {/* Progress bar toggle - only shown when progress bar exists */}
-        {hasProgressBar && (
-          <button
-            onClick={onToggleProgressBar}
-            className={`h-[26px] w-[26px] flex items-center justify-center rounded-md transition-colors ${
-              showProgressBar
-                ? isLight
-                  ? 'text-blue-600 bg-blue-100 hover:bg-blue-200'
-                  : 'text-blue-400 bg-blue-900/50 hover:bg-blue-900/70'
-                : isLight
-                  ? 'text-gray-600 hover:bg-gray-200'
-                  : 'text-gray-400 hover:bg-gray-700'
-            }`}
-            title={showProgressBar ? "Hide Progress Bar" : "Show Progress Bar"}
-          >
-            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-          </button>
-        )}
         
         <button
           onClick={onSaveClick}

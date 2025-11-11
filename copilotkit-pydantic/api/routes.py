@@ -8,8 +8,8 @@ from config import DEBUG, logger
 from config.db_loaders import _sync_cache as _context_cache  # for readiness check
 from database.connection import get_db_connection
 from core import get_agent
+from core.models import AgentState
 from services import (
-    get_or_create_session_state,
     cleanup_session,
     session_states,
     manager,
@@ -24,8 +24,8 @@ from services import (
     prewarm_user_context,
 )
 from services.deployment_manager import DeploymentError
-from pydantic_ai.ag_ui import handle_ag_ui_request
-
+from pydantic_ai.ag_ui import AGUIAdapter
+from pydantic_ai.ag_ui import StateDeps
 
 class DeploymentRequest(BaseModel):
     organization_id: str
@@ -112,13 +112,8 @@ def register_agent_routes(app: FastAPI) -> None:
                 status_code=exc.status_code, content={"error": str(exc)}
             )
 
-        state_deps = get_or_create_session_state(
-            conversation_id,
-            agent_type,
-            model,
-            organization_id,
-            team_id,
-        )
+        # Let handle_ag_ui_request extract and manage state automatically from the request
+        print(f"[AGENT_REQUEST] Delegating state management to handle_ag_ui_request")
 
         agent_db_id = None
         model_db_id = None
@@ -225,10 +220,11 @@ def register_agent_routes(app: FastAPI) -> None:
         )
 
         try:
-            response = await handle_ag_ui_request(
-                agent=await get_agent(agent_type, model, organization_id, team_id),
+                        
+            response = await AGUIAdapter.dispatch_request(
                 request=request,
-                deps=state_deps,
+                agent=await get_agent(agent_type, model, organization_id, team_id),
+                deps=StateDeps[AgentState](state=AgentState(steps=[])),
                 on_complete=usage_callback,
             )
         except Exception as exc:

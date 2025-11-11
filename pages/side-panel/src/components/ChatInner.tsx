@@ -312,6 +312,59 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   });
   const latestAssistantMessageIdRef = useRef<string | null>(null);
   
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [stickyMessageId, setStickyMessageId] = useState<string | null>(null);
+  
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop } = container;
+      const userMessageElements = container.querySelectorAll<HTMLDivElement>('[data-message-role="user"]');
+
+      let newStickyId: string | null = null;
+      let maxOffsetTop = -1;
+
+      userMessageElements.forEach(el => {
+        const messageTop = el.offsetTop;
+        if (messageTop <= scrollTop) {
+          if (messageTop > maxOffsetTop) {
+            maxOffsetTop = messageTop;
+            newStickyId = el.dataset.messageId || null;
+          }
+        }
+      });
+
+      setStickyMessageId(prevStickyId => {
+        if (prevStickyId === newStickyId) {
+          return prevStickyId;
+        }
+        return newStickyId;
+      });
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll(); // Initial check
+
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [messages]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const userMessageElements = container.querySelectorAll<HTMLDivElement>('[data-message-role="user"]');
+
+    userMessageElements.forEach(el => {
+      if (el.dataset.messageId === stickyMessageId) {
+        el.classList.add('is-sticky');
+      } else {
+        el.classList.remove('is-sticky');
+      }
+    });
+  }, [stickyMessageId, messages]);
+
   // Shared agent state for maintaining agent context across interactions
     const { state, setState } = useCoAgent<AgentState>({
     name: 'dynamic_agent',
@@ -598,31 +651,52 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   });
 
   const dynamicAgentState = React.useMemo<AgentStepState>(() => {
+    console.log('[COAGENT_STATE_MEMO] Computing dynamicAgentState from rawDynamicAgentState:', {
+      hasRaw: !!rawDynamicAgentState,
+      rawStepsCount: rawDynamicAgentState?.steps?.length,
+      rawSessionId: rawDynamicAgentState?.sessionId,
+      currentSessionId: sessionId,
+      planDeleted: planDeletionInfoRef.current.deleted,
+    });
+    
     if (!rawDynamicAgentState) {
+      console.log('[COAGENT_STATE_MEMO] No raw state, returning empty');
       return { sessionId, steps: [] };
     }
     if (planDeletionInfoRef.current.deleted && (rawDynamicAgentState.steps?.length ?? 0) > 0) {
+      console.log('[COAGENT_STATE_MEMO] Plan deleted, returning empty');
       return { sessionId, steps: [] };
     }
     if (rawDynamicAgentState.sessionId && rawDynamicAgentState.sessionId !== sessionId) {
+      console.log('[COAGENT_STATE_MEMO] Session mismatch, returning empty');
       return { sessionId, steps: [] };
     }
     if (rawDynamicAgentState.sessionId === sessionId) {
+      console.log('[COAGENT_STATE_MEMO] Session match, returning raw state with', rawDynamicAgentState.steps?.length, 'steps');
       return rawDynamicAgentState;
     }
     if (!rawDynamicAgentState.sessionId && Array.isArray(rawDynamicAgentState.steps)) {
+      console.log('[COAGENT_STATE_MEMO] No session ID on raw, adding it with', rawDynamicAgentState.steps?.length, 'steps');
       return {
         sessionId,
         steps: rawDynamicAgentState.steps,
       };
     }
+    console.log('[COAGENT_STATE_MEMO] Fallback, returning empty');
     return { sessionId, steps: [] };
   }, [rawDynamicAgentState, sessionId]);
 
   const setDynamicAgentState = React.useCallback(
     (nextState: AgentStepState) => {
+      console.log('[COAGENT_STATE_UPDATE] setDynamicAgentState called with:', {
+        sessionId,
+        stepsCount: nextState?.steps?.length,
+        steps: nextState?.steps?.map(s => ({ desc: s.description?.substring(0, 30), status: s.status })),
+      });
+      
       const nextSteps = nextState?.steps ?? [];
       if (nextSteps.length === 0) {
+        console.log('[COAGENT_STATE_UPDATE] Clearing all steps (plan deleted)');
         planDeletionInfoRef.current = {
           deleted: true,
           lastAssistantId: latestAssistantMessageIdRef.current,
@@ -634,6 +708,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         return;
       }
 
+      console.log('[COAGENT_STATE_UPDATE] Updating coAgent state via setRawDynamicAgentState');
       planDeletionInfoRef.current = {
         deleted: false,
         lastAssistantId: latestAssistantMessageIdRef.current,
@@ -743,7 +818,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         };
       }
 
-      if (planDeletionInfoRef.current.deleted) {
+      if (planDeletionInfoRef.current.deleted && (!scopedState.steps || scopedState.steps.length === 0)) {
         return null;
       }
       
@@ -752,13 +827,19 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           data-task-progress="true"
           data-session-id={sessionId}
           data-timestamp={Date.now()}
-          className="w-full pt-2"
+          className="w-full pt-2 pl-3 pr-3"
+          style={{
+            ['--copilot-kit-input-background-color' as any]: 'transparent',
+            ['--copilot-kit-separator-color' as any]: isLight ? '#e5e7eb' : '#374151',
+            ['--copilot-kit-border-color' as any]: isLight ? '#e5e7eb' : '#374151',
+          ['--task-progress-rendered-border-color' as any]: isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151',
+          }}
         >
           <TaskProgressCard 
             state={{ ...scopedState, sessionId }}
             setState={setDynamicAgentState}
-            isCollapsed={false}
-            isHistorical={false}
+            isCollapsed={true}
+            isHistorical={true}
             showControls={false}
           />
         </div>
@@ -797,40 +878,26 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         {...props}
         listenSessionId={sessionId}
         isAgentAndModelSelected={isAgentAndModelSelected}
+        taskProgressState={dynamicAgentState}
+        onTaskProgressStateChange={setDynamicAgentState}
+        showTaskProgress={showProgressBar}
+        sessionId={sessionId}
+        onToggleTaskProgress={toggleProgressBarFn}
       />
     );
     return Comp;
-  }, [sessionId, isAgentAndModelSelected]);
+  }, [sessionId, isAgentAndModelSelected, dynamicAgentState, setDynamicAgentState, showProgressBar, toggleProgressBarFn]);
 
   // ================================================================================
   // RENDER
   // ================================================================================
-
-  // Memoize sticky style for referential stability
-  const stickyStyle = React.useMemo(() => ({
-    backgroundColor: isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(12, 17, 23, 0.95)'
-  }), [isLight]);
     
     return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* CopilotChat with inline historical cards and floating progress card */}
-      <div className={cn("copilot-chat-wrapper relative min-h-0 flex-1", !isAgentAndModelSelected && "chat-input-disabled")}>
-        {/* Floating TaskProgressCard - sticks to top and floats above messages */}
-        {dynamicAgentState.steps && dynamicAgentState.steps.length > 0 && showProgressBar && (
-          <div 
-            data-session-id={sessionId}
-            className="sticky top-0 z-10 px-2 pb-1 pt-2 backdrop-blur-sm"
-            style={stickyStyle}>
-            <TaskProgressCard 
-              state={dynamicAgentState} 
-              setState={setDynamicAgentState}
-              isCollapsed={false} 
-              isHistorical={false}
-              showControls={true}
-            />
-          </div>
-        )}
-        
+      {/* CopilotChat with inline historical cards - TaskProgressCard moved to CustomInput */}
+      <div 
+        ref={scrollContainerRef}
+        className={cn("copilot-chat-wrapper relative min-h-0 flex-1 overflow-y-auto", !isAgentAndModelSelected && "chat-input-disabled")}>
         <StreamingContext.Provider value={{ isStreaming: !!isLoading }}>
         <CopilotChat
           // labels={{

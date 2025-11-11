@@ -106,8 +106,8 @@ class AnthropicModelWithCache(AnthropicModel):
         return text.strip()
     
     async def _map_message(  # type: ignore
-        self, messages: list[ModelMessage]
-    ) -> tuple[list[TextBlockParam], list[MessageParam]]:
+        self, messages: list[ModelMessage], model_request_parameters: ModelRequestParameters
+    ) -> tuple[str, list[MessageParam]]:
         """Map messages with cache control for system prompts and handle attachments."""
         # First, process user messages to convert attachment references to proper content blocks
         # Only process attachments in the LAST user message to avoid re-processing historical attachments
@@ -163,7 +163,9 @@ class AnthropicModelWithCache(AnthropicModel):
                 processed_messages.append(message)
         
         # Call parent's mapping with processed messages
-        _, anthropic_messages = await super()._map_message(processed_messages)
+        system_prompt_str, anthropic_messages = await super()._map_message(
+            processed_messages, model_request_parameters
+        )
         
         logger.debug(f"[anthropic_cache] After parent mapping: {len(anthropic_messages)} anthropic messages")
         
@@ -283,35 +285,12 @@ class AnthropicModelWithCache(AnthropicModel):
             else:
                 final_messages.append(msg)
         
-        # Handle system prompt with cache control
-        system_prompt: list[TextBlockParam] = []
-        is_cached = False
+        # In the new version, system prompt is returned as a string from parent
+        # We'll use the parent's system prompt string
+        # Note: Cache control for system prompts might now be handled differently in the parent
         
-        for message in reversed(messages):
-            if isinstance(message, ModelRequest):
-                for part in reversed(message.parts):
-                    if isinstance(part, SystemPromptPart):
-                        if not part.dynamic_ref and not is_cached:
-                            block = TextBlockParam(
-                                type="text",
-                                text=part.content,
-                                cache_control={"type": "ephemeral"},
-                            )
-                            is_cached = True
-                        else:
-                            block = TextBlockParam(
-                                type="text",
-                                text=part.content,
-                            )
-                        system_prompt.append(block)
-        
-        system_prompt.reverse()
-
-        if instructions := self._get_instructions(messages):
-            system_prompt.insert(0, TextBlockParam(type='text', text=instructions))
-        
-        logger.info(f"[anthropic_cache] Returning {len(system_prompt)} system prompt parts, {len(final_messages)} messages")
-        return system_prompt, final_messages
+        logger.info(f"[anthropic_cache] Returning system prompt string, {len(final_messages)} messages")
+        return system_prompt_str, final_messages
     
     def _get_tools(
         self, model_request_parameters: ModelRequestParameters

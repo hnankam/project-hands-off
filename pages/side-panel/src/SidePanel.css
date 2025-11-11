@@ -1411,6 +1411,25 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 }
 
 /* ==========================================================
+   CONTEXT-AWARE STICKY MESSAGES
+   ========================================================== */
+.copilotKitUserMessage.is-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+
+  /* To make it clear it's a sticky header and not the actual message in-scroll */
+  border-bottom: 2px solid var(--copilot-kit-primary-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.2s ease-in-out, border-bottom-color 0.2s ease-in-out;
+}
+
+.dark .copilotKitUserMessage.is-sticky {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+
+/* ==========================================================
    PAGE TRANSITION ANIMATIONS
    Smooth fade-in for page changes
    ========================================================== */

@@ -66,6 +66,7 @@ def get_or_create_session_state(
             team_id,
         )
         session_states[session_id][key] = StateDeps(AgentState())
+        print(f"[AGENT_STATE_BACKEND] 🆕 Created NEW state for session={session_id[:8]} - steps={len(session_states[session_id][key].state.steps)}")
     else:
         logger.debug(
             "Reusing state session=%s agent=%s model=%s org=%s team=%s",
@@ -75,6 +76,11 @@ def get_or_create_session_state(
             organization_id,
             team_id,
         )
+        state_obj = session_states[session_id][key].state
+        print(f"[AGENT_STATE_BACKEND] ♻️  REUSING state for session={session_id[:8]}")
+        print(f"[AGENT_STATE_BACKEND]    State has {len(state_obj.steps)} steps:")
+        for i, step in enumerate(state_obj.steps):
+            print(f"[AGENT_STATE_BACKEND]      Step {i}: {step.description[:50]}... (status={step.status})")
 
     now = time.time()
     _session_last_access[session_id] = now

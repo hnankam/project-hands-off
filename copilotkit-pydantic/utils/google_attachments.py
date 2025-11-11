@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 from pydantic_ai.models.google import GoogleModel
+from pydantic_ai.models import ModelRequestParameters
 
 from config import logger
 
@@ -73,7 +74,9 @@ class GoogleModelWithAttachments(GoogleModel):
         text = re.sub(r'\[Document:\s*.+?\s*\([^\)]+?\)\s+-\s+https?://[^\]]+?\]', '', text)
         return text.strip()
 
-    async def _map_messages(self, messages: list[ModelMessage]) -> tuple[Any, list[Any]]:  # type: ignore[override]
+    async def _map_messages(  # type: ignore[override]
+        self, messages: list[ModelMessage], model_request_parameters: ModelRequestParameters
+    ) -> tuple[Any, list[Any]]:
         """Map messages with attachment handling."""
         # First, process user messages to convert attachment references
         # Only process attachments in the LAST user message to avoid re-processing historical attachments
@@ -125,8 +128,8 @@ class GoogleModelWithAttachments(GoogleModel):
             else:
                 processed_messages.append(message)
         
-        # Call parent's mapping
-        return await super()._map_messages(processed_messages)
+        # Call parent's mapping with both parameters
+        return await super()._map_messages(processed_messages, model_request_parameters)
 
     async def _map_user_prompt(self, part: UserPromptPart) -> list[dict[str, Any]]:  # type: ignore[override]
         """Handle attachment markers injected during message processing."""

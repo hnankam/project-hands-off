@@ -28,11 +28,14 @@ function createSessionStore() {
   // Subscribe to DB changes
   const unsubscribeDB = sessionStorageDB.subscribe((event) => {
     if (event.type === 'sessionsUpdated' || event.type === 'sessionChanged') {
-      console.log('[SessionStore] DB changed, refetching data...', event);
+      console.log('[SessionStore] 🔔 ========== DB EVENT RECEIVED ==========');
+      console.log('[SessionStore] Event type:', event.type);
+      console.log('[SessionStore] Triggering refetch...');
       // Refetch data and notify listeners
       fetchData()
         .then(() => {
-          console.log('[SessionStore] Data refetched successfully, notifying listeners');
+          console.log('[SessionStore] ✅ Data refetched successfully');
+          console.log('[SessionStore] Notifying', listeners.length, 'listeners');
           listeners.forEach(listener => {
             try {
               listener();
@@ -42,7 +45,7 @@ function createSessionStore() {
           });
         })
         .catch(error => {
-          console.error('[SessionStore] Failed to refetch after change:', error);
+          console.error('[SessionStore] ❌ Failed to refetch after change:', error);
           // Still notify listeners even on error so UI can update
           listeners.forEach(listener => {
             try {
@@ -56,7 +59,9 @@ function createSessionStore() {
   });
 
   const fetchData = async (): Promise<SessionStorageState> => {
-    console.log('[useSessionStorageDB] Fetching session data from IndexedDB...');
+    console.log('[SessionStore] 📦 ========== FETCHING DATA ==========');
+    console.log('[SessionStore] Timestamp:', new Date().toISOString());
+    console.log('[SessionStore] Current userId:', sessionStorageDB.getCurrentUserId()?.slice(0, 8));
     try {
       const [sessions, currentSessionId] = await Promise.all([
         sessionStorageDB.getAllSessions(),
@@ -66,17 +71,16 @@ function createSessionStore() {
       // Ensure sessions is always an array
       const validSessions = Array.isArray(sessions) ? sessions : [];
       
-      console.log('[useSessionStorageDB] ✅ Fetched data:', { 
+      console.log('[SessionStore] ✅ Fetch complete:', { 
         sessionsCount: validSessions.length, 
-        currentSessionId, 
-        firstSession: validSessions[0],
-        sessionsIsArray: Array.isArray(sessions)
+        currentSessionId: currentSessionId?.slice(0, 8), 
+        sessionIds: validSessions.map(s => s.id.slice(0, 8)),
       });
       
       cache = { sessions: validSessions, currentSessionId };
       return cache;
     } catch (error) {
-      console.error('[useSessionStorageDB] ❌ Failed to fetch data:', error);
+      console.error('[SessionStore] ❌ Failed to fetch data:', error);
       // Return empty state on error instead of throwing
       const emptyState = { sessions: [], currentSessionId: null };
       cache = emptyState;
@@ -257,6 +261,13 @@ export const sessionStorageDBWrapper = {
    */
   async updateSessionAgentAndModel(sessionId: string, agent: string, model: string): Promise<void> {
     await sessionStorageDB.updateSessionAgentAndModel(sessionId, agent, model);
+  },
+
+  /**
+   * Update session plan expanded state
+   */
+  async updateSessionPlanExpanded(sessionId: string, planExpanded: boolean): Promise<void> {
+    await sessionStorageDB.updateSessionPlanExpanded(sessionId, planExpanded);
   },
 
   /**

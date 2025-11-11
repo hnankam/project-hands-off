@@ -64,6 +64,9 @@ export const useProgressCardCollapse = (): void => {
             if (collapseButton) {
               (collapseButton as HTMLButtonElement).click();
               collapsedCards.add(card);
+            } else {
+              // Card is already collapsed; mark as processed so we don't auto-collapse on first manual expand
+              collapsedCards.add(card);
             }
           }
         } else {

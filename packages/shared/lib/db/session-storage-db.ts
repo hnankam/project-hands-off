@@ -32,6 +32,14 @@ export class SessionStorageDB {
   private initializePromise: Promise<void> | null = null;
   private listeners = new Set<SessionStorageListener>();
   private currentUserId: string | null = null;
+  private computeMessageSignature(messages: any[]): string {
+    try {
+      return JSON.stringify(messages ?? []);
+    } catch (error) {
+      log('[SessionStorageDB] ⚠️ Failed to compute message signature, falling back to length:', error);
+      return `len:${Array.isArray(messages) ? messages.length : 0}`;
+    }
+  }
 
   private normalizeSession(row: any): SessionMetadata {
     if (!row) {
@@ -74,6 +82,12 @@ export class SessionStorageDB {
       isOpen: row.isOpen !== false,
       selectedAgent: row.selectedAgent ?? undefined,
       selectedModel: row.selectedModel ?? undefined,
+      // Plan expanded state may be stored as boolean or integer (1/0)
+      planExpanded: typeof row.planExpanded === 'boolean'
+        ? row.planExpanded
+        : typeof row.planExpanded === 'number'
+          ? row.planExpanded === 1
+          : undefined,
     };
   }
 
@@ -97,6 +111,13 @@ export class SessionStorageDB {
         from: previousUserId || 'null', 
         to: userId || 'null' 
       });
+      // Notify listeners so UI can refetch sessions for the new user immediately
+      // This avoids transient empty states before ensureCurrentSessionForActiveUser completes
+      try {
+        this.notify({ type: 'sessionsUpdated' });
+      } catch (e) {
+        // Best-effort; do not throw
+      }
     } else {
       log('[SessionStorageDB:setCurrentUserId] ℹ️  User ID set (no change):', userId || 'null');
     }
@@ -556,6 +577,17 @@ export class SessionStorageDB {
     // which updates currentSession prop, which triggers another save
   }
 
+  /**
+   * Update session plan expanded state
+   */
+  async updateSessionPlanExpanded(sessionId: string, planExpanded: boolean): Promise<void> {
+    const worker = this.getWorker();
+    await worker.query(
+      'UPDATE session_metadata SET planExpanded = $planExpanded, timestamp = $timestamp WHERE sessionId = $id OR id = $id;',
+      { id: sessionId, planExpanded: planExpanded ? 1 : 0, timestamp: Date.now() }
+    );
+  }
+
   // ========================================
   // Session Messages Operations
   // ========================================
@@ -583,16 +615,107 @@ export class SessionStorageDB {
       'SELECT * FROM session_messages WHERE sessionId = $id LIMIT 1;',
       { id: sessionId }
     );
+    const existingRecord = existing[0]?.[0] ?? null;
+    const existingMessages = existingRecord?.messages ?? [];
+    const existingSignature = this.computeMessageSignature(existingMessages);
+    const normalizeMessagesForStorage = (msgs: any[]): any[] => {
+      if (!Array.isArray(msgs) || msgs.length === 0) {
+        return [];
+      }
+      const validRoles = new Set(['user', 'assistant', 'tool', 'system']);
+      const seenIds = new Set<string>();
+      const normalized: any[] = [];
+      let removedEmptyAssistants = 0;
+      let removedInvalidRoles = 0;
+      let deduplicated = 0;
+      let preservedStatefulAssistants = 0;
 
-    if (existing[0]?.length > 0) {
+      for (const raw of msgs) {
+        const message = raw ?? {};
+        const role = message?.role;
+        if (!validRoles.has(role)) {
+          removedInvalidRoles += 1;
+          continue;
+        }
+
+        const toolCalls = Array.isArray(message?.toolCalls) ? message.toolCalls : [];
+        const hasToolCalls = toolCalls.length > 0;
+        const statePayload = message?.state;
+        let hasState = false;
+        if (Array.isArray(statePayload)) {
+          hasState = statePayload.length > 0;
+        } else if (statePayload && typeof statePayload === 'object') {
+          hasState = Object.keys(statePayload).length > 0;
+        } else if (typeof statePayload === 'string') {
+          hasState = statePayload.trim().length > 0;
+        } else if (statePayload != null) {
+          hasState = Boolean(statePayload);
+        }
+
+        const content = message?.content;
+        let hasContent = false;
+        if (typeof content === 'string') {
+          hasContent = content.trim().length > 0;
+        } else if (Array.isArray(content)) {
+          hasContent = content.length > 0;
+        } else if (content && typeof content === 'object') {
+          hasContent = Object.keys(content).length > 0;
+        } else if (content != null) {
+          hasContent = true;
+        }
+
+        if (role === 'assistant' && !hasContent && !hasToolCalls) {
+          if (hasState) {
+            preservedStatefulAssistants += 1;
+          } else {
+            removedEmptyAssistants += 1;
+            continue;
+          }
+        }
+
+        const id = typeof message?.id === 'string' ? message.id : undefined;
+        if (id && seenIds.has(id)) {
+          deduplicated += 1;
+          continue;
+        }
+        if (id) {
+          seenIds.add(id);
+        }
+        normalized.push(message);
+      }
+
+      if (removedEmptyAssistants > 0 || removedInvalidRoles > 0 || deduplicated > 0) {
+        log('[SessionStorageDB] Sanitized messages before storing:', {
+          sessionId: sessionId.slice(0, 12) + '...',
+          before: msgs.length,
+          after: normalized.length,
+          removedEmptyAssistants,
+          removedInvalidRoles,
+          deduplicated,
+          preservedStatefulAssistants,
+        });
+      }
+
+      return normalized;
+    };
+
+    const normalizedMessages = normalizeMessagesForStorage(messages);
+    const newSignature = this.computeMessageSignature(normalizedMessages);
+
+    if (existingRecord && existingSignature === newSignature) {
+      log('[SessionStorageDB] ℹ️  Skipping message update - content unchanged for session:', sessionId.slice(0, 12) + '...');
+      return;
+    }
+
+    if (existingRecord) {
       await worker.query(
         'UPDATE session_messages SET messages = $messages WHERE sessionId = $id;',
-        { id: sessionId, messages }
+        { id: sessionId, messages: normalizedMessages }
       );
     } else {
       await worker.query(
         'CREATE session_messages CONTENT { sessionId: $id, messages: $messages };',
-        { id: sessionId, messages }
+        { id: sessionId, messages: normalizedMessages }
       );
     }
 
@@ -603,8 +726,7 @@ export class SessionStorageDB {
     );
 
     this.notify({ type: 'messagesUpdated', sessionId });
-    this.notify({ type: 'sessionsUpdated' });
-    log(`[SessionStorageDB] ✅ Updated ${messages.length} messages for session:`, sessionId);
+    log(`[SessionStorageDB] ✅ Updated ${normalizedMessages.length} messages for session:`, sessionId);
   }
 
   // ========================================
