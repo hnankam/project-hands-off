@@ -1004,21 +1004,6 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
             </svg>
           </button>
 
-          {/* Home Button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onGoHome}
-            title="Home"
-            className={cn(
-              'h-7 w-7 p-0',
-              isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-800',
-            )}>
-            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-          </Button>
-
           {/* More Options Dropdown */}
           <DropdownMenu
             align="right"
@@ -1137,6 +1122,21 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onClose} isLight={isLight}>Close Panel</DropdownMenuItem>
           </DropdownMenu>
+
+          {/* Home Button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onGoHome}
+            title="Home"
+            className={cn(
+              'h-7 w-7 p-0',
+              isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-800',
+            )}>
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          </Button>
 
           {/* User Menu with Organization and Team Selectors */}
           <UserMenu isLight={isLight} onGoAdmin={onGoAdmin} />

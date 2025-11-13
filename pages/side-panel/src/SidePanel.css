@@ -497,6 +497,7 @@ input:focus {
   max-width: 100% !important; /* Allow full width instead of 80% */
   width: 100% !important; /* Force full width */
   margin-bottom: 0 !important;
+  overflow: visible !important; /* Ensure dropdowns can extend beyond message bounds */
   margin-top: 1rem !important;
   border: 1px solid var(--copilot-kit-border-color) !important;
 }
@@ -544,7 +545,7 @@ input:focus {
   left: auto !important;
   padding-left: 3rem !important;
   border-radius: 6px !important;
-  z-index: 10000 !important;
+  z-index: 10000 !important; /* Below sticky messages (10001) */
 }
 
 .copilot-chat-container .copilotKitAssistantMessage .copilotKitMessageControls {
@@ -668,6 +669,58 @@ input:focus {
   opacity: 0 !important;
   visibility: hidden !important;
   transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out !important;
+  overflow: visible !important; /* Ensure dropdowns can extend beyond */
+}
+
+/* Ensure non-sticky user message controls are visible and have proper z-index */
+.copilot-chat-container .copilotKitUserMessage:not(.is-sticky) .copilotKitMessageControls {
+  z-index: 10000 !important; /* Same as assistant controls, below sticky messages */
+  overflow: visible !important;
+}
+
+/* Ensure sticky user message controls are visible but below dropdown */
+.copilot-chat-container .copilotKitUserMessage.is-sticky .copilotKitMessageControls {
+  z-index: 10000 !important; /* Below dropdown (10002) but above assistant controls */
+  overflow: visible !important;
+}
+
+/* Ensure delete dropdown container and menu are always visible regardless of parent controls visibility */
+.copilot-chat-container .copilotKitUserMessage .copilotKitMessageControls .copilotKitDeleteDropdownContainer {
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.copilot-chat-container .copilotKitUserMessage .copilotKitMessageControls .copilotKitDeleteDropdownMenu {
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  display: block !important;
+  z-index: 10002 !important;
+}
+
+/* When dropdown is open, ensure parent controls container is also visible */
+.copilot-chat-container .copilotKitUserMessage .copilotKitMessageControls:has(.copilotKitDeleteDropdownMenu) {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* Ensure parent containers don't clip the dropdown */
+.copilot-chat-container .copilotKitUserMessage:has(.copilotKitDeleteDropdownMenu),
+.copilot-chat-container .copilotKitUserMessage:has(.copilotKitDeleteDropdownContainer) {
+  overflow: visible !important;
+}
+
+.copilot-chat-container .copilotKitMessages:has(.copilotKitDeleteDropdownMenu),
+.copilot-chat-container .copilotKitMessages:has(.copilotKitDeleteDropdownContainer) {
+  overflow-y: auto !important; /* Keep scroll */
+  overflow-x: visible !important; /* Allow dropdown to overflow horizontally */
+}
+
+.copilot-chat-wrapper:has(.copilotKitDeleteDropdownMenu),
+.copilot-chat-wrapper:has(.copilotKitDeleteDropdownContainer) {
+  overflow: visible !important;
 }
 
 /* Show controls on hover for any message */
@@ -758,6 +811,11 @@ footer div[class*="suggestions"] button {
   overflow-x: auto;
   overflow-y: hidden;
   max-width: 100%;
+}
+
+/* Ensure user messages allow dropdowns to extend beyond bounds */
+.copilot-chat-container .copilotKitUserMessage {
+  overflow: visible !important;
 }
 
 /* Assistant messages use inner scroller to keep controls unclipped */
@@ -994,6 +1052,22 @@ div.copilotKitInputContainer,
 }
 .copilot-chat-container.dark .copilotKitCodeBlock > div[style]::-webkit-scrollbar-thumb:hover {
   background: rgba(75, 85, 99, 0.5) !important;
+}
+
+/* Inline code elements (not inside code blocks) - match font size with regular text */
+.copilot-chat-container .copilotKitAssistantMessage .copilotKitInlineCode {
+  font-size: 13px !important;
+  border-width: 0px !important;
+}
+
+/* Light mode inline code - bg-gray-100 */
+.copilot-chat-container:not(.dark) .copilotKitAssistantMessage .copilotKitInlineCode {
+  background: #f3f4f6 !important; /* bg-gray-100 */
+}
+
+/* Dark mode inline code - more visible than user message background */
+.copilot-chat-container.dark .copilotKitAssistantMessage .copilotKitInlineCode {
+  background: rgba(55, 65, 81, 0.5) !important; /* gray-700 with higher opacity for visibility */
 }
 
 .copilotKitMessagesContainer > div:not([class]) {
@@ -1412,21 +1486,105 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 
 /* ==========================================================
    CONTEXT-AWARE STICKY MESSAGES
+   Smart sticky behavior: user messages stick when their
+   corresponding assistant responses are visible, providing
+   context for what's being viewed
    ========================================================== */
+.copilotKitUserMessage {
+  /* Minimal styling on base element */
+  contain: layout;
+  
+  /* Optimize rendering - only repaint when visible */
+  content-visibility: auto;
+}
+
+/* Ensure first user message has consistent top positioning */
+.copilotKitMessages > [data-message-role="user"]:first-child,
+.copilotKitMessages > div:first-child[data-message-role="user"] {
+  margin-top: 0 !important;
+}
+
+/* Sticky message transition animation */
+  @keyframes stickyFadeIn {
+    0% {
+      opacity: 0;
+      transform: translateY(-8px) translateZ(0);
+      border-radius: 10px 10px 10px 10px;
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) translateZ(0);
+      border-radius: 0 0 10px 10px;
+    }
+  }
+
 .copilotKitUserMessage.is-sticky {
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  position: sticky !important;
+  top: -2px !important; /* Move 1px higher to prevent gaps */
+  z-index: 10001 !important; /* Higher than assistant message controls (10000) */
 
-  /* To make it clear it's a sticky header and not the actual message in-scroll */
-  border-bottom: 2px solid var(--copilot-kit-primary-color);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  transition: box-shadow 0.2s ease-in-out, border-bottom-color 0.2s ease-in-out;
+  /* Match chat input background - use the same CSS variable */
+  background-color: var(--copilot-kit-input-background-color) !important;
+  
+  /* Match chat input border - use the same CSS variable */
+  border: 1px solid var(--copilot-kit-separator-color) !important;
+  border-top: none !important; /* Remove top border for flush appearance */
+  
+  /* Remove top rounded corners - only round bottom corners */
+  border-radius: 0 0 10px 10px !important;
+  
+  /* Minimal shadow for depth + inset shadow to cover any gaps at top */
+  box-shadow: 
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 var(--copilot-kit-input-background-color) !important;
+  
+  /* Remove all spacing to ensure flush top position */
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  
+  /* Ensure dropdowns can extend beyond sticky message bounds */
+  overflow: visible !important;
+  
+  /* Smooth animation when becoming sticky */
+  animation: stickyFadeIn 0.25s ease-out !important;
+  
+  /* Force GPU layer for smoother updates */
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  
+  /* Ensure sticky elements are always painted */
+  content-visibility: visible !important;
+  
+  /* Prevent repaints during scroll */
+  will-change: transform, opacity;
 }
 
-.dark .copilotKitUserMessage.is-sticky {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+.copilotKitUserMessage.is-sticky::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  height: 2px;
+  background-color: var(--copilot-kit-input-background-color);
+  z-index: -1;
 }
+
+/* Dark theme sticky styles */
+.dark .copilotKitUserMessage.is-sticky,
+.copilot-chat-container.dark .copilotKitUserMessage.is-sticky {
+  /* Variables are already updated by theme, but ensure shadow is darker */
+  box-shadow: 
+    0 1px 3px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 var(--copilot-kit-input-background-color) !important;
+}
+
+.dark .copilotKitUserMessage.is-sticky::before,
+.copilot-chat-container.dark .copilotKitUserMessage.is-sticky::before {
+  background-color: var(--copilot-kit-input-background-color);
+}
+
+/* Note: Animation removed to prevent flickering during rapid scroll events */
 
 
 /* ==========================================================
@@ -1474,4 +1632,13 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 .chat-input-disabled footer.copilotKitMessagesFooter button {
   pointer-events: none !important;
   opacity: 0.5 !important;
+}
+
+/* ==========================================================
+   SCROLL SPACER
+   Automatically managed by parent container - shrinks naturally as content grows
+   ========================================================== */
+.chat-scroll-spacer {
+  /* All properties are set in JavaScript - don't override with !important */
+  /* This ensures the spacer has predictable behavior and forces scroll space */
 }

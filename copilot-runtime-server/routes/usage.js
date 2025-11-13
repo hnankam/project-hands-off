@@ -686,8 +686,8 @@ router.get('/', async (req, res, next) => {
     let countPromise;
     let recentPromise;
 
-    if (metric === 'sessions') {
-      // For sessions, count and paginate by unique day + session + agent + model + user combinations
+    if (metric === 'sessions' || metric === 'requests') {
+      // For sessions and requests, count and paginate by unique day + session + agent + model + user combinations
       countPromise = pool.query(
         `
           SELECT COUNT(*) as total
@@ -732,7 +732,7 @@ router.get('/', async (req, res, next) => {
         [...params, limit, offset],
       );
     } else {
-      // For tokens and requests, use the original non-aggregated query
+      // For tokens, use the original non-aggregated query
       countPromise = pool.query(
         `
           SELECT COUNT(*) as total
@@ -1069,8 +1069,8 @@ router.get('/', async (req, res, next) => {
       usersTimeseries,
       recent: {
         data: recentResult.rows.map(row => {
-          if (metric === 'sessions') {
-            // Aggregated session data
+          if (metric === 'sessions' || metric === 'requests') {
+            // Aggregated session/request data
             return {
               id: `${row.day}-${row.session_id}`,
               sessionId: row.session_id,
@@ -1084,7 +1084,7 @@ router.get('/', async (req, res, next) => {
               cost: row.cost != null ? Number(row.cost) : null,
             };
           } else {
-            // Individual request data
+            // Individual token data
             return {
               id: row.id,
               sessionId: row.session_id,

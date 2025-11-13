@@ -4,6 +4,7 @@ export interface PreferencesStateType {
   showAgentCursor: boolean;
   showSuggestions: boolean;
   showThoughtBlocks: boolean;
+  agentModeChat: boolean;
 }
 
 export type PreferencesStorageType = ReturnType<typeof createStorage<PreferencesStateType>> & {
@@ -13,6 +14,8 @@ export type PreferencesStorageType = ReturnType<typeof createStorage<Preferences
   toggleShowSuggestions: () => Promise<void>;
   setShowThoughtBlocks: (show: boolean) => Promise<void>;
   toggleShowThoughtBlocks: () => Promise<void>;
+  setAgentModeChat: (enabled: boolean) => Promise<void>;
+  toggleAgentModeChat: () => Promise<void>;
 };
 
 const storage = createStorage<PreferencesStateType>(
@@ -21,6 +24,7 @@ const storage = createStorage<PreferencesStateType>(
     showAgentCursor: true, // Default to showing agent cursor
     showSuggestions: true, // Default to showing suggestions
     showThoughtBlocks: true, // Default to showing thought blocks
+    agentModeChat: false, // Default to disabled (normal chat mode)
   },
   {
     storageEnum: StorageEnum.Local,
@@ -64,6 +68,18 @@ export const preferencesStorage: PreferencesStorageType = {
     await storage.set(currentState => ({
       ...currentState,
       showThoughtBlocks: !currentState.showThoughtBlocks,
+    }));
+  },
+  setAgentModeChat: async (enabled: boolean) => {
+    await storage.set(currentState => ({
+      ...currentState,
+      agentModeChat: enabled,
+    }));
+  },
+  toggleAgentModeChat: async () => {
+    await storage.set(currentState => ({
+      ...currentState,
+      agentModeChat: !currentState.agentModeChat,
     }));
   },
 };

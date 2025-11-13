@@ -9,6 +9,7 @@ interface SettingsModalProps {
   showAgentCursor: boolean;
   showSuggestions: boolean;
   showThoughtBlocks: boolean;
+  agentModeChat: boolean;
   agentType?: string;
   modelType?: string;
   organizationId?: string;
@@ -17,6 +18,7 @@ interface SettingsModalProps {
   onShowAgentCursorChange: (show: boolean) => void;
   onShowSuggestionsChange: (show: boolean) => void;
   onShowThoughtBlocksChange: (show: boolean) => void;
+  onAgentModeChatChange: (enabled: boolean) => void;
 }
 
 interface ToolParameter {
@@ -47,6 +49,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   showAgentCursor,
   showSuggestions,
   showThoughtBlocks,
+  agentModeChat,
   agentType,
   modelType,
   organizationId,
@@ -55,6 +58,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onShowAgentCursorChange,
   onShowSuggestionsChange,
   onShowThoughtBlocksChange,
+  onAgentModeChatChange,
 }) => {
   const { theme } = useStorage(exampleThemeStorage);
   const [toolsExpanded, setToolsExpanded] = useState(false);
@@ -501,6 +505,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className={cn(
                     'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                     showThoughtBlocks ? 'translate-x-4' : 'translate-x-0'
+                  )}
+                />
+              </button>
+            </div>
+
+            {/* Divider */}
+            <div className={cn('border-t', isLight ? 'border-gray-200' : 'border-gray-700')} />
+
+            {/* Agent Mode Chat Toggle */}
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <label
+                  htmlFor="agent-mode-chat"
+                  className="text-xs font-medium cursor-pointer"
+                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
+                >
+                  Agent Mode Chat
+                </label>
+                <p
+                  className={cn(
+                    'text-xs mt-0.5',
+                    isLight ? 'text-gray-500' : 'text-gray-400'
+                  )}
+                >
+                  Enable sticky user messages with dynamic scroll
+                </p>
+              </div>
+              <button
+                id="agent-mode-chat"
+                role="switch"
+                aria-checked={agentModeChat}
+                onClick={() => onAgentModeChatChange(!agentModeChat)}
+                className={cn(
+                  'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 ml-3',
+                  agentModeChat
+                    ? 'bg-blue-600 focus:ring-blue-500'
+                    : isLight
+                    ? 'bg-gray-200 focus:ring-gray-300'
+                    : 'bg-gray-600 focus:ring-gray-500'
+                )}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                    agentModeChat ? 'translate-x-4' : 'translate-x-0'
                   )}
                 />
               </button>

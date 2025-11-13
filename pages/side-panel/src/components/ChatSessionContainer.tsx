@@ -74,7 +74,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   });
 
   const { sessions } = useSessionStorageDB();
-  const { showAgentCursor, showSuggestions, showThoughtBlocks } = useStorage(preferencesStorage);
+  const { showAgentCursor, showSuggestions, showThoughtBlocks, agentModeChat } = useStorage(preferencesStorage);
   const { organization, activeTeam } = useAuth();
   const [currentMessages, setCurrentMessages] = useState<any[]>([]);
   const [headlessMessagesCount, setHeadlessMessagesCount] = useState<number>(0);
@@ -1184,6 +1184,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         setIsAgentLoading={setIsAgentLoading}
         showSuggestions={showSuggestions}
         showThoughtBlocks={showThoughtBlocks}
+        agentModeChat={agentModeChat}
         initialAgentStepState={currentAgentStepState}
         onAgentStepStateChange={setCurrentAgentStepState}
         contextMenuMessage={contextMenuMessage}
@@ -1216,6 +1217,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       setThemeColor,
       showSuggestions,
       showThoughtBlocks,
+      agentModeChat,
       themeColor,
       triggerManualRefreshWithEmbeddingWait,
     ],
@@ -1445,12 +1447,10 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           isLight={isLight}
           selectedAgent={selectedAgent}
           selectedModel={selectedModel}
-          showAgentCursor={showAgentCursor}
           showSuggestions={showSuggestions}
           showThoughtBlocks={showThoughtBlocks}
           onAgentChange={handleAgentChange}
           onModelChange={handleModelChange}
-            onShowAgentCursorChange={show => preferencesStorage.setShowAgentCursor(show)}
           onShowSuggestionsChange={show => preferencesStorage.setShowSuggestions(show)}
           onShowThoughtBlocksChange={show => preferencesStorage.setShowThoughtBlocks(show)}
           onExpandSettingsClick={() => setIsSettingsOpen(true)}
@@ -1464,6 +1464,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         showAgentCursor={showAgentCursor}
         showSuggestions={showSuggestions}
         showThoughtBlocks={showThoughtBlocks}
+        agentModeChat={agentModeChat}
         agentType={activeAgent}
         modelType={activeModel}
         organizationId={organization?.id || undefined}
@@ -1472,6 +1473,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           onShowAgentCursorChange={show => preferencesStorage.setShowAgentCursor(show)}
           onShowSuggestionsChange={show => preferencesStorage.setShowSuggestions(show)}
         onShowThoughtBlocksChange={show => preferencesStorage.setShowThoughtBlocks(show)}
+        onAgentModeChatChange={enabled => preferencesStorage.setAgentModeChat(enabled)}
       />
       
       {/* Usage Popup */}

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
@@ -44,8 +45,26 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
   const [editHistory, setEditHistory] = useState<string[]>([]);
   const [showCopyFeedback, setShowCopyFeedback] = useState(false);
 
+  // Update dropdown position when it opens
+  useEffect(() => {
+    if (showDeleteMenu && deleteButtonRef.current && deleteDropdownRef.current) {
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        if (deleteButtonRef.current && deleteDropdownRef.current) {
+          const buttonRect = deleteButtonRef.current.getBoundingClientRect();
+          const top = buttonRect.bottom + 4; // 4px = marginTop (0.25rem)
+          const right = window.innerWidth - buttonRect.right;
+          deleteDropdownRef.current.style.top = `${top}px`;
+          deleteDropdownRef.current.style.right = `${right}px`;
+        }
+      });
+    }
+  }, [showDeleteMenu]);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const deleteMenuRef = useRef<HTMLDivElement>(null);
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const deleteDropdownRef = useRef<HTMLDivElement>(null);
 
   // Get message content (handle both string and array content)
   const getMessageContent = (): string => {
@@ -107,18 +126,29 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
     }
   }, [isEditing]);
 
-  // Close delete menu when clicking outside
+  // Close delete menu when clicking outside (works with portal)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (deleteMenuRef.current && !deleteMenuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      
+      // Check if click is outside both the button and the dropdown menu
+      const isClickInsideButton = deleteButtonRef.current?.contains(target);
+      const isClickInsideMenu = deleteMenuRef.current?.contains(target);
+      
+      // For portal, also check if the dropdown element itself was clicked
+      const dropdownElement = document.querySelector('.copilotKitDeleteDropdownMenu');
+      const isClickInsideDropdown = dropdownElement?.contains(target);
+      
+      if (!isClickInsideButton && !isClickInsideMenu && !isClickInsideDropdown) {
         setShowDeleteMenu(false);
       }
     };
 
     if (showDeleteMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
+      // Use capture phase to ensure we catch the event
+      document.addEventListener('mousedown', handleClickOutside, true);
       return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('mousedown', handleClickOutside, true);
       };
     }
     return undefined;
@@ -256,6 +286,8 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
   return (
     <div
       className="copilotKitMessage copilotKitUserMessage"
+      data-message-role="user"
+      data-message-id={(message as any)?.id || ''}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
@@ -449,6 +481,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
             visibility: isHovered ? 'visible' : 'hidden',
             transition: 'opacity 0.2s ease-in-out, visibility 0.2s ease-in-out',
             zIndex: 10000,
+            overflow: 'visible', // Ensure dropdowns can extend beyond
             // Add background with left-side fade - match user message background
             background: isLight
               ? 'linear-gradient(to right, rgba(249, 250, 251, 0) 0%, rgba(249, 250, 251, 0.8) 20%, rgba(249, 250, 251, 0.95) 40%, rgb(249, 250, 251) 60%)'
@@ -620,8 +653,16 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
           </button>
 
           {/* Delete Button with Dropdown */}
-          <div style={{ position: 'relative' }} ref={deleteMenuRef}>
+          <div 
+            className="copilotKitDeleteDropdownContainer"
+            style={{ 
+              position: 'relative', 
+              zIndex: 10002,
+              isolation: 'isolate', // Create new stacking context
+            }} 
+            ref={deleteMenuRef}>
             <button
+              ref={deleteButtonRef}
               onClick={() => setShowDeleteMenu(!showDeleteMenu)}
               className="copilotKitMessageControlButton"
               title="Delete options"
@@ -639,6 +680,8 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                 justifyContent: 'center',
                 transition: 'all 0.2s ease',
                 margin: '0px',
+                position: 'relative',
+                zIndex: 10002,
               }}
               onMouseEnter={e => {
                 e.currentTarget.style.transform = 'scale(1.15)';
@@ -660,24 +703,35 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
               </svg>
             </button>
 
-            {/* Delete Dropdown Menu */}
-            {showDeleteMenu && (
+            {/* Delete Dropdown Menu - Rendered as Portal to body */}
+            {showDeleteMenu && createPortal(
               <div
+                ref={deleteDropdownRef}
+                className="copilotKitDeleteDropdownMenu"
                 style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: '0',
-                  marginTop: '0.25rem',
+                  position: 'fixed', // Use fixed to avoid clipping by parent containers
+                  top: '0px', // Will be updated by useEffect
+                  right: '0px', // Will be updated by useEffect
+                  marginTop: '0',
                   backgroundColor: isLight ? '#f9fafb' : '#151C24',
                   border: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
                   borderRadius: '6px',
                   boxShadow: '0 10px 20px rgba(0, 0, 0, 0.15)',
-                  zIndex: 99999,
+                  zIndex: 10002, /* Higher than sticky message (10001) */
                   minWidth: '160px',
+                  maxWidth: '200px',
+                  width: 'auto',
                   overflow: 'visible',
+                  visibility: 'visible', /* Force visibility */
+                  opacity: 1, /* Force opacity */
+                  pointerEvents: 'auto', /* Ensure it's clickable */
                 }}>
                 <button
-                  onClick={handleDeleteMessage}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDeleteMessage();
+                  }}
                   style={{
                     width: '100%',
                     padding: '0.5rem 0.75rem',
@@ -689,6 +743,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                     cursor: 'pointer',
                     transition: 'all 0.2s ease',
                     borderBottom: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+                    whiteSpace: 'nowrap',
                   }}
                   onMouseEnter={e => {
                     e.currentTarget.style.backgroundColor = isLight ? '#f3f4f6' : '#1f2937';
@@ -699,7 +754,11 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                   Delete this message
                 </button>
                 <button
-                  onClick={handleDeleteAbove}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDeleteAbove();
+                  }}
                   disabled={index === 0}
                   style={{
                     width: '100%',
@@ -712,6 +771,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                     cursor: index === 0 ? 'not-allowed' : 'pointer',
                     transition: 'all 0.2s ease',
                     borderBottom: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+                    whiteSpace: 'nowrap',
                   }}
                   onMouseEnter={e => {
                     if (index !== 0) {
@@ -724,7 +784,11 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                   Delete all above
                 </button>
                 <button
-                  onClick={handleDeleteBelow}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDeleteBelow();
+                  }}
                   disabled={isLast}
                   style={{
                     width: '100%',
@@ -736,6 +800,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                     textAlign: 'left',
                     cursor: isLast ? 'not-allowed' : 'pointer',
                     transition: 'all 0.2s ease',
+                    whiteSpace: 'nowrap',
                   }}
                   onMouseEnter={e => {
                     if (!isLast) {
@@ -747,7 +812,8 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                   }}>
                   Delete all below
                 </button>
-              </div>
+              </div>,
+              document.body
             )}
           </div>
         </div>

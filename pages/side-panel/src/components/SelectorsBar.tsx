@@ -8,12 +8,10 @@ interface SelectorsBarProps {
   isLight: boolean;
   selectedAgent: string;
   selectedModel: string;
-  showAgentCursor: boolean;
   showSuggestions: boolean;
   showThoughtBlocks: boolean;
   onAgentChange: (agent: string) => void;
   onModelChange: (model: string) => void;
-  onShowAgentCursorChange: (show: boolean) => void;
   onShowSuggestionsChange: (show: boolean) => void;
   onShowThoughtBlocksChange: (show: boolean) => void;
   onExpandSettingsClick: () => void;
@@ -23,12 +21,10 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
   isLight,
   selectedAgent,
   selectedModel,
-  showAgentCursor,
   showSuggestions,
   showThoughtBlocks,
   onAgentChange,
   onModelChange,
-  onShowAgentCursorChange,
   onShowSuggestionsChange,
   onShowThoughtBlocksChange,
   onExpandSettingsClick,
@@ -81,10 +77,8 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
       {/* Right side: Settings Dropdown */}
       <SettingsDropdown
         isLight={isLight}
-        showAgentCursor={showAgentCursor}
         showSuggestions={showSuggestions}
         showThoughtBlocks={showThoughtBlocks}
-        onShowAgentCursorChange={onShowAgentCursorChange}
         onShowSuggestionsChange={onShowSuggestionsChange}
         onShowThoughtBlocksChange={onShowThoughtBlocksChange}
         onExpandClick={onExpandSettingsClick}

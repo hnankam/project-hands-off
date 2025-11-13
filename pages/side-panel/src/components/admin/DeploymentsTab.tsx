@@ -1174,9 +1174,8 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
             disabled={refreshing}
             title="Refresh deployments"
           >
-            <svg className={cn('w-4 h-4', refreshing ? 'animate-spin' : '')} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path d="M4 4v4h4M16 16v-4h-4" />
-              <path d="M5.636 5.636A7 7 0 0117 10M14.364 14.364A7 7 0 013 10" />
+            <svg className={cn('w-4 h-4', refreshing ? 'animate-spin' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
         </div>

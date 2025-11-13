@@ -208,6 +208,8 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
       {content && (
         <div
           className="copilotKitMessage copilotKitAssistantMessage"
+          data-message-role="assistant"
+          data-message-id={(message as any)?.id || ''}
           style={assistantMessageStyle}
         >
           {content && <Markdown content={content} components={markdownTagRenderers} />}

@@ -1523,6 +1523,13 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
     setCurrentPage(1);
   }, [filters.range, filters.teamIds, filters.userIds, filters.agentIds, filters.modelIds, metric]);
 
+  // Refresh data when metric changes
+  useEffect(() => {
+    if (selectedOrgId) {
+      fetchUsage(filters);
+    }
+  }, [metric]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleFilterChange = (filterKey: string, value: any) => {
     const newFilters = { ...filters, [filterKey]: value };
     setFilters(newFilters);
@@ -1701,8 +1708,8 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
     ];
   }, [metric, summary]);
 
-  // For sessions metric, the backend already provides aggregated data
-  // For other metrics, we just pass through the data as-is
+  // For sessions and requests metrics, the backend provides aggregated data
+  // For tokens metric, we pass through individual request data
   const activityData = useMemo(() => {
     if (!usageData?.recent?.data) {
       return [];
@@ -1893,8 +1900,8 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
           disabled={loading || refreshing}
           title="Refresh"
         >
-          <svg className={cn('h-4 w-4', refreshing && 'animate-spin')} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v4h4M16 16v-4h-4M5.636 5.636a7 7 0 019.9 0l.707.707M14.364 14.364a7 7 0 01-9.9 0l-.707-.707" />
+          <svg className={cn('h-4 w-4', refreshing && 'animate-spin')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
         </button>
       </div>
@@ -2846,7 +2853,7 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                 ))}
 
               {metric === 'requests' &&
-                usageData?.recent.data.map(row => (
+                activityData.map(row => (
                   <tr
                     key={row.id}
                     className={cn(
@@ -2855,11 +2862,9 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                     )}
                   >
                     <td className={cn('px-3 py-2 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      {new Date(row.createdAt).toLocaleString([], {
+                      {new Date(row.createdAt).toLocaleDateString([], {
                         month: 'short',
                         day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
                       })}
                     </td>
                     <td className={cn('px-3 py-2 truncate max-w-[150px]', mainTextColor)}>
@@ -2871,11 +2876,11 @@ export const UsageTab: React.FC<UsageTabProps> = ({ isLight, organizations, pres
                     <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-700' : 'text-gray-300')}>
                       {row.user || '—'}
                     </td>
-                    <td className={cn('px-3 py-2 truncate max-w-[150px]', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      {row.sessionId ? row.sessionId : '—'}
+                    <td className={cn('px-3 py-2 truncate max-w-[160px]', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      {row.sessionId || '—'}
                     </td>
                     <td className={cn('px-3 py-2 text-right tabular-nums font-medium', mainTextColor)}>
-                      1
+                      {numberFormatter.format(row.requestCount || 1)}
                     </td>
                     <td className={cn('px-3 py-2 text-right tabular-nums', isLight ? 'text-gray-700' : 'text-gray-300')}>
                       {numberFormatter.format(row.totalTokens)}
