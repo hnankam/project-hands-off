@@ -1697,11 +1697,3 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   opacity: 0.5 !important;
 }
 
-/* ==========================================================
-   SCROLL SPACER
-   Automatically managed by parent container - shrinks naturally as content grows
-   ========================================================== */
-.chat-scroll-spacer {
-  /* All properties are set in JavaScript - don't override with !important */
-  /* This ensures the spacer has predictable behavior and forces scroll space */
-}
