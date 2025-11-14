@@ -65,6 +65,10 @@ const SidePanel = () => {
   
   // Invitation handling
   const [invitationId, setInvitationId] = useState<string | null>(null);
+  const [invitationModalOpen, setInvitationModalOpen] = useState(false);
+  const [invitationIdInput, setInvitationIdInput] = useState('');
+  const [invitationValidationError, setInvitationValidationError] = useState<string | null>(null);
+  const [isValidatingInvitation, setIsValidatingInvitation] = useState(false);
 
   // CopilotKit configuration
   const copilotKitConfig = {
@@ -87,6 +91,43 @@ const SidePanel = () => {
     setActivePage('admin');
     window.location.hash = '#/admin';
   }, []);
+
+  const navigateToInvitation = useCallback(() => {
+    // Reset error state and open modal to get invitation ID
+    setInvitationValidationError(null);
+    setInvitationModalOpen(true);
+  }, []);
+
+  const handleInvitationSubmit = useCallback(async () => {
+    if (!invitationIdInput || !invitationIdInput.trim()) return;
+
+    const trimmedId = invitationIdInput.trim();
+
+    // Validate invitation ID
+    setIsValidatingInvitation(true);
+    setInvitationValidationError(null);
+
+    try {
+      // Validate invitation by fetching it
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseURL}/api/invitations/${trimmedId}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Invitation not found');
+      }
+
+      // Invitation is valid, proceed to the page
+      setInvitationId(trimmedId);
+      window.location.hash = `#/accept-invitation/${trimmedId}`;
+      setInvitationModalOpen(false);
+      setInvitationIdInput('');
+    } catch (err: any) {
+      setInvitationValidationError(err.message || 'Failed to validate invitation');
+    } finally {
+      setIsValidatingInvitation(false);
+    }
+  }, [invitationIdInput]);
 
   const closeSidePanel = () => {
     // Send message to popup to update its state
@@ -299,10 +340,18 @@ const SidePanel = () => {
       <AcceptInvitationPage
         invitationId={invitationId}
         onSuccess={() => {
-          // Clear invitation ID and force full page reload to refresh all data
+          // Clear invitation ID
           setInvitationId(null);
-          window.location.hash = '#/admin';
-          window.location.reload();
+          
+          // If authenticated (after accepting), redirect to admin and reload
+          // If not authenticated (after declining), just return to login
+          if (isAuthenticated) {
+            window.location.hash = '#/admin';
+            window.location.reload();
+          } else {
+            // Just clearing invitationId will show the login page
+            window.location.hash = '';
+          }
         }}
       />
     );
@@ -310,7 +359,188 @@ const SidePanel = () => {
 
   // Show login page if not authenticated
   if (!isAuthenticated) {
-    return <LoginPage />;
+    return (
+      <>
+        <LoginPage onGoToInvitation={navigateToInvitation} />
+        
+        {/* Invitation ID Modal */}
+        <>
+        {/* Backdrop */}
+        {invitationModalOpen && (
+          <div
+            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
+            onClick={() => {
+              setInvitationModalOpen(false);
+              setInvitationIdInput('');
+              setInvitationValidationError(null);
+            }}
+          />
+        )}
+
+          {/* Modal */}
+          <div
+            className={cn(
+              'fixed inset-0 z-[10001] flex items-center justify-center p-4 transition-opacity',
+              invitationModalOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+            )}
+          >
+            <div
+              className={cn(
+                'w-full max-w-sm rounded-lg shadow-xl',
+                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
+              )}
+              onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div
+                className={cn(
+                  'flex items-center justify-between border-b px-4 py-2',
+                  isLight ? 'border-gray-200' : 'border-gray-700',
+                )}>
+                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                  Enter Invitation ID
+                </h2>
+                <button
+                  onClick={() => {
+                    setInvitationModalOpen(false);
+                    setInvitationIdInput('');
+                    setInvitationValidationError(null);
+                  }}
+                  className={cn(
+                    'rounded-md p-0.5 transition-colors',
+                    isLight
+                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
+                  )}>
+                  <svg
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round">
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="space-y-3 px-4 py-4">
+                {invitationValidationError && (
+                  <div
+                    className={cn(
+                      'flex items-start gap-3 rounded-md px-3 py-2.5 text-xs',
+                      isLight ? 'bg-red-50 text-red-700' : 'bg-red-900/20 text-red-300',
+                    )}>
+                    <svg className="h-4 w-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                      <path
+                        fillRule="evenodd"
+                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.5a.75.75 0 10-1.5 0v4a.75.75 0 001.5 0v-4zm0 6.5a.75.75 0 10-1.5 0 .75.75 0 001.5 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    <div className="flex-1">
+                      <p>{invitationValidationError}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setInvitationValidationError(null)}
+                      className={cn(
+                        'rounded-md p-0.5 transition-colors',
+                        isLight ? 'text-red-500 hover:bg-red-100' : 'text-red-300 hover:bg-red-900/30',
+                      )}
+                      aria-label="Dismiss error">
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+                
+                <div className="space-y-1">
+                  <label
+                    htmlFor="invitationId"
+                    className={cn(
+                      'block text-xs font-medium',
+                      isLight ? 'text-gray-700' : 'text-gray-300',
+                    )}>
+                    Invitation ID
+                  </label>
+                  <input
+                    id="invitationId"
+                    type="text"
+                    value={invitationIdInput}
+                    onChange={(e) => setInvitationIdInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && invitationIdInput.trim() && !isValidatingInvitation) {
+                        handleInvitationSubmit();
+                      }
+                    }}
+                    placeholder="Enter invitation ID"
+                    autoFocus
+                    disabled={isValidatingInvitation}
+                    className={cn(
+                      'w-full px-2.5 py-1.5 text-sm border rounded-md outline-none focus:ring-1 focus:ring-blue-500 transition-colors',
+                      isLight ? 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400' : 'bg-[#151C24] border-gray-600 text-white placeholder:text-gray-500',
+                      isValidatingInvitation && 'opacity-60 cursor-not-allowed',
+                    )}
+                  />
+                  <p className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    Enter the invitation ID you received to join an organization
+                  </p>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div
+                className={cn(
+                  'flex items-center justify-end gap-2 border-t px-4 py-2',
+                  isLight ? 'border-gray-200' : 'border-gray-700',
+                )}>
+                <button
+                  onClick={() => {
+                    setInvitationModalOpen(false);
+                    setInvitationIdInput('');
+                    setInvitationValidationError(null);
+                  }}
+                  disabled={isValidatingInvitation}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                    isLight
+                      ? 'bg-gray-200 hover:bg-gray-300'
+                      : 'bg-gray-700 hover:bg-gray-600',
+                    isValidatingInvitation && 'opacity-50 cursor-not-allowed',
+                  )}
+                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleInvitationSubmit}
+                  disabled={!invitationIdInput.trim() || isValidatingInvitation}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-2',
+                    'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed',
+                  )}>
+                  {isValidatingInvitation && (
+                    <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                  )}
+                  {isValidatingInvitation ? 'Validating...' : 'Continue'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      </>
+    );
   }
 
   return (

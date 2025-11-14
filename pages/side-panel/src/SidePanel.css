@@ -498,8 +498,14 @@ input:focus {
   width: 100% !important; /* Force full width */
   margin-bottom: 0 !important;
   overflow: visible !important; /* Ensure dropdowns can extend beyond message bounds */
-  margin-top: 1rem !important;
+  margin-top: 2.5rem !important;
   border: 1px solid var(--copilot-kit-border-color) !important;
+}
+
+/* Ensure the very first user message in the list has a margin-top of 1rem */
+.copilotKitMessagesContainer > .copilotKitMessage[data-message-role="user"]:first-child,
+.copilotKitMessagesContainer > [data-message-role="user"]:first-child {
+  margin-top: 1.2rem !important;
 }
 
 /* Light mode user message - match status bar background */
@@ -527,6 +533,16 @@ input:focus {
   overflow: visible !important; /* Allow controls to overflow outside message bounds */
 }
 
+/* Override padding for empty assistant messages at the base level */
+.copilotKitAssistantMessage:has(> .copilotKitMarkdown:empty),
+.copilotKitAssistantMessage:has(> .copilotKitMarkdown:not(:has(*))) {
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  background: red !important;
+}
+
 /* Maintain horizontal scroll for assistant message content while allowing controls to overflow */
 .copilotKitAssistantMessage > *:not(.copilotKitMessageControls) {
   overflow-x: auto !important;
@@ -546,6 +562,17 @@ input:focus {
   padding-left: 3rem !important;
   border-radius: 6px !important;
   z-index: 10000 !important; /* Below sticky messages (10001) */
+}
+
+.copilotKitMessage.copilotKitAssistantMessage {
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* Remove padding from empty assistant messages - must come after other assistant message rules */
+/* Target assistant messages that contain an empty markdown div */
+.copilotKitMessage.copilotKitAssistantMessage:has(> .copilotKitMarkdown:empty) {
+  padding: 0 !important;
 }
 
 .copilot-chat-container .copilotKitAssistantMessage .copilotKitMessageControls {
@@ -613,8 +640,8 @@ input:focus {
 .copilot-chat-container p,
 .copilot-chat-container div:not([role="group"]):not([class*="controls"]):not([class*="actions"]):not([class*="suggestions"]),
 .copilot-chat-container span:not([role="group"] span) {
-  font-size: 13px !important;
-  line-height: 1.4 !important;
+  font-size: 12.5px !important;
+  /* line-height: 1.4 !important; */
 }
 
 /* Specific targeting for common CopilotKit classes */
@@ -748,8 +775,7 @@ input:focus {
 
 /* Individual suggestion buttons - ABSOLUTELY NO WRAP OR SHRINK */
 footer div[class*="suggestions"] button {
-  font-size: 0.75rem !important;
-  padding: 6px 12px !important;
+  padding: 3px 9px !important;
   margin: 0 !important;
   white-space: nowrap !important;
   flex-shrink: 0 !important;
@@ -804,7 +830,6 @@ footer div[class*="suggestions"] button {
 }
 
 /* Individual message containers - allow horizontal scroll when content overflows */
-.copilot-chat-container .copilotKitUserMessage,
 .copilot-chat-container .copilotKitToolMessage,
 .copilot-chat-container [class*="copilotKitMessageBody"],
 .copilot-chat-container [class*="copilotKitToolCall"] {
@@ -813,9 +838,40 @@ footer div[class*="suggestions"] button {
   max-width: 100%;
 }
 
-/* Ensure user messages allow dropdowns to extend beyond bounds */
+/* User messages: visible overflow for controls, but content area has scrolling */
 .copilot-chat-container .copilotKitUserMessage {
   overflow: visible !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Set max height for user message content (similar to chat input max of ~6 rows) */
+/* Target the content div (not in edit mode) */
+.copilot-chat-container .copilotKitUserMessage > div:not(.copilotKitMessageControls):not(.edit-mode) {
+  max-height: 150px !important;
+  overflow-y: auto !important;
+  overflow-x: visible !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: transparent transparent !important;
+}
+
+/* In edit mode, make the edit-mode container a flex column */
+.copilot-chat-container .copilotKitUserMessage .edit-mode {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Set max height for textarea in edit mode, keep buttons outside scroll area */
+.copilot-chat-container .copilotKitUserMessage .edit-mode textarea {
+  max-height: 150px !important;
+  overflow-y: auto !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: transparent transparent !important;
+}
+
+/* Light mode: slightly grey background for edit textarea */
+.copilot-chat-container:not(.dark) .copilotKitUserMessage .edit-mode textarea {
+  background-color: #f3f4f6 !important; /* bg-gray-100 - subtle grey */
 }
 
 /* Assistant messages use inner scroller to keep controls unclipped */
@@ -1058,6 +1114,7 @@ div.copilotKitInputContainer,
 .copilot-chat-container .copilotKitAssistantMessage .copilotKitInlineCode {
   font-size: 13px !important;
   border-width: 0px !important;
+  border-radius: 4px !important;
 }
 
 /* Light mode inline code - bg-gray-100 */
@@ -1165,6 +1222,12 @@ footer.copilotKitMessagesFooter,
   order: 1 !important; /* Ensure footer always appears before input in flex layout */
   contain: layout style !important; /* Isolate from parent layout changes */
   transform: translateZ(0) !important; /* Create stacking context */
+  /* Match input container width and centering */
+  max-width: 56rem !important; /* Match home page max-w-4xl and input container */
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  box-sizing: border-box !important;
 }
 
 /* Hide scrollbar on footer completely - same as session tabs parent */
@@ -1191,7 +1254,7 @@ footer.copilotKitMessagesFooter,
   overflow-y: hidden !important;
   scrollbar-width: thin !important;
   gap: 8px !important;
-  padding: 4px 4px !important;
+  padding: 0 !important; /* Match typical input field horizontal padding */
   font-size: 10px !important;
   line-height: 1.2 !important;
 }

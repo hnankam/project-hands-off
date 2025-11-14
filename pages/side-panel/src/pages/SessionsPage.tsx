@@ -1221,7 +1221,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       {/* Session List - Fixed at bottom */}
       <div
         className={cn(
-          'flex-shrink-0 border-t p-2',
+          'flex-shrink-0 border-t py-1',
           isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
         )}>
         <SessionList isLight={isLight} />

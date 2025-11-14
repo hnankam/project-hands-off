@@ -8,7 +8,7 @@
 import OpenAI from "openai";
 import { OpenAIAdapter } from "@copilotkit/runtime";
 import { DEBUG } from '../config/index.js';
-import { getProviderConfig, getModelConfig } from '../config/loader.js';
+import { getProviderConfigByType, getModelConfig } from '../config/loader.js';
 
 /**
  * Create OpenAI adapter with configuration options
@@ -24,7 +24,7 @@ import { getProviderConfig, getModelConfig } from '../config/loader.js';
  * @returns {OpenAIAdapter} OpenAI adapter instance
  */
 export async function createOpenAIAdapter(modelKey = "gpt-5-mini", options = {}) {
-    const providerConfig = await getProviderConfig('azure_openai');
+    const providerConfig = await getProviderConfigByType('azure_openai');
     const modelConfig = await getModelConfig(modelKey);
     
     if (!providerConfig?.credentials?.api_key) {
@@ -55,7 +55,7 @@ export async function createOpenAIAdapter(modelKey = "gpt-5-mini", options = {})
  * @returns {OpenAIAdapter} Azure OpenAI adapter instance
  */
 export async function createAzureOpenAIAdapter(modelKey = "gpt-4o-mini", context = {}) {
-  const providerConfig = await getProviderConfig('azure_openai', context);
+  const providerConfig = await getProviderConfigByType('azure_openai', context);
   const modelConfig = await getModelConfig(modelKey, context);
   
   if (!providerConfig?.credentials?.api_key) {

@@ -534,8 +534,12 @@ def register_info_routes(app: FastAPI) -> None:
                         )
                 return params
 
+            # Track filtering for debugging
+            filtered_count = {"mcp_no_server": 0, "total_processed": 0}
+            
             # Build entries from database tool definitions
             for tool_key in allowed_tool_keys:
+                filtered_count["total_processed"] += 1
                 tool_cfg = tool_definitions.get(tool_key)
                 if not tool_cfg:
                     continue
@@ -569,6 +573,18 @@ def register_info_routes(app: FastAPI) -> None:
                             server_info = mcp_servers_by_id.get(
                                 str(server_key)
                             ) or mcp_servers.get(server_key)
+                    
+                    # CRITICAL FIX: Filter out MCP tools whose servers are not available to this team
+                    if not server_info:
+                        filtered_count["mcp_no_server"] += 1
+                        logger.debug(
+                            "Filtering out MCP tool '%s' (server_id=%s) - server not available to team %s",
+                            tool_key,
+                            server_id,
+                            team_id
+                        )
+                        continue  # Skip this tool entirely
+                    
                     if server_info:
                         entry["mcp_server"] = (
                             server_info.get("display_name")
@@ -578,6 +594,15 @@ def register_info_routes(app: FastAPI) -> None:
                         entry["mcp_server_key"] = server_info.get("server_key")
 
                 tools_by_key[tool_key] = entry
+            
+            # Log filtering results
+            logger.info(
+                "Tool filtering for team %s: processed=%d, filtered_mcp_no_server=%d, final_count=%d",
+                team_id,
+                filtered_count["total_processed"],
+                filtered_count["mcp_no_server"],
+                len(tools_by_key)
+            )
 
             # Preserve original ordering from allowed_tool_keys
             for tool_key in allowed_tool_keys:

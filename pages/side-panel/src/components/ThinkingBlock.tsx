@@ -29,6 +29,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
   const { isLight } = useStorage(exampleThemeStorage);
   const { isStreaming } = useStreaming();
   const [isOpen, setIsOpen] = useState(() => Boolean(isStreaming));
+  const [isHovered, setIsHovered] = useState(false);
   const autoCloseTimerRef = useRef<NodeJS.Timeout | null>(null);
   const manualOnlyRef = useRef(false); // After auto-close, only manual toggling allowed
   const prevStreamingRef = useRef<boolean>(false);
@@ -278,72 +279,103 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
   }, [children, extractThinkingInner]);
 
   return (
-    <div
-      className={`thinking-block my-2 rounded-[10px] transition-all ${
-        isLight ? 'bg-blue-50/60' : 'bg-blue-900/20'
-      }`}>
+    <div className={`thinking-block ${isLight ? 'text-gray-600' : 'text-gray-500'}`} style={{ fontSize: 12 }}>
       {/* Accordion Header - Always visible */}
-      <button
+      <div
         onClick={toggleAccordion}
-        className={`flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors rounded-[10px] ${
-          isLight ? 'bg-blue-100/60 hover:bg-blue-200/70' : 'bg-blue-900/20 hover:bg-blue-900/30'
-        }`}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        style={{
+          padding: 4,
+          paddingLeft: 0,
+          paddingRight: 0,
+          paddingTop: 0,
+          display: 'flex',
+          alignItems: 'center',
+          cursor: 'pointer',
+        }}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleAccordion();
+          }
+        }}
         aria-expanded={isOpen}
         aria-controls="thinking-content">
         {/* Lightbulb icon indicating thinking/processing */}
         <svg 
-          className={`h-3.5 w-3.5 flex-shrink-0 transition-colors ${isLight ? 'text-blue-500' : 'text-blue-400'}`}
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
           fill="none" 
-          stroke="currentColor" 
-          viewBox="0 0 24 24">
-          <path 
-            strokeLinecap="round" 
-            strokeLinejoin="round" 
-            strokeWidth={2} 
-            d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" 
-          />
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ 
+            flexShrink: 0, 
+            marginRight: 6,
+            color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+          }}>
+          <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
         </svg>
         
         {/* Title */}
-        <div className={`flex-1 text-xs font-medium ${isLight ? 'text-blue-700/80' : 'text-blue-300/80'}`}>
+        <span style={{ flex: 1 }}>
           {isStreaming && isLatest ? 'Thinking...' : 'Thought'}
-        </div>
+        </span>
         
-        {/* Chevron icon for accordion state */}
+        {/* Chevron icon for accordion state - only visible on hover */}
         <svg
-          className={`h-3.5 w-3.5 flex-shrink-0 transition-transform duration-200 ${
-            isOpen ? 'rotate-180' : ''
-          } ${isLight ? 'text-blue-600' : 'text-blue-400'}`}
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          viewBox="0 0 24 24"
-          strokeWidth={2}
+          strokeWidth="2"
           strokeLinecap="round"
-          strokeLinejoin="round">
-          <path d="M19 9l-7 7-7-7" />
+          strokeLinejoin="round"
+          style={{
+            marginLeft: 6,
+            transition: 'transform 0.2s ease-in-out, opacity 0.2s ease-in-out',
+            transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+            opacity: isHovered ? 1 : 0,
+          }}>
+          <polyline points="9 18 15 12 9 6" />
         </svg>
-      </button>
+      </div>
       
       {/* Accordion Content - Collapsible with auto-scroll during streaming */}
       <div
         id="thinking-content"
-        className={`overflow-hidden transition-all duration-200 ease-in-out ${
-          isOpen
-            ? (isStreaming && isLatest ? 'max-h-[75vh] opacity-100' : 'max-h-[500px] opacity-100')
-            : 'max-h-0 opacity-0'
-        }`}>
+        style={{
+          overflow: 'hidden',
+          transition: 'max-height 0.3s ease-in-out, opacity 0.2s ease-in-out',
+          maxHeight: isOpen ? (isStreaming && isLatest ? '75vh' : '500px') : '0',
+          opacity: isOpen ? 1 : 0,
+        }}>
         <div
-          ref={contentRef}
-          className={`p-2 pl-3 pr-3 text-xs ${
-            isStreaming && isLatest
-              ? 'overflow-y-auto max-h-[75vh] overscroll-contain session-tabs-scroll'
-              : 'overflow-y-auto max-h-40 overscroll-contain session-tabs-scroll'
-          } ${
-            isLight ? 'text-blue-900/80' : 'text-blue-100/80'
-          } [&_.whitespace-pre-wrap]:m-0 [&_.whitespace-pre-wrap]:p-0 [&_.whitespace-pre-wrap]:text-[13px] [&_.whitespace-pre-wrap]:leading-[1.35]
-             [&_.copilotKitMarkdownElement]:m-0 [&_.copilotKitMarkdownElement]:p-0 [&_.copilotKitMarkdownElement:not(:last-child)]:!mb-0`}
-        >
-          <div className="whitespace-pre-wrap m-0 p-0 [&>*]:m-0 [&>*]:p-0">{normalizedChildren}</div>
+          style={{
+            paddingLeft: 8,
+            paddingRight: 6,
+            paddingBottom: 0,
+            paddingTop: 0,
+            // borderLeft: `2px solid ${isLight ? '#e5e7eb' : '#374151'}`,
+            marginLeft: 13,
+          }}>
+          <div
+            ref={contentRef}
+            className={`text-xs mb-4 opacity-80 ${
+              isStreaming && isLatest
+                ? 'overflow-y-auto max-h-[75vh] overscroll-contain session-tabs-scroll'
+                : 'overflow-y-auto max-h-40 overscroll-contain session-tabs-scroll'
+            } [&_.whitespace-pre-wrap]:m-0 [&_.whitespace-pre-wrap]:p-0 [&_.whitespace-pre-wrap]:text-[13px] [&_.whitespace-pre-wrap]:leading-[1.35]
+               [&_.copilotKitMarkdownElement]:m-0 [&_.copilotKitMarkdownElement]:p-0 [&_.copilotKitMarkdownElement:not(:last-child)]:!mb-0`}
+          >
+            <div className="whitespace-pre-wrap m-0 p-0 [&>*]:m-0 [&>*]:p-0">{normalizedChildren}</div>
+          </div>
         </div>
       </div>
     </div>

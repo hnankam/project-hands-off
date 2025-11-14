@@ -4,7 +4,7 @@
 
 import { GoogleGenerativeAIAdapter } from "@copilotkit/runtime";
 import { DEBUG } from '../config/index.js';
-import { getProviderConfig, getModelConfig } from '../config/loader.js';
+import { getProviderConfigByType, getModelConfig } from '../config/loader.js';
 
 /**
  * Create Google Gemini adapter
@@ -15,7 +15,7 @@ import { getProviderConfig, getModelConfig } from '../config/loader.js';
  */
 export async function createGeminiAdapter(modelKey = 'gemini-2.5-flash-lite', context = {}) {
   const modelConfig = await getModelConfig(modelKey, context);
-  const providerConfig = await getProviderConfig('google', context);
+  const providerConfig = await getProviderConfigByType('google', context);
   
   if (!providerConfig?.credentials?.api_key) {
     throw new Error('Google API key not found in database configuration');

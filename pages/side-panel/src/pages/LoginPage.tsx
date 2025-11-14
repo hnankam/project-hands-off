@@ -10,7 +10,14 @@ import { useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';
 
-export default function LoginPage() {
+// Flag to control invitation-only mode
+const INVITATION_ONLY = true;
+
+interface LoginPageProps {
+  onGoToInvitation?: () => void;
+}
+
+export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
   const { signIn, signUp } = useAuth();
   const { isLight } = useStorage(exampleThemeStorage);
   const [isSignUp, setIsSignUp] = useState(false);
@@ -122,20 +129,45 @@ export default function LoginPage() {
                 </button>
                 <button
                   type="button"
+                  disabled={INVITATION_ONLY}
                   onClick={() => handleModeChange('sign-up')}
                   className={cn(
                     'flex-1 rounded-md px-3 py-1.5 transition-all',
-                    isSignUp
-                      ? isLight
-                        ? 'bg-white text-gray-900 shadow-md'
-                        : 'bg-[#2D3748] text-white shadow-lg'
-                      : isLight
-                        ? 'text-gray-600 hover:text-gray-900'
-                        : 'text-gray-400 hover:text-gray-200',
-                  )}>
+                    INVITATION_ONLY
+                      ? 'cursor-not-allowed opacity-50'
+                      : isSignUp
+                        ? isLight
+                          ? 'bg-white text-gray-900 shadow-md'
+                          : 'bg-[#2D3748] text-white shadow-lg'
+                        : isLight
+                          ? 'text-gray-600 hover:text-gray-900'
+                          : 'text-gray-400 hover:text-gray-200',
+                    !INVITATION_ONLY && !isSignUp && (isLight ? 'text-gray-600' : 'text-gray-400'),
+                  )}
+                  title={INVITATION_ONLY ? 'Sign up is currently disabled' : undefined}>
                   Sign up
                 </button>
               </div>
+
+              {/* Invitation-Only Banner */}
+              {INVITATION_ONLY && (
+                <div
+                  className={cn(
+                    'mx-auto mt-4 flex items-start gap-2 rounded-md px-3 py-2.5 text-xs max-w-xs',
+                    isLight ? 'bg-blue-50 text-blue-700' : 'bg-blue-900/20 text-blue-300',
+                  )}>
+                  <svg className="h-4 w-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                    <path
+                      fillRule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <div className="flex-1">
+                    <p>This app is currently <strong>invitation-only</strong>. Contact your organization administrator to get an invite.</p>
+                  </div>
+                </div>
+              )}
 
               {error && (
                 <div
@@ -354,16 +386,34 @@ export default function LoginPage() {
                 </div>
               </form>
 
-              <div className="mt-4 text-center text-xs sm:text-sm">
-                <button
-                  type="button"
-                  onClick={() => handleModeChange(isSignUp ? 'sign-in' : 'sign-up')}
-                  className={cn(
-                    'font-medium underline-offset-4 transition-colors hover:underline',
-                    isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-300 hover:text-blue-200',
-                  )}>
-                  {isSignUp ? 'Already have an account? Sign in' : 'New here? Create an account'}
-                </button>
+              <div className="mt-4 space-y-2 text-center text-xs sm:text-sm">
+                {!INVITATION_ONLY && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => handleModeChange(isSignUp ? 'sign-in' : 'sign-up')}
+                      className={cn(
+                        'font-medium underline-offset-4 transition-colors hover:underline',
+                        isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-300 hover:text-blue-200',
+                      )}>
+                      {isSignUp ? 'Already have an account? Sign in' : 'New here? Create an account'}
+                    </button>
+                  </div>
+                )}
+                
+                {onGoToInvitation && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={onGoToInvitation}
+                      className={cn(
+                        'font-medium underline-offset-4 transition-colors hover:underline',
+                        isLight ? 'text-gray-600 hover:text-gray-700' : 'text-gray-400 hover:text-gray-300',
+                      )}>
+                      Have an invitation? Join an organization
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

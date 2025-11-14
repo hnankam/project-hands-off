@@ -404,19 +404,32 @@ useEffect(() => {
     setLoading(true);
 
     try {
-      const { data, error } = await (authClient.organization as any).inviteMember({
-        email: inviteEmail,
-        role: inviteRole,
-        organizationId: selectedOrgForUsers,
+      // Use custom invitation endpoint that supports team assignments
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseURL}/api/invitations/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: inviteEmail,
+          role: inviteRole,
+          organizationId: selectedOrgForUsers,
+          teamIds: inviteTeamIds,
+        }),
       });
 
-      if (error) throw new Error(error.message);
+      const result = await response.json();
 
-      // Note: Team assignment for invited users should be handled after invitation acceptance
-      // The inviteTeamIds are selected but need backend support for automatic team assignment
-      // For now, admins can manually add users to teams after they accept
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to invite user');
+      }
 
-      onSuccess(`Invitation sent to ${inviteEmail}${inviteTeamIds.length > 0 ? ' - Please add to team(s) after acceptance' : ''}`);
+      const teamMessage = inviteTeamIds.length > 0 
+        ? ` with automatic assignment to ${inviteTeamIds.length} team(s)` 
+        : '';
+      onSuccess(`Invitation sent to ${inviteEmail}${teamMessage}`);
       setInviteEmail('');
       setInviteRole('member');
       setInviteTeamIds([]);
@@ -811,15 +824,15 @@ useEffect(() => {
                   className={cn(
                     'p-3 rounded-lg border transition-all',
                     isLight
-                        ? 'bg-yellow-50 border-yellow-200 hover:border-yellow-300 hover:shadow-sm'
-                        : 'bg-yellow-900/10 border-yellow-800 hover:border-yellow-700',
+                        ? 'bg-gray-50/80 border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                        : 'bg-gray-800/30 border-gray-700 hover:border-gray-600',
                     )}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         <div
                           className={cn(
                             'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0',
-                            isLight ? 'bg-yellow-100 text-yellow-600' : 'bg-yellow-900/30 text-yellow-400',
+                            isLight ? 'bg-gray-100 text-gray-500' : 'bg-gray-700/50 text-gray-400',
                           )}>
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -836,7 +849,7 @@ useEffect(() => {
                             <span
                               className={cn(
                                 'inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium',
-                                isLight ? 'bg-yellow-100 text-yellow-700' : 'bg-yellow-900/30 text-yellow-400',
+                                isLight ? 'bg-orange-100 text-orange-700' : 'bg-orange-900/30 text-orange-400',
                               )}>
                               Pending Invitation
                             </span>

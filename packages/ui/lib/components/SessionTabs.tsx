@@ -113,25 +113,17 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
 
   // Auto-scroll to the active session when it changes
   useEffect(() => {
-    if (currentSessionId && currentSessionId !== previousCurrentSessionId.current && scrollContainerRef.current) {
+    if (currentSessionId && scrollContainerRef.current) {
       // Find the active session element and scroll to it
       const activeSessionElement = scrollContainerRef.current.querySelector(`[data-session-id="${currentSessionId}"]`);
+      
       if (activeSessionElement) {
         setTimeout(() => {
-          if (scrollContainerRef.current && activeSessionElement) {
-            activeSessionElement.scrollIntoView({
-              behavior: 'smooth',
-              block: 'nearest',
-              inline: 'end'
-            });
-          }
-        }, 100);
-      } else {
-        // Fallback: scroll to the end if we can't find the specific element
-        setTimeout(() => {
-          if (scrollContainerRef.current) {
-            scrollContainerRef.current.scrollLeft = scrollContainerRef.current.scrollWidth;
-          }
+          activeSessionElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest',
+            inline: 'center'
+          });
         }, 100);
       }
     }

@@ -71,7 +71,7 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
   return (
     <>
       <div className={cn("flex flex-col", className)}>
-        <div className="flex items-center justify-between px-2 py-1.5">
+        <div className="flex items-center justify-between px-2 h-[34px]">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
             className="flex items-center gap-1.5 text-xs"

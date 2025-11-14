@@ -6,7 +6,7 @@ import { AnthropicAdapter } from "@copilotkit/runtime";
 import AnthropicBedrock from "@anthropic-ai/bedrock-sdk";
 import { DEBUG } from '../config/index.js';
 import { 
-  getProviderConfig, 
+  getProviderConfigByType, 
   getModelConfig,
   getBedrockModelId 
 } from '../config/loader.js';
@@ -64,7 +64,7 @@ export function createAnthropicClient(providerConfig) {
  */
 export async function createAnthropicAdapter(modelKey = 'claude-3.7-sonnet', context = {}) {
   const modelConfig = await getModelConfig(modelKey, context);
-  const providerConfig = await getProviderConfig('anthropic_bedrock', context);
+  const providerConfig = await getProviderConfigByType('anthropic_bedrock', context);
   const anthropic = createAnthropicClient(providerConfig);
   
   const bedrockModelId = modelConfig 

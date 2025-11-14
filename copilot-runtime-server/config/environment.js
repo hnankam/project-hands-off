@@ -13,7 +13,7 @@ export const NODE_ENV = process.env.NODE_ENV || 'development';
 export const AGENT_BASE_URL = process.env.AGENT_BASE_URL || 'http://localhost:8001';
 
 // Debug flag (default off in production)
-export const DEBUG = (NODE_ENV !== 'production' && process.env.DEBUG !== 'false') || process.env.DEBUG === 'true';
+export const DEBUG = true; //(NODE_ENV !== 'production' && process.env.DEBUG !== 'false') || process.env.DEBUG === 'true';
 
 // CORS configuration
 export const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || '')

@@ -3,7 +3,7 @@
  * Refactored to use separate tab components
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { authClient } from '../lib/auth-client';
 import { useAuth } from '../context/AuthContext';
 import { cn, Button, DropdownMenu, DropdownMenuItem } from '@extension/ui';
@@ -212,6 +212,10 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
   
+  // Refs for tab scrolling
+  const tabContainerRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<Map<AdminTabKey, HTMLButtonElement>>(new Map());
+  
   // Initialize activeTab from localStorage, fallback to initialTab
   const [activeTab, setActiveTab] = useState<AdminTabKey>(() => {
     try {
@@ -239,6 +243,21 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
       localStorage.setItem('adminPageActiveTab', activeTab);
     } catch (error) {
       console.error('[AdminPage] Failed to save tab to localStorage:', error);
+    }
+  }, [activeTab]);
+
+  // Auto-scroll to active tab when it changes
+  useEffect(() => {
+    const activeTabElement = tabRefs.current.get(activeTab);
+    
+    if (activeTabElement && tabContainerRef.current) {
+      setTimeout(() => {
+        activeTabElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+          inline: 'center'
+        });
+      }, 100);
     }
   }, [activeTab]);
 
@@ -391,7 +410,10 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
           'flex items-center gap-2 px-2 py-1 border-t border-b h-[34px]',
           isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700',
         )}>
-        <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0 session-tabs-scroll">
+        <div 
+          ref={tabContainerRef}
+          className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0 session-tabs-scroll"
+        >
           {(['organizations', 'teams', 'users', 'usage', 'providers', 'models', 'tools', 'agents', 'deployments'] as const)
             .filter(tab => {
               // Hide providers, models, tools, and agents tabs for member users
@@ -403,6 +425,13 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
             .map(tab => (
               <button
                 key={tab}
+                ref={(el) => {
+                  if (el) {
+                    tabRefs.current.set(tab, el);
+                  } else {
+                    tabRefs.current.delete(tab);
+                  }
+                }}
                 onClick={() => setActiveTab(tab)}
                 className={cn(
                   'flex-shrink-0 px-3 py-1 text-xs font-medium rounded transition-colors capitalize',

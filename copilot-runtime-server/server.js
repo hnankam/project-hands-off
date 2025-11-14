@@ -70,8 +70,8 @@ app.use('/api/auth/organization', teamMembersBypassMiddleware);
 // Per Better Auth docs: https://www.better-auth.com/docs/integrations/express
 app.use('/api/auth', authRouter);
 
-// Mount invitations routes (also before body parsing for cookie access)
-app.use('/api/invitations', invitationsRouter);
+// Mount invitations routes with JSON body parsing for POST /create endpoint
+app.use('/api/invitations', express.json({ limit: `${BODY_LIMIT_MB}mb` }), invitationsRouter);
 
 // Security headers (after auth to avoid interfering)
 app.use(helmet({

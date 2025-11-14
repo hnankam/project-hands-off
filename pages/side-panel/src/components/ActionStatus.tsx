@@ -35,6 +35,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
   error,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const isWorking = status === 'inProgress' || status === 'executing';
 
   const defaultMessages: Required<ActionStatusMessages> = {
@@ -94,8 +95,9 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
       strokeLinejoin="round"
       style={{
         marginLeft: 6,
-        transition: 'transform 0.2s ease-in-out',
+        transition: 'transform 0.2s ease-in-out, opacity 0.2s ease-in-out',
         transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+        opacity: isHovered ? 1 : 0,
       }}
     >
       <polyline points="9 18 15 12 9 6" />
@@ -120,12 +122,17 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
       {/* Header (always visible) */}
       <div
         style={{
-          padding: 6,
+          paddingTop: 6,
+          paddingBottom: 0,
+          paddingLeft: 12,
+          paddingRight: 12,
           display: 'flex',
           alignItems: 'center',
           cursor: hasExpandableData ? 'pointer' : 'default',
         }}
         onClick={() => hasExpandableData && setIsExpanded(!isExpanded)}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
         {icon}
         <span className={isWorking ? 'copilot-action-sparkle-text' : undefined} style={{ flex: 1 }}>
@@ -136,14 +143,22 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
       </div>
 
       {/* Expanded content */}
-      {isExpanded && hasExpandableData && (
+      <div
+        style={{
+          overflow: 'hidden',
+          transition: 'max-height 0.3s ease-in-out, opacity 0.2s ease-in-out',
+          maxHeight: isExpanded && hasExpandableData ? '500px' : '0',
+          opacity: isExpanded && hasExpandableData ? 1 : 0,
+        }}
+      >
         <div
           style={{
-            paddingLeft: 26,
+            paddingLeft: 20,
             paddingRight: 6,
             paddingBottom: 6,
-            borderLeft: `2px solid ${isLight ? '#e5e7eb' : '#374151'}`,
+            // borderLeft: `2px solid ${isLight ? '#e5e7eb' : '#374151'}`,
             marginLeft: 13,
+            opacity: 0.8,
           }}
         >
           {/* Input Arguments */}
@@ -243,7 +258,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 };

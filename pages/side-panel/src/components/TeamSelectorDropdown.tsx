@@ -42,6 +42,8 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
   const [activeTeamName, setActiveTeamName] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [userRole, setUserRole] = useState<string[]>([]);
+  const [canJoinTeams, setCanJoinTeams] = useState(false);
   const manuallySetNameRef = useRef<string | null>(null);
   const lastOrgIdRef = useRef<string | null>(null);
   const lastUserIdRef = useRef<string | null>(null);
@@ -186,6 +188,36 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
     try {
       isLoadingRef.current = true;
       setIsLoading(true);
+      
+      // First, get user's role in the organization
+      try {
+        const { data: fullOrg } = await (authClient.organization as any).getFullOrganization({
+          organizationId: targetOrgId,
+        });
+        
+        let memberRoles: string[] = [];
+        let canJoin = false;
+        
+        if (fullOrg?.members && user?.id) {
+          const currentMember = fullOrg.members.find((m: any) => m.userId === user.id);
+          
+          if (currentMember) {
+            memberRoles = Array.isArray(currentMember.role) 
+              ? currentMember.role 
+              : [currentMember.role];
+            
+            // Only owners and admins can join teams on their own
+            canJoin = memberRoles.includes('owner') || memberRoles.includes('admin');
+          }
+        }
+        
+        setUserRole(memberRoles);
+        setCanJoinTeams(canJoin);
+      } catch (err) {
+        console.warn('[TeamSelector] Failed to load user role:', err);
+        setUserRole([]);
+        setCanJoinTeams(false);
+      }
       // Fetch teams from the runtime server
       const response = await fetch(`${API_CONFIG.BASE_URL}/api/config/teams`, {
         credentials: 'include',
@@ -504,8 +536,8 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
                 </>
               )}
               
-              {/* Other Teams Section */}
-              {teams.filter(t => !t.isMember).length > 0 && (
+              {/* Other Teams Section - Only shown for admins and owners */}
+              {canJoinTeams && teams.filter(t => !t.isMember).length > 0 && (
                 <>
                   <div className={cn(
                     'px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider border-t mt-1',

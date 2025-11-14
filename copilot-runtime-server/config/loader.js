@@ -19,12 +19,14 @@ function makeCacheKey({ organizationId = null, teamId = null } = {}) {
  */
 export async function loadProvidersConfig(options = {}) {
   const cacheKey = makeCacheKey({ organizationId: null, teamId: null, ...options });
+  
   if (_providersConfigCache.has(cacheKey)) {
     return _providersConfigCache.get(cacheKey);
   }
 
   const { getModelsConfigFromDb } = await import('./db-loaders.js');
   const dbConfig = await getModelsConfigFromDb(options);
+  
   const config = { providers: dbConfig.providers };
   _providersConfigCache.set(cacheKey, config);
   console.log('[Config] Loaded providers configuration from database for context', cacheKey);
@@ -77,6 +79,23 @@ export async function loadAgentsConfig(options = {}) {
 export async function getProviderConfig(providerKey, options = {}) {
   const config = await loadProvidersConfig(options);
   return config.providers[providerKey];
+}
+
+/**
+ * Get provider configuration by type (e.g., 'azure_openai', 'anthropic', 'google')
+ * This searches by provider_type instead of provider_key
+ */
+export async function getProviderConfigByType(providerType, options = {}) {
+  const config = await loadProvidersConfig(options);
+  
+  // Search through providers to find one with matching type
+  for (const [key, provider] of Object.entries(config.providers)) {
+    if (provider.type === providerType) {
+      return provider;
+    }
+  }
+  
+  return null;
 }
 
 /**
