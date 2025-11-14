@@ -7,6 +7,7 @@
 import React from 'react';
 import { debug } from '@extension/shared';
 import { WaitCountdown } from '../../components/WaitCountdown';
+import { ConfirmationCard } from '../../components/ConfirmationCard';
 
 // Timestamp helper for consistent logging
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
@@ -38,6 +39,40 @@ export const createWaitAction = ({ isLight }: UtilityActionDependencies) => ({
     await new Promise(resolve => setTimeout(resolve, s * 1000));
     debug.log(ts(), '[Agent Response] wait:', { status: 'success', waitedSeconds: s });
     return { status: 'success', waitedSeconds: s } as const;
+  },
+});
+
+/**
+ * Creates the human-in-the-loop configuration for confirmAction
+ * 
+ * Allows the agent to ask for explicit user confirmation before proceeding with an action.
+ * This provides the interactive UI for users to confirm or cancel actions.
+ * Must be used with useHumanInTheLoop hook in the component.
+ * 
+ * @returns useHumanInTheLoop configuration object
+ */
+export const createConfirmActionHumanInTheLoop = ({ isLight }: UtilityActionDependencies) => ({
+  name: 'confirmAction',
+  description: 'Ask user to confirm before proceeding with an action',
+  parameters: [
+    {
+      name: 'actionDescription',
+      type: 'string',
+      description: 'Description of the action that needs confirmation',
+      required: true,
+    },
+  ],
+  render: ({ args, status, respond, result }: any) => {
+    const actionDescription = args?.actionDescription ?? 'proceed with this action';
+    
+    return (
+      <ConfirmationCard
+        actionDescription={actionDescription}
+        status={status}
+        respond={respond}
+        result={result}
+      />
+    );
   },
 });
 

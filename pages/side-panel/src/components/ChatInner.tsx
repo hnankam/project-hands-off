@@ -107,7 +107,7 @@ import {
 } from '../actions/copilot/navigationActions';
 import { createTakeScreenshotAction } from '../actions/copilot/screenshotActions';
 import { createGetWeatherAction } from '../actions/copilot/weatherActions';
-import { createWaitAction } from '../actions/copilot/utilityActions';
+import { createWaitAction, createConfirmActionHumanInTheLoop } from '../actions/copilot/utilityActions';
 
 // Types & Libraries
 import { AgentState } from '../lib/types';
@@ -1453,6 +1453,10 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
 
   // --- UTILITY ACTIONS ---
   useFrontendTool(createWaitAction({ isLight }) as any, [isLight]);
+
+  // --- HUMAN IN THE LOOP ---
+  // Enable human confirmation for the confirmAction tool
+  useHumanInTheLoop(createConfirmActionHumanInTheLoop({ isLight }) as any);
 
   // ================================================================================
   // AGENT STATE MANAGEMENT
