@@ -855,6 +855,11 @@ footer div[class*="suggestions"] button {
   scrollbar-color: transparent transparent !important;
 }
 
+/* Reduce max height in sticky mode for more compact display */
+.copilot-chat-container .copilotKitUserMessage.is-sticky > div:not(.copilotKitMessageControls):not(.edit-mode) {
+  max-height: 70px !important;
+}
+
 /* In edit mode, make the edit-mode container a flex column */
 .copilot-chat-container .copilotKitUserMessage .edit-mode {
   display: flex !important;
