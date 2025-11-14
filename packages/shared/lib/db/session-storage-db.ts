@@ -593,31 +593,148 @@ export class SessionStorageDB {
   // ========================================
 
   /**
+   * Manually backfill lastModified field for records that have NONE
+   */
+  private async backfillLastModified(): Promise<void> {
+    const worker = this.getWorker();
+    try {
+      const now = Date.now();
+      log('[SessionStorageDB] Running manual lastModified backfill...');
+      
+      // Split into two queries to avoid syntax issues
+      // First, backfill version
+      const versionResult = await worker.query<any[]>(`
+        UPDATE session_messages 
+        SET version = 1
+        WHERE version = NONE OR version = 0;
+      `);
+      
+      // Then, backfill lastModified
+      const modifiedResult = await worker.query<any[]>(`
+        UPDATE session_messages 
+        SET lastModified = ${now}
+        WHERE lastModified = NONE;
+      `);
+      
+      const versionCount = (versionResult && versionResult[0] && Array.isArray(versionResult[0])) ? versionResult[0].length : 0;
+      const modifiedCount = (modifiedResult && modifiedResult[0] && Array.isArray(modifiedResult[0])) ? modifiedResult[0].length : 0;
+      
+      if (versionCount > 0 || modifiedCount > 0) {
+        log(`[SessionStorageDB] ✅ Backfilled ${versionCount} version records, ${modifiedCount} lastModified records`);
+      } else {
+        log('[SessionStorageDB] ℹ️  No records needed backfill');
+      }
+    } catch (error) {
+      console.error('[SessionStorageDB] ❌ Backfill failed:', error);
+    }
+  }
+
+  /**
    * Get all messages for a session
    */
   async getMessages(sessionId: string): Promise<any[]> {
     const worker = this.getWorker();
+    try {
+      const result = await worker.query<any[]>(
+        'SELECT messages FROM session_messages WHERE sessionId = $id LIMIT 1;',
+        { id: sessionId }
+      );
+      return result[0]?.[0]?.messages || [];
+    } catch (error: any) {
+      // Handle schema mismatch gracefully (e.g., during migration)
+      if (error.message?.includes('lastModified') && error.message?.includes('NONE')) {
+        log('[SessionStorageDB] ⚠️  Schema migration needed - triggering backfill');
+        await this.backfillLastModified();
+        // Retry after backfill
     const result = await worker.query<any[]>(
       'SELECT messages FROM session_messages WHERE sessionId = $id LIMIT 1;',
       { id: sessionId }
     );
     return result[0]?.[0]?.messages || [];
+      }
+      throw error;
+    }
   }
 
   /**
-   * Update messages for a session
+   * Get current version for a session's messages
    */
-  async updateMessages(sessionId: string, messages: any[]): Promise<void> {
+  async getMessagesVersion(sessionId: string): Promise<number> {
     const worker = this.getWorker();
-    
-    // Upsert: update if exists, create if not
-    const existing = await worker.query<any[]>(
+    try {
+      const result = await worker.query<any[]>(
+        'SELECT version FROM session_messages WHERE sessionId = $id LIMIT 1;',
+        { id: sessionId }
+      );
+      return result[0]?.[0]?.version ?? 0;
+    } catch (error: any) {
+      // Handle schema mismatch gracefully
+      if (error.message?.includes('lastModified') && error.message?.includes('NONE')) {
+        log('[SessionStorageDB] ⚠️  Schema migration needed in getMessagesVersion - triggering backfill');
+        await this.backfillLastModified();
+        // Retry after backfill
+        const result = await worker.query<any[]>(
+          'SELECT version FROM session_messages WHERE sessionId = $id LIMIT 1;',
+          { id: sessionId }
+        );
+        return result[0]?.[0]?.version ?? 0;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Update messages for a session with optimistic locking
+   * Returns success status and current version
+   */
+  async updateMessagesWithVersion(
+    sessionId: string, 
+    messages: any[], 
+    expectedVersion?: number
+  ): Promise<{ success: boolean; currentVersion?: number; error?: string }> {
+    const worker = this.getWorker();
+
+    // 1. Read current record with version (with error handling for schema migration)
+    let existing: any[];
+    try {
+      existing = await worker.query<any[]>(
       'SELECT * FROM session_messages WHERE sessionId = $id LIMIT 1;',
       { id: sessionId }
     );
-    const existingRecord = existing[0]?.[0] ?? null;
-    const existingMessages = existingRecord?.messages ?? [];
-    const existingSignature = this.computeMessageSignature(existingMessages);
+    } catch (error: any) {
+      // Handle schema mismatch gracefully
+      if (error.message?.includes('lastModified') && error.message?.includes('NONE')) {
+        log('[SessionStorageDB] ⚠️  Schema migration needed in updateMessagesWithVersion - triggering backfill');
+        await this.backfillLastModified();
+        // Retry after backfill
+        existing = await worker.query<any[]>(
+          'SELECT * FROM session_messages WHERE sessionId = $id LIMIT 1;',
+          { id: sessionId }
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    const existingRecord = existing[0]?.[0];
+    const currentVersion = existingRecord?.version ?? 0;
+
+    // 2. If expectedVersion provided, check for conflict
+    if (expectedVersion !== undefined && currentVersion !== expectedVersion) {
+      log('[SessionStorageDB] ⚠️  Version conflict detected:', {
+        sessionId: sessionId.slice(0, 12) + '...',
+        expected: expectedVersion,
+        current: currentVersion,
+      });
+      
+      return {
+        success: false,
+        currentVersion,
+        error: 'Version conflict: data was modified by another operation',
+      };
+    }
+
+    // 3. Normalize messages (inline for now, will extract later)
     const normalizeMessagesForStorage = (msgs: any[]): any[] => {
       if (!Array.isArray(msgs) || msgs.length === 0) {
         return [];
@@ -701,33 +818,98 @@ export class SessionStorageDB {
 
     const normalizedMessages = normalizeMessagesForStorage(messages);
     const newSignature = this.computeMessageSignature(normalizedMessages);
+    const existingSignature = existingRecord 
+      ? this.computeMessageSignature(existingRecord.messages || [])
+      : '';
 
-    if (existingRecord && existingSignature === newSignature) {
-      log('[SessionStorageDB] ℹ️  Skipping message update - content unchanged for session:', sessionId.slice(0, 12) + '...');
-      return;
+    // 4. Skip if content unchanged
+    if (existingSignature === newSignature) {
+      log('[SessionStorageDB] ℹ️  Skipping update - content unchanged');
+      return { success: true, currentVersion };
     }
 
+    // 5. Perform versioned update
+    const newVersion = currentVersion + 1;
+    const now = Date.now();
+
+    try {
     if (existingRecord) {
-      await worker.query(
-        'UPDATE session_messages SET messages = $messages WHERE sessionId = $id;',
-        { id: sessionId, messages: normalizedMessages }
+        // Update with version check
+        const result = await worker.query<any[]>(
+          `UPDATE session_messages 
+           SET messages = $messages, 
+               version = $newVersion,
+               lastModified = $timestamp
+           WHERE sessionId = $id AND version = $currentVersion
+           RETURN AFTER;`,
+          { 
+            id: sessionId, 
+            messages: normalizedMessages,
+            newVersion,
+            currentVersion,
+            timestamp: now,
+          }
       );
+
+        // Check if update actually happened (would return empty if version mismatched)
+        if (!result[0] || result[0].length === 0) {
+          log('[SessionStorageDB] ⚠️  Update failed - version changed during operation');
+          return {
+            success: false,
+            error: 'Version conflict: data changed during update',
+          };
+        }
     } else {
+        // Create new record
       await worker.query(
-        'CREATE session_messages CONTENT { sessionId: $id, messages: $messages };',
-        { id: sessionId, messages: normalizedMessages }
+          `CREATE session_messages CONTENT { 
+            sessionId: $id, 
+            messages: $messages,
+            version: 1,
+            lastModified: $timestamp
+          };`,
+          { id: sessionId, messages: normalizedMessages, timestamp: now }
       );
     }
 
-    // Update session timestamp to reflect latest activity
+      // 6. Update session timestamp
     await worker.query(
       'UPDATE session_metadata SET timestamp = $timestamp WHERE sessionId = $id OR id = $id;',
-      { id: sessionId, timestamp: Date.now() }
+        { id: sessionId, timestamp: now }
     );
 
     this.notify({ type: 'messagesUpdated', sessionId });
-    log(`[SessionStorageDB] ✅ Updated ${normalizedMessages.length} messages for session:`, sessionId);
+      log(`[SessionStorageDB] ✅ Updated ${normalizedMessages.length} messages (v${newVersion})`);
+      
+      return { success: true, currentVersion: newVersion };
+      
+    } catch (error) {
+      log('[SessionStorageDB] ❌ Update failed:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : String(error) 
+      };
+    }
   }
+
+  /**
+   * Update messages for a session (backward compatible wrapper)
+   * Uses optimistic locking with automatic retry
+   */
+  async updateMessages(sessionId: string, messages: any[]): Promise<void> {
+    // Try versioned update
+    const result = await this.updateMessagesWithVersion(sessionId, messages);
+    
+    if (!result.success) {
+      // Retry once on conflict
+      log('[SessionStorageDB] Retrying after version conflict...');
+      const retryResult = await this.updateMessagesWithVersion(sessionId, messages);
+      if (!retryResult.success) {
+        throw new Error(retryResult.error || 'Failed to update messages after retry');
+  }
+    }
+  }
+
 
   // ========================================
   // Usage Stats Operations

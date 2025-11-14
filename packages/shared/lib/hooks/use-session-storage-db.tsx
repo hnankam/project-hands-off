@@ -295,6 +295,25 @@ export const sessionStorageDBWrapper = {
   },
 
   /**
+   * Get current version for a session's messages
+   */
+  async getMessagesVersion(sessionId: string): Promise<number> {
+    return await sessionStorageDB.getMessagesVersion(sessionId);
+  },
+
+  /**
+   * Update messages with optimistic locking
+   * Returns success status and current version
+   */
+  async updateMessagesWithVersion(
+    sessionId: string,
+    messages: any[],
+    expectedVersion?: number
+  ): Promise<{ success: boolean; currentVersion?: number; error?: string }> {
+    return await sessionStorageDB.updateMessagesWithVersion(sessionId, messages, expectedVersion);
+  },
+
+  /**
    * Update usage stats
    */
   async updateUsageStats(

@@ -20,7 +20,7 @@ interface ChatSessionProps {
 
 export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicApiKey, isActive = true }) => {
   const { sessions } = useSessionStorageDB();
-  const { showSuggestions, showThoughtBlocks } = useStorage(preferencesStorage);
+  const { showSuggestions, showThoughtBlocks, agentModeChat } = useStorage(preferencesStorage);
   const [currentMessages, setCurrentMessages] = useState<any[]>([]);
   const [headlessMessagesCount, setHeadlessMessagesCount] = useState<number>(0); // Track messages from useCopilotChatHeadless_c
   const [isLoading, setIsLoading] = useState(true);
@@ -154,7 +154,10 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
   // Save agent step state to storage whenever it changes
   useEffect(() => {
     if (currentAgentStepState) {
-      sessionStorageDBWrapper.updateAgentStepState(sessionId, currentAgentStepState);
+      sessionStorageDBWrapper.updateAgentStepState(sessionId, {
+        ...currentAgentStepState,
+        sessionId
+      });
     }
   }, [sessionId, currentAgentStepState]);
   
@@ -183,8 +186,14 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
     error: undefined
   });
   
-  // Content cache to prevent unnecessary refetches
-  const contentCacheRef = useRef<Map<string, { content: any; timestamp: number; tabId: number }>>(new Map());
+  // Content cache to prevent unnecessary refetches (scoped by session + tab)
+  const contentCacheRef = useRef<Map<string, { content: any; timestamp: number; tabId: number; sessionId: string }>>(new Map());
+  
+  // Clear cache when session changes to prevent cross-session contamination
+  useEffect(() => {
+    contentCacheRef.current.clear();
+    debug.log('[ChatSession] Cache cleared for session switch');
+  }, [sessionId]);
   
   // Track last content timestamp received via direct response (to avoid duplicate processing from broadcast)
   const lastDirectResponseTimestampRef = useRef<number | null>(null);
@@ -218,7 +227,7 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
         }
 
         // Always invalidate cache for this tab so the next fetch is fresh
-        const cacheKey = `${message.tabId}`;
+        const cacheKey = `${sessionId}_${message.tabId}`;
         contentCacheRef.current.delete(cacheKey);
 
         // Only refresh immediately if assistant is streaming (not just panel active)
@@ -272,11 +281,12 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
     
     // Check cache first (unless forced)
     if (!force) {
-      const cacheKey = `${tabId}`;
+      const cacheKey = `${sessionId}_${tabId}`;
       const cached = contentCacheRef.current.get(cacheKey);
       
-      if (cached && isContentFresh(cached.timestamp)) {
-        debug.log('[ChatSession] Using fresh cached content');
+      // Verify session ID matches (extra safety check)
+      if (cached && cached.sessionId === sessionId && isContentFresh(cached.timestamp)) {
+        debug.log('[ChatSession] Using fresh cached content', { sessionId: sessionId.slice(0, 8), tabId });
         setContentState(prev => ({
           current: cached.content,
           previous: prev.current,
@@ -285,6 +295,12 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
           error: undefined
         }));
         return;
+      } else if (cached && cached.sessionId !== sessionId) {
+        debug.log('[ChatSession] Cache invalid - session mismatch', {
+          cachedSession: cached.sessionId.slice(0, 8),
+          currentSession: sessionId.slice(0, 8)
+        });
+        contentCacheRef.current.delete(cacheKey);
       }
       
       // Skip if already fetching (only when not forced)
@@ -332,11 +348,12 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
         // Track this timestamp to avoid duplicate processing from broadcast
         lastDirectResponseTimestampRef.current = timestamp;
         
-        // Update cache
-        contentCacheRef.current.set(`${tabId}`, {
+        // Update cache with session ID
+        contentCacheRef.current.set(`${sessionId}_${tabId}`, {
           content: response.content,
           timestamp,
-          tabId: tabId
+          tabId: tabId,
+          sessionId: sessionId
         });
         
         // Clean old cache entries (keep only last 5)
@@ -605,9 +622,8 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
             currentTabTitleRef.current = response.title || '';
             setTabTitleVersion(prev => prev + 1);
             
-            setTimeout(() => {
+            // Immediate fetch for faster loading
               fetchFreshPageContent(true, response.tabId); // Force refresh with new tab ID
-            }, 100);
           }
         });
         
@@ -626,36 +642,20 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
           debug.log('[ChatSession] Cleared stale indicator, refreshing content');
         }
         
-        // CACHE INVALIDATION: Clear cache when session becomes active (tab switched)
-        // This ensures agent always has fresh content when switching sessions
-        if (currentTabId) {
-          const cacheKey = `${currentTabId}`;
-          contentCacheRef.current.delete(cacheKey);
-          debug.log('[ChatSession] Cache invalidated - session became active (tab switched)');
-        }
-        
-        setTimeout(() => {
-          fetchFreshPageContent(true, currentTabId); // Force refresh when session becomes active
-        }, 100);
+        // Immediate fetch when session becomes active - cache is already session-scoped so no need to clear
+        // The session-scoped cache key ensures we don't get content from other sessions
+        fetchFreshPageContent(false, currentTabId); // Use cache if available for instant display
         
         previousSessionId.current = sessionId;
         previousIsActive.current = isActive;
         return;
       }
       
-      // For session switches, check cache first to avoid flickering
+      // For session switches, use cache for instant display (cache is session-scoped)
       if (sessionChanged) {
-        // CACHE INVALIDATION: Clear cache when switching sessions
-        // This ensures agent always has fresh content when switching between sessions
-        const cacheKey = `${currentTabId}`;
-        contentCacheRef.current.delete(cacheKey);
-        debug.log('[ChatSession] Cache invalidated - session switched');
-        
-        // Force refresh immediately to get fresh content
-        debug.log('[ChatSession] Session switched, forcing refresh');
-          setTimeout(() => {
-            fetchFreshPageContent(true, currentTabId); // Force refresh
-          }, 100);
+        debug.log('[ChatSession] Session switched, checking cache');
+        // Use cached content if available for instant display, refresh in background if stale
+        fetchFreshPageContent(false, currentTabId);
       }
     }
     
@@ -789,11 +789,12 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
           const timestamp = Date.now();
           
           // Update cache
-          const cacheKey = `${message.tabId}`;
+          const cacheKey = `${sessionId}_${message.tabId}`;
           contentCacheRef.current.set(cacheKey, {
             content: message.data,
             timestamp,
-            tabId: message.tabId
+            tabId: message.tabId,
+            sessionId: sessionId
           });
           
           // Only update state if we don't already have this exact content
@@ -841,11 +842,11 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
       // Update tab ID immediately to avoid race conditions
       setCurrentTabId(activeInfo.tabId);
       
-      // Check cache first for immediate content display
-      const cacheKey = `${activeInfo.tabId}`;
+      // Check cache first for immediate content display (using session-scoped key)
+      const cacheKey = `${sessionId}_${activeInfo.tabId}`;
       const cached = contentCacheRef.current.get(cacheKey);
       
-      if (cached && isContentFresh(cached.timestamp)) {
+      if (cached && cached.sessionId === sessionId && isContentFresh(cached.timestamp)) {
         // Use cached content immediately to prevent flickering
         debug.log('[ChatSession] Using cached content for tab switch');
         setContentState(prev => ({
@@ -856,13 +857,13 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
           error: undefined
         }));
       } else {
-        // Content is stale or missing, refresh in background
+        // Content is stale or missing, refresh immediately (no delay)
         if (tabChangeTimeoutRef.current) {
           clearTimeout(tabChangeTimeoutRef.current);
+          tabChangeTimeoutRef.current = null;
         }
-        tabChangeTimeoutRef.current = setTimeout(() => {
-          fetchFreshPageContent(false, activeInfo.tabId); // Pass the new tab ID explicitly
-        }, 200); // Shorter delay for better UX
+        // Immediate fetch for faster tab switching
+        fetchFreshPageContent(false, activeInfo.tabId);
       }
     };
 
@@ -871,8 +872,8 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
       if (tabId === currentTabId && changeInfo.url) {
         debug.log('[ChatSession] URL changed for current tab, forcing auto refresh');
         
-        // Clear cache for this tab since URL changed
-        const cacheKey = `${tabId}`;
+        // Clear cache for this tab since URL changed (session-scoped)
+        const cacheKey = `${sessionId}_${tabId}`;
         contentCacheRef.current.delete(cacheKey);
         
         // Update tab title immediately if available
@@ -882,13 +883,13 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
           setTabTitleVersion(prev => prev + 1);
         }
         
-        // Debounce the refresh to avoid excessive calls
+        // Debounce the refresh to avoid excessive calls during rapid URL changes
         if (tabChangeTimeoutRef.current) {
           clearTimeout(tabChangeTimeoutRef.current);
         }
         tabChangeTimeoutRef.current = setTimeout(() => {
           fetchFreshPageContent(true, tabId); // FORCE refresh for URL changes
-        }, 500); // Moderate debounce for URL changes
+        }, 300); // Reduced from 500ms for faster response
       }
     };
 
@@ -989,6 +990,7 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
             setIsAgentLoading={setIsAgentLoading}
             showSuggestions={showSuggestions}
             showThoughtBlocks={showThoughtBlocks}
+            agentModeChat={agentModeChat}
             initialAgentStepState={initialAgentStepState}
             onAgentStepStateChange={setCurrentAgentStepState}
           />

@@ -1250,10 +1250,71 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     }
   }, [messages, isLoading, saveMessagesRef, saveMessagesToStorage, sessionId]);
   
-  // Clear sanitization cache when session changes to prevent cross-session contamination
+  // Comprehensive ref cleanup on session change to prevent cross-session contamination
   useEffect(() => {
+    debug.log('[ChatInner] Session changed, cleaning up refs and intervals');
+    
+    // Clear sanitization cache
     cachedSanitizedRef.current = null;
     wasStreamingRef.current = false;
+    
+    // Clear scroll spacer and its intervals
+    if (scrollSpacerRef.current) {
+      // Clear sticky check interval
+      const stickyCheckInterval = (scrollSpacerRef.current as any).__stickyCheckInterval;
+      if (stickyCheckInterval) {
+        clearInterval(stickyCheckInterval);
+        delete (scrollSpacerRef.current as any).__stickyCheckInterval;
+      }
+      
+      // Clear content wait interval
+      const contentInterval = (scrollSpacerRef.current as any).__contentInterval;
+      if (contentInterval) {
+        clearInterval(contentInterval);
+        delete (scrollSpacerRef.current as any).__contentInterval;
+      }
+      
+      // Remove spacer from DOM if it exists
+      if (scrollSpacerRef.current.parentElement) {
+        scrollSpacerRef.current.remove();
+      }
+      scrollSpacerRef.current = null;
+    }
+    
+    // Clear element position cache
+    elementCacheRef.current = null;
+    
+    // Clear sticky state
+    currentStickyIdRef.current = null;
+    
+    // Reset scroll tracking refs
+    lastScrollTopRef.current = 0;
+    scrollDirectionRef.current = 'none';
+    scrollVelocityRef.current = 0;
+    lastScrollTimeRef.current = Date.now();
+    lastStickyChangeTimeRef.current = 0;
+    
+    // Clear message tracking refs
+    lastUserMessageIdRef.current = null;
+    latestAssistantMessageIdRef.current = null;
+    
+    // Clear page data
+    pageDataRef.current = { embeddings: null, pageContent: null };
+    
+    // Reset plan deletion tracking
+    planDeletionInfoRef.current = { deleted: false, lastAssistantId: null };
+    
+    // Reset scroll flags
+    isAutoScrollingRef.current = false;
+    isScrollingUserMessageToTopRef.current = false;
+    
+    // Reset initialization flags
+    hasInitializedStickyOnOpenRef.current = false;
+    hasInitializedRef.current = false;
+    previousUserMessageCountRef.current = 0;
+    previousMessageCountRef.current = 0;
+    
+    debug.log('[ChatInner] ✅ Ref cleanup complete');
   }, [sessionId]);
 
   // Totals for DB-backed counts (HTML, form, clickable element chunks)

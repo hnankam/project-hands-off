@@ -86,13 +86,13 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
 
   // Track render count
   renderCountRef.current += 1;
-  console.log(`[SessionsPage] 🔄 RENDER #${renderCountRef.current}`, {
-    sessionsCount: sessions.length,
-    currentSessionId: currentSessionId?.slice(0, 8),
-    sessionsLoading,
-    userId: user?.id?.slice(0, 8),
-    storageUserId: sessionStorageDBWrapper.getCurrentUserId()?.slice(0, 8),
-  });
+  // console.log(`[SessionsPage] 🔄 RENDER #${renderCountRef.current}`, {
+  //   sessionsCount: sessions.length,
+  //   currentSessionId: currentSessionId?.slice(0, 8),
+  //   sessionsLoading,
+  //   userId: user?.id?.slice(0, 8),
+  //   storageUserId: sessionStorageDBWrapper.getCurrentUserId()?.slice(0, 8),
+  // });
 
   // Track when the storage userId changes; require at least one sessions fetch after change
   useEffect(() => {
@@ -107,10 +107,10 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       return;
     }
     if (lastStorageUserIdRef.current !== storageUserId) {
-      console.log('[SessionsPage] 🔄 USER ID CHANGED - resetting session state', {
-        from: lastStorageUserIdRef.current?.slice(0, 8),
-        to: storageUserId?.slice(0, 8),
-      });
+      // console.log('[SessionsPage] 🔄 USER ID CHANGED - resetting session state', {
+      //   from: lastStorageUserIdRef.current?.slice(0, 8),
+      //   to: storageUserId?.slice(0, 8),
+      // });
       lastStorageUserIdRef.current = storageUserId;
       hasSeenSessionsForCurrentUserRef.current = false;
       // Also reset the initial-session attempt gate when user changes
@@ -316,7 +316,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       return;
     }
 
-    console.log('[SessionsPage] 🔄 Session changed, starting skeleton display for:', currentSessionId.slice(0, 8));
+    // console.log('[SessionsPage] 🔄 Session changed, starting skeleton display for:', currentSessionId.slice(0, 8));
     // Record when skeleton starts showing
     skeletonStartTimeRef.current = Date.now();
     
@@ -1221,7 +1221,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       {/* Session List - Fixed at bottom */}
       <div
         className={cn(
-          'flex-shrink-0 border-t py-1',
+          'flex-shrink-0 border-t px-1',
           isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
         )}>
         <SessionList isLight={isLight} />

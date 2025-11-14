@@ -218,11 +218,30 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
   // Handle rerun (regenerate assistant response for this user message)
   const handleRerun = () => {
     try {
-      if (!messages || !message) return;
+      if (!messages || !message) {
+        console.warn('[CustomUserMessage] Cannot rerun: messages or message is null');
+        return;
+      }
       
       // Validate that the current message has a valid role
-      if (!(message as any)?.role || typeof (message as any).role !== 'string') {
-        console.error('[CustomUserMessage] Cannot rerun: current message has invalid role:', (message as any)?.role);
+      const currentRole = (message as any)?.role;
+      if (!currentRole || typeof currentRole !== 'string') {
+        console.error('[CustomUserMessage] Cannot rerun: current message has invalid role:', currentRole);
+        return;
+      }
+      
+      // CRITICAL: Validate message exists in the messages array with a role
+      // This prevents CopilotKit's "Regenerate cannot be performed on undefined role" error
+      const messageInArray = messages.find(m => m.id === message.id);
+      if (!messageInArray) {
+        console.error('[CustomUserMessage] Cannot rerun: message not found in messages array');
+        return;
+      }
+      
+      const messageRole = (messageInArray as any)?.role;
+      if (!messageRole || typeof messageRole !== 'string') {
+        console.error('[CustomUserMessage] Cannot rerun: message in array has no role field');
+        console.error('[CustomUserMessage] This usually means messages are still loading - please wait');
         return;
       }
       
@@ -233,12 +252,21 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
       });
       
       if (following?.id) {
+        // Double-check the following message is in the array with a valid role
+        const followingInArray = messages.find(m => m.id === following.id);
+        if (!followingInArray || !(followingInArray as any)?.role) {
+          console.error('[CustomUserMessage] Following message not properly loaded, cannot reload');
+          return;
+        }
+        
+        console.log('[CustomUserMessage] Reloading from assistant message:', following.id);
         reloadMessages(following.id);
         return;
       }
       
       // Fallback: rerun starting from this user message
-      if ((message as any)?.id) {
+      if ((message as any)?.id && messageInArray) {
+        console.log('[CustomUserMessage] No assistant message found, reloading from user message:', message.id);
         reloadMessages((message as any).id);
       }
     } catch (e) {

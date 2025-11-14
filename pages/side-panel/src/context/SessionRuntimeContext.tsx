@@ -11,7 +11,7 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { CopilotKit, useCopilotChatHeadless_c } from '@copilotkit/react-core';
-import { sessionStorageDBWrapper } from '@extension/shared';
+import { sessionStorageDBWrapper, persistenceLock } from '@extension/shared';
 
 type RuntimeConfig = {
   sessionId: string;
@@ -72,15 +72,15 @@ export const SessionRuntimeProvider: React.FC<PropsWithChildren> = ({ children }
   }, [runtimes]);
 
   const ensureRuntime = useCallback((config: RuntimeConfig) => {
-    console.log(`[SessionRuntimeProvider] ensureRuntime called for ${config.sessionId.slice(0, 8)}`);
+    // console.log(`[SessionRuntimeProvider] ensureRuntime called for ${config.sessionId.slice(0, 8)}`);
     setRuntimes(prev => {
       const existing = prev[config.sessionId];
       if (existing && shallowEqualRuntimeConfig(existing.config, config)) {
-        console.log(`[SessionRuntimeProvider] Runtime config unchanged for ${config.sessionId.slice(0, 8)}`);
+        // console.log(`[SessionRuntimeProvider] Runtime config unchanged for ${config.sessionId.slice(0, 8)}`);
         return prev;
       }
 
-      console.log(`[SessionRuntimeProvider] Creating/updating runtime for ${config.sessionId.slice(0, 8)}`);
+      // console.log(`[SessionRuntimeProvider] Creating/updating runtime for ${config.sessionId.slice(0, 8)}`);
       return {
         ...prev,
         [config.sessionId]: {
@@ -247,6 +247,25 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
   const previousMessagesCountRef = useRef<number>(0);
   const lastEmptyPersistAttemptRef = useRef<number>(0);
   const mountedAtRef = useRef<number>(Date.now());
+  
+  // Optimistic locking: Track current version
+  const currentVersionRef = useRef<number>(0);
+  const persistInProgressRef = useRef<boolean>(false);
+  
+  // Track last known storage state to detect external clears
+  const lastKnownStorageCountRef = useRef<number | null>(null);
+
+  // Load initial version on mount
+  useEffect(() => {
+    sessionStorageDBWrapper.getMessagesVersion(sessionId)
+      .then(version => {
+        currentVersionRef.current = version;
+        console.log(`[RuntimeStateBridge:${sessionId.slice(0, 8)}] Initial version:`, version);
+      })
+      .catch(err => {
+        console.warn('[RuntimeStateBridge] Failed to load version:', err);
+      });
+  }, [sessionId]);
 
   // Track renders
   renderCountRef.current += 1;
@@ -308,6 +327,24 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
           return;
         }
 
+        // Check if loading is in progress (persistence lock)
+        if (persistenceLock.isLoading(sessionId)) {
+          console.log(
+            `[RuntimeStateBridge:${sessionId.slice(0, 8)}] Loading in progress, skipping auto-persist`,
+          );
+          return;
+        }
+
+        // Prevent concurrent writes
+        if (persistInProgressRef.current) {
+          console.log(
+            `[RuntimeStateBridge:${sessionId.slice(0, 8)}] Persist already in progress, skipping`,
+          );
+          return;
+        }
+
+        persistInProgressRef.current = true;
+
         const sanitizedMessages = sanitizeMessages(messages);
         const hasMessages = sanitizedMessages.length > 0;
         const shouldPersistEmpty = !isLoading && sanitizedMessages.length === 0;
@@ -335,26 +372,81 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
           lastEmptyPersistAttemptRef.current = now;
         }
 
-        // If we're still within the first 1500ms of mount and messages are empty,
-        // check storage; if storage already has messages, do not overwrite them with empty.
-        if (!hasMessages && Date.now() - mountedAtRef.current < 1500) {
-          try {
-            const stored = await sessionStorageDBWrapper.getAllMessagesAsync(sessionId);
-            if (Array.isArray(stored) && stored.length > 0) {
-              console.log(
-                `[RuntimeStateBridge:${sessionId.slice(0, 8)}] Preventing early empty overwrite; storage has ${stored.length} messages`,
-              );
+        // CRITICAL: Always check storage before persisting empty messages
+        // This prevents data loss from timing bugs, failed hydration, or race conditions
+        // Empty messages should only be persisted if storage is also empty OR via explicit user action
+        if (!hasMessages) {
+          // Check if this is an intentional reset (user clicked "Reset Session" or "Clear Messages")
+          const isIntentionalClear = persistenceLock.isManualReset(sessionId);
+          
+          if (isIntentionalClear) {
+            console.log(
+              `[RuntimeStateBridge:${sessionId.slice(0, 8)}] ✅ Intentional clear detected, allowing empty persist`,
+            );
+            // Allow the empty write - this is a user-initiated action
+            lastKnownStorageCountRef.current = 0;
+          } else {
+            // Not an intentional clear - check storage to prevent accidental data loss
+            try {
+              const stored = await sessionStorageDBWrapper.getAllMessagesAsync(sessionId);
+              const storedCount = Array.isArray(stored) ? stored.length : 0;
+              
+              if (storedCount > 0) {
+                console.warn(
+                  `[RuntimeStateBridge:${sessionId.slice(0, 8)}] ⚠️ PREVENTED DATA LOSS: Refusing to overwrite ${storedCount} stored messages with empty state!`,
+                );
+                console.warn(
+                  `[RuntimeStateBridge:${sessionId.slice(0, 8)}] This suggests a hydration or timing issue. Storage will be preserved.`,
+                );
+                // Track storage count for future comparisons
+                lastKnownStorageCountRef.current = storedCount;
+                // Don't update version - keep expecting the current version so we stay in sync
+                return;
+              }
+              
+              // Storage is empty - allow the write
+              lastKnownStorageCountRef.current = 0;
+            } catch (e) {
+              console.error('[RuntimeStateBridge] Failed to check storage before empty write - ABORTING for safety:', e);
+              // On error, refuse to persist empty to avoid potential data loss
               return;
             }
-          } catch (e) {
-            console.warn('[RuntimeStateBridge] Failed to read stored messages during early-empty check', e);
           }
+        } else {
+          // Track non-empty message count
+          lastKnownStorageCountRef.current = sanitizedMessages.length;
         }
 
-        await sessionStorageDBWrapper.updateAllMessages(sessionId, sanitizedMessages);
+        // Use versioned update
+        const result = await sessionStorageDBWrapper.updateMessagesWithVersion(
+          sessionId,
+          sanitizedMessages,
+          currentVersionRef.current  // Pass expected version
+        );
+
+        if (result.success) {
+          currentVersionRef.current = result.currentVersion!;
         lastPersistedSignatureRef.current = signature;
+          previousMessagesCountRef.current = sanitizedMessages.length;
+          console.log(
+            `[RuntimeStateBridge:${sessionId.slice(0, 8)}] ✅ Persisted ${sanitizedMessages.length} messages (v${result.currentVersion})`,
+          );
+        } else {
+          console.warn('[RuntimeStateBridge] Version conflict detected:', result.error);
+          
+          // On conflict, reload current version and skip this update
+          try {
+            const currentVersion = await sessionStorageDBWrapper.getMessagesVersion(sessionId);
+            currentVersionRef.current = currentVersion;
+            console.log('[RuntimeStateBridge] Version updated, will retry on next change');
+          } catch (err) {
+            console.warn('[RuntimeStateBridge] Failed to reload version:', err);
+          }
+        }
       } catch (error) {
         console.error('[SessionRuntime] Failed to persist messages for session', sessionId, error);
+      } finally {
+        persistInProgressRef.current = false;
       }
     }, delay);
 

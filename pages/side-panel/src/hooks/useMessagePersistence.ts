@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { debug as baseDebug, sessionStorageDBWrapper } from '@extension/shared';
+import { debug as baseDebug, sessionStorageDBWrapper, persistenceLock } from '@extension/shared';
 import type { CopilotMessage } from '@extension/storage';
 import { TIMING_CONSTANTS } from '../constants';
 
@@ -84,6 +84,10 @@ export const useMessagePersistence = ({
     const wrappedReset = () => {
       debug.log('[useMessagePersistence] Manual reset initiated - disabling stabilization guard');
       manualResetInProgressRef.current = true;
+      
+      // Signal to persistence lock that manual reset is in progress
+      // This allows RuntimeStateBridge to permit the empty write
+      persistenceLock.setManualReset(sessionId, true);
       
       // Call the original reset
       originalReset();
@@ -466,6 +470,9 @@ export const useMessagePersistence = ({
       return;
     }
 
+    // Acquire loading lock to prevent RuntimeStateBridge from persisting during load
+    const unlock = await persistenceLock.acquireLoadingLock(sessionId);
+
     // Reset restore attempts counter on manual load to allow fresh attempts
     restoreAttemptsRef.current = 0;
     debug.log('[useMessagePersistence] Reset restore attempts counter for fresh load');
@@ -604,6 +611,8 @@ export const useMessagePersistence = ({
       setHydrationCompleted(true); // Complete even on error to unblock UI
       debug.log(`🎯 [useMessagePersistence] Hydration COMPLETED for session ${sessionId} (with error, unblocking UI)`);
     } finally {
+      // Always release the loading lock
+      unlock();
       clearHydrationFallback();
       setIsHydrating(false);
     }

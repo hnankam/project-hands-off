@@ -43,7 +43,10 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
       DEFINE TABLE IF NOT EXISTS session_messages SCHEMALESS;
       DEFINE FIELD IF NOT EXISTS sessionId ON session_messages TYPE string;
       DEFINE FIELD IF NOT EXISTS messages ON session_messages TYPE array;
+      DEFINE FIELD IF NOT EXISTS version ON session_messages TYPE number DEFAULT 0;
+      DEFINE FIELD IF NOT EXISTS lastModified ON session_messages TYPE option<number>;
       DEFINE INDEX IF NOT EXISTS idx_messages_session ON session_messages FIELDS sessionId;
+      DEFINE INDEX IF NOT EXISTS idx_messages_version ON session_messages FIELDS version;
 
       -- Session Usage Stats Table (separate from metadata for performance)
       DEFINE TABLE IF NOT EXISTS session_usage SCHEMALESS;
@@ -109,6 +112,38 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
     } else {
       log('[SessionSchema] ℹ️  No sessions without userId found');
     }
+
+    // Backfill version and lastModified for existing message records
+    // Split into two queries to avoid syntax issues
+    try {
+      const now = Date.now();
+      
+      // First, backfill version
+      const versionResult = await worker.query<any[]>(`
+        UPDATE session_messages 
+        SET version = 1
+        WHERE version = NONE OR version = 0;
+      `);
+      
+      // Then, backfill lastModified
+      const modifiedResult = await worker.query<any[]>(`
+        UPDATE session_messages 
+        SET lastModified = ${now}
+        WHERE lastModified = NONE;
+      `);
+      
+      const versionCount = (versionResult && versionResult[0] && Array.isArray(versionResult[0])) ? versionResult[0].length : 0;
+      const modifiedCount = (modifiedResult && modifiedResult[0] && Array.isArray(modifiedResult[0])) ? modifiedResult[0].length : 0;
+      
+      if (versionCount > 0 || modifiedCount > 0) {
+        log(`[SessionSchema] ✅ Backfilled ${versionCount} version records, ${modifiedCount} lastModified records`);
+      } else {
+        log('[SessionSchema] ℹ️  No message records needed backfill');
+      }
+    } catch (backfillError) {
+      console.error('[SessionSchema] ⚠️  Backfill failed (non-critical):', backfillError);
+      // Non-critical error - the optional field allows NONE values
+    }
  
     log('[SessionSchema] ✅ Session storage schema initialized successfully');
   } catch (error) {
@@ -136,6 +171,8 @@ export interface SessionMetadata {
 export interface SessionMessages {
   sessionId: string;
   messages: any[]; // CopilotMessage[]
+  version?: number; // Optimistic locking version
+  lastModified?: number; // Last modification timestamp
 }
 
 export interface SessionUsageLastRecord {

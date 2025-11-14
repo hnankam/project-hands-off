@@ -68,10 +68,10 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   // ================================================================================
   const renderCountRef = useRef(0);
   renderCountRef.current += 1;
-  console.log(`[ChatSessionContainer] 🔄 RENDER #${renderCountRef.current} for session ${sessionId.slice(0, 8)}`, {
-    isActive,
-    timestamp: new Date().toISOString(),
-  });
+  // console.log(`[ChatSessionContainer] 🔄 RENDER #${renderCountRef.current} for session ${sessionId.slice(0, 8)}`, {
+  //   isActive,
+  //   timestamp: new Date().toISOString(),
+  // });
 
   const { sessions } = useSessionStorageDB();
   const { showAgentCursor, showSuggestions, showThoughtBlocks, agentModeChat } = useStorage(preferencesStorage);
@@ -133,6 +133,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   // Track the last loaded session to prevent duplicate loads
   const lastLoadedSessionRef = useRef<string | null>(null);
   const isLoadingRef = useRef<boolean>(false);
+  // Track if we're in the middle of loading from DB (shared with useAgentSwitching)
+  const isLoadingFromDBRef = useRef<boolean>(false);
   
   // Log only when session actually changes (not on every render)
   useEffect(() => {
@@ -149,6 +151,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     let isCancelled = false;
     let enableSavesTimeoutId: NodeJS.Timeout | null = null;
     isLoadingRef.current = true;
+    isLoadingFromDBRef.current = true; // Mark that we're loading from DB
 
     const loadSessionMetadata = async () => {
       console.log(`[AGENT_MODEL_SYNC] 📥 Loading metadata from DB for session ${sessionId}...`);
@@ -157,11 +160,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         if (!metadata) {
           console.warn(`[AGENT_MODEL_SYNC] ⚠️ No metadata found in DB for session ${sessionId}`);
           isLoadingRef.current = false;
+          isLoadingFromDBRef.current = false;
           return;
         }
         if (isCancelled) {
           console.log(`[AGENT_MODEL_SYNC] ❌ Load cancelled for session ${sessionId}`);
           isLoadingRef.current = false;
+          isLoadingFromDBRef.current = false;
           return;
         }
 
@@ -197,12 +202,14 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         enableSavesTimeoutId = setTimeout(() => {
           if (!isCancelled) {
             isLoadingRef.current = false;
+            isLoadingFromDBRef.current = false; // Clear loading flag
             console.log(`[AGENT_MODEL_SYNC] ✅ Load complete for session ${sessionId}, saves now enabled`);
           }
         }, 200);
       } catch (error) {
         console.error(`[AGENT_MODEL_SYNC] ❌ Failed to load session metadata from DB for session ${sessionId}:`, error);
         isLoadingRef.current = false;
+        isLoadingFromDBRef.current = false; // Clear loading flag on error
       }
     };
 
@@ -216,6 +223,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         clearTimeout(enableSavesTimeoutId);
       }
       isLoadingRef.current = false;
+      isLoadingFromDBRef.current = false; // Clear loading flag on cleanup
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, isActive]);
@@ -660,7 +668,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     resetCumulative,
     setCumulative,
     setLastUsage,
-  } = useUsageStream(sessionId, isActive, 'ws://localhost:8001', initialUsage, initialLastUsage);
+  } = useUsageStream(sessionId, true, 'ws://localhost:8001', initialUsage, initialLastUsage); // Always keep WebSocket open for usage tracking
 
   const [currentAgentStepState, setCurrentAgentStepState] = useState<AgentStepState>({
     sessionId,
@@ -943,6 +951,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                   sessionId,
       handleSaveMessages,
       handleLoadMessages,
+      isLoadingFromDBRef, // Pass ref to check if change is from DB load
     });
 
     // Auto-save hook - replaces auto-save effects
