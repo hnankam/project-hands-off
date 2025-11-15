@@ -1,5 +1,5 @@
 import type { FC } from 'react';
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 
@@ -19,7 +19,27 @@ export interface ImageGalleryCardProps {
 const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrls = [], prompt }) => {
   const { isLight } = useStorage(exampleThemeStorage);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isExpanded, setIsExpanded] = useState(true);
+  
+  // Cards default to closed, but newly created ones (being generated) are kept open
+  const [isExpanded, setIsExpanded] = useState(false);
+  const userClosedRef = useRef(false);
+  
+  // Keep newly created cards open unless user manually closes them
+  useEffect(() => {
+    const isBeingCreated = status === 'inProgress' || status === 'executing';
+    if (isBeingCreated && !userClosedRef.current) {
+      setIsExpanded(true);
+    }
+  }, [status]);
+  
+  const handleToggle = () => {
+    const newState = !isExpanded;
+    setIsExpanded(newState);
+    // Track if user is closing a card that's being created
+    if (!newState && (status === 'inProgress' || status === 'executing')) {
+      userClosedRef.current = true;
+    }
+  };
   
   const displayUrls = imageUrls.length > 0 ? imageUrls : [];
 
@@ -213,7 +233,7 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
       {/* Header - Accordion Toggle */}
       <button
         type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={handleToggle}
         style={{
           width: '100%',
           padding: '6px',
@@ -403,10 +423,7 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
           )}
 
           {/* Image Display */}
-          <a
-            href={currentUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <div
             className="transition-all"
             style={{
               flex: 1,
@@ -416,7 +433,6 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
               overflow: 'hidden',
               backgroundColor: "transparent",
               display: 'block',
-              cursor: 'pointer',
             }}
             onMouseEnter={(e) => {
               const overlay = e.currentTarget.querySelector('.hover-overlay') as HTMLElement;
@@ -448,15 +464,89 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                gap: '12px',
                 opacity: 0,
                 transition: 'opacity 200ms',
               }}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'white' }}>
+              {/* Download button */}
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    const response = await fetch(currentUrl);
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `generated-image-${currentIndex + 1}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                  } catch (error) {
+                    console.error('Download failed:', error);
+                  }
+                }}
+                style={{
+                  background: 'rgba(75, 75, 75, 0.7)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background 200ms',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(95, 95, 95, 0.85)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(75, 75, 75, 0.7)';
+                }}
+                title="Download image"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </button>
+
+              {/* Open in new tab button */}
+              <a
+                href={currentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: 'rgba(75, 75, 75, 0.7)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background 200ms',
+                  textDecoration: 'none',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(95, 95, 95, 0.85)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(75, 75, 75, 0.7)';
+                }}
+                title="Open in new tab"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
                 <path d="M10 6v2H5v11h11v-5h2v6a1 1 0 01-1 1H4a1 1 0 01-1-1V7a1 1 0 011-1h6zm11-3v8h-2V6.413l-7.793 7.794-1.414-1.414L17.585 5H13V3h8z"/>
               </svg>
+              </a>
             </div>
-          </a>
+          </div>
 
           {/* Right Arrow */}
           {displayUrls.length > 1 && (

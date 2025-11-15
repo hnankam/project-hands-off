@@ -709,7 +709,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         /* CSS Variables */
         :root {
           color-scheme: light dark;
-          --copilot-kit-primary-color: ${styles.getPropertyValue('--copilot-kit-primary-color') || '#e5e7eb'};
+          --copilot-kit-primary-color: ${styles.getPropertyValue('--copilot-kit-primary-color') || '#374151'};
           --copilot-kit-background-color: ${bg.trim()};
           --copilot-kit-secondary-color: ${styles.getPropertyValue('--copilot-kit-secondary-color') || (isDark ? '#151C24' : '#f9fafb')};
           --copilot-kit-text-color: ${textCol.trim()};

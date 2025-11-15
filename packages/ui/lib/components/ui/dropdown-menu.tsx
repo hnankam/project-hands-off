@@ -109,7 +109,7 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', dir
         <div 
           ref={dropdownRef}
           className={cn(
-            "dropdown-menu-content w-48 rounded-md border shadow-lg overflow-hidden",
+            "dropdown-menu-content w-40 rounded-md border shadow-lg overflow-hidden",
             isLight
               ? "border-gray-200 bg-gray-50"
               : "border-gray-700 bg-[#151C24]"
@@ -118,11 +118,15 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', dir
             position: 'absolute',
             ...(openUpward ? { bottom: `${position.bottom}px` } : { top: `${position.top}px` }),
             [align === 'right' ? 'right' : 'left']: align === 'right' ? `${position.right}px` : `${position.left}px`,
-            pointerEvents: 'auto'
+            pointerEvents: 'auto',
+            animation: openUpward 
+              ? 'dropdownSlideUp 150ms cubic-bezier(0.16, 1, 0.3, 1)' 
+              : 'dropdownSlideDown 150ms cubic-bezier(0.16, 1, 0.3, 1)',
+            transformOrigin: openUpward ? 'bottom' : 'top'
           }}
         >
           <DropdownMenuContext.Provider value={{ isLight, portalContainer, closeMenu: () => setIsOpen(false) }}>
-            <div className="py-1" onClick={() => setIsOpen(false)}>
+            <div className="py-0" onClick={() => setIsOpen(false)}>
               {React.Children.map(children, child => {
                 if (React.isValidElement(child)) {
                   return React.cloneElement(child, { isLight } as any)
@@ -152,7 +156,7 @@ export const DropdownMenuItem = ({ children, onClick, onMouseDown, className, sh
   return (
     <button
       className={cn(
-        "flex w-full items-center justify-between px-3 py-2 text-xs font-medium transition-colors text-left",
+        "flex w-full items-center justify-between px-3 py-1.5 text-xs font-medium transition-colors text-left",
         disabled
           ? isLight
             ? "cursor-not-allowed text-gray-400 opacity-50"
@@ -186,7 +190,7 @@ interface DropdownMenuSeparatorProps {
 export const DropdownMenuSeparator = ({ className, isLight = true }: DropdownMenuSeparatorProps) => {
   return (
     <div className={cn(
-      "border-t",
+      "border-t my-0",
       isLight ? "border-gray-200" : "border-gray-700",
       className
     )} />

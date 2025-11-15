@@ -10,12 +10,28 @@ import { debug, useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 import { TaskProgressCard, AgentStepState } from './TaskProgressCard';
 import { cn } from '@extension/ui';
+import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator } from '@extension/ui';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import { Mention } from '@tiptap/extension-mention';
+import Link from '@tiptap/extension-link';
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { common, createLowlight } from 'lowlight';
+import { EnterToSend } from './tiptap/EnterToSendExtension';
+import { createSlashCommandExtension, type SlashCommand } from './tiptap/SlashCommandExtension';
+import { createMentionSuggestion, type MentionSuggestion } from './tiptap/MentionExtension';
+import { editorToMarkdown } from './tiptap/markdownSerializer';
 
 const MAX_NEWLINES = 6;
+
+// Create lowlight instance for code highlighting
+const lowlight = createLowlight(common);
 
 /**
  * AutoResizingTextarea Component
  * Internal component for auto-resizing textarea
+ * DEPRECATED: Keeping for potential fallback, but replaced by Tiptap
  */
 interface AutoResizingTextareaProps {
   placeholder?: string;
@@ -245,7 +261,7 @@ const CustomIcons = {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round">
       <path d="M12 5v14" />
@@ -281,6 +297,62 @@ const CustomIcons = {
       <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
       <line x1="12" y1="19" x2="12" y2="23" />
       <line x1="8" y1="23" x2="16" y2="23" />
+    </svg>
+  ),
+  image: (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <polyline points="21 15 16 10 5 21" />
+    </svg>
+  ),
+  file: (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round">
+      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  ),
+  recentFile: (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round">
+      <path d="M3 3v5h5" />
+      <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+      <path d="M12 7v5l4 2" />
+    </svg>
+  ),
+  workflow: (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round">
+      <polygon points="5 3 19 12 5 21 5 3" />
     </svg>
   ),
 };
@@ -371,11 +443,194 @@ export const CustomInput: React.FC<CustomInputProps> = ({
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isComposing, setIsComposing] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Drag & drop state for file uploads
   const [isDragActive, setIsDragActive] = useState(false);
   const dragCounterRef = useRef(0);
+
+  // Sample mention suggestions
+  const mentionSuggestions: MentionSuggestion[] = useMemo(() => [
+    { id: '1', label: 'AI Assistant', type: 'agent' },
+    { id: '2', label: 'Code Agent', type: 'agent' },
+    { id: '3', label: 'Data Analyst', type: 'agent' },
+    { id: '4', label: 'project-spec.md', type: 'file' },
+    { id: '5', label: 'database-schema.sql', type: 'file' },
+    { id: '6', label: 'api-docs.json', type: 'file' },
+    { id: '7', label: 'USER_ID', type: 'variable' },
+    { id: '8', label: 'API_KEY', type: 'variable' },
+  ], []);
+
+  // Slash commands configuration
+  const slashCommands: SlashCommand[] = useMemo(() => [
+    {
+      title: 'Code Block',
+      description: '',
+      icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>',
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .toggleCodeBlock()
+          .run();
+      },
+    },
+    {
+      title: 'Bold',
+      description: '',
+      icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path></svg>',
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .toggleBold()
+          .run();
+      },
+    },
+    {
+      title: 'Italic',
+      description: '',
+      icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="4" x2="10" y2="4"></line><line x1="14" y1="20" x2="5" y2="20"></line><line x1="15" y1="4" x2="9" y2="20"></line></svg>',
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .toggleItalic()
+          .run();
+      },
+    },
+    {
+      title: 'separator',
+      description: '',
+      icon: '',
+      command: () => {},
+    },
+    {
+      title: 'Create Command',
+      description: '',
+      icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).run();
+        // TODO: Open create command modal
+        console.log('Create Command clicked');
+      },
+    },
+  ], []);
+
+  // Tiptap Editor Setup
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: false,
+        horizontalRule: false,
+        blockquote: false,
+        codeBlock: false, // We'll use CodeBlockLowlight instead
+      }),
+      Link.configure({
+        openOnClick: true,
+        autolink: true,
+        defaultProtocol: 'https',
+        HTMLAttributes: {
+          class: 'editor-link',
+          rel: 'noopener noreferrer',
+          target: '_blank',
+        },
+      }),
+      CodeBlockLowlight.configure({
+        lowlight,
+        HTMLAttributes: {
+          class: 'code-block',
+        },
+      }),
+      Mention.configure({
+        HTMLAttributes: {
+          class: 'mention',
+        },
+        suggestion: createMentionSuggestion(mentionSuggestions),
+      }),
+      Placeholder.configure({
+        placeholder: () => {
+          if (!isInputEnabled) {
+            return 'Please select an agent and model to start chatting';
+          }
+          // return context.labels.placeholder || 'Type a message... (/ for commands, @ for context)';
+          return 'Type a message... (/ for commands, @ for context)';
+        },
+      }),
+      EnterToSend.configure({
+        onSend: () => {
+          send();
+        },
+        canSend: (): boolean => {
+          if (!editor || !isInputEnabled) return false;
+          const interruptEvent = copilotContext.langGraphInterruptAction?.event;
+          const interruptInProgress = interruptEvent?.name === 'LangGraphInterruptEvent' && !interruptEvent?.response;
+          const hasContent = !editor.isEmpty;
+          return !inProgress && hasContent && !interruptInProgress;
+        },
+      }),
+      createSlashCommandExtension(slashCommands),
+    ],
+    editorProps: {
+      attributes: {
+        class: 'copilotKitInputTextarea tiptap-editor',
+        spellcheck: 'true',
+      },
+      handlePaste: (view, event) => {
+        if (!isInputEnabled) return false;
+        
+        try {
+          const items = Array.from(event.clipboardData?.items || []);
+          const fileItems = items.filter(i => i.kind === 'file');
+          
+          if (fileItems.length === 0) {
+            // No files, let Tiptap handle text paste normally
+            return false;
+          }
+          
+          // Prevent default text paste when files are present
+          event.preventDefault();
+          
+          const files: File[] = [];
+          for (const item of fileItems) {
+            const file = item.getAsFile();
+            if (file) files.push(file);
+          }
+          
+          if (files.length > 0) {
+            // Create FileList-like object for handleFilesPicked
+            const fileList = {
+              length: files.length,
+              item: (index: number) => files[index] || null,
+              [Symbol.iterator]: function* () {
+                for (const file of files) {
+                  yield file;
+                }
+              },
+            } as unknown as FileList;
+            
+            handleFilesPicked(fileList);
+          }
+          
+          return true; // We handled the paste
+        } catch (error) {
+          console.error('[CustomInput] Paste error:', error);
+          return false;
+        }
+      },
+    },
+    editable: isInputEnabled,
+    shouldRerenderOnTransaction: false, // Performance optimization: prevent re-renders on every transaction
+    onCreate: () => {
+      // Auto-focus behavior can be added here if needed
+    },
+    onUpdate: () => {
+      // Optional: track content changes
+    },
+  }, [isInputEnabled, context.labels.placeholder, slashCommands, mentionSuggestions]);
 
   type AttachmentItem = {
     id: string;
@@ -391,32 +646,35 @@ export const CustomInput: React.FC<CustomInputProps> = ({
 
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
 
+  // Update editor editable state when input is disabled
   useEffect(() => {
-    if (!isInputEnabled) {
-      setText('');
+    if (!isInputEnabled && editor) {
+      editor.commands.clearContent();
       setAttachments(prev => {
         prev.forEach(a => URL.revokeObjectURL(a.previewUrl));
         return [];
       });
     }
-  }, [isInputEnabled]);
+    if (editor) {
+      editor.setEditable(isInputEnabled);
+    }
+  }, [isInputEnabled, editor]);
 
   const handleDivClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
 
-    // If the user clicked a button or inside a button, don't focus the textarea
+    // If the user clicked a button or inside a button, don't focus the editor
     if (target.closest('button')) return;
 
-    // If the user clicked the textarea, do nothing (it's already focused)
-    if (target.tagName === 'TEXTAREA') return;
+    // If the user clicked the editor, do nothing (it's already focused)
+    if (target.closest('.tiptap-editor')) return;
 
-    if (!isInputEnabled) return;
+    if (!isInputEnabled || !editor) return;
 
-    // Otherwise, focus the textarea
-    textareaRef.current?.focus();
+    // Otherwise, focus the editor
+    editor.commands.focus('end');
   };
 
-  const [text, setText] = useState('');
   const lastPrefillTimestampRef = useRef<number>(0);
   const focusPendingRef = useRef<number | null>(null);
 
@@ -446,12 +704,10 @@ export const CustomInput: React.FC<CustomInputProps> = ({
       }
       lastPrefillTimestampRef.current = timestamp;
 
-      if (prefillText && prefillText.trim() && isInputEnabled) {
-        console.log('[CustomInput] Setting text to prefill content');
-        setText(prefillText);
-
-        // Mark that we need to focus for this timestamp
-        focusPendingRef.current = timestamp;
+      if (prefillText && prefillText.trim() && isInputEnabled && editor) {
+        console.log('[CustomInput] Setting editor content to prefill text');
+        editor.commands.setContent(prefillText);
+        editor.commands.focus('end');
       }
     };
 
@@ -462,28 +718,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
       window.removeEventListener('copilot-prefill-text', handlePrefillEvent);
       console.log('[CustomInput] Unregistered copilot-prefill-text event listener');
     };
-  }, [listenSessionId, isInputEnabled]);
-
-  // Separate effect to handle focusing after text is set
-  // This only runs when text changes and we have a pending focus
-  useEffect(() => {
-    if (focusPendingRef.current && text && textareaRef.current) {
-      const timestamp = focusPendingRef.current;
-      focusPendingRef.current = null; // Clear immediately to prevent multiple focuses
-
-      // Small delay to ensure DOM is updated
-      setTimeout(() => {
-        console.log('[CustomInput] Focusing textarea for timestamp:', timestamp);
-        if (textareaRef.current) {
-          textareaRef.current.focus();
-          // Move cursor to end
-          const length = text.length;
-          textareaRef.current.setSelectionRange(length, length);
-          console.log('[CustomInput] Cursor positioned at end');
-        }
-      }, 100);
-    }
-  }, [text]);
+  }, [listenSessionId, isInputEnabled, editor]);
 
   const uploadAttachment = async (item: AttachmentItem, sessionId: string) => {
     if (!COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS || !COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
@@ -518,7 +753,11 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   };
 
   const send = async () => {
-    if (inProgress || !isInputEnabled) return;
+    if (inProgress || !isInputEnabled || !editor) return;
+
+    // Get markdown from editor
+    const markdown = editorToMarkdown(editor);
+    if (!markdown.trim() && attachments.length === 0) return;
 
     // Upload all pending attachments first
     const sessionId = listenSessionId || 'default';
@@ -547,18 +786,18 @@ export const CustomInput: React.FC<CustomInputProps> = ({
     const manifestBlock = manifest.length > 0
       ? `\n\n<!--ATTACHMENTS:\n${JSON.stringify(manifest)}\n-->`
       : '';
-    const finalText = `${text}${manifestBlock}`;
+    const finalText = `${markdown}${manifestBlock}`;
 
-    debug.log('[CustomInput] Final text:', finalText);
+    debug.log('[CustomInput] Final markdown:', finalText);
 
     onSend(finalText);
-    setText('');
+    editor.commands.clearContent();
 
     // Cleanup attachments
     attachments.forEach(a => URL.revokeObjectURL(a.previewUrl));
     setAttachments([]);
 
-    textareaRef.current?.focus();
+    editor.commands.focus();
   };
 
   const { pushToTalkState, setPushToTalkState } = usePushToTalk({
@@ -571,14 +810,16 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   const showPushToTalk =
     pushToTalkConfigured && (pushToTalkState === 'idle' || pushToTalkState === 'recording') && !inProgress && isInputEnabled;
 
-  const canSend = useMemo(() => {
-    if (!isInputEnabled) return false;
+  const canSend: boolean = useMemo(() => {
+    if (!isInputEnabled || !editor) return false;
 
     const interruptEvent = copilotContext.langGraphInterruptAction?.event;
     const interruptInProgress = interruptEvent?.name === 'LangGraphInterruptEvent' && !interruptEvent?.response;
 
-    return !isInProgress && text.trim().length > 0 && pushToTalkState === 'idle' && !interruptInProgress;
-  }, [copilotContext.langGraphInterruptAction?.event, isInProgress, text, pushToTalkState, isInputEnabled]);
+    // Check if editor has any content (works with all node types)
+    const hasContent = !editor.isEmpty;
+    return !isInProgress && hasContent && pushToTalkState === 'idle' && !interruptInProgress;
+  }, [copilotContext.langGraphInterruptAction?.event, isInProgress, editor, pushToTalkState, isInputEnabled]);
 
   const canStop = useMemo(() => {
     return isInProgress && !hideStopButton;
@@ -642,6 +883,11 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   const openFilePicker = () => {
     if (!isInputEnabled) return;
     if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  const openImagePicker = () => {
+    if (!isInputEnabled) return;
+    if (imageInputRef.current) imageInputRef.current.click();
   };
 
   // Helpers to handle drag & drop uploads
@@ -812,29 +1058,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
             </span>
           </div>
         )}
-        <AutoResizingTextarea
-          ref={textareaRef}
-          placeholder={
-            isInputEnabled
-              ? context.labels.placeholder
-              : 'Please select an agent and model to start chatting'
-          }
-          autoFocus={false}
-          maxRows={MAX_NEWLINES}
-          value={text}
-          onChange={event => setText(event.target.value)}
-          onPaste={handlePaste}
-          onCompositionStart={() => setIsComposing(true)}
-          onCompositionEnd={() => setIsComposing(false)}
-          onKeyDown={event => {
-            if (event.key === 'Enter' && !event.shiftKey && !isComposing) {
-              event.preventDefault();
-              if (canSend) {
-                send();
-              }
-            }
-          }}
-        />
+        {editor && <EditorContent editor={editor} />}
         {/* Attachments preview */}
         {attachments.length > 0 && (
           <div
@@ -921,12 +1145,21 @@ export const CustomInput: React.FC<CustomInputProps> = ({
           </div>
         )}
         <div className="copilotKitInputControls">
-          {/* Enable upload for all file types via hidden file input */}
+          {/* Hidden file inputs for different file types */}
           <input
             ref={fileInputRef}
             type="file"
             multiple
-            accept="*/*"
+            accept=".pdf,.txt,.sql,.csv,.json,.xml,.md,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+            style={{ display: 'none' }}
+            onChange={(e) => handleFilesPicked(e.target.files)}
+            disabled={!isInputEnabled}
+          />
+          <input
+            ref={imageInputRef}
+            type="file"
+            multiple
+            accept="image/*"
             style={{ display: 'none' }}
             onChange={(e) => handleFilesPicked(e.target.files)}
             disabled={!isInputEnabled}
@@ -960,14 +1193,79 @@ export const CustomInput: React.FC<CustomInputProps> = ({
           >
             {CustomIcons.plan}
           </button>
+          
+          {/* Upload dropdown menu */}
+          <DropdownMenu
+            trigger={
           <button
-            onClick={openFilePicker}
+                type="button"
             className="copilotKitInputControlButton"
             disabled={!isInputEnabled}
+                style={{
+                  opacity: !isInputEnabled ? 0.4 : 1,
+                  cursor: !isInputEnabled ? 'not-allowed' : 'pointer'
+                }}
           >
             {CustomIcons.upload}
           </button>
-          
+            }
+            align="left"
+            direction="up"
+            isLight={isLight}
+          >
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                openImagePicker();
+              }}
+              isLight={isLight}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {CustomIcons.image}
+                <span>Upload Images</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                openFilePicker();
+              }}
+              isLight={isLight}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {CustomIcons.file}
+                <span>Upload Files</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={true}
+              isLight={isLight}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {CustomIcons.recentFile}
+                <span>Recent Files</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator isLight={isLight} />
+            <DropdownMenuItem
+              disabled={true}
+              isLight={isLight}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {CustomIcons.plan}
+                <span>Plan</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={true}
+              isLight={isLight}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {CustomIcons.workflow}
+                <span>Workflow</span>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenu>
 
           <div style={{ flexGrow: 1 }} />
 

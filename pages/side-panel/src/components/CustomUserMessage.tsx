@@ -4,6 +4,7 @@ import { useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
 import { ImageRenderer, type UserMessageProps } from '@copilotkit/react-ui';
+import { MarkdownRenderer } from './tiptap/MarkdownRenderer';
 
 /**
  * Custom UserMessage Component for CopilotChat
@@ -362,7 +363,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
               minHeight: '60px',
               padding: '0.5rem',
               borderRadius: '6px',
-              border: isLight ? '1px solid #d1d5db' : '1px solid #4b5563',
+              border: 'none',
               backgroundColor: isLight ? '#ffffff' : '#0C1117',
               color: isLight ? '#0C1117' : '#f9fafb',
               fontSize: '13px',
@@ -504,10 +505,8 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                 fontSize: '13px',
                 lineHeight: '1.4',
                 color: isLight ? '#0C1117' : '#f9fafb',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
               }}>
-              {cleanedContent}
+              <MarkdownRenderer content={cleanedContent} isLight={isLight} />
             </div>
           )}
         </div>

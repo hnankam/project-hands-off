@@ -81,7 +81,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   const [isCounterReady, setIsCounterReady] = useState<boolean>(false); // Hide counter until stable
   const [isLoading, setIsLoading] = useState(true);
   const [isAgentLoading, setIsAgentLoading] = useState(false);
-    const [themeColor, setThemeColor] = useState('#e5e7eb');
+    const [themeColor, setThemeColor] = useState('#374151'); // gray-700 for better visibility
   // Track if initial message count has been reported to prevent flickering after skeleton disappears
   const hasReportedInitialCountRef = useRef(false);
   const hydrationReadyTimeoutRef = useRef<NodeJS.Timeout | null>(null);

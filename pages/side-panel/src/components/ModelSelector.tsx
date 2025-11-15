@@ -292,9 +292,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
       {/* Dropdown - Always mounted, visibility controlled with CSS */}
       <div
         className={cn(
-          'absolute bottom-full left-0 z-[9999] mb-1 max-h-64 w-full min-w-[200px] overflow-y-auto rounded-md border shadow-lg transition-opacity',
+          'absolute bottom-full left-0 z-[9999] mb-1 max-h-64 w-full min-w-[200px] overflow-y-auto rounded-md border shadow-lg',
           isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
-          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          isOpen ? 'pointer-events-auto model-selector-dropdown' : 'opacity-0 pointer-events-none'
         )}>
         {models.map(model => {
           // Check if model is allowed for the selected agent

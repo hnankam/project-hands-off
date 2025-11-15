@@ -25,7 +25,7 @@ export const ChatSession: FC<ChatSessionProps> = ({ sessionId, isLight, publicAp
   const [headlessMessagesCount, setHeadlessMessagesCount] = useState<number>(0); // Track messages from useCopilotChatHeadless_c
   const [isLoading, setIsLoading] = useState(true);
   const [isAgentLoading, setIsAgentLoading] = useState(false); // Track if agent is processing
-  const [themeColor, setThemeColor] = useState("#E5E7EB");
+  const [themeColor, setThemeColor] = useState("#374151"); // gray-700 for better visibility
   
   // Message data structure returned by saveMessagesRef
   interface MessageData {

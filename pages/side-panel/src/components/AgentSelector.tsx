@@ -285,11 +285,11 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
       {/* Dropdown - Always mounted, visibility controlled with CSS */}
       <div
         className={cn(
-          'absolute bottom-full left-0 mb-1 w-full min-w-[180px] rounded-md border shadow-lg z-[9999] transition-opacity',
+          'absolute bottom-full left-0 mb-1 w-full min-w-[180px] rounded-md border shadow-lg z-[9999]',
           isLight
             ? 'bg-gray-50 border-gray-200'
             : 'bg-[#151C24] border-gray-700',
-          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          isOpen ? 'pointer-events-auto agent-selector-dropdown' : 'opacity-0 pointer-events-none'
         )}
       >
         {agents.map(agent => (
