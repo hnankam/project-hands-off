@@ -47,3 +47,7 @@ PORT = int(os.getenv("PORT", 8001))
 
 # Note: API keys and provider credentials are now stored in the database
 # and loaded via config/models.py from the 'providers' table
+
+# Firebase configuration is loaded from environment variables
+# See config/firebase.py for Firebase Storage configuration
+# Required for image generation uploads to Firebase Storage

@@ -107,6 +107,7 @@ import {
 } from '../actions/copilot/navigationActions';
 import { createTakeScreenshotAction } from '../actions/copilot/screenshotActions';
 import { createGetWeatherAction } from '../actions/copilot/weatherActions';
+import { createGenerateImagesAction } from '../actions/copilot/imageActions';
 import { createWaitAction, createConfirmActionHumanInTheLoop } from '../actions/copilot/utilityActions';
 
 // Types & Libraries
@@ -1511,6 +1512,9 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
 
   // --- WEATHER ACTIONS ---
   useFrontendTool(createGetWeatherAction({ themeColor }) as any, [themeColor]);
+
+  // --- IMAGE GENERATION ACTIONS ---
+  useRenderToolCall(createGenerateImagesAction({ themeColor }) as any, [themeColor]);
 
   // --- UTILITY ACTIONS ---
   useFrontendTool(createWaitAction({ isLight }) as any, [isLight]);

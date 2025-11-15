@@ -21,6 +21,7 @@ export const createGetWeatherAction = ({ themeColor }: WeatherActionDependencies
   name: 'get_weather',
   description: 'Get the weather for a given location.',
   available: 'disabled' as const,
+  followUp: false,
   parameters: [{ name: 'location', type: 'string', required: true }],
   render: ({ args }: any) => {
     return <WeatherCard location={args.location} themeColor={themeColor} />;

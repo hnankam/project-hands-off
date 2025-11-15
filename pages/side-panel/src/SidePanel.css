@@ -638,8 +638,8 @@ input:focus {
 
 /* More specific selectors to avoid affecting message controls */
 .copilot-chat-container p,
-.copilot-chat-container div:not([role="group"]):not([class*="controls"]):not([class*="actions"]):not([class*="suggestions"]),
-.copilot-chat-container span:not([role="group"] span) {
+.copilot-chat-container div:not([role="group"]):not([class*="controls"]):not([class*="actions"]):not([class*="suggestions"]):not([class*="gallery"]),
+.copilot-chat-container span:not([role="group"] span):not([class*="gallery"]) {
   font-size: 12.5px !important;
   /* line-height: 1.4 !important; */
 }
@@ -1535,6 +1535,27 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 @keyframes copilot-action-sparkle {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* ---------------------------------------- */
+/* Skeleton Loading Animations              */
+/* ---------------------------------------- */
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* Scale-in animation for copy success icon */

@@ -95,63 +95,23 @@ async def get_agent_tools(
 
     # ========== MCP Tools ==========
     
-    logger.info("🔍 DEBUG: allowed_mcp_tools = %s (count: %d)", list(allowed_mcp_tools), len(allowed_mcp_tools))
-    logger.info("🔍 DEBUG: mcp_servers available = %s (count: %d)", list(mcp_servers.keys()) if mcp_servers else [], len(mcp_servers) if mcp_servers else 0)
+    logger.debug("allowed_mcp_tools = %s (count: %d)", list(allowed_mcp_tools), len(allowed_mcp_tools))
+    logger.debug("mcp_servers available = %s (count: %d)", list(mcp_servers.keys()) if mcp_servers else [], len(mcp_servers) if mcp_servers else 0)
 
-    # TEMPORARILY DISABLED: Skip if no MCP tools to test filtering issue
-    # if not allowed_mcp_tools:
-    #     logger.info(
-    #         "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: 0)",
-    #         agent_type,
-    #         registered_tools['total_count'],
-    #         len(registered_tools['backend'])
-    #     )
-    #     return (all_tools, [])
+    # If no MCP tools are allowed for this agent, return early
+    if not allowed_mcp_tools:
+        logger.info(
+            "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: 0)",
+            agent_type,
+            registered_tools['total_count'],
+            len(registered_tools['backend'])
+        )
+        return (all_tools, [])
     
-    # 🧪 TEMPORARY: Load all MCP servers without filtering to test
+    # If no MCP servers available, return early
     if not mcp_servers:
         logger.warning("No MCP servers available in context")
         return (all_tools, [])
-
-    if not allowed_mcp_tools:
-        logger.warning("⚠️ No MCP tools in allowed list - will load all servers without filtering for testing")
-        # Build configs for ALL servers
-        server_configs = {}
-        for server_key, server in mcp_servers.items():
-            if not server.get('enabled', True):
-                continue
-            
-            config_entry = {
-                'transport': server.get('transport', 'stdio'),
-            }
-            if server.get('command'):
-                config_entry['command'] = server['command']
-            if server.get('args'):
-                config_entry['args'] = server['args']
-            if server.get('env'):
-                config_entry['env'] = server['env']
-            if server.get('url'):
-                config_entry['url'] = server['url']
-            metadata = server.get('metadata') or {}
-            if isinstance(metadata, dict) and 'max_retries' in metadata:
-                config_entry['max_retries'] = metadata['max_retries']
-            
-            server_configs[server_key] = config_entry
-        
-        logger.info("🔧 Loading %d MCP server(s) WITHOUT filtering for testing", len(server_configs))
-        mcp_toolsets = load_mcp_toolsets(server_configs)
-        
-        logger.info(
-            "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: %d unfiltered)",
-            agent_type,
-            registered_tools['total_count'],
-            len(registered_tools['backend']),
-            len(mcp_toolsets)
-        )
-        logger.info("=" * 80)
-        logger.info("✅ get_agent_tools() returning UNFILTERED: backend_tools=%d, mcp_toolsets=%d", len(all_tools), len(mcp_toolsets))
-        logger.info("=" * 80)
-        return (all_tools, mcp_toolsets)
 
     # Create a reverse mapping from server ID to server_key for MCP server lookup
     server_id_to_key = {}

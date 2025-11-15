@@ -259,15 +259,34 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
           return;
         }
         
-        console.log('[CustomUserMessage] Reloading from assistant message:', following.id);
-        reloadMessages(following.id);
+        // CRITICAL FIX: Refresh CopilotKit's state before reloading
+        // This ensures all message fields (especially 'role') are properly set
+        // This is why editing works - it calls setMessages() which refreshes the state
+        console.log('[CustomUserMessage] Refreshing message state before reload');
+        const refreshedMessages = messages.map(m => ({ ...m }));
+        setMessages(refreshedMessages);
+        
+        // Use setTimeout to ensure state update completes before reloadMessages
+        setTimeout(() => {
+          console.log('[CustomUserMessage] Reloading from assistant message:', following.id);
+          reloadMessages(following.id);
+        }, 50);
         return;
       }
       
       // Fallback: rerun starting from this user message
       if ((message as any)?.id && messageInArray) {
         console.log('[CustomUserMessage] No assistant message found, reloading from user message:', message.id);
-        reloadMessages((message as any).id);
+        
+        // CRITICAL FIX: Refresh CopilotKit's state before reloading
+        console.log('[CustomUserMessage] Refreshing message state before reload');
+        const refreshedMessages = messages.map(m => ({ ...m }));
+        setMessages(refreshedMessages);
+        
+        // Use setTimeout to ensure state update completes before reloadMessages
+        setTimeout(() => {
+          reloadMessages((message as any).id);
+        }, 50);
       }
     } catch (e) {
       console.warn('[CustomUserMessage] Failed to rerun message:', e);

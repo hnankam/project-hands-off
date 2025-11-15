@@ -111,7 +111,8 @@ INSERT INTO tools (tool_key, tool_name, tool_type, description, enabled)
 VALUES
     ('create_plan', 'Create Plan', 'backend', 'Create a plan with multiple steps.', true),
     ('update_plan_step', 'Update Plan Step', 'backend', 'Update the description or status of a plan step.', true),
-    ('get_weather', 'Get Weather', 'backend', 'Retrieve weather information for a location.', true)
+    ('get_weather', 'Get Weather', 'backend', 'Retrieve weather information for a location.', true),
+    ('generate_images', 'Generate Images', 'backend', 'Generate images based on a text prompt and return URLs.', true)
 ON CONFLICT DO NOTHING;
 
 -- Built-in tools provided by pydantic-ai

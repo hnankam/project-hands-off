@@ -39,12 +39,22 @@ Example:
 
 from __future__ import annotations
 
-from pydantic_ai import RunContext
+from pydantic import BaseModel
+from pydantic_ai import Agent, RunContext, BinaryImage, ImageGenerationTool
 from pydantic_ai.ag_ui import StateDeps
 from ag_ui.core import EventType, StateSnapshotEvent
 
 from core.models import AgentState, Step, StepStatus
 
+from pydantic_ai import ModelSettings
+from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
+from pydantic_ai.providers.google import GoogleProvider
+
+# Import Firebase Storage utility
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+from utils.firebase_storage import upload_binary_image_to_storage
 
 # ========== State Management Tools ==========
 
@@ -127,6 +137,92 @@ def get_weather(_: RunContext[StateDeps[AgentState]], location: str) -> str:
     return f"The weather in {location} is sunny."
 
 
+# ========== Image Generation Tools ==========
+
+google_provider = GoogleProvider(api_key='AIzaSyCID3PMug--i65c02xdw_FB-wyVTXJ3wHs')
+google_model = GoogleModel(model_name='gemini-2.5-flash-image', provider=google_provider)
+
+# Create a Pydantic AI agent for image generation with structured output
+image_generation_agent = Agent(
+    model=google_model,
+    # output_type=ImageGenerationResult,
+    builtin_tools=[ImageGenerationTool()],
+    system_prompt=(
+        "You are an image generation assistant. Based on the user's prompt, "
+        "generate a list of image URLs (use placeholder URLs from https://picsum.photos/), "
+        "refine the prompt for better image generation, and identify the artistic style. "
+        "Return exactly the number of images requested."
+    ),
+)
+
+
+async def generate_images(
+    _: RunContext[StateDeps[AgentState]], 
+    prompt: str, 
+    num_images: int = 1
+) -> list[str]:
+    """Generate images based on a text prompt using AI and upload to Firebase Storage.
+    
+    This function uses Gemini's image generation capability to create images,
+    then uploads them to Firebase Storage in the 'generations' folder, matching
+    the same Firebase configuration as the frontend takeScreenshot function.
+    
+    Args:
+        prompt: Text description of the images to generate
+        num_images: Number of images to generate (default: 1)
+        
+    Returns:
+        List of public URLs pointing to the uploaded images in Firebase Storage
+    """
+    # print(f"🎨 Generating {num_images} images based on prompt: {prompt}")
+    
+    try:
+        # Use the AI agent to generate images
+        result = await image_generation_agent.run(
+            f"Generate {num_images} image(s) based on this prompt: {prompt}"
+        )
+                
+        # Upload each BinaryImage to Firebase Storage
+        uploaded_urls = []
+        
+        for idx, image in enumerate(result.response.images):
+            if isinstance(image, BinaryImage):
+                print(f"🎨 Uploading image {idx + 1}/{len(result.response.images)} to Firebase Storage...")
+                
+                # Get the binary data from BinaryImage
+                # BinaryImage has a 'data' attribute with the bytes
+                image_data = image.data
+                
+                # Determine content type from media type
+                content_type = image.media_type or "image/png"
+                
+                # Upload to Firebase Storage in 'generations' folder
+                url = await upload_binary_image_to_storage(
+                    image_data,
+                    folder="generations",
+                    content_type=content_type
+                )
+                
+                if url:
+                    uploaded_urls.append(url)
+                    print(f"   ✅ Uploaded: {url}")
+                else:
+                    print(f"   ⚠️ Failed to upload image {idx + 1}")
+            else:
+                print(f"   ⚠️ Unexpected image type: {type(image)}")
+        
+        if not uploaded_urls:
+            print("⚠️ No images were successfully uploaded, returning placeholder URLs")
+            return []
+        
+        print(f"🎨 Successfully uploaded {len(uploaded_urls)} images to Firebase Storage")
+        return uploaded_urls
+        
+    except Exception as e:
+        print(f"❌ Error generating/uploading images: {e}")
+        return []
+
+
 # ========== Tool Registry ==========
 # Maps tool keys to their function implementations
 
@@ -134,6 +230,7 @@ BACKEND_TOOLS = {
     'create_plan': create_plan,
     'update_plan_step': update_plan_step,
     'get_weather': get_weather,
+    'generate_images': generate_images,
 }
 
 
