@@ -77,7 +77,7 @@ export default function FeedbackModal({
           </div>
 
           {/* Content */}
-          <div className="space-y-3 px-3 py-4">
+          <div className="space-y-3 px-5 py-4">
             <p className={cn('text-sm font-medium', mainTextColor)}>
               We'd love your feedback.
             </p>
@@ -133,7 +133,7 @@ export default function FeedbackModal({
           {/* Footer */}
           <div
             className={cn(
-              'flex items-center justify-end gap-2 border-t px-3 py-2',
+              'flex items-center justify-end gap-2 border-t px-5 py-2',
               isLight ? 'border-gray-200' : 'border-gray-700',
             )}>
             <button

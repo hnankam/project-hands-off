@@ -109,7 +109,7 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', dir
         <div 
           ref={dropdownRef}
           className={cn(
-            "dropdown-menu-content w-40 rounded-md border shadow-lg overflow-hidden",
+            "dropdown-menu-content w-52 rounded-md border shadow-lg overflow-hidden",
             isLight
               ? "border-gray-200 bg-gray-50"
               : "border-gray-700 bg-[#151C24]"
@@ -156,7 +156,7 @@ export const DropdownMenuItem = ({ children, onClick, onMouseDown, className, sh
   return (
     <button
       className={cn(
-        "flex w-full items-center justify-between px-3 py-1.5 text-xs font-medium transition-colors text-left",
+        "flex w-full items-center justify-between px-4 py-1.5 text-xs font-medium transition-colors text-left",
         disabled
           ? isLight
             ? "cursor-not-allowed text-gray-400 opacity-50"
@@ -232,7 +232,7 @@ export const DropdownSubmenu = ({ label, children, align = 'right', isLight = tr
     <div ref={itemRef} className="relative">
       <button
         className={cn(
-          "flex w-full items-center justify-between px-3 py-2 text-xs font-medium transition-colors text-left",
+          "flex w-full items-center justify-between px-4 py-1.5 text-xs font-medium transition-colors text-left",
           effectiveLight ? "hover:bg-gray-100" : "hover:bg-gray-700/50"
         )}
         style={{ color: effectiveLight ? '#374151' : '#bcc1c7' }}
@@ -244,7 +244,7 @@ export const DropdownSubmenu = ({ label, children, align = 'right', isLight = tr
       {open && portalContainer && createPortal(
         <div
           className={cn(
-            "dropdown-submenu-content w-44 rounded-md border shadow-lg overflow-hidden",
+            "dropdown-submenu-content w-52 rounded-md border shadow-lg overflow-hidden",
             effectiveLight ? "border-gray-200 bg-gray-50" : "border-gray-700 bg-[#151C24]"
           )}
           style={{ position: 'absolute', top: `${pos.top}px`, right: `${pos.right}px`, pointerEvents: 'auto' }}
@@ -285,7 +285,7 @@ export const DropdownAccordion = ({ label, children, isLight = true }: DropdownA
     <div>
       <button
         className={cn(
-          "flex w-full items-center gap-0.5 px-3 py-2 text-xs font-medium transition-colors text-left",
+          "flex w-full items-center gap-0.5 px-4 py-1.5 text-xs font-medium transition-colors text-left",
           effectiveLight ? "hover:bg-gray-100" : "hover:bg-gray-700/50"
         )}
         style={{ color: effectiveLight ? '#374151' : '#bcc1c7' }}

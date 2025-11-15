@@ -247,7 +247,7 @@ export default function SupportRequestModal({
           </div>
 
           {/* Content */}
-          <div className="space-y-4 px-3 py-4">
+          <div className="space-y-4 px-5 py-4">
             {/* Info Banner */}
             <div
               className={cn(
@@ -667,7 +667,7 @@ export default function SupportRequestModal({
           {/* Footer */}
           <div
             className={cn(
-              'flex items-center justify-end gap-2 border-t px-3 py-2 sticky bottom-0',
+              'flex items-center justify-end gap-2 border-t px-5 py-2 sticky bottom-0',
               isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
             )}>
             <button
