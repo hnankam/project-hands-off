@@ -6,6 +6,8 @@ import type { SessionMetadata } from '@extension/shared';
 import { sessionStorageDBWrapper, generateSessionName } from '@extension/shared';
 import { useAuth } from '../context/AuthContext';
 import UserMenu from '../components/UserMenu';
+import FeedbackModal from '../components/FeedbackModal';
+import SupportRequestModal, { type SupportRequestData } from '../components/SupportRequestModal';
 import {
   cn,
   Button,
@@ -15,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownSubmenu,
+  DropdownAccordion,
 } from '@extension/ui';
 import { SessionRuntimeProvider } from '../context/SessionRuntimeContext';
 
@@ -47,7 +50,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
 
   // Auth
-  const { user } = useAuth();
+  const { user, organization, activeTeam } = useAuth();
   
   // Ensure sessions is always an array (defensive programming)
   const sessions = useMemo(() => {
@@ -70,6 +73,9 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const [sessionMessageCounts, setSessionMessageCounts] = useState<Record<string, number>>({});
   const [clearSessionsConfirmOpen, setClearSessionsConfirmOpen] = useState(false);
   const [copiedSessionId, setCopiedSessionId] = useState(false);
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [supportRequestModalOpen, setSupportRequestModalOpen] = useState(false);
   // Track if messages are currently loading for the active session
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   // Track when skeleton started showing to enforce minimum display time
@@ -952,21 +958,51 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     }
   };
 
+  const openFeedbackModal = () => {
+    setTimeout(() => setFeedbackModalOpen(true), 60);
+  };
+
+  const handleSendFeedback = () => {
+    if (!feedbackText.trim()) return;
+    
+    console.log('[SessionsPage] Sending feedback:', feedbackText);
+    // TODO: Implement actual feedback submission
+    
+    setFeedbackModalOpen(false);
+    setFeedbackText('');
+  };
+
+  const openSupportRequestModal = () => {
+    setTimeout(() => setSupportRequestModalOpen(true), 60);
+  };
+
+  const handleSupportRequestSubmit = (data: SupportRequestData) => {
+    console.log('[SessionsPage] Submitting support request:', data);
+    // TODO: Implement actual support request submission
+    
+    setSupportRequestModalOpen(false);
+  };
+
   // Close confirmation modal on escape key
   useEffect(() => {
-    if (!clearMessagesConfirmOpen && !clearSessionsConfirmOpen && !resetSessionConfirmOpen) return;
+    if (!clearMessagesConfirmOpen && !clearSessionsConfirmOpen && !resetSessionConfirmOpen && !feedbackModalOpen && !supportRequestModalOpen) return;
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (clearMessagesConfirmOpen) setClearMessagesConfirmOpen(false);
         if (clearSessionsConfirmOpen) setClearSessionsConfirmOpen(false);
         if (resetSessionConfirmOpen) setResetSessionConfirmOpen(false);
+        if (feedbackModalOpen) {
+          setFeedbackModalOpen(false);
+          setFeedbackText('');
+        }
+        if (supportRequestModalOpen) setSupportRequestModalOpen(false);
       }
     };
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [clearMessagesConfirmOpen, clearSessionsConfirmOpen, resetSessionConfirmOpen]);
+  }, [clearMessagesConfirmOpen, clearSessionsConfirmOpen, resetSessionConfirmOpen, feedbackModalOpen, supportRequestModalOpen]);
 
   return (
     <SessionRuntimeProvider>
@@ -1043,7 +1079,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
             <DropdownMenuItem onClick={handleClearAllMessages} isLight={isLight}>Clear All Session Messages</DropdownMenuItem>
             <DropdownMenuItem onClick={openClearSessionsConfirm} isLight={isLight}>Clear All Sessions</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownSubmenu label="Export Session" isLight={isLight}>
+            <DropdownAccordion label="Export Session" isLight={isLight}>
               <DropdownMenuItem
                 onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleExportSessionAsHTML(); }}
@@ -1067,7 +1103,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
               >
                 Export as Image
               </DropdownMenuItem>
-            </DropdownSubmenu>
+            </DropdownAccordion>
             <DropdownMenuItem 
               onClick={handleCopySessionId}
               isLight={isLight}
@@ -1077,12 +1113,6 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
               )}
             >
               <div className="flex items-center gap-2 w-full">
-                <span className={cn(
-                  'flex-1 transition-colors duration-200',
-                  copiedSessionId && (isLight ? 'text-green-700' : 'text-green-400')
-                )}>
-                  {copiedSessionId ? 'Session ID Copied!' : 'Copy Session ID'}
-                </span>
                 {copiedSessionId ? (
                   <svg
                     className={cn(
@@ -1111,10 +1141,16 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                     <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
                   </svg>
                 )}
+                <span className={cn(
+                  'flex-1 transition-colors duration-200',
+                  copiedSessionId && (isLight ? 'text-green-700' : 'text-green-400')
+                )}>
+                  {copiedSessionId ? 'Session ID Copied!' : 'Copy Session ID'}
+                </span>
               </div>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem isLight={isLight}>Give Feedback</DropdownMenuItem>
+            <DropdownMenuItem onClick={openFeedbackModal} isLight={isLight}>Give Feedback</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem isLight={isLight}>Session Settings</DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -1131,7 +1167,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
             title="Home"
             className={cn(
               'h-7 w-7 p-0',
-              isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-800',
+              isLight ? 'text-gray-600 bg-gray-200/70 hover:bg-gray-300/70' : 'text-gray-400 bg-gray-800/50 hover:bg-gray-700/60',
             )}>
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -1569,6 +1605,31 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
             </div>
         </div>
       </>
+
+      {/* Feedback Modal */}
+      <FeedbackModal
+        isLight={isLight}
+        isOpen={feedbackModalOpen}
+        feedbackText={feedbackText}
+        onClose={() => {
+          setFeedbackModalOpen(false);
+          setFeedbackText('');
+        }}
+        onFeedbackChange={setFeedbackText}
+        onSubmit={handleSendFeedback}
+      />
+
+      {/* Support Request Modal */}
+      <SupportRequestModal
+        isLight={isLight}
+        isOpen={supportRequestModalOpen}
+        onClose={() => setSupportRequestModalOpen(false)}
+        onSubmit={handleSupportRequestSubmit}
+        userEmail={user?.email || ''}
+        userOrganization={organization?.name || ''}
+        userTeam={activeTeam || ''}
+        availableTeams={[]}
+      />
     </SessionRuntimeProvider>
   );
 };

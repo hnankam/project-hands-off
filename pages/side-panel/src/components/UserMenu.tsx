@@ -64,7 +64,7 @@ export default function UserMenu({ isLight, onGoAdmin, onGoToSessions }: UserMen
               {/* User Info */}
               <div
                 className={cn(
-                  'px-3 py-2 border-b text-xs',
+                  'px-3 py-1.5 border-b text-xs rounded-t-md',
                   isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#1A2332]'
                 )}
               >
@@ -77,17 +77,17 @@ export default function UserMenu({ isLight, onGoAdmin, onGoToSessions }: UserMen
               </div>
 
               {/* Organization Selector */}
-              <div className={cn('px-2 py-1.5 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+              <div className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
                 <OrganizationSelector isLight={isLight} />
               </div>
 
               {/* Team Selector */}
-              <div className={cn('px-2 py-1.5 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+              <div className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
                 <TeamSelectorDropdown isLight={isLight} />
               </div>
 
               {/* Menu Items */}
-              <div className="py-1">
+              <div>
                 {onGoToSessions && (
                   <button
                     onClick={() => {
@@ -107,7 +107,7 @@ export default function UserMenu({ isLight, onGoAdmin, onGoToSessions }: UserMen
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+                        d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
                       />
                     </svg>
                     Sessions{!canAccessSessions && ' (Select org & team)'}

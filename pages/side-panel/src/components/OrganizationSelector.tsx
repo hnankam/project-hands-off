@@ -129,7 +129,7 @@ export default function OrganizationSelector({ isLight = true }: OrganizationSel
         <button
           onClick={handleToggle}
           className={cn(
-            'flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors w-full',
+            'flex items-center gap-2 px-2 py-1.5 transition-colors w-full',
             isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-700/50'
           )}
         >

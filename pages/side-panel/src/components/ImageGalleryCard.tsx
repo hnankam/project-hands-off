@@ -276,7 +276,7 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
               height="16"
               viewBox="0 0 24 24"
               fill="currentColor"
-              style={{ color: isLight ? '#2563eb' : '#60a5fa' }}
+              style={{ color: isLight ? '#6b7280' : '#9ca3af' }}
             >
               <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
             </svg>
@@ -353,12 +353,14 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
             const buttons = e.currentTarget.querySelectorAll('.gallery-nav-button');
             buttons.forEach((btn) => {
               (btn as HTMLElement).style.opacity = '1';
+              (btn as HTMLElement).style.transition = 'opacity 0.3s ease-in-out, background-color 0.2s ease, color 0.2s ease';
             });
           }}
           onMouseLeave={(e) => {
             const buttons = e.currentTarget.querySelectorAll('.gallery-nav-button');
             buttons.forEach((btn) => {
               (btn as HTMLElement).style.opacity = '0';
+              (btn as HTMLElement).style.transition = 'opacity 0.3s ease-in-out, background-color 0.2s ease, color 0.2s ease';
             });
           }}
         >
@@ -380,17 +382,17 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
                 cursor: 'pointer',
                 flexShrink: 0,
                 backgroundColor: 'transparent',
-                color: isLight ? '#d1d5db' : '#4b5563',
+                color: isLight ? '#e5e7eb' : '#374151',
                 opacity: 0,
-                transition: 'opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease',
+                transition: 'opacity 0.3s ease-in-out, background-color 0.2s ease, color 0.2s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isLight ? 'rgba(0, 0, 0, 0.02)' : 'rgba(255, 255, 255, 0.02)';
-                e.currentTarget.style.color = isLight ? '#6b7280' : '#6b7280';
+                e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.08)';
+                e.currentTarget.style.color = isLight ? '#9ca3af' : '#4b5563';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.color = isLight ? '#d1d5db' : '#4b5563';
+                e.currentTarget.style.color = isLight ? '#e5e7eb' : '#374151';
               }}
               title="Previous image"
             >
@@ -412,7 +414,7 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
               aspectRatio: '16/9',
               borderRadius: '6px',
               overflow: 'hidden',
-              backgroundColor: isLight ? '#f9fafb' : '#0B121C',
+              backgroundColor: "transparent",
               display: 'block',
               cursor: 'pointer',
             }}
@@ -473,17 +475,17 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
                 cursor: 'pointer',
                 flexShrink: 0,
                 backgroundColor: 'transparent',
-                color: isLight ? '#d1d5db' : '#4b5563',
+                color: isLight ? '#e5e7eb' : '#374151',
                 opacity: 0,
-                transition: 'opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease',
+                transition: 'opacity 0.3s ease-in-out, background-color 0.2s ease, color 0.2s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = isLight ? 'rgba(0, 0, 0, 0.02)' : 'rgba(255, 255, 255, 0.02)';
-                e.currentTarget.style.color = isLight ? '#6b7280' : '#6b7280';
+                e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.08)';
+                e.currentTarget.style.color = isLight ? '#9ca3af' : '#4b5563';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.color = isLight ? '#d1d5db' : '#4b5563';
+                e.currentTarget.style.color = isLight ? '#e5e7eb' : '#374151';
               }}
               title="Next image"
             >
@@ -512,8 +514,9 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
                   backgroundColor:
                     index === currentIndex
                       ? isLight ? '#2563eb' : '#60a5fa'
-                      : isLight ? '#d1d5db' : '#4b5563',
+                      : isLight ? '#e5e7eb' : '#374151',
                   padding: 0,
+                  transition: 'all 0.2s ease',
                 }}
                 title={`Image ${index + 1}`}
               />

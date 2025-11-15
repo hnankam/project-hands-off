@@ -3,6 +3,9 @@ import { cn } from '@extension/ui';
 import { useStorage, useSessionStorageDB, sessionStorageDBWrapper } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 import UserMenu from '../components/UserMenu';
+import InfoMenu from '../components/InfoMenu';
+import FeedbackModal from '../components/FeedbackModal';
+import SupportRequestModal, { type SupportRequestData } from '../components/SupportRequestModal';
 import { useAuth } from '../context/AuthContext';
 import { UsageDisplay } from '../components/UsageDisplay';
 import type { CumulativeUsage } from '../hooks/useUsageStream';
@@ -311,6 +314,9 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const [currentTipIndex, setCurrentTipIndex] = useState(0);
   const [sessionsPage, setSessionsPage] = useState(1);
   const sessionsPerPage = 10;
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [supportRequestModalOpen, setSupportRequestModalOpen] = useState(false);
   
   // Initialize activeHomeTab from localStorage
   const [activeHomeTab, setActiveHomeTab] = useState<'sessions' | 'usage' | 'insights'>(() => {
@@ -535,6 +541,31 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     requestCount: aggregatedUsage.requestCount,
   }), [aggregatedUsage]);
 
+  const openFeedbackModal = useCallback(() => {
+    setFeedbackModalOpen(true);
+  }, []);
+
+  const handleSendFeedback = useCallback(() => {
+    if (!feedbackText.trim()) return;
+    
+    console.log('[HomePage] Sending feedback:', feedbackText);
+    // TODO: Implement actual feedback submission
+    
+    setFeedbackModalOpen(false);
+    setFeedbackText('');
+  }, [feedbackText]);
+
+  const openSupportRequestModal = useCallback(() => {
+    setSupportRequestModalOpen(true);
+  }, []);
+
+  const handleSupportRequestSubmit = useCallback((data: SupportRequestData) => {
+    console.log('[HomePage] Submitting support request:', data);
+    // TODO: Implement actual support request submission
+    
+    setSupportRequestModalOpen(false);
+  }, []);
+
   const handleCreateSession = useCallback(async () => {
     if (creatingSession) return;
 
@@ -711,6 +742,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
           </div>
         </div>
         <div className="flex items-center gap-1">
+          <InfoMenu isLight={isLight} onSendFeedback={openFeedbackModal} onRequestSupport={openSupportRequestModal} />
           <UserMenu
             isLight={isLight}
             onGoAdmin={(tab) => onGoAdmin?.(tab)}
@@ -1512,6 +1544,31 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
           </div>
         </>
       )}
+
+      {/* Feedback Modal */}
+      <FeedbackModal
+        isLight={isLight}
+        isOpen={feedbackModalOpen}
+        feedbackText={feedbackText}
+        onClose={() => {
+          setFeedbackModalOpen(false);
+          setFeedbackText('');
+        }}
+        onFeedbackChange={setFeedbackText}
+        onSubmit={handleSendFeedback}
+      />
+
+      {/* Support Request Modal */}
+      <SupportRequestModal
+        isLight={isLight}
+        isOpen={supportRequestModalOpen}
+        onClose={() => setSupportRequestModalOpen(false)}
+        onSubmit={handleSupportRequestSubmit}
+        userEmail={user?.email || ''}
+        userOrganization={organization?.name || ''}
+        userTeam={activeTeam || ''}
+        availableTeams={[]}
+      />
     </>
   );
 };

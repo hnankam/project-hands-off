@@ -170,7 +170,7 @@ export const DropdownMenuItem = ({ children, onClick, onMouseDown, className, sh
       <span>{children}</span>
       {shortcut && (
         <span className={cn(
-          "text-[10px] ml-4 font-medium opacity-75",
+          "text-[10px] font-medium opacity-75",
           isLight ? "text-gray-500" : "text-gray-400"
         )}>{shortcut}</span>
       )}
@@ -186,7 +186,7 @@ interface DropdownMenuSeparatorProps {
 export const DropdownMenuSeparator = ({ className, isLight = true }: DropdownMenuSeparatorProps) => {
   return (
     <div className={cn(
-      "border-t my-1",
+      "border-t",
       isLight ? "border-gray-200" : "border-gray-700",
       className
     )} />
@@ -256,6 +256,68 @@ export const DropdownSubmenu = ({ label, children, align = 'right', isLight = tr
           </div>
         </div>,
         portalContainer
+      )}
+    </div>
+  )
+}
+
+interface DropdownAccordionProps {
+  label: string
+  children: React.ReactNode
+  isLight?: boolean
+}
+
+export const DropdownAccordion = ({ label, children, isLight = true }: DropdownAccordionProps) => {
+  const { isLight: ctxLight } = React.useContext(DropdownMenuContext)
+  const effectiveLight = isLight ?? ctxLight
+  const [isExpanded, setIsExpanded] = React.useState(false)
+
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setIsExpanded(prev => !prev)
+  }
+
+  return (
+    <div>
+      <button
+        className={cn(
+          "flex w-full items-center gap-0.5 px-3 py-2 text-xs font-medium transition-colors text-left",
+          effectiveLight ? "hover:bg-gray-100" : "hover:bg-gray-700/50"
+        )}
+        style={{ color: effectiveLight ? '#374151' : '#bcc1c7' }}
+        onClick={toggle}
+      >
+        {/* Chevron on the left */}
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={cn(
+            "flex-shrink-0 transition-transform duration-200",
+            effectiveLight ? "text-gray-500" : "text-gray-400"
+          )}
+          style={{
+            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+          }}
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+        <span>{label}</span>
+      </button>
+      {isExpanded && (
+        <div className="ml-0">
+          {React.Children.map(children, child => {
+            if (React.isValidElement(child)) {
+              return React.cloneElement(child, { isLight: effectiveLight } as any)
+            }
+            return child
+          })}
+        </div>
       )}
     </div>
   )
