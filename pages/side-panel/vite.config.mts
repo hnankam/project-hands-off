@@ -33,7 +33,7 @@ export default withPageConfig({
   },
   // Don't pre-bundle transformers - side panel doesn't use it anymore
   optimizeDeps: {
-    include: ['react', 'react-dom'],
+    include: ['react', 'react-dom', 'mermaid'],
     exclude: ['@huggingface/transformers', 'onnxruntime-web', 'onnxruntime-common'],
     esbuildOptions: {
       target: 'esnext',

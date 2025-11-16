@@ -4,6 +4,7 @@ import { useChatContext, Markdown } from '@copilotkit/react-ui';
 import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
 import { useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
+import { MermaidBlock } from './MermaidBlock';
 
 const extractTextFromMessage = (msg: any): string => {
   if (!msg) return '';
@@ -203,6 +204,34 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
       }
     : undefined;
 
+  // Extend markdownTagRenderers with code block renderer for mermaid
+  const extendedMarkdownRenderers = useMemo(() => {
+    return {
+      ...markdownTagRenderers,
+      // Add code block renderer for mermaid diagrams
+      code: ({ node, inline, className, children, ...props }: any) => {
+        const match = /language-(\w+)/.exec(className || '');
+        const language = match ? match[1] : '';
+        
+        // Handle mermaid diagrams
+        if (language === 'mermaid' && !inline) {
+          return <MermaidBlock>{String(children)}</MermaidBlock>;
+        }
+        
+        // Return default code rendering for other languages
+        return inline ? (
+          <code className={className} {...props}>
+            {children}
+          </code>
+        ) : (
+          <code className={className} {...props}>
+            {children}
+          </code>
+        );
+      },
+    };
+  }, [markdownTagRenderers]);
+
   return (
     <>
       {content && (
@@ -212,7 +241,7 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
           data-message-id={(message as any)?.id || ''}
           style={assistantMessageStyle}
         >
-          {content && <Markdown content={content} components={markdownTagRenderers} />}
+          {content && <Markdown content={content} components={extendedMarkdownRenderers} />}
 
           {shouldRenderControls && (
             <div

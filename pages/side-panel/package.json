@@ -29,6 +29,7 @@
     "better-auth": "1.4.0-beta.14",
     "firebase": "^11.1.0",
     "html2canvas": "1.4.1",
+    "mermaid": "^10.9.1",
     "zod": "3.25.76"
   },
   "devDependencies": {

@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 // @ts-ignore
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { MermaidBlock } from '../MermaidBlock';
 
 export interface MarkdownRendererProps {
   /**
@@ -97,10 +98,15 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
         components={{
-          // Code blocks with syntax highlighting
+          // Code blocks with syntax highlighting and mermaid diagram support
           code({ node, inline, className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || '');
             const language = match ? match[1] : '';
+            
+            // Handle mermaid diagrams
+            if (language === 'mermaid' && !inline) {
+              return <MermaidBlock>{String(children)}</MermaidBlock>;
+            }
             
             // If not inline and has multiple lines, treat as code block even without language
             const isCodeBlock = !inline && (String(children).includes('\n') || language);

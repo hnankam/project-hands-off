@@ -63,6 +63,7 @@ import { CustomUserMessage } from './CustomUserMessage';
 import { CustomAssistantMessage } from './CustomAssistantMessage';
 import { CustomInput } from './CustomInput';
 import { ThinkingBlock } from './ThinkingBlock';
+import { MermaidBlock } from './MermaidBlock';
 const EmptyThinkingBlock: React.FC<{ children?: React.ReactNode }> = () => null;
 import { ChatErrorDisplay } from './ChatErrorDisplay';
 
@@ -409,11 +410,12 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         el = el.parentElement as HTMLElement;
       }
       
+      const messageHeight = messageElement.offsetHeight;
       const containerHeight = container.clientHeight;
       const currentScrollHeight = container.scrollHeight;
       const currentScrollTop = container.scrollTop;
-      const STICKY_THRESHOLD = -2; // Match the sticky detection threshold
-      const requiredScrollHeight = messageTopInContent - STICKY_THRESHOLD + containerHeight;
+      const STICKY_THRESHOLD = 0; // Match the sticky detection threshold
+      const requiredScrollHeight = messageTopInContent - STICKY_THRESHOLD + containerHeight + messageHeight;
       const targetHeight = Math.max(0, requiredScrollHeight - currentScrollHeight);
       
       // Also calculate how much we need to scroll from current position
@@ -1762,6 +1764,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // Custom markdown renderers for chat messages (stable reference)
   const customMarkdownTagRenderers = React.useMemo(() => ({
     think: showThoughtBlocks ? ThinkingBlock : EmptyThinkingBlock,
+    mermaid: MermaidBlock,
   }), [showThoughtBlocks]);
 
   // Create a stable, session-scoped Input component to avoid remounts
