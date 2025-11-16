@@ -2,14 +2,31 @@ import { Editor } from '@tiptap/react';
 
 /**
  * Converts Tiptap editor content to Markdown format
- * Supports: bold, italic, code blocks, code inline, mentions, paragraphs, hard breaks
+ * Supports: headings, bold, italic, code blocks, code inline, mentions, paragraphs, 
+ *           hard breaks, blockquotes, horizontal rules, lists (ordered and unordered)
  */
 export function editorToMarkdown(editor: Editor): string {
   const json = editor.getJSON();
   return jsonToMarkdown(json);
 }
 
-function jsonToMarkdown(node: any, depth = 0): string {
+/**
+ * Serializes Tiptap JSON to Markdown
+ */
+export function serializeToMarkdown(json: any): string {
+  return jsonToMarkdown(json);
+}
+
+/**
+ * Converts Markdown string to Tiptap-compatible content
+ * Note: This returns the raw string which Tiptap will parse
+ * For existing HTML content, it will also work as Tiptap can parse HTML
+ */
+export function markdownToJson(markdown: string): string {
+  return markdown || '';
+}
+
+function jsonToMarkdown(node: any, depth = 0, listContext?: { type: 'bullet' | 'ordered'; index: number }): string {
   if (!node) return '';
 
   // Handle text nodes with marks
@@ -52,29 +69,80 @@ function jsonToMarkdown(node: any, depth = 0): string {
     return '\n';
   }
 
+  // Handle headings
+  if (node.type === 'heading') {
+    const level = node.attrs?.level || 1;
+    const content = node.content?.map((child: any) => jsonToMarkdown(child, depth)).join('') || '';
+    return '#'.repeat(level) + ' ' + content + '\n\n';
+  }
+
   // Handle paragraph
   if (node.type === 'paragraph') {
     const content = node.content?.map((child: any) => jsonToMarkdown(child, depth)).join('') || '';
     return depth === 0 ? content + '\n' : content;
   }
 
+  // Handle blockquote
+  if (node.type === 'blockquote') {
+    const content = node.content?.map((child: any) => jsonToMarkdown(child, depth + 1)).join('') || '';
+    // Prefix each line with "> "
+    return content.split('\n').filter((line: string) => line.trim()).map((line: string) => `> ${line}`).join('\n') + '\n\n';
+  }
+
+  // Handle horizontal rule
+  if (node.type === 'horizontalRule') {
+    return '---\n\n';
+  }
+
   // Handle code block
   if (node.type === 'codeBlock') {
     const content = node.content?.map((child: any) => jsonToMarkdown(child, depth + 1)).join('') || '';
     const language = node.attrs?.language || '';
-    return `\`\`\`${language}\n${content}\`\`\`\n`;
+    return `\`\`\`${language}\n${content}\`\`\`\n\n`;
+  }
+
+  // Handle bullet list
+  if (node.type === 'bulletList') {
+    const items = node.content?.map((child: any, index: number) => 
+      jsonToMarkdown(child, depth, { type: 'bullet', index })
+    ).join('') || '';
+    return items + (depth === 0 ? '\n' : '');
+  }
+
+  // Handle ordered list
+  if (node.type === 'orderedList') {
+    const items = node.content?.map((child: any, index: number) => 
+      jsonToMarkdown(child, depth, { type: 'ordered', index: index + 1 })
+    ).join('') || '';
+    return items + (depth === 0 ? '\n' : '');
+  }
+
+  // Handle list item
+  if (node.type === 'listItem') {
+    const indent = '  '.repeat(depth);
+    const bullet = listContext?.type === 'ordered' 
+      ? `${listContext.index}. `
+      : '- ';
+    const content = node.content?.map((child: any) => {
+      // For nested lists or paragraphs in list items
+      if (child.type === 'paragraph') {
+        return child.content?.map((c: any) => jsonToMarkdown(c, depth + 1)).join('') || '';
+      }
+      return jsonToMarkdown(child, depth + 1, listContext);
+    }).join('') || '';
+    return `${indent}${bullet}${content}\n`;
   }
 
   // Handle document root
   if (node.type === 'doc') {
     const content = node.content?.map((child: any) => jsonToMarkdown(child, depth)).join('') || '';
-    // Remove trailing newlines
-    return content.trim();
+    // Remove excessive trailing newlines
+    return content.replace(/\n{3,}/g, '\n\n').trim();
   }
 
   // Handle other block nodes
   if (node.content) {
-    return node.content.map((child: any) => jsonToMarkdown(child, depth)).join('');
+    return node.content.map((child: any) => jsonToMarkdown(child, depth, listContext)).join('');
   }
 
   return '';

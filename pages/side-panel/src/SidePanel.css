@@ -498,7 +498,7 @@ input:focus {
   width: 100% !important; /* Force full width */
   margin-bottom: 0 !important;
   overflow: visible !important; /* Ensure dropdowns can extend beyond message bounds */
-  margin-top: 2.5rem !important;
+  margin-top: 30px !important;
   border: 1px solid var(--copilot-kit-border-color) !important;
 }
 
@@ -1345,6 +1345,74 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   will-change: auto !important; /* Let browser optimize naturally */
 }
 
+/* ThinkingBlock content - ensure lists render properly */
+.thinking-block-content {
+  margin: 0;
+  padding: 0;
+}
+
+.thinking-block-content > * {
+  margin: 0;
+  padding: 0;
+}
+
+/* Lists in ThinkingBlock need proper spacing - target all ul/ol/li regardless of nesting */
+.thinking-block-content ul,
+.thinking-block-content ol {
+  margin: 0.5em 0 !important;
+  margin-top: 0.5em !important;
+  margin-bottom: 0.5em !important;
+  padding-left: 20px !important;
+  display: block !important;
+  line-height: 1.5 !important;
+}
+
+.thinking-block-content li {
+  margin: 0.3em 0 !important;
+  margin-top: 0.3em !important;
+  margin-bottom: 0.3em !important;
+  padding-left: 4px !important;
+  display: list-item !important;
+  list-style-position: outside !important;
+  line-height: 1.5 !important;
+}
+
+.thinking-block-content ul > li {
+  list-style-type: disc !important;
+  list-style-position: outside !important;
+}
+
+.thinking-block-content ol > li {
+  list-style-type: decimal !important;
+  list-style-position: outside !important;
+}
+
+/* Ensure markdown-content wrapper doesn't interfere */
+.thinking-block-content .markdown-content {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.thinking-block-content .markdown-content ul,
+.thinking-block-content .markdown-content ol {
+  margin: 0.5em 0 !important;
+  margin-top: 0.5em !important;
+  margin-bottom: 0.5em !important;
+  padding-left: 20px !important;
+  display: block !important;
+  line-height: 1.5 !important;
+}
+
+.thinking-block-content .markdown-content li {
+  margin: 0.3em 0 !important;
+  margin-top: 0.3em !important;
+  margin-bottom: 0.3em !important;
+  padding-left: 4px !important;
+  display: list-item !important;
+  list-style-position: outside !important;
+  line-height: 1.5 !important;
+}
+
 .copilotKitUserMessage > .copilotKitMessageControls > .copilotKitMessageControlButton {
   margin-bottom: 0rem !important;
 }
@@ -1875,6 +1943,93 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   font-style: italic;
 }
 
+/* Headings */
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3,
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6 {
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 8px 0 4px 0;
+  color: inherit;
+}
+
+.ProseMirror h1 {
+  font-size: 1.5em;
+}
+
+.ProseMirror h2 {
+  font-size: 1.3em;
+}
+
+.ProseMirror h3 {
+  font-size: 1.15em;
+}
+
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6 {
+  font-size: 1em;
+}
+
+/* Blockquote */
+.ProseMirror blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 12px;
+  margin: 8px 0;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.dark .ProseMirror blockquote {
+  border-left-color: #4b5563;
+  color: #9ca3af;
+}
+
+/* Horizontal Rule */
+.ProseMirror hr {
+  border: none;
+  border-top: 2px solid #e5e7eb;
+  margin: 10px 0 !important;
+}
+
+.dark .ProseMirror hr {
+  border-top-color: #1f2937 !important;
+}
+
+/* Lists */
+.ProseMirror ul,
+.ProseMirror ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.ProseMirror li {
+  margin: 2px 0;
+}
+
+.ProseMirror ul > li {
+  list-style-type: disc;
+}
+
+.ProseMirror ol > li {
+  list-style-type: decimal;
+}
+
+/* Nested lists */
+.ProseMirror ul ul,
+.ProseMirror ol ul {
+  list-style-type: circle;
+}
+
+.ProseMirror ul ul ul,
+.ProseMirror ol ul ul,
+.ProseMirror ol ol ul {
+  list-style-type: square;
+}
+
 /* Links - styled like mentions with icon */
 .ProseMirror a.editor-link {
   color: #6b7280; /* gray-500 */
@@ -2321,6 +2476,114 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   font-style: italic;
 }
 
+/* Headings in markdown */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0.8em 0 0.4em 0;
+  color: inherit;
+}
+
+.markdown-content h1 {
+  font-size: 1.5em;
+}
+
+.markdown-content h2 {
+  font-size: 1.3em;
+}
+
+.markdown-content h3 {
+  font-size: 1.15em;
+}
+
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  font-size: 1em;
+}
+
+/* Blockquote in markdown */
+.markdown-content blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 12px;
+  margin: 0.8em 0;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.dark .markdown-content blockquote {
+  border-left-color: #4b5563;
+  color: #9ca3af;
+}
+
+/* Horizontal Rule in markdown */
+.markdown-content hr {
+  border: none;
+  border-top: 2px solid #e5e7eb;
+  margin: 1.2em 0;
+}
+
+.dark .markdown-content hr {
+  border-top-color: #1f2937 !important;
+}
+
+/* Horizontal Rule in CopilotKit markdown */
+.copilotKitAssistantMessage hr,
+.copilotKitMarkdownElement hr,
+.copilotKitMarkdown hr,
+.copilotKitMessage hr {
+  border: none !important;
+  border-top: 2px solid #e5e7eb !important;
+  margin: 10px 0 !important;
+}
+
+.dark .copilotKitAssistantMessage hr,
+.dark .copilotKitMarkdownElement hr,
+.dark .copilotKitMarkdown hr,
+.dark .copilotKitMessage hr {
+  border: none !important;
+  border-top: 2px solid #1f2937 !important;
+  border-top-color: #1f2937 !important;
+  color: transparent !important;
+  margin: 10px 0 !important;
+}
+
+/* Lists in markdown */
+.markdown-content ul,
+.markdown-content ol {
+  margin: 0.4em 0;
+  padding-left: 20px;
+}
+
+.markdown-content li {
+  margin: 0.2em 0;
+}
+
+.markdown-content ul > li {
+  list-style-type: disc;
+}
+
+.markdown-content ol > li {
+  list-style-type: decimal;
+}
+
+/* Nested lists in markdown */
+.markdown-content ul ul,
+.markdown-content ol ul {
+  list-style-type: circle;
+}
+
+.markdown-content ul ul ul,
+.markdown-content ol ul ul,
+.markdown-content ol ol ul {
+  list-style-type: square;
+}
+
 .markdown-content code {
   background-color: rgba(0, 0, 0, 0.05);
   border-radius: 3px;
@@ -2586,11 +2849,18 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
+  overflow: visible !important;
 }
 
 .mermaid-block:hover .mermaid-settings-panel {
   opacity: 1 !important;
   pointer-events: auto !important;
+}
+
+/* Ensure select dropdowns can render outside the panel */
+.mermaid-settings-panel select {
+  position: relative;
+  z-index: 22;
 }
 
 /* Select hover and focus states */
@@ -2701,5 +2971,431 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 
 .dark .mermaid-block {
   --toggle-hover-bg: #334155;
+}
+
+/* ==========================================================
+   ADMIN PAGE RICH TEXT EDITOR
+   ========================================================== */
+/* Admin Rich Text Editor Styles */
+.admin-rich-text-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.admin-rich-text-editor > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.admin-rich-text-editor .ProseMirror-focused {
+  outline: none;
+}
+
+.admin-rich-text-editor .ProseMirror {
+  padding: 12px;
+  outline: none !important;
+  font-size: 13px;
+  min-height: 100%;
+  overflow-y: auto;
+}
+
+.admin-rich-text-editor p {
+  margin: 0.5em 0;
+}
+
+.admin-rich-text-editor p:first-child {
+  margin-top: 0;
+}
+
+.admin-rich-text-editor p:last-child {
+  margin-bottom: 0;
+}
+
+/* Placeholder */
+.admin-rich-text-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9ca3af;
+  pointer-events: none;
+  height: 0;
+}
+
+.dark .admin-rich-text-editor p.is-editor-empty:first-child::before {
+  color: #6b7280;
+}
+
+/* Headings */
+.admin-rich-text-editor h1,
+.admin-rich-text-editor h2,
+.admin-rich-text-editor h3 {
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0.8em 0 0.4em 0;
+}
+
+.admin-rich-text-editor h1:first-child,
+.admin-rich-text-editor h2:first-child,
+.admin-rich-text-editor h3:first-child {
+  margin-top: 0;
+}
+
+.admin-rich-text-editor h1 {
+  font-size: 1.5em;
+}
+
+.admin-rich-text-editor h2 {
+  font-size: 1.3em;
+}
+
+.admin-rich-text-editor h3 {
+  font-size: 1.15em;
+}
+
+/* Bold and Italic */
+.admin-rich-text-editor strong {
+  font-weight: 700;
+}
+
+.admin-rich-text-editor em {
+  font-style: italic;
+}
+
+/* Inline Code */
+.admin-rich-text-editor code {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+  color: inherit;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+.dark .admin-rich-text-editor code {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Code Block */
+.admin-rich-text-editor pre {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 6px;
+  color: inherit;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  margin: 0.8em 0;
+  padding: 12px;
+  overflow-x: auto;
+}
+
+.dark .admin-rich-text-editor pre {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.admin-rich-text-editor pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Blockquote */
+.admin-rich-text-editor blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 12px;
+  margin: 0.8em 0;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.dark .admin-rich-text-editor blockquote {
+  border-left-color: #4b5563;
+  color: #9ca3af;
+}
+
+/* Horizontal Rule */
+.admin-rich-text-editor hr {
+  border: none;
+  border-top: 2px solid #e5e7eb;
+  margin: 10px 0 !important;
+}
+
+.dark .admin-rich-text-editor hr {
+  border-top-color: #1f2937 !important;
+}
+
+/* Lists */
+.admin-rich-text-editor ul,
+.admin-rich-text-editor ol {
+  margin: 0.5em 0;
+  padding-left: 20px;
+}
+
+.admin-rich-text-editor li {
+  margin: 0.2em 0;
+}
+
+.admin-rich-text-editor ul > li {
+  list-style-type: disc;
+}
+
+.admin-rich-text-editor ol > li {
+  list-style-type: decimal;
+}
+
+/* Nested lists */
+.admin-rich-text-editor ul ul,
+.admin-rich-text-editor ol ul {
+  list-style-type: circle;
+}
+
+.admin-rich-text-editor ul ul ul,
+.admin-rich-text-editor ol ul ul,
+.admin-rich-text-editor ol ol ul {
+  list-style-type: square;
+}
+
+/* Scrollbar for editor content */
+.admin-rich-text-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.admin-rich-text-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-rich-text-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 2px;
+}
+
+.admin-rich-text-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+.dark .admin-rich-text-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3);
+}
+
+.dark .admin-rich-text-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5);
+}
+
+/* ==========================================================
+   CODEMIRROR JSON EDITOR
+   ========================================================== */
+.codemirror-json-editor {
+  display: flex;
+  flex-direction: column;
+}
+
+.codemirror-json-editor > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Ensure CodeMirror editor is flexible */
+.codemirror-json-editor .cm-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.codemirror-json-editor .cm-scroller {
+  flex: 1;
+  min-height: 0;
+}
+
+/* CodeMirror scrollbar styling */
+.codemirror-json-editor .cm-scroller::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.codemirror-json-editor .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.codemirror-json-editor .cm-scroller::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 2px;
+}
+
+.codemirror-json-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+.dark .codemirror-json-editor .cm-scroller::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3);
+}
+
+.dark .codemirror-json-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5);
+}
+
+/* CodeMirror line height fix */
+.codemirror-json-editor .cm-line {
+  line-height: 1;
+}
+
+/* Agent Instructions Markdown Display on Card */
+.agent-instructions-markdown {
+  font-size: inherit !important;
+  line-height: 1.6;
+}
+
+.agent-instructions-markdown p {
+  margin: 0.5em 0;
+  font-size: inherit;
+  line-height: 1.5;
+}
+
+.agent-instructions-markdown p:first-child {
+  margin-top: 0;
+}
+
+.agent-instructions-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.agent-instructions-markdown p + p {
+  margin-top: 0.8em;
+}
+
+.agent-instructions-markdown h1,
+.agent-instructions-markdown h2,
+.agent-instructions-markdown h3 {
+  font-weight: 700;
+  margin: 0.5em 0 0.3em 0;
+}
+
+.agent-instructions-markdown h1:first-child,
+.agent-instructions-markdown h2:first-child,
+.agent-instructions-markdown h3:first-child {
+  margin-top: 0;
+}
+
+.agent-instructions-markdown h1 {
+  font-size: 1.3em;
+}
+
+.agent-instructions-markdown h2 {
+  font-size: 1.15em;
+}
+
+.agent-instructions-markdown h3 {
+  font-size: 1em;
+}
+
+.agent-instructions-markdown strong {
+  font-weight: 700;
+}
+
+.agent-instructions-markdown em {
+  font-style: italic;
+}
+
+.agent-instructions-markdown code {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 2px;
+  padding: 1px 4px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 11px;
+}
+
+.dark .agent-instructions-markdown code {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.agent-instructions-markdown pre {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  padding: 8px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+  font-size: 11px;
+}
+
+.dark .agent-instructions-markdown pre {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.agent-instructions-markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.agent-instructions-markdown ul,
+.agent-instructions-markdown ol {
+  margin: 0.8em 0;
+  padding-left: 20px;
+  line-height: 1.6;
+}
+
+.agent-instructions-markdown ul:first-child,
+.agent-instructions-markdown ol:first-child {
+  margin-top: 0;
+}
+
+.agent-instructions-markdown ul:last-child,
+.agent-instructions-markdown ol:last-child {
+  margin-bottom: 0;
+}
+
+.agent-instructions-markdown li {
+  margin: 0.4em 0;
+  padding-left: 4px;
+}
+
+.agent-instructions-markdown li:first-child {
+  margin-top: 0;
+}
+
+.agent-instructions-markdown li:last-child {
+  margin-bottom: 0;
+}
+
+.agent-instructions-markdown ul > li {
+  list-style-type: disc;
+  list-style-position: outside;
+}
+
+.agent-instructions-markdown ol > li {
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
+.agent-instructions-markdown li p {
+  margin: 0.2em 0;
+}
+
+.agent-instructions-markdown blockquote {
+  border-left: 2px solid #d1d5db;
+  padding-left: 8px;
+  margin: 0.5em 0;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.dark .agent-instructions-markdown blockquote {
+  border-left-color: #4b5563;
+  color: #9ca3af;
+}
+
+.agent-instructions-markdown hr {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 0.8em 0;
+}
+
+.dark .agent-instructions-markdown hr {
+  border-top-color: #1f2937 !important;
 }
 

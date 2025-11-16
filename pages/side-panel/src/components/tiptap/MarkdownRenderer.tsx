@@ -84,6 +84,10 @@ const processMentions = (text: string): (string | React.ReactElement)[] => {
  * - @Mentions (styled as blue pills)
  * - Bold/italic text
  * - Inline code
+ * - Headings (H1-H6)
+ * - Blockquotes
+ * - Horizontal rules
+ * - Lists (ordered and unordered)
  * - Proper styling
  */
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
@@ -97,6 +101,8 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   return (
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
+        remarkPlugins={[]}
+        rehypePlugins={[]}
         components={{
           // Code blocks with syntax highlighting and mermaid diagram support
           code({ node, inline, className, children, ...props }) {
@@ -164,6 +170,45 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
             });
             
             return <p className="markdown-paragraph" {...props}>{processedChildren}</p>;
+          },
+          // Headings (H1-H6)
+          h1({ node, children, ...props }: any) {
+            return <h1 {...props}>{children}</h1>;
+          },
+          h2({ node, children, ...props }: any) {
+            return <h2 {...props}>{children}</h2>;
+          },
+          h3({ node, children, ...props }: any) {
+            return <h3 {...props}>{children}</h3>;
+          },
+          h4({ node, children, ...props }: any) {
+            return <h4 {...props}>{children}</h4>;
+          },
+          h5({ node, children, ...props }: any) {
+            return <h5 {...props}>{children}</h5>;
+          },
+          h6({ node, children, ...props }: any) {
+            return <h6 {...props}>{children}</h6>;
+          },
+          // Blockquote
+          blockquote({ node, children, ...props }: any) {
+            return <blockquote {...props}>{children}</blockquote>;
+          },
+          // Horizontal rule
+          hr({ node, ...props }: any) {
+            return <hr {...props} />;
+          },
+          // Unordered list
+          ul({ node, children, ...props }: any) {
+            return <ul {...props}>{children}</ul>;
+          },
+          // Ordered list
+          ol({ node, children, ...props }: any) {
+            return <ol {...props}>{children}</ol>;
+          },
+          // List item
+          li({ node, children, ...props }: any) {
+            return <li {...props}>{children}</li>;
           },
           // Strong/bold text
           strong({ node, children, ...props }) {

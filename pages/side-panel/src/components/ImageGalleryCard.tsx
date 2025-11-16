@@ -181,7 +181,7 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
                   fontWeight: 300,
                 }}
               >
-                Generating images...
+                Generating Images...
               </div>
             </div>
           </div>

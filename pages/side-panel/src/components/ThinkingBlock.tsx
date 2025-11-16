@@ -1,8 +1,8 @@
 import type { FC } from 'react';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
-import { useStreaming } from '../context/StreamingContext';
+import { MarkdownRenderer } from './tiptap/MarkdownRenderer';
 
 /**
  * ThinkingBlock Component
@@ -12,8 +12,8 @@ import { useStreaming } from '../context/StreamingContext';
  * 
  * Features:
  * - Accordion (collapsible) interface
- * - Auto-opens when message is streaming
- * - Auto-closes when content stops updating (1 second delay)
+ * - Auto-opens when opening tag is encountered (streaming)
+ * - Auto-closes when closing tag is received
  * - Theme-aware styling (light/dark modes)
  * - Lightbulb icon to indicate thinking state
  * - Smooth expand/collapse animations
@@ -22,17 +22,16 @@ import { useStreaming } from '../context/StreamingContext';
  * 
  * @example
  * ```tsx
- * <thinking>Analyzing the page structure...</thinking>
+ * <think>Analyzing the page structure...</think>
  * ```
  */
-export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) => {
+export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolean }> = ({ children, isComplete = false }) => {
   const { isLight } = useStorage(exampleThemeStorage);
-  const { isStreaming } = useStreaming();
-  const [isOpen, setIsOpen] = useState(() => Boolean(isStreaming));
+  const [isOpen, setIsOpen] = useState(() => !isComplete);
   const [isHovered, setIsHovered] = useState(false);
   const autoCloseTimerRef = useRef<NodeJS.Timeout | null>(null);
   const manualOnlyRef = useRef(false); // After auto-close, only manual toggling allowed
-  const prevStreamingRef = useRef<boolean>(false);
+  const prevCompleteRef = useRef<boolean>(false);
   const myIdRef = useRef<number>(0);
   const [isLatest, setIsLatest] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -73,12 +72,11 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
     };
   }, []);
 
-  // Open during streaming for the latest block; close shortly after streaming ends.
+  // Open when tag is incomplete (streaming); close when closing tag is received.
   // Once auto-closed, switch to manual-only.
   useEffect(() => {
-    const prev = prevStreamingRef.current;
-    const isActiveStreaming = isStreaming && isLatest;
-    prevStreamingRef.current = isActiveStreaming;
+    const prev = prevCompleteRef.current;
+    prevCompleteRef.current = isComplete;
 
     // Clear any pending close timer on state change
     if (autoCloseTimerRef.current) {
@@ -86,25 +84,25 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
       autoCloseTimerRef.current = null;
     }
 
-    if (isActiveStreaming && !manualOnlyRef.current) {
-      // While streaming, keep it open
+    if (!isComplete && !manualOnlyRef.current) {
+      // While tag is incomplete (no closing tag), keep it open
       setIsOpen(true);
       return;
     }
 
-    // When streaming transitions to false for the first time, auto-close and enter manual-only mode
-    if (!isActiveStreaming && prev && !manualOnlyRef.current) {
+    // When tag becomes complete (closing tag received), auto-close and enter manual-only mode
+    if (isComplete && !prev && !manualOnlyRef.current) {
       autoCloseTimerRef.current = setTimeout(() => {
         setIsOpen(false);
         manualOnlyRef.current = true; // From now on, only manual open/close
       }, 800);
     }
-  }, [isStreaming, isLatest]);
+  }, [isComplete]);
 
-  // Auto-scroll to bottom during streaming to keep new content visible
+  // Auto-scroll to bottom while tag is incomplete to keep new content visible
   // Use throttled MutationObserver for smooth, responsive scrolling
   useEffect(() => {
-    if (!isStreaming || !isLatest || !isOpen || !contentRef.current) {
+    if (isComplete || !isOpen || !contentRef.current) {
       return;
     }
 
@@ -145,7 +143,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
     return () => {
       observer.disconnect();
     };
-  }, [isStreaming, isLatest, isOpen]);
+  }, [isComplete, isOpen]);
   
   const toggleAccordion = () => {
     setIsOpen(!isOpen);
@@ -157,126 +155,40 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
     }
   };
   
-  // PERFORMANCE: Pre-compile regex patterns once
-  const THINKING_OPEN_RE = React.useMemo(() => /<think(?:ing)?\s*>/i, []);
-  const THINKING_CLOSE_RE = React.useMemo(() => /<\/think(?:ing)?\s*>/i, []);
-  const THINKING_TAGS_RE = React.useMemo(() => /<\/?think(?:ing)?\s*>/gi, []);
-
-  // Extract only the content that is actually inside <thinking>...</thinking> tags.
-  // The markdown renderer should only pass content between the tags, but sometimes
-  // malformed markdown causes the entire response to be wrapped. This extracts
-  // just the thinking portion and strips any tag artifacts.
-  const extractThinkingInner = React.useCallback((node: React.ReactNode): React.ReactNode => {
-    // Collapse multiple blank lines to a single newline for cleaner display
-    const collapseBlankLines = (text: string): string => text.replace(/(\r?\n)\s*(\r?\n)+/g, '$1');
-
-    // Helper to recursively collect all text content from React nodes
-    const collectText = (n: React.ReactNode): string => {
-      if (typeof n === 'string') return n;
-      if (typeof n === 'number') return String(n);
-      if (Array.isArray(n)) return n.map(collectText).join('');
-      if (React.isValidElement(n)) {
-        const el = n as React.ReactElement<{ children?: React.ReactNode }>;
-        return collectText(el.props?.children);
+  // Light sanitization: remove consecutive newlines and trim content when tag is complete
+  const sanitizeContent = useMemo(() => {
+    if (typeof children !== 'string') {
+      return children;
       }
-      return '';
-    };
-
-    // Get all text to check for thinking tags
-    const allText = collectText(node);
     
-    // PERFORMANCE: Early exit if no thinking tags present
-    if (!allText.includes('<thinking') && !allText.includes('</thinking')) {
-      return node;
-    }
+    let sanitized = children;
     
-    // If content has thinking tags, extract only what's between the first valid pair
-    const openMatch = allText.match(THINKING_OPEN_RE);
-    const closeMatch = allText.match(THINKING_CLOSE_RE);
-    
-    if (openMatch && closeMatch && openMatch.index !== undefined && closeMatch.index !== undefined) {
-      const start = openMatch.index + openMatch[0].length;
-      const end = closeMatch.index;
+    // Apply sanitization only when closing tag is received
+    if (isComplete) {
+      // Normalize different line break types (Windows \r\n, Mac \r, Unix \n) to \n
+      sanitized = sanitized.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       
-      if (end > start) {
-        // Return only the content between the tags, stripped of any tag artifacts
-        return collapseBlankLines(
-          allText.slice(start, end).replace(THINKING_TAGS_RE, '').trim()
-        );
-      }
+      // Light sanitization: Only remove excessive newlines (3+), keep double newlines
+      // This preserves markdown list formatting (which needs double newlines) while
+      // removing excessive blank lines
+      sanitized = sanitized.replace(/\n{3,}/g, '\n\n');
+      
+      // Trim leading and trailing whitespace (including newlines)
+      sanitized = sanitized.trim();
     }
     
-    // If tags are malformed or unmatched, strip all tag artifacts and return content
-    return collapseBlankLines(allText.replace(THINKING_TAGS_RE, '').trim());
-  }, [THINKING_OPEN_RE, THINKING_CLOSE_RE, THINKING_TAGS_RE]);
+    return sanitized;
+  }, [children, isComplete]);
 
-  // Remove a single leading space character from the very first text node only,
-  // preserving newlines and internal spacing for pre-wrap semantics.
-  const normalizedChildren = React.useMemo(() => {
-    let removed = false;
-
-    const trimNode = (node: React.ReactNode): React.ReactNode => {
-      if (typeof node === 'string') {
-        let text = node;
-        // Remove a single leading newline first ("\n" or "\r\n")
-        if (!removed && /^\r?\n/.test(text)) {
-          removed = true;
-          text = text.replace(/^\r?\n/, '');
-        } else if (!removed && text.startsWith(' ')) {
-          // Fallback: remove a single leading space
-          removed = true;
-          text = text.slice(1);
-        }
-        // Collapse any double/multiple newlines into a single newline
-        text = text.replace(/(\r?\n){2,}/g, '\n');
-        return text;
-      }
-      if (Array.isArray(node)) {
-        const isBlockElement = (el: React.ReactNode) => {
-          if (!React.isValidElement(el)) return false;
-          const t = el.type as any;
-          return typeof t === 'string' && (t === 'p' || t === 'div' || t === 'pre');
-        };
-
-        const reduced: React.ReactNode[] = [];
-        for (const child of node) {
-          let next = trimNode(child);
-          const last = reduced.length > 0 ? reduced[reduced.length - 1] : undefined;
-
-          // Merge adjacent text nodes and collapse multi-newlines across the boundary
-          if (typeof last === 'string' && typeof next === 'string') {
-            reduced[reduced.length - 1] = (last + next).replace(/(\r?\n){2,}/g, '\n');
-            continue;
-          }
-
-          // If a text node is followed by a block element, strip trailing newlines from the text
-          if (typeof last === 'string' && isBlockElement(next)) {
-            reduced[reduced.length - 1] = last.replace(/\r?\n+$/g, '');
-          }
-
-          // If a block element is followed by a text node, strip leading newlines from the text
-          if (isBlockElement(last) && typeof next === 'string') {
-            next = next.replace(/^\r?\n+/g, '');
-          }
-
-          reduced.push(next);
-        }
-        return reduced;
-      }
-      if (React.isValidElement(node)) {
-        const el = node as React.ReactElement<{ children?: React.ReactNode }>;
-        const childNodes = el.props?.children;
-        if (childNodes === undefined || childNodes === null) return el;
-        const nextChildren = trimNode(childNodes);
-        if (nextChildren === childNodes) return el;
-        return React.cloneElement(el, { ...(el.props as any), children: nextChildren });
-      }
-      return node;
-    };
-
-    const innerOnly = extractThinkingInner(children);
-    return trimNode(innerOnly);
-  }, [children, extractThinkingInner]);
+  // Render content - handle both string (from CustomAssistantMessage) and React nodes (from CopilotKit)
+  const renderedContent = useMemo(() => {
+    // If children is a string, render it as markdown using MarkdownRenderer for better formatting
+    if (typeof sanitizeContent === 'string') {
+      return <MarkdownRenderer content={sanitizeContent} isLight={isLight} />;
+    }
+    // Otherwise, render React nodes as-is
+    return sanitizeContent;
+  }, [sanitizeContent, isLight]);
 
   return (
     <div className={`thinking-block ${isLight ? 'text-gray-600' : 'text-gray-500'}`} style={{ fontSize: 12 }}>
@@ -324,7 +236,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
         
         {/* Title */}
         <span style={{ flex: 1 }}>
-          {isStreaming && isLatest ? 'Thinking...' : 'Thought'}
+          {isComplete ? 'Thought' : 'Thinking...'}
         </span>
         
         {/* Chevron icon for accordion state - only visible on hover */}
@@ -353,7 +265,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
         style={{
           overflow: 'hidden',
           transition: 'max-height 0.3s ease-in-out, opacity 0.2s ease-in-out',
-          maxHeight: isOpen ? (isStreaming && isLatest ? '75vh' : '500px') : '0',
+          maxHeight: isOpen ? (isComplete ? '500px' : '75vh') : '0',
           opacity: isOpen ? 1 : 0,
         }}>
         <div
@@ -368,13 +280,12 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode }> = ({ children }) 
           <div
             ref={contentRef}
             className={`text-xs mb-4 opacity-80 ${
-              isStreaming && isLatest
-                ? 'overflow-y-auto max-h-[75vh] overscroll-contain session-tabs-scroll'
-                : 'overflow-y-auto max-h-40 overscroll-contain session-tabs-scroll'
-            } [&_.whitespace-pre-wrap]:m-0 [&_.whitespace-pre-wrap]:p-0 [&_.whitespace-pre-wrap]:text-[13px] [&_.whitespace-pre-wrap]:leading-[1.35]
-               [&_.copilotKitMarkdownElement]:m-0 [&_.copilotKitMarkdownElement]:p-0 [&_.copilotKitMarkdownElement:not(:last-child)]:!mb-0`}
+              isComplete
+                ? 'overflow-y-auto max-h-40 overscroll-contain session-tabs-scroll'
+                : 'overflow-y-auto max-h-[75vh] overscroll-contain session-tabs-scroll'
+            }`}
           >
-            <div className="whitespace-pre-wrap m-0 p-0 [&>*]:m-0 [&>*]:p-0">{normalizedChildren}</div>
+            <div className="thinking-block-content">{renderedContent}</div>
           </div>
         </div>
       </div>

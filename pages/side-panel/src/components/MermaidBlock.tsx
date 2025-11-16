@@ -349,7 +349,7 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
         borderRadius: '8px',
         backgroundColor: cardBackground,
         border: `1px solid ${borderColor}`,
-        overflow: 'auto',
+        overflow: showControls ? 'visible' : 'auto',
         minHeight: '100px',
       }}
     >
@@ -496,7 +496,7 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
             zIndex: 21,
             minWidth: '208px',
             width: '208px',
-            overflow: 'hidden',
+            overflow: 'visible',
           }}
         >
           <div style={{ padding: '8px 0' }}>

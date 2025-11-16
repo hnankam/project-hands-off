@@ -4,6 +4,7 @@ import { authClient } from '../../lib/auth-client';
 import { OrganizationSelector } from './OrganizationSelector';
 import { TeamMultiSelector } from './TeamMultiSelector';
 import { Radio, Checkbox } from './FormControls';
+import { CodeMirrorJsonEditor } from './CodeMirrorJsonEditor';
 
 interface Organization {
   id: string;
@@ -1258,14 +1259,13 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                 <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                   Model Settings JSON
                 </label>
-                <textarea
-                  rows={4}
+                <CodeMirrorJsonEditor
                   value={createForm.modelSettings}
-                  onChange={e => setCreateForm(prev => ({ ...prev, modelSettings: e.target.value }))}
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                  )}
+                  onChange={value => setCreateForm(prev => ({ ...prev, modelSettings: value }))}
+                  placeholder="{}"
+                  isLight={isLight}
+                  minHeight="20px"
+                  maxHeight="150px"
                 />
               </div>
 
@@ -1273,14 +1273,13 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                 <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                   Metadata JSON
                 </label>
-                <textarea
-                  rows={4}
+                <CodeMirrorJsonEditor
                   value={createForm.metadata}
-                  onChange={e => setCreateForm(prev => ({ ...prev, metadata: e.target.value }))}
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                  )}
+                  onChange={value => setCreateForm(prev => ({ ...prev, metadata: value }))}
+                  placeholder="{}"
+                  isLight={isLight}
+                  minHeight="20px"
+                  maxHeight="150px"
                 />
               </div>
 
@@ -1567,14 +1566,13 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                           <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                             Model Settings JSON
                           </label>
-                          <textarea
-                            rows={3}
+                          <CodeMirrorJsonEditor
                             value={editForm.modelSettings}
-                            onChange={e => setEditForm(prev => (prev ? { ...prev, modelSettings: e.target.value } : prev))}
-                            className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                            )}
+                            onChange={value => setEditForm(prev => (prev ? { ...prev, modelSettings: value } : prev))}
+                            placeholder="{}"
+                            isLight={isLight}
+                            minHeight="20px"
+                            maxHeight="150px"
                           />
                         </div>
 
@@ -1582,14 +1580,13 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                           <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                             Metadata JSON
                           </label>
-                          <textarea
-                            rows={3}
+                          <CodeMirrorJsonEditor
                             value={editForm.metadata}
-                            onChange={e => setEditForm(prev => (prev ? { ...prev, metadata: e.target.value } : prev))}
-                            className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                            )}
+                            onChange={value => setEditForm(prev => (prev ? { ...prev, metadata: value } : prev))}
+                            placeholder="{}"
+                            isLight={isLight}
+                            minHeight="20px"
+                            maxHeight="150px"
                           />
                         </div>
 

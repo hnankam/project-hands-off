@@ -4,6 +4,7 @@ import { authClient } from '../../lib/auth-client';
 import { OrganizationSelector } from './OrganizationSelector';
 import { TeamMultiSelector } from './TeamMultiSelector';
 import { Radio, Checkbox } from './FormControls';
+import { CodeMirrorJsonEditor } from './CodeMirrorJsonEditor';
 
 interface Organization {
   id: string;
@@ -1123,14 +1124,13 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                 <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                   Credentials JSON
                 </label>
-                <textarea
-                  rows={4}
+                <CodeMirrorJsonEditor
                   value={createForm.credentials}
-                  onChange={e => setCreateForm(prev => ({ ...prev, credentials: e.target.value }))}
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                  )}
+                  onChange={value => setCreateForm(prev => ({ ...prev, credentials: value }))}
+                  placeholder="{}"
+                  isLight={isLight}
+                  minHeight="20px"
+                  maxHeight="150px"
                 />
               </div>
 
@@ -1150,14 +1150,13 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                 <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                   Model Settings JSON
                 </label>
-                <textarea
-                  rows={3}
+                <CodeMirrorJsonEditor
                   value={createForm.modelSettings}
-                  onChange={e => setCreateForm(prev => ({ ...prev, modelSettings: e.target.value }))}
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                  )}
+                  onChange={value => setCreateForm(prev => ({ ...prev, modelSettings: value }))}
+                  placeholder="{}"
+                  isLight={isLight}
+                  minHeight="20px"
+                  maxHeight="150px"
                 />
               </div>
 
@@ -1165,14 +1164,13 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                 <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                   Metadata JSON
                 </label>
-                <textarea
-                  rows={3}
+                <CodeMirrorJsonEditor
                   value={createForm.metadata}
-                  onChange={e => setCreateForm(prev => ({ ...prev, metadata: e.target.value }))}
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                  )}
+                  onChange={value => setCreateForm(prev => ({ ...prev, metadata: value }))}
+                  placeholder="{}"
+                  isLight={isLight}
+                  minHeight="20px"
+                  maxHeight="150px"
                 />
               </div>
 
@@ -1180,15 +1178,13 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                 <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                   Bedrock Settings JSON
                 </label>
-                <textarea
-                  rows={3}
+                <CodeMirrorJsonEditor
                   value={createForm.bedrockModelSettings}
-                  onChange={e => setCreateForm(prev => ({ ...prev, bedrockModelSettings: e.target.value }))}
+                  onChange={value => setCreateForm(prev => ({ ...prev, bedrockModelSettings: value }))}
                   placeholder="{}"
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                  )}
+                  isLight={isLight}
+                  minHeight="20px"
+                  maxHeight="150px"
                 />
               </div>
 
@@ -1438,19 +1434,17 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                               )}
                             </button>
                           </div>
-                          <textarea
-                            rows={4}
+                          <CodeMirrorJsonEditor
                             value={editCredentialsDisplayValue}
-                            onChange={e => {
+                            onChange={value => {
                               if (!showEditCredentials) return;
-                              setEditForm(prev => (prev ? { ...prev, credentials: e.target.value } : prev));
+                              setEditForm(prev => (prev ? { ...prev, credentials: value } : prev));
                             }}
+                            placeholder="{}"
+                            isLight={isLight}
+                            minHeight="20px"
+                            maxHeight="150px"
                             readOnly={!showEditCredentials}
-                            className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                              !showEditCredentials && 'opacity-90'
-                            )}
                           />
                         </div>
 
@@ -1458,14 +1452,13 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                           <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                             Model Settings JSON
                           </label>
-                          <textarea
-                            rows={3}
+                          <CodeMirrorJsonEditor
                             value={editForm.modelSettings}
-                            onChange={e => setEditForm(prev => prev ? ({ ...prev, modelSettings: e.target.value }) : prev)}
-                            className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                            )}
+                            onChange={value => setEditForm(prev => prev ? ({ ...prev, modelSettings: value }) : prev)}
+                            placeholder="{}"
+                            isLight={isLight}
+                            minHeight="20px"
+                            maxHeight="150px"
                           />
                         </div>
 
@@ -1473,14 +1466,13 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                           <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                             Metadata JSON
                           </label>
-                          <textarea
-                            rows={3}
+                          <CodeMirrorJsonEditor
                             value={editForm.metadata}
-                            onChange={e => setEditForm(prev => prev ? ({ ...prev, metadata: e.target.value }) : prev)}
-                            className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                            )}
+                            onChange={value => setEditForm(prev => prev ? ({ ...prev, metadata: value }) : prev)}
+                            placeholder="{}"
+                            isLight={isLight}
+                            minHeight="20px"
+                            maxHeight="150px"
                           />
                         </div>
 
@@ -1488,14 +1480,13 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                           <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                             Bedrock Settings JSON
                           </label>
-                          <textarea
-                            rows={3}
+                          <CodeMirrorJsonEditor
                             value={editForm.bedrockModelSettings}
-                            onChange={e => setEditForm(prev => prev ? ({ ...prev, bedrockModelSettings: e.target.value }) : prev)}
-                            className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                            )}
+                            onChange={value => setEditForm(prev => prev ? ({ ...prev, bedrockModelSettings: value }) : prev)}
+                            placeholder="{}"
+                            isLight={isLight}
+                            minHeight="20px"
+                            maxHeight="150px"
                           />
                         </div>
 
@@ -1731,9 +1722,17 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                                     Masked
                                   </span>
                                 </div>
-                                <pre className="mt-1 h-28 overflow-auto rounded bg-black/5 p-2 font-mono text-[11px] providers-tab-scrollbar">
-                                  {JSON.stringify(maskedCredentials, null, 2)}
-                                </pre>
+                                <div className="mt-1">
+                                  <CodeMirrorJsonEditor
+                                    value={JSON.stringify(maskedCredentials, null, 2)}
+                                    onChange={() => {}}
+                                    placeholder="{}"
+                                    isLight={isLight}
+                                    minHeight="20px"
+                                    maxHeight="150px"
+                                    readOnly={true}
+                                  />
+                                </div>
                                 <p
                                   className={cn(
                                     'mt-1 text-[10px]',
@@ -1745,16 +1744,32 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                               </div>
                               <div className="mt-3">
                                 <div className="font-medium">Model Settings</div>
-                                <pre className="mt-1 h-28 overflow-auto rounded bg-black/5 p-2 font-mono text-[11px] providers-tab-scrollbar">
-                                  {JSON.stringify(provider.modelSettings ?? {}, null, 2)}
-                                </pre>
+                                <div className="mt-1">
+                                  <CodeMirrorJsonEditor
+                                    value={JSON.stringify(provider.modelSettings ?? {}, null, 2)}
+                                    onChange={() => {}}
+                                    placeholder="{}"
+                                    isLight={isLight}
+                                    minHeight="20px"
+                                    maxHeight="150px"
+                                    readOnly={true}
+                                  />
+                                </div>
                               </div>
                               {provider.bedrockModelSettings && (
                                 <div className="mt-3">
                                   <div className="font-medium">Bedrock Model Settings</div>
-                                  <pre className="mt-1 max-h-28 overflow-auto rounded bg-black/5 p-2 font-mono text-[11px] providers-tab-scrollbar">
-                                    {JSON.stringify(provider.bedrockModelSettings ?? {}, null, 2)}
-                                  </pre>
+                                  <div className="mt-1">
+                                    <CodeMirrorJsonEditor
+                                      value={JSON.stringify(provider.bedrockModelSettings ?? {}, null, 2)}
+                                      onChange={() => {}}
+                                      placeholder="{}"
+                                      isLight={isLight}
+                                      minHeight="20px"
+                                      maxHeight="150px"
+                                      readOnly={true}
+                                    />
+                                  </div>
                                 </div>
                               )}
                               {provider.metadata && Object.keys(provider.metadata).length > 0 && (

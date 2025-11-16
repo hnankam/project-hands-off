@@ -165,7 +165,7 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
     );
   }
 
-  // Complete state - keep question, replace buttons with result
+  // Complete state - header with result, collapsible content with description
   if (status === 'complete' && result) {
     const isConfirmed = result.confirmed;
     const chevronColor = isLight ? '#6b7280' : '#9ca3af';
@@ -182,65 +182,7 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
           width: 'calc(100% - 24px)', // Subtract both margins
         }}
       >
-        {/* Content - collapsible section */}
-        {isExpanded && (
-          <div style={{ padding: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-              {/* Question mark icon - keep original */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '50%',
-                  backgroundColor: isLight ? '#dbeafe' : 'rgba(37, 99, 235, 0.2)',
-                  flexShrink: 0,
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  style={{ 
-                    color: isLight ? '#2563eb' : '#60a5fa' // blue-600 / blue-400
-                  }}
-                >
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                </svg>
-              </div>
-
-              <div style={{ flex: 1 }}>
-                {/* Title - keep original */}
-                <div
-                  style={{
-                    fontSize: '14px',
-                    fontWeight: 400,
-                    color: textColor, // Using main text color
-                    marginBottom: '4px',
-                  }}
-                >
-                  Confirmation Required
-                </div>
-
-                {/* Description - keep original question */}
-                <div
-                  style={{
-                    fontSize: '12px',
-                    color: mutedTextColor,
-                    lineHeight: '1.5',
-                  }}
-                >
-                  Do you want to {actionDescription}?
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Footer - show result with chevron toggle */}
+        {/* Header - show result with chevron toggle */}
         <button
           onClick={() => setIsExpanded(!isExpanded)}
           style={{
@@ -248,8 +190,7 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            borderTop: isExpanded ? `1px solid ${borderColor}` : 'none',
-            padding: '8px 12px',
+            padding: '6px 8px',
             background: 'transparent',
             border: 'none',
             cursor: 'pointer',
@@ -265,7 +206,7 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
               width: '16px',
               height: '16px',
               flexShrink: 0,
-              transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
               transition: 'transform 0.2s ease',
             }}
           >
@@ -279,7 +220,7 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M19 9l-7 7-7-7" />
+              <path d="M9 18l6-6-6-6" />
             </svg>
           </div>
 
@@ -333,6 +274,76 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
             {isConfirmed ? 'Action confirmed' : 'Action cancelled'}
           </span>
         </button>
+
+        {/* Content - collapsible section (similar to executing state) */}
+        <div
+          style={{
+            maxHeight: isExpanded ? '1000px' : '0',
+            opacity: isExpanded ? 1 : 0,
+            overflow: 'hidden',
+            transition: 'max-height 0.3s ease-in-out, opacity 0.3s ease-in-out',
+          }}
+        >
+          <div
+            style={{
+              borderTop: `1px solid ${borderColor}`,
+              padding: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+              {/* Question mark icon */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '50%',
+                  backgroundColor: isLight ? '#dbeafe' : 'rgba(37, 99, 235, 0.2)',
+                  flexShrink: 0,
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  style={{ 
+                    color: isLight ? '#2563eb' : '#60a5fa' // blue-600 / blue-400
+                  }}
+                >
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                </svg>
+              </div>
+
+              <div style={{ flex: 1 }}>
+                {/* Title */}
+                <div
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: 400,
+                    color: textColor,
+                    marginBottom: '4px',
+                  }}
+                >
+                  Confirmation Required
+                </div>
+
+                {/* Description */}
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: mutedTextColor,
+                    lineHeight: '1.5',
+                  }}
+                >
+                  Do you want to {actionDescription}?
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

@@ -8,10 +8,6 @@ const TRUNCATABLE_TOOLS = new Set([
   'searchClickableElements',
   'takeScreenshot',
 ]);
-const DOUBLE_NEWLINE_RE = /\r?\n\s*\r?\n/;
-const THINKING_OPEN_RE = /<(thinking|think)\s*>/i;
-const THINKING_CLOSE_RE = /<\/(thinking|think)\s*>/i;
-const THINKING_TAGS_RE = /<\/?(thinking|think)\s*>/gi;
 
 const isAlreadyTruncated = (content: string): boolean => {
   return typeof content === 'string' && content.endsWith(TRUNCATION_SUFFIX);
@@ -164,60 +160,7 @@ const truncateToolResult = (content: any, toolName: string): any => {
   return truncated;
 };
 
-const normalizeThinking = (text: string): { text: string; changed: boolean } => {
-  if (typeof text !== 'string') {
-    return { text, changed: false };
-  }
-
-  if (!THINKING_OPEN_RE.test(text)) {
-    return { text, changed: false };
-  }
-
-  const openMatch = text.match(THINKING_OPEN_RE);
-  if (!openMatch || openMatch.index === undefined) {
-    return { text, changed: false };
-  }
-
-  const openIndex = openMatch.index;
-  const beforeThinking = text.slice(0, openIndex);
-  const afterOpen = text.slice(openIndex + openMatch[0].length);
-  const closeMatch = afterOpen.match(THINKING_CLOSE_RE);
-
-  let thinkingContent = '';
-  let afterThinking = '';
-
-  if (closeMatch && closeMatch.index !== undefined) {
-    thinkingContent = afterOpen.slice(0, closeMatch.index);
-    afterThinking = afterOpen.slice(closeMatch.index + closeMatch[0].length);
-  } else {
-    const dblNlIndex = afterOpen.search(DOUBLE_NEWLINE_RE);
-    if (dblNlIndex >= 0) {
-      thinkingContent = afterOpen.slice(0, dblNlIndex);
-      afterThinking = afterOpen.slice(dblNlIndex);
-    } else {
-      thinkingContent = afterOpen;
-      afterThinking = '';
-    }
-  }
-
-  let cleanedThinking = thinkingContent.replace(THINKING_TAGS_RE, '').trim();
-  const cleanedAfter = afterThinking.replace(THINKING_TAGS_RE, '').trim();
-
-  cleanedThinking = cleanedThinking.replace(/(\r?\n)(?:\s*\r?\n){2,}/g, '\n\n');
-
-  const parts: string[] = [];
-  if (beforeThinking.trim()) {
-    parts.push(beforeThinking.trim());
-  }
-  if (cleanedThinking) {
-    parts.push(`<think>\n\n${cleanedThinking}\n\n</think>`);
-  }
-  if (cleanedAfter) {
-    parts.push(cleanedAfter);
-  }
-
-  return { text: parts.join('\n\n'), changed: true };
-};
+// normalizeThinking removed - CustomAssistantMessage handles tag extraction and rendering directly
 
 /**
  * Message data structure returned by saveMessages
@@ -481,23 +424,14 @@ export const useMessageSanitization = (
         }
       }
 
-      // Normalize assistant content thinking tags and newlines
+      // Normalize assistant content newlines only (no tag processing needed)
+      // CustomAssistantMessage handles tag extraction and rendering directly
       if (message.role === 'assistant' && typeof message.content === 'string') {
-        const normalized = normalizeThinking(message.content);
-        let finalContent = normalized.text;
-        let contentChanged = normalized.changed;
-        
         // Apply general newline normalization: max 2 consecutive newlines
-        // This ensures consistency across all assistant messages
-        const normalizedNewlines = finalContent.replace(/(\r?\n)(?:\s*\r?\n){2,}/g, '\n\n');
-        if (normalizedNewlines !== finalContent) {
-          finalContent = normalizedNewlines;
-          contentChanged = true;
-        }
-        
-        if (contentChanged) {
+        const normalizedNewlines = message.content.replace(/(\r?\n)(?:\s*\r?\n){2,}/g, '\n\n');
+        if (normalizedNewlines !== message.content) {
           hasChanges = true;
-          return { ...message, content: finalContent };
+          return { ...message, content: normalizedNewlines };
         }
       }
       

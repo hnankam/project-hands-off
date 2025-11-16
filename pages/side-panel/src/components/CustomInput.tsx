@@ -468,12 +468,21 @@ export const CustomInput: React.FC<CustomInputProps> = ({
       description: '',
       icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>',
       command: ({ editor, range }) => {
-        editor
-          .chain()
-          .focus()
-          .deleteRange(range)
-          .toggleCodeBlock()
-          .run();
+        // Delete the slash command trigger text first
+        editor.chain().focus().deleteRange(range).run();
+        
+        // Get the current node type
+        const { $from } = editor.state.selection;
+        const currentNode = $from.node($from.depth);
+        
+        // If we're in a code block, toggle it off (convert back to paragraph)
+        if (currentNode.type.name === 'codeBlock') {
+          editor.chain().focus().toggleCodeBlock().run();
+        } else {
+          // If we're in any other node, convert it to a code block
+          // Use setNode to replace the current block with a code block
+          editor.chain().focus().setNode('codeBlock').run();
+        }
       },
     },
     {
@@ -503,6 +512,46 @@ export const CustomInput: React.FC<CustomInputProps> = ({
       },
     },
     {
+      title: 'Heading 1',
+      description: 'Large heading',
+      icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h8M4 18V6M12 18V6M17 12h3M17 18h3M17 6h3"></path></svg>',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).setNode('heading', { level: 1 }).run();
+      },
+    },
+    {
+      title: 'Heading 2',
+      description: 'Medium heading',
+      icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h8M4 18V6M12 18V6M18 18h4l-4-6h4"></path></svg>',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).setNode('heading', { level: 2 }).run();
+      },
+    },
+    {
+      title: 'Heading 3',
+      description: 'Small heading',
+      icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h8M4 18V6M12 18V6M18 12h4l-4-6h4M18 18h4l-4-6"></path></svg>',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).setNode('heading', { level: 3 }).run();
+      },
+    },
+    {
+      title: 'Blockquote',
+      description: 'Insert a quote',
+      icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"></path><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"></path></svg>',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).setNode('blockquote').run();
+      },
+    },
+    {
+      title: 'Horizontal Rule',
+      description: 'Insert a divider',
+      icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line></svg>',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).setHorizontalRule().run();
+      },
+    },
+    {
       title: 'separator',
       description: '',
       icon: '',
@@ -524,9 +573,11 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        heading: false,
-        horizontalRule: false,
-        blockquote: false,
+        heading: {
+          levels: [1, 2, 3, 4, 5, 6],
+        },
+        horizontalRule: {},
+        blockquote: {},
         codeBlock: false, // We'll use CodeBlockLowlight instead
       }),
       Link.configure({

@@ -7,6 +7,9 @@ import { TeamMultiSelector } from './TeamMultiSelector';
 import { Radio, Checkbox } from './FormControls';
 import { ModelMultiSelector } from './ModelMultiSelector';
 import ToolMultiSelector from './ToolMultiSelector';
+import { RichTextEditor } from './RichTextEditor';
+import { CodeMirrorJsonEditor } from './CodeMirrorJsonEditor';
+import { MarkdownRenderer } from '../tiptap/MarkdownRenderer';
 
 interface Organization {
   id: string;
@@ -1466,16 +1469,13 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                     onSave={() => openSaveTemplateDialog('create')}
                   />
                 </div>
-                <textarea
-                  rows={6}
+                <RichTextEditor
                   value={createForm.promptTemplate}
-                  onChange={e => setCreateForm(prev => ({ ...prev, promptTemplate: e.target.value }))}
+                  onChange={value => setCreateForm(prev => ({ ...prev, promptTemplate: value }))}
                   placeholder="You are a helpful AI assistant..."
-                  required
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea agents-tab-scrollbar',
-                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                  )}
+                  isLight={isLight}
+                  minHeight="150px"
+                  maxHeight="300px"
                 />
               </div>
 
@@ -1483,14 +1483,13 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                 <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                   Metadata JSON (optional)
                 </label>
-                <textarea
-                  rows={3}
+                <CodeMirrorJsonEditor
                   value={createForm.metadata}
-                  onChange={e => setCreateForm(prev => ({ ...prev, metadata: e.target.value }))}
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                  )}
+                  onChange={value => setCreateForm(prev => ({ ...prev, metadata: value }))}
+                  placeholder="{}"
+                  isLight={isLight}
+                  minHeight="20px"
+                  maxHeight="150px"
                 />
               </div>
 
@@ -1769,14 +1768,13 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                               onSave={() => openSaveTemplateDialog('edit')}
                             />
                           </div>
-                          <textarea
-                            rows={6}
+                          <RichTextEditor
                             value={editForm.promptTemplate}
-                            onChange={e => setEditForm(prev => (prev ? { ...prev, promptTemplate: e.target.value } : prev))}
-                            className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea agents-tab-scrollbar',
-                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                            )}
+                            onChange={value => setEditForm(prev => (prev ? { ...prev, promptTemplate: value } : prev))}
+                            placeholder="You are a helpful AI assistant..."
+                            isLight={isLight}
+                            minHeight="150px"
+                            maxHeight="300px"
                           />
                         </div>
 
@@ -1784,14 +1782,13 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                           <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                             Metadata JSON
                           </label>
-                          <textarea
-                            rows={3}
+                          <CodeMirrorJsonEditor
                             value={editForm.metadata}
-                            onChange={e => setEditForm(prev => (prev ? { ...prev, metadata: e.target.value } : prev))}
-                            className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                            )}
+                            onChange={value => setEditForm(prev => (prev ? { ...prev, metadata: value } : prev))}
+                            placeholder="{}"
+                            isLight={isLight}
+                            minHeight="20px"
+                            maxHeight="150px"
                           />
                         </div>
 
@@ -2219,9 +2216,15 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                             </svg>
                           </button>
                           {expandedInstructions.has(agent.id) && (
-                            <pre className={cn('text-xs whitespace-pre-wrap font-mono p-2 rounded max-h-32 overflow-auto agents-tab-scrollbar', isLight ? 'bg-gray-50 text-gray-800' : 'bg-gray-900/40 text-gray-200')}>
-                              {agent.promptTemplate}
-                            </pre>
+                            <div 
+                              className={cn('text-xs p-2 rounded max-h-32 overflow-auto agents-tab-scrollbar', isLight ? 'bg-gray-50 text-gray-800' : 'bg-gray-900/40 text-gray-200')}
+                            >
+                              <MarkdownRenderer 
+                                content={agent.promptTemplate} 
+                                isLight={isLight}
+                                className="agent-instructions-markdown"
+                              />
+                            </div>
                           )}
                         </div>
 

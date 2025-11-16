@@ -20,16 +20,22 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@extension/shared": "workspace:*",
-    "@extension/storage": "workspace:*",
-    "@extension/i18n": "workspace:*",
-    "@extension/ui": "workspace:*",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/theme-one-dark": "^6.1.3",
     "@copilotkit/react-core": "1.10.6",
     "@copilotkit/react-ui": "1.10.6",
+    "@extension/i18n": "workspace:*",
+    "@extension/shared": "workspace:*",
+    "@extension/storage": "workspace:*",
+    "@extension/ui": "workspace:*",
+    "@tiptap/html": "^3.10.7",
     "better-auth": "1.4.0-beta.14",
+    "codemirror": "^6.0.2",
     "firebase": "^11.1.0",
     "html2canvas": "1.4.1",
     "mermaid": "^10.9.1",
+    "tiptap-markdown": "^0.9.0",
     "zod": "3.25.76"
   },
   "devDependencies": {
