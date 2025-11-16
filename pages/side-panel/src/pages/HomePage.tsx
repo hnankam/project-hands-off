@@ -4,8 +4,8 @@ import { useStorage, useSessionStorageDB, sessionStorageDBWrapper } from '@exten
 import { exampleThemeStorage } from '@extension/storage';
 import UserMenu from '../components/UserMenu';
 import InfoMenu from '../components/InfoMenu';
-import FeedbackModal from '../components/FeedbackModal';
-import SupportRequestModal, { type SupportRequestData } from '../components/SupportRequestModal';
+import { ViewOptionsMenu } from '../components/ViewOptionsMenu';
+import { InstallAppHelper } from '../components/InstallAppHelper';
 import { useAuth } from '../context/AuthContext';
 import { UsageDisplay } from '../components/UsageDisplay';
 import type { CumulativeUsage } from '../hooks/useUsageStream';
@@ -261,12 +261,12 @@ const SettingsButton: React.FC<{ isLight: boolean; theme: string; onOpenSettings
           </div>
 
           {/* Divider */}
-          <div
+          {/* <div
             className={cn(
               'border-t',
               isLight ? 'border-gray-200' : 'border-gray-700'
             )}
-          />
+          /> */}
 
           {/* More Settings Button */}
           <button
@@ -314,9 +314,6 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const [currentTipIndex, setCurrentTipIndex] = useState(0);
   const [sessionsPage, setSessionsPage] = useState(1);
   const sessionsPerPage = 10;
-  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
-  const [feedbackText, setFeedbackText] = useState('');
-  const [supportRequestModalOpen, setSupportRequestModalOpen] = useState(false);
   
   // Initialize activeHomeTab from localStorage
   const [activeHomeTab, setActiveHomeTab] = useState<'sessions' | 'usage' | 'insights'>(() => {
@@ -541,31 +538,6 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     requestCount: aggregatedUsage.requestCount,
   }), [aggregatedUsage]);
 
-  const openFeedbackModal = useCallback(() => {
-    setFeedbackModalOpen(true);
-  }, []);
-
-  const handleSendFeedback = useCallback(() => {
-    if (!feedbackText.trim()) return;
-    
-    console.log('[HomePage] Sending feedback:', feedbackText);
-    // TODO: Implement actual feedback submission
-    
-    setFeedbackModalOpen(false);
-    setFeedbackText('');
-  }, [feedbackText]);
-
-  const openSupportRequestModal = useCallback(() => {
-    setSupportRequestModalOpen(true);
-  }, []);
-
-  const handleSupportRequestSubmit = useCallback((data: SupportRequestData) => {
-    console.log('[HomePage] Submitting support request:', data);
-    // TODO: Implement actual support request submission
-    
-    setSupportRequestModalOpen(false);
-  }, []);
-
   const handleCreateSession = useCallback(async () => {
     if (creatingSession) return;
 
@@ -742,7 +714,10 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <InfoMenu isLight={isLight} onSendFeedback={openFeedbackModal} onRequestSupport={openSupportRequestModal} />
+          <ViewOptionsMenu
+            isLight={isLight}
+            currentSessionId={null}
+          />
           <UserMenu
             isLight={isLight}
             onGoAdmin={(tab) => onGoAdmin?.(tab)}
@@ -1404,7 +1379,11 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
           <div className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
             v {version}
           </div>
+          <div className="flex items-center gap-1">
           <SettingsButton isLight={isLight} theme={theme} onOpenSettings={() => setSettingsOpen(true)} />
+            {/* Info Menu - About and Support */}
+            <InfoMenu isLight={isLight} />
+          </div>
         </div>
       </div>
 
@@ -1422,7 +1401,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
             <div
               className={cn(
                 'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'bg-white border-gray-200 border' : 'bg-[#151C24] border-gray-700 border',
+                isLight ? 'bg-white' : 'bg-[#151C24]',
               )}
               onClick={e => e.stopPropagation()}>
               {/* Header */}
@@ -1456,70 +1435,78 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                 </button>
               </div>
 
-            {/* Content */}
-            <div className="px-3 py-2.5">
-              <label
-                className={cn(
-                  'text-xs font-medium block mb-2',
-                  mainTextColor
-                )}
-              >
-                Theme
-              </label>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => exampleThemeStorage.setTheme('light')}
+            {/* Content - Scrollable */}
+            <div className={cn('max-h-[70vh] overflow-y-auto', isLight ? 'bg-white' : 'bg-[#151C24]')}>
+              {/* Theme Selection */}
+              <div className={cn('px-3 py-2.5 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                <label
                   className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
-                    theme === 'light'
-                      ? 'bg-blue-500 text-white'
-                      : isLight
-                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    'text-xs font-medium block mb-2',
+                    mainTextColor
                   )}
-                  title="Light theme"
                 >
-                  <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                  <span>Light</span>
-                </button>
-                
-                <button
-                  onClick={() => exampleThemeStorage.setTheme('dark')}
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
-                    theme === 'dark'
-                      ? 'bg-blue-500 text-white'
-                      : isLight
-                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  )}
-                  title="Dark theme"
-                >
-                  <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                  </svg>
-                  <span>Dark</span>
-                </button>
-                
-                <button
-                  onClick={() => exampleThemeStorage.setTheme('system')}
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
-                    theme === 'system'
-                      ? 'bg-blue-500 text-white'
-                      : isLight
-                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  )}
-                  title="System theme"
-                >
-                  <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  <span>System</span>
-                </button>
+                  Theme
+                </label>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => exampleThemeStorage.setTheme('light')}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
+                      theme === 'light'
+                        ? 'bg-blue-500 text-white'
+                        : isLight
+                        ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    )}
+                    title="Light theme"
+                  >
+                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    <span>Light</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => exampleThemeStorage.setTheme('dark')}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
+                      theme === 'dark'
+                        ? 'bg-blue-500 text-white'
+                        : isLight
+                        ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    )}
+                    title="Dark theme"
+                  >
+                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                    <span>Dark</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => exampleThemeStorage.setTheme('system')}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
+                      theme === 'system'
+                        ? 'bg-blue-500 text-white'
+                        : isLight
+                        ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    )}
+                    title="System theme"
+                  >
+                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    <span>System</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Install App Helper */}
+              <div className="px-3 py-4">
+                <InstallAppHelper isLight={isLight} />
               </div>
             </div>
 
@@ -1545,30 +1532,6 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
         </>
       )}
 
-      {/* Feedback Modal */}
-      <FeedbackModal
-        isLight={isLight}
-        isOpen={feedbackModalOpen}
-        feedbackText={feedbackText}
-        onClose={() => {
-          setFeedbackModalOpen(false);
-          setFeedbackText('');
-        }}
-        onFeedbackChange={setFeedbackText}
-        onSubmit={handleSendFeedback}
-      />
-
-      {/* Support Request Modal */}
-      <SupportRequestModal
-        isLight={isLight}
-        isOpen={supportRequestModalOpen}
-        onClose={() => setSupportRequestModalOpen(false)}
-        onSubmit={handleSupportRequestSubmit}
-        userEmail={user?.email || ''}
-        userOrganization={organization?.name || ''}
-        userTeam={activeTeam || ''}
-        availableTeams={[]}
-      />
     </>
   );
 };

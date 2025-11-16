@@ -1,4 +1,4 @@
-import '@src/SidePanel.css';
+import './SidePanel.css';
 import '@copilotkit/react-ui/styles.css';
 import React, { useEffect, useState, useCallback } from 'react';
 import {
@@ -6,6 +6,7 @@ import {
   useStorage,
   useSessionStorageDB,
   withErrorBoundary,
+  sessionStorageDBWrapper,
 } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
 import {
@@ -20,6 +21,7 @@ import AcceptInvitationPage from './pages/AcceptInvitationPage';
 import { useAuth } from './context/AuthContext';
 import { useDBWorkerClient } from './hooks/useDBWorkerClient';
 import { ChatSkeleton } from './components/LoadingStates';
+import { getCurrentViewMode, getSessionIdFromUrl } from './utils/windowManager';
 
 const SidePanel = () => {
   // Authentication
@@ -228,6 +230,37 @@ const SidePanel = () => {
     window.addEventListener('hashchange', checkHash);
     return () => window.removeEventListener('hashchange', checkHash);
   }, [isPageRestored]);
+
+  // Handle session ID from URL (for new tab and popup contexts)
+  useEffect(() => {
+    const viewMode = getCurrentViewMode();
+    const urlSessionId = getSessionIdFromUrl();
+    
+    console.log('[SidePanel] View mode detection:', { viewMode, urlSessionId, currentSessionId });
+    
+    // If we're in a new tab or popup with a specific session ID
+    if ((viewMode === 'newtab' || viewMode === 'popup') && urlSessionId && urlSessionId !== currentSessionId) {
+      console.log('[SidePanel] Setting active session from URL:', urlSessionId);
+      
+      // Check if the session exists
+      const sessionExists = sessions.some(s => s.id === urlSessionId);
+      
+      if (sessionExists) {
+        // Switch to the specified session
+        sessionStorageDBWrapper.setActiveSession(urlSessionId).catch(err => {
+          console.error('[SidePanel] Failed to set active session from URL:', err);
+        });
+        
+        // Ensure we're on the sessions page
+        if (activePage !== 'sessions') {
+          setActivePage('sessions');
+          window.location.hash = '#/sessions';
+        }
+      } else {
+        console.warn('[SidePanel] Session ID from URL not found:', urlSessionId);
+      }
+    }
+  }, [sessions, currentSessionId, activePage]);
 
   // Apply dark mode class to document element for proper CopilotKit theming
   useEffect(() => {

@@ -15,6 +15,7 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [tabsNeedingFade, setTabsNeedingFade] = useState<Set<string>>(new Set());
+  const [containerHasOverflow, setContainerHasOverflow] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
@@ -62,8 +63,15 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
     }
   };
 
-  // Check if tabs need fade effect based on overflow
+  // Check if container and tabs need fade effect based on overflow
   const checkTabOverflow = useCallback(() => {
+    // First check if the scroll container has overflow
+    if (scrollContainerRef.current) {
+      const hasOverflow = scrollContainerRef.current.scrollWidth > scrollContainerRef.current.clientWidth;
+      setContainerHasOverflow(hasOverflow);
+      
+      // Only check individual tabs if container has overflow
+      if (hasOverflow) {
     const newTabsNeedingFade = new Set<string>();
     
     tabRefs.current.forEach((tabElement, sessionId) => {
@@ -77,9 +85,11 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
             // Active tabs should never have fade effect - always show full name
             // Skip adding to fade set
           } else {
-            // For inactive tabs, use the 80px limit minus fade width
+                // For inactive tabs with max-w-30 (120px), check if text exceeds container
             const textWidth = span.scrollWidth;
-            if (textWidth > 60) { // 80px - 20px fade width
+                const containerWidth = 120; // max-w-30 = 120px
+                // Apply fade if text is wider than container (with small buffer for fade gradient)
+                if (textWidth > containerWidth - 15) { // 120px - 15px buffer for fade
               newTabsNeedingFade.add(sessionId);
             }
           }
@@ -88,6 +98,11 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
     });
     
     setTabsNeedingFade(newTabsNeedingFade);
+      } else {
+        // No overflow, clear all fade effects
+        setTabsNeedingFade(new Set());
+      }
+    }
   }, [currentSessionId]);
 
   // Check overflow when tabs change or active session changes
@@ -164,7 +179,7 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
                 onBlur={handleEditSubmit}
                 onKeyDown={handleEditKeyDown}
                 className={cn(
-                  "bg-transparent border-none outline-none text-xs py-0 px-1 min-w-0 max-w-20",
+                  "bg-transparent border-none outline-none text-xs py-0 px-1 min-w-0 max-w-30",
                   isLight ? "text-gray-900" : "text-gray-100"
                 )}
                 style={{ width: `${Math.max(editValue.length * 6, 20)}px` }}
@@ -179,7 +194,7 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
                   }
                 }}
                 className={`relative ${
-                  session.id === currentSessionId ? 'max-w-none' : 'max-w-20 overflow-hidden'
+                  session.id === currentSessionId ? 'max-w-none' : 'max-w-30 overflow-hidden'
                 }`}
                 style={{
                   '--fade-bg-color': session.id === currentSessionId

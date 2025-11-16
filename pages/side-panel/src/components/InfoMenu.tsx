@@ -2,19 +2,52 @@
  * Info Menu Component
  * 
  * Displays help resources and documentation links.
+ * Manages feedback and support modals internally.
  */
 
 import React, { useState } from 'react';
 import { cn } from '@extension/ui';
+import FeedbackModal from './FeedbackModal';
+import SupportRequestModal, { type SupportRequestData } from './SupportRequestModal';
 
 interface InfoMenuProps {
   isLight: boolean;
-  onSendFeedback?: () => void;
-  onRequestSupport?: () => void;
 }
 
-export default function InfoMenu({ isLight, onSendFeedback, onRequestSupport }: InfoMenuProps) {
+export default function InfoMenu({ isLight }: InfoMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
+  
+  // Modal state management
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  
+  const openFeedbackModal = () => {
+    setIsFeedbackModalOpen(true);
+    setIsOpen(false);
+  };
+  
+  const closeFeedbackModal = () => {
+    setIsFeedbackModalOpen(false);
+    setFeedbackText('');
+  };
+  
+  const handleFeedbackSubmit = () => {
+    console.log('Feedback submitted:', feedbackText);
+    closeFeedbackModal();
+  };
+  
+  const openSupportModal = () => {
+    setIsSupportModalOpen(true);
+    setIsOpen(false);
+  };
+  
+  const closeSupportModal = () => setIsSupportModalOpen(false);
+  
+  const handleSupportSubmit = async (data: SupportRequestData) => {
+    console.log('Support request submitted:', data);
+    closeSupportModal();
+  };
 
   const menuItems = [
     {
@@ -116,14 +149,14 @@ export default function InfoMenu({ isLight, onSendFeedback, onRequestSupport }: 
   ];
 
   const handleItemClick = (item: typeof menuItems[number]) => {
-    if (item.label === 'Request Support' && onRequestSupport) {
-      onRequestSupport();
-    } else if (item.label === 'Send Feedback' && onSendFeedback) {
-      onSendFeedback();
+    if (item.label === 'Request Support') {
+      openSupportModal();
+    } else if (item.label === 'Send Feedback') {
+      openFeedbackModal();
     } else if (item.external && item.url) {
       window.open(item.url, '_blank', 'noopener,noreferrer');
+      setIsOpen(false);
     }
-    setIsOpen(false);
   };
 
   return (
@@ -131,7 +164,7 @@ export default function InfoMenu({ isLight, onSendFeedback, onRequestSupport }: 
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'h-7 w-7 rounded-md flex items-center justify-center transition-all',
+          'h-7 w-7 rounded-full flex items-center justify-center transition-all',
           isLight 
             ? 'bg-gray-200/70 text-gray-600 hover:bg-gray-300/70' 
             : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/60'
@@ -155,10 +188,10 @@ export default function InfoMenu({ isLight, onSendFeedback, onRequestSupport }: 
         />
       )}
       
-      {/* Menu - Keep mounted but control visibility */}
+      {/* Menu - Opens upward from bottom */}
       <div
         className={cn(
-          'absolute right-0 top-full mt-1 w-56 rounded-md border shadow-lg z-50 transition-opacity',
+          'absolute right-0 bottom-full mb-1 w-56 rounded-md border shadow-lg z-50 transition-opacity',
           isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700',
           isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         )}
@@ -194,6 +227,24 @@ export default function InfoMenu({ isLight, onSendFeedback, onRequestSupport }: 
           ))}
         </div>
       </div>
+      
+      {/* Feedback Modal */}
+      <FeedbackModal
+        isOpen={isFeedbackModalOpen}
+        onClose={closeFeedbackModal}
+        isLight={isLight}
+        feedbackText={feedbackText}
+        onFeedbackChange={setFeedbackText}
+        onSubmit={handleFeedbackSubmit}
+      />
+      
+      {/* Support Request Modal */}
+      <SupportRequestModal
+        isOpen={isSupportModalOpen}
+        onClose={closeSupportModal}
+        isLight={isLight}
+        onSubmit={handleSupportSubmit}
+      />
     </div>
   );
 }

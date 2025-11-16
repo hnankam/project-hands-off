@@ -6,8 +6,7 @@ import type { SessionMetadata } from '@extension/shared';
 import { sessionStorageDBWrapper, generateSessionName } from '@extension/shared';
 import { useAuth } from '../context/AuthContext';
 import UserMenu from '../components/UserMenu';
-import FeedbackModal from '../components/FeedbackModal';
-import SupportRequestModal, { type SupportRequestData } from '../components/SupportRequestModal';
+import { ViewOptionsMenu } from '../components/ViewOptionsMenu';
 import {
   cn,
   Button,
@@ -73,9 +72,6 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const [sessionMessageCounts, setSessionMessageCounts] = useState<Record<string, number>>({});
   const [clearSessionsConfirmOpen, setClearSessionsConfirmOpen] = useState(false);
   const [copiedSessionId, setCopiedSessionId] = useState(false);
-  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
-  const [feedbackText, setFeedbackText] = useState('');
-  const [supportRequestModalOpen, setSupportRequestModalOpen] = useState(false);
   // Track if messages are currently loading for the active session
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   // Track when skeleton started showing to enforce minimum display time
@@ -958,51 +954,21 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     }
   };
 
-  const openFeedbackModal = () => {
-    setTimeout(() => setFeedbackModalOpen(true), 60);
-  };
-
-  const handleSendFeedback = () => {
-    if (!feedbackText.trim()) return;
-    
-    console.log('[SessionsPage] Sending feedback:', feedbackText);
-    // TODO: Implement actual feedback submission
-    
-    setFeedbackModalOpen(false);
-    setFeedbackText('');
-  };
-
-  const openSupportRequestModal = () => {
-    setTimeout(() => setSupportRequestModalOpen(true), 60);
-  };
-
-  const handleSupportRequestSubmit = (data: SupportRequestData) => {
-    console.log('[SessionsPage] Submitting support request:', data);
-    // TODO: Implement actual support request submission
-    
-    setSupportRequestModalOpen(false);
-  };
-
   // Close confirmation modal on escape key
   useEffect(() => {
-    if (!clearMessagesConfirmOpen && !clearSessionsConfirmOpen && !resetSessionConfirmOpen && !feedbackModalOpen && !supportRequestModalOpen) return;
+    if (!clearMessagesConfirmOpen && !clearSessionsConfirmOpen && !resetSessionConfirmOpen) return;
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (clearMessagesConfirmOpen) setClearMessagesConfirmOpen(false);
         if (clearSessionsConfirmOpen) setClearSessionsConfirmOpen(false);
         if (resetSessionConfirmOpen) setResetSessionConfirmOpen(false);
-        if (feedbackModalOpen) {
-          setFeedbackModalOpen(false);
-          setFeedbackText('');
-        }
-        if (supportRequestModalOpen) setSupportRequestModalOpen(false);
       }
     };
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [clearMessagesConfirmOpen, clearSessionsConfirmOpen, resetSessionConfirmOpen, feedbackModalOpen, supportRequestModalOpen]);
+  }, [clearMessagesConfirmOpen, clearSessionsConfirmOpen, resetSessionConfirmOpen]);
 
   return (
     <SessionRuntimeProvider>
@@ -1150,14 +1116,18 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
               </div>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={openFeedbackModal} isLight={isLight}>Give Feedback</DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem isLight={isLight}>Session Settings</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onOpenAbout} isLight={isLight}>About Project Hands-Off</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onClose} isLight={isLight}>Close Panel</DropdownMenuItem>
           </DropdownMenu>
+
+          {/* View Options Menu - Open in Popup/New Tab */}
+          <ViewOptionsMenu
+            isLight={isLight}
+            currentSessionId={currentSessionId}
+          />
 
           {/* Home Button */}
           <Button
@@ -1606,30 +1576,6 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         </div>
       </>
 
-      {/* Feedback Modal */}
-      <FeedbackModal
-        isLight={isLight}
-        isOpen={feedbackModalOpen}
-        feedbackText={feedbackText}
-        onClose={() => {
-          setFeedbackModalOpen(false);
-          setFeedbackText('');
-        }}
-        onFeedbackChange={setFeedbackText}
-        onSubmit={handleSendFeedback}
-      />
-
-      {/* Support Request Modal */}
-      <SupportRequestModal
-        isLight={isLight}
-        isOpen={supportRequestModalOpen}
-        onClose={() => setSupportRequestModalOpen(false)}
-        onSubmit={handleSupportRequestSubmit}
-        userEmail={user?.email || ''}
-        userOrganization={organization?.name || ''}
-        userTeam={activeTeam || ''}
-        availableTeams={[]}
-      />
     </SessionRuntimeProvider>
   );
 };
