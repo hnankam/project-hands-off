@@ -696,6 +696,12 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   };
 
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+  const attachmentsRef = useRef<AttachmentItem[]>([]);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
 
   // Update editor editable state when input is disabled
   useEffect(() => {
@@ -808,11 +814,13 @@ export const CustomInput: React.FC<CustomInputProps> = ({
 
     // Get markdown from editor
     const markdown = editorToMarkdown(editor);
-    if (!markdown.trim() && attachments.length === 0) return;
+    // Use ref to get current attachments value (avoids closure issues)
+    const currentAttachments = attachmentsRef.current;
+    if (!markdown.trim() && currentAttachments.length === 0) return;
 
     // Upload all pending attachments first
     const sessionId = listenSessionId || 'default';
-    const updatedAttachments = [...attachments];
+    const updatedAttachments = [...currentAttachments];
     for (let i = 0; i < updatedAttachments.length; i++) {
       const item = updatedAttachments[i];
       if (item.status === 'pending') {
@@ -845,7 +853,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
     editor.commands.clearContent();
 
     // Cleanup attachments
-    attachments.forEach(a => URL.revokeObjectURL(a.previewUrl));
+    currentAttachments.forEach(a => URL.revokeObjectURL(a.previewUrl));
     setAttachments([]);
 
     editor.commands.focus();

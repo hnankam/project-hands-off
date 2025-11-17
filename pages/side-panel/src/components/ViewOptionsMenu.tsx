@@ -97,10 +97,10 @@ export const ViewOptionsMenu: React.FC<ViewOptionsMenuProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         disabled={isProcessing}
         className={cn(
-          'flex h-6 w-6 items-center justify-center rounded transition-colors',
+          'flex h-7 w-7 p-0 items-center justify-center rounded-md transition-colors',
           isLight
-            ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-            : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
+            ? 'text-gray-600 hover:bg-gray-200/70'
+            : 'text-gray-400 hover:bg-gray-800/50',
           isProcessing && 'opacity-50 cursor-not-allowed'
         )}
         title="View options"

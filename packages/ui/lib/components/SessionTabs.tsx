@@ -6,9 +6,10 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 interface SessionTabsProps {
   className?: string;
   isLight: boolean;
+  viewMode?: 'sidepanel' | 'popup' | 'newtab' | 'fullscreen';
 }
 
-export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
+export const SessionTabs = ({ className, isLight, viewMode = 'sidepanel' }: SessionTabsProps) => {
   const { sessions, currentSessionId } = useSessionStorageDB();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const previousCurrentSessionId = useRef(currentSessionId);
@@ -18,6 +19,9 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
   const [containerHasOverflow, setContainerHasOverflow] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  
+  // Only show extra roundness on first tab in side panel view
+  const shouldShowExtraRoundness = viewMode === 'sidepanel';
 
   const handleSessionClick = (sessionId: string) => {
     // Don't trigger setActiveSession if the session is already active
@@ -160,7 +164,7 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
             onDoubleClick={() => handleDoubleClick(session.id, session.title)}
             className={cn(
               "group flex items-center space-x-1 px-2 py-1 text-xs rounded cursor-pointer transition-colors whitespace-nowrap flex-shrink-0",
-              index === 0 && "rounded-tl-xl",
+              index === 0 && shouldShowExtraRoundness && "rounded-tl-xl",
               session.id === currentSessionId
                 ? isLight 
                   ? "bg-gray-200 text-gray-900" 
@@ -211,13 +215,22 @@ export const SessionTabs = ({ className, isLight }: SessionTabsProps) => {
               </div>
             )}
             <button
-              onClick={(e) => handleCloseSession(session.id, e)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCloseSession(session.id, e);
+              }}
+              onMouseDown={(e) => {
+                // Prevent parent onClick from firing when clicking the close button
+                // This ensures the first click works, not just the second
+                e.stopPropagation();
+              }}
               className={cn(
                 "opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity flex-shrink-0",
                 isLight 
                   ? "text-gray-400 hover:text-red-500 hover:bg-red-50" 
                   : "text-gray-500 hover:text-red-400 hover:bg-red-900"
               )}
+              style={{ minWidth: '16px', minHeight: '16px' }} // Ensure minimum clickable area
             >
               <svg width="8" height="8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6 18L18 6M6 6l12 12" />

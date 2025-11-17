@@ -41,9 +41,22 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
     setDeleteConfirmOpen(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
     if (sessionToDelete) {
-      sessionStorageDBWrapper.deleteSession(sessionToDelete.id);
+      const sessionId = sessionToDelete.id; // Capture sessionId before clearing state
+      try {
+        // Perform deletion first, then close modal
+        await sessionStorageDBWrapper.deleteSession(sessionId);
+      } catch (error) {
+        console.error('[SessionList] Failed to delete session:', error);
+        // Don't close modal on error so user can retry
+        return;
+      }
+      // Close modal only after successful deletion
       setDeleteConfirmOpen(false);
       setSessionToDelete(null);
     }
@@ -112,7 +125,7 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
         </div>
 
         {isExpanded && (
-          <div className="space-y-0 max-h-[200px] overflow-y-auto session-list-expanded">
+          <div className="space-y-0 max-h-[200px] overflow-y-auto session-list-expanded mb-1">
             {sessions.map((session, index) => (
               <div
                 key={session.id}
@@ -172,17 +185,26 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
-            onClick={() => {
+            onClick={(e) => {
+              // Only close if clicking directly on backdrop, not on modal content
+              if (e.target === e.currentTarget) {
               setDeleteConfirmOpen(false);
               setSessionToDelete(null);
+              }
             }}
           />
 
           {/* Modal */}
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
+          <div 
+            className="fixed inset-0 z-[10001] flex items-center justify-center p-4 pointer-events-none"
+            onClick={(e) => {
+              // Prevent backdrop click when clicking modal container
+              e.stopPropagation();
+            }}
+          >
             <div
               className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl',
+                'w-full max-w-sm rounded-lg shadow-xl pointer-events-auto',
                 isLight
                   ? 'bg-gray-50 border border-gray-200'
                   : 'bg-[#151C24] border border-gray-700'
@@ -296,7 +318,15 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
                   Cancel
                 </button>
                 <button
-                  onClick={handleConfirmDelete}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    handleConfirmDelete(e);
+                  }}
+                  onMouseDown={(e) => {
+                    // Prevent backdrop click from firing when clicking delete button
+                    e.stopPropagation();
+                  }}
                   className={cn(
                     'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
                     'bg-red-600 text-white hover:bg-red-700'

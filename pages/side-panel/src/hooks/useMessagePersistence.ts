@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { debug as baseDebug, sessionStorageDBWrapper, persistenceLock } from '@extension/shared';
 import type { CopilotMessage } from '@extension/storage';
 import { TIMING_CONSTANTS } from '../constants';
+import { useSessionRuntimeState } from '../context/SessionRuntimeContext';
 
 // Message data structure returned by saveMessagesRef
 export interface MessageData {
@@ -460,6 +461,16 @@ export const useMessagePersistence = ({
     console.log(`[useMessagePersistence] Session: ${sessionId.slice(0, 8)}`);
     console.log(`[useMessagePersistence] isActive: ${isActive}`);
     debug.log(`📥 [useMessagePersistence] handleLoadMessages called for session ${sessionId}`);
+    
+    // CRITICAL: Check if streaming is in progress before loading messages
+    // This prevents activity dots from disappearing when reload happens during streaming
+    const isStreaming = runtimeStateRef.current?.isInProgress ?? false;
+    if (isStreaming) {
+      debug.log(`⏸️ [useMessagePersistence] Streaming in progress, aborting message reload to preserve activity dots`);
+      console.log(`[useMessagePersistence] ⏸️ Aborting reload - streaming active`);
+      return;
+    }
+    
     setIsHydrating(true);
     scheduleHydrationFallback();
 
@@ -834,6 +845,121 @@ export const useMessagePersistence = ({
     }
     return undefined;
   }, [hydrationCompleted, isActive, sessionId]);
+
+  // Get runtime state to check if streaming is in progress
+  const runtimeState = useSessionRuntimeState(sessionId);
+  const runtimeStateRef = useRef(runtimeState);
+  const pendingReloadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Keep ref updated with latest runtime state
+  useEffect(() => {
+    runtimeStateRef.current = runtimeState;
+  }, [runtimeState]);
+  
+  // Cross-window message sync: Listen for message updates from other windows
+  useEffect(() => {
+    // Only listen if chrome.storage is available and session is active
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.onChanged || !isActive) {
+      return;
+    }
+
+    const syncKeyPrefix = 'session_storage_sync_';
+    const messagesUpdatedKey = `${syncKeyPrefix}messagesUpdated`;
+    
+    // Get our window ID to filter out self-notifications
+    const ourWindowId = sessionStorageDBWrapper.getWindowId();
+
+    const handleStorageChange = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string
+    ) => {
+      // Only process changes from chrome.storage.local
+      if (areaName !== 'local') return;
+
+      const change = changes[messagesUpdatedKey];
+      if (!change || !change.newValue) return;
+
+      const syncData = change.newValue as { event: string; sessionId?: string; timestamp: number; userId?: string; windowId?: string };
+      
+      // Filter out self-notifications: ignore if windowId matches ours
+      if (syncData.windowId === ourWindowId) {
+        debug.log(`🚫 [useMessagePersistence] Ignoring self-notification (same window ID) for session ${sessionId}`);
+        return;
+      }
+      
+      // Only reload if this is for the current session and came from another window
+      if (syncData.sessionId === sessionId && syncData.event === 'messagesUpdated') {
+        const oldTimestamp = change.oldValue?.timestamp;
+        const newTimestamp = syncData.timestamp;
+        
+        // Only reload if timestamp changed (indicating it came from another window)
+        if (!oldTimestamp || newTimestamp !== oldTimestamp) {
+          // CRITICAL: Don't reload messages if streaming is in progress
+          // This prevents activity dots from disappearing when cross-window sync triggers reloads
+          const isStreaming = runtimeStateRef.current?.isInProgress ?? false;
+          
+          if (isStreaming) {
+            debug.log(`⏸️ [useMessagePersistence] Streaming in progress for session ${sessionId}, deferring cross-window reload...`);
+            
+            // Clear any existing pending reload
+            if (pendingReloadTimeoutRef.current) {
+              clearTimeout(pendingReloadTimeoutRef.current);
+            }
+            
+            // Set up a listener to reload when streaming completes
+            // Use a ref to track the notification timestamp to avoid stale reloads
+            const notificationTimestamp = newTimestamp;
+            const checkStreamingComplete = () => {
+              const stillStreaming = runtimeStateRef.current?.isInProgress ?? false;
+              if (!stillStreaming && isActive) {
+                // Double-check: verify streaming is still not active right before reload
+                // This prevents race conditions where streaming might restart between checks
+                const finalCheck = runtimeStateRef.current?.isInProgress ?? false;
+                if (!finalCheck) {
+                  debug.log(`▶️ [useMessagePersistence] Streaming completed, reloading messages from cross-window sync...`);
+                  debug.log(`   Notification timestamp: ${new Date(notificationTimestamp).toISOString()}`);
+                  handleLoadMessages();
+                  pendingReloadTimeoutRef.current = null;
+                } else {
+                  // Streaming restarted, continue checking
+                  debug.log(`🔄 [useMessagePersistence] Streaming restarted, continuing to defer reload...`);
+                  pendingReloadTimeoutRef.current = setTimeout(checkStreamingComplete, 300);
+                }
+              } else if (stillStreaming) {
+                // Still streaming, check again in 300ms
+                pendingReloadTimeoutRef.current = setTimeout(checkStreamingComplete, 300);
+              }
+            };
+            
+            // Start checking after a short delay
+            pendingReloadTimeoutRef.current = setTimeout(checkStreamingComplete, 300);
+            return;
+          }
+          
+          debug.log(`🌐 [useMessagePersistence] Cross-window message update detected for session ${sessionId}, reloading messages...`);
+          debug.log(`   From window: ${syncData.windowId?.slice(0, 12) + '...' || 'unknown'}`);
+          
+          // Small delay to ensure IndexedDB has been updated
+          setTimeout(() => {
+            if (isActive) {
+              handleLoadMessages();
+            }
+          }, 100);
+        }
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+      // Clear any pending reload timeout
+      if (pendingReloadTimeoutRef.current) {
+        clearTimeout(pendingReloadTimeoutRef.current);
+        pendingReloadTimeoutRef.current = null;
+      }
+    };
+  }, [sessionId, isActive, handleLoadMessages]);
 
   return {
     storedMessages,

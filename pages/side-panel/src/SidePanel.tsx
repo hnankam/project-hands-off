@@ -1,6 +1,6 @@
 import './SidePanel.css';
 import '@copilotkit/react-ui/styles.css';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   PROJECT_URL_OBJECT,
   useStorage,
@@ -232,29 +232,50 @@ const SidePanel = () => {
   }, [isPageRestored]);
 
   // Handle session ID from URL (for new tab and popup contexts)
+  // Only apply URL session ID once on mount, don't override manual tab switches
+  const urlSessionIdAppliedRef = useRef<string | null>(null);
   useEffect(() => {
     const viewMode = getCurrentViewMode();
     const urlSessionId = getSessionIdFromUrl();
     
     console.log('[SidePanel] View mode detection:', { viewMode, urlSessionId, currentSessionId });
     
-    // If we're in a new tab or popup with a specific session ID
-    if ((viewMode === 'newtab' || viewMode === 'popup') && urlSessionId && urlSessionId !== currentSessionId) {
-      console.log('[SidePanel] Setting active session from URL:', urlSessionId);
+    // Only apply URL session ID if:
+    // 1. We're in a new tab or popup context
+    // 2. URL has a session ID
+    // 3. We haven't already applied this URL session ID (to prevent overriding manual switches)
+    // 4. Sessions are loaded
+    if ((viewMode === 'newtab' || viewMode === 'popup') && urlSessionId && sessions.length > 0) {
+      // Check if we've already applied this URL session ID
+      if (urlSessionIdAppliedRef.current === urlSessionId) {
+        // Already applied, don't override manual tab switches
+        return;
+      }
       
       // Check if the session exists
       const sessionExists = sessions.some(s => s.id === urlSessionId);
       
       if (sessionExists) {
-        // Switch to the specified session
-        sessionStorageDBWrapper.setActiveSession(urlSessionId).catch(err => {
-          console.error('[SidePanel] Failed to set active session from URL:', err);
-        });
-        
-        // Ensure we're on the sessions page
-        if (activePage !== 'sessions') {
-          setActivePage('sessions');
-          window.location.hash = '#/sessions';
+        // Only apply if current session doesn't match (initial load scenario)
+        if (urlSessionId !== currentSessionId) {
+          console.log('[SidePanel] Setting active session from URL (initial load):', urlSessionId);
+          
+          // Switch to the specified session
+          sessionStorageDBWrapper.setActiveSession(urlSessionId).catch(err => {
+            console.error('[SidePanel] Failed to set active session from URL:', err);
+          });
+          
+          // Mark this URL session ID as applied
+          urlSessionIdAppliedRef.current = urlSessionId;
+          
+          // Ensure we're on the sessions page
+          if (activePage !== 'sessions') {
+            setActivePage('sessions');
+            window.location.hash = '#/sessions';
+          }
+        } else {
+          // Current session already matches URL, mark as applied
+          urlSessionIdAppliedRef.current = urlSessionId;
         }
       } else {
         console.warn('[SidePanel] Session ID from URL not found:', urlSessionId);

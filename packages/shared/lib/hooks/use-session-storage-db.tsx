@@ -24,14 +24,11 @@ export interface SessionStorageState {
 function createSessionStore() {
   let cache: SessionStorageState | null = null;
   let listeners: Array<() => void> = [];
+  const syncKeyPrefix = 'session_storage_sync_';
 
-  // Subscribe to DB changes
-  const unsubscribeDB = sessionStorageDB.subscribe((event) => {
-    if (event.type === 'sessionsUpdated' || event.type === 'sessionChanged') {
-      console.log('[SessionStore] 🔔 ========== DB EVENT RECEIVED ==========');
-      console.log('[SessionStore] Event type:', event.type);
-      console.log('[SessionStore] Triggering refetch...');
-      // Refetch data and notify listeners
+  // Helper function to trigger refetch and notify listeners
+  const triggerRefetch = () => {
+    console.log('[SessionStore] 🔔 ========== TRIGGERING REFETCH ==========');
       fetchData()
         .then(() => {
           console.log('[SessionStore] ✅ Data refetched successfully');
@@ -55,8 +52,82 @@ function createSessionStore() {
             }
           });
         });
+  };
+
+  // Subscribe to DB changes (local window)
+  const unsubscribeDB = sessionStorageDB.subscribe((event) => {
+    if (event.type === 'sessionsUpdated' || event.type === 'sessionChanged') {
+      console.log('[SessionStore] 🔔 ========== DB EVENT RECEIVED ==========');
+      console.log('[SessionStore] Event type:', event.type);
+      triggerRefetch();
     }
   });
+
+  // Subscribe to cross-window changes via chrome.storage.local
+  let unsubscribeStorage: (() => void) | null = null;
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    // Get our window ID to filter out self-notifications
+    const ourWindowId = sessionStorageDB.getWindowId();
+    
+    const handleStorageChange = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string
+    ) => {
+      // Only process changes from chrome.storage.local
+      if (areaName !== 'local') return;
+
+      // Check if any of our sync keys changed
+      const syncKeys = [
+        `${syncKeyPrefix}sessionsUpdated`,
+        `${syncKeyPrefix}sessionChanged`,
+        `${syncKeyPrefix}messagesUpdated`,
+      ];
+
+      let shouldRefetch = false;
+      for (const key of syncKeys) {
+        if (changes[key]) {
+          const newValue = changes[key].newValue;
+          const oldValue = changes[key].oldValue;
+          
+          // Filter out self-notifications: ignore if windowId matches ours
+          if (newValue?.windowId === ourWindowId) {
+            console.log('[SessionStore] 🚫 Ignoring self-notification (same window ID)');
+            continue;
+          }
+          
+          // Only refetch if this change came from another window (not our own)
+          // We can detect this by checking if the timestamp is different
+          if (newValue && (!oldValue || newValue.timestamp !== oldValue.timestamp)) {
+            // Verify userId matches (only sync for same user)
+            const currentUserId = sessionStorageDB.getCurrentUserId();
+            if (!currentUserId || newValue.userId === currentUserId) {
+              console.log('[SessionStore] 🌐 ========== CROSS-WINDOW SYNC DETECTED ==========');
+              console.log('[SessionStore] Change from another window:', {
+                event: newValue.event,
+                sessionId: newValue.sessionId,
+                timestamp: new Date(newValue.timestamp).toISOString(),
+                fromWindowId: newValue.windowId?.slice(0, 12) + '...',
+              });
+              shouldRefetch = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (shouldRefetch) {
+        // Small delay to ensure IndexedDB has been updated
+        setTimeout(() => {
+          triggerRefetch();
+        }, 50);
+      }
+    };
+    
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    unsubscribeStorage = () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
+  }
 
   const fetchData = async (): Promise<SessionStorageState> => {
     console.log('[SessionStore] 📦 ========== FETCHING DATA ==========');
@@ -97,7 +168,17 @@ function createSessionStore() {
 
   const getSnapshot = () => cache;
 
-  return { fetchData, subscribe, getSnapshot, cleanup: () => unsubscribeDB() };
+  return { 
+    fetchData, 
+    subscribe, 
+    getSnapshot, 
+    cleanup: () => {
+      unsubscribeDB();
+      if (unsubscribeStorage) {
+        unsubscribeStorage();
+      }
+    }
+  };
 }
 
 // Global store instance
@@ -308,9 +389,10 @@ export const sessionStorageDBWrapper = {
   async updateMessagesWithVersion(
     sessionId: string,
     messages: any[],
-    expectedVersion?: number
+    expectedVersion?: number,
+    isStreaming?: boolean
   ): Promise<{ success: boolean; currentVersion?: number; error?: string }> {
-    return await sessionStorageDB.updateMessagesWithVersion(sessionId, messages, expectedVersion);
+    return await sessionStorageDB.updateMessagesWithVersion(sessionId, messages, expectedVersion, isStreaming);
   },
 
   /**
@@ -386,6 +468,13 @@ export const sessionStorageDBWrapper = {
     const userId = sessionStorageDB.getCurrentUserId();
     console.log('[sessionStorageDBWrapper:getCurrentUserId] Current user ID:', userId || 'null');
     return userId;
+  },
+
+  /**
+   * Get the window ID for this instance (used to filter self-notifications)
+   */
+  getWindowId(): string {
+    return sessionStorageDB.getWindowId();
   },
 };
 

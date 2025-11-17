@@ -32,6 +32,15 @@ export class SessionStorageDB {
   private initializePromise: Promise<void> | null = null;
   private listeners = new Set<SessionStorageListener>();
   private currentUserId: string | null = null;
+  private syncKeyPrefix = 'session_storage_sync_';
+  private windowId: string; // Unique ID for this window instance to filter self-notifications
+  
+  constructor() {
+    // Generate a unique window ID for this instance to filter self-notifications
+    this.windowId = `window_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    log('[SessionStorageDB] 🪟 Window ID initialized:', this.windowId);
+  }
+  
   private computeMessageSignature(messages: any[]): string {
     try {
       return JSON.stringify(messages ?? []);
@@ -204,6 +213,46 @@ export class SessionStorageDB {
         console.error('[SessionStorageDB] Listener error:', error);
       }
     });
+    
+    // Also notify other windows via chrome.storage.local (cross-window sync)
+    this.notifyOtherWindows(event);
+  }
+
+  /**
+   * Notify other windows of changes via chrome.storage.local
+   * This enables real-time sync across side panel, popup, and tabless windows
+   */
+  private async notifyOtherWindows(event: SessionStorageEvent): Promise<void> {
+    // Only sync if chrome.storage is available (Chrome extension context)
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+      return;
+    }
+
+    try {
+      const syncKey = `${this.syncKeyPrefix}${event.type}`;
+      const syncData = {
+        timestamp: Date.now(),
+        event: event.type,
+        sessionId: event.type === 'sessionChanged' || event.type === 'messagesUpdated' 
+          ? (event as any).sessionId 
+          : undefined,
+        userId: this.currentUserId,
+        windowId: this.windowId, // Include window ID to filter self-notifications
+      };
+
+      await chrome.storage.local.set({ [syncKey]: syncData });
+      log('[SessionStorageDB] 🔔 Cross-window sync notification sent:', { ...syncData, windowId: syncData.windowId.slice(0, 12) + '...' });
+    } catch (error) {
+      // Silently fail - cross-window sync is best-effort
+      log('[SessionStorageDB] ⚠️ Failed to send cross-window sync notification:', error);
+    }
+  }
+
+  /**
+   * Get the window ID for this instance
+   */
+  getWindowId(): string {
+    return this.windowId;
   }
 
   // ========================================
@@ -311,13 +360,28 @@ export class SessionStorageDB {
       await this.initialize(false);
     }
     const worker = this.getWorker();
+    
+    try {
     const result = await worker.query<any[]>(
       'SELECT sessionId FROM current_session LIMIT 1;'
     );
     const currentId = result[0]?.[0]?.sessionId || null;
 
-    if (!currentId || !this.currentUserId) {
-      return currentId || null;
+      // If sessionId is null or empty string, treat as no current session
+      // This handles cases where the record exists but has NULL sessionId (shouldn't happen after fix, but handle gracefully)
+      if (!currentId || currentId === null || currentId === 'null') {
+        // Clean up invalid record if it exists
+        try {
+          await worker.query('DELETE current_session WHERE sessionId IS NONE OR sessionId IS NULL;');
+        } catch (cleanupError) {
+          // Ignore cleanup errors - record might not exist
+          log('[SessionStorageDB:getCurrentSessionId] Cleanup query failed (non-critical):', cleanupError);
+        }
+        return null;
+      }
+
+      if (!this.currentUserId) {
+        return currentId;
     }
 
     const session = await this.getSession(currentId);
@@ -343,6 +407,22 @@ export class SessionStorageDB {
     }
 
     return session.id;
+    } catch (error: any) {
+      // Handle database errors gracefully (e.g., NULL sessionId in record)
+      log('[SessionStorageDB:getCurrentSessionId] ⚠️ Error getting current session ID:', error?.message || error);
+      
+      // If error is about NULL sessionId, try to clean up the invalid record
+      if (error?.message?.includes('NULL') || error?.message?.includes('null')) {
+        try {
+          await worker.query('DELETE current_session WHERE sessionId IS NONE OR sessionId IS NULL;');
+        } catch (cleanupError) {
+          // Ignore cleanup errors
+          log('[SessionStorageDB:getCurrentSessionId] Cleanup after error failed (non-critical):', cleanupError);
+        }
+      }
+      
+      return null;
+    }
   }
 
   /**
@@ -526,6 +606,10 @@ export class SessionStorageDB {
   async deleteSession(sessionId: string): Promise<void> {
     const worker = this.getWorker();
 
+    // Check if this is the current session BEFORE deleting
+    const currentId = await this.getCurrentSessionId();
+    const isCurrentSession = currentId === sessionId;
+
     // Delete from all tables
     await worker.query(`
       DELETE FROM session_metadata WHERE sessionId = $id OR id = $id;
@@ -535,16 +619,17 @@ export class SessionStorageDB {
     `, { id: sessionId });
 
     // If this was the current session, set a new one
-    const currentId = await this.getCurrentSessionId();
-    if (currentId === sessionId) {
+    if (isCurrentSession) {
       const sessions = await this.getAllSessions();
       if (sessions.length > 0) {
         await this.setActiveSession(sessions[0].id);
       } else {
+        // No sessions left - clear current session pointer
         await this.setCurrentSessionId(null);
       }
     }
 
+    // Notify listeners to update UI
     this.notify({ type: 'sessionsUpdated' });
     log('[SessionStorageDB] ✅ Deleted session:', sessionId);
   }
@@ -690,7 +775,8 @@ export class SessionStorageDB {
   async updateMessagesWithVersion(
     sessionId: string, 
     messages: any[], 
-    expectedVersion?: number
+    expectedVersion?: number,
+    isStreaming?: boolean // If true, skip cross-window notifications (only notify when streaming completes)
   ): Promise<{ success: boolean; currentVersion?: number; error?: string }> {
     const worker = this.getWorker();
 
@@ -878,8 +964,17 @@ export class SessionStorageDB {
         { id: sessionId, timestamp: now }
     );
 
+    // Only send cross-window notifications when streaming is complete
+    // This prevents other windows from reloading incomplete messages mid-stream
+    // and avoids race conditions from out-of-order Chrome storage events
+    if (!isStreaming) {
+      // Notify about both message update and session update (for timestamp change)
     this.notify({ type: 'messagesUpdated', sessionId });
-      log(`[SessionStorageDB] ✅ Updated ${normalizedMessages.length} messages (v${newVersion})`);
+      this.notify({ type: 'sessionsUpdated' }); // Also notify to sync session timestamp across windows
+      log(`[SessionStorageDB] ✅ Updated ${normalizedMessages.length} messages (v${newVersion}) - notifications sent`);
+    } else {
+      log(`[SessionStorageDB] ✅ Updated ${normalizedMessages.length} messages (v${newVersion}) - streaming in progress, skipping notifications`);
+    }
       
       return { success: true, currentVersion: newVersion };
       
@@ -1040,11 +1135,19 @@ export class SessionStorageDB {
   private async setCurrentSessionId(sessionId: string | null): Promise<void> {
     const worker = this.getWorker();
     
+    if (sessionId === null) {
+      // When setting to null, delete the record entirely instead of creating one with NULL
+      // This prevents database errors when querying for sessionId
+      await worker.query('DELETE current_session;');
+      log('[SessionStorageDB:setCurrentSessionId] Cleared current session (set to null)');
+    } else {
     // Delete all existing records and create a new one (single record table)
     await worker.query(`
       DELETE current_session;
       CREATE current_session CONTENT { sessionId: $sid };
     `, { sid: sessionId });
+      log('[SessionStorageDB:setCurrentSessionId] Set current session:', sessionId.slice(0, 12) + '...');
+    }
   }
 
   /**

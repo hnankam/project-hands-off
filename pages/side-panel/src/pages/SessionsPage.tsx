@@ -7,6 +7,7 @@ import { sessionStorageDBWrapper, generateSessionName } from '@extension/shared'
 import { useAuth } from '../context/AuthContext';
 import UserMenu from '../components/UserMenu';
 import { ViewOptionsMenu } from '../components/ViewOptionsMenu';
+import { getCurrentViewMode } from '../utils/windowManager';
 import {
   cn,
   Button,
@@ -47,6 +48,9 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
 }) => {
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
+  
+  // Detect current view mode for conditional styling
+  const viewMode = getCurrentViewMode();
 
   // Auth
   const { user, organization, activeTeam } = useAuth();
@@ -979,7 +983,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
           isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
         )}>
         <div className="mr-2 flex min-w-0 flex-1 items-center overflow-hidden">
-          <SessionTabs isLight={isLight} className="flex-1" />
+          <SessionTabs isLight={isLight} viewMode={viewMode} className="flex-1" />
         </div>
 
         <div className="flex flex-shrink-0 items-center space-x-1">

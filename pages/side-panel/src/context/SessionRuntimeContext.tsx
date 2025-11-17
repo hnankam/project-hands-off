@@ -418,10 +418,13 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
         }
 
         // Use versioned update
+        // Pass isLoading state to skip notifications during streaming
+        // This prevents other windows from reloading incomplete messages mid-stream
         const result = await sessionStorageDBWrapper.updateMessagesWithVersion(
           sessionId,
           sanitizedMessages,
-          currentVersionRef.current  // Pass expected version
+          currentVersionRef.current,  // Pass expected version
+          isLoading  // Pass streaming state - notifications only sent when streaming completes
         );
 
         if (result.success) {

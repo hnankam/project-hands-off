@@ -96,12 +96,15 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
     try {
       const re = /<!--ATTACHMENTS:\s*([\s\S]*?)\s*-->/m;
       const m = content.match(re);
-      if (!m) return { cleanedContent: content, attachments: [] as AttachmentItem[] };
+      if (!m) {
+        return { cleanedContent: content, attachments: [] as AttachmentItem[] };
+      }
       const json = m[1];
       const list = JSON.parse(json) as AttachmentItem[];
       const cleaned = content.replace(re, '').trimEnd();
       return { cleanedContent: cleaned, attachments: Array.isArray(list) ? list : [] };
-    } catch {
+    } catch (err) {
+      console.error('[CustomUserMessage] Error parsing attachments:', err);
       return { cleanedContent: content, attachments: [] as AttachmentItem[] };
     }
   }, [content]);
