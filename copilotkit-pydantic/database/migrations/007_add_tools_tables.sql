@@ -112,7 +112,11 @@ VALUES
     ('create_plan', 'Create Plan', 'backend', 'Create a plan with multiple steps.', true),
     ('update_plan_step', 'Update Plan Step', 'backend', 'Update the description or status of a plan step.', true),
     ('get_weather', 'Get Weather', 'backend', 'Retrieve weather information for a location.', true),
-    ('generate_images', 'Generate Images', 'backend', 'Generate images based on a text prompt and return URLs.', true)
+    ('generate_images', 'Generate Images', 'backend', 'Generate images based on a text prompt and return URLs.', true),
+    ('web_search', 'Web Search', 'backend', 'Search the web for relevant information.', true),
+    ('code_execution', 'Code Execution', 'backend', 'Execute sandboxed Python code.', true),
+    ('url_context', 'URL Context', 'backend', 'Load content from provided URLs.', true),
+
 ON CONFLICT DO NOTHING;
 
 -- Built-in tools provided by pydantic-ai

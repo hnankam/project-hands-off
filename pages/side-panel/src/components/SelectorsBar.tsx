@@ -3,6 +3,7 @@ import { cn } from '@extension/ui';
 import { AgentSelector } from './AgentSelector';
 import { ModelSelector } from './ModelSelector';
 import { SettingsDropdown } from './SettingsDropdown';
+import InfoMenu from './InfoMenu';
 
 interface SelectorsBarProps {
   isLight: boolean;
@@ -74,15 +75,18 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
         />
       </div>
 
-      {/* Right side: Settings Dropdown */}
-      <SettingsDropdown
-        isLight={isLight}
-        showSuggestions={showSuggestions}
-        showThoughtBlocks={showThoughtBlocks}
-        onShowSuggestionsChange={onShowSuggestionsChange}
-        onShowThoughtBlocksChange={onShowThoughtBlocksChange}
-        onExpandClick={onExpandSettingsClick}
-      />
+      {/* Right side: Settings Dropdown and Info Menu */}
+      <div className="flex items-center gap-1">
+        <SettingsDropdown
+          isLight={isLight}
+          showSuggestions={showSuggestions}
+          showThoughtBlocks={showThoughtBlocks}
+          onShowSuggestionsChange={onShowSuggestionsChange}
+          onShowThoughtBlocksChange={onShowThoughtBlocksChange}
+          onExpandClick={onExpandSettingsClick}
+        />
+        <InfoMenu isLight={isLight} />
+      </div>
     </div>
   );
 };

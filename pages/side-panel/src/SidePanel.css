@@ -1991,7 +1991,7 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 /* Horizontal Rule */
 .ProseMirror hr {
   border: none;
-  border-top: 2px solid #e5e7eb;
+  border-top: 1px solid #e5e7eb;
   margin: 10px 0 !important;
 }
 
@@ -2524,7 +2524,7 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 /* Horizontal Rule in markdown */
 .markdown-content hr {
   border: none;
-  border-top: 2px solid #e5e7eb;
+  border-top: 1px solid #e5e7eb;
   margin: 1.2em 0;
 }
 
@@ -2538,7 +2538,7 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 .copilotKitMarkdown hr,
 .copilotKitMessage hr {
   border: none !important;
-  border-top: 2px solid #e5e7eb !important;
+  border-top: 1px solid #e5e7eb !important;
   margin: 10px 0 !important;
 }
 
@@ -2547,7 +2547,7 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 .dark .copilotKitMarkdown hr,
 .dark .copilotKitMessage hr {
   border: none !important;
-  border-top: 2px solid #1f2937 !important;
+  border-top: 1px solid #1f2937 !important;
   border-top-color: #1f2937 !important;
   color: transparent !important;
   margin: 10px 0 !important;
@@ -2844,6 +2844,17 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   opacity: 1 !important;
 }
 
+/* Refresh button hover */
+.mermaid-refresh-btn:hover {
+  background-color: #e5e7eb !important;
+  opacity: 1 !important;
+}
+
+.dark .mermaid-refresh-btn:hover {
+  background-color: #374151 !important;
+  opacity: 1 !important;
+}
+
 /* Settings panel - hide by default, show on hover or when active */
 .mermaid-settings-panel {
   opacity: 0;
@@ -3119,7 +3130,7 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 /* Horizontal Rule */
 .admin-rich-text-editor hr {
   border: none;
-  border-top: 2px solid #e5e7eb;
+  border-top: 1px solid #e5e7eb;
   margin: 10px 0 !important;
 }
 

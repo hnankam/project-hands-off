@@ -87,15 +87,12 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
         <div className="flex items-center justify-between px-2 h-[34px]">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="flex items-center gap-1.5 text-xs"
-          >
-            <span
-              className={cn(
-                "transition-colors",
-                isLight ? "hover:text-gray-900" : "hover:text-gray-100"
+            className={cn(
+              "flex items-center gap-1.5 text-xs font-medium transition-colors",
+              isLight ? "text-gray-600 hover:text-gray-900" : "text-gray-500 hover:text-gray-100"
             )}
-              style={{ color: isLight ? '#4b5563' : '#6b7280', fontWeight: 500 }}
-            >
+          >
+            <span>
               Past Sessions
             </span>
             <svg

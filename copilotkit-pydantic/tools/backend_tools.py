@@ -40,15 +40,16 @@ Example:
 from __future__ import annotations
 
 from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext, BinaryImage, ImageGenerationTool
+from pydantic_ai import Agent, RunContext, BinaryImage, ImageGenerationTool, WebSearchTool, CodeExecutionTool, UrlContextTool
 from pydantic_ai.ag_ui import StateDeps
-from ag_ui.core import EventType, StateSnapshotEvent
+from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent
 
 from core.models import AgentState, Step, StepStatus
 
 from pydantic_ai import ModelSettings
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from pydantic_ai.providers.google import GoogleProvider
+from core.models import JSONPatchOp
 
 # Import Firebase Storage utility
 import sys
@@ -121,6 +122,23 @@ async def update_plan_step(
         type=EventType.STATE_SNAPSHOT,
         snapshot=state_dict,
     )
+    # changes: list[JSONPatchOp] = []
+    # if description is not None:
+    #     changes.append(
+    #         JSONPatchOp(
+    #             op='replace', path=f'/steps/{index}/description', value=description
+    #         )
+    #     )
+    # if status is not None:
+    #     changes.append(
+    #         JSONPatchOp(op='replace', path=f'/steps/{index}/status', value=status)
+    #     )
+    
+    # print(f"   ✅ Changes: {changes}")
+    # return StateDeltaEvent(
+    #     type=EventType.STATE_DELTA,
+    #     delta=changes,
+    # )
 
 
 # ========== Utility Tools ==========
@@ -141,6 +159,40 @@ def get_weather(_: RunContext[StateDeps[AgentState]], location: str) -> str:
 
 google_provider = GoogleProvider(api_key='AIzaSyCID3PMug--i65c02xdw_FB-wyVTXJ3wHs')
 google_model = GoogleModel(model_name='gemini-2.5-flash-image', provider=google_provider)
+web_search_model = GoogleModel(model_name='gemini-2.5-flash', provider=google_provider)
+code_execution_model = GoogleModel(model_name='gemini-2.5-flash', provider=google_provider)
+memory_model = GoogleModel(model_name='gemini-2.5-flash', provider=google_provider)
+url_context_model = GoogleModel(model_name='gemini-2.5-flash', provider=google_provider)
+
+web_search_agent = Agent(
+    model=web_search_model,
+    builtin_tools=[WebSearchTool()],
+    system_prompt=(
+        "You are a web search assistant. Based on the user's prompt, "
+        "search the web for relevant information. "
+        "Return the search results."
+    ),
+)
+
+code_execution_agent = Agent(
+    model=code_execution_model,
+    builtin_tools=[CodeExecutionTool()],
+    system_prompt=(
+        "You are a code execution assistant. Based on the user's prompt, "
+        "execute the code and return the results. "
+        "ALWAYS return both the code execution results and the code itself."
+    ),
+)
+
+url_context_agent = Agent(
+    model=url_context_model,
+    builtin_tools=[UrlContextTool()],
+    system_prompt=(
+        "You are a URL context assistant. Based on the user's prompt, "
+        "load the content from the provided URLs. "
+        "Return the content from the URLs."
+    ),
+)
 
 # Create a Pydantic AI agent for image generation with structured output
 image_generation_agent = Agent(
@@ -223,6 +275,19 @@ async def generate_images(
         return []
 
 
+async def web_search(ctx: RunContext[StateDeps[AgentState]], prompt: str) -> str:
+
+    result = await web_search_agent.run(prompt)
+    return result.response.text
+
+async def code_execution(ctx: RunContext[StateDeps[AgentState]], prompt: str) -> str:
+    result = await code_execution_agent.run(prompt)
+    return result.response.text
+
+async def url_context(ctx: RunContext[StateDeps[AgentState]], urls: list[str]) -> str:
+    result = await url_context_agent.run(urls)
+    return result.response.text
+
 # ========== Tool Registry ==========
 # Maps tool keys to their function implementations
 
@@ -231,6 +296,9 @@ BACKEND_TOOLS = {
     'update_plan_step': update_plan_step,
     'get_weather': get_weather,
     'generate_images': generate_images,
+    'web_search': web_search,
+    'code_execution': code_execution,
+    'url_context': url_context,
 }
 
 

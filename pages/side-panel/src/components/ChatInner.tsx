@@ -110,6 +110,11 @@ import { createTakeScreenshotAction } from '../actions/copilot/screenshotActions
 import { createGetWeatherAction } from '../actions/copilot/weatherActions';
 import { createGenerateImagesAction } from '../actions/copilot/imageActions';
 import { createWaitAction, createConfirmActionHumanInTheLoop } from '../actions/copilot/utilityActions';
+import { 
+  createWebSearchRender, 
+  createCodeExecutionRender, 
+  createUrlContextRender 
+} from '../actions/copilot/builtinToolActions';
 
 // Types & Libraries
 import { AgentState } from '../lib/types';
@@ -1517,6 +1522,11 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
 
   // --- IMAGE GENERATION ACTIONS ---
   useRenderToolCall(createGenerateImagesAction({ themeColor }) as any, [themeColor]);
+
+  // --- BUILTIN TOOL RENDERS ---
+  useRenderToolCall(createWebSearchRender({ isLight, clipText }) as any, [isLight, clipText]);
+  useRenderToolCall(createCodeExecutionRender({ isLight, clipText }) as any, [isLight, clipText]);
+  useRenderToolCall(createUrlContextRender({ isLight, clipText }) as any, [isLight, clipText]);
 
   // --- UTILITY ACTIONS ---
   useFrontendTool(createWaitAction({ isLight }) as any, [isLight]);

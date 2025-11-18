@@ -47,6 +47,7 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
   const [svgContent, setSvgContent] = useState<string>('');
   const [showRaw, setShowRaw] = useState(false); // Toggle between raw and rendered
   const [showControls, setShowControls] = useState(false); // Toggle controls panel
+  const [refreshCounter, setRefreshCounter] = useState(0); // Counter to force re-render
   const renderTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   // Flowchart/Graph configuration options
@@ -104,7 +105,7 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
   
   // Check if diagram type supports configuration
   const supportsConfiguration = React.useMemo(() => {
-    return ['flowchart', 'sequence', 'class', 'state'].includes(diagramType);
+    return ['flowchart', 'sequence', 'class'].includes(diagramType);
   }, [diagramType]);
 
   // Convert children to string content and inject direction
@@ -333,7 +334,7 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
         clearTimeout(renderTimerRef.current);
       }
     };
-  }, [content, isLight, mermaidLoaded, layoutEngine, nodeSpacing, rankSpacing]);
+  }, [content, isLight, mermaidLoaded, layoutEngine, nodeSpacing, rankSpacing, refreshCounter]);
 
   // Card styling to match ConfirmationCard
   const cardBackground = isLight ? 'rgba(249, 250, 251, 0.5)' : 'rgba(21, 28, 36, 0.4)';
@@ -441,6 +442,42 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+
+          {/* Refresh button */}
+          <button
+            onClick={() => {
+              // Force re-render by clearing and regenerating the diagram
+              setSvgContent('');
+              setIsLoading(true);
+              setError(null);
+              // Trigger re-render by incrementing counter
+              setRefreshCounter(prev => prev + 1);
+            }}
+            className="mermaid-refresh-btn"
+            title="Refresh Diagram"
+            style={{
+              padding: '6px',
+              borderRadius: '6px',
+              border: 'none',
+              backgroundColor: isLight ? '#f9fafb' : '#151C24',
+              color: isLight ? '#6b7280' : '#9ca3af',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '28px',
+              width: '28px',
+              transition: 'all 0.2s ease',
+              boxShadow: isLight 
+                ? '0 1px 2px rgba(0, 0, 0, 0.05)' 
+                : '0 1px 2px rgba(0, 0, 0, 0.2)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
             </svg>
           </button>
           
