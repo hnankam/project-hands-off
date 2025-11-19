@@ -685,12 +685,11 @@ input:focus {
 }
 
 /* Message controls - hide by default and show on hover */
+/* Hide all message controls by default (will be shown on hover or for assistant messages) */
 .copilot-chat-container .copilotKitMessageControls,
 .copilot-chat-container .copilotKitMessage .copilotKitMessageControls,
-.copilot-chat-container .copilotKitAssistantMessage .copilotKitMessageControls,
 .copilot-chat-container .copilotKitUserMessage .copilotKitMessageControls,
 .copilot-chat-container .copilotKitMessage:last-child .copilotKitMessageControls,
-.copilot-chat-container .copilotKitAssistantMessage:last-of-type .copilotKitMessageControls,
 .copilot-chat-container .copilotKitMessages > div:last-child .copilotKitMessageControls,
 .copilot-chat-container [class*="copilotKitMessage"]:last-child .copilotKitMessageControls {
   opacity: 0 !important;
@@ -698,6 +697,9 @@ input:focus {
   transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out !important;
   overflow: visible !important; /* Ensure dropdowns can extend beyond */
 }
+
+/* NOTE: Assistant message controls are intentionally excluded from the hidden rule above.
+   They are always visible - see rules starting at line 768 */
 
 /* Ensure non-sticky user message controls are visible and have proper z-index */
 .copilot-chat-container .copilotKitUserMessage:not(.is-sticky) .copilotKitMessageControls {
@@ -750,22 +752,31 @@ input:focus {
   overflow: visible !important;
 }
 
-/* Show controls on hover for any message */
-.copilot-chat-container .copilotKitMessage:hover .copilotKitMessageControls,
-.copilot-chat-container .copilotKitAssistantMessage:hover .copilotKitMessageControls,
-.copilot-chat-container .copilotKitUserMessage:hover .copilotKitMessageControls,
-.copilot-chat-container .copilotKitMessage:last-child:hover .copilotKitMessageControls,
-.copilot-chat-container .copilotKitAssistantMessage:last-of-type:hover .copilotKitMessageControls,
-.copilot-chat-container .copilotKitMessages > div:last-child:hover .copilotKitMessageControls,
-.copilot-chat-container [class*="copilotKitMessage"]:last-child:hover .copilotKitMessageControls {
+/* ==========================================================
+   ASSISTANT MESSAGE CONTROLS - ALWAYS VISIBLE
+   ========================================================== */
+/* Assistant controls should ALWAYS be visible (no hover required) - highest specificity */
+.copilot-chat-container .copilotKitAssistantMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessages .copilotKitAssistantMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessages > div .copilotKitAssistantMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessages > div > div .copilotKitAssistantMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessagesContainer .copilotKitAssistantMessage .copilotKitMessageControls {
   opacity: 1 !important;
   visibility: visible !important;
   display: flex !important;
   pointer-events: auto !important;
 }
 
-/* Assistant controls should stay visible without hover */
-.copilot-chat-container .copilotKitAssistantMessage .copilotKitMessageControls {
+/* ==========================================================
+   USER MESSAGE CONTROLS - ONLY VISIBLE ON HOVER
+   ========================================================== */
+/* User message controls are hidden by default (handled by rule at line 689-699) */
+
+/* Show user message controls ONLY when hovering the specific user message element itself */
+/* Do NOT use parent hover selectors - they would match all messages in the container */
+.copilot-chat-container .copilotKitUserMessage:hover .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessages .copilotKitUserMessage:hover .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessagesContainer .copilotKitUserMessage:hover .copilotKitMessageControls {
   opacity: 1 !important;
   visibility: visible !important;
   display: flex !important;

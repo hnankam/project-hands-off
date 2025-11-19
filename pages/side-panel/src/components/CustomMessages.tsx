@@ -3,6 +3,7 @@ import { Message } from "@copilotkit/shared";
 import { useCopilotChatHeadless_c } from "@copilotkit/react-core";
 import { useChatContext } from "@copilotkit/react-ui";
 import type { MessagesProps } from "@copilotkit/react-ui";
+import { VList, type VListHandle } from "virtua";
 
 /**
  * Custom Messages Component for CopilotChat
@@ -12,6 +13,7 @@ import type { MessagesProps } from "@copilotkit/react-ui";
  * 
  * Features:
  * - Renders all chat messages with custom message components
+ * - Virtual scrolling with Virtua for optimal performance with large message lists
  * - Auto-scrolls to bottom when new messages arrive
  * - Handles initial messages from labels
  * - Supports custom AssistantMessage and UserMessage components
@@ -38,46 +40,58 @@ export const CustomMessages = ({
   const { messages: visibleMessages, interrupt } = useCopilotChatHeadless_c();
   const initialMessages = useMemo(() => makeInitialMessages(labels.initial), [labels.initial]);
   const messages = [...initialMessages, ...visibleMessages];
-  const { messagesContainerRef, messagesEndRef } = useScrollToBottom(messages);
+  const vListRef = useRef<VListHandle>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Determine which render component to use (default to RenderMessage from CopilotKit)
   const MessageRenderer = RenderMessage;
 
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    // Scroll to bottom when messages change
+    console.log('[CustomMessages] scrolling to bottom', messages.length);
+    if (vListRef.current && messages.length > 0) {
+      // Use VList's scrollToIndex to scroll to the last message
+      vListRef.current.scrollToIndex(messages.length - 1, { align: "end" });
+    }
+  }, [messages.length]);
+
   return (
-    <div className="copilotKitMessages" ref={messagesContainerRef}>
-      <div className="copilotKitMessagesContainer">
-        {messages.map((message, index) => {
-          const isCurrentMessage = index === messages.length - 1;
-          
-          if (!MessageRenderer) {
-            return null;
-          }
-          
-          return (
-            <MessageRenderer
-              key={index}
-              message={message}
-              inProgress={inProgress}
-              index={index}
-              isCurrentMessage={isCurrentMessage}
-              AssistantMessage={AssistantMessage}
-              UserMessage={UserMessage}
-              ImageRenderer={ImageRenderer}
-              onRegenerate={onRegenerate}
-              onCopy={onCopy}
-              onThumbsUp={onThumbsUp}
-              onThumbsDown={onThumbsDown}
-              markdownTagRenderers={markdownTagRenderers}
-            />
-          );
-        })}
-        {interrupt}
-        {chatError && ErrorMessage && <ErrorMessage error={chatError} isCurrentMessage />}
-      </div>
-      <footer className="copilotKitMessagesFooter" ref={messagesEndRef}>
+    <VList ref={vListRef} className="copilotKitMessages" reverse={true}>
+        <div className="copilotKitMessagesContainer">
+          {messages.map((message, index) => {
+            const isCurrentMessage = index === messages.length - 1;
+            
+            if (!MessageRenderer) {
+              return null;
+            }
+            
+            return (
+              <MessageRenderer
+                key={message.id || index}
+                message={message}
+                inProgress={inProgress}
+                index={index}
+                isCurrentMessage={isCurrentMessage}
+                AssistantMessage={AssistantMessage}
+                UserMessage={UserMessage}
+                ImageRenderer={ImageRenderer}
+                onRegenerate={onRegenerate}
+                onCopy={onCopy}
+                onThumbsUp={onThumbsUp}
+                onThumbsDown={onThumbsDown}
+                markdownTagRenderers={markdownTagRenderers}
+              />
+            );
+          })}
+          {interrupt}
+          {chatError && ErrorMessage && <ErrorMessage error={chatError} isCurrentMessage />}
+          <div ref={messagesEndRef} />
+        </div>
+      <footer className="copilotKitMessagesFooter">
         {children}
       </footer>
-    </div>
+    </VList>
   );
 };
 
@@ -104,85 +118,5 @@ function makeInitialMessages(initial: string | string[] | undefined): Message[] 
       content: initial,
     },
   ];
-}
-
-/**
- * Hook to manage auto-scroll-to-bottom behavior
- * 
- * Features:
- * - Auto-scrolls to bottom when new messages arrive
- * - Detects when user scrolls up manually
- * - Maintains scroll position when user is reading older messages
- * - Scrolls to bottom when user sends a new message
- */
-export function useScrollToBottom(messages: Message[]) {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
-  const isProgrammaticScrollRef = useRef(false);
-  const isUserScrollUpRef = useRef(false);
-
-  const scrollToBottom = () => {
-    if (messagesContainerRef.current && messagesEndRef.current) {
-      isProgrammaticScrollRef.current = true;
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
-    }
-  };
-
-  const handleScroll = () => {
-    if (isProgrammaticScrollRef.current) {
-      isProgrammaticScrollRef.current = false;
-      return;
-    }
-
-    if (messagesContainerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
-      isUserScrollUpRef.current = scrollTop + clientHeight < scrollHeight;
-    }
-  };
-
-  // Attach scroll listener
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (container) {
-      container.addEventListener("scroll", handleScroll);
-    }
-    return () => {
-      if (container) {
-        container.removeEventListener("scroll", handleScroll);
-      }
-    };
-  }, []);
-
-  // Observe DOM mutations and scroll to bottom when content changes
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) {
-      return;
-    }
-
-    const mutationObserver = new MutationObserver(() => {
-      if (!isUserScrollUpRef.current) {
-        scrollToBottom();
-      }
-    });
-
-    mutationObserver.observe(container, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-
-    return () => {
-      mutationObserver.disconnect();
-    };
-  }, []);
-
-  // Scroll to bottom when user sends a new message
-  useEffect(() => {
-    isUserScrollUpRef.current = false;
-    scrollToBottom();
-  }, [messages.filter((m) => m.role === "user").length]);
-
-  return { messagesEndRef, messagesContainerRef };
 }
 
