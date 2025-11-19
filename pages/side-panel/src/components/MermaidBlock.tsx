@@ -134,12 +134,12 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
   useEffect(() => {
     const loadMermaid = async () => {
       try {
-        console.log('[MermaidBlock] Starting to load mermaid library...');
+        // console.log('[MermaidBlock] Starting to load mermaid library...');
         // Dynamically import mermaid to reduce initial bundle size
         const mermaidModule = await import('mermaid');
         const mermaid = mermaidModule.default;
         
-        console.log('[MermaidBlock] Mermaid loaded, initializing...');
+        // console.log('[MermaidBlock] Mermaid loaded, initializing...');
         // Initialize mermaid with current theme and diagram-specific configs
         mermaid.initialize({
           startOnLoad: false,
@@ -172,10 +172,10 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
           },
         });
         
-        console.log('[MermaidBlock] Mermaid initialized successfully');
+        // console.log('[MermaidBlock] Mermaid initialized successfully');
         setMermaidLoaded(true);
       } catch (err) {
-        console.error('[MermaidBlock] Failed to load mermaid library:', err);
+        // console.error('[MermaidBlock] Failed to load mermaid library:', err);
         setError('Failed to load diagram renderer');
         setIsLoading(false);
       }
@@ -187,12 +187,12 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
   // Render mermaid diagram with debounce to avoid flickering during streaming
   useEffect(() => {
     if (!mermaidLoaded) {
-      console.log('[MermaidBlock] Waiting for mermaid to load...');
+      // console.log('[MermaidBlock] Waiting for mermaid to load...');
       return;
     }
     
     if (!content.trim()) {
-      console.log('[MermaidBlock] No content to render');
+      // console.log('[MermaidBlock] No content to render');
       setIsLoading(false);
       return;
     }
@@ -204,19 +204,19 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
 
     // Debounce: wait 300ms after content stops changing before rendering
     // This prevents flickering during AI streaming
-    console.log('[MermaidBlock] Content changed, debouncing render...');
+    // console.log('[MermaidBlock] Content changed, debouncing render...');
     renderTimerRef.current = setTimeout(() => {
-      console.log('[MermaidBlock] Debounce complete, starting render');
+      // console.log('[MermaidBlock] Debounce complete, starting render');
       renderDiagram();
     }, 300);
 
     const renderDiagram = async () => {
-      console.log('[MermaidBlock] Starting diagram render...', {
-        contentLength: content.length,
-        contentPreview: content.substring(0, 50),
-        layoutEngine,
-        direction
-      });
+      // console.log('[MermaidBlock] Starting diagram render...', {
+      //   contentLength: content.length,
+      //   contentPreview: content.substring(0, 50),
+      //   layoutEngine,
+      //   direction
+      // });
       
       setIsLoading(true);
       setError(null);
@@ -230,7 +230,7 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
           throw new Error('Mermaid library not loaded');
         }
 
-        console.log('[MermaidBlock] Re-initializing mermaid with theme:', isLight ? 'light' : 'dark');
+        // console.log('[MermaidBlock] Re-initializing mermaid with theme:', isLight ? 'light' : 'dark');
         
         // Re-initialize with current theme and user-selected layout options
         const config: any = {
@@ -287,7 +287,7 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
         // Generate unique ID for this diagram
         const id = `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         
-        console.log('[MermaidBlock] Rendering diagram with ID:', id);
+        // console.log('[MermaidBlock] Rendering diagram with ID:', id);
 
         // Validate content before rendering
         if (!content || !content.trim()) {
@@ -303,19 +303,19 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
         
         const { svg } = renderResult;
 
-        console.log('[MermaidBlock] Diagram rendered successfully, setting SVG content');
+        // console.log('[MermaidBlock] Diagram rendered successfully, setting SVG content');
         
         // Use state to let React handle the SVG insertion
         setSvgContent(svg);
         setIsLoading(false);
-        console.log('[MermaidBlock] Render complete!');
+        // console.log('[MermaidBlock] Render complete!');
       } catch (err: any) {
-        console.error('[MermaidBlock] Mermaid rendering error:', err);
-        console.error('[MermaidBlock] Error details:', {
-          message: err?.message,
-          stack: err?.stack,
-          content: content
-        });
+        // console.error('[MermaidBlock] Mermaid rendering error:', err);
+        // console.error('[MermaidBlock] Error details:', {
+        //   message: err?.message,
+        //   stack: err?.stack,
+        //   content: content
+        // });
         
         // Provide helpful error message
         let errorMessage = 'Invalid diagram syntax';

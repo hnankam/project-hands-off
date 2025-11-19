@@ -62,6 +62,7 @@ import { StreamingContext } from '../context/StreamingContext';
 import { CustomUserMessage } from './CustomUserMessage';
 import { CustomAssistantMessage } from './CustomAssistantMessage';
 import { CustomInput } from './CustomInput';
+import { CustomMessages } from './CustomMessages';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MermaidBlock } from './MermaidBlock';
 const EmptyThinkingBlock: React.FC<{ children?: React.ReactNode }> = () => null;
@@ -2031,6 +2032,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           markdownTagRenderers={customMarkdownTagRenderers}
           AssistantMessage={CustomAssistantMessage}
           UserMessage={CustomUserMessage}
+          Messages={CustomMessages}
           Input={ScopedInput}
         />
         </StreamingContext.Provider>
