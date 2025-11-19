@@ -57,8 +57,8 @@ export const CustomMessages = ({
   }, [messages.length]);
 
   return (
-    <VList ref={vListRef} className="copilotKitMessages" reverse={true}>
-        <div className="copilotKitMessagesContainer">
+    <div className="copilotKitMessages">
+        <VList ref={vListRef} className="copilotKitMessagesContainer">
           {messages.map((message, index) => {
             const isCurrentMessage = index === messages.length - 1;
             
@@ -84,14 +84,14 @@ export const CustomMessages = ({
               />
             );
           })}
-          {interrupt}
-          {chatError && ErrorMessage && <ErrorMessage error={chatError} isCurrentMessage />}
-          <div ref={messagesEndRef} />
-        </div>
+        </VList>
+        {interrupt}
+        {chatError && ErrorMessage && <ErrorMessage error={chatError} isCurrentMessage />}
+        <div ref={messagesEndRef} />
       <footer className="copilotKitMessagesFooter">
         {children}
       </footer>
-    </VList>
+    </div>
   );
 };
 
