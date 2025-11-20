@@ -1335,8 +1335,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           AssistantMessage={CustomAssistantMessage}
           UserMessage={CustomUserMessage}
           Messages={React.useCallback((props: any) => (
-            <CustomMessages {...props} />
-          ), [])}
+            <CustomMessages {...props} agentMode={agentModeChat} />
+          ), [agentModeChat])}
           Input={ScopedInput}
         />
         </StreamingContext.Provider>
