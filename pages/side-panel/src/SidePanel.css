@@ -411,7 +411,25 @@ input:focus {
   margin-right: auto !important;
   box-sizing: border-box !important;
   align-self: stretch !important;
+  /* Virtua sets overflow-y: auto on this container for scrolling */
+  /* Ensure it can be a scrolling container for sticky positioning */
+  height: 100% !important;
+  /* Ensure absolute positioned children (sticky messages) are positioned relative to this container */
+  position: relative !important;
 }
+
+/* 
+ * Virtua structure for sticky positioning:
+ * .copilotKitMessagesContainer (scrolling container with overflow-y: auto)
+ *   └─ div (position: relative, height updated by Virtua)
+ *       └─ div (position: absolute, contains .copilotKitMessage)
+ *           └─ .copilotKitMessage.is-sticky (sticky element)
+ * 
+ * Sticky positioning should work as long as:
+ * 1. .copilotKitMessagesContainer is the scrolling container (it is)
+ * 2. No intermediate ancestor has overflow: hidden/auto (Virtua shouldn't set this)
+ * 3. The sticky element is a descendant of the scrolling container (it is)
+ */
 
 .copilotKitMessages {
   width: 100% !important;
@@ -504,11 +522,16 @@ input:focus {
   overflow: visible !important; /* Ensure dropdowns can extend beyond message bounds */
   margin-top: 30px !important;
   border: 1px solid var(--copilot-kit-border-color) !important;
+  
+  /* Smooth transitions for all user messages */
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 /* Ensure the very first user message in the list has a margin-top of 1rem */
-.copilotKitMessagesContainer > .copilotKitMessage[data-message-role="user"]:first-child,
-.copilotKitMessagesContainer > [data-message-role="user"]:first-child {
+/* Account for Virtua's 2 wrapper divs */
+/* Exclude sticky messages from this rule */
+.copilotKitMessagesContainer > div > div > .copilotKitMessage[data-message-role="user"]:first-child:not(.is-sticky),
+.copilotKitMessagesContainer > div > div > [data-message-role="user"]:first-child:not(.is-sticky) {
   margin-top: 1.2rem !important;
 }
 
@@ -1241,7 +1264,7 @@ footer.copilotKitMessagesFooter,
   flex: 0 0 auto !important; /* Don't grow, don't shrink, natural size */
   order: 1 !important; /* Ensure footer always appears before input in flex layout */
   contain: layout style !important; /* Isolate from parent layout changes */
-  transform: translateZ(0) !important; /* Create stacking context */
+  /* REMOVED transform: translateZ(0) - breaks position: sticky for messages above */
   /* Match input container width and centering */
   max-width: 56rem !important; /* Match home page max-w-4xl and input container */
   width: 100% !important;
@@ -1510,106 +1533,6 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
     opacity: 1;
     transform: scale(1);
   }
-}
-
-/* ==========================================================
-   CONTEXT-AWARE STICKY MESSAGES
-   Smart sticky behavior: user messages stick when their
-   corresponding assistant responses are visible, providing
-   context for what's being viewed
-   ========================================================== */
-.copilotKitUserMessage {
-  /* Minimal styling on base element */
-  contain: layout;
-  
-  /* Optimize rendering - only repaint when visible */
-  content-visibility: auto;
-}
-
-/* Ensure first user message has consistent top positioning */
-.copilotKitMessages > [data-message-role="user"]:first-child,
-.copilotKitMessages > div:first-child[data-message-role="user"] {
-  margin-top: 0 !important;
-}
-
-/* Sticky message transition animation */
-  @keyframes stickyFadeIn {
-    0% {
-      opacity: 0;
-      transform: translateY(-8px) translateZ(0);
-      border-radius: 10px 10px 10px 10px;
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0) translateZ(0);
-      border-radius: 0 0 10px 10px;
-    }
-  }
-
-.copilotKitUserMessage.is-sticky {
-  position: sticky !important;
-  top: -2px !important; /* Move 1px higher to prevent gaps */
-  z-index: 10001 !important; /* Higher than assistant message controls (10000) */
-
-  /* Match chat input background - use the same CSS variable */
-  background-color: var(--copilot-kit-input-background-color) !important;
-  
-  /* Match chat input border - use the same CSS variable */
-  border: 1px solid var(--copilot-kit-separator-color) !important;
-  border-top: none !important; /* Remove top border for flush appearance */
-  
-  /* Remove top rounded corners - only round bottom corners */
-  border-radius: 0 0 10px 10px !important;
-  
-  /* Minimal shadow for depth + inset shadow to cover any gaps at top */
-  box-shadow: 
-    0 1px 3px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 var(--copilot-kit-input-background-color) !important;
-  
-  /* Remove all spacing to ensure flush top position */
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
-  
-  /* Ensure dropdowns can extend beyond sticky message bounds */
-  overflow: visible !important;
-  
-  /* Smooth animation when becoming sticky */
-  animation: stickyFadeIn 0.25s ease-out !important;
-  
-  /* Force GPU layer for smoother updates */
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
-  
-  /* Ensure sticky elements are always painted */
-  content-visibility: visible !important;
-  
-  /* Prevent repaints during scroll */
-  will-change: transform, opacity;
-}
-
-.copilotKitUserMessage.is-sticky::before {
-  content: '';
-  position: absolute;
-  top: -1px;
-  left: -1px;
-  right: -1px;
-  height: 2px;
-  background-color: var(--copilot-kit-input-background-color);
-  z-index: -1;
-}
-
-/* Dark theme sticky styles */
-.dark .copilotKitUserMessage.is-sticky,
-.copilot-chat-container.dark .copilotKitUserMessage.is-sticky {
-  /* Variables are already updated by theme, but ensure shadow is darker */
-  box-shadow: 
-    0 1px 3px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 var(--copilot-kit-input-background-color) !important;
-}
-
-.dark .copilotKitUserMessage.is-sticky::before,
-.copilot-chat-container.dark .copilotKitUserMessage.is-sticky::before {
-  background-color: var(--copilot-kit-input-background-color);
 }
 
 /* Note: Animation removed to prevent flickering during rapid scroll events */
@@ -3425,3 +3348,86 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   border-top-color: #1f2937 !important;
 }
 
+/* ==========================================================
+   CONTEXT-AWARE STICKY MESSAGES
+   Smart sticky behavior: user messages stick when their
+   corresponding assistant responses are visible, providing
+   context for what's being viewed
+   ========================================================== */
+   .copilotKitUserMessage {
+    /* Minimal styling on base element */
+    contain: layout;
+    
+    /* Optimize rendering - only repaint when visible */
+    content-visibility: auto;
+  }
+  
+  /* Sticky message transition animation */
+    @keyframes stickyFadeIn {
+      0% {
+        opacity: 0;
+        transform: translateY(-8px) translateZ(0);
+        border-radius: 10px 10px 10px 10px;
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0) translateZ(0);
+        border-radius: 0 0 10px 10px;
+      }
+    }
+  
+  .copilotKitUserMessage.is-sticky {
+    /* Match chat input background - use the same CSS variable */
+    background-color: var(--copilot-kit-input-background-color) !important;
+    
+    /* Match chat input border - use the same CSS variable */
+    border: 1px solid var(--copilot-kit-separator-color) !important;
+    border-top: none !important; /* Remove top border for flush appearance */
+    
+    /* Remove top rounded corners - keep bottom corners rounded */
+    border-radius: 0 0 10px 10px !important;
+    
+    /* Minimal shadow for depth */
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12) !important;
+    
+    /* Remove all spacing to ensure flush top position */
+    margin-top: 0 !important;
+    
+    /* Ensure dropdowns can extend beyond sticky message bounds */
+    overflow: visible !important;
+    
+    /* Fast, smooth transitions for sticky state changes */
+    transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+  
+  /* Remove margin-top from the parent wrapper when it contains a sticky message */
+  div:has(> .copilotKitUserMessage.is-sticky) {
+    margin-top: 0 !important;
+    transition: margin 150ms cubic-bezier(0.4, 0, 0.2, 1), padding 150ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+  
+  .copilotKitUserMessage.is-sticky::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background-color: var(--copilot-kit-input-background-color);
+    z-index: -1;
+  }
+  
+  /* Dark theme sticky styles */
+  .dark .copilotKitUserMessage.is-sticky,
+  .copilot-chat-container.dark .copilotKitUserMessage.is-sticky {
+    /* Variables are already updated by theme, but ensure shadow is darker */
+    box-shadow: 
+      0 1px 3px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 var(--copilot-kit-input-background-color) !important;
+  }
+  
+  .dark .copilotKitUserMessage.is-sticky::before,
+  .copilot-chat-container.dark .copilotKitUserMessage.is-sticky::before {
+    background-color: var(--copilot-kit-input-background-color);
+  }
+  

@@ -31,6 +31,7 @@
 // React Core
 import type { FC } from 'react';
 import React, { useEffect, useRef, useMemo, useState } from 'react';
+import ReactDOM from 'react-dom';
 
 // CopilotKit Hooks & Components
 import {
@@ -323,305 +324,140 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   const latestAssistantMessageIdRef = useRef<string | null>(null);
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const scrollSpacerRef = useRef<HTMLDivElement>(null); // Spacer to force scrollable area
   const isLoadingRef = useRef(false); // Track loading state for interval callbacks
   const actualScrollContainerRef = useRef<HTMLElement | null>(null);
   const [scrollContainerReady, setScrollContainerReady] = useState(false);
+  
+  // NOTE: Sticky message logic has been moved to CustomMessages.tsx
+  // These refs are kept only for agent mode scroll functionality
   const isAutoScrollingRef = useRef(false);
-  const isScrollingUserMessageToTopRef = useRef(false); // Track when scrolling user message to top
-  const currentStickyIdRef = useRef<string | null>(null);
-  const rafPendingRef = useRef(false);
-  const previousMessagesLengthRef = useRef(messages.length);
-  const lastScrollTopRef = useRef<number>(0);
-  const scrollDirectionRef = useRef<'up' | 'down' | 'none'>('none');
-  const scrollVelocityRef = useRef<number>(0);
-  const lastScrollTimeRef = useRef<number>(Date.now());
-  const lastStickyChangeTimeRef = useRef<number>(0);
   const lastUserMessageIdRef = useRef<string | null>(null);
-  const hasInitializedStickyOnOpenRef = useRef<boolean>(false);
+  const previousMessagesLengthRef = useRef(messages.length);
+  const previousUserMessageCountRef = useRef(0);
   
   // Helper function to find the actual scrolling container
+  // With Virtua, we need to find the element that actually has overflow-y: auto
   const getActualScrollContainer = React.useCallback((): HTMLElement | null => {
-    if (!scrollContainerRef.current) return null;
-    
-    // CopilotKit renders messages in a .copilotKitMessages container
-    const messagesContainer = scrollContainerRef.current.querySelector('.copilotKitMessages');
-    if (messagesContainer) {
-      return messagesContainer as HTMLElement;
+    if (!scrollContainerRef.current) {
+      console.log('[STICKY] getActualScrollContainer: No scrollContainerRef');
+      return null;
     }
     
-    // Fallback to the wrapper itself
+    // Virtua's VList creates a structure like:
+    // .copilotKitMessagesContainer (VList root)
+    //   └─ div (scrollable container with overflow-y: auto)
+    //       └─ div (virtualized content)
+    
+    // First try to find the VList container
+    const vListContainer = scrollContainerRef.current.querySelector('.copilotKitMessagesContainer') as HTMLElement;
+    if (vListContainer) {
+      console.log('[STICKY] Inspecting VList DOM structure:', {
+        vListScrollHeight: vListContainer.scrollHeight,
+        vListClientHeight: vListContainer.clientHeight,
+        childrenCount: vListContainer.children.length,
+        children: Array.from(vListContainer.children).map((child, i) => ({
+          index: i,
+          tagName: (child as HTMLElement).tagName,
+          className: (child as HTMLElement).className,
+          scrollHeight: (child as HTMLElement).scrollHeight,
+          clientHeight: (child as HTMLElement).clientHeight,
+          overflowY: window.getComputedStyle(child as HTMLElement).overflowY
+        }))
+      });
+
+      // Check if VList itself is scrollable
+      const computedStyle = window.getComputedStyle(vListContainer);
+      if (computedStyle.overflowY === 'auto' || computedStyle.overflowY === 'scroll') {
+        console.log('[STICKY] ✅ Using VList itself as scroll container (has overflow)');
+        return vListContainer;
+      }
+      
+      // If VList isn't scrollable, find its scrollable child
+      // Virtua wraps content in a div that has the actual scroll
+      const scrollableChild = Array.from(vListContainer.children).find((child) => {
+        const style = window.getComputedStyle(child as HTMLElement);
+        return style.overflowY === 'auto' || style.overflowY === 'scroll';
+      }) as HTMLElement | undefined;
+      
+      if (scrollableChild) {
+        console.log('[STICKY] ✅ Using scrollable child of VList');
+        return scrollableChild;
+      }
+      
+      // Fallback: return VList container anyway (may not be scrollable yet)
+      console.log('[STICKY] ⚠️  Using VList container as fallback (no overflow detected)');
+      return vListContainer;
+    }
+    
+    // Fallback to .copilotKitMessages for backwards compatibility
+    const messagesContainer = scrollContainerRef.current.querySelector('.copilotKitMessages') as HTMLElement;
+    if (messagesContainer) {
+      console.log('[STICKY] Using .copilotKitMessages as fallback');
+      return messagesContainer;
+    }
+    
+    // Last resort: wrapper itself
+    console.log('[STICKY] Using scrollContainerRef as last resort');
     return scrollContainerRef.current;
   }, []);
   
   // Find and cache the actual scrolling container
+  // Wait for Virtua to render before measuring dimensions
   useEffect(() => {
-    const container = getActualScrollContainer();
-    if (container && container !== actualScrollContainerRef.current) {
-      actualScrollContainerRef.current = container;
-      setScrollContainerReady(true);
-    }
-    
-    // Cleanup: remove spacer and clear intervals when component unmounts
-    return () => {
-      if (scrollSpacerRef.current) {
-        // Clear sticky check interval
-        const stickyCheckInterval = (scrollSpacerRef.current as any).__stickyCheckInterval;
-        if (stickyCheckInterval) {
-          clearInterval(stickyCheckInterval);
-        }
+    const checkContainer = () => {
+      const container = getActualScrollContainer();
+      if (!container) return;
+      
+      // Wait a bit for Virtua to render and calculate dimensions
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        const scrollHeight = container.scrollHeight;
+        const clientHeight = container.clientHeight;
+        const hasOverflow = scrollHeight > clientHeight;
         
-        // Clear content wait interval
-        const contentInterval = (scrollSpacerRef.current as any).__contentInterval;
-        if (contentInterval) {
-          clearInterval(contentInterval);
+        if (container !== actualScrollContainerRef.current) {
+          console.log('[STICKY] Setting scroll container:', {
+            tagName: container.tagName,
+            className: container.className,
+            scrollTop: container.scrollTop,
+            scrollHeight,
+            clientHeight,
+            hasOverflow
+          });
+          actualScrollContainerRef.current = container;
+          setScrollContainerReady(true);
+        } else {
+          // Log dimensions even if same container to debug
+          if (scrollHeight > 0 || hasOverflow) {
+            console.log('[STICKY] Scroll container dimensions:', {
+              scrollTop: container.scrollTop,
+              scrollHeight,
+              clientHeight,
+              hasOverflow
+            });
+          }
         }
-        
-        // Remove spacer
-        scrollSpacerRef.current.remove();
-        scrollSpacerRef.current = null;
-      }
+      });
     };
+    
+    // Initial check
+    checkContainer();
+    
+    // Also check after a short delay to catch Virtua's delayed rendering
+    const timeoutId = setTimeout(checkContainer, 100);
+    
+    return () => clearTimeout(timeoutId);
   }, [getActualScrollContainer, messages.length]); // Re-run when messages change in case structure updates
   
-  // Helper function to scroll so a user message becomes sticky
+  // Helper function to scroll so a user message becomes sticky (Virtua implementation)
+  // NOTE: This function is currently unused - sticky logic is now in CustomMessages.tsx
   const scrollToMakeSticky = React.useCallback((container: HTMLElement, messageElement: HTMLDivElement) => {
-    try {
-      isAutoScrollingRef.current = true;
-      isScrollingUserMessageToTopRef.current = true;
-
-      // Reuse existing spacer if present, otherwise create new one
-      const existingSpacer = scrollSpacerRef.current;
-      let reusingExistingSpacer = false;
-      
-      if (existingSpacer && existingSpacer.parentElement) {
-        reusingExistingSpacer = true;
-        
-        // Clear any existing intervals on the spacer
-        if ((existingSpacer as any).__contentInterval) {
-          clearInterval((existingSpacer as any).__contentInterval);
-          delete (existingSpacer as any).__contentInterval;
-        }
-        if ((existingSpacer as any).__stickyCheckInterval) {
-          clearInterval((existingSpacer as any).__stickyCheckInterval);
-          delete (existingSpacer as any).__stickyCheckInterval;
-        }
-      }
-      
-      // Calculate message position first
-      let messageTopInContent = 0;
-      let el: HTMLElement | null = messageElement;
-      while (el && el !== container && el.parentElement) {
-        messageTopInContent += el.offsetTop;
-        el = el.parentElement as HTMLElement;
-      }
-      
-      const messageHeight = messageElement.offsetHeight;
-      const containerHeight = container.clientHeight;
-      const currentScrollHeight = container.scrollHeight;
-      const currentScrollTop = container.scrollTop;
-      const STICKY_THRESHOLD = 0; // Match the sticky detection threshold
-      const requiredScrollHeight = messageTopInContent - STICKY_THRESHOLD + containerHeight + messageHeight;
-      const targetHeight = Math.max(0, requiredScrollHeight - currentScrollHeight);
-      
-      // Also calculate how much we need to scroll from current position
-      const targetScrollTop = messageTopInContent - STICKY_THRESHOLD;
-      const scrollDelta = targetScrollTop - currentScrollTop;
-      
-      let spacer: HTMLDivElement;
-      
-      if (reusingExistingSpacer && existingSpacer) {
-        // Reuse existing spacer - reset it to 0 height for fresh growth
-        spacer = existingSpacer;
-        spacer.style.transition = 'none'; // No transition for reset
-        spacer.style.height = '0px';
-        spacer.offsetHeight; // Force reflow
-        spacer.style.transition = 'height 0.025s ease-out'; // Re-enable transition for growth
-      } else {
-        // Create new spacer with 0 height that will grow then shrink dynamically
-        spacer = document.createElement('div');
-        spacer.className = 'chat-scroll-spacer';
-        spacer.style.height = '0px';
-        spacer.style.width = '100%';
-        spacer.style.pointerEvents = 'none';
-        spacer.style.opacity = '0';
-        spacer.style.overflow = 'hidden';
-        spacer.style.boxSizing = 'border-box';
-        spacer.style.transition = 'height 0.025s ease-out'; // 25ms fast growth
-        spacer.style.backgroundColor = 'transparent';
-        spacer.style.flexShrink = '0'; // Don't allow CSS auto-shrink in scroll container
-        spacer.style.minHeight = '0';
-        spacer.textContent = '\u00A0';
-        spacer.setAttribute('aria-hidden', 'true');
-        
-        // Insert spacer at the END of the messages container (pushes message up as it grows)
-        container.appendChild(spacer);
-        scrollSpacerRef.current = spacer;
-      }
-      
-      // Invalidate position cache since spacer changes layout
-      elementCacheRef.current = null;
-      
-      // Start growing the spacer
-      requestAnimationFrame(() => {
-        if (!scrollSpacerRef.current) return;
-        
-        scrollSpacerRef.current.style.height = `${targetHeight}px`;
-      });
-      
-        // Wait for spacer to finish growing (25ms ease-out transition) + 25ms buffer then start scrolling
-        setTimeout(() => {
-        if (!scrollSpacerRef.current) return;
-        
-        // Force layout recalculation to ensure spacer has taken effect
-        container.offsetHeight; // Force reflow
-        
-        // Recalculate message position after spacer has grown to ensure accuracy
-        let updatedMessageTopInContent = 0;
-        let el: HTMLElement | null = messageElement;
-        while (el && el !== container && el.parentElement) {
-          updatedMessageTopInContent += el.offsetTop;
-          el = el.parentElement as HTMLElement;
-        }
-        
-        // Use the same sticky threshold (5px) for consistency
-        // Target: scrollTop = messageTopInContent - 5, giving distanceFromTop = 5 (within sticky zone)
-        const updatedTargetScrollTop = updatedMessageTopInContent - STICKY_THRESHOLD;
-        
-        // Temporarily allow sticky detection during this animation
-        isScrollingUserMessageToTopRef.current = false;
-        isAutoScrollingRef.current = false;
-        
-        // Use smooth scroll animation over 50ms with ease-out
-        const startScrollTop = container.scrollTop;
-        const scrollDistance = updatedTargetScrollTop - startScrollTop;
-        const startTime = Date.now();
-        const duration = 50; // 50ms fast scroll
-        
-        const smoothScrollStep = () => {
-          const elapsed = Date.now() - startTime;
-          const progress = Math.min(elapsed / duration, 1);
-          
-          // Ease-out function for smooth deceleration
-          const easeProgress = 1 - Math.pow(1 - progress, 3);
-          
-          container.scrollTop = startScrollTop + (scrollDistance * easeProgress);
-          
-          if (progress < 1 && scrollSpacerRef.current) {
-            requestAnimationFrame(smoothScrollStep);
-          }
-        };
-        
-        requestAnimationFrame(smoothScrollStep);
-        
-        // Monitor until message becomes sticky
-        const checkStickyInterval = setInterval(() => {
-          // Force cache invalidation to ensure sticky detection gets fresh positions
-          elementCacheRef.current = null;
-          
-          // Trigger scroll event to update sticky detection
-          if (actualScrollContainerRef.current) {
-            const scrollEvent = new Event('scroll', { bubbles: true });
-            actualScrollContainerRef.current.dispatchEvent(scrollEvent);
-          }
-          
-          // Check if message is now sticky
-          if (messageElement.classList.contains('is-sticky')) {
-            clearInterval(checkStickyInterval);
-            
-            // Track content growth and shrink spacer by exactly that amount
-            let lastScrollHeight = container.scrollHeight;
-            let currentSpacerHeight = targetHeight;
-            
-            const dynamicShrinkInterval = setInterval(() => {
-              if (!scrollSpacerRef.current) {
-                clearInterval(dynamicShrinkInterval);
-                return;
-        }
-              
-              const currentScrollHeight = container.scrollHeight;
-              const contentGrowth = currentScrollHeight - lastScrollHeight;
-              
-              // Shrink spacer by the amount content grew (slightly slower for more persistence)
-              if (contentGrowth > 0) {
-                // Shrink spacer by 0.99x the content growth for controlled shrinking
-                const shrinkAmount = contentGrowth * 0.99;
-                currentSpacerHeight = Math.max(0, currentSpacerHeight - shrinkAmount);
-                
-                // Apply new height immediately without transition for instant response
-                scrollSpacerRef.current.style.transition = 'none';
-                scrollSpacerRef.current.style.height = `${currentSpacerHeight}px`;
-                
-                // Force reflow to ensure height is applied
-                scrollSpacerRef.current.offsetHeight;
-                
-                // Only remove spacer if it has naturally reached 0
-                if (currentSpacerHeight === 0) {
-                  clearInterval(dynamicShrinkInterval);
-                  setTimeout(() => {
-                    if (scrollSpacerRef.current && scrollSpacerRef.current.parentElement) {
-                      scrollSpacerRef.current.remove();
-                      scrollSpacerRef.current = null;
-                    }
-                  }, 100);
-                }
-              }
-              
-              // Check if user scrolled up past the sticky message - smoothly remove spacer
-              if (scrollSpacerRef.current && !messageElement.classList.contains('is-sticky')) {
-                clearInterval(dynamicShrinkInterval);
-                scrollSpacerRef.current.style.transition = 'height 0.3s ease-out';
-                scrollSpacerRef.current.style.height = '0px';
-                setTimeout(() => {
-                  if (scrollSpacerRef.current && scrollSpacerRef.current.parentElement) {
-                    scrollSpacerRef.current.remove();
-                    scrollSpacerRef.current = null;
-                  }
-                }, 300);
-              }
-              
-              lastScrollHeight = currentScrollHeight;
-            }, 25); // Check every 25ms for faster response
-            
-            // Store interval for cleanup
-            if (scrollSpacerRef.current) {
-              (scrollSpacerRef.current as any).__contentInterval = dynamicShrinkInterval;
-            }
-          }
-        }, 100);
-        
-        // Store interval for cleanup
-        if (scrollSpacerRef.current) {
-          (scrollSpacerRef.current as any).__stickyCheckInterval = checkStickyInterval;
-        }
-        
-        // Safety timeout - if not sticky after 5 seconds, give up
-        setTimeout(() => {
-          if (!messageElement.classList.contains('is-sticky')) {
-            clearInterval(checkStickyInterval);
-            if (scrollSpacerRef.current && scrollSpacerRef.current.parentElement) {
-              scrollSpacerRef.current.remove();
-              scrollSpacerRef.current = null;
-            }
-            isAutoScrollingRef.current = false;
-          isScrollingUserMessageToTopRef.current = false;
-        }
-      }, 5000);
-        }, 50); // Wait for 25ms spacer growth + 25ms buffer
-      
-    } catch (error) {
-      isAutoScrollingRef.current = false;
-      isScrollingUserMessageToTopRef.current = false;
-      if (scrollSpacerRef.current && scrollSpacerRef.current.parentElement) {
-        scrollSpacerRef.current.remove();
-        scrollSpacerRef.current = null;
-      }
-    }
+    console.log('[STICKY] scrollToMakeSticky called (unused)');
+    // This function is no longer used - sticky logic is handled in CustomMessages
   }, []);
   
-  // Initialize lastUserMessageIdRef on first render to prevent spacer on tab open
+  // Initialize lastUserMessageIdRef on first render
   const hasInitializedRef = useRef(false);
-  const previousUserMessageCountRef = useRef(0);
 
   useEffect(() => {
     if (!hasInitializedRef.current && messages.length > 0) {
@@ -635,64 +471,11 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     }
   }, [messages]); // Depend on messages to initialize on first message load
   
-  // Auto-scroll to position new user message at top when sent (makes it sticky)
+  // Auto-scroll to position new user message at top when sent in agent mode (makes it sticky)
+  // DISABLED: Ignoring agent mode for now - sticky logic is handled in CustomMessages.tsx
   useEffect(() => {
-    const container = actualScrollContainerRef.current;
-    if (!container || !scrollContainerReady) {
-      return;
-    }
-
-    // Find the latest user message
-    const userMessages = messages.filter((m: any) => m.role === 'user');
-    const currentUserMessageCount = userMessages.length;
-    
-    if (currentUserMessageCount === 0) return;
-    
-    // Only proceed if user messages were ADDED, not deleted
-    if (currentUserMessageCount <= previousUserMessageCountRef.current) {
-      previousUserMessageCountRef.current = currentUserMessageCount;
-      return;
-    }
-    
-    const latestUserMessage = userMessages[userMessages.length - 1];
-    const latestUserMessageId = latestUserMessage?.id;
-    
-    // Check if this is a new user message
-    if (!latestUserMessageId || latestUserMessageId === lastUserMessageIdRef.current) {
-      previousUserMessageCountRef.current = currentUserMessageCount;
-      return;
-    }
-    
-    // Update the refs to track this message
-    lastUserMessageIdRef.current = latestUserMessageId;
-    previousUserMessageCountRef.current = currentUserMessageCount;
-    
-    // Only use sticky logic if Agent Mode Chat is enabled
-    if (!agentModeChat) {
-      return;
-    }
-    
-    // Wait for DOM to render the new message
-    setTimeout(() => {
-      const userMessageElement = container.querySelector<HTMLDivElement>(
-        `[data-message-role="user"][data-message-id="${latestUserMessageId}"]`
-      );
-      
-      if (!userMessageElement) {
-        setTimeout(() => {
-          const retryElement = container.querySelector<HTMLDivElement>(
-            `[data-message-role="user"][data-message-id="${latestUserMessageId}"]`
-          );
-          if (retryElement) {
-            scrollToMakeSticky(container, retryElement);
-          }
-        }, 200);
-        return;
-      }
-      
-      scrollToMakeSticky(container, userMessageElement);
-    }, 100);
-  }, [messages, scrollContainerReady, scrollToMakeSticky, agentModeChat]);
+    return; // Early exit - agent mode disabled, sticky logic is in CustomMessages
+  }, [messages, scrollContainerReady, agentModeChat]);
 
   // Auto-scroll to bottom when new assistant messages arrive (if user is already at bottom)
   useEffect(() => {
@@ -712,14 +495,12 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     const isLastMessageFromAssistant = (lastMessage as any)?.role !== 'user';
     
     // Only auto-scroll if messages were added (not removed/edited)
-    // Skip if we're currently scrolling a user message to the top
-    // Auto-scroll if spacer is hidden (after 3s) or if user is near bottom
-    if (currentLength > previousLength && isLastMessageFromAssistant && !isScrollingUserMessageToTopRef.current) {
-      const isSpacerHidden = !scrollSpacerRef.current || scrollSpacerRef.current.style.display === 'none';
+    // Auto-scroll if user is near bottom
+    if (currentLength > previousLength && isLastMessageFromAssistant) {
       const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
       
-      // Auto-scroll if spacer is hidden (allowing scroll) or if user is already near bottom
-      if (isSpacerHidden || isNearBottom || previousLength === 0) {
+      // Auto-scroll if user is already near bottom
+      if (isNearBottom || previousLength === 0) {
         isAutoScrollingRef.current = true;
         requestAnimationFrame(() => {
           container.scrollTo({
@@ -745,453 +526,12 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     timestamp: number;
   } | null>(null);
 
-  // Direct DOM manipulation - immediate handoff between sticky messages
-  const applyStickyClass = React.useCallback((stickyId: string | null) => {
-    const container = actualScrollContainerRef.current;
-    if (!container) return;
+  // All sticky message logic has been moved to CustomMessages.tsx for better encapsulation
+  // This component no longer manages sticky state - it's handled entirely within CustomMessages
 
-    // Get all user message elements
-    const userMessageElements = container.querySelectorAll<HTMLDivElement>('[data-message-role="user"]');
+  // Sticky initialization on tab open is now handled in CustomMessages.tsx
 
-    // Immediate synchronous update - no delays, no flickering
-    // Remove sticky from ALL first (ensures clean handoff and prevents multiple sticky)
-    userMessageElements.forEach(el => {
-      if (el.classList.contains('is-sticky')) {
-        el.classList.remove('is-sticky');
-      }
-    });
-    
-    // Then add sticky to ONLY the target message (if any)
-    if (stickyId) {
-      userMessageElements.forEach(el => {
-        if (el.dataset.messageId === stickyId) {
-        el.classList.add('is-sticky');
-        }
-      });
-    }
-  }, []);
-
-  // Memoized scroll handler - optimized to minimize layout thrashing
-  const handleScroll = React.useCallback(() => {
-    const container = actualScrollContainerRef.current;
-    if (!container) return;
-    
-    // Skip during auto-scroll or when scrolling user message to top
-    if (isAutoScrollingRef.current || isScrollingUserMessageToTopRef.current) return;
-
-    const { scrollTop, clientHeight, scrollHeight } = container;
-    
-    // Detect scroll direction and velocity
-    const now = Date.now();
-    const previousScrollTop = lastScrollTopRef.current;
-    const timeDelta = now - lastScrollTimeRef.current;
-    const scrollDelta = Math.abs(scrollTop - previousScrollTop);
-    
-    // Calculate velocity (pixels per millisecond)
-    const velocity = timeDelta > 0 ? scrollDelta / timeDelta : 0;
-    scrollVelocityRef.current = velocity;
-    
-    if (scrollTop > previousScrollTop) {
-      scrollDirectionRef.current = 'down';
-    } else if (scrollTop < previousScrollTop) {
-      scrollDirectionRef.current = 'up';
-    }
-    
-    lastScrollTopRef.current = scrollTop;
-    lastScrollTimeRef.current = now;
-    
-    // Check if we're at the absolute top
-    const isAtAbsoluteTop = scrollTop <= 5;
-    
-    // No stickiness needed if content doesn't overflow
-    const hasOverflow = scrollHeight > clientHeight;
-    if (!hasOverflow) {
-      if (currentStickyIdRef.current !== null) {
-        currentStickyIdRef.current = null;
-        applyStickyClass(null);
-        }
-      return;
-    }
-
-    // Rebuild cache if stale (check every 100ms for responsive updates)
-    const cacheAge = elementCacheRef.current ? now - elementCacheRef.current.timestamp : Infinity;
-    
-    if (!elementCacheRef.current || cacheAge > 100) {
-      const allMessageElements = Array.from(
-        container.querySelectorAll<HTMLDivElement>('[data-message-role]')
-      );
-
-      if (allMessageElements.length === 0) {
-        if (currentStickyIdRef.current !== null) {
-          currentStickyIdRef.current = null;
-          applyStickyClass(null);
-        }
-        return;
-      }
-
-      // Batch all DOM reads - single getBoundingClientRect call for container
-      const containerRect = container.getBoundingClientRect();
-      const userMessages: Array<{ id: string; index: number; top: number }> = [];
-      const assistantMessages: Array<{ index: number; top: number; bottom: number }> = [];
-      
-      // Read all positions in one batch (minimizes layout thrashing)
-      allMessageElements.forEach((el, idx) => {
-        const rect = el.getBoundingClientRect();
-        const top = rect.top - containerRect.top + scrollTop;
-        const bottom = rect.bottom - containerRect.top + scrollTop;
-        
-        if (el.dataset.messageRole === 'user') {
-          userMessages.push({
-            id: el.dataset.messageId || '',
-            index: idx,
-            top,
-          });
-        } else if (el.dataset.messageRole === 'assistant') {
-          assistantMessages.push({
-            index: idx,
-            top,
-            bottom,
-          });
-        }
-      });
-
-      elementCacheRef.current = {
-        userMessages,
-        assistantMessages,
-        allElements: allMessageElements,
-        timestamp: now,
-      };
-    }
-
-    const { userMessages, assistantMessages } = elementCacheRef.current;
-    
-    if (userMessages.length === 0) {
-      if (currentStickyIdRef.current !== null) {
-        currentStickyIdRef.current = null;
-        applyStickyClass(null);
-      }
-      return;
-    }
-
-    // Calculate viewport bounds
-    const viewportTop = scrollTop;
-    const viewportBottom = scrollTop + clientHeight;
-
-    // Find the topmost visible assistant message using cached positions
-    let topmostVisibleAssistantIndex = -1;
-    
-    for (const assistantMsg of assistantMessages) {
-      // Check if this assistant message is visible in viewport using cached positions
-      const isVisible = assistantMsg.bottom > viewportTop && assistantMsg.top < viewportBottom;
-      
-      if (isVisible) {
-        topmostVisibleAssistantIndex = assistantMsg.index;
-        break;
-      }
-    }
-
-    // Find which user message should be sticky - dynamic threshold based on message positions
-    let newStickyId: string | null = null;
-    
-    const scrollDirection = scrollDirectionRef.current;
-    const currentStickyId = currentStickyIdRef.current;
-    
-    // Special case: At absolute top, remove all stickiness
-    if (isAtAbsoluteTop) {
-      if (currentStickyIdRef.current !== null) {
-        currentStickyIdRef.current = null;
-        applyStickyClass(null);
-      }
-      return;
-    }
-
-    if (topmostVisibleAssistantIndex !== -1) {
-      
-      // Fast scroll detection: velocity > 0.12px/ms is considered "fast"
-      // (based on observed values: slow ~0.01, medium ~0.11, fast ~0.17+)
-      const isFastScrolling = velocity > 0.12;
-      
-      // During fast scrolling, prevent rapid transitions
-      const MIN_CHANGE_INTERVAL_FAST = 150; // ms - minimum time between sticky changes during fast scroll
-      const timeSinceLastChange = now - lastStickyChangeTimeRef.current;
-      
-      // During fast upward scrolling with an existing sticky message, skip evaluation
-      // unless enough time has passed to prevent rapid toggling
-      if (scrollDirection === 'up' && isFastScrolling && currentStickyId !== null) {
-        if (timeSinceLastChange < MIN_CHANGE_INTERVAL_FAST) {
-          return; // Skip all sticky logic during cooldown
-        }
-      }
-      
-      // Find the user message that comes before the topmost visible assistant message
-      for (let i = userMessages.length - 1; i >= 0; i--) {
-        const userMsg = userMessages[i];
-        
-        if (userMsg.index < topmostVisibleAssistantIndex) {
-          // This is the contextually correct message for these responses
-          const isThisMessageCurrentlySticky = userMsg.id === currentStickyId;
-          const distanceFromTop = userMsg.top - viewportTop;
-          
-          // HYSTERESIS: Use different thresholds for making sticky vs removing sticky
-          // distanceFromTop = userMsg.top - viewportTop
-          //   Positive = message is BELOW viewport top
-          //   Negative = message is ABOVE viewport top (already scrolled past)
-          
-          const MAKE_STICKY_THRESHOLD = 10;     // Make sticky when within 10px of viewport top (positive or negative)
-          const UNSTICK_THRESHOLD = 40;         // Only unstick when message is 40px BELOW viewport (back in view)
-          
-          let shouldBeSticky: boolean;
-          let reason: string;
-          
-          if (isThisMessageCurrentlySticky) {
-            // Already sticky - during fast upward scrolling, NEVER remove stickiness
-            // This prevents flickering when scrolling rapidly through messages
-            if (scrollDirection === 'up' && isFastScrolling) {
-              shouldBeSticky = true;
-              reason = `fast_scroll_lock: keeping sticky during fast upward scroll (${Math.round(distanceFromTop)}px)`;
-            } else if (distanceFromTop > UNSTICK_THRESHOLD) {
-              // Normal speed - only remove when message is back in view (positive distance, below viewport)
-              shouldBeSticky = false;
-              reason = `unstick: ${Math.round(distanceFromTop)}px below viewport (threshold: ${UNSTICK_THRESHOLD})`;
-      } else {
-              shouldBeSticky = true;
-              reason = `keep_sticky: within keep zone (${Math.round(distanceFromTop)}px vs ${UNSTICK_THRESHOLD}px)`;
-            }
-          } else if (currentStickyId !== null) {
-            // A DIFFERENT message is currently sticky - this is a transition
-            // During fast upward scrolling, be VERY conservative about switching
-            if (scrollDirection === 'up' && isFastScrolling) {
-              // Find the current sticky message's position for comparison
-              const currentStickyMsg = userMessages.find(m => m.id === currentStickyId);
-              const currentStickyDistance = currentStickyMsg ? currentStickyMsg.top - viewportTop : Infinity;
-              
-              // Require ALL of these conditions:
-              // 1. Message must be well past the top (-150px)
-              // 2. Sufficient time since last change (150ms)
-              // 3. New message must be significantly closer to viewport than current sticky
-              //    (less negative distance = closer to viewport)
-              const FAST_SWITCH_THRESHOLD = -150;
-              const DISTANCE_IMPROVEMENT_REQUIRED = 100; // Must be 100px closer to viewport
-              const hasEnoughTime = timeSinceLastChange > MIN_CHANGE_INTERVAL_FAST;
-              // New message is closer if its distance is less negative (or more positive) than current
-              // Example: current=-200px, new=-100px → improvement = 100px ✓
-              const distanceImprovement = currentStickyDistance - distanceFromTop;
-              const isSignificantlyCloser = distanceImprovement >= DISTANCE_IMPROVEMENT_REQUIRED;
-              
-              if (distanceFromTop <= FAST_SWITCH_THRESHOLD && hasEnoughTime && isSignificantlyCloser) {
-                shouldBeSticky = true;
-                reason = `fast_scroll_switch: ${Math.round(distanceFromTop)}px past top, ${Math.round(timeSinceLastChange)}ms since last, ${Math.round(currentStickyDistance - distanceFromTop)}px closer`;
-              } else if (!hasEnoughTime) {
-                shouldBeSticky = false;
-                reason = `fast_scroll_cooldown: only ${Math.round(timeSinceLastChange)}ms since last change (min: ${MIN_CHANGE_INTERVAL_FAST}ms)`;
-              } else if (!isSignificantlyCloser) {
-                shouldBeSticky = false;
-                reason = `fast_scroll_not_closer: current=${Math.round(currentStickyDistance)}px, new=${Math.round(distanceFromTop)}px (need ${DISTANCE_IMPROVEMENT_REQUIRED}px improvement)`;
-              } else {
-                shouldBeSticky = false;
-                reason = `fast_scroll_wait: ${Math.round(distanceFromTop)}px not far enough (threshold: ${FAST_SWITCH_THRESHOLD})`;
-              }
-            } else {
-              // Normal speed - use standard threshold
-              if (distanceFromTop <= MAKE_STICKY_THRESHOLD) {
-                shouldBeSticky = true;
-                reason = `switch: ${Math.round(distanceFromTop)}px from top (threshold: ${MAKE_STICKY_THRESHOLD})`;
-              } else {
-                shouldBeSticky = false;
-                reason = `switch_wait: ${Math.round(distanceFromTop)}px from top (threshold: ${MAKE_STICKY_THRESHOLD})`;
-              }
-            }
-          } else {
-            // No message currently sticky - make sticky when close to or past top
-            if (distanceFromTop <= MAKE_STICKY_THRESHOLD) {
-              shouldBeSticky = true;
-              reason = `make_sticky: ${Math.round(distanceFromTop)}px from top (threshold: ${MAKE_STICKY_THRESHOLD})`;
-            } else {
-              shouldBeSticky = false;
-              reason = `not_yet: ${Math.round(distanceFromTop)}px from top (threshold: ${MAKE_STICKY_THRESHOLD})`;
-            }
-          }
-          
-          if (shouldBeSticky) {
-            newStickyId = userMsg.id;
-          }
-          break;
-        }
-      }
-    } else {
-      // No assistant message visible - check last user message scrolled past
-      const MAKE_STICKY_THRESHOLD = 10;
-      const UNSTICK_THRESHOLD = 40;  // Only unstick when back in view (below viewport)
-      
-      for (let i = userMessages.length - 1; i >= 0; i--) {
-        const userMsg = userMessages[i];
-        const isThisMessageCurrentlySticky = userMsg.id === currentStickyId;
-        const distanceFromTop = userMsg.top - viewportTop;
-        
-        let shouldBeSticky: boolean;
-        let reason: string;
-        
-        if (isThisMessageCurrentlySticky) {
-          // Use hysteresis - keep sticky until message is back in view (positive distance)
-          if (distanceFromTop > UNSTICK_THRESHOLD) {
-            shouldBeSticky = false;
-            reason = `no_assistant+unstick: ${Math.round(distanceFromTop)}px below viewport`;
-          } else {
-            shouldBeSticky = true;
-            reason = `no_assistant+keep: within zone (${Math.round(distanceFromTop)}px)`;
-          }
-        } else {
-          // Make sticky when close to or past top
-          if (distanceFromTop <= MAKE_STICKY_THRESHOLD) {
-            shouldBeSticky = true;
-            reason = `no_assistant+make: ${Math.round(distanceFromTop)}px from top`;
-          } else {
-            shouldBeSticky = false;
-            reason = `no_assistant+not_yet: ${Math.round(distanceFromTop)}px from top`;
-          }
-        }
-        
-        if (shouldBeSticky) {
-          newStickyId = userMsg.id;
-          break;
-        } else if (userMsg.top > viewportTop) {
-          // This and all previous messages are below viewport
-          break;
-        }
-      }
-    }
-
-    // Apply changes with hysteresis built into the decision logic
-    if (currentStickyIdRef.current !== newStickyId) {
-      currentStickyIdRef.current = newStickyId;
-      lastStickyChangeTimeRef.current = now; // Record time of change
-      applyStickyClass(newStickyId);
-    }
-  }, [applyStickyClass]);
-
-  // Properly throttled version - only ONE RAF pending at a time
-  const throttledHandleScroll = React.useCallback(() => {
-    if (isAutoScrollingRef.current) return;
-    
-    // If we already have a pending RAF, skip this scroll event
-    if (rafPendingRef.current) return;
-    
-    // Mark that we have a pending RAF
-    rafPendingRef.current = true;
-    
-    // Queue the calculation for next frame
-    requestAnimationFrame(() => {
-      rafPendingRef.current = false;
-      handleScroll();
-      });
-  }, [handleScroll]);
-
-  // Context-aware stickiness: attach scroll listener
-  useEffect(() => {
-    const container = actualScrollContainerRef.current;
-    if (!container || !scrollContainerReady) return;
-
-    // Use passive: true for better scroll performance
-    container.addEventListener('scroll', throttledHandleScroll, { passive: true });
-    
-    // Initial check when messages change
-    const timeoutId = setTimeout(handleScroll, 100);
-
-    return () => {
-      container.removeEventListener('scroll', throttledHandleScroll);
-      clearTimeout(timeoutId);
-    };
-  }, [messages.length, scrollContainerReady, throttledHandleScroll, handleScroll]);
-
-  // Make latest message sticky when tab opens (if content is long enough for scrolling)
-  useEffect(() => {
-    const container = actualScrollContainerRef.current;
-    if (!container || !scrollContainerReady) return;
-    
-    // Only run once per session/tab open
-    if (hasInitializedStickyOnOpenRef.current) return;
-    
-    // Wait for messages to be rendered
-    if (messages.length === 0) return;
-    
-    // Small delay to ensure DOM is fully rendered
-    const timeoutId = setTimeout(() => {
-      // Check if content is long enough for scrolling
-      const scrollHeight = container.scrollHeight;
-      const clientHeight = container.clientHeight;
-      const hasOverflow = scrollHeight > clientHeight;
-      
-      if (!hasOverflow) {
-        // Not enough content to scroll, no need to make sticky
-        hasInitializedStickyOnOpenRef.current = true;
-        return;
-      }
-      
-      // Find the latest user message
-      const userMessages = messages.filter((m: any) => m.role === 'user');
-      if (userMessages.length === 0) {
-        hasInitializedStickyOnOpenRef.current = true;
-        return;
-      }
-      
-      const latestUserMessage = userMessages[userMessages.length - 1];
-      const latestUserMessageId = latestUserMessage?.id;
-      
-      if (!latestUserMessageId) {
-        hasInitializedStickyOnOpenRef.current = true;
-        return;
-      }
-      
-      // Find the message element in the DOM
-      const userMessageElement = container.querySelector<HTMLDivElement>(
-        `[data-message-role="user"][data-message-id="${latestUserMessageId}"]`
-      );
-      
-      if (!userMessageElement) {
-        // Retry once more after a short delay
-        setTimeout(() => {
-          const retryElement = container.querySelector<HTMLDivElement>(
-            `[data-message-role="user"][data-message-id="${latestUserMessageId}"]`
-          );
-          if (retryElement) {
-            retryElement.classList.add('is-sticky');
-            currentStickyIdRef.current = latestUserMessageId;
-            hasInitializedStickyOnOpenRef.current = true;
-          } else {
-            hasInitializedStickyOnOpenRef.current = true;
-          }
-        }, 200);
-        return;
-      }
-      
-      // Simply add the sticky class to the latest user message
-      userMessageElement.classList.add('is-sticky');
-      currentStickyIdRef.current = latestUserMessageId;
-      hasInitializedStickyOnOpenRef.current = true;
-    }, 300);
-    
-    return () => clearTimeout(timeoutId);
-  }, [scrollContainerReady, messages.length, messages]);
-
-  // Reset initialization flag when session changes
-  useEffect(() => {
-    hasInitializedStickyOnOpenRef.current = false;
-  }, [sessionId]);
-
-  // Invalidate cache and recalculate when messages change
-  useEffect(() => {
-    if (!scrollContainerReady) return;
-    
-    // Invalidate cache so it rebuilds with new message positions
-    elementCacheRef.current = null;
-    
-    // Small delay to ensure DOM is ready after message updates
-    const timeoutId = setTimeout(() => {
-      handleScroll();
-    }, 50);
-    
-    return () => clearTimeout(timeoutId);
-  }, [messages.length, scrollContainerReady, handleScroll]);
+  // Sticky-related useEffects removed - all sticky logic is now in CustomMessages.tsx
 
   // Shared agent state for maintaining agent context across interactions
     const { state, setState } = useCoAgent<AgentState>({
@@ -1267,42 +607,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     cachedSanitizedRef.current = null;
     wasStreamingRef.current = false;
     
-    // Clear scroll spacer and its intervals
-    if (scrollSpacerRef.current) {
-      // Clear sticky check interval
-      const stickyCheckInterval = (scrollSpacerRef.current as any).__stickyCheckInterval;
-      if (stickyCheckInterval) {
-        clearInterval(stickyCheckInterval);
-        delete (scrollSpacerRef.current as any).__stickyCheckInterval;
-      }
-      
-      // Clear content wait interval
-      const contentInterval = (scrollSpacerRef.current as any).__contentInterval;
-      if (contentInterval) {
-        clearInterval(contentInterval);
-        delete (scrollSpacerRef.current as any).__contentInterval;
-      }
-      
-      // Remove spacer from DOM if it exists
-      if (scrollSpacerRef.current.parentElement) {
-        scrollSpacerRef.current.remove();
-      }
-      scrollSpacerRef.current = null;
-    }
-    
-    // Clear element position cache
-    elementCacheRef.current = null;
-    
-    // Clear sticky state
-    currentStickyIdRef.current = null;
-    
-    // Reset scroll tracking refs
-    lastScrollTopRef.current = 0;
-    scrollDirectionRef.current = 'none';
-    scrollVelocityRef.current = 0;
-    lastScrollTimeRef.current = Date.now();
-    lastStickyChangeTimeRef.current = 0;
-    
     // Clear message tracking refs
     lastUserMessageIdRef.current = null;
     latestAssistantMessageIdRef.current = null;
@@ -1315,10 +619,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     
     // Reset scroll flags
     isAutoScrollingRef.current = false;
-    isScrollingUserMessageToTopRef.current = false;
     
     // Reset initialization flags
-    hasInitializedStickyOnOpenRef.current = false;
     hasInitializedRef.current = false;
     previousUserMessageCountRef.current = 0;
     previousMessageCountRef.current = 0;
@@ -2032,7 +1334,9 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           markdownTagRenderers={customMarkdownTagRenderers}
           AssistantMessage={CustomAssistantMessage}
           UserMessage={CustomUserMessage}
-          Messages={CustomMessages}
+          Messages={React.useCallback((props: any) => (
+            <CustomMessages {...props} />
+          ), [])}
           Input={ScopedInput}
         />
         </StreamingContext.Provider>
