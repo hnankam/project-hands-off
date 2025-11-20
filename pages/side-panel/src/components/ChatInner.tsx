@@ -370,7 +370,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
       if (computedStyle.overflowY === 'auto' || computedStyle.overflowY === 'scroll') {
         console.log('[STICKY] ✅ Using VList itself as scroll container (has overflow)');
         return vListContainer;
-      }
+        }
       
       // If VList isn't scrollable, find its scrollable child
       // Virtua wraps content in a div that has the actual scroll
@@ -442,7 +442,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     
     // Initial check
     checkContainer();
-    
+                
     // Also check after a short delay to catch Virtua's delayed rendering
     const timeoutId = setTimeout(checkContainer, 100);
     

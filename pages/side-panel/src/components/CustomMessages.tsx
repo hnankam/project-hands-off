@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useCallback, useState } from "react";
-import { Message } from "@copilotkit/shared";
 import { useCopilotChatHeadless_c } from "@copilotkit/react-core";
 import { useChatContext } from "@copilotkit/react-ui";
 import type { MessagesProps } from "@copilotkit/react-ui";
 import { VList, type VListHandle } from "virtua";
+import type { Message } from "@copilotkit/shared";
 
 /**
  * Custom Messages Component for CopilotChat
@@ -45,7 +45,14 @@ export const CustomMessages = ({
   const { labels } = useChatContext();
   const { messages: visibleMessages, interrupt } = useCopilotChatHeadless_c();
   const initialMessages = useMemo(() => makeInitialMessages(labels.initial), [labels.initial]);
-  const messages = [...initialMessages, ...visibleMessages];
+  
+  // Filter out any undefined/null messages and ensure all have required properties
+  const messages = useMemo(() => {
+    const allMessages = [...initialMessages, ...visibleMessages];
+    return allMessages.filter((msg): msg is Message => {
+      return msg != null && typeof msg === 'object' && 'id' in msg;
+    });
+  }, [initialMessages, visibleMessages]);
   const vListRef = useRef<VListHandle>(null);
   const isAutoScrollingRef = useRef(false);
   const previousStickyIdRef = useRef<string | null>(null);
@@ -59,14 +66,17 @@ export const CustomMessages = ({
 
   // Handle scroll using VList's findItemIndex API - all logic centralized here
   const handleScroll = useCallback((offset: number) => {
-    // Skip during auto-scroll
-    if (isAutoScrollingRef.current) return;
+    // Skip during auto-scroll or if no messages
+    if (isAutoScrollingRef.current || messages.length === 0) return;
 
     const vList = vListRef.current;
     if (!vList) return;
 
     // Use findItemIndex to get the item index at the scroll offset
     const topItemIndex = vList.findItemIndex(offset);
+    
+    // Guard against invalid index
+    if (topItemIndex < 0 || topItemIndex >= messages.length) return;
 
     // If at the top (index 0), no sticky needed
     if (topItemIndex === 0) {
@@ -80,8 +90,8 @@ export const CustomMessages = ({
     // Find the topmost visible assistant message starting from topItemIndex
     let topmostVisibleAssistantIndex = -1;
     for (let i = topItemIndex; i < messages.length; i++) {
-      const message = messages[i] as any;
-      if (message && message.role === 'assistant') {
+      const message = messages[i];
+      if (message && typeof message === 'object' && 'role' in message && message.role === 'assistant') {
         topmostVisibleAssistantIndex = i;
         break;
       }
@@ -94,9 +104,9 @@ export const CustomMessages = ({
     if (topmostVisibleAssistantIndex !== -1) {
       // Find the user message immediately before this assistant message
       for (let i = topmostVisibleAssistantIndex - 1; i >= 0; i--) {
-        const message = messages[i] as any;
-        if (message && message.role === 'user') {
-          newStickyId = message.id;
+        const message = messages[i];
+        if (message && typeof message === 'object' && 'role' in message && 'id' in message && message.role === 'user') {
+          newStickyId = String(message.id);
           newStickyIndex = i;
           break;
         }
@@ -105,9 +115,9 @@ export const CustomMessages = ({
       // No assistant visible - find the last user message before topItemIndex
       if (topItemIndex > 0) {
         for (let i = topItemIndex - 1; i >= 0; i--) {
-          const message = messages[i] as any;
-          if (message && message.role === 'user') {
-            newStickyId = message.id;
+          const message = messages[i];
+          if (message && typeof message === 'object' && 'role' in message && 'id' in message && message.role === 'user') {
+            newStickyId = String(message.id);
             newStickyIndex = i;
             break;
           }
@@ -136,7 +146,10 @@ export const CustomMessages = ({
 
   // Calculate keepMounted array - keep the sticky message mounted even when off-screen
   const keepMounted = useMemo(() => {
-    if (stickyMessageIndex !== null && stickyMessageIndex !== undefined && stickyMessageIndex >= 0) {
+    if (stickyMessageIndex !== null && 
+        stickyMessageIndex !== undefined && 
+        stickyMessageIndex >= 0 && 
+        stickyMessageIndex < messages.length) {
       return [stickyMessageIndex];
     }
     return undefined;
@@ -144,6 +157,9 @@ export const CustomMessages = ({
 
   // Apply sticky styles directly to Virtua's wrapper divs
   useEffect(() => {
+    // Skip if no messages or MessageRenderer
+    if (messages.length === 0 || !MessageRenderer) return;
+    
     const previousStickyId = previousStickyIdRef.current;
     previousStickyIdRef.current = stickyMessageId;
 
@@ -217,7 +233,9 @@ export const CustomMessages = ({
           // Remove the is-sticky class from the user message element
           userMessageEl.classList.remove('is-sticky');
           
-          const messageIndex = messages.findIndex((m: any) => m && m.id === messageId);
+          const messageIndex = messages.findIndex((m) => {
+            return m && typeof m === 'object' && 'id' in m && String(m.id) === messageId;
+          });
           
           // Trigger Virtua recalculation
           void virtuaWrapper.offsetHeight;
@@ -319,7 +337,18 @@ export const CustomMessages = ({
         }
       });
     });
-  }, [stickyMessageId]);
+  }, [stickyMessageId, messages, MessageRenderer]);
+
+  // Early return if no valid messages to prevent rendering errors
+  if (!MessageRenderer) {
+    return (
+      <div className="copilotKitMessages">
+        <footer className="copilotKitMessagesFooter">
+          {children}
+        </footer>
+      </div>
+    );
+  }
 
   return (
     <div className="copilotKitMessages">
@@ -330,17 +359,12 @@ export const CustomMessages = ({
         onScroll={handleScroll}
       >
         {messages.map((message, index) => {
-          if (!message) {
-            return <div key={`empty-${index}`} style={{ display: 'none' }} />;
-          }
-          
-          if (!MessageRenderer) {
-            return null;
-          }
+          // Ensure key is always a string (messages are already filtered to have id)
+          const messageKey = String(message.id || `message-${index}`);
           
           return (
             <MessageRenderer
-              key={message.id || `message-${index}`}
+              key={messageKey}
               message={message}
               inProgress={inProgress}
               index={index}
