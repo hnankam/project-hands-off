@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useCallback, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState } from "react";
 import { useCopilotChatHeadless_c } from "@copilotkit/react-core";
 import { useChatContext } from "@copilotkit/react-ui";
 import type { MessagesProps } from "@copilotkit/react-ui";
@@ -28,7 +28,7 @@ const TOP_MARGIN = 5; // Small margin to ensure message is fully visible at top
 const SPACER_VISIBILITY_THRESHOLD = 5; // Minimum height to consider spacer visible
 const AUTO_SCROLL_FLAG_DURATION = 50; // Duration to keep auto-scroll flag active (ms)
 const INITIAL_SCROLL_DELAY = 100; // Delay before initial scroll on mount (ms)
-const SCROLL_VERIFY_DELAY = 150; // Delay before verifying scroll position (ms)
+const SCROLL_VERIFY_DELAY = 100; // Delay before verifying scroll position (ms)
 const SCROLL_BOTTOM_THRESHOLD = 20; // Distance from bottom to consider "at bottom" (px)
 const MAX_ELEMENT_QUERY_RETRIES = 5; // Max retries for finding DOM elements
 
@@ -99,7 +99,8 @@ export const CustomMessages = ({
     vListRef,
     getContainer,
     MessageRenderer,
-    isAutoScrollingRef
+    isAutoScrollingRef,
+    inProgress
   );
 
   // Early return if no valid messages to prevent rendering errors
@@ -367,7 +368,8 @@ const useStickyUserMessage = (
   vListRef: React.RefObject<VListHandle | null>,
   getContainer: () => HTMLElement,
   MessageRenderer: React.ComponentType<any> | undefined,
-  isAutoScrollingRef: React.MutableRefObject<boolean>
+  isAutoScrollingRef: React.MutableRefObject<boolean>,
+  inProgress: boolean
 ) => {
   const [stickyMessageId, setStickyMessageId] = useState<string | null>(null);
   const [stickyMessageIndex, setStickyMessageIndex] = useState<number | null>(null);
@@ -438,7 +440,10 @@ const useStickyUserMessage = (
     }
 
     // Check specific agent mode condition
-    if (agentMode && spacerHeight > 0 && newStickyId === latestUserMessageIdRef.current) {
+    // Disable sticky if:
+    // 1. We have a spacer (content fits in viewport)
+    // 2. OR we are streaming (allow message to scroll off screen)
+    if (agentMode && (spacerHeight > 0 || inProgress) && newStickyId === latestUserMessageIdRef.current) {
       newStickyId = null;
       newStickyIndex = null;
     }
@@ -448,15 +453,15 @@ const useStickyUserMessage = (
       setStickyMessageId(newStickyId);
       setStickyMessageIndex(newStickyIndex);
     }
-  }, [stickyMessageId, agentMode, spacerHeight]);
+  }, [stickyMessageId, agentMode, spacerHeight, inProgress]);
 
-  // Clear sticky when agent mode is enabled and spacer exists
+  // Clear sticky when agent mode is enabled and (spacer exists OR streaming in progress)
   useEffect(() => {
-    if (agentMode && spacerHeight > 0 && stickyMessageId !== null && stickyMessageId === latestUserMessageIdRef.current) {
+    if (agentMode && (spacerHeight > 0 || inProgress) && stickyMessageId !== null && stickyMessageId === latestUserMessageIdRef.current) {
       setStickyMessageId(null);
       setStickyMessageIndex(null);
     }
-  }, [agentMode, spacerHeight, stickyMessageId]);
+  }, [agentMode, spacerHeight, stickyMessageId, inProgress]);
 
   // Calculate keepMounted array
   const keepMounted = useMemo(() => {
@@ -647,32 +652,15 @@ const useAgentSpacer = (
   const latestUserMessageIdRef = useRef<string | null>(null);
   const previousMessagesLengthRef = useRef(0);
 
-  // Step 1: Track user messages for spacer
-  useEffect(() => {
-    if (!agentMode || messages.length === 0) {
-      // Single cleanup path for exiting agent mode or no messages
-      if (spacerHeight > 0) {
-        setSpacerHeight(0);
-      }
-      if (latestUserMessageIdRef.current !== null) {
-        latestUserMessageIdRef.current = null;
-      }
-      previousMessagesLengthRef.current = messages.length;
-      return;
-    }
-    
-    // Find the latest user message (always track the most recent one)
+  // Step 3: Observer shrinks spacer as assistant message grows
+  useLayoutEffect(() => {
+    // Sync latestUserMessageIdRef immediately
     const latestUserMessageId = findLatestUserMessageId(messages);
-    
     if (latestUserMessageId && latestUserMessageIdRef.current !== latestUserMessageId) {
       latestUserMessageIdRef.current = latestUserMessageId;
     }
-    
     previousMessagesLengthRef.current = messages.length;
-  }, [messages.length, agentMode]);
 
-  // Step 3: Observer shrinks spacer as assistant message grows
-  useEffect(() => {
     if (!agentMode) {
       setSpacerHeight(0);
       return;
@@ -705,9 +693,7 @@ const useAgentSpacer = (
         // Retry if the message might not be rendered yet
         if (retryCount < MAX_ELEMENT_QUERY_RETRIES) {
           retryCount++;
-          setTimeout(() => {
-            updateSpacer(true);
-          }, 100 * retryCount); // Exponential backoff
+          requestAnimationFrame(() => updateSpacer(true));
           return;
         }
         // Don't clear tracking - keep trying with observer
@@ -738,18 +724,12 @@ const useAgentSpacer = (
       setSpacerHeight(newSpacerHeight);
     };
     
-    // Initial calculation after messages are rendered
-    // Use multiple frames to ensure DOM is fully updated
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          updateSpacer();
-        });
-      });
-    });
+    // Initial calculation - try immediately
+    updateSpacer();
     
     // Watch for content size changes (streaming, images, etc.)
     const resizeObserver = new ResizeObserver(() => {
+      // Use requestAnimationFrame for resize events to avoid Loop Limit errors
       requestAnimationFrame(() => updateSpacer());
     });
     
