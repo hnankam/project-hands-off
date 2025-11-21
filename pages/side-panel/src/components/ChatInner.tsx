@@ -48,6 +48,9 @@ import {
 } from '@copilotkit/react-core';
 import { CopilotChat, useCopilotChatSuggestions } from '@copilotkit/react-ui';
 
+import { useCopilotMessagesContext } from "@copilotkit/react-core";
+import { ActionExecutionMessage, ResultMessage, TextMessage } from "@copilotkit/runtime-client-gql";
+
 // Extension Utilities & Storage
 import { debug, useStorage, cosineSimilarity, embeddingService, sessionStorageDBWrapper } from '@extension/shared';
 import { embeddingsStorage } from '@extension/shared';

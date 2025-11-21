@@ -638,6 +638,9 @@ importers:
       '@copilotkit/react-ui':
         specifier: 1.10.6
         version: 1.10.6(@types/react@19.1.12)(graphql@16.11.0)(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
+      '@copilotkit/runtime-client-gql':
+        specifier: ^1.10.6
+        version: 1.10.6(graphql@16.11.0)(react@19.1.1)
       '@copilotkit/shared':
         specifier: 1.10.6
         version: 1.10.6
@@ -7822,7 +7825,7 @@ snapshots:
       '@urql/core': 5.2.0(graphql@16.11.0)
       react: 19.1.1
       untruncate-json: 0.0.1
-      urql: 4.2.2(@urql/core@5.2.0(graphql@16.11.0))(react@19.1.1)
+      urql: 4.2.2(@urql/core@5.2.0)(react@19.1.1)
     transitivePeerDependencies:
       - encoding
       - graphql
@@ -15667,7 +15670,7 @@ snapshots:
 
   urlpattern-polyfill@10.1.0: {}
 
-  urql@4.2.2(@urql/core@5.2.0(graphql@16.11.0))(react@19.1.1):
+  urql@4.2.2(@urql/core@5.2.0)(react@19.1.1):
     dependencies:
       '@urql/core': 5.2.0(graphql@16.11.0)
       react: 19.1.1

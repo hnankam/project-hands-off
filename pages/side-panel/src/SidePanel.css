@@ -520,7 +520,7 @@ input:focus {
   width: 100% !important; /* Force full width */
   margin-bottom: 0 !important;
   overflow: visible !important; /* Ensure dropdowns can extend beyond message bounds */
-  margin-top: 30px !important;
+  margin-top: 40px !important;
   border: 1px solid var(--copilot-kit-border-color) !important;
   
   /* Smooth transitions for all user messages */
@@ -582,7 +582,7 @@ input:focus {
 /* Move message controls to the bottom right and ensure they stay within viewport */
 .copilotKitMessage.copilotKitAssistantMessage .copilotKitMessageControls {
   position: absolute !important;
-  bottom: -2.3rem !important;
+  /* bottom: -2.3rem !important; */
   right: 0px !important;
   top: auto !important;
   left: auto !important;
@@ -592,7 +592,7 @@ input:focus {
 }
 
 .copilotKitMessage.copilotKitAssistantMessage {
-  margin-bottom: 0 !important;
+  margin-bottom: 1.5rem !important;
   padding-bottom: 0 !important;
 }
 
@@ -3429,5 +3429,15 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   .dark .copilotKitUserMessage.is-sticky::before,
   .copilot-chat-container.dark .copilotKitUserMessage.is-sticky::before {
     background-color: var(--copilot-kit-input-background-color);
+  }
+
+  /* ==========================================================
+     EMPTY DIV MARGIN FIX
+     Remove margin-bottom from empty divs with specific inline style
+     (e.g., empty subComponent wrappers with margin-bottom: 0.5rem)
+     ========================================================== */
+  div:empty[style*="margin-bottom: 0.5rem"],
+  div:empty {
+    margin-bottom: 0 !important;
   }
   

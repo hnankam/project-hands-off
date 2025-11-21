@@ -11230,3 +11230,276 @@
 2025-11-20 18:31:29.195 [info] MCP Server initialized successfully
 2025-11-20 18:31:29.196 [info] Wiki MCP Server connected via stdio
 2025-11-20 18:31:29.197 [info] Wiki MCP Server started successfully with stdio transport
+2025-11-20 20:14:23.813 [debug] Initializing ConfigManager from environment variables
+2025-11-20 20:14:23.814 [debug] Loaded config from environment (sensitive data redacted):
+2025-11-20 20:14:23.815 [debug] {
+  "host": "wiki.corp.adobe.com",
+  "authMethod": "[REDACTED]",
+  "port": 1984,
+  "assetsOutputDir": "./cursor-wiki-mcp/assets",
+  "assets": {
+    "extractAssets": false,
+    "outputDir": "./cursor-wiki-mcp/assets",
+    "filenamePrefix": "asset-",
+    "createOutputDirs": true,
+    "useAbsolutePath": true,
+    "assetTypes": [
+      "image",
+      "pdf",
+      "document",
+      "attachment",
+      "plantuml"
+    ]
+  }
+}
+2025-11-20 20:14:23.815 [debug] ConfigManager initialized
+2025-11-20 20:14:24.327 [info] Initializing MCP Server...
+2025-11-20 20:14:24.331 [debug] Creating Confluence client
+2025-11-20 20:14:24.331 [debug] - Host: wiki.corp.adobe.com
+2025-11-20 20:14:24.332 [debug] Normalized host: wiki.corp.adobe.com
+2025-11-20 20:14:24.332 [debug] Client config host with protocol: https://wiki.corp.adobe.com
+2025-11-20 20:14:24.332 [debug] ApiPrefix: /rest
+2025-11-20 20:14:24.332 [info] Using Personal Access Token authentication method
+2025-11-20 20:14:24.333 [info] Confluence client created successfully for host: wiki.corp.adobe.com
+2025-11-20 20:14:24.333 [info] Registered expert-wiki-editor prompt
+2025-11-20 20:14:24.334 [info] Registered plantuml_diagram_creator prompt
+2025-11-20 20:14:24.334 [info] Registered prompts: expert_wiki_editor, plantuml_diagram_creator
+2025-11-20 20:14:24.334 [info] Prompt "expert_wiki_editor" registered: has description=true, has callback=true
+2025-11-20 20:14:24.334 [info] Prompt "plantuml_diagram_creator" registered: has description=true, has callback=true
+2025-11-20 20:14:24.334 [info] MCP Server initialized successfully
+2025-11-20 20:14:24.335 [info] Wiki MCP Server connected via stdio
+2025-11-20 20:14:24.336 [info] Wiki MCP Server started successfully with stdio transport
+2025-11-21 06:55:33.396 [debug] Initializing ConfigManager from environment variables
+2025-11-21 06:55:33.397 [debug] Loaded config from environment (sensitive data redacted):
+2025-11-21 06:55:33.398 [debug] {
+  "host": "wiki.corp.adobe.com",
+  "authMethod": "[REDACTED]",
+  "port": 1984,
+  "assetsOutputDir": "./cursor-wiki-mcp/assets",
+  "assets": {
+    "extractAssets": false,
+    "outputDir": "./cursor-wiki-mcp/assets",
+    "filenamePrefix": "asset-",
+    "createOutputDirs": true,
+    "useAbsolutePath": true,
+    "assetTypes": [
+      "image",
+      "pdf",
+      "document",
+      "attachment",
+      "plantuml"
+    ]
+  }
+}
+2025-11-21 06:55:33.398 [debug] ConfigManager initialized
+2025-11-21 06:55:33.953 [info] Initializing MCP Server...
+2025-11-21 06:55:33.956 [debug] Creating Confluence client
+2025-11-21 06:55:33.956 [debug] - Host: wiki.corp.adobe.com
+2025-11-21 06:55:33.956 [debug] Normalized host: wiki.corp.adobe.com
+2025-11-21 06:55:33.956 [debug] Client config host with protocol: https://wiki.corp.adobe.com
+2025-11-21 06:55:33.957 [debug] ApiPrefix: /rest
+2025-11-21 06:55:33.957 [info] Using Personal Access Token authentication method
+2025-11-21 06:55:33.958 [info] Confluence client created successfully for host: wiki.corp.adobe.com
+2025-11-21 06:55:33.958 [info] Registered expert-wiki-editor prompt
+2025-11-21 06:55:33.958 [info] Registered plantuml_diagram_creator prompt
+2025-11-21 06:55:33.958 [info] Registered prompts: expert_wiki_editor, plantuml_diagram_creator
+2025-11-21 06:55:33.958 [info] Prompt "expert_wiki_editor" registered: has description=true, has callback=true
+2025-11-21 06:55:33.959 [info] Prompt "plantuml_diagram_creator" registered: has description=true, has callback=true
+2025-11-21 06:55:33.959 [info] MCP Server initialized successfully
+2025-11-21 06:55:33.960 [info] Wiki MCP Server connected via stdio
+2025-11-21 06:55:33.960 [info] Wiki MCP Server started successfully with stdio transport
+2025-11-21 06:55:38.404 [debug] Initializing ConfigManager from environment variables
+2025-11-21 06:55:38.405 [debug] Loaded config from environment (sensitive data redacted):
+2025-11-21 06:55:38.406 [debug] {
+  "host": "wiki.corp.adobe.com",
+  "authMethod": "[REDACTED]",
+  "port": 1984,
+  "assetsOutputDir": "./cursor-wiki-mcp/assets",
+  "assets": {
+    "extractAssets": false,
+    "outputDir": "./cursor-wiki-mcp/assets",
+    "filenamePrefix": "asset-",
+    "createOutputDirs": true,
+    "useAbsolutePath": true,
+    "assetTypes": [
+      "image",
+      "pdf",
+      "document",
+      "attachment",
+      "plantuml"
+    ]
+  }
+}
+2025-11-21 06:55:38.406 [debug] ConfigManager initialized
+2025-11-21 06:55:38.678 [info] Initializing MCP Server...
+2025-11-21 06:55:38.680 [debug] Creating Confluence client
+2025-11-21 06:55:38.680 [debug] - Host: wiki.corp.adobe.com
+2025-11-21 06:55:38.680 [debug] Normalized host: wiki.corp.adobe.com
+2025-11-21 06:55:38.680 [debug] Client config host with protocol: https://wiki.corp.adobe.com
+2025-11-21 06:55:38.680 [debug] ApiPrefix: /rest
+2025-11-21 06:55:38.681 [info] Using Personal Access Token authentication method
+2025-11-21 06:55:38.681 [info] Confluence client created successfully for host: wiki.corp.adobe.com
+2025-11-21 06:55:38.682 [info] Registered expert-wiki-editor prompt
+2025-11-21 06:55:38.682 [info] Registered plantuml_diagram_creator prompt
+2025-11-21 06:55:38.682 [info] Registered prompts: expert_wiki_editor, plantuml_diagram_creator
+2025-11-21 06:55:38.682 [info] Prompt "expert_wiki_editor" registered: has description=true, has callback=true
+2025-11-21 06:55:38.682 [info] Prompt "plantuml_diagram_creator" registered: has description=true, has callback=true
+2025-11-21 06:55:38.683 [info] MCP Server initialized successfully
+2025-11-21 06:55:38.684 [info] Wiki MCP Server connected via stdio
+2025-11-21 06:55:38.684 [info] Wiki MCP Server started successfully with stdio transport
+2025-11-21 06:55:45.145 [debug] Initializing ConfigManager from environment variables
+2025-11-21 06:55:45.146 [debug] Loaded config from environment (sensitive data redacted):
+2025-11-21 06:55:45.146 [debug] {
+  "host": "wiki.corp.adobe.com",
+  "authMethod": "[REDACTED]",
+  "port": 1984,
+  "assetsOutputDir": "./cursor-wiki-mcp/assets",
+  "assets": {
+    "extractAssets": false,
+    "outputDir": "./cursor-wiki-mcp/assets",
+    "filenamePrefix": "asset-",
+    "createOutputDirs": true,
+    "useAbsolutePath": true,
+    "assetTypes": [
+      "image",
+      "pdf",
+      "document",
+      "attachment",
+      "plantuml"
+    ]
+  }
+}
+2025-11-21 06:55:45.147 [debug] ConfigManager initialized
+2025-11-21 06:55:45.424 [info] Initializing MCP Server...
+2025-11-21 06:55:45.428 [debug] Creating Confluence client
+2025-11-21 06:55:45.428 [debug] - Host: wiki.corp.adobe.com
+2025-11-21 06:55:45.428 [debug] Normalized host: wiki.corp.adobe.com
+2025-11-21 06:55:45.428 [debug] Client config host with protocol: https://wiki.corp.adobe.com
+2025-11-21 06:55:45.429 [debug] ApiPrefix: /rest
+2025-11-21 06:55:45.429 [info] Using Personal Access Token authentication method
+2025-11-21 06:55:45.429 [info] Confluence client created successfully for host: wiki.corp.adobe.com
+2025-11-21 06:55:45.430 [info] Registered expert-wiki-editor prompt
+2025-11-21 06:55:45.430 [info] Registered plantuml_diagram_creator prompt
+2025-11-21 06:55:45.430 [info] Registered prompts: expert_wiki_editor, plantuml_diagram_creator
+2025-11-21 06:55:45.430 [info] Prompt "expert_wiki_editor" registered: has description=true, has callback=true
+2025-11-21 06:55:45.431 [info] Prompt "plantuml_diagram_creator" registered: has description=true, has callback=true
+2025-11-21 06:55:45.431 [info] MCP Server initialized successfully
+2025-11-21 06:55:45.432 [info] Wiki MCP Server connected via stdio
+2025-11-21 06:55:45.432 [info] Wiki MCP Server started successfully with stdio transport
+2025-11-21 06:55:53.673 [debug] Initializing ConfigManager from environment variables
+2025-11-21 06:55:53.674 [debug] Loaded config from environment (sensitive data redacted):
+2025-11-21 06:55:53.674 [debug] {
+  "host": "wiki.corp.adobe.com",
+  "authMethod": "[REDACTED]",
+  "port": 1984,
+  "assetsOutputDir": "./cursor-wiki-mcp/assets",
+  "assets": {
+    "extractAssets": false,
+    "outputDir": "./cursor-wiki-mcp/assets",
+    "filenamePrefix": "asset-",
+    "createOutputDirs": true,
+    "useAbsolutePath": true,
+    "assetTypes": [
+      "image",
+      "pdf",
+      "document",
+      "attachment",
+      "plantuml"
+    ]
+  }
+}
+2025-11-21 06:55:53.675 [debug] ConfigManager initialized
+2025-11-21 06:55:53.976 [info] Initializing MCP Server...
+2025-11-21 06:55:53.979 [debug] Creating Confluence client
+2025-11-21 06:55:53.979 [debug] - Host: wiki.corp.adobe.com
+2025-11-21 06:55:53.980 [debug] Normalized host: wiki.corp.adobe.com
+2025-11-21 06:55:53.980 [debug] Client config host with protocol: https://wiki.corp.adobe.com
+2025-11-21 06:55:53.980 [debug] ApiPrefix: /rest
+2025-11-21 06:55:53.980 [info] Using Personal Access Token authentication method
+2025-11-21 06:55:53.981 [info] Confluence client created successfully for host: wiki.corp.adobe.com
+2025-11-21 06:55:53.981 [info] Registered expert-wiki-editor prompt
+2025-11-21 06:55:53.981 [info] Registered plantuml_diagram_creator prompt
+2025-11-21 06:55:53.982 [info] Registered prompts: expert_wiki_editor, plantuml_diagram_creator
+2025-11-21 06:55:53.982 [info] Prompt "expert_wiki_editor" registered: has description=true, has callback=true
+2025-11-21 06:55:53.982 [info] Prompt "plantuml_diagram_creator" registered: has description=true, has callback=true
+2025-11-21 06:55:53.982 [info] MCP Server initialized successfully
+2025-11-21 06:55:53.984 [info] Wiki MCP Server connected via stdio
+2025-11-21 06:55:53.984 [info] Wiki MCP Server started successfully with stdio transport
+2025-11-21 06:56:55.877 [debug] Initializing ConfigManager from environment variables
+2025-11-21 06:56:55.879 [debug] Loaded config from environment (sensitive data redacted):
+2025-11-21 06:56:55.879 [debug] {
+  "host": "wiki.corp.adobe.com",
+  "authMethod": "[REDACTED]",
+  "port": 1984,
+  "assetsOutputDir": "./cursor-wiki-mcp/assets",
+  "assets": {
+    "extractAssets": false,
+    "outputDir": "./cursor-wiki-mcp/assets",
+    "filenamePrefix": "asset-",
+    "createOutputDirs": true,
+    "useAbsolutePath": true,
+    "assetTypes": [
+      "image",
+      "pdf",
+      "document",
+      "attachment",
+      "plantuml"
+    ]
+  }
+}
+2025-11-21 06:56:55.879 [debug] ConfigManager initialized
+2025-11-21 06:56:56.367 [info] Initializing MCP Server...
+2025-11-21 06:56:56.370 [debug] Creating Confluence client
+2025-11-21 06:56:56.370 [debug] - Host: wiki.corp.adobe.com
+2025-11-21 06:56:56.371 [debug] Normalized host: wiki.corp.adobe.com
+2025-11-21 06:56:56.371 [debug] Client config host with protocol: https://wiki.corp.adobe.com
+2025-11-21 06:56:56.371 [debug] ApiPrefix: /rest
+2025-11-21 06:56:56.371 [info] Using Personal Access Token authentication method
+2025-11-21 06:56:56.372 [info] Confluence client created successfully for host: wiki.corp.adobe.com
+2025-11-21 06:56:56.372 [info] Registered expert-wiki-editor prompt
+2025-11-21 06:56:56.373 [info] Registered plantuml_diagram_creator prompt
+2025-11-21 06:56:56.373 [info] Registered prompts: expert_wiki_editor, plantuml_diagram_creator
+2025-11-21 06:56:56.373 [info] Prompt "expert_wiki_editor" registered: has description=true, has callback=true
+2025-11-21 06:56:56.373 [info] Prompt "plantuml_diagram_creator" registered: has description=true, has callback=true
+2025-11-21 06:56:56.373 [info] MCP Server initialized successfully
+2025-11-21 06:56:56.375 [info] Wiki MCP Server connected via stdio
+2025-11-21 06:56:56.375 [info] Wiki MCP Server started successfully with stdio transport
+2025-11-21 06:57:11.569 [debug] Initializing ConfigManager from environment variables
+2025-11-21 06:57:11.570 [debug] Loaded config from environment (sensitive data redacted):
+2025-11-21 06:57:11.570 [debug] {
+  "host": "wiki.corp.adobe.com",
+  "authMethod": "[REDACTED]",
+  "port": 1984,
+  "assetsOutputDir": "./cursor-wiki-mcp/assets",
+  "assets": {
+    "extractAssets": false,
+    "outputDir": "./cursor-wiki-mcp/assets",
+    "filenamePrefix": "asset-",
+    "createOutputDirs": true,
+    "useAbsolutePath": true,
+    "assetTypes": [
+      "image",
+      "pdf",
+      "document",
+      "attachment",
+      "plantuml"
+    ]
+  }
+}
+2025-11-21 06:57:11.570 [debug] ConfigManager initialized
+2025-11-21 06:57:11.861 [info] Initializing MCP Server...
+2025-11-21 06:57:11.865 [debug] Creating Confluence client
+2025-11-21 06:57:11.865 [debug] - Host: wiki.corp.adobe.com
+2025-11-21 06:57:11.865 [debug] Normalized host: wiki.corp.adobe.com
+2025-11-21 06:57:11.866 [debug] Client config host with protocol: https://wiki.corp.adobe.com
+2025-11-21 06:57:11.866 [debug] ApiPrefix: /rest
+2025-11-21 06:57:11.866 [info] Using Personal Access Token authentication method
+2025-11-21 06:57:11.867 [info] Confluence client created successfully for host: wiki.corp.adobe.com
+2025-11-21 06:57:11.867 [info] Registered expert-wiki-editor prompt
+2025-11-21 06:57:11.867 [info] Registered plantuml_diagram_creator prompt
+2025-11-21 06:57:11.867 [info] Registered prompts: expert_wiki_editor, plantuml_diagram_creator
+2025-11-21 06:57:11.868 [info] Prompt "expert_wiki_editor" registered: has description=true, has callback=true
+2025-11-21 06:57:11.868 [info] Prompt "plantuml_diagram_creator" registered: has description=true, has callback=true
+2025-11-21 06:57:11.868 [info] MCP Server initialized successfully
+2025-11-21 06:57:11.869 [info] Wiki MCP Server connected via stdio
+2025-11-21 06:57:11.869 [info] Wiki MCP Server started successfully with stdio transport
