@@ -57,25 +57,25 @@ def get_or_create_session_state(
             logger.info(f"Evicted least-recently used state session={session_id} key={lru_key}")
 
     if key not in session_states[session_id]:
-        logger.debug(
-            "Creating new state session=%s agent=%s model=%s org=%s team=%s",
-            session_id,
-            agent_type,
-            model,
-            organization_id,
-            team_id,
-        )
+        # logger.debug(
+        #     "Creating new state session=%s agent=%s model=%s org=%s team=%s",
+        #     session_id,
+        #     agent_type,
+        #     model,
+        #     organization_id,
+        #     team_id,
+        # )
         session_states[session_id][key] = StateDeps(AgentState())
         print(f"[AGENT_STATE_BACKEND] 🆕 Created NEW state for session={session_id[:8]} - steps={len(session_states[session_id][key].state.steps)}")
     else:
-        logger.debug(
-            "Reusing state session=%s agent=%s model=%s org=%s team=%s",
-            session_id,
-            agent_type,
-            model,
-            organization_id,
-            team_id,
-        )
+        # logger.debug(
+        #     "Reusing state session=%s agent=%s model=%s org=%s team=%s",
+        #     session_id,
+        #     agent_type,
+        #     model,
+        #     organization_id,
+        #     team_id,
+        # )
         state_obj = session_states[session_id][key].state
         print(f"[AGENT_STATE_BACKEND] ♻️  REUSING state for session={session_id[:8]}")
         print(f"[AGENT_STATE_BACKEND]    State has {len(state_obj.steps)} steps:")

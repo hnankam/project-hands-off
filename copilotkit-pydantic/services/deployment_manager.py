@@ -90,18 +90,18 @@ async def _refresh_context(
         try:
             bundle = await fetch_context_bundle(organization_id, team_id)
             
-            logger.info(
-                "[Refresh] 📦 Fetched from DB for org=%s team=%s: %d providers, %d models, %d agents, %d tools, %d mcp_servers (version=%s, force=%s)",
-                organization_id[:8] if organization_id else 'global',
-                team_id[:8] if team_id else 'org-wide',
-                len(bundle.providers),
-                len(bundle.models),
-                len(bundle.agents),
-                len(bundle.tools),
-                len(bundle.mcp_servers),
-                bundle.version.isoformat() if bundle.version else 'none',
-                force
-            )
+            # logger.info(
+            #     "[Refresh] 📦 Fetched from DB for org=%s team=%s: %d providers, %d models, %d agents, %d tools, %d mcp_servers (version=%s, force=%s)",
+            #     organization_id[:8] if organization_id else 'global',
+            #     team_id[:8] if team_id else 'org-wide',
+            #     len(bundle.providers),
+            #     len(bundle.models),
+            #     len(bundle.agents),
+            #     len(bundle.tools),
+            #     len(bundle.mcp_servers),
+            #     bundle.version.isoformat() if bundle.version else 'none',
+            #     force
+            # )
 
             if (
                 not force
@@ -110,11 +110,11 @@ async def _refresh_context(
                 and state.version >= bundle.version
             ):
                 # No changes detected; simply update freshness timestamps
-                logger.debug(
-                    "[Refresh] ⏭️  No changes detected (version check), skipping reload for org=%s team=%s",
-                    organization_id[:8] if organization_id else 'global',
-                    team_id[:8] if team_id else 'org-wide'
-                )
+                # logger.debug(
+                #     "[Refresh] ⏭️  No changes detected (version check), skipping reload for org=%s team=%s",
+                #     organization_id[:8] if organization_id else 'global',
+                #     team_id[:8] if team_id else 'org-wide'
+                # )
                 now = time.time()
                 state.last_refresh = now
                 state.next_version_check = now + DEPLOYMENT_REFRESH_INTERVAL_SECONDS
@@ -143,15 +143,15 @@ async def _refresh_context(
                     'base_instructions': bundle.base_instructions,
                 },
             )
-            logger.debug(
-                "[Deployment] Storing %d tools and %d MCP servers for org=%s team=%s",
-                len(bundle.tools),
-                len(bundle.mcp_servers),
-                organization_id[:8] if organization_id else 'global',
-                team_id[:8] if team_id else 'org-wide'
-            )
-            if bundle.tools:
-                logger.debug("[Deployment] Tool keys being stored: %s", list(bundle.tools.keys())[:10])
+            # logger.debug(
+            #     "[Deployment] Storing %d tools and %d MCP servers for org=%s team=%s",
+            #     len(bundle.tools),
+            #     len(bundle.mcp_servers),
+            #     organization_id[:8] if organization_id else 'global',
+            #     team_id[:8] if team_id else 'org-wide'
+            # )
+            # if bundle.tools:
+                # logger.debug("[Deployment] Tool keys being stored: %s", list(bundle.tools.keys())[:10])
             
             store_tools_for_context(
                 organization_id,
@@ -308,13 +308,13 @@ async def restart_context(organization_id: Optional[str], team_id: Optional[str]
 
     state = await _refresh_context(organization_id, team_id, force=True)
     
-    logger.info(
-        "[Restart] ✅ Context restart completed for org=%s team=%s: %d models, %d agents loaded from DB",
-        organization_id[:8] if organization_id else 'global',
-        team_id[:8] if team_id else 'org-wide',
-        len(state.models_meta),
-        len(state.agents_meta)
-    )
+    # logger.info(
+    #     "[Restart] ✅ Context restart completed for org=%s team=%s: %d models, %d agents loaded from DB",
+    #     organization_id[:8] if organization_id else 'global',
+    #     team_id[:8] if team_id else 'org-wide',
+    #     len(state.models_meta),
+    #     len(state.agents_meta)
+    # )
     
     return state
 
@@ -406,7 +406,7 @@ async def prewarm_user_context(organization_id: str, team_id: Optional[str] = No
     # Check if already loaded
     context_key = context_tuple(organization_id, team_id)
     if context_key in _states and _states[context_key].status == 'ready':
-        logger.debug(f"Context already loaded for org={organization_id[:8]}... team={team_id[:8] if team_id else 'org-wide'}")
+        # logger.debug(f"Context already loaded for org={organization_id[:8]}... team={team_id[:8] if team_id else 'org-wide'}")
         return
     
     try:
@@ -448,7 +448,7 @@ async def prewarm_user_context(organization_id: str, team_id: Optional[str] = No
                 contexts = await cur.fetchall()
         
         if not contexts:
-            logger.debug(f"No configuration found for org={organization_id[:8]}...")
+            # logger.debug(f"No configuration found for org={organization_id[:8]}...")
             return
         
         logger.info(f"Prewarming {len(contexts)} context(s) for org={organization_id[:8]}...")
@@ -465,10 +465,10 @@ async def prewarm_user_context(organization_id: str, team_id: Optional[str] = No
                 models_count = len(status.get('models', []))
                 agents_count = len(status.get('agents', []))
                 
-                logger.info(
-                    f"  ✓ Loaded org={org_id[:8]}... team={team_id_db[:8] if team_id_db else 'org-wide'}: "
-                    f"{models_count} models, {agents_count} agents"
-                )
+                # logger.info(
+                #     f"  ✓ Loaded org={org_id[:8]}... team={team_id_db[:8] if team_id_db else 'org-wide'}: "
+                #     f"{models_count} models, {agents_count} agents"
+                # )
             except Exception as exc:
                 logger.warning(f"  ✗ Failed to prewarm org={org_id} team={team_id_db}: {exc}")
         
@@ -481,7 +481,7 @@ async def initialize_deployments(prewarm_global: bool = True) -> None:
     
     Deployments are now loaded on-demand when users first authenticate.
     """
-    logger.info("✅ Deployment manager ready (will prewarm on first user login)")
+    # logger.info("✅ Deployment manager ready (will prewarm on first user login)")
 
 
 def list_deployments() -> List[Dict[str, any]]:

@@ -304,13 +304,13 @@ async def fetch_context_bundle(
                     # MCP servers must belong to a specific organization
                     server_org_condition = "ms.organization_id = %(organization_id)s" if organization_id else "FALSE"
                     
-                    logger.debug(
-                        "🔍 MCP Server Query for org=%s team=%s | org_condition=%s | team_condition=%s",
-                        organization_id,
-                        team_id,
-                        server_org_condition,
-                        server_team_condition.strip()
-                    )
+                    # logger.debug(
+                    #     "🔍 MCP Server Query for org=%s team=%s | org_condition=%s | team_condition=%s",
+                    #     organization_id,
+                    #     team_id,
+                    #     server_org_condition,
+                    #     server_team_condition.strip()
+                    # )
                     
                     await cur.execute(
                         f"""
@@ -341,20 +341,20 @@ async def fetch_context_bundle(
                         params,
                     )
                     server_rows = await cur.fetchall()
-                    logger.info(
-                        "📊 MCP Servers loaded for org=%s team=%s: %d servers",
-                        organization_id,
-                        team_id,
-                        len(server_rows)
-                    )
+                    # logger.info(
+                    #     "📊 MCP Servers loaded for org=%s team=%s: %d servers",
+                    #     organization_id,
+                    #     team_id,
+                    #     len(server_rows)
+                    # )
                     for row in server_rows:
-                        logger.debug(
-                            "   - Server: %s (id=%s, team_ids=%s, org_id=%s)",
-                            row['server_key'],
-                            row['id'],
-                            row.get('team_ids', []),
-                            row.get('organization_id')
-                        )
+                        # logger.debug(
+                        #     "   - Server: %s (id=%s, team_ids=%s, org_id=%s)",
+                        #     row['server_key'],
+                        #     row['id'],
+                        #     row.get('team_ids', []),
+                        #     row.get('organization_id')
+                        # )
                         servers_map[row['server_key']] = {
                             'id': row['id'],
                             'server_key': row['server_key'],
@@ -390,13 +390,13 @@ async def fetch_context_bundle(
                     # Allow global tools (organization_id IS NULL) to be inherited by all organizations
                     tools_org_condition = "(t.organization_id IS NULL OR t.organization_id = %(organization_id)s)" if organization_id else "t.organization_id IS NULL"
                     
-                    logger.debug(
-                        "🔍 Tools Query for org=%s team=%s | org_condition=%s | team_condition=%s",
-                        organization_id,
-                        team_id,
-                        tools_org_condition,
-                        tools_team_condition.strip()
-                    )
+                    # logger.debug(
+                    #     "🔍 Tools Query for org=%s team=%s | org_condition=%s | team_condition=%s",
+                    #     organization_id,
+                    #     team_id,
+                    #     tools_org_condition,
+                    #     tools_team_condition.strip()
+                    # )
                     
                     await cur.execute(
                         f"""
@@ -439,23 +439,23 @@ async def fetch_context_bundle(
                         params,
                     )
                     tool_rows = await cur.fetchall()
-                    logger.info(
-                        "📊 Tools loaded for org=%s team=%s: %d tools",
-                        organization_id,
-                        team_id,
-                        len(tool_rows)
-                    )
+                    # logger.info(
+                    #     "📊 Tools loaded for org=%s team=%s: %d tools",
+                    #     organization_id,
+                    #     team_id,
+                    #     len(tool_rows)
+                    # )
                     
                     mcp_tool_count = 0
                     for row in tool_rows:
                         if row.get('tool_type') == 'mcp':
                             mcp_tool_count += 1
-                            logger.debug(
-                                "   - MCP Tool: %s (server_id=%s, team_ids=%s)",
-                                row['tool_key'],
-                                row.get('mcp_server_id'),
-                                row.get('team_ids', [])
-                            )
+                            # logger.debug(
+                            #     "   - MCP Tool: %s (server_id=%s, team_ids=%s)",
+                            #     row['tool_key'],
+                            #     row.get('mcp_server_id'),
+                            #     row.get('team_ids', [])
+                            # )
                         
                         rank = _scope_rank(row['organization_id'], row['team_ids'], organization_id, team_id)
                         existing_rank = tool_ranks.get(row['tool_key'])
@@ -480,13 +480,13 @@ async def fetch_context_bundle(
                             tool_ranks[row['tool_key']] = rank
                         max_version = _max_timestamp(max_version, row.get('updated_at') or row.get('created_at'))
                     
-                    if mcp_tool_count > 0:
-                        logger.info(
-                            "   ✅ Loaded %d MCP tools for org=%s team=%s",
-                            mcp_tool_count,
-                            organization_id,
-                            team_id
-                        )
+                    # if mcp_tool_count > 0:
+                        # logger.info(
+                        #     "   ✅ Loaded %d MCP tools for org=%s team=%s",
+                        #     mcp_tool_count,
+                        #     organization_id,
+                        #     team_id
+                        # )
 
                     # Base instructions (organization-scoped only, no team support)
                     instructions_org_condition = "organization_id = %(organization_id)s" if organization_id else "organization_id IS NULL"
@@ -522,15 +522,16 @@ async def fetch_context_bundle(
             base_instructions = {k: v['value'] for k, v in instructions_map.items()}
             
             # Log what was fetched
-            logger.debug(
-                "[DB Fetch] org=%s team=%s: %d tools, %d mcp_servers",
-                organization_id[:8] if organization_id else 'global',
-                team_id[:8] if team_id else 'org-wide',
-                len(tools_map),
-                len(servers_map)
-            )
+            # logger.debug(
+            #     "[DB Fetch] org=%s team=%s: %d tools, %d mcp_servers",
+            #     organization_id[:8] if organization_id else 'global',
+            #     team_id[:8] if team_id else 'org-wide',
+            #     len(tools_map),
+            #     len(servers_map)
+            # )
             if tools_map:
-                logger.debug("[DB Fetch] Tool keys: %s", list(tools_map.keys())[:10])
+                pass
+                # logger.debug("[DB Fetch] Tool keys: %s", list(tools_map.keys())[:10])
             
             # Add MCP server info to tools
             for tool_key, tool_data in tools_map.items():

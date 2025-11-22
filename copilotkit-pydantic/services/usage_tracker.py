@@ -137,40 +137,40 @@ def create_usage_tracking_callback(
         if hasattr(usage, 'input_tokens') and hasattr(usage, 'output_tokens'):
             raw_input = getattr(usage, 'input_tokens', 0)
             raw_output = getattr(usage, 'output_tokens', 0)
-            logger.debug(f"Direct attributes - input: {raw_input}, output: {raw_output}")
+            # logger.debug(f"Direct attributes - input: {raw_input}, output: {raw_output}")
             if raw_input > 0 or raw_output > 0:
                 req_tokens = _safe_int(raw_input)
                 res_tokens = _safe_int(raw_output)
                 total_tokens = req_tokens + res_tokens
-                logger.debug(
-                    "✓ Using direct attributes - request: %s, response: %s, total: %s",
-                    req_tokens,
-                    res_tokens,
-                    total_tokens,
-                )
+                # logger.debug(
+                #     "✓ Using direct attributes - request: %s, response: %s, total: %s",
+                #     req_tokens,
+                #     res_tokens,
+                #     total_tokens,
+                # )
 
         if req_tokens == 0 and res_tokens == 0 and details_dict is not None:
-            logger.debug(f"Checking details dict: {details_dict}")
+            # logger.debug(f"Checking details dict: {details_dict}")
             if 'input_tokens' in details_dict and 'output_tokens' in details_dict:
                 req_tokens = _safe_int(details_dict.get('input_tokens', 0))
                 res_tokens = _safe_int(details_dict.get('output_tokens', 0))
                 total_tokens = req_tokens + res_tokens
-                logger.debug(
-                    "✓ Using details dict (Anthropic) - request: %s, response: %s, total: %s",
-                    req_tokens,
-                    res_tokens,
-                    total_tokens,
-                )
+                # logger.debug(
+                #     "✓ Using details dict (Anthropic) - request: %s, response: %s, total: %s",
+                #     req_tokens,
+                #     res_tokens,
+                #     total_tokens,
+                # )
             elif 'prompt_tokens' in details_dict and 'completion_tokens' in details_dict:
                 req_tokens = _safe_int(details_dict.get('prompt_tokens', 0))
                 res_tokens = _safe_int(details_dict.get('completion_tokens', 0))
                 total_tokens = _safe_int(details_dict.get('total_tokens', req_tokens + res_tokens))
-                logger.debug(
-                    "✓ Using details dict (OpenAI) - request: %s, response: %s, total: %s",
-                    req_tokens,
-                    res_tokens,
-                    total_tokens,
-                )
+                # logger.debug(
+                #     "✓ Using details dict (OpenAI) - request: %s, response: %s, total: %s",
+                #     req_tokens,
+                #     res_tokens,
+                #     total_tokens,
+                # )
 
         if req_tokens == 0 and res_tokens == 0 and hasattr(usage, 'request_tokens'):
             request_tokens_attr = getattr(usage, 'request_tokens')
@@ -184,13 +184,13 @@ def create_usage_tracking_callback(
                 req_tokens = _safe_int(request_tokens_attr)
                 res_tokens = _safe_int(response_tokens_attr)
                 total_tokens = _safe_int(total_tokens_attr)
-            if req_tokens > 0 or res_tokens > 0:
-                logger.debug(
-                    "✓ Using token properties - request: %s, response: %s, total: %s",
-                    req_tokens,
-                    res_tokens,
-                    total_tokens,
-                )
+            # if req_tokens > 0 or res_tokens > 0:
+                # logger.debug(
+                #     "✓ Using token properties - request: %s, response: %s, total: %s",
+                #     req_tokens,
+                #     res_tokens,
+                #     total_tokens,
+                # )
 
         if req_tokens == 0 and res_tokens == 0:
             logger.warning("⚠ Could not extract non-zero usage. Usage repr: %s", repr(usage))

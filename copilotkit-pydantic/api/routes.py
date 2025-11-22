@@ -1,8 +1,9 @@
 """API route handlers for agent endpoints."""
 
 from fastapi import FastAPI, Request, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+import asyncio
 
 from config import DEBUG, logger
 from config.db_loaders import _sync_cache as _context_cache  # for readiness check
@@ -23,9 +24,24 @@ from services import (
     list_endpoints,
     prewarm_user_context,
 )
+
+from ag_ui.encoder import EventEncoder
+from anyio import create_memory_object_stream, create_task_group
+from anyio.streams.memory import MemoryObjectSendStream
+from pydantic import ValidationError
+
 from services.deployment_manager import DeploymentError
-from pydantic_ai.ag_ui import AGUIAdapter
-from pydantic_ai.ag_ui import StateDeps
+from pydantic_ai.ag_ui import AGUIAdapter, StateDeps, run_ag_ui
+from pydantic_ai.ui import SSE_CONTENT_TYPE
+from ag_ui.core import CustomEvent, RunAgentInput
+from dataclasses import dataclass
+
+@dataclass
+class ExtendedDeps:
+    """Extended dependencies including state, send_stream, and adapter."""
+    state: AgentState
+    send_stream: MemoryObjectSendStream[str] | None = None
+    adapter: AGUIAdapter | None = None
 
 class DeploymentRequest(BaseModel):
     organization_id: str
@@ -45,39 +61,145 @@ def _make_unauthorized(message: str) -> JSONResponse:
     return JSONResponse(status_code=401, content={"error": message})
 
 
+def _extract_auth_context(request: Request) -> tuple[str | None, ...]:
+    """Extract authentication context headers from request."""
+    return (
+        request.headers.get("x-copilot-session-id"),
+        request.headers.get("x-copilot-thread-id"),
+        request.headers.get("x-copilot-user-id"),
+        request.headers.get("x-copilot-organization-id"),
+        request.headers.get("x-copilot-team-id"),
+    )
+
+
+def _trigger_prewarm(organization_id: str, background_tasks: BackgroundTasks) -> None:
+    """Trigger prewarming for an organization if not already done."""
+    if organization_id not in _prewarmed_orgs:
+        _prewarmed_orgs.add(organization_id)
+        background_tasks.add_task(prewarm_user_context, organization_id, None)
+
+
+async def _resolve_tracking_ids(
+    agent_type: str, model: str, organization_id: str, team_id: str
+) -> tuple[str | None, str | None]:
+    """Resolve database IDs for agent and model for usage tracking."""
+    agent_db_id = None
+    model_db_id = None
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Resolve Agent ID
+                await cur.execute(
+                    """
+                    SELECT a.id,
+                           CASE
+                             WHEN EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id AND at.team_id = %s) 
+                                  AND a.organization_id = %s THEN 0
+                             WHEN NOT EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id) 
+                                  AND a.organization_id = %s THEN 1
+                             WHEN a.organization_id IS NULL 
+                                  AND NOT EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id) THEN 2
+                         ELSE 3
+                           END as priority
+                      FROM agents a
+                     WHERE a.agent_type = %s
+                       AND (a.organization_id IS NULL OR a.organization_id = %s)
+                       AND (
+                           NOT EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id)
+                           OR EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id AND at.team_id = %s)
+                       )
+                     ORDER BY priority, a.created_at DESC
+                     LIMIT 1
+                    """,
+                    (
+                        team_id,
+                        organization_id,
+                        organization_id,
+                        agent_type,
+                        organization_id,
+                        team_id,
+                    ),
+                )
+                agent_row = await cur.fetchone()
+                if agent_row:
+                    agent_db_id = agent_row.get("id")
+
+                # Resolve Model ID
+                await cur.execute(
+                    """
+                    SELECT m.id,
+                           CASE
+                             WHEN EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id AND mt.team_id = %s) 
+                                  AND m.organization_id = %s THEN 0
+                             WHEN NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id) 
+                                  AND m.organization_id = %s THEN 1
+                             WHEN m.organization_id IS NULL 
+                                  AND NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id) THEN 2
+                         ELSE 3
+                           END as priority
+                      FROM models m
+                     WHERE m.model_key = %s
+                       AND (m.organization_id IS NULL OR m.organization_id = %s)
+                       AND (
+                           NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id)
+                           OR EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id AND mt.team_id = %s)
+                       )
+                     ORDER BY priority, m.created_at DESC
+                     LIMIT 1
+                    """,
+                    (
+                        team_id,
+                        organization_id,
+                        organization_id,
+                        model,
+                        organization_id,
+                        team_id,
+                    ),
+                )
+                model_row = await cur.fetchone()
+                if model_row:
+                    model_db_id = model_row.get("id")
+    except Exception as exc:
+        logger.warning(
+            "Failed to resolve agent/model IDs for usage tracking: %s",
+            exc,
+        )
+
+    if agent_db_id is None:
+        logger.warning(
+            "Falling back to agent type for usage tracking id resolution: %s",
+            agent_type,
+        )
+    if model_db_id is None:
+        logger.warning(
+            "Falling back to model key for usage tracking id resolution: %s",
+            model,
+        )
+
+    return agent_db_id, model_db_id
+
+
 def register_agent_routes(app: FastAPI) -> None:
     """Register agent routes with parameterized handler."""
-
-    if DEBUG:
-        logger.info("Registering agent endpoint with dynamic context resolution")
 
     @app.post("/agent/{agent_type}/{model}")
     async def run_agent(
         agent_type: str, model: str, request: Request, background_tasks: BackgroundTasks
     ):
         # Enforce authentication context propagated from runtime
-        session_id = request.headers.get("x-copilot-session-id")
-        thread_id = request.headers.get("x-copilot-thread-id")
-        user_id = request.headers.get("x-copilot-user-id")
-        organization_id = request.headers.get("x-copilot-organization-id")
-        team_id = request.headers.get("x-copilot-team-id")
+        (
+            session_id,
+            thread_id,
+            user_id,
+            organization_id,
+            team_id,
+        ) = _extract_auth_context(request)
 
         if not session_id or not user_id or not organization_id or not team_id:
             return _make_unauthorized("Missing authentication context")
 
         conversation_id = thread_id or session_id
-
-        if DEBUG and thread_id:
-            logger.debug(
-                "Using thread conversation id=%s (auth session=%s) for agent request",
-                conversation_id,
-                session_id,
-            )
-
-        # Prewarm organization deployments on first authenticated request
-        if organization_id not in _prewarmed_orgs:
-            _prewarmed_orgs.add(organization_id)
-            background_tasks.add_task(prewarm_user_context, organization_id, None)
+        _trigger_prewarm(organization_id, background_tasks)
 
         try:
             await ensure_agent_ready(organization_id, team_id, agent_type, model)
@@ -112,99 +234,9 @@ def register_agent_routes(app: FastAPI) -> None:
                 status_code=exc.status_code, content={"error": str(exc)}
             )
 
-        # Let handle_ag_ui_request extract and manage state automatically from the request
-        print(f"[AGENT_REQUEST] Delegating state management to handle_ag_ui_request")
-
-        agent_db_id = None
-        model_db_id = None
-        try:
-            async with get_db_connection() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(
-                        """
-                        SELECT a.id,
-                               CASE
-                                 WHEN EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id AND at.team_id = %s) 
-                                      AND a.organization_id = %s THEN 0
-                                 WHEN NOT EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id) 
-                                      AND a.organization_id = %s THEN 1
-                                 WHEN a.organization_id IS NULL 
-                                      AND NOT EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id) THEN 2
-                             ELSE 3
-                               END as priority
-                          FROM agents a
-                         WHERE a.agent_type = %s
-                           AND (a.organization_id IS NULL OR a.organization_id = %s)
-                           AND (
-                               NOT EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id)
-                               OR EXISTS (SELECT 1 FROM agent_teams at WHERE at.agent_id = a.id AND at.team_id = %s)
-                           )
-                         ORDER BY priority, a.created_at DESC
-                         LIMIT 1
-                        """,
-                        (
-                            team_id,
-                            organization_id,
-                            organization_id,
-                            agent_type,
-                            organization_id,
-                            team_id,
-                        ),
-                    )
-                    agent_row = await cur.fetchone()
-                    if agent_row:
-                        agent_db_id = agent_row.get("id")
-
-                    await cur.execute(
-                        """
-                        SELECT m.id,
-                               CASE
-                                 WHEN EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id AND mt.team_id = %s) 
-                                      AND m.organization_id = %s THEN 0
-                                 WHEN NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id) 
-                                      AND m.organization_id = %s THEN 1
-                                 WHEN m.organization_id IS NULL 
-                                      AND NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id) THEN 2
-                             ELSE 3
-                               END as priority
-                          FROM models m
-                         WHERE m.model_key = %s
-                           AND (m.organization_id IS NULL OR m.organization_id = %s)
-                           AND (
-                               NOT EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id)
-                               OR EXISTS (SELECT 1 FROM model_teams mt WHERE mt.model_id = m.id AND mt.team_id = %s)
-                           )
-                         ORDER BY priority, m.created_at DESC
-                         LIMIT 1
-                        """,
-                        (
-                            team_id,
-                            organization_id,
-                            organization_id,
-                            model,
-                            organization_id,
-                            team_id,
-                        ),
-                    )
-                    model_row = await cur.fetchone()
-                    if model_row:
-                        model_db_id = model_row.get("id")
-        except Exception as exc:
-            logger.warning(
-                "Failed to resolve agent/model IDs for usage tracking: %s",
-                exc,
-            )
-
-        if agent_db_id is None:
-            logger.warning(
-                "Falling back to agent type for usage tracking id resolution: %s",
-                agent_type,
-            )
-        if model_db_id is None:
-            logger.warning(
-                "Falling back to model key for usage tracking id resolution: %s",
-                model,
-            )
+        agent_db_id, model_db_id = await _resolve_tracking_ids(
+            agent_type, model, organization_id, team_id
+        )
 
         usage_callback = create_usage_tracking_callback(
             session_id=conversation_id,
@@ -220,13 +252,61 @@ def register_agent_routes(app: FastAPI) -> None:
         )
 
         try:
-                        
-            response = await AGUIAdapter.dispatch_request(
-                request=request,
-                agent=await get_agent(agent_type, model, organization_id, team_id),
-                deps=StateDeps[AgentState](state=AgentState(steps=[])),
-                on_complete=usage_callback,
+
+            # response = await AGUIAdapter.dispatch_request(
+            #     request=request,
+            #     agent=await get_agent(agent_type, model, organization_id, team_id),
+            #     deps=StateDeps[AgentState](state=AgentState(steps=[])),
+            #     on_complete=usage_callback,
+            # )
+
+            accept = request.headers.get('accept', SSE_CONTENT_TYPE)
+            try:
+                run_input = RunAgentInput.model_validate(await request.json())
+            except ValidationError as e:  
+                return JSONResponse(
+                    content=e.errors(),
+                    status_code=422,
+                )
+
+            # Initialize agent once
+            agent_instance = await get_agent(agent_type, model, organization_id, team_id)
+
+            adapter = AGUIAdapter(
+                run_input=run_input,
+                agent=agent_instance,
+                accept=accept,
             )
+
+            send_stream, receive_stream = create_memory_object_stream[str]()
+
+            async def run_agent_task(send_stream: MemoryObjectSendStream[str]) -> None:
+                async with send_stream:
+                    # Create extended deps with state, send_stream, and adapter
+                    extended_deps = ExtendedDeps(
+                        state=AgentState(steps=[]),
+                        send_stream=send_stream,
+                        adapter=adapter
+                    )
+                    event_stream = run_ag_ui(
+                        agent=agent_instance,
+                        run_input=run_input,
+                        deps=extended_deps,
+                        on_complete=usage_callback
+                    )
+                    async for event in event_stream:
+                        await send_stream.send(event)
+
+            async def event_generator():
+                """Generate SSE events from memory stream."""
+                async with create_task_group() as tg:
+                    tg.start_soon(run_agent_task, send_stream)
+                    async with receive_stream:
+                        async for event_str in receive_stream:
+                            yield event_str
+
+            response = StreamingResponse(event_generator(), media_type=accept)
+
         except Exception as exc:
             logger.exception(
                 "Agent invocation failed session=%s org=%s team=%s agent=%s model=%s",
@@ -256,14 +336,14 @@ def register_agent_routes(app: FastAPI) -> None:
             )
             raise
 
-        if DEBUG:
-            logger.info(
-                "[%s] Completed agent call session=%s org=%s team=%s",
-                getattr(request.state, "req_id", "unknown"),
-                conversation_id,
-                organization_id,
-                team_id,
-            )
+        # if DEBUG:
+        #     logger.info(
+        #         "[%s] Completed agent call session=%s org=%s team=%s",
+        #         getattr(request.state, "req_id", "unknown"),
+        #         conversation_id,
+        #         organization_id,
+        #         team_id,
+        #     )
         return response
 
     logger.info("Registered: POST /agent/{agent_type}/{model}")
@@ -371,26 +451,9 @@ def register_info_routes(app: FastAPI) -> None:
         organization_id = request.headers.get("x-copilot-organization-id")
         team_id = request.headers.get("x-copilot-team-id")
 
-        logger.debug(
-            "[Deployments] Request headers: org_id=%s team_id=%s",
-            organization_id[:8] if organization_id else None,
-            team_id[:8] if team_id else None,
-        )
-
         # Prewarm organization deployments on first authenticated request
-        if organization_id and organization_id not in _prewarmed_orgs:
-            logger.info(
-                "[Deployments] 🚀 Triggering prewarm for organization: %s",
-                organization_id[:8],
-            )
-            _prewarmed_orgs.add(organization_id)
-            background_tasks.add_task(prewarm_user_context, organization_id, None)
-        elif organization_id:
-            logger.debug(
-                "[Deployments] Organization %s already prewarmed", organization_id[:8]
-            )
-        else:
-            logger.debug("[Deployments] No organization_id in request headers")
+        if organization_id:
+             _trigger_prewarm(organization_id, background_tasks)
 
         return {"deployments": list_deployments()}
 
@@ -402,27 +465,10 @@ def register_info_routes(app: FastAPI) -> None:
         organization_id = request.headers.get("x-copilot-organization-id")
         team_id = request.headers.get("x-copilot-team-id")
 
-        logger.debug(
-            "[Endpoints] Request headers: org_id=%s team_id=%s",
-            organization_id[:8] if organization_id else None,
-            team_id[:8] if team_id else None,
-        )
-
         # Prewarm organization deployments on first authenticated request
-        if organization_id and organization_id not in _prewarmed_orgs:
-            logger.info(
-                "[Endpoints] 🚀 Triggering prewarm for organization: %s",
-                organization_id[:8],
-            )
-            _prewarmed_orgs.add(organization_id)
-            background_tasks.add_task(prewarm_user_context, organization_id, None)
-        elif organization_id:
-            logger.debug(
-                "[Endpoints] Organization %s already prewarmed", organization_id[:8]
-            )
-        else:
-            logger.debug("[Endpoints] No organization_id in request headers")
-
+        if organization_id:
+            _trigger_prewarm(organization_id, background_tasks)
+        
         return {"endpoints": list_endpoints()}
 
     @app.get("/tools/{agent_type}/{model}")
@@ -447,23 +493,13 @@ def register_info_routes(app: FastAPI) -> None:
             return _make_unauthorized("Missing authentication context")
 
         # Prewarm organization deployments on first authenticated request
-        if organization_id not in _prewarmed_orgs:
-            _prewarmed_orgs.add(organization_id)
-            background_tasks.add_task(prewarm_user_context, organization_id, None)
+        _trigger_prewarm(organization_id, background_tasks)
 
         try:
             # Ensure agent is ready before fetching tools
             try:
                 await ensure_agent_ready(organization_id, team_id, agent_type, model)
             except DeploymentError as exc:
-                logger.warning(
-                    "Deployment error for tools endpoint org=%s team=%s agent=%s model=%s: %s",
-                    organization_id,
-                    team_id,
-                    agent_type,
-                    model,
-                    exc,
-                )
                 return JSONResponse(
                     status_code=exc.status_code, content={"error": str(exc)}
                 )
@@ -494,27 +530,14 @@ def register_info_routes(app: FastAPI) -> None:
 
             # If no allowed_tools specified (None or empty list), include all enabled tools
             if not allowed_tool_keys:
-                logger.debug(
-                    "No specific tools for agent %s, defaulting to all enabled tools from %d definitions",
-                    agent_type,
-                    len(tool_definitions),
-                )
                 allowed_tool_keys = [
                     key
                     for key, data in tool_definitions.items()
                     if data.get("enabled", True)
                 ]
-            else:
-                logger.debug(
-                    "Agent %s has %d allowed tools configured",
-                    agent_type,
-                    len(allowed_tool_keys),
-                )
 
             # Extract tool information drawn from configuration and runtime
             tools: list[dict] = []
-            tools_by_key: dict[str, dict] = {}
-
             def _extract_parameters(config_entry: dict | None) -> list[dict]:
                 params: list[dict] = []
                 if not isinstance(config_entry, dict):
@@ -574,7 +597,7 @@ def register_info_routes(app: FastAPI) -> None:
                                 str(server_key)
                             ) or mcp_servers.get(server_key)
                     
-                    # CRITICAL FIX: Filter out MCP tools whose servers are not available to this team
+                    # Filter out MCP tools whose servers are not available to this team
                     if not server_info:
                         filtered_count["mcp_no_server"] += 1
                         logger.debug(
@@ -593,21 +616,7 @@ def register_info_routes(app: FastAPI) -> None:
                         )
                         entry["mcp_server_key"] = server_info.get("server_key")
 
-                tools_by_key[tool_key] = entry
-            
-            # Log filtering results
-            logger.info(
-                "Tool filtering for team %s: processed=%d, filtered_mcp_no_server=%d, final_count=%d",
-                team_id,
-                filtered_count["total_processed"],
-                filtered_count["mcp_no_server"],
-                len(tools_by_key)
-            )
-
-            # Preserve original ordering from allowed_tool_keys
-            for tool_key in allowed_tool_keys:
-                if tool_key in tools_by_key:
-                    tools.append(tools_by_key[tool_key])
+                tools.append(entry)
 
             # Include runtime-registered tools that may not be present in config (custom, builtin, etc.)
             seen_runtime = {(item.get("source"), item.get("name")) for item in tools}
@@ -669,16 +678,17 @@ def register_info_routes(app: FastAPI) -> None:
 
             # MCP toolsets loaded at runtime (may expose additional metadata)
             if hasattr(agent, "_user_toolsets") and agent._user_toolsets:
-                for toolset in agent._user_toolsets:
+                async def _fetch_mcp_tools(toolset):
+                    extracted = []
                     if not hasattr(toolset, "tool_prefix"):
-                        continue
+                        return extracted
 
                     try:
                         if hasattr(toolset, "__aenter__"):
                             await toolset.__aenter__()
 
                         if not hasattr(toolset, "list_tools"):
-                            continue
+                            return extracted
 
                         tool_list = await toolset.list_tools()
                         for mcp_tool in tool_list:
@@ -688,10 +698,7 @@ def register_info_routes(app: FastAPI) -> None:
                                 else str(mcp_tool)
                             )
                             display_name = f"{toolset.tool_prefix}_{tool_name}"
-                            identifier = ("mcp", display_name)
-                            if identifier in seen_runtime:
-                                continue
-
+                            
                             parameters: list[dict] = []
                             if hasattr(mcp_tool, "inputSchema"):
                                 schema = mcp_tool.inputSchema
@@ -710,17 +717,13 @@ def register_info_routes(app: FastAPI) -> None:
                                             }
                                         )
 
-                            tools.append(
-                                {
-                                    "name": display_name,
-                                    "description": getattr(mcp_tool, "description", "")
-                                    or "",
-                                    "parameters": parameters,
-                                    "source": "mcp",
-                                    "mcp_server": getattr(toolset, "id", None),
-                                }
-                            )
-                            seen_runtime.add(identifier)
+                            extracted.append({
+                                "name": display_name,
+                                "description": getattr(mcp_tool, "description", "") or "",
+                                "parameters": parameters,
+                                "source": "mcp",
+                                "mcp_server": getattr(toolset, "id", None),
+                            })
                     except Exception as exc:  # pragma: no cover
                         logger.error(
                             "Failed to extract MCP tools from %s: %s",
@@ -728,6 +731,20 @@ def register_info_routes(app: FastAPI) -> None:
                             exc,
                             exc_info=True,
                         )
+                    return extracted
+
+                # Fetch all toolsets in parallel
+                mcp_results = await asyncio.gather(
+                    *[_fetch_mcp_tools(ts) for ts in agent._user_toolsets]
+                )
+                
+                for toolset_tools in mcp_results:
+                    for tool in toolset_tools:
+                        identifier = ("mcp", tool["name"])
+                        if identifier in seen_runtime:
+                            continue
+                        tools.append(tool)
+                        seen_runtime.add(identifier)
 
             # Compute breakdown for logging
             source_counts = {
@@ -737,18 +754,6 @@ def register_info_routes(app: FastAPI) -> None:
                 "mcp": len([t for t in tools if t.get("source") == "mcp"]),
                 "custom": len([t for t in tools if t.get("source") == "custom"]),
             }
-
-            logger.info(
-                "Returning %d tools for agent %s/%s (frontend=%d, backend=%d, builtin=%d, mcp=%d, custom=%d)",
-                len(tools),
-                agent_type,
-                model,
-                source_counts["frontend"],
-                source_counts["backend"],
-                source_counts["builtin"],
-                source_counts["mcp"],
-                source_counts["custom"],
-            )
 
             return {
                 "agent_type": agent_type,

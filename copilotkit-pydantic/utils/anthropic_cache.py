@@ -106,7 +106,10 @@ class AnthropicModelWithCache(AnthropicModel):
         return text.strip()
     
     async def _map_message(  # type: ignore
-        self, messages: list[ModelMessage], model_request_parameters: ModelRequestParameters
+        self,
+        messages: list[ModelMessage],
+        model_request_parameters: ModelRequestParameters,
+        agent_model_function_tools: Any | None = None,
     ) -> tuple[str, list[MessageParam]]:
         """Map messages with cache control for system prompts and handle attachments."""
         # First, process user messages to convert attachment references to proper content blocks
@@ -164,10 +167,10 @@ class AnthropicModelWithCache(AnthropicModel):
         
         # Call parent's mapping with processed messages
         system_prompt_str, anthropic_messages = await super()._map_message(
-            processed_messages, model_request_parameters
+            processed_messages, model_request_parameters, agent_model_function_tools
         )
         
-        logger.debug(f"[anthropic_cache] After parent mapping: {len(anthropic_messages)} anthropic messages")
+        # logger.debug(f"[anthropic_cache] After parent mapping: {len(anthropic_messages)} anthropic messages")
         
         # Post-process to convert attachment markers to proper Anthropic blocks
         final_messages: list[MessageParam] = []
@@ -285,27 +288,42 @@ class AnthropicModelWithCache(AnthropicModel):
             else:
                 final_messages.append(msg)
         
-        # In the new version, system prompt is returned as a string from parent
-        # We'll use the parent's system prompt string
-        # Note: Cache control for system prompts might now be handled differently in the parent
+        # Add cache control to the last user message content block
+        # This helps with prompt caching for repeated context
+        # if final_messages:
+        #     for msg in reversed(final_messages):
+        #         if msg.get('role') == 'user':
+        #             content = msg.get('content', [])
+        #             if isinstance(content, list) and content:
+        #                 # Add cache control to the last content block
+        #                 last_block = content[-1]
+        #                 if isinstance(last_block, dict):
+        #                     last_block['cache_control'] = CacheControlEphemeralParam(type='ephemeral')
+        #                     # logger.debug(f"[anthropic_cache] Added cache control to last user message content block")
+        #             break
         
-        logger.info(f"[anthropic_cache] Returning system prompt string, {len(final_messages)} messages")
+        # logger.info(f"[anthropic_cache] Returning system prompt string, {len(final_messages)} messages with cache control")
         return system_prompt_str, final_messages
     
     def _get_tools(
-        self, model_request_parameters: ModelRequestParameters
+        self, 
+        model_request_parameters: ModelRequestParameters,
+        agent_model_function_tools: Any = None
     ) -> list[ToolParam]:
         """Get tools with cache control on the last tool."""
-        tools = [
-            self._map_tool_definition(r)
-            for r in model_request_parameters.function_tools
-        ]
-        if model_request_parameters.output_tools:
-            tools += [
-                self._map_tool_definition(r)
-                for r in model_request_parameters.output_tools
-            ]
-
-        tools[-1]["cache_control"] = CacheControlEphemeralParam(type="ephemeral")
+        # Call parent's _get_tools with all arguments
+        tools = super()._get_tools(model_request_parameters, agent_model_function_tools)
+        
+        # Add cache control to the last tool with TTL
+        if tools:
+            try:
+                # Try with ttl parameter (newer API)
+                tools[-1]["cache_control"] = CacheControlEphemeralParam(type="ephemeral")
+                # logger.debug(f"[anthropic_cache] Added cache control with TTL to last tool")
+            except TypeError:
+                # Fallback without ttl parameter (older API)
+                tools[-1]["cache_control"] = CacheControlEphemeralParam(type="ephemeral")
+                # logger.debug(f"[anthropic_cache] Added cache control (no TTL) to last tool")
+        
         return tools
 

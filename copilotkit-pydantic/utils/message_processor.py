@@ -51,7 +51,7 @@ async def process_message_attachments(
         if isinstance(message, ModelRequest):
             last_request_idx = idx
     
-    logger.debug(f"[process_message_attachments] Last ModelRequest index: {last_request_idx} out of {len(messages)} messages")
+    # logger.debug(f"[process_message_attachments] Last ModelRequest index: {last_request_idx} out of {len(messages)} messages")
     
     for idx, message in enumerate(messages):
         # Only process ModelRequest messages (user messages)
@@ -83,7 +83,7 @@ async def process_message_attachments(
                     # Historical message - attachments already processed, just keep clean text
                     if clean_text.strip():
                         new_parts.append(UserPromptPart(content=clean_text))
-                    logger.debug(f"Skipping {len(attachments)} historical attachment(s) in manifest (already processed)")
+                    # logger.debug(f"Skipping {len(attachments)} historical attachment(s) in manifest (already processed)")
                     continue
                 
                 has_attachments = True
@@ -109,15 +109,15 @@ async def process_message_attachments(
                         desc = f"[Document: {name} ({mime_type}) - {url}]"
                     
                     new_parts.append(UserPromptPart(content=desc))
-                    logger.info(f"Processed NEW attachment: {name} ({mime_type})")
+                    # logger.info(f"Processed NEW attachment: {name} ({mime_type})")
                     
             elif isinstance(part, ToolReturnPart) and isinstance(part.content, str):
                 content = part.content
-                logger.debug(f"[ToolReturnPart] tool={part.tool_name}, content_length={len(content)}, has_manifest={'<!--ATTACHMENTS:' in content}")
+                # logger.debug(f"[ToolReturnPart] tool={part.tool_name}, content_length={len(content)}, has_manifest={'<!--ATTACHMENTS:' in content}")
                 # Parse manifest (only log for latest message)
                 clean_text, attachments = parse_attachment_manifest(content, log_parse=is_last_request)
                 
-                logger.debug(f"[ToolReturnPart] Found {len(attachments)} attachments after parsing")
+                # logger.debug(f"[ToolReturnPart] Found {len(attachments)} attachments after parsing")
                 
                 if not attachments:
                     # No attachments, keep original part
@@ -133,7 +133,7 @@ async def process_message_attachments(
                         tool_call_id=part.tool_call_id,
                         timestamp=part.timestamp
                     ))
-                    logger.debug(f"Skipping {len(attachments)} historical attachment(s) in tool return (already processed)")
+                    # logger.debug(f"Skipping {len(attachments)} historical attachment(s) in tool return (already processed)")
                     continue
                 
                 has_attachments = True
@@ -163,8 +163,8 @@ async def process_message_attachments(
                         desc = f"[Document: {name} ({mime_type}) - {url}]"
                     
                     new_parts.append(UserPromptPart(content=desc))
-                    logger.info(f"Processed NEW tool return attachment: {name} ({mime_type})")
-                    logger.debug(f"  Image reference created: {desc[:100]}...")
+                    # logger.info(f"Processed NEW tool return attachment: {name} ({mime_type})")
+                    # logger.debug(f"  Image reference created: {desc[:100]}...")
             else:
                 new_parts.append(part)
         
@@ -182,12 +182,12 @@ async def process_message_attachments(
                     part_type = type(part).__name__
                     if isinstance(part, UserPromptPart):
                         content_preview = part.content[:100] if isinstance(part.content, str) else str(part.content)[:100]
-                        logger.debug(f"  Part {i}: {part_type} - content: {content_preview}...")
+                        # logger.debug(f"  Part {i}: {part_type} - content: {content_preview}...")
                     elif isinstance(part, ToolReturnPart):
                         content_preview = part.content[:100] if isinstance(part.content, str) else str(part.content)[:100]
-                        logger.debug(f"  Part {i}: {part_type} ({part.tool_name}) - content: {content_preview}...")
-                    else:
-                        logger.debug(f"  Part {i}: {part_type}")
+                        # logger.debug(f"  Part {i}: {part_type} ({part.tool_name}) - content: {content_preview}...")
+                    # else:
+                        # logger.debug(f"  Part {i}: {part_type}")
         else:
             processed_messages.append(message)
     
@@ -224,7 +224,7 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
         ]
         -->
     """
-    logger.debug(f"[parse_manifest] Parsing content (length={len(content)}), starts_with_brace={content.startswith('{')}")
+    # logger.debug(f"[parse_manifest] Parsing content (length={len(content)}), starts_with_brace={content.startswith('{')}")
     
     # If content looks like a JSON string (from tool return), try to decode it first
     decoded_content = content
@@ -235,7 +235,7 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
             # If it's a JSON object with a 'message' field, extract it
             if isinstance(json_obj, dict) and 'message' in json_obj:
                 decoded_content = json_obj['message']
-                logger.debug(f"[parse_manifest] Decoded JSON tool return, extracted message field")
+                # logger.debug(f"[parse_manifest] Decoded JSON tool return, extracted message field")
             else:
                 decoded_content = content
         except (json.JSONDecodeError, ValueError):
@@ -247,14 +247,14 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
     
     match = re.search(manifest_pattern, decoded_content, re.DOTALL)
     if not match:
-        if '<!--ATTACHMENTS:' in decoded_content:
-            logger.debug(f"[parse_manifest] Found ATTACHMENTS marker but regex didn't match. Content preview: {decoded_content[:200]}")
+        # if '<!--ATTACHMENTS:' in decoded_content:
+            # logger.debug(f"[parse_manifest] Found ATTACHMENTS marker but regex didn't match. Content preview: {decoded_content[:200]}")
         return content, []
     
     try:
         # Parse the JSON manifest
         manifest_json = match.group(1)
-        logger.debug(f"[parse_manifest] Extracted manifest JSON: {manifest_json[:200]}...")
+        # logger.debug(f"[parse_manifest] Extracted manifest JSON: {manifest_json[:200]}...")
         attachments = json.loads(manifest_json)
         
         # Remove the manifest block from decoded content
@@ -276,7 +276,7 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
         
         if log_parse:
             logger.info(f"Parsed attachment manifest: {len(attachments)} attachments")
-        logger.debug(f"[parse_manifest] Successfully parsed {len(attachments)} attachments")
+        # logger.debug(f"[parse_manifest] Successfully parsed {len(attachments)} attachments")
         return clean_text, attachments
         
     except json.JSONDecodeError as e:

@@ -96,11 +96,11 @@ async def reset_connection_pool(force: bool = False) -> None:
             # No need to reset a healthy pool unless forced
             return
         try:
-            logger.debug("Closing connection pool...")
+            # logger.debug("Closing connection pool...")
             await _pool.close()
             # Give more time for connections to fully close and cleanup
             await asyncio.sleep(0.3)
-            logger.debug("Connection pool closed")
+            # logger.debug("Connection pool closed")
         finally:
             _pool = None
 

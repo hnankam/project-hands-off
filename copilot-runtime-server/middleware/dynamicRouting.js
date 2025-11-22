@@ -201,7 +201,7 @@ export function createDynamicRoutingMiddleware(runtime) {
             }
           } catch (teamNameError) {
             if (DEBUG) {
-              log('⚠️ Error fetching team name:', teamNameError.message, reqId);
+              // log('⚠️ Error fetching team name:', teamNameError.message, reqId);
             }
           }
         }
@@ -209,7 +209,7 @@ export function createDynamicRoutingMiddleware(runtime) {
     } catch (authError) {
       // Auth is optional for copilotkit requests - continue without auth context
       if (DEBUG) {
-        log('No auth session for request:', authError.message, reqId);
+        // log('No auth session for request:', authError.message, reqId);
       }
       return res.status(401).json({ error: 'Authentication required' });
     }
@@ -232,8 +232,8 @@ export function createDynamicRoutingMiddleware(runtime) {
     log('=== CopilotKit Request ===', reqId);
     log('Agent:', agent, 'Model:', model, 'Method:', req.method, 'Path:', req.path, 'URL:', req.url);
     if (authContext.userId) {
-      log('User:', authContext.userEmail, 'Org:', authContext.organizationName || 'none', 'Team:', authContext.teamId || 'none', reqId);
-      log('IDs - UserID:', authContext.userId, 'OrgID:', authContext.organizationId || 'none', 'TeamID:', authContext.teamId || 'none', reqId);
+      // log('User:', authContext.userEmail, 'Org:', authContext.organizationName || 'none', 'Team:', authContext.teamId || 'none', reqId);
+      // log('IDs - UserID:', authContext.userId, 'OrgID:', authContext.organizationId || 'none', 'TeamID:', authContext.teamId || 'none', reqId);
     }
     
     if (DEBUG) {
@@ -242,7 +242,7 @@ export function createDynamicRoutingMiddleware(runtime) {
         'x-copilot-model-type': req.headers['x-copilot-model-type']
       }));
       if (authContext.userId) {
-        log('Full Auth Context:', JSON.stringify(authContext, null, 2), reqId);
+        // log('Full Auth Context:', JSON.stringify(authContext, null, 2), reqId);
       }
     }
     

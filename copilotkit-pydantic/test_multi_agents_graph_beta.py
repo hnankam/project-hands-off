@@ -10,10 +10,20 @@ from pydantic_graph.beta import GraphBuilder, StepContext, TypeExpression
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 
+import asyncio
+import uuid
+from ag_ui.core import CustomEvent, RunAgentInput, UserMessage
+from ag_ui.encoder import EventEncoder
+from anyio import create_memory_object_stream, create_task_group
+from anyio.streams.memory import MemoryObjectSendStream
+from pydantic_ai import Agent
+from pydantic_ai._run_context import RunContext
+from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, run_ag_ui, AGUIAdapter
+
 # Google provider and models
 google_provider = GoogleProvider(api_key='AIzaSyCID3PMug--i65c02xdw_FB-wyVTXJ3wHs')
 image_generation_model = GoogleModel(model_name='gemini-2.5-flash-image', provider=google_provider)
-general_model = GoogleModel(model_name='gemini-2.5-pro', provider=google_provider)
+general_model = GoogleModel(model_name='gemini-2.5-flash', provider=google_provider)
 
 
 # Define action types for routing
@@ -88,6 +98,7 @@ web_search_agent = Agent(
 code_execution_agent = Agent(
     model=general_model,
     builtin_tools=[CodeExecutionTool()],
+    output_type=str,
     system_prompt="You are a code execution assistant. Execute code to solve problems.",
 )
 
@@ -121,6 +132,14 @@ error_handler_agent = Agent(
 )
 
 
+# Define the graph dependencies
+@dataclass
+class GraphDeps:
+    """Dependencies passed to all graph nodes."""
+    send_stream: MemoryObjectSendStream[str] | None = None
+    ag_ui_adapter: AGUIAdapter | None = None
+
+
 # Define the graph state to hold query context
 @dataclass
 class QueryState:
@@ -149,6 +168,7 @@ def create_multi_agent_graph():
         state_type=QueryState,
         input_type=str,  # User query string
         output_type=str,  # Final result string
+        deps_type=GraphDeps,  # Graph dependencies (stream and AG-UI adapter)
     )
     
     # ==================== ORCHESTRATOR STEP ====================
@@ -169,9 +189,35 @@ def create_multi_agent_graph():
         if ctx.state.execution_history:
             print(f"History: {' → '.join(ctx.state.execution_history)}")
         
+        # Send orchestrator start event
+        if ctx.deps and ctx.deps.send_stream:
+            encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+            await ctx.deps.send_stream.send(
+                encoder.encode(
+                    CustomEvent(
+                        name='orchestrator_start',
+                        value={
+                            'iteration': ctx.state.iteration_count,
+                            'query': ctx.state.query,
+                            'history': ctx.state.execution_history
+                        }
+                    )
+                )
+            )
+        
         # Check iteration limit
         if ctx.state.iteration_count > ctx.state.max_iterations:
             print(f"⚠️  Max iterations reached")
+            if ctx.deps and ctx.deps.send_stream:
+                encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+                await ctx.deps.send_stream.send(
+                    encoder.encode(
+                        CustomEvent(
+                            name='max_iterations_reached',
+                            value={'max_iterations': ctx.state.max_iterations}
+                        )
+                    )
+                )
             return "end"
         
         # Build context
@@ -191,6 +237,24 @@ def create_multi_agent_graph():
             print(f"\n📊 Decision: {decision.next_task_type.upper()}")
             print(f"   Reasoning: {decision.reasoning[:100]}...")
             
+            # Send decision event
+            if ctx.deps and ctx.deps.send_stream:
+                encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+                await ctx.deps.send_stream.send(
+                    encoder.encode(
+                        CustomEvent(
+                            name='orchestrator_decision',
+                            value={
+                                'next_task': decision.next_task_type,
+                                'should_continue': decision.should_continue,
+                                'needs_followup': decision.needs_followup,
+                                'confidence': decision.confidence,
+                                'reasoning': decision.reasoning
+                            }
+                        )
+                    )
+                )
+            
             # Store for worker nodes
             ctx.state.should_continue = decision.needs_followup
             
@@ -198,85 +262,382 @@ def create_multi_agent_graph():
             
         except Exception as e:
             print(f"✗ Orchestrator failed: {e}")
+            if ctx.deps and ctx.deps.send_stream:
+                encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+                await ctx.deps.send_stream.send(
+                    encoder.encode(
+                        CustomEvent(
+                            name='orchestrator_error',
+                            value={'error': str(e)}
+                        )
+                    )
+                )
             return "end"
     
     # ==================== WORKER STEPS ====================
     @g.step
     async def image_generation_step(ctx: StepContext[QueryState, None, ActionType]) -> WorkerResult:
-        """Generate an image."""
+        """Generate an image using AGUIAdapter for streaming."""
         print(f"🎨 ImageGeneration processing...")
         ctx.state.execution_history.append("ImageGeneration")
         
+        # Send start event
+        if ctx.deps and ctx.deps.send_stream:
+            encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+            await ctx.deps.send_stream.send(
+                encoder.encode(
+                    CustomEvent(
+                        name='image_generation_start',
+                        value={'query': ctx.state.query}
+                    )
+                )
+            )
+        
         try:
-            result = await image_generation_agent.run(ctx.state.query)
-            num_images = len(result.response.images) if result.response.images else 0
-            node_result = f"✅ Image: {num_images} image(s) created"
+            # Create a new AGUIAdapter instance for this specific run
+            adapter = AGUIAdapter(
+                agent=image_generation_agent,
+                run_input=ctx.deps.ag_ui_adapter.run_input,
+                accept=SSE_CONTENT_TYPE
+            )
+            
+            # Variable to capture the final result
+            final_result = None
+            
+            def on_complete(result):
+                """Callback to capture the final result."""
+                nonlocal final_result
+                final_result = result
+            
+            # Run the agent and stream events
+            event_stream = adapter.run_stream(on_complete=on_complete)
+            
+            # Stream all events through the deps if available
+            if ctx.deps and ctx.deps.send_stream:
+                async for event in event_stream:
+                    await ctx.deps.send_stream.send(event)
+            else:
+                async for _ in event_stream:
+                    pass
+            
+            # Extract result from the completed run
+            if final_result:
+                num_images = len(final_result.response.images) if final_result.response.images else 0
+                node_result = f"✅ Image: {num_images} image(s) created"
+            else:
+                node_result = "Image generation completed"
+            
             ctx.state.intermediate_results["ImageGeneration"] = node_result
             ctx.state.result = node_result
-            print(f"   ✓ Complete")
+            print(f"   ✓ Complete {num_images} image(s) created")
+            
+            # Send success event
+            if ctx.deps and ctx.deps.send_stream:
+                encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+                await ctx.deps.send_stream.send(
+                    encoder.encode(
+                        CustomEvent(
+                            name='image_generation_complete',
+                            value={
+                                'result': node_result,
+                                'should_continue': ctx.state.should_continue
+                            }
+                        )
+                    )
+                )
             
             return "continue" if ctx.state.should_continue else "end"
         except Exception as e:
             ctx.state.errors.append({"node": "ImageGeneration", "error": str(e), "timestamp": datetime.now().isoformat()})
             print(f"   ✗ Error: {e}")
+            
+            # Send error event
+            if ctx.deps and ctx.deps.send_stream:
+                encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+                await ctx.deps.send_stream.send(
+                    encoder.encode(
+                        CustomEvent(
+                            name='image_generation_error',
+                            value={'error': str(e)}
+                        )
+                    )
+                )
+            
             return "error"
     
     @g.step
     async def web_search_step(ctx: StepContext[QueryState, None, ActionType]) -> WorkerResult:
-        """Perform web search."""
+        """Perform web search using AGUIAdapter for streaming."""
         print(f"🔍 WebSearch processing...")
         ctx.state.execution_history.append("WebSearch")
         
+        # Send start event
+        if ctx.deps and ctx.deps.send_stream:
+            encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+            await ctx.deps.send_stream.send(
+                encoder.encode(
+                    CustomEvent(
+                        name='web_search_start',
+                        value={'query': ctx.state.query}
+                    )
+                )
+            )
+        
         try:
-            result = await web_search_agent.run(ctx.state.query)
-            node_result = result.output if hasattr(result, 'output') else str(result.data)
+            # Create a new AGUIAdapter instance for this specific run
+            adapter = AGUIAdapter(
+                agent=web_search_agent,
+                run_input=ctx.deps.ag_ui_adapter.run_input,
+                accept=SSE_CONTENT_TYPE
+            )
+            
+            # Variable to capture the final result
+            final_result = None
+            
+            def on_complete(result):
+                """Callback to capture the final result."""
+                nonlocal final_result
+                final_result = result
+            
+            # Run the agent and stream events
+            event_stream = adapter.run_stream(on_complete=on_complete)
+            
+            # Stream all events through the deps if available
+            if ctx.deps and ctx.deps.send_stream:
+                async for event in event_stream:
+                    await ctx.deps.send_stream.send(event)
+            else:
+                async for _ in event_stream:
+                    pass
+            
+            # Extract result from the completed run
+            if final_result:
+                node_result = final_result.output if hasattr(final_result, 'output') else str(final_result.data)
+            else:
+                node_result = "Web search completed"
+            
             ctx.state.intermediate_results["WebSearch"] = node_result
             ctx.state.result = node_result
             print(f"   ✓ Complete")
+            
+            # Send success event
+            if ctx.deps and ctx.deps.send_stream:
+                encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+                await ctx.deps.send_stream.send(
+                    encoder.encode(
+                        CustomEvent(
+                            name='web_search_complete',
+                            value={
+                                'result': node_result[:200] if len(node_result) > 200 else node_result,
+                                'should_continue': ctx.state.should_continue
+                            }
+                        )
+                    )
+                )
             
             return "continue" if ctx.state.should_continue else "end"
         except Exception as e:
             ctx.state.errors.append({"node": "WebSearch", "error": str(e), "timestamp": datetime.now().isoformat()})
             print(f"   ✗ Error: {e}")
+            
+            # Send error event
+            if ctx.deps and ctx.deps.send_stream:
+                encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+                await ctx.deps.send_stream.send(
+                    encoder.encode(
+                        CustomEvent(
+                            name='web_search_error',
+                            value={'error': str(e)}
+                        )
+                    )
+                )
+            
             return "error"
     
     @g.step
     async def code_execution_step(ctx: StepContext[QueryState, None, ActionType]) -> WorkerResult:
-        """Execute code."""
+        """Execute code using AGUIAdapter for streaming."""
         print(f"💻 CodeExecution processing...")
         ctx.state.execution_history.append("CodeExecution")
         
+        # Send start event
+        if ctx.deps and ctx.deps.send_stream:
+            encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+            await ctx.deps.send_stream.send(
+                encoder.encode(
+                    CustomEvent(
+                        name='code_execution_start',
+                        value={'query': ctx.state.query}
+                    )
+                )
+            )
+        
         try:
-            result = await code_execution_agent.run(ctx.state.query)
-            node_result = result.output if hasattr(result, 'output') else str(result.data)
+            
+            # Create a new adapter with the code_execution_agent
+            adapter = AGUIAdapter(
+                agent=code_execution_agent,
+                run_input=ctx.deps.ag_ui_adapter.run_input,
+                accept=SSE_CONTENT_TYPE
+            )
+            
+            # Variable to capture the final result
+            final_result = None
+            
+            def on_complete(result):
+                """Callback to capture the final result."""
+                nonlocal final_result
+                final_result = result
+            
+            # Run the agent and stream events
+            event_stream = adapter.run_stream(on_complete=on_complete)
+            
+            # Stream all events through the deps if available
+            event_count = 0
+            if ctx.deps and ctx.deps.send_stream:
+                async for event in event_stream:
+                    event_count += 1
+                    # Forward the AG-UI event directly to the send stream
+                    # The event is already encoded in AG-UI format
+                    await ctx.deps.send_stream.send(event)
+            else:
+                # If no send_stream, still consume the stream
+                async for _ in event_stream:
+                    event_count += 1
+
+            # Extract result from the completed run
+            if final_result:
+                node_result = final_result.output
+            else:
+                node_result = "Code execution completed but no output available"
+            
             ctx.state.intermediate_results["CodeExecution"] = node_result
             ctx.state.result = node_result
             print(f"   ✓ Complete")
+            
+            # Send success event
+            if ctx.deps and ctx.deps.send_stream:
+                encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+                await ctx.deps.send_stream.send(
+                    encoder.encode(
+                        CustomEvent(
+                            name='code_execution_complete',
+                            value={
+                                'result': node_result[:200] if len(node_result) > 200 else node_result,
+                                'should_continue': ctx.state.should_continue
+                            }
+                        )
+                    )
+                )
             
             return "continue" if ctx.state.should_continue else "end"
         except Exception as e:
             ctx.state.errors.append({"node": "CodeExecution", "error": str(e), "timestamp": datetime.now().isoformat()})
             print(f"   ✗ Error: {e}")
+            
+            # Send error event
+            if ctx.deps and ctx.deps.send_stream:
+                encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+                await ctx.deps.send_stream.send(
+                    encoder.encode(
+                        CustomEvent(
+                            name='code_execution_error',
+                            value={'error': str(e)}
+                        )
+                    )
+                )
+            
             return "error"
     
     @g.step
     async def result_aggregator_step(ctx: StepContext[QueryState, None, ActionType]) -> WorkerResult:
-        """Aggregate results."""
+        """Aggregate results using AGUIAdapter for streaming."""
         print(f"📋 ResultAggregator processing...")
         ctx.state.execution_history.append("ResultAggregator")
+        
+        # Send start event
+        if ctx.deps and ctx.deps.send_stream:
+            encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+            await ctx.deps.send_stream.send(
+                encoder.encode(
+                    CustomEvent(
+                        name='result_aggregator_start',
+                        value={
+                            'num_results': len(ctx.state.intermediate_results),
+                            'nodes': list(ctx.state.intermediate_results.keys())
+                        }
+                    )
+                )
+            )
         
         context = f"Original Query: {ctx.state.original_query}\n\nResults:\n"
         for node, result in ctx.state.intermediate_results.items():
             context += f"\n{node}: {result}\n"
         
         try:
-            result = await result_aggregator_agent.run(context)
-            ctx.state.result = result.output
+            # Create a new AGUIAdapter instance for this specific run            
+            adapter = AGUIAdapter(
+                agent=result_aggregator_agent,
+                run_input=ctx.deps.ag_ui_adapter.run_input,
+                accept=SSE_CONTENT_TYPE
+            )
+            
+            # Variable to capture the final result
+            final_result = None
+            
+            def on_complete(result):
+                """Callback to capture the final result."""
+                nonlocal final_result
+                final_result = result
+            
+            # Run the agent and stream events
+            event_stream = adapter.run_stream(on_complete=on_complete)
+            
+            # Stream all events through the deps if available
+            if ctx.deps and ctx.deps.send_stream:
+                async for event in event_stream:
+                    await ctx.deps.send_stream.send(event)
+            else:
+                async for _ in event_stream:
+                    pass
+            
+            # Extract result from the completed run
+            if final_result:
+                ctx.state.result = final_result.output if hasattr(final_result, 'output') else str(final_result.data)
+            else:
+                ctx.state.result = "Result aggregation completed"
+            
             print(f"   ✓ Complete")
+            
+            # Send success event
+            if ctx.deps and ctx.deps.send_stream:
+                encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+                await ctx.deps.send_stream.send(
+                    encoder.encode(
+                        CustomEvent(
+                            name='result_aggregator_complete',
+                            value={'result': ctx.state.result}
+                        )
+                    )
+                )
+            
             return "end"
         except Exception as e:
             ctx.state.result = f"Aggregation failed: {str(e)}"
             print(f"   ✗ Error: {e}")
+            
+            # Send error event
+            if ctx.deps and ctx.deps.send_stream:
+                encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+                await ctx.deps.send_stream.send(
+                    encoder.encode(
+                        CustomEvent(
+                            name='result_aggregator_error',
+                            value={'error': str(e)}
+                        )
+                    )
+                )
+            
             return "end"
     
     # ==================== FINALIZE STEP ====================
@@ -292,6 +653,22 @@ def create_multi_agent_graph():
         # Add summary
         if ctx.state.execution_history:
             final_result = f"{final_result}\n\n[Executed: {' → '.join(ctx.state.execution_history)}]"
+        
+        # Send finalize event
+        if ctx.deps and ctx.deps.send_stream:
+            encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+            await ctx.deps.send_stream.send(
+                encoder.encode(
+                    CustomEvent(
+                        name='graph_finalize',
+                        value={
+                            'final_result': final_result,
+                            'execution_history': ctx.state.execution_history,
+                            'iteration_count': ctx.state.iteration_count
+                        }
+                    )
+                )
+            )
         
         return final_result
     
@@ -328,12 +705,179 @@ def create_multi_agent_graph():
     return g.build()
 
 
+async def run_multi_agent_graph_with_ag_ui(run_input: RunAgentInput, send_stream=None):
+    """
+    Run the multi-agent graph with AG UI event streaming.
+    
+    Args:
+        run_input: RunAgentInput containing thread_id, run_id, messages, etc.
+        send_stream: Optional MemoryObjectSendStream for custom event streaming
+    
+    Returns:
+        Final result from the graph execution
+    """
+    # Create the graph
+    multi_agent_graph = create_multi_agent_graph()
+    
+    # Extract query from the last user message
+    query = ""
+    if run_input.messages:
+        last_message = run_input.messages[-1]
+        if hasattr(last_message, 'content'):
+            query = last_message.content
+    
+    if not query:
+        query = "No query provided"
+    
+    print(f"\n{'='*60}")
+    print(f"🚀 Running Multi-Agent Graph with AG UI")
+    print(f"{'='*60}")
+    print(f"Thread ID: {run_input.thread_id}")
+    print(f"Run ID: {run_input.run_id}")
+    print(f"Query: {query}")
+    print(f"{'='*60}\n")
+    
+    # Initialize encoder if we have a send stream
+    encoder = EventEncoder(accept=SSE_CONTENT_TYPE) if send_stream else None
+    
+    # Send start event
+    if send_stream and encoder:
+        await send_stream.send(
+            encoder.encode(
+                CustomEvent(
+                    name='graph_start',
+                    value={'query': query, 'thread_id': run_input.thread_id}
+                )
+            )
+        )
+    
+    # Create a dummy agent for the AGUIAdapter
+    # The adapter is mainly for protocol handling and can be reused across different agents
+    dummy_agent = Agent(model=general_model)
+    
+    # Create AGUIAdapter instance with the dummy agent
+    # This will be used by nodes to stream agent events
+    ag_ui_adapter = AGUIAdapter(
+        agent=dummy_agent,
+        run_input=run_input,
+        accept=SSE_CONTENT_TYPE
+    )
+    
+    # Initialize state
+    state = QueryState(query=query, max_iterations=5)
+    
+    # Send state initialization event
+    if send_stream and encoder:
+        await send_stream.send(
+            encoder.encode(
+                CustomEvent(
+                    name='state_initialized',
+                    value={'query': query, 'max_iterations': state.max_iterations}
+                )
+            )
+        )
+    
+    # Create GraphDeps with both send_stream and ag_ui_adapter
+    deps = GraphDeps(send_stream=send_stream, ag_ui_adapter=ag_ui_adapter)
+    
+    try:
+        # Run the graph with GraphDeps
+        result = await multi_agent_graph.run(state=state, inputs=query, deps=deps)
+        
+        # Send final result event
+        if send_stream and encoder:
+            await send_stream.send(
+                encoder.encode(
+                    CustomEvent(
+                        name='graph_complete',
+                        value={'result': result, 'status': 'success'}
+                    )
+                )
+            )
+        
+        print(f"\n{'='*60}")
+        print(f"✅ FINAL RESULT:")
+        print(f"{'='*60}")
+        print(f"{result}")
+        print(f"\n{'='*60}\n")
+        
+        return result
+        
+    except Exception as e:
+        error_msg = f"Graph execution failed: {str(e)}"
+        print(f"\n{'='*60}")
+        print(f"❌ ERROR:")
+        print(f"{'='*60}")
+        print(f"{error_msg}")
+        print(f"\n{'='*60}\n")
+        
+        # Send error event
+        if send_stream and encoder:
+            await send_stream.send(
+                encoder.encode(
+                    CustomEvent(
+                        name='graph_error',
+                        value={'error': error_msg, 'status': 'error'}
+                    )
+                )
+            )
+        
+        raise
+
+
+async def run_with_mock_ag_ui_events(query: str):
+    """
+    Run the multi-agent graph with mock AG UI event streaming.
+    Similar to the example code pattern with memory streams.
+    
+    Args:
+        query: The user query to process
+    """
+    # Create mock AG UI input
+    run_input = RunAgentInput(
+        thread_id=uuid.uuid4().hex,
+        run_id=uuid.uuid4().hex,
+        messages=[
+            UserMessage(
+                id='msg_1',
+                content=query,
+            )
+        ],
+        state={},
+        context=[],
+        tools=[],
+        forwarded_props=None,
+    )
+    
+    # Create memory streams for event handling
+    send_stream, receive_stream = create_memory_object_stream[str]()
+    
+    async def run_graph_with_stream(send_stream: MemoryObjectSendStream[str]) -> None:
+        """Run the graph and send events to the stream."""
+        async with send_stream:
+            result = await run_multi_agent_graph_with_ag_ui(run_input, send_stream)
+    
+    # Run the graph and collect events
+    events = []
+    async with create_task_group() as tg:
+        tg.start_soon(run_graph_with_stream, send_stream)
+        async for event in receive_stream:
+            print(f"[EVENT] {event}")
+            events.append(event)
+    
+    return events
+
+
 # Example usage
 if __name__ == "__main__":
     import asyncio
     
     async def main():
-        # Create the graph
+        # Test 1: Direct graph execution (original pattern)
+        print("\n" + "=" * 40)
+        print("TEST 1: Direct Graph Execution")
+        print("=" * 40)
+        
         multi_agent_graph = create_multi_agent_graph()
         
         # Generate mermaid diagram
@@ -344,42 +888,49 @@ if __name__ == "__main__":
         print(mermaid_diagram)
         print("\n")
         
-        # Example queries to test
+        # Test 2: AG UI event streaming pattern (new pattern)
+        print("\n" + "=" * 40)
+        print("TEST 2: AG UI Event Streaming Pattern")
+        print("=" * 40)
+        
         test_queries = [
             # {
             #     "query": "Calculate the factorial of 15",
             #     "description": "Simple code execution task"
             # },
             # {
-            #     "query": "Search for the latest SpaceX rocket launch details, then create an image visualizing it and provide a brief description of the launch..",
-            #     "description": "Multi-step: Web search → Image generation"
+            #     "query": "Generate an image of a cat sitting on a windowsill. Make any assumptions about the cat's environment.",
+            #     "description": "Simple image generation task"
+            # },
+            # {
+            #     "query": "Search the web for the latest news on the latest AI models.",
+            #     "description": "Web search task"
             # },
             {
-                "query": "Write a story about the latest election results in Cameroon, using images and various illustrations.",
-                "description": "Multi-step"
+                "query": "Search for the latest SpaceX rocket launch details, then create an image visualizing it and provide a brief description of the launch..",
+                "description": "Multi-step: Web search → Image generation"
             },
+            # {
+            #     "query": "Write a story about the latest election results in Cameroon, using images and various illustrations.",
+            #     "description": "Multi-step"
+            # },
         ]
         
         for i, test_case in enumerate(test_queries, 1):
             query = test_case["query"]
             description = test_case["description"]
             
-            print("\n" + "🔹" * 40)
+            print("\n" + "=" * 40)
             print(f"EXAMPLE {i}: {description}")
-            print("🔹" * 40)
+            print("=" * 40)
             print(f"Query: {query}")
             
-            # Initialize state
-            state = QueryState(query=query, max_iterations=5)
-            
-            # Run the graph
-            result = await multi_agent_graph.run(state=state, inputs=query)
+            # Run with mock AG UI events
+            events = await run_with_mock_ag_ui_events(query)
             
             print(f"\n{'='*60}")
-            print(f"✅ FINAL RESULT:")
-            print(f"{'='*60}")
-            print(f"{result}")
-            print(f"\n{'='*60}\n")
+            print(f"COLLECTED {len(events)} EVENTS")
+            print(f"{'='*60}\n")
     
     asyncio.run(main())
 

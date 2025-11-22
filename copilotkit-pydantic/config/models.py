@@ -178,11 +178,7 @@ def _build_models(config: Dict[str, Any]) -> tuple[Dict[str, Dict[str, Any]], Di
             GoogleModelWithAttachments = google_module.GoogleModelWithAttachments
             
             factory_settings = settings_factories.get(provider_ref, {})
-            settings = GoogleModelSettings(
-                google_thinking_config=per_model_settings_cfg.get('google_thinking_config') or factory_settings.get('google_thinking_config'),
-                temperature=per_model_settings_cfg.get('temperature', factory_settings.get('temperature', 0.0)),
-                max_tokens=per_model_settings_cfg.get('max_tokens', factory_settings.get('max_tokens', 4096)),
-            )
+            settings = GoogleModelSettings(**per_model_settings_cfg)
             model_instance = GoogleModelWithAttachments(model_name, provider=provider)
         elif provider_type in {'anthropic', 'anthropic_bedrock'}:
             # Lazy import to avoid circular dependency - use importlib to bypass utils.__init__
@@ -190,25 +186,15 @@ def _build_models(config: Dict[str, Any]) -> tuple[Dict[str, Dict[str, Any]], Di
             AnthropicModelWithCache = anthropic_module.AnthropicModelWithCache
             
             factory_settings = settings_factories.get(provider_ref, {})
-            settings = AnthropicModelSettings(
-                extra_headers=per_model_settings_cfg.get('extra_headers') or factory_settings.get('extra_headers', {}),
-                temperature=per_model_settings_cfg.get('temperature', factory_settings.get('temperature', 0.0)),
-                max_tokens=per_model_settings_cfg.get('max_tokens', factory_settings.get('max_tokens', 4096)),
-            )
+            settings = AnthropicModelSettings(**per_model_settings_cfg)
             model_instance = AnthropicModelWithCache(model_name, provider=provider)
         elif provider_type in {'openai', 'azure_openai'}:
             factory_settings = settings_factories.get(provider_ref, {})
-            settings = OpenAIModelSettings(
-                temperature=per_model_settings_cfg.get('temperature', factory_settings.get('temperature', 0.0)),
-                max_tokens=per_model_settings_cfg.get('max_tokens', factory_settings.get('max_tokens', 4096)),
-            )
+            settings = OpenAIModelSettings(**per_model_settings_cfg)
             model_instance = OpenAIResponsesModel(model_name, provider=provider)
         else:
             # Fallback generic
-            settings = ModelSettings(
-                temperature=per_model_settings_cfg.get('temperature', 0.0),
-                max_tokens=per_model_settings_cfg.get('max_tokens', 2048),
-            )
+            settings = ModelSettings(**per_model_settings_cfg)
             model_instance = OpenAIResponsesModel(model_name, provider=provider)  # pragma: no cover
 
         models[key] = {

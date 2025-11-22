@@ -101,11 +101,15 @@ app.use('/api', apiRateLimiter);
     const defaultAgent = await createDefaultAgent();
 
     // Create runtime with dynamic agent
+    // console.log('Creating runtime with dynamic agent');
+    // console.log('defaultAgent', defaultAgent);
     const runtime = new CopilotRuntime({
       agents: {
         "dynamic_agent": defaultAgent,
       },
     });
+
+    // console.log('Runtime', runtime);
 
     // Dynamic routing middleware (must be before copilotkit endpoint)
     const dynamicRoutingMiddleware = createDynamicRoutingMiddleware(runtime);

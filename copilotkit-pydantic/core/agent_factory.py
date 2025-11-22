@@ -87,21 +87,21 @@ async def create_agent(
     agent_info = get_agent_info_for_context(agent_type, organization_id, team_id) or {}
 
     allowed_tool_keys = agent_info.get('allowed_tools')
-    logger.debug(
-        "Agent '%s' allowed_tools from DB: %s (type: %s)",
-        agent_type,
-        allowed_tool_keys,
-        type(allowed_tool_keys).__name__ if allowed_tool_keys is not None else 'None'
-    )
-    logger.debug(
-        "Available tool_definitions: %d tools - %s",
-        len(tool_definitions),
-        list(tool_definitions.keys())[:10] if tool_definitions else []
-    )
+    # logger.debug(
+    #     "Agent '%s' allowed_tools from DB: %s (type: %s)",
+    #     agent_type,
+    #     allowed_tool_keys,
+    #     type(allowed_tool_keys).__name__ if allowed_tool_keys is not None else 'None'
+    # )
+    # logger.debug(
+    #     "Available tool_definitions: %d tools - %s",
+    #     len(tool_definitions),
+    #     list(tool_definitions.keys())[:10] if tool_definitions else []
+    # )
     
     # Handle None or empty list - default to all enabled tools
     if not allowed_tool_keys:
-        logger.debug("No specific tools configured for agent '%s', defaulting to all enabled tools", agent_type)
+        # logger.debug("No specific tools configured for agent '%s', defaulting to all enabled tools", agent_type)
         allowed_tool_keys = [
             key
             for key, data in tool_definitions.items()
@@ -114,7 +114,7 @@ async def create_agent(
             for key in allowed_tool_keys
             if key in tool_definitions and tool_definitions[key].get('enabled', True)
         ]
-        logger.debug("Agent '%s' has %d allowed tools configured", agent_type, len(allowed_tool_keys))
+        # logger.debug("Agent '%s' has %d allowed tools configured", agent_type, len(allowed_tool_keys))
 
     # Preserve order while removing duplicates
     seen_keys = set()
@@ -125,12 +125,12 @@ async def create_agent(
             seen_keys.add(key)
     allowed_tool_keys = filtered_keys
     
-    logger.debug(
-        "Agent '%s' final tool list after deduplication: %d tools - %s",
-        agent_type,
-        len(allowed_tool_keys),
-        allowed_tool_keys[:10] if allowed_tool_keys else []
-    )
+    # logger.debug(
+    #     "Agent '%s' final tool list after deduplication: %d tools - %s",
+    #     agent_type,
+    #     len(allowed_tool_keys),
+    #     allowed_tool_keys[:10] if allowed_tool_keys else []
+    # )
 
     builtin_tool_instances = []
     allowed_backend_keys: list[str] = []
@@ -187,18 +187,18 @@ async def create_agent(
     
     if builtin_tool_instances:
         builtin_names = [type(tool).__name__ for tool in builtin_tool_instances]
-        logger.debug("Builtin tools: %s", ", ".join(builtin_names))
-    if allowed_backend_keys:
-        logger.debug("Backend tools: %s", ", ".join(allowed_backend_keys))
-    if allowed_mcp_keys:
-        logger.debug("MCP tools: %s", ", ".join(allowed_mcp_keys))
-    if frontend_tool_keys:
-        logger.debug("Frontend tools: %s", ", ".join(frontend_tool_keys))
+        # logger.debug("Builtin tools: %s", ", ".join(builtin_names))
+    # if allowed_backend_keys:
+        # logger.debug("Backend tools: %s", ", ".join(allowed_backend_keys))
+    # if allowed_mcp_keys:
+        # logger.debug("MCP tools: %s", ", ".join(allowed_mcp_keys))
+    # if frontend_tool_keys:
+        # logger.debug("Frontend tools: %s", ", ".join(frontend_tool_keys))
     
     # Import here to avoid circular import
     from tools.agent_tools import get_agent_tools
     
-    logger.debug("Getting backend and MCP tools for agent '%s'", agent_type)
+    # logger.debug("Getting backend and MCP tools for agent '%s'", agent_type)
     backend_tools, mcp_toolsets = await get_agent_tools(
         agent_type=agent_type,
         organization_id=organization_id,

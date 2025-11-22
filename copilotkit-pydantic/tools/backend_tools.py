@@ -40,9 +40,9 @@ Example:
 from __future__ import annotations
 
 from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext, BinaryImage, ImageGenerationTool, WebSearchTool, CodeExecutionTool, UrlContextTool
+from pydantic_ai import Agent, RunContext, BinaryImage, ImageGenerationTool, WebSearchTool, CodeExecutionTool, UrlContextTool, ToolReturn
 from pydantic_ai.ag_ui import StateDeps
-from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent
+from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, CustomEvent
 
 from core.models import AgentState, Step, StepStatus
 
@@ -59,7 +59,7 @@ from utils.firebase_storage import upload_binary_image_to_storage
 
 # ========== State Management Tools ==========
 
-async def create_plan(ctx: RunContext[StateDeps[AgentState]], steps: list[str]) -> StateSnapshotEvent:
+async def create_plan(ctx: RunContext[StateDeps[AgentState]], steps: list[str]) -> ToolReturn:
     """Create a plan with multiple steps.
     
     Args:
@@ -75,9 +75,15 @@ async def create_plan(ctx: RunContext[StateDeps[AgentState]], steps: list[str]) 
     print(f"   State after: steps={len(ctx.deps.state.steps)}")
     state_dict = ctx.deps.state.model_dump()
     print(f"   Returning snapshot: {state_dict}")
-    return StateSnapshotEvent(
-        type=EventType.STATE_SNAPSHOT,
-        snapshot=state_dict,
+
+    return ToolReturn(
+        return_value='Plan Created',
+        metadata=[
+            StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=state_dict,
+            ),
+        ],
     )
 
 
@@ -86,7 +92,7 @@ async def update_plan_step(
     index: int,
     description: str | None = None,
     status: StepStatus | None = None
-) -> StateSnapshotEvent:
+) -> ToolReturn:
     """Update a specific step in the plan.
     
     Args:
@@ -118,9 +124,14 @@ async def update_plan_step(
     state_dict = ctx.deps.state.model_dump()
     print(f"   ✅ Updated step {index}, returning full snapshot: {state_dict}")
 
-    return StateSnapshotEvent(
-        type=EventType.STATE_SNAPSHOT,
-        snapshot=state_dict,
+    return ToolReturn(
+        return_value='Plan Step Updated',
+        metadata=[
+            StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=state_dict,
+            ),
+        ],
     )
     # changes: list[JSONPatchOp] = []
     # if description is not None:

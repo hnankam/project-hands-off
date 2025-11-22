@@ -37,7 +37,7 @@ class ConnectionManager:
             logger.warning(f"WS rejected for session={session_id}: limit reached ({self.max_per_session})")
             return
         conns.add(websocket)
-        logger.debug(f"WS connected for session={session_id} total={len(conns)}")
+        # logger.debug(f"WS connected for session={session_id} total={len(conns)}")
     
     def disconnect(self, websocket: WebSocket, session_id: str) -> None:
         """Remove a WebSocket connection.
@@ -49,7 +49,7 @@ class ConnectionManager:
         self.active_connections[session_id].discard(websocket)
         if not self.active_connections[session_id]:
             del self.active_connections[session_id]
-        logger.debug(f"WS disconnected for session={session_id}")
+        # logger.debug(f"WS disconnected for session={session_id}")
     
     async def broadcast_to_session(self, session_id: str, message: dict) -> None:
         """Broadcast a message to all connections for a specific session.
@@ -59,7 +59,7 @@ class ConnectionManager:
             message: The message dict to send
         """
         if session_id not in self.active_connections:
-            logger.debug(f"No WebSocket connections for session={session_id}")
+            # logger.debug(f"No WebSocket connections for session={session_id}")
             return
         
         # Add timestamp
