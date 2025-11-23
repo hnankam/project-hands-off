@@ -3,30 +3,53 @@
  * Mirrors the dynamic pattern from CopilotKit examples.
  */
 
-import { isClaudeModel, isGeminiModel, isGPTModel, DEFAULT_MODEL } from '../config/models.js';
+import { isClaudeModel, isGeminiModel, isGPTModel, getDefaultModel } from '../config/models.js';
 import { getForcedModel, getModelConfig } from '../config/loader.js';
-import { createAnthropicAdapter, createClaudeHaikuAdapter } from './anthropic.js';
+import { createAnthropicAdapter } from './anthropic.js';
 import { createGeminiAdapter } from './google.js';
 import { createAzureOpenAIAdapter } from './openai.js';
 import { log } from '../utils/logger.js';
+import { DEBUG } from '../config/environment.js';
+
+// Global context storage for the current request
+let currentRequestContext = { 
+  organizationId: null, 
+  teamId: null,
+  agent: null,
+  model: null
+};
+
+/**
+ * Middleware to capture organization, team, agent, and model context from Express request
+ * Must be called before the CopilotKit endpoint processes the request
+ */
+export function captureRequestContext(req, res, next) {
+  currentRequestContext = {
+    organizationId: req.authContext?.organizationId || null,
+    teamId: req.authContext?.teamId || null,
+    agent: req.headers['x-copilot-agent-type'] || req.query?.agent || null,
+    model: req.headers['x-copilot-model-type'] || req.query?.model || null,
+  };
+  
+  if (DEBUG && currentRequestContext.model) {
+    log(`[Context] Captured model=${currentRequestContext.model} agent=${currentRequestContext.agent}`);
+  }
+  
+  next();
+}
 
 /**
  * Factory that creates a CopilotServiceAdapter selecting provider per request.model
  */
 export async function createDynamicServiceAdapter() {
-  // Get default forced models from configuration
-  const defaultGeminiModel = 'gemini-2.5-flash-lite';
-  const defaultClaudeModel = 'claude-4.5-haiku';
-  const defaultGPTModel = 'gpt-4o-mini';
-  
-  // Adapter cache per organization context
+  // Adapter cache per organization context and model
   const adapterCache = new Map();
   
   const getOrCreateAdapter = async (type, model, context = {}) => {
-    const cacheKey = `${type}-${context.organizationId || 'global'}-${context.teamId || 'global'}`;
+    const cacheKey = `${type}-${model}-${context.organizationId || 'global'}-${context.teamId || 'global'}`;
     
     if (!adapterCache.has(cacheKey)) {
-      log(`Creating ${type} adapter for context: org=${context.organizationId || 'null'} team=${context.teamId || 'null'}`);
+      log(`Creating ${type} adapter for model=${model} context: org=${context.organizationId || 'null'} team=${context.teamId || 'null'}`);
       let adapter;
       
       switch (type) {
@@ -37,7 +60,7 @@ export async function createDynamicServiceAdapter() {
           adapter = await createGeminiAdapter(model, context);
           break;
         case 'anthropic':
-          adapter = await createClaudeHaikuAdapter(context);
+          adapter = await createAnthropicAdapter(model, context);
           break;
         default:
           throw new Error(`Unknown adapter type: ${type}`);
@@ -68,31 +91,29 @@ export async function createDynamicServiceAdapter() {
 
   return {
     async process(request) {
+      // Use model from request, or from captured context, or fall back to default
       const requestedModel = (request?.model
         || request?.forwardedParameters?.model
-        || DEFAULT_MODEL);
+        || currentRequestContext.model
+        || await getDefaultModel());
       
-      // Extract context from request (should be set by middleware)
+      // Extract context from global context (set by middleware)
       const context = {
-        organizationId: request?.context?.organizationId,
-        teamId: request?.context?.teamId,
+        organizationId: currentRequestContext.organizationId,
+        teamId: currentRequestContext.teamId,
       };
       
-      // Get forced model from configuration (for cost optimization)
-      const forcedModel = await getForcedModel(requestedModel, context);
+      // Get model configuration (includes forced model if set)
       const modelConfig = await getModelConfig(requestedModel, context);
-      
+      const effectiveModel = modelConfig?.forced_model || requestedModel;
       
       if (isGeminiModel(requestedModel)) {
-        const forcedGemini = modelConfig?.forced_model || defaultGeminiModel;
-        const googleAdapter = await getOrCreateAdapter('google', forcedGemini, context);
-        return processWithRetry('google', () => googleAdapter.process({ ...request, model: forcedGemini }));
+        const googleAdapter = await getOrCreateAdapter('google', effectiveModel, context);
+        return processWithRetry('google', () => googleAdapter.process({ ...request, model: effectiveModel }));
       }
       
       if (isClaudeModel(requestedModel)) {
-        const forcedClaude = modelConfig?.forced_model || defaultClaudeModel;
-        
-        // Sanitize messages for Anthropic
+        // Sanitize messages for Anthropic - remove unpaired action execution messages
         const sanitizeForAnthropic = (msgs = []) => {
           const out = [];
           for (let i = 0; i < msgs.length; i++) {
@@ -115,19 +136,17 @@ export async function createDynamicServiceAdapter() {
         };
         
         const sanitizedMessages = sanitizeForAnthropic(request.messages);
-        const anthropicAdapter = await getOrCreateAdapter('anthropic', forcedClaude, context);
-        return processWithRetry('anthropic', () => anthropicAdapter.process({ ...request, model: forcedClaude, messages: sanitizedMessages }));
+        const anthropicAdapter = await getOrCreateAdapter('anthropic', effectiveModel, context);
+        return processWithRetry('anthropic', () => anthropicAdapter.process({ ...request, model: effectiveModel, messages: sanitizedMessages }));
       }
       
       if (isGPTModel(requestedModel)) {
-        const forcedGPT = modelConfig?.forced_model || defaultGPTModel;
-        const openaiAdapter = await getOrCreateAdapter('openai', forcedGPT, context);
-        return processWithRetry('openai', () => openaiAdapter.process({ ...request, model: forcedGPT }));
+        const openaiAdapter = await getOrCreateAdapter('openai', effectiveModel, context);
+        return processWithRetry('openai', () => openaiAdapter.process({ ...request, model: effectiveModel }));
       }
       
-      // default to OpenAI-compatible (Azure OpenAI)
-      const openaiAdapter = await getOrCreateAdapter('openai', defaultGPTModel, context);
-      return processWithRetry('openai-default', () => openaiAdapter.process(request));
+      // Unknown model type - throw error instead of silently defaulting
+      throw new Error(`Unsupported model type: ${requestedModel}. Must be a GPT, Claude, or Gemini model.`);
     },
   };
 }

@@ -1,6 +1,10 @@
 /**
  * Configuration loader
- * Loads configuration from PostgreSQL database
+ * Loads configuration from PostgreSQL database with multi-tenant caching
+ * 
+ * Note: This is a secondary cache layer on top of db-loaders.js
+ * - db-loaders.js has its own cache with _cacheValid flag
+ * - This layer provides simpler Map-based caching per loader function
  */
 
 // Cache for loaded configurations, keyed by organization/team context
@@ -8,6 +12,13 @@ const _providersConfigCache = new Map();
 const _modelsConfigCache = new Map();
 const _agentsConfigCache = new Map();
 
+/**
+ * Generate a consistent cache key from organization and team context
+ * @param {Object} options - Context options
+ * @param {string|null} options.organizationId - Organization ID (null for global)
+ * @param {string|null} options.teamId - Team ID (null for org-wide)
+ * @returns {string} Cache key in format "orgId:teamId"
+ */
 function makeCacheKey({ organizationId = null, teamId = null } = {}) {
   const org = organizationId ?? 'global';
   const team = teamId ?? 'global';
@@ -16,9 +27,13 @@ function makeCacheKey({ organizationId = null, teamId = null } = {}) {
 
 /**
  * Load providers configuration from database
+ * @param {Object} options - Multi-tenant context
+ * @param {string|null} options.organizationId - Organization ID
+ * @param {string|null} options.teamId - Team ID
+ * @returns {Promise<{providers: Object}>} Providers configuration
  */
 export async function loadProvidersConfig(options = {}) {
-  const cacheKey = makeCacheKey({ organizationId: null, teamId: null, ...options });
+  const cacheKey = makeCacheKey(options);
   
   if (_providersConfigCache.has(cacheKey)) {
     return _providersConfigCache.get(cacheKey);
@@ -29,13 +44,16 @@ export async function loadProvidersConfig(options = {}) {
   
   const config = { providers: dbConfig.providers };
   _providersConfigCache.set(cacheKey, config);
-  console.log('[Config] Loaded providers configuration from database for context', cacheKey);
   
   return config;
 }
 
 /**
  * Load models configuration from database
+ * @param {Object} options - Multi-tenant context
+ * @param {string|null} options.organizationId - Organization ID
+ * @param {string|null} options.teamId - Team ID
+ * @returns {Promise<{models: Array, default_agent: string, default_model: string}>}
  */
 export async function loadModelsConfig(options = {}) {
   const cacheKey = makeCacheKey(options);
@@ -51,13 +69,16 @@ export async function loadModelsConfig(options = {}) {
     default_model: dbConfig.default_model
   };
   _modelsConfigCache.set(cacheKey, config);
-  console.log('[Config] Loaded models configuration from database for context', cacheKey);
   
   return config;
 }
 
 /**
  * Load agents configuration from database
+ * @param {Object} options - Multi-tenant context
+ * @param {string|null} options.organizationId - Organization ID
+ * @param {string|null} options.teamId - Team ID
+ * @returns {Promise<{agents: Array}>}
  */
 export async function loadAgentsConfig(options = {}) {
   const cacheKey = makeCacheKey(options);
@@ -68,7 +89,6 @@ export async function loadAgentsConfig(options = {}) {
   const { getAgentsConfigFromDb } = await import('./db-loaders.js');
   const dbConfig = await getAgentsConfigFromDb(options);
   _agentsConfigCache.set(cacheKey, dbConfig);
-  console.log('[Config] Loaded agents configuration from database for context', cacheKey);
   
   return dbConfig;
 }
@@ -82,20 +102,17 @@ export async function getProviderConfig(providerKey, options = {}) {
 }
 
 /**
- * Get provider configuration by type (e.g., 'azure_openai', 'anthropic', 'google')
+ * Get provider configuration by type (e.g., 'azure_openai', 'anthropic_bedrock', 'google')
  * This searches by provider_type instead of provider_key
+ * @param {string} providerType - Provider type to search for
+ * @param {Object} options - Multi-tenant context
+ * @returns {Promise<Object|null>} Provider configuration or null if not found
  */
 export async function getProviderConfigByType(providerType, options = {}) {
   const config = await loadProvidersConfig(options);
   
-  // Search through providers to find one with matching type
-  for (const [key, provider] of Object.entries(config.providers)) {
-    if (provider.type === providerType) {
-      return provider;
-    }
-  }
-  
-  return null;
+  // Use Object.values for cleaner iteration (we don't need the key)
+  return Object.values(config.providers).find(provider => provider.type === providerType) || null;
 }
 
 /**
@@ -207,6 +224,9 @@ export function isGPTModel(modelKey) {
 
 /**
  * Get provider type for a model
+ * @param {string} modelKey - Model key to look up
+ * @param {Object} options - Multi-tenant context
+ * @returns {Promise<string>} Provider type (e.g., 'azure_openai', 'anthropic_bedrock', 'google')
  */
 export async function getProviderTypeForModel(modelKey, options = {}) {
   const model = await getModelConfig(modelKey, options);
@@ -218,15 +238,24 @@ export async function getProviderTypeForModel(modelKey, options = {}) {
 
 /**
  * Invalidate cache (force reload on next access)
+ * This clears the secondary cache layer; db-loaders.js has its own cache invalidation
  */
 export function invalidateCache() {
   _providersConfigCache.clear();
   _modelsConfigCache.clear();
   _agentsConfigCache.clear();
+  console.log('[Loader] Cache invalidated');
 }
 
-// ============================================================================
-// Legacy environment variable mapping removed
-// All provider credentials are now loaded from the database via getProviderConfig()
-// ============================================================================
-
+/**
+ * Get cache statistics (for debugging/monitoring)
+ * @returns {Object} Cache size information
+ */
+export function getCacheStats() {
+  return {
+    providers: _providersConfigCache.size,
+    models: _modelsConfigCache.size,
+    agents: _agentsConfigCache.size,
+    total: _providersConfigCache.size + _modelsConfigCache.size + _agentsConfigCache.size
+  };
+}

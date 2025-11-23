@@ -158,7 +158,7 @@ export const COPIOLITKIT_CONFIG = {
   // Firebase upload integration (set these via environment-injection script)
   ENABLE_FIREBASE_UPLOADS: true,
   FIREBASE: {
-    apiKey: "AIzaSyCCLmP_BJd55Z_lkMQ02GEXPCv0un3_jPw",
+    apiKey: "AIzaSyA8gy_pM2D8A80jX4bUuhwkAuRHupNrYNE",
     authDomain: "adbe-gcp0814.firebaseapp.com",
     projectId: "adbe-gcp0814",
     storageBucket: "adbe-gcp0814.firebasestorage.app",

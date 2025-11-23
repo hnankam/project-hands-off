@@ -15,26 +15,6 @@ Python functions that run on the server and have access to the agent's state.
 
 3. Add the tool to your database with tool_type='backend'
 
-Example:
-    def my_new_tool(ctx: RunContext[StateDeps[AgentState]], param1: str, param2: int = 5) -> str:
-        '''Description of what this tool does.
-        
-        Args:
-            ctx: The run context with agent state
-            param1: Description of param1
-            param2: Description of param2 (optional, default 5)
-            
-        Returns:
-            Description of return value
-        '''
-        # Tool implementation
-        return "result"
-    
-    # Then add to BACKEND_TOOLS:
-    BACKEND_TOOLS = {
-        'my_new_tool': my_new_tool,
-        # ... other tools
-    }
 """
 
 from __future__ import annotations
@@ -50,12 +30,11 @@ from pydantic_ai import ModelSettings
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from pydantic_ai.providers.google import GoogleProvider
 from core.models import JSONPatchOp
+from config import logger
 
 # Import Firebase Storage utility
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
 from utils.firebase_storage import upload_binary_image_to_storage
+import os
 
 # ========== State Management Tools ==========
 
@@ -69,12 +48,8 @@ async def create_plan(ctx: RunContext[StateDeps[AgentState]], steps: list[str]) 
     Returns:
         StateSnapshotEvent with updated state
     """
-    print(f"📝 Creating plan with {len(steps)} steps")
-    print(f"   Current state before: steps={len(ctx.deps.state.steps)}")
     ctx.deps.state.steps = [Step(description=step) for step in steps]
-    print(f"   State after: steps={len(ctx.deps.state.steps)}")
     state_dict = ctx.deps.state.model_dump()
-    print(f"   Returning snapshot: {state_dict}")
 
     return ToolReturn(
         return_value='Plan Created',
@@ -107,13 +82,9 @@ async def update_plan_step(
     Raises:
         ValueError: If step index doesn't exist
     """
-    print(f"🔄 Updating step {index}: description={description}, status={status}")
-    print(f"   Current state: {len(ctx.deps.state.steps)} steps")
 
     if not ctx.deps.state.steps or index >= len(ctx.deps.state.steps):
         error_msg = f"Step at index {index} does not exist. Current steps count: {len(ctx.deps.state.steps)}"
-        print(f"   ❌ ERROR: {error_msg}")
-        print(f"   Current steps: {[s.description for s in ctx.deps.state.steps]}")
         raise ValueError(error_msg)
 
     if description is not None:
@@ -122,7 +93,6 @@ async def update_plan_step(
         ctx.deps.state.steps[index].status = status
 
     state_dict = ctx.deps.state.model_dump()
-    print(f"   ✅ Updated step {index}, returning full snapshot: {state_dict}")
 
     return ToolReturn(
         return_value='Plan Step Updated',
@@ -133,23 +103,7 @@ async def update_plan_step(
             ),
         ],
     )
-    # changes: list[JSONPatchOp] = []
-    # if description is not None:
-    #     changes.append(
-    #         JSONPatchOp(
-    #             op='replace', path=f'/steps/{index}/description', value=description
-    #         )
-    #     )
-    # if status is not None:
-    #     changes.append(
-    #         JSONPatchOp(op='replace', path=f'/steps/{index}/status', value=status)
-    #     )
-    
-    # print(f"   ✅ Changes: {changes}")
-    # return StateDeltaEvent(
-    #     type=EventType.STATE_DELTA,
-    #     delta=changes,
-    # )
+
 
 
 # ========== Utility Tools ==========
@@ -237,7 +191,6 @@ async def generate_images(
     Returns:
         List of public URLs pointing to the uploaded images in Firebase Storage
     """
-    # print(f"🎨 Generating {num_images} images based on prompt: {prompt}")
     
     try:
         # Use the AI agent to generate images
@@ -250,7 +203,7 @@ async def generate_images(
         
         for idx, image in enumerate(result.response.images):
             if isinstance(image, BinaryImage):
-                print(f"🎨 Uploading image {idx + 1}/{len(result.response.images)} to Firebase Storage...")
+                logger.info("Uploading image %d/%d to Firebase Storage...", idx + 1, len(result.response.images))
                 
                 # Get the binary data from BinaryImage
                 # BinaryImage has a 'data' attribute with the bytes
@@ -268,21 +221,19 @@ async def generate_images(
                 
                 if url:
                     uploaded_urls.append(url)
-                    print(f"   ✅ Uploaded: {url}")
+                    logger.info("Uploaded: %s", url)
                 else:
-                    print(f"   ⚠️ Failed to upload image {idx + 1}")
+                    logger.warning("Failed to upload image %d", idx + 1)
             else:
-                print(f"   ⚠️ Unexpected image type: {type(image)}")
+                logger.warning("Unexpected image type: %s", type(image))
         
         if not uploaded_urls:
-            print("⚠️ No images were successfully uploaded, returning placeholder URLs")
             return []
         
-        print(f"🎨 Successfully uploaded {len(uploaded_urls)} images to Firebase Storage")
         return uploaded_urls
         
     except Exception as e:
-        print(f"❌ Error generating/uploading images: {e}")
+        logger.error("Error generating/uploading images: %s", e)
         return []
 
 

@@ -48,6 +48,10 @@ async def lifespan(app: FastAPI):
     # Shutdown: cleanup resources if needed
     logger.info("Shutting down Pydantic AI Agent Server")
 
+    # Close connection pool
+    from database.connection import close_connection_pool
+    await close_connection_pool()
+
 
 # Create FastAPI application with lifespan
 app = FastAPI(
@@ -93,16 +97,8 @@ async def handle_model_http_error(request: Request, exc: ModelHTTPError) -> JSON
         exc.status_code,
         exc_info=exc,
     )
-    return JSONResponse(
-        status_code=exc.status_code or 502,
-        content={
-            "error": "model_http_error",
-            "message": str(exc),
-            "model": exc.model_name,
-            "details": exc.body,
-            "request_id": getattr(request.state, "req_id", None),
-        },
-    )
+    from middleware.request_middleware import _model_http_error_response
+    return _model_http_error_response(request, exc)
 
 
 @app.exception_handler(AgentRunError)

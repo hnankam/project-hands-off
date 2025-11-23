@@ -5,17 +5,11 @@
 
 import { config } from 'dotenv';
 import pg from 'pg';
-import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 
 // Load environment variables
 config();
 
 const { Pool } = pg;
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 // Database connection pool
 let pool = null;
@@ -46,13 +40,21 @@ export function getPool() {
     const connectionString = getConnectionString();
     pool = new Pool({
       connectionString,
-      max: 10,
+      max: 20, // Increased for better concurrency
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,
+      // Additional recommended settings
+      allowExitOnIdle: false,
+      statement_timeout: 10000, // 10 second statement timeout
     });
     
     pool.on('error', (err) => {
-      console.error('Unexpected error on idle client', err);
+      console.error('Unexpected error on idle database client:', err.message);
+    });
+    
+    pool.on('connect', () => {
+      // Uncomment for debugging connection events
+      // console.log('Database client connected to pool');
     });
   }
   
@@ -80,10 +82,7 @@ export async function query(text, params) {
  */
 export async function testConnection() {
   try {
-    const result = await query('SELECT NOW() as now, version() as version');
-    console.log('✓ Database connection successful');
-    console.log('  Time:', result.rows[0].now);
-    console.log('  Version:', result.rows[0].version.split(',')[0]);
+    await query('SELECT NOW() as now, version() as version');
     return true;
   } catch (error) {
     console.error('✗ Database connection failed:', error.message);
@@ -91,30 +90,6 @@ export async function testConnection() {
   }
 }
 
-/**
- * Initialize database schema extensions for runtime server
- */
-export async function initSchemaExtensions() {
-  const client = await getClient();
-  
-  try {
-    const schemaPath = join(__dirname, '../../copilotkit-pydantic/database/schema_extensions.sql');
-    const schema = readFileSync(schemaPath, 'utf-8');
-    
-    await client.query('BEGIN');
-    await client.query(schema);
-    await client.query('COMMIT');
-    
-    console.log('✓ Schema extensions initialized successfully');
-    return true;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('✗ Schema extensions failed:', error.message);
-    throw error;
-  } finally {
-    client.release();
-  }
-}
 
 /**
  * Close database connection pool
@@ -130,13 +105,22 @@ export async function closePool() {
 /**
  * Graceful shutdown handler
  */
-process.on('SIGINT', async () => {
-  await closePool();
-  process.exit(0);
-});
+let isShuttingDown = false;
 
-process.on('SIGTERM', async () => {
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  
+  console.log(`\n${signal} received, closing database connections...`);
+  try {
   await closePool();
   process.exit(0);
-});
+  } catch (error) {
+    console.error('Error during graceful shutdown:', error);
+    process.exit(1);
+  }
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 

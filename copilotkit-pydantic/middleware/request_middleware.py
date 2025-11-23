@@ -21,6 +21,8 @@ def _model_http_error_response(request: Request, exc: ModelHTTPError) -> JSONRes
         },
     )
 
+__all__ = ['agent_model_middleware', 'agent_error_middleware', '_model_http_error_response']
+
 
 async def agent_model_middleware(request: Request, call_next):
     """Middleware for request ID tracking and agent/model selection.
@@ -36,55 +38,19 @@ async def agent_model_middleware(request: Request, call_next):
     request.state.req_id = req_id
     
     # Get agent type and model from custom headers
-    agent_type = (
-        request.headers.get("x-copilot-agent-type") or
-        request.headers.get("X-Copilot-Agent-Type") or
-        "general"
-    )
-    
-    model_name = (
-        request.headers.get("x-copilot-model-type") or
-        request.headers.get("X-Copilot-Model-Type") or
-        "gemini-2.5-flash-lite"
-    )
+    agent_type = request.headers.get("x-copilot-agent-type")
+    model_name = request.headers.get("x-copilot-model-type")
     
     # Extract user, organization, and team information from headers
-    user_id = (
-        request.headers.get("x-copilot-user-id") or
-        request.headers.get("X-Copilot-User-Id")
-    )
-    user_email = (
-        request.headers.get("x-copilot-user-email") or
-        request.headers.get("X-Copilot-User-Email")
-    )
-    user_name = (
-        request.headers.get("x-copilot-user-name") or
-        request.headers.get("X-Copilot-User-Name")
-    )
-    organization_id = (
-        request.headers.get("x-copilot-organization-id") or
-        request.headers.get("X-Copilot-Organization-Id")
-    )
-    organization_name = (
-        request.headers.get("x-copilot-organization-name") or
-        request.headers.get("X-Copilot-Organization-Name")
-    )
-    organization_slug = (
-        request.headers.get("x-copilot-organization-slug") or
-        request.headers.get("X-Copilot-Organization-Slug")
-    )
-    member_role = (
-        request.headers.get("x-copilot-member-role") or
-        request.headers.get("X-Copilot-Member-Role")
-    )
-    team_id = (
-        request.headers.get("x-copilot-team-id") or
-        request.headers.get("X-Copilot-Team-Id")
-    )
-    team_name = (
-        request.headers.get("x-copilot-team-name") or
-        request.headers.get("X-Copilot-Team-Name")
-    )
+    user_id = request.headers.get("x-copilot-user-id")
+    user_email = request.headers.get("x-copilot-user-email")
+    user_name = request.headers.get("x-copilot-user-name")
+    organization_id = request.headers.get("x-copilot-organization-id")
+    organization_name = request.headers.get("x-copilot-organization-name")
+    organization_slug = request.headers.get("x-copilot-organization-slug")
+    member_role = request.headers.get("x-copilot-member-role")
+    team_id = request.headers.get("x-copilot-team-id")
+    team_name = request.headers.get("x-copilot-team-name")
     
     if DEBUG:
         logger.info(f"[{req_id}] Agent={agent_type} Model={model_name} {request.method} {request.url.path}")
@@ -110,14 +76,6 @@ async def agent_model_middleware(request: Request, call_next):
     request.state.member_role = member_role
     request.state.team_id = team_id
     request.state.team_name = team_name
-    
-    if DEBUG:
-        logger.info(f"[{req_id}] Using agent={agent_type} model={model_name}")
-        if user_id:
-            logger.info(
-                f"[{req_id}] Auth context: user={user_email}, org={organization_name} ({organization_slug}), "
-                f"team={team_name}, userID={user_id}, orgID={organization_id}, teamID={team_id}"
-            )
     
     response = await call_next(request)
     return response

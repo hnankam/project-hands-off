@@ -4,7 +4,7 @@
 
 import { HttpAgent } from "@ag-ui/client";
 import { AGENT_BASE_URL } from '../config/index.js';
-import { getModelEndpoint, DEFAULT_AGENT, DEFAULT_MODEL } from '../config/models.js';
+import { getModelEndpoint, getDefaultAgent, getDefaultModel } from '../config/models.js';
 
 /**
  * Generate dynamic agent URL based on agent type and model
@@ -20,8 +20,12 @@ export async function getDynamicAgentUrl(agent, model) {
  * @param {string} agent - The agent type
  * @param {string} model - The model type
  * @param {Object} authContext - Optional authentication context with user, org, and team info
+ * @param {Object} extraHeaders - Additional headers to forward
  */
-export async function createHttpAgent(agent = DEFAULT_AGENT, model = DEFAULT_MODEL, authContext = {}, extraHeaders = {}) {
+export async function createHttpAgent(agent, model, authContext = {}, extraHeaders = {}) {
+  // Get defaults if not provided
+  if (!agent) agent = await getDefaultAgent();
+  if (!model) model = await getDefaultModel();
   const url = await getDynamicAgentUrl(agent, model);
   
   // Build headers including auth context if provided
@@ -31,37 +35,26 @@ export async function createHttpAgent(agent = DEFAULT_AGENT, model = DEFAULT_MOD
     'Content-Type': 'application/json'
   };
   
+  // Map of auth context properties to header names
+  const authContextMapping = {
+    userId: 'x-copilot-user-id',
+    userEmail: 'x-copilot-user-email',
+    userName: 'x-copilot-user-name',
+    organizationId: 'x-copilot-organization-id',
+    organizationName: 'x-copilot-organization-name',
+    organizationSlug: 'x-copilot-organization-slug',
+    memberRole: 'x-copilot-member-role',
+    teamId: 'x-copilot-team-id',
+    teamName: 'x-copilot-team-name',
+    sessionId: 'x-copilot-session-id'
+  };
+  
   // Add auth context headers if available
-  if (authContext.userId) {
-    headers['x-copilot-user-id'] = authContext.userId;
+  Object.entries(authContextMapping).forEach(([contextKey, headerName]) => {
+    if (authContext[contextKey]) {
+      headers[headerName] = authContext[contextKey];
   }
-  if (authContext.userEmail) {
-    headers['x-copilot-user-email'] = authContext.userEmail;
-  }
-  if (authContext.userName) {
-    headers['x-copilot-user-name'] = authContext.userName;
-  }
-  if (authContext.organizationId) {
-    headers['x-copilot-organization-id'] = authContext.organizationId;
-  }
-  if (authContext.organizationName) {
-    headers['x-copilot-organization-name'] = authContext.organizationName;
-  }
-  if (authContext.organizationSlug) {
-    headers['x-copilot-organization-slug'] = authContext.organizationSlug;
-  }
-  if (authContext.memberRole) {
-    headers['x-copilot-member-role'] = authContext.memberRole;
-  }
-  if (authContext.teamId) {
-    headers['x-copilot-team-id'] = authContext.teamId;
-  }
-  if (authContext.teamName) {
-    headers['x-copilot-team-name'] = authContext.teamName;
-  }
-  if (authContext.sessionId) {
-    headers['x-copilot-session-id'] = authContext.sessionId;
-  }
+  });
 
   // Forward any additional headers (e.g., client thread identifiers)
   if (extraHeaders && typeof extraHeaders === 'object') {
@@ -80,8 +73,11 @@ export async function createHttpAgent(agent = DEFAULT_AGENT, model = DEFAULT_MOD
 
 /**
  * Create the default dynamic agent
+ * Fetches defaults from database configuration
  */
 export async function createDefaultAgent() {
-  return await createHttpAgent(DEFAULT_AGENT, DEFAULT_MODEL);
+  const agent = await getDefaultAgent();
+  const model = await getDefaultModel();
+  return await createHttpAgent(agent, model);
 }
 

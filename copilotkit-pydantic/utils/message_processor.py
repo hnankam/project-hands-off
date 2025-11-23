@@ -51,8 +51,6 @@ async def process_message_attachments(
         if isinstance(message, ModelRequest):
             last_request_idx = idx
     
-    # logger.debug(f"[process_message_attachments] Last ModelRequest index: {last_request_idx} out of {len(messages)} messages")
-    
     for idx, message in enumerate(messages):
         # Only process ModelRequest messages (user messages)
         if not isinstance(message, ModelRequest):
@@ -69,12 +67,16 @@ async def process_message_attachments(
             # Process both UserPromptPart and ToolReturnPart
             if isinstance(part, UserPromptPart) and isinstance(part.content, str):
                 content = part.content
-                # Parse manifest (only log for latest message)
+                
+                # Parse manifest-based attachments (from frontend)
                 clean_text, attachments = parse_attachment_manifest(content, log_parse=is_last_request)
                 
                 if not attachments:
-                    # No attachments, keep original part
-                    new_parts.append(part)
+                    # No attachments, keep original part (or simplified if we just cleaned text)
+                    if clean_text != content:
+                        new_parts.append(UserPromptPart(content=clean_text))
+                    else:
+                        new_parts.append(part)
                     continue
                 
                 # Only process attachments for the most recent user message
@@ -83,7 +85,6 @@ async def process_message_attachments(
                     # Historical message - attachments already processed, just keep clean text
                     if clean_text.strip():
                         new_parts.append(UserPromptPart(content=clean_text))
-                    # logger.debug(f"Skipping {len(attachments)} historical attachment(s) in manifest (already processed)")
                     continue
                 
                 has_attachments = True
@@ -96,32 +97,40 @@ async def process_message_attachments(
                 for attachment in attachments:
                     name = attachment.get('name', 'attachment')
                     mime_type = attachment.get('type', 'application/octet-stream')
+                    # Handle media_type key from inline parser
+                    if 'media_type' in attachment:
+                        mime_type = attachment['media_type']
+                        
                     url = attachment.get('url', '')
                     
                     if not url:
                         logger.warning(f"Skipping attachment '{name}' with no URL")
                         continue
                     
-                    # Create a descriptive text block about the attachment
-                    if mime_type.startswith('image/'):
-                        desc = f"[Image: {name} - {url}]"
-                    else:
-                        desc = f"[Document: {name} ({mime_type}) - {url}]"
+                    # Create standardized internal marker for model mappers
+                    # Format: __ATTACHMENT__|||type|||mime_type|||url|||name
+                    att_type = 'image' if mime_type.startswith('image/') else 'document'
+                    marker = f"__ATTACHMENT__|||{att_type}|||{mime_type}|||{url}|||{name}"
                     
-                    new_parts.append(UserPromptPart(content=desc))
-                    # logger.info(f"Processed NEW attachment: {name} ({mime_type})")
+                    new_parts.append(UserPromptPart(content=marker))
                     
             elif isinstance(part, ToolReturnPart) and isinstance(part.content, str):
                 content = part.content
-                # logger.debug(f"[ToolReturnPart] tool={part.tool_name}, content_length={len(content)}, has_manifest={'<!--ATTACHMENTS:' in content}")
-                # Parse manifest (only log for latest message)
-                clean_text, attachments = parse_attachment_manifest(content, log_parse=is_last_request)
                 
-                # logger.debug(f"[ToolReturnPart] Found {len(attachments)} attachments after parsing")
+                # Parse manifest-based attachments
+                clean_text, attachments = parse_attachment_manifest(content, log_parse=is_last_request)
                 
                 if not attachments:
                     # No attachments, keep original part
-                    new_parts.append(part)
+                    if clean_text != content:
+                         new_parts.append(ToolReturnPart(
+                            tool_name=part.tool_name,
+                            content=clean_text,
+                            tool_call_id=part.tool_call_id,
+                            timestamp=part.timestamp
+                        ))
+                    else:
+                        new_parts.append(part)
                     continue
                 
                 # Only process attachments for the most recent message
@@ -133,7 +142,6 @@ async def process_message_attachments(
                         tool_call_id=part.tool_call_id,
                         timestamp=part.timestamp
                     ))
-                    # logger.debug(f"Skipping {len(attachments)} historical attachment(s) in tool return (already processed)")
                     continue
                 
                 has_attachments = True
@@ -146,25 +154,24 @@ async def process_message_attachments(
                     timestamp=part.timestamp
                 ))
                 
-                # Add attachment references as UserPromptPart
+                # Add attachment references as UserPromptPart with internal markers
                 for attachment in attachments:
                     name = attachment.get('name', 'attachment')
                     mime_type = attachment.get('type', 'application/octet-stream')
+                    if 'media_type' in attachment:
+                        mime_type = attachment['media_type']
+                        
                     url = attachment.get('url', '')
                     
                     if not url:
                         logger.warning(f"Skipping attachment '{name}' with no URL in tool return")
                         continue
                     
-                    # Create a descriptive text block about the attachment
-                    if mime_type.startswith('image/'):
-                        desc = f"[Image: {name} - {url}]"
-                    else:
-                        desc = f"[Document: {name} ({mime_type}) - {url}]"
+                    # Create standardized internal marker
+                    att_type = 'image' if mime_type.startswith('image/') else 'document'
+                    marker = f"__ATTACHMENT__|||{att_type}|||{mime_type}|||{url}|||{name}"
                     
-                    new_parts.append(UserPromptPart(content=desc))
-                    # logger.info(f"Processed NEW tool return attachment: {name} ({mime_type})")
-                    # logger.debug(f"  Image reference created: {desc[:100]}...")
+                    new_parts.append(UserPromptPart(content=marker))
             else:
                 new_parts.append(part)
         
@@ -177,17 +184,6 @@ async def process_message_attachments(
             processed_messages.append(new_message)
             if has_attachments:
                 logger.info(f"Transformed message with NEW attachments into {len(new_parts)} parts")
-                # Log the parts for debugging
-                for i, part in enumerate(new_parts):
-                    part_type = type(part).__name__
-                    if isinstance(part, UserPromptPart):
-                        content_preview = part.content[:100] if isinstance(part.content, str) else str(part.content)[:100]
-                        # logger.debug(f"  Part {i}: {part_type} - content: {content_preview}...")
-                    elif isinstance(part, ToolReturnPart):
-                        content_preview = part.content[:100] if isinstance(part.content, str) else str(part.content)[:100]
-                        # logger.debug(f"  Part {i}: {part_type} ({part.tool_name}) - content: {content_preview}...")
-                    # else:
-                        # logger.debug(f"  Part {i}: {part_type}")
         else:
             processed_messages.append(message)
     
@@ -224,7 +220,6 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
         ]
         -->
     """
-    # logger.debug(f"[parse_manifest] Parsing content (length={len(content)}), starts_with_brace={content.startswith('{')}")
     
     # If content looks like a JSON string (from tool return), try to decode it first
     decoded_content = content
@@ -235,7 +230,6 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
             # If it's a JSON object with a 'message' field, extract it
             if isinstance(json_obj, dict) and 'message' in json_obj:
                 decoded_content = json_obj['message']
-                # logger.debug(f"[parse_manifest] Decoded JSON tool return, extracted message field")
             else:
                 decoded_content = content
         except (json.JSONDecodeError, ValueError):
@@ -247,14 +241,11 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
     
     match = re.search(manifest_pattern, decoded_content, re.DOTALL)
     if not match:
-        # if '<!--ATTACHMENTS:' in decoded_content:
-            # logger.debug(f"[parse_manifest] Found ATTACHMENTS marker but regex didn't match. Content preview: {decoded_content[:200]}")
         return content, []
     
     try:
         # Parse the JSON manifest
         manifest_json = match.group(1)
-        # logger.debug(f"[parse_manifest] Extracted manifest JSON: {manifest_json[:200]}...")
         attachments = json.loads(manifest_json)
         
         # Remove the manifest block from decoded content
@@ -276,7 +267,6 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
         
         if log_parse:
             logger.info(f"Parsed attachment manifest: {len(attachments)} attachments")
-        # logger.debug(f"[parse_manifest] Successfully parsed {len(attachments)} attachments")
         return clean_text, attachments
         
     except json.JSONDecodeError as e:
@@ -301,7 +291,7 @@ async def keep_recent_messages(
     - Separates paired messages inappropriately
     - Breaks the logical flow of multi-turn interactions
 
-    CRITICAL FIX: This function also removes orphaned tool_use blocks (ToolCallPart)
+    This function also removes orphaned tool_use blocks (ToolCallPart)
     that don't have corresponding tool_result blocks (ToolReturnPart) in subsequent messages.
     This prevents Anthropic API errors like:
     "messages.X: `tool_use` ids were found without `tool_result` blocks immediately after"
@@ -311,9 +301,6 @@ async def keep_recent_messages(
 
     Reference: https://github.com/pydantic/pydantic-ai/issues/2050
     """
-
-    # for index, message in enumerate(messages):
-    #     logger.info(f"Message {index}: {message}")
 
     logger.info(f"Message History Usage: {ctx.usage.total_tokens} = {ctx.usage.input_tokens} + {ctx.usage.output_tokens}")
 
@@ -577,13 +564,11 @@ async def keep_recent_messages(
 
     messages = post_validated_messages
 
-    message_window = 100
+    message_window = 150
 
     if len(messages) <= message_window:
         logger.info(f"Returning {len(messages)} messages (<={message_window})")
         return messages
-
-    logger.info(f"Compacting history with window={message_window}")
 
     # Find system prompt if it exists
     system_prompt = None

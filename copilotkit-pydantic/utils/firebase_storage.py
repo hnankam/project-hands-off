@@ -16,6 +16,7 @@ import sys
 # Import Firebase configuration from environment
 sys.path.append(str(Path(__file__).parent.parent))
 from config.firebase import FirebaseConfig
+from config import logger
 
 
 def _generate_unique_filename(extension: str = 'png') -> str:
@@ -23,6 +24,71 @@ def _generate_unique_filename(extension: str = 'png') -> str:
     timestamp = int(datetime.now().timestamp() * 1000)
     random_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     return f"{timestamp}-{random_str}.{extension}"
+
+
+def _get_firebase_auth_token() -> Optional[str]:
+    """Get a Firebase Auth ID token using anonymous authentication via REST API.
+    
+    This uses Firebase Auth REST API to sign in anonymously and get an ID token
+    that can be used to authenticate Storage uploads.
+    
+    Returns:
+        Firebase ID token string, or None if authentication fails
+    """
+    try:
+        api_key = FirebaseConfig.API_KEY
+        if not api_key:
+            logger.error("Firebase API key not configured")
+            return None
+        
+        # Firebase Auth REST API endpoint for anonymous sign-in
+        auth_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={api_key}"
+        
+        # Request anonymous authentication
+        response = requests.post(
+            auth_url,
+            json={"returnSecureToken": True},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            id_token = data.get('idToken')
+            if id_token:
+                logger.debug("Successfully obtained Firebase Auth token")
+                return id_token
+            else:
+                logger.error("Firebase Auth response missing idToken")
+                return None
+        elif response.status_code == 400:
+            error_data = response.json()
+            error_code = error_data.get('error', {}).get('code', 'UNKNOWN')
+            
+            if error_code == 'CONFIGURATION_NOT_FOUND':
+                logger.warning(
+                    "Firebase Auth Anonymous sign-in is not enabled. "
+                    "Please enable it in Firebase Console: "
+                    "Authentication > Sign-in method > Anonymous > Enable"
+                )
+            else:
+                logger.error(
+                    "Failed to get Firebase Auth token: status=%d, code=%s, response=%s",
+                    response.status_code,
+                    error_code,
+                    response.text
+                )
+            return None
+        else:
+            logger.error(
+                "Failed to get Firebase Auth token: status=%d, response=%s",
+                response.status_code,
+                response.text
+            )
+            return None
+            
+    except Exception as e:
+        logger.error("Exception getting Firebase Auth token: %s", e)
+        return None
 
 
 async def upload_binary_image_to_storage(
@@ -53,19 +119,35 @@ async def upload_binary_image_to_storage(
         storage_bucket = FirebaseConfig.get_storage_bucket()
         api_key = FirebaseConfig.API_KEY
         
+        if not api_key:
+            logger.error("Firebase API key not configured")
+            return None
+        
+        # Try to get Firebase Auth token for authentication
+        # If Auth is not configured, we'll try with API key in URL
+        auth_token = _get_firebase_auth_token()
+        
         # Firebase Storage REST API endpoint
-        # Use the upload endpoint that doesn't require authentication for public buckets
         upload_url = (
             f"https://firebasestorage.googleapis.com/v0/b/{storage_bucket}/o"
             f"?uploadType=media&name={blob_path}"
         )
         
-        # Upload the file
-        print(f"📤 Uploading to Firebase Storage: {blob_path}")
+        # Upload the file with authentication
+        logger.info("📤 Uploading to Firebase Storage: %s", blob_path)
         
         headers = {
             'Content-Type': content_type,
         }
+        
+        # Add Authorization header if we have a token
+        if auth_token:
+            headers['Authorization'] = f'Bearer {auth_token}'
+        else:
+            logger.warning(
+                "No auth token available. Upload may fail if Storage rules require authentication. "
+                "Enable Firebase Auth Anonymous sign-in in Firebase Console."
+            )
         
         response = requests.post(
             upload_url,
@@ -83,18 +165,19 @@ async def upload_binary_image_to_storage(
                 f"?alt=media"
             )
             
-            print(f"✅ Uploaded successfully: {blob_path}")
-            print(f"   URL: {public_url}")
+            logger.info("✅ Uploaded successfully: %s", blob_path)
+            logger.debug("   URL: %s", public_url)
             return public_url
         else:
-            print(f"❌ Upload failed with status {response.status_code}")
-            print(f"   Response: {response.text}")
+            logger.error(
+                "❌ Upload failed with status %d: %s",
+                response.status_code,
+                response.text
+            )
             return None
         
     except Exception as e:
-        print(f"❌ Failed to upload image to Firebase: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("❌ Failed to upload image to Firebase")
         return None
 
 
@@ -129,7 +212,7 @@ async def upload_base64_image_to_storage(
         )
         
     except Exception as e:
-        print(f"❌ Failed to decode/upload base64 image: {e}")
+        logger.exception("❌ Failed to decode/upload base64 image")
         return None
 
 

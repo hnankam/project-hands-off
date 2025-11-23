@@ -3,35 +3,12 @@
 from __future__ import annotations
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from pydantic_ai.mcp import load_mcp_servers
-
-
-def mcp_log_handler(level: str, data: Any, logger: str | None = None) -> None:
-    """Custom log handler that writes MCP server logs to stderr instead of stdout.
-    
-    This prevents MCP server debug messages from interfering with JSON-RPC communication.
-    """
-    # Write to stderr to avoid breaking JSON-RPC protocol on stdout
-    # Filter out JSON parsing errors as they're often caused by MCP server debug output
-    data_str = str(data)
-    
-    # Suppress common non-critical JSON-RPC parsing errors
-    if "Failed to parse JSONRPC message" in data_str:
-        return
-    if "Invalid JSON" in data_str and "pydantic_core" in data_str:
-        return
-    
-    # Only log warnings and errors to reduce noise
-    if level in ("warning", "error"):
-        print(f"[MCP {logger or 'unknown'}] {level.upper()}: {data}", file=sys.stderr)
-    elif level == "debug":
-        # Suppress debug messages by default (too noisy)
-        pass
+from config import logger
 
 
 def load_mcp_toolsets(server_configs: dict | None = None) -> list:
@@ -44,7 +21,7 @@ def load_mcp_toolsets(server_configs: dict | None = None) -> list:
         List of MCP server toolset instances loaded via load_mcp_servers.
     """
     if not server_configs:
-        print("⚠️ No MCP server configurations provided")
+        logger.warning("No MCP server configurations provided")
         return []
     
     # Build JSON configuration for MCP servers from DB config
@@ -58,7 +35,7 @@ def load_mcp_toolsets(server_configs: dict | None = None) -> list:
         if transport == "stdio":
             command = server_config.get('command')
             if not command:
-                print(f"⚠️ MCP server '{server_key}': command is required for stdio transport")
+                logger.warning("MCP server '%s': command is required for stdio transport", server_key)
                 continue
 
             args = server_config.get('args', [])
@@ -80,13 +57,13 @@ def load_mcp_toolsets(server_configs: dict | None = None) -> list:
         elif transport in ("sse", "http"):
             url = server_config.get('url')
             if not url:
-                print(f"⚠️ MCP server '{server_key}': url is required for {transport} transport")
+                logger.warning("MCP server '%s': url is required for %s transport", server_key, transport)
                 continue
 
             mcp_entry['url'] = url
 
         else:
-            print(f"⚠️ MCP server '{server_key}': unsupported transport type '{transport}'")
+            logger.warning("MCP server '%s': unsupported transport type '%s'", server_key, transport)
             continue
 
         # Add max_retries if specified
@@ -97,7 +74,7 @@ def load_mcp_toolsets(server_configs: dict | None = None) -> list:
         mcpServers[server_key] = mcp_entry
     
     if not mcpServers:
-        print("⚠️ No valid MCP server configurations after validation")
+        logger.warning("No valid MCP server configurations after validation")
         return []
 
     # Create the dynamic JSON config from DB
@@ -113,9 +90,7 @@ def load_mcp_toolsets(server_configs: dict | None = None) -> list:
         json.dump(dynamic_config, tmp_file, indent=2)
         tmp_path = tmp_file.name
     
-    try:
-        print(f"🔌 Loading {len(mcpServers)} MCP server(s) from DB-generated configuration")
-        
+    try:        
         # Load MCP servers using the standard load_mcp_servers function
         toolsets = load_mcp_servers(Path(tmp_path))
         
@@ -125,15 +100,15 @@ def load_mcp_toolsets(server_configs: dict | None = None) -> list:
                 if not hasattr(toolset, 'tool_prefix') or not toolset.tool_prefix:
                     toolset.tool_prefix = toolset.id
             else:
-                print(f"⚠️ MCP toolset loaded without ID, this may cause issues")
+                logger.warning("MCP toolset loaded without ID, this may cause issues")
         
-        print(f"✅ Successfully loaded {len(toolsets)} MCP server toolset(s) from DB config")
+        logger.info("Successfully loaded %d MCP server toolset(s) from DB config", len(toolsets))
         return toolsets
         
     except Exception as exc:
-        print(f"❌ Error loading MCP servers from DB-generated JSON config: {exc}")
-        import traceback
-        traceback.print_exc()
+        logger.error("Error loading MCP servers from DB-generated JSON config: %s", exc)
+        # import traceback
+        # traceback.print_exc()
         return []
 
     finally:

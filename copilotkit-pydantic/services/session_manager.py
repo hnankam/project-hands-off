@@ -57,30 +57,25 @@ def get_or_create_session_state(
             logger.info(f"Evicted least-recently used state session={session_id} key={lru_key}")
 
     if key not in session_states[session_id]:
-        # logger.debug(
-        #     "Creating new state session=%s agent=%s model=%s org=%s team=%s",
-        #     session_id,
-        #     agent_type,
-        #     model,
-        #     organization_id,
-        #     team_id,
-        # )
+        if logger.isEnabledFor(10):  # DEBUG
+            logger.debug(
+                "Creating new state session=%s agent=%s model=%s org=%s team=%s",
+                session_id,
+                agent_type,
+                model,
+                organization_id,
+                team_id,
+            )
         session_states[session_id][key] = StateDeps(AgentState())
-        print(f"[AGENT_STATE_BACKEND] 🆕 Created NEW state for session={session_id[:8]} - steps={len(session_states[session_id][key].state.steps)}")
     else:
-        # logger.debug(
-        #     "Reusing state session=%s agent=%s model=%s org=%s team=%s",
-        #     session_id,
-        #     agent_type,
-        #     model,
-        #     organization_id,
-        #     team_id,
-        # )
-        state_obj = session_states[session_id][key].state
-        print(f"[AGENT_STATE_BACKEND] ♻️  REUSING state for session={session_id[:8]}")
-        print(f"[AGENT_STATE_BACKEND]    State has {len(state_obj.steps)} steps:")
-        for i, step in enumerate(state_obj.steps):
-            print(f"[AGENT_STATE_BACKEND]      Step {i}: {step.description[:50]}... (status={step.status})")
+        if logger.isEnabledFor(10):  # DEBUG
+            state_obj = session_states[session_id][key].state
+            logger.debug(
+                "Reusing state session=%s steps=%d",
+                session_id,
+                len(state_obj.steps)
+            )
+
 
     now = time.time()
     _session_last_access[session_id] = now
@@ -101,11 +96,27 @@ def cleanup_session(session_id: str) -> None:
         _state_last_access.pop(session_id, None)
 
 
+# Throttling cleanup to avoid scanning all sessions on every request
+_last_cleanup_time: float = 0
+CLEANUP_INTERVAL_SECONDS = 60.0
+
+
 def _cleanup_expired_sessions() -> None:
-    """Remove sessions not accessed within TTL."""
+    """Remove sessions not accessed within TTL.
+    
+    Throttled to run at most once every CLEANUP_INTERVAL_SECONDS.
+    """
     if TTL_SECONDS <= 0:
         return
+
+    global _last_cleanup_time
     now = time.time()
+    
+    if now - _last_cleanup_time < CLEANUP_INTERVAL_SECONDS:
+        return
+        
+    _last_cleanup_time = now
+    
     expired = [sid for sid, ts in _session_last_access.items() if (now - ts) > TTL_SECONDS]
     for sid in expired:
         cleanup_session(sid)

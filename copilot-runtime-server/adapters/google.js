@@ -21,7 +21,11 @@ export async function createGeminiAdapter(modelKey = 'gemini-2.5-flash-lite', co
     throw new Error('Google API key not found in database configuration');
   }
   
-  const modelId = modelConfig?.model_id || 'gemini-2.5-flash-lite';
+  if (!modelConfig?.model_id) {
+    throw new Error(`Model configuration not found for key: ${modelKey}`);
+  }
+  
+  const modelId = modelConfig.model_id;
   const apiKey = providerConfig.credentials.api_key;
   
   return new GoogleGenerativeAIAdapter({

@@ -1,12 +1,52 @@
+/**
+ * Tools API Routes
+ * 
+ * Provides CRUD operations for AI tools and MCP (Model Context Protocol) servers.
+ * Supports multi-tenant architecture with organization and team-level scoping.
+ * 
+ * Tool Types:
+ * - frontend: Client-side tools (read-only, bundled with app)
+ * - backend: Server-side tools (read-only, bundled with app)
+ * - builtin: Core system tools (read-only, bundled with app)
+ * - mcp: Dynamic tools from MCP servers (user-created, deletable)
+ * 
+ * Endpoints:
+ * - GET    /api/admin/tools - List tools (filtered by org/team)
+ * - POST   /api/admin/tools - Create tool
+ * - PUT    /api/admin/tools/:toolId - Update tool
+ * - DELETE /api/admin/tools/:toolId - Delete tool
+ * - PUT    /api/admin/tools/bulk/scope - Bulk update tool scopes
+ * - GET    /api/admin/tools/mcp-servers - List MCP servers
+ * - POST   /api/admin/tools/mcp-servers - Create MCP server
+ * - PUT    /api/admin/tools/mcp-servers/:serverId - Update MCP server
+ * - DELETE /api/admin/tools/mcp-servers/:serverId - Delete MCP server
+ * - POST   /api/admin/tools/mcp-servers/:serverId/load-tools - Load tools from MCP server
+ * - POST   /api/admin/tools/mcp-servers/test-config - Test MCP server config
+ * - POST   /api/admin/tools/mcp-servers/:serverId/test - Test MCP server connectivity
+ * 
+ * @module routes/tools
+ */
+
 import express from 'express';
-import { auth } from '../auth/index.js';
 import { getPool } from '../config/database.js';
 import { invalidateCache as invalidateDbCache } from '../config/db-loaders.js';
 import { invalidateCache as invalidateLoaderCache } from '../config/loader.js';
-import { syncTeamAssociations, syncTeamAssociationsWithClient, getTeamsForResource } from '../lib/team-helpers.js';
+import { syncTeamAssociations, syncTeamAssociationsWithClient } from '../lib/team-helpers.js';
+import {
+  sanitizeJSON,
+  ensureAuthenticated,
+  ensureOrgAdmin,
+} from '../utils/route-helpers.js';
 
 const router = express.Router();
 
+// ============================================================================
+// Constants and Utilities
+// ============================================================================
+
+/**
+ * Custom validation error class
+ */
 class ValidationError extends Error {
   constructor(message) {
     super(message);
@@ -15,75 +55,28 @@ class ValidationError extends Error {
   }
 }
 
+/**
+ * UUID validation regex (RFC 4122 compliant)
+ */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const sanitizeJSON = (value, fallback = {}) => {
-  if (value == null) {
-    return fallback;
-  }
-
-  if (typeof value === 'object') {
-    return value;
-  }
-
-  if (typeof value === 'string' && value.trim() === '') {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(value);
-  } catch (err) {
-    throw new ValidationError('Invalid JSON payload');
-  }
-};
-
-async function ensureAuthenticated(req, res) {
-  const session = await auth.api.getSession({ headers: req.headers });
-
-  if (!session || !session.user) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return null;
-  }
-
-  return session;
-}
-
-async function ensureOrgAdmin(pool, organizationId, userId, res) {
-  if (!organizationId) {
-    res.status(400).json({ error: 'organizationId is required' });
-    return null;
-  }
-
-  const memberResult = await pool.query(
-    'SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2',
-    [organizationId, userId],
-  );
-
-  if (memberResult.rows.length === 0) {
-    res.status(403).json({ error: 'Forbidden: user is not a member of the organization' });
-    return null;
-  }
-
-  const roleValue = memberResult.rows[0].role;
-  const roles = Array.isArray(roleValue)
-    ? roleValue
-    : typeof roleValue === 'string'
-      ? [roleValue]
-      : [];
-
-  if (!roles.includes('owner') && !roles.includes('admin')) {
-    res.status(403).json({ error: 'Forbidden: admin or owner role required' });
-    return null;
-  }
-
-  return roles;
-}
-
+/**
+ * Invalidates configuration caches after changes
+ */
 function invalidateConfigCaches() {
   invalidateDbCache();
   invalidateLoaderCache();
 }
 
+// ============================================================================
+// Data Transformation Functions
+// ============================================================================
+
+/**
+ * Transform database row to camelCase tool object
+ * @param {Object} row - Database row (snake_case)
+ * @returns {Object} Tool object (camelCase)
+ */
 const toCamelTool = row => ({
   id: row.id,
   toolKey: row.tool_key,
@@ -110,6 +103,11 @@ const toCamelTool = row => ({
     : null,
 });
 
+/**
+ * Transform database row to camelCase MCP server object
+ * @param {Object} row - Database row (snake_case)
+ * @returns {Object} Server object (camelCase)
+ */
 const toCamelServer = row => ({
   id: row.id,
   serverKey: row.server_key,
@@ -127,6 +125,25 @@ const toCamelServer = row => ({
   updatedAt: row.updated_at,
 });
 
+// ============================================================================
+// Tool Routes
+// ============================================================================
+
+/**
+ * GET /api/admin/tools
+ * Lists all tools for an organization, optionally filtered by team(s).
+ * 
+ * Query Parameters:
+ * - organizationId: string (required) - Organization ID
+ * - teamIds: string | string[] (optional) - Team ID(s) for filtering
+ * 
+ * Returns tools that are either:
+ * 1. Organization-wide (no team restrictions), OR
+ * 2. Assigned to at least one of the specified teams
+ * 
+ * For global tools (frontend, builtin, backend), returns org-level enabled state.
+ * For team-specific queries, returns team-level enabled states.
+ */
 router.get('/', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -223,6 +240,23 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/admin/tools
+ * Creates a new tool for the organization.
+ * 
+ * Body:
+ * - organizationId: string (required) - Organization ID
+ * - teamIds: string[] (optional) - Team IDs to associate with the tool
+ * - toolKey: string (required) - Unique key for the tool
+ * - toolName: string (required) - Display name
+ * - toolType: 'frontend' | 'backend' | 'builtin' | 'mcp' (required)
+ * - description: string (optional)
+ * - metadata: object (optional) - Tool metadata
+ * - config: object (optional) - Tool configuration
+ * - enabled: boolean (optional, default: true)
+ * - mcpServerId: string (required for MCP tools) - MCP server ID
+ * - remoteToolName: string (required for MCP tools) - Remote tool identifier
+ */
 router.post('/', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -258,13 +292,14 @@ router.post('/', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    if (teamId) {
+    // Validate teams if provided
+    if (teamIds && teamIds.length > 0) {
       const { rows } = await pool.query(
-        'SELECT id FROM team WHERE id = $1 AND "organizationId" = $2',
-        [teamId, organizationId],
+        'SELECT id FROM team WHERE id = ANY($1::text[]) AND "organizationId" = $2',
+        [teamIds, organizationId],
       );
-      if (rows.length === 0) {
-        return res.status(404).json({ error: 'Team not found in organization' });
+      if (rows.length !== teamIds.length) {
+        return res.status(404).json({ error: 'One or more teams not found in organization' });
       }
     }
 
@@ -364,6 +399,27 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+/**
+ * PUT /api/admin/tools/:toolId
+ * Updates an existing tool.
+ * 
+ * Read-only tools (frontend, backend, builtin) can only have enabled state modified.
+ * MCP tools can have all fields updated.
+ * 
+ * Supports team-level enabled state overrides via teamEnabledStates parameter.
+ * 
+ * Body:
+ * - organizationId: string (required) - Organization ID
+ * - teamIds: string[] (optional) - Update team associations
+ * - toolName: string (optional) - Update display name
+ * - description: string (optional) - Update description
+ * - metadata: object (optional) - Update metadata
+ * - config: object (optional) - Update configuration
+ * - enabled: boolean (optional) - Update enabled state
+ * - teamEnabledStates: object (optional) - Team-level enabled overrides { teamId: boolean }
+ * - remoteToolName: string (optional, MCP only) - Update remote tool name
+ * - mcpServerId: string (optional, MCP only) - Update MCP server
+ */
 router.put('/:toolId', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -620,7 +676,17 @@ router.put('/:toolId', async (req, res, next) => {
   }
 });
 
-// Bulk update tools scope
+/**
+ * PUT /api/admin/tools/bulk/scope
+ * Bulk update team associations for multiple tools.
+ * 
+ * Validates that MCP tools don't exceed their server's scope restrictions.
+ * 
+ * Body:
+ * - toolIds: string[] (required) - Array of tool IDs to update
+ * - organizationId: string (required) - Organization ID
+ * - teamIds: string[] (optional) - New team associations (empty = org-wide)
+ */
 router.put('/bulk/scope', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -746,6 +812,16 @@ router.put('/bulk/scope', async (req, res, next) => {
   }
 });
 
+/**
+ * DELETE /api/admin/tools/:toolId
+ * Deletes a tool (MCP tools only).
+ * 
+ * Read-only tools (frontend, backend, builtin) cannot be deleted.
+ * Prevents deletion if tool is assigned to any agents.
+ * 
+ * Query Parameters:
+ * - organizationId: string (required) - Organization ID
+ */
 router.delete('/:toolId', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -809,6 +885,18 @@ router.delete('/:toolId', async (req, res, next) => {
   }
 });
 
+// ============================================================================
+// MCP Server Routes
+// ============================================================================
+
+/**
+ * GET /api/admin/tools/mcp-servers
+ * Lists all MCP servers for an organization, optionally filtered by team(s).
+ * 
+ * Query Parameters:
+ * - organizationId: string (required) - Organization ID
+ * - teamIds: string | string[] (optional) - Team ID(s) for filtering
+ */
 router.get('/mcp-servers', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -871,6 +959,23 @@ router.get('/mcp-servers', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/admin/tools/mcp-servers
+ * Creates a new MCP server for the organization.
+ * 
+ * Body:
+ * - organizationId: string (required)
+ * - teamIds: string[] (optional) - Team associations
+ * - serverKey: string (required) - Unique key
+ * - displayName: string (required) - Display name
+ * - transport: 'stdio' | 'sse' | 'ws' (default: 'stdio')
+ * - command: string (optional, for stdio) - Command to run
+ * - args: string[] (optional) - Command arguments
+ * - env: object (optional) - Environment variables
+ * - url: string (optional, for sse/ws) - Server URL
+ * - metadata: object (optional)
+ * - enabled: boolean (default: true)
+ */
 router.post('/mcp-servers', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -989,6 +1094,22 @@ router.post('/mcp-servers', async (req, res, next) => {
   }
 });
 
+/**
+ * PUT /api/admin/tools/mcp-servers/:serverId
+ * Updates an existing MCP server.
+ * 
+ * Body:
+ * - organizationId: string (required)
+ * - teamIds: string[] (optional) - Update team associations
+ * - displayName: string (optional)
+ * - transport: 'stdio' | 'sse' | 'ws' (optional)
+ * - command: string (optional)
+ * - args: string[] (optional)
+ * - env: object (optional)
+ * - url: string (optional)
+ * - metadata: object (optional)
+ * - enabled: boolean (optional)
+ */
 router.put('/mcp-servers/:serverId', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -1093,6 +1214,15 @@ router.put('/mcp-servers/:serverId', async (req, res, next) => {
   }
 });
 
+/**
+ * DELETE /api/admin/tools/mcp-servers/:serverId
+ * Deletes an MCP server.
+ * 
+ * Prevents deletion if server still has tools assigned.
+ * 
+ * Query Parameters:
+ * - organizationId: string (required)
+ */
 router.delete('/mcp-servers/:serverId', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -1141,6 +1271,16 @@ router.delete('/mcp-servers/:serverId', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/admin/tools/mcp-servers/:serverId/load-tools
+ * Loads tools from an MCP server by connecting to it via Python backend.
+ * 
+ * Creates or updates tools in the database based on what the MCP server exposes.
+ * Tool scope automatically matches the MCP server's scope (org-wide or team-specific).
+ * 
+ * Body:
+ * - organizationId: string (required)
+ */
 router.post('/mcp-servers/:serverId/load-tools', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -1328,7 +1468,21 @@ router.post('/mcp-servers/:serverId/load-tools', async (req, res, next) => {
   }
 });
 
-// Test MCP server connectivity with configuration (no server ID required)
+/**
+ * POST /api/admin/tools/mcp-servers/test-config
+ * Tests MCP server connectivity with a provided configuration (before saving).
+ * 
+ * Useful for validating server config during creation/editing.
+ * 
+ * Body:
+ * - organizationId: string (required)
+ * - serverConfig: object (required)
+ *   - transport: 'stdio' | 'sse' | 'ws'
+ *   - command: string (for stdio)
+ *   - args: string[] (optional)
+ *   - url: string (for sse/ws)
+ *   - env: object (optional)
+ */
 router.post('/mcp-servers/test-config', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -1394,7 +1548,14 @@ router.post('/mcp-servers/test-config', async (req, res, next) => {
   }
 });
 
-// Test MCP server connectivity
+/**
+ * POST /api/admin/tools/mcp-servers/:serverId/test
+ * Tests connectivity to an existing MCP server.
+ * 
+ * Body:
+ * - organizationId: string (required)
+ * - teamId: string (optional) - For team-specific testing
+ */
 router.post('/mcp-servers/:serverId/test', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);

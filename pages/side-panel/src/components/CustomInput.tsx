@@ -4,7 +4,7 @@ import type { InputProps } from '@copilotkit/react-ui';
 import { useChatContext } from '@copilotkit/react-ui';
 import { useCopilotContext } from '@copilotkit/react-core';
 import { COPIOLITKIT_CONFIG } from '../constants';
-import { ensureFirebase } from '../utils/firebaseStorage';
+import { ensureFirebase, ensureFirebaseAuth } from '../utils/firebaseStorage';
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { debug, useStorage } from '@extension/shared';
 import { exampleThemeStorage } from '@extension/storage';
@@ -782,29 +782,79 @@ export const CustomInput: React.FC<CustomInputProps> = ({
       return item; // fallback to blob URL
     }
     try {
+      // Ensure Firebase is initialized and authenticated before uploading
+      try {
+        await ensureFirebaseAuth(COPIOLITKIT_CONFIG.FIREBASE as any);
+      } catch (authError: any) {
+        console.error('[FileUpload] Firebase authentication failed:', authError);
+        setAttachments(prev => prev.map(a => 
+          a.id === item.id 
+            ? { ...a, status: 'error', error: `Authentication failed: ${authError.message || 'Unknown error'}` }
+            : a
+        ));
+        return item;
+      }
+      
       const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
       const ts = Date.now();
       const safeName = item.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const path = `attachments/${sessionId || 'default'}/${ts}-${safeName}`;
       const storageRef = fbRef(storage as any, path);
+      
       return await new Promise<AttachmentItem>((resolve, reject) => {
         const task = uploadBytesResumable(storageRef as any, item.file);
         setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'uploading', progress: 0 } : a));
-        task.on('state_changed', (snap: any) => {
+        
+        task.on('state_changed', 
+          (snap: any) => {
+            // Upload progress
           const prog = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
           setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, progress: prog } : a));
-        }, (err: any) => {
-          setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'error', error: String(err) } : a));
+          },
+          (err: any) => {
+            // Upload error
+            const errorMessage = err.code === 'storage/unauthorized' 
+              ? 'Permission denied. Please check Firebase Storage rules.'
+              : err.message || String(err);
+            console.error('[FileUpload] Upload failed:', err);
+            setAttachments(prev => prev.map(a => 
+              a.id === item.id 
+                ? { ...a, status: 'error', error: errorMessage }
+                : a
+            ));
           reject(err);
-        }, async () => {
+          },
+          async () => {
+            // Upload complete
+            try {
           const url = await getDownloadURL(task.snapshot.ref);
-          const updated: AttachmentItem = { ...item, status: 'uploaded', progress: 100, uploadedUrl: url };
+              const updated: AttachmentItem = { 
+                ...item, 
+                status: 'uploaded', 
+                progress: 100, 
+                uploadedUrl: url 
+              };
           setAttachments(prev => prev.map(a => a.id === item.id ? updated : a));
           resolve(updated);
-        });
+            } catch (urlError: any) {
+              console.error('[FileUpload] Failed to get download URL:', urlError);
+              setAttachments(prev => prev.map(a => 
+                a.id === item.id 
+                  ? { ...a, status: 'error', error: 'Upload completed but failed to get URL' }
+                  : a
+              ));
+              reject(urlError);
+            }
+          }
+        );
       });
     } catch (e: any) {
-      setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'error', error: String(e) } : a));
+      console.error('[FileUpload] Unexpected error:', e);
+      setAttachments(prev => prev.map(a => 
+        a.id === item.id 
+          ? { ...a, status: 'error', error: e.message || String(e) }
+          : a
+      ));
       return item;
     }
   };

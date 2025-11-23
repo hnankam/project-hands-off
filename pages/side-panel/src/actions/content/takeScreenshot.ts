@@ -320,10 +320,11 @@ export async function handleTakeScreenshot(
               path,
               optimized.dataUrl,
               optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
+              COPIOLITKIT_CONFIG.FIREBASE as any,
             );
           }
         } catch (e) {
-          debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback');
+          debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback:', e);
         }
 
       // Build attachment manifest if Firebase URL is available
@@ -405,6 +406,7 @@ export async function handleTakeScreenshot(
             path,
             optimized.dataUrl,
             optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
+            COPIOLITKIT_CONFIG.FIREBASE as any,
           );
         }
       } catch (e) {

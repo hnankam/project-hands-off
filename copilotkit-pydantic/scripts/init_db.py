@@ -32,12 +32,12 @@ async def main():
             return 1
         
         if args.test:
-            logger.info("✅ Database connection successful!")
+            logger.info("Database connection successful!")
             return 0
         
         # Drop tables if requested
         if args.drop or args.reset:
-            response = input("⚠️  This will DROP ALL TABLES. Are you sure? (type 'yes' to confirm): ")
+            response = input("This will DROP ALL TABLES. Are you sure? (type 'yes' to confirm): ")
             if response.lower() != 'yes':
                 logger.info("Operation cancelled")
                 return 1
@@ -47,13 +47,13 @@ async def main():
         if not args.test:
             logger.info("Initializing database schema...")
             await init_database()
-            logger.info("✅ Database schema created successfully!")
+            logger.info("Database schema created successfully!")
         
         # Seed data if requested
         if args.seed or args.reset:
             logger.info("Seeding database...")
             result = await seed_database()
-            logger.info("✅ Database seeded successfully!")
+            logger.info("Database seeded successfully!")
             logger.info(f"Summary: {result}")
         
         logger.info("=" * 60)

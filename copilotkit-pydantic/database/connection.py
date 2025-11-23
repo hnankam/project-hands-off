@@ -105,6 +105,17 @@ async def reset_connection_pool(force: bool = False) -> None:
             _pool = None
 
 
+async def close_connection_pool() -> None:
+    """Gracefully close the connection pool."""
+    global _pool
+    async with _pool_lock:
+        if _pool is None:
+            return
+        await _pool.close()
+        _pool = None
+        logger.info("Connection pool closed")
+
+
 async def init_database(schema_file: Optional[str] = None):
     """Initialize database with schema.
     

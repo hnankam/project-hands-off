@@ -62,14 +62,23 @@ export function createAnthropicClient(providerConfig) {
  * @param {string} modelKey - Model key from configuration (e.g., 'claude-4.5-haiku')
  * @param {object} context - Organization/team context for loading configuration
  */
-export async function createAnthropicAdapter(modelKey = 'claude-3.7-sonnet', context = {}) {
+export async function createAnthropicAdapter(modelKey, context = {}) {
+  if (!modelKey) {
+    throw new Error('Model key is required for createAnthropicAdapter');
+  }
+  
   const modelConfig = await getModelConfig(modelKey, context);
+  if (!modelConfig) {
+    throw new Error(`Model configuration not found for key: ${modelKey}`);
+  }
+  
   const providerConfig = await getProviderConfigByType('anthropic_bedrock', context);
   const anthropic = createAnthropicClient(providerConfig);
   
-  const bedrockModelId = modelConfig 
-    ? await getBedrockModelId(modelKey, context)
-    : "us.anthropic.claude-3-7-sonnet-20250219-v1:0";
+  const bedrockModelId = await getBedrockModelId(modelKey, context);
+  if (!bedrockModelId) {
+    throw new Error(`Bedrock model ID not found for model key: ${modelKey}`);
+  }
   
   return new AnthropicAdapter({
     anthropic: anthropic,
@@ -79,15 +88,5 @@ export async function createAnthropicAdapter(modelKey = 'claude-3.7-sonnet', con
       debug: DEBUG
     }
   });
-}
-
-/**
- * Create Claude Haiku adapter (Bedrock)
- * Forces the lightweight Haiku family for all Claude requests
- * 
- * @param {object} context - Organization/team context for loading configuration
- */
-export async function createClaudeHaikuAdapter(context = {}) {
-  return await createAnthropicAdapter('claude-4.5-haiku', context);
 }
 

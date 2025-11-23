@@ -5,6 +5,8 @@ This directory contains SQL migration scripts for upgrading the database schema.
 ## Migration Files
 
 - `001_add_multi_tenancy_and_rename_usage.sql` - Adds multi-tenancy support (organization_id, team_id) to all configuration tables and renames usage_logs to usage
+- `002-015_*.sql` - Various schema improvements (FK constraints, tools tables, team support, etc.)
+- `016_add_runtime_server_fields.sql` - Adds Node.js runtime server specific fields (endpoint, forced_model, bedrock_model_id, deployment_name)
 
 ## Running Migrations
 

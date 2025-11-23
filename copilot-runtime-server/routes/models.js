@@ -1,108 +1,91 @@
+/**
+ * Model Routes (Admin)
+ * 
+ * Manages LLM model configurations for organizations.
+ * Models define the specific AI models (e.g., GPT-4, Claude, Gemini) that can be used
+ * by agents within an organization.
+ * 
+ * **Features:**
+ * - CRUD operations for models
+ * - Multi-team support (org-wide or team-specific)
+ * - Provider connectivity testing
+ * - Model-provider compatibility validation
+ * - Team scope validation
+ * - Configuration cache invalidation
+ * 
+ * **Multi-Tenancy:**
+ * - Organization-scoped (all models belong to an organization)
+ * - Team-scoped (models can be restricted to specific teams)
+ * - Validation ensures models and providers share compatible team scopes
+ * 
+ * **Supported Providers:**
+ * - OpenAI (GPT models)
+ * - Azure OpenAI (GPT models via Azure)
+ * - Google (Gemini models)
+ * - Anthropic (Claude models via API)
+ * - Anthropic Bedrock (Claude models via AWS Bedrock)
+ * 
+ * **Connectivity Testing:**
+ * Each provider type has dedicated test functions that verify:
+ * - Valid credentials
+ * - Model/deployment accessibility
+ * - Proper configuration
+ * 
+ * @module routes/models
+ */
+
 import express from 'express';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
-import { auth } from '../auth/index.js';
 import { getPool } from '../config/database.js';
 import { invalidateCache as invalidateDbCache } from '../config/db-loaders.js';
 import { invalidateCache as invalidateLoaderCache } from '../config/loader.js';
-import { log } from '../utils/logger.js';
+import { log, logError } from '../utils/logger.js';
 import { syncTeamAssociations } from '../lib/team-helpers.js';
+import {
+  sanitizeJSON,
+  ensureHttps,
+  safeJsonParse,
+  extractErrorMessage,
+  ensureAuthenticated,
+  ensureOrgAdmin,
+  validateTeamBelongsToOrg,
+} from '../utils/route-helpers.js';
 
 const router = express.Router();
 
-const sanitizeJSON = (value, fallback = {}) => {
-  if (value == null) {
-    return fallback;
-  }
+// Utility functions imported from route-helpers.js
 
-  if (typeof value === 'object') {
-    return value;
-  }
-
-  if (typeof value === 'string' && value.trim() === '') {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(value);
-  } catch (err) {
-    throw new Error('Invalid JSON payload');
-  }
-};
-
-const ensureHttps = value => {
-  if (!value) return value;
-  if (value.startsWith('http://') || value.startsWith('https://')) {
-    return value;
-  }
-  return `https://${value}`;
-};
-
-const safeJsonParse = async response => {
-  try {
-    return await response.json();
-  } catch (err) {
-    return null;
-  }
-};
-
-const extractErrorMessage = (payload, fallback) => {
-  if (!payload) return fallback;
-
-  if (typeof payload === 'string') {
-    return payload;
-  }
-
-  const errField = payload.error;
-  if (errField) {
-    if (typeof errField === 'string') {
-      return errField;
-    }
-    if (typeof errField.message === 'string') {
-      return errField.message;
-    }
-    if (typeof errField.error === 'string') {
-      return errField.error;
-    }
-    if (errField.error && typeof errField.error.message === 'string') {
-      return errField.error.message;
-    }
-  }
-
-  if (typeof payload.message === 'string') {
-    return payload.message;
-  }
-
-  if (Array.isArray(payload.errors) && payload.errors.length > 0) {
-    const first = payload.errors[0];
-    if (typeof first === 'string') {
-      return first;
-    }
-    if (first && typeof first.message === 'string') {
-      return first.message;
-    }
-  }
-
-  if (typeof payload.detail === 'string') {
-    return payload.detail;
-  }
-
-  if (typeof payload.title === 'string') {
-    return payload.title;
-  }
-
-  return fallback;
-};
-
+/**
+ * Resolves model identifier from modelName or modelKey
+ * Prioritizes modelKey over modelName
+ * @param {string} modelName - Model name (e.g., 'gpt-4')
+ * @param {string} modelKey - Model key (e.g., 'gpt-4-turbo')
+ * @returns {string|null} Resolved identifier or null
+ */
 const resolveModelIdentifier = (modelName, modelKey) => {
-  if (modelName && typeof modelName === 'string' && modelName.trim()) {
-    return modelName.trim();
-  }
   if (modelKey && typeof modelKey === 'string' && modelKey.trim()) {
     return modelKey.trim();
+  }
+  if (modelName && typeof modelName === 'string' && modelName.trim()) {
+    return modelName.trim();
   }
   return null;
 };
 
+// ============================================================================
+// Provider Connectivity Test Functions
+// ============================================================================
+
+/**
+ * Test OpenAI model connectivity
+ * Verifies that the model exists and is accessible with the provided API key
+ * @param {Object} credentials - Provider credentials
+ * @param {string} credentials.api_key - OpenAI API key
+ * @param {string} modelName - Model name to test
+ * @param {string} modelKey - Model key (fallback)
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails
+ */
 async function testOpenAIModel(credentials, modelName, modelKey) {
   const identifier = resolveModelIdentifier(modelName, modelKey);
   if (!identifier) {
@@ -132,8 +115,23 @@ async function testOpenAIModel(credentials, modelName, modelKey) {
   };
 }
 
+/**
+ * Test Azure OpenAI model connectivity
+ * Tries multiple deployment names (modelName, modelKey) until one succeeds
+ * @param {Object} credentials - Provider credentials
+ * @param {string} credentials.api_key - Azure OpenAI API key
+ * @param {string} credentials.endpoint - Azure OpenAI endpoint
+ * @param {string} credentials.api_version - API version (default: 2024-02-15-preview)
+ * @param {string} modelName - Deployment name to test
+ * @param {string} modelKey - Alternative deployment name (fallback)
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails
+ */
 async function testAzureOpenAIModel(credentials, modelName, modelKey) {
-  const candidateNames = Array.from(new Set([modelName, modelKey].filter(Boolean).map(value => value.trim()).filter(Boolean)));
+  const candidateNames = Array.from(
+    new Set([modelName, modelKey].filter(Boolean).map(value => value.trim()).filter(Boolean))
+  );
+  
   if (candidateNames.length === 0) {
     throw new Error('Deployment name is required to test Azure OpenAI connectivity');
   }
@@ -156,6 +154,7 @@ async function testAzureOpenAIModel(credentials, modelName, modelKey) {
 
   let lastNotFound = null;
 
+  // Try each candidate deployment name
   for (const deployment of candidateNames) {
     const url = `${endpoint}/openai/deployments/${encodeURIComponent(deployment)}?api-version=${encodeURIComponent(apiVersion)}`;
     const response = await fetch(url, {
@@ -172,6 +171,7 @@ async function testAzureOpenAIModel(credentials, modelName, modelKey) {
       };
     }
 
+    // If not 404, it's a real error (not just "deployment not found")
     if (response.status !== 404) {
       const payload = await safeJsonParse(response);
       throw new Error(extractErrorMessage(payload, `Azure OpenAI API responded with status ${response.status}`));
@@ -183,6 +183,16 @@ async function testAzureOpenAIModel(credentials, modelName, modelKey) {
   throw new Error(`Azure OpenAI deployment "${lastNotFound}" was not found or is inaccessible`);
 }
 
+/**
+ * Test Google Generative AI model connectivity
+ * Verifies that the model exists and is accessible with the provided API key
+ * @param {Object} credentials - Provider credentials
+ * @param {string} credentials.api_key - Google API key
+ * @param {string} modelName - Model name to test (e.g., 'gemini-2.5-flash')
+ * @param {string} modelKey - Model key (fallback)
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails
+ */
 async function testGoogleModel(credentials, modelName, modelKey) {
   const identifier = resolveModelIdentifier(modelName, modelKey);
   if (!identifier) {
@@ -194,13 +204,16 @@ async function testGoogleModel(credentials, modelName, modelKey) {
     throw new Error('api_key is required to test Google Generative AI connectivity');
   }
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(identifier)}?key=${encodeURIComponent(apiKey)}`);
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(identifier)}?key=${encodeURIComponent(apiKey)}`
+  );
   const payload = await safeJsonParse(response);
 
   if (!response.ok) {
     throw new Error(extractErrorMessage(payload, `Google Generative AI API responded with status ${response.status}`));
   }
 
+  // Check for error in payload (Google sometimes returns 200 with error)
   if (payload && typeof payload === 'object' && payload.error) {
     throw new Error(extractErrorMessage(payload.error, 'Google Generative AI API reported an error'));
   }
@@ -211,6 +224,16 @@ async function testGoogleModel(credentials, modelName, modelKey) {
   };
 }
 
+/**
+ * Test Anthropic model connectivity
+ * Lists available models and verifies the requested model exists
+ * @param {Object} credentials - Provider credentials
+ * @param {string} credentials.api_key - Anthropic API key
+ * @param {string} modelName - Model name to test (e.g., 'claude-3-5-sonnet-20241022')
+ * @param {string} modelKey - Model key (fallback)
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails
+ */
 async function testAnthropicModel(credentials, modelName, modelKey) {
   const apiKey = credentials?.api_key || credentials?.apiKey;
   if (!apiKey) {
@@ -249,6 +272,19 @@ async function testAnthropicModel(credentials, modelName, modelKey) {
   };
 }
 
+/**
+ * Test AWS Bedrock model connectivity
+ * Attempts to invoke the model with a test payload
+ * @param {Object} credentials - Provider credentials
+ * @param {string} credentials.aws_access_key_id - AWS access key ID
+ * @param {string} credentials.aws_secret_access_key - AWS secret access key
+ * @param {string} credentials.region - AWS region
+ * @param {string} credentials.aws_session_token - AWS session token (optional)
+ * @param {string} modelName - Bedrock model ID to test
+ * @param {string} modelKey - Model key (fallback)
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails
+ */
 async function testBedrockModel(credentials, modelName, modelKey) {
   const identifier = resolveModelIdentifier(modelName, modelKey);
   if (!identifier) {
@@ -293,6 +329,8 @@ async function testBedrockModel(credentials, modelName, modelKey) {
     const errorName = err?.name || err?.Code;
     const errorMessage = err?.message || err?.Message;
 
+    // Some errors indicate the service is reachable but the request is invalid
+    // This is still considered a successful connectivity test
     if (
       errorName === 'ValidationException' ||
       errorName === 'ModelNotReadyException' ||
@@ -308,6 +346,16 @@ async function testBedrockModel(credentials, modelName, modelKey) {
   }
 }
 
+/**
+ * Test model connectivity based on provider type
+ * Routes to the appropriate provider-specific test function
+ * @param {string} providerType - Provider type (openai, azure_openai, google, anthropic, anthropic_bedrock)
+ * @param {Object} credentials - Provider credentials
+ * @param {string} modelName - Model name to test
+ * @param {string} modelKey - Model key (fallback)
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails or provider type unsupported
+ */
 async function testModelConnectivity(providerType, credentials, modelName, modelKey) {
   switch (providerType) {
     case 'openai':
@@ -325,6 +373,15 @@ async function testModelConnectivity(providerType, credentials, modelName, model
   }
 }
 
+// ============================================================================
+// Data Transformation Functions
+// ============================================================================
+
+/**
+ * Transform database row to camelCase model object
+ * @param {Object} row - Database row from models_with_teams view
+ * @returns {Object} Camel-cased model object
+ */
 const toCamelModel = row => ({
   id: row.id,
   modelKey: row.model_key,
@@ -343,61 +400,19 @@ const toCamelModel = row => ({
   updatedAt: row.updated_at,
 });
 
-async function ensureAuthenticated(req, res) {
-  const session = await auth.api.getSession({ headers: req.headers });
+// Authentication & Authorization helpers imported from route-helpers.js
 
-  if (!session || !session.user) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return null;
-  }
+// ============================================================================
+// Database Query Helpers
+// ============================================================================
 
-  return session;
-}
-
-async function ensureOrgAdmin(pool, organizationId, userId, res) {
-  if (!organizationId) {
-    res.status(400).json({ error: 'organizationId is required' });
-    return null;
-  }
-
-  const memberResult = await pool.query(
-    'SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2',
-    [organizationId, userId],
-  );
-
-  if (memberResult.rows.length === 0) {
-    res.status(403).json({ error: 'Forbidden: user is not a member of the organization' });
-    return null;
-  }
-
-  const roleValue = memberResult.rows[0].role;
-  const roles = Array.isArray(roleValue)
-    ? roleValue
-    : typeof roleValue === 'string'
-      ? [roleValue]
-      : [];
-
-  if (!roles.includes('owner') && !roles.includes('admin')) {
-    res.status(403).json({ error: 'Forbidden: admin or owner role required' });
-    return null;
-  }
-
-  return roles;
-}
-
-async function validateTeamBelongsToOrg(pool, organizationId, teamId) {
-  if (!teamId) {
-    return true;
-  }
-
-  const teamResult = await pool.query(
-    'SELECT id FROM team WHERE id = $1 AND "organizationId" = $2',
-    [teamId, organizationId],
-  );
-
-  return teamResult.rows.length > 0;
-}
-
+/**
+ * Fetches a model by ID with provider and team information
+ * @param {Pool} pool - Database connection pool
+ * @param {string} id - Model ID
+ * @param {string} organizationId - Organization ID
+ * @returns {Promise<Object|null>} Model object or null if not found
+ */
 async function fetchModelById(pool, id, organizationId) {
   const { rows } = await pool.query(
     `SELECT m.*, p.provider_key, p.provider_type
@@ -410,11 +425,40 @@ async function fetchModelById(pool, id, organizationId) {
   return rows[0] ? toCamelModel(rows[0]) : null;
 }
 
+/**
+ * Invalidates all configuration caches after model changes
+ * Must be called after any create/update/delete operation
+ */
 function invalidateConfigCaches() {
   invalidateDbCache();
   invalidateLoaderCache();
 }
 
+// ============================================================================
+// Route Handlers
+// ============================================================================
+
+/**
+ * GET /api/admin/models
+ * List all models for an organization, optionally filtered by teams
+ * 
+ * Requires: Authentication, Organization Admin/Owner role
+ * 
+ * Query Parameters:
+ * - organizationId: string (required, UUID) - Organization ID
+ * - teamIds?: string | string[] (optional) - Team ID(s) to filter by
+ * 
+ * Team Filtering Logic:
+ * - If teamIds provided: Returns models that are either org-wide OR assigned to any of the specified teams
+ * - If teamIds omitted: Returns all models for the organization
+ * 
+ * Responses:
+ * - 200 OK: { models: ModelObject[], count: number }
+ * - 400 Bad Request: Missing organizationId
+ * - 401 Unauthorized: Not authenticated
+ * - 403 Forbidden: User is not admin/owner
+ * - 500 Internal Server Error: Database or server error
+ */
 router.get('/', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -475,6 +519,33 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/admin/models
+ * Create a new model configuration
+ * 
+ * Requires: Authentication, Organization Admin/Owner role
+ * 
+ * Body:
+ * - organizationId: string (required, UUID) - Organization ID
+ * - providerId?: string (UUID) - Provider ID (either providerId or providerKey required)
+ * - providerKey?: string - Provider key (e.g., 'anthropic_bedrock')
+ * - modelKey: string (required) - Model key (e.g., 'claude-4.5-haiku')
+ * - modelName: string (required) - Model name/ID (e.g., 'claude-4-5-haiku-20250514')
+ * - displayName?: string - Human-readable display name
+ * - description?: string - Model description
+ * - enabled?: boolean - Whether model is enabled (default: true)
+ * - modelSettings?: object - Model-specific settings override
+ * - metadata?: object - Additional metadata
+ * - teamIds?: string[] - Array of team IDs to associate (empty = org-wide)
+ * 
+ * Responses:
+ * - 201 Created: { model: ModelObject }
+ * - 400 Bad Request: Invalid input or validation error
+ * - 401 Unauthorized: Not authenticated
+ * - 403 Forbidden: User is not admin/owner
+ * - 404 Not Found: Provider or team not found
+ * - 500 Internal Server Error: Database or server error
+ */
 router.post('/', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -583,6 +654,36 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+/**
+ * PUT /api/admin/models/:modelId
+ * Update an existing model configuration
+ * 
+ * Requires: Authentication, Organization Admin/Owner role
+ * 
+ * Path Parameters:
+ * - modelId: string (UUID) - Model ID to update
+ * 
+ * Body:
+ * - organizationId: string (required, UUID) - Organization ID
+ * - providerId?: string (UUID) - Provider ID to change to
+ * - providerKey?: string - Provider key to change to
+ * - modelKey?: string - Model key to update
+ * - modelName?: string - Model name/ID to update
+ * - displayName?: string - Display name to update
+ * - description?: string - Description to update
+ * - enabled?: boolean - Enabled status to update
+ * - modelSettings?: object - Model settings to update
+ * - metadata?: object - Metadata to update
+ * - teamIds?: string[] - Team associations to update (replaces all)
+ * 
+ * Responses:
+ * - 200 OK: { model: ModelObject }
+ * - 400 Bad Request: Invalid input or validation error
+ * - 401 Unauthorized: Not authenticated
+ * - 403 Forbidden: User is not admin/owner
+ * - 404 Not Found: Model, provider, or team not found
+ * - 500 Internal Server Error: Database or server error
+ */
 router.put('/:modelId', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -687,6 +788,39 @@ router.put('/:modelId', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/admin/models/:modelId/test
+ * Test connectivity for an existing model configuration
+ * 
+ * Tests that the model is accessible with the provider's credentials.
+ * Optionally allows testing with override parameters before saving.
+ * 
+ * Requires: Authentication, Organization Admin/Owner role
+ * 
+ * Path Parameters:
+ * - modelId: string (UUID) - Model ID to test
+ * 
+ * Body:
+ * - organizationId: string (required, UUID) - Organization ID
+ * - teamId?: string (UUID) - Team ID for team-scoped validation
+ * - providerId?: string (UUID) - Override provider for testing
+ * - modelKey?: string - Override model key for testing
+ * - modelName?: string - Override model name for testing
+ * - modelSettings?: object - Override settings for testing (not saved)
+ * - metadata?: object - Override metadata for testing (not saved)
+ * 
+ * Team Scope Validation:
+ * If both model and provider have team restrictions, they must share at least one team.
+ * 
+ * Responses:
+ * - 200 OK: { ok: true, result: { provider, message } }
+ * - 400 Bad Request: Invalid input or team compatibility error
+ * - 401 Unauthorized: Not authenticated
+ * - 403 Forbidden: User is not admin/owner
+ * - 404 Not Found: Model, provider, or team not found
+ * - 502 Bad Gateway: Connectivity test failed
+ * - 500 Internal Server Error: Database or server error
+ */
 router.post('/:modelId/test', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -838,6 +972,32 @@ router.post('/:modelId/test', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/admin/models/test-new
+ * Test connectivity for a new model before creating it
+ * 
+ * Allows testing model connectivity without saving the configuration.
+ * Useful for validating credentials and model availability before creation.
+ * 
+ * Requires: Authentication, Organization Admin/Owner role
+ * 
+ * Body:
+ * - organizationId: string (required, UUID) - Organization ID
+ * - providerId: string (required, UUID) - Provider ID
+ * - modelKey?: string - Model key for testing
+ * - modelName: string (required) - Model name/ID to test
+ * - modelSettings?: object - Settings for testing (not saved)
+ * - metadata?: object - Metadata for testing (not saved)
+ * 
+ * Responses:
+ * - 200 OK: { ok: true, result: { provider, message } }
+ * - 400 Bad Request: Invalid input or validation error
+ * - 401 Unauthorized: Not authenticated
+ * - 403 Forbidden: User is not admin/owner
+ * - 404 Not Found: Provider not found
+ * - 502 Bad Gateway: Connectivity test failed
+ * - 500 Internal Server Error: Database or server error
+ */
 router.post('/test-new', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -923,6 +1083,26 @@ router.post('/test-new', async (req, res, next) => {
   }
 });
 
+/**
+ * DELETE /api/admin/models/:modelId
+ * Delete a model configuration
+ * 
+ * Requires: Authentication, Organization Admin/Owner role
+ * 
+ * Path Parameters:
+ * - modelId: string (UUID) - Model ID to delete
+ * 
+ * Query Parameters:
+ * - organizationId: string (required, UUID) - Organization ID
+ * 
+ * Responses:
+ * - 200 OK: { ok: true }
+ * - 400 Bad Request: Missing organizationId
+ * - 401 Unauthorized: Not authenticated
+ * - 403 Forbidden: User is not admin/owner
+ * - 404 Not Found: Model not found
+ * - 500 Internal Server Error: Database or server error
+ */
 router.delete('/:modelId', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);

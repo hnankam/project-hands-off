@@ -1,35 +1,43 @@
+/**
+ * Agents API Routes
+ * 
+ * Provides CRUD operations for AI agents with multi-tenant support.
+ * Agents can be organization-wide or team-specific, with associated models and tools.
+ * 
+ * Endpoints:
+ * - GET    /api/admin/agents - List agents (filtered by org/team)
+ * - POST   /api/admin/agents - Create agent
+ * - PUT    /api/admin/agents/:agentId - Update agent
+ * - DELETE /api/admin/agents/:agentId - Delete agent
+ */
+
 import express from 'express';
-import { auth } from '../auth/index.js';
 import { getPool } from '../config/database.js';
 import { invalidateCache as invalidateDbCache } from '../config/db-loaders.js';
 import { invalidateCache as invalidateLoaderCache } from '../config/loader.js';
 import { log } from '../utils/logger.js';
 import { syncTeamAssociations } from '../lib/team-helpers.js';
+import {
+  sanitizeJSON,
+  ensureAuthenticated,
+  ensureOrgAdmin,
+  validateTeamBelongsToOrg,
+} from '../utils/route-helpers.js';
 
 const router = express.Router();
 
-const sanitizeJSON = (value, fallback = {}) => {
-  if (value == null) {
-    return fallback;
-  }
+// ============================================================================
+// Constants and Utilities
+// ============================================================================
 
-  if (typeof value === 'object') {
-    return value;
-  }
-
-  if (typeof value === 'string' && value.trim() === '') {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(value);
-  } catch (err) {
-    throw new Error('Invalid JSON payload');
-  }
-};
-
+/**
+ * UUID validation regex (RFC 4122 compliant)
+ */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/**
+ * Custom validation error class
+ */
 class ValidationError extends Error {
   constructor(message) {
     super(message);
@@ -38,6 +46,17 @@ class ValidationError extends Error {
   }
 }
 
+// sanitizeJSON imported from route-helpers.js
+
+// ============================================================================
+// Model ID Extraction and Validation
+// ============================================================================
+
+/**
+ * Extract and normalize model IDs from request body
+ * @param {Object} body - Request body
+ * @returns {{provided: boolean, modelIds: string[]}}
+ */
 const extractModelIds = body => {
   if (!body || !Object.prototype.hasOwnProperty.call(body, 'modelIds')) {
     return { provided: false, modelIds: [] };
@@ -64,6 +83,7 @@ const extractModelIds = body => {
     if (!UUID_REGEX.test(trimmed)) {
       throw new ValidationError(`Invalid modelId: ${value}`);
     }
+    // Deduplicate
     if (!normalized.includes(trimmed)) {
       normalized.push(trimmed);
     }
@@ -72,6 +92,14 @@ const extractModelIds = body => {
   return { provided: true, modelIds: normalized };
 };
 
+/**
+ * Validate model IDs and check team scope constraints
+ * @param {Object} pool - Database connection pool
+ * @param {string} organizationId - Organization ID
+ * @param {string[]} teamIds - Team IDs for scope validation
+ * @param {string[]} modelIds - Model IDs to validate
+ * @returns {Promise<string[]>} Validated model IDs
+ */
 const validateModelIds = async (pool, organizationId, teamIds, modelIds) => {
   if (!modelIds || modelIds.length === 0) {
     return [];
@@ -79,19 +107,17 @@ const validateModelIds = async (pool, organizationId, teamIds, modelIds) => {
 
   // Query models with their team associations
   const { rows } = await pool.query(
-    `
-      SELECT 
+    `SELECT 
         m.id::text AS id,
         COALESCE(
           (SELECT json_agg(mt.team_id)
            FROM model_teams mt 
            WHERE mt.model_id = m.id),
           '[]'::json
-        ) as teams
+        ) AS teams
       FROM models m
       WHERE m.id = ANY($1::uuid[])
-        AND m.organization_id = $2
-    `,
+        AND m.organization_id = $2`,
     [modelIds, organizationId],
   );
 
@@ -108,7 +134,7 @@ const validateModelIds = async (pool, organizationId, teamIds, modelIds) => {
     }
   } else {
     // Team-scoped agent: can use org-wide or models from selected teams
-    const effectiveTeamIds = teamIds.filter(id => id);
+    const effectiveTeamIds = teamIds.filter(Boolean);
     const invalid = rows.filter(row => {
       if (!row.teams || row.teams.length === 0) {
         // Org-wide model - OK
@@ -126,6 +152,15 @@ const validateModelIds = async (pool, organizationId, teamIds, modelIds) => {
   return rows.map(row => row.id);
 };
 
+// ============================================================================
+// Tool ID Extraction and Validation
+// ============================================================================
+
+/**
+ * Extract and normalize tool IDs from request body
+ * @param {Object} body - Request body
+ * @returns {{provided: boolean, toolIds: string[]}}
+ */
 const extractToolIds = body => {
   if (!body || !Object.prototype.hasOwnProperty.call(body, 'toolIds')) {
     return { provided: false, toolIds: [] };
@@ -152,6 +187,7 @@ const extractToolIds = body => {
     if (!UUID_REGEX.test(trimmed)) {
       throw new ValidationError(`Invalid toolId: ${value}`);
     }
+    // Deduplicate
     if (!normalized.includes(trimmed)) {
       normalized.push(trimmed);
     }
@@ -160,13 +196,21 @@ const extractToolIds = body => {
   return { provided: true, toolIds: normalized };
 };
 
+/**
+ * Validate tool IDs and check team scope constraints
+ * Supports both organization-specific and global tools with enabled status
+ * @param {Object} pool - Database connection pool
+ * @param {string} organizationId - Organization ID
+ * @param {string[]} teamIds - Team IDs for scope validation
+ * @param {string[]} toolIds - Tool IDs to validate
+ * @returns {Promise<string[]>} Validated tool IDs
+ */
 const validateToolIds = async (pool, organizationId, teamIds, toolIds) => {
   if (!toolIds || toolIds.length === 0) {
     return [];
   }
 
-  // Query tools with their team associations
-  // Use the same enabled logic as GET /api/admin/tools: check organization_tool_settings for global tools
+  // Query tools with their team associations and enabled status
   const { rows } = await pool.query(
     `
       SELECT 
@@ -237,6 +281,16 @@ const validateToolIds = async (pool, organizationId, teamIds, toolIds) => {
   return rows.map(row => row.id);
 };
 
+// ============================================================================
+// Agent Association Management
+// ============================================================================
+
+/**
+ * Replace agent-model mappings (delete all + insert new)
+ * @param {Object} pool - Database connection pool
+ * @param {string} agentId - Agent ID
+ * @param {string[]} modelIds - Model IDs to associate
+ */
 const replaceAgentModelMappings = async (pool, agentId, modelIds) => {
   await pool.query('DELETE FROM agent_model_mappings WHERE agent_id = $1', [agentId]);
 
@@ -245,15 +299,19 @@ const replaceAgentModelMappings = async (pool, agentId, modelIds) => {
   }
 
   await pool.query(
-    `
-      INSERT INTO agent_model_mappings (agent_id, model_id)
+    `INSERT INTO agent_model_mappings (agent_id, model_id)
       SELECT $1, id
-      FROM UNNEST($2::uuid[]) AS id
-    `,
+     FROM UNNEST($2::uuid[]) AS id`,
     [agentId, modelIds],
   );
 };
 
+/**
+ * Replace agent-tool mappings (delete all + insert new)
+ * @param {Object} pool - Database connection pool
+ * @param {string} agentId - Agent ID
+ * @param {string[]} toolIds - Tool IDs to associate
+ */
 const replaceAgentToolMappings = async (pool, agentId, toolIds) => {
   await pool.query('DELETE FROM agent_tool_mappings WHERE agent_id = $1', [agentId]);
 
@@ -262,15 +320,22 @@ const replaceAgentToolMappings = async (pool, agentId, toolIds) => {
   }
 
   await pool.query(
-    `
-      INSERT INTO agent_tool_mappings (agent_id, tool_id)
+    `INSERT INTO agent_tool_mappings (agent_id, tool_id)
       SELECT $1, id
-      FROM UNNEST($2::uuid[]) AS id
-    `,
+     FROM UNNEST($2::uuid[]) AS id`,
     [agentId, toolIds],
   );
 };
 
+// ============================================================================
+// Data Transformation
+// ============================================================================
+
+/**
+ * Convert database row to camelCase agent object
+ * @param {Object} row - Database row
+ * @returns {Object} Camel-cased agent object
+ */
 const toCamelAgent = row => ({
   id: row.id,
   agentType: row.agent_type,
@@ -279,7 +344,7 @@ const toCamelAgent = row => ({
   promptTemplate: row.prompt_template,
   enabled: row.enabled,
   organizationId: row.organization_id,
-  teams: row.teams || [], // Array of {id, name} objects from the view
+  teams: row.teams || [],
   metadata: row.metadata || null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -287,61 +352,23 @@ const toCamelAgent = row => ({
   toolIds: Array.isArray(row.tool_ids) ? row.tool_ids.filter(Boolean) : [],
 });
 
-async function ensureAuthenticated(req, res) {
-  const session = await auth.api.getSession({ headers: req.headers });
+// ============================================================================
+// Authentication and Authorization Helpers
+// ============================================================================
 
-  if (!session || !session.user) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return null;
-  }
+// Authentication & Authorization helpers imported from route-helpers.js
 
-  return session;
-}
+// ============================================================================
+// Database Queries
+// ============================================================================
 
-async function ensureOrgAdmin(pool, organizationId, userId, res) {
-  if (!organizationId) {
-    res.status(400).json({ error: 'organizationId is required' });
-    return null;
-  }
-
-  const memberResult = await pool.query(
-    'SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2',
-    [organizationId, userId],
-  );
-
-  if (memberResult.rows.length === 0) {
-    res.status(403).json({ error: 'Forbidden: user is not a member of the organization' });
-    return null;
-  }
-
-  const roleValue = memberResult.rows[0].role;
-  const roles = Array.isArray(roleValue)
-    ? roleValue
-    : typeof roleValue === 'string'
-      ? [roleValue]
-      : [];
-
-  if (!roles.includes('owner') && !roles.includes('admin')) {
-    res.status(403).json({ error: 'Forbidden: admin or owner role required' });
-    return null;
-  }
-
-  return roles;
-}
-
-async function validateTeamBelongsToOrg(pool, organizationId, teamId) {
-  if (!teamId) {
-    return true;
-  }
-
-  const teamResult = await pool.query(
-    'SELECT id FROM team WHERE id = $1 AND "organizationId" = $2',
-    [teamId, organizationId],
-  );
-
-  return teamResult.rows.length > 0;
-}
-
+/**
+ * Fetch agent by ID with all associations
+ * @param {Object} pool - Database pool
+ * @param {string} id - Agent ID
+ * @param {string} organizationId - Organization ID
+ * @returns {Promise<Object|null>} Agent object or null if not found
+ */
 async function fetchAgentById(pool, id, organizationId) {
   const { rows } = await pool.query(
     `SELECT 
@@ -375,11 +402,29 @@ async function fetchAgentById(pool, id, organizationId) {
   return rows[0] ? toCamelAgent(rows[0]) : null;
 }
 
+/**
+ * Invalidate configuration caches after agent changes
+ * Ensures that changes are reflected immediately in the runtime
+ */
 function invalidateConfigCaches() {
   invalidateDbCache();
   invalidateLoaderCache();
 }
 
+// ============================================================================
+// Route Handlers
+// ============================================================================
+
+/**
+ * GET /api/admin/agents
+ * List all agents for an organization (optionally filtered by teams)
+ * 
+ * Query params:
+ * - organizationId (required): Organization ID
+ * - teamIds (optional): Team ID(s) to filter by
+ * 
+ * Returns: { agents: Agent[], count: number }
+ */
 router.get('/', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -450,6 +495,24 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/admin/agents
+ * Create a new agent
+ * 
+ * Body:
+ * - organizationId (required): Organization ID
+ * - agentType (required): Unique agent type identifier
+ * - agentName (required): Display name
+ * - promptTemplate (required): Agent prompt template
+ * - description (optional): Agent description
+ * - enabled (optional): Enable/disable agent (default: true)
+ * - metadata (optional): Additional metadata JSON
+ * - teamIds (optional): Array of team IDs (empty = org-wide)
+ * - modelIds (optional): Array of model UUIDs
+ * - toolIds (optional): Array of tool UUIDs
+ * 
+ * Returns: { agent: Agent }
+ */
 router.post('/', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -457,7 +520,7 @@ router.post('/', async (req, res, next) => {
 
     const {
       organizationId,
-      teamIds = [], // Array of team IDs for multi-team support
+      teamIds = [],
       agentType,
       agentName,
       description,
@@ -598,6 +661,27 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+/**
+ * PUT /api/admin/agents/:agentId
+ * Update an existing agent
+ * 
+ * Params:
+ * - agentId: Agent UUID
+ * 
+ * Body: (all optional except organizationId)
+ * - organizationId (required): Organization ID
+ * - agentType: Unique agent type identifier
+ * - agentName: Display name
+ * - promptTemplate: Agent prompt template
+ * - description: Agent description
+ * - enabled: Enable/disable agent
+ * - metadata: Additional metadata JSON
+ * - teamIds: Array of team IDs (empty = org-wide)
+ * - modelIds: Array of model UUIDs
+ * - toolIds: Array of tool UUIDs
+ * 
+ * Returns: { agent: Agent }
+ */
 router.put('/:agentId', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -607,7 +691,7 @@ router.put('/:agentId', async (req, res, next) => {
     const body = req.body || {};
     const {
       organizationId,
-      teamIds = [], // Array of team IDs for multi-team support
+      teamIds = [],
       agentType,
       agentName,
       description,
@@ -743,6 +827,18 @@ router.put('/:agentId', async (req, res, next) => {
   }
 });
 
+/**
+ * DELETE /api/admin/agents/:agentId
+ * Delete an agent
+ * 
+ * Params:
+ * - agentId: Agent UUID
+ * 
+ * Query params:
+ * - organizationId (required): Organization ID
+ * 
+ * Returns: { ok: true }
+ */
 router.delete('/:agentId', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);

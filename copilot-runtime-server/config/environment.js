@@ -1,5 +1,6 @@
 /**
  * Environment configuration and variables
+ * Loads and validates environment variables with sensible defaults
  */
 
 import { config } from 'dotenv';
@@ -7,9 +8,19 @@ import { config } from 'dotenv';
 // Load environment variables from .env file
 config();
 
+// Helper to parse boolean environment variables
+function parseBoolean(value, defaultValue) {
+  if (value === undefined || value === null || value === '') {
+    return defaultValue;
+  }
+  return value.toLowerCase() === 'true' || value === '1';
+}
+
 // Server configuration
-export const PORT = Number(process.env.PORT || 3001);
+export const PORT = Number(process.env.PORT) || 3001;
 export const NODE_ENV = process.env.NODE_ENV || 'development';
+export const IS_PRODUCTION = NODE_ENV === 'production';
+export const IS_DEVELOPMENT = NODE_ENV === 'development';
 export const AGENT_BASE_URL = process.env.AGENT_BASE_URL || 'http://localhost:8001';
 
 // Debug flag (default off in production)
@@ -21,28 +32,31 @@ export const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || '')
   .map(o => o.trim())
   .filter(Boolean);
 
-// Body size limit (in MB)
-export const BODY_LIMIT_MB = Number(process.env.BODY_LIMIT_MB || 25);
+// Body size limit (in MB) - parse with validation
+const bodyLimitInput = Number(process.env.BODY_LIMIT_MB);
+export const BODY_LIMIT_MB = (bodyLimitInput > 0 && bodyLimitInput <= 100) ? bodyLimitInput : 30;
 
 // Rate limiting
-export const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000); // 1 minute
-export const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 120); // requests per window per IP
+const rateLimitWindow = Number(process.env.RATE_LIMIT_WINDOW_MS);
+const rateLimitMax = Number(process.env.RATE_LIMIT_MAX);
+export const RATE_LIMIT_WINDOW_MS = rateLimitWindow > 0 ? rateLimitWindow : 60_000; // 1 minute
+export const RATE_LIMIT_MAX = rateLimitMax > 0 ? rateLimitMax : 120; // requests per window per IP
 
-// Request timeouts
-export const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS || 30_000);
-export const HEADERS_TIMEOUT_MS = Number(process.env.HEADERS_TIMEOUT_MS || 65_000); // Node default
+// Request timeouts (with validation)
+const requestTimeout = Number(process.env.REQUEST_TIMEOUT_MS);
+const headersTimeout = Number(process.env.HEADERS_TIMEOUT_MS);
+export const REQUEST_TIMEOUT_MS = requestTimeout > 0 ? requestTimeout : 30_000; // 30 seconds
+export const HEADERS_TIMEOUT_MS = headersTimeout > 0 ? headersTimeout : 65_000; // Node default
 
 // Trust proxy (for rate-limit + IPs behind proxies)
-export const TRUST_PROXY = (process.env.TRUST_PROXY || 'false') === 'true';
+export const TRUST_PROXY = parseBoolean(process.env.TRUST_PROXY, false);
 
-// ============================================================================
-// Note: API keys and provider credentials are now stored in the database
-// and loaded via config/loader.js from the 'providers' table.
-// 
-// The following legacy environment variables are no longer used:
-// - GOOGLE_API_KEY (now in providers.credentials.api_key for 'google')
-// - AZURE_OPENAI_API_KEY (now in providers.credentials.api_key for 'azure_openai')
-// - AWS_ACCESS_KEY_ID (now in providers.credentials.aws_access_key_id for 'anthropic_bedrock')
-// - AWS_SECRET_ACCESS_KEY (now in providers.credentials.aws_secret_access_key for 'anthropic_bedrock')
-// - AWS_REGION (now in providers.credentials.aws_region for 'anthropic_bedrock')
-// ============================================================================
+// Validation: Log warnings for misconfigured values
+if (IS_DEVELOPMENT && DEBUG) {
+  if (bodyLimitInput > 100) {
+    console.warn(`BODY_LIMIT_MB (${bodyLimitInput}) exceeds maximum (100), using 25 MB`);
+  }
+  if (HEADERS_TIMEOUT_MS <= REQUEST_TIMEOUT_MS) {
+    console.warn(`HEADERS_TIMEOUT_MS (${HEADERS_TIMEOUT_MS}) should be > REQUEST_TIMEOUT_MS (${REQUEST_TIMEOUT_MS})`);
+  }
+}

@@ -29,15 +29,11 @@ async def get_agent_tools(
         - toolsets: List of MCP toolsets for Agent(toolsets=[...])
     """
 
-    logger.info("=" * 80)
-    logger.info("🔧 get_agent_tools() called for agent '%s'", agent_type)
-    logger.info("=" * 80)
-
     allowed_backend_tools = set(allowed_backend_tools or set())
     allowed_mcp_tools = set(allowed_mcp_tools or set())
     
-    logger.info("📊 Input: allowed_backend_tools=%d, allowed_mcp_tools=%d", len(allowed_backend_tools), len(allowed_mcp_tools))
-    logger.info("📊 Input: mcp_servers=%d, tool_definitions=%d", len(mcp_servers) if mcp_servers else 0, len(tool_definitions))
+    logger.info("Input: allowed_backend_tools=%d, allowed_mcp_tools=%d", len(allowed_backend_tools), len(allowed_mcp_tools))
+    logger.info("Input: mcp_servers=%d, tool_definitions=%d", len(mcp_servers) if mcp_servers else 0, len(tool_definitions))
 
     # Track all registered tools for logging
     registered_tools = {
@@ -84,28 +80,10 @@ async def get_agent_tools(
         registered_tools['backend'].append(tool_key)
         registered_tools['total_count'] += 1
 
-    # Log backend tools
-    if registered_tools['backend']:
-        logger.info(
-            "Registered %d backend tool(s) for agent %s: %s",
-            len(registered_tools['backend']),
-            agent_type,
-            ", ".join(registered_tools['backend'])
-        )
-
     # ========== MCP Tools ==========
-    
-    # logger.debug("allowed_mcp_tools = %s (count: %d)", list(allowed_mcp_tools), len(allowed_mcp_tools))
-    # logger.debug("mcp_servers available = %s (count: %d)", list(mcp_servers.keys()) if mcp_servers else [], len(mcp_servers) if mcp_servers else 0)
 
     # If no MCP tools are allowed for this agent, return early
     if not allowed_mcp_tools:
-        logger.info(
-            "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: 0)",
-            agent_type,
-            registered_tools['total_count'],
-            len(registered_tools['backend'])
-        )
         return (all_tools, [])
     
     # If no MCP servers available, return early
@@ -118,12 +96,6 @@ async def get_agent_tools(
     for server_key, server_data in mcp_servers.items():
         if server_data.get('id'):
             server_id_to_key[server_data['id']] = server_key
-    
-    # logger.debug(
-    #     "Built server_id_to_key mapping with %d entries for agent '%s'",
-    #     len(server_id_to_key),
-    #     agent_type
-    # )
 
     # Group MCP tools by server
     grouped_tools = defaultdict(lambda: {'tool_keys': [], 'remote_names': set()})
@@ -161,12 +133,6 @@ async def get_agent_tools(
 
     if not grouped_tools:
         logger.warning("No MCP toolsets available for agent %s after filtering", agent_type)
-        logger.info(
-            "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: 0)",
-            agent_type,
-            registered_tools['total_count'],
-            len(registered_tools['backend'])
-        )
         return (all_tools, [])
 
     # Build server configs for MCP loader
@@ -192,44 +158,19 @@ async def get_agent_tools(
 
         server_configs[server_key] = config_entry
         allowed_remote_names_by_key[server_key] = data['remote_names']
-        
-        # logger.debug(
-        #     "Configured MCP server '%s' with %d tools for agent '%s'",
-        #     server_key,
-        #     len(data['remote_names']),
-        #     agent_type
-        # )
 
     if not server_configs:
         logger.warning("No MCP server configurations available for agent %s", agent_type)
-        logger.info(
-            "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: 0)",
-            agent_type,
-            registered_tools['total_count'],
-            len(registered_tools['backend'])
-        )
         return (all_tools, [])
 
     # Load MCP toolsets using JSON-based configuration
-    # The toolsets are loaded via load_mcp_servers which is more stable and avoids timeouts
-    logger.info("🔧 Loading %d MCP server(s) via JSON configuration for agent '%s'", len(server_configs), agent_type)
-    # logger.debug("MCP server configs: %s", list(server_configs.keys()))
     mcp_toolsets = load_mcp_toolsets(server_configs)
     
     if not mcp_toolsets:
         logger.warning("No MCP toolsets were loaded from configuration")
-        logger.info(
-            "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: 0)",
-            agent_type,
-            registered_tools['total_count'],
-            len(registered_tools['backend'])
-        )
         return (all_tools, [])
     
-    logger.info("✅ Successfully loaded %d MCP toolset(s), now filtering by allowed tools", len(mcp_toolsets))
     toolset_ids = [getattr(ts, 'id', 'NO_ID') for ts in mcp_toolsets]
-    # logger.debug("MCP toolset IDs: %s", toolset_ids)
-    # logger.debug("Allowed remote names by key: %s", {k: sorted(list(v)) for k, v in allowed_remote_names_by_key.items()})
 
     filtered_mcp_toolsets: List[Any] = []
     for toolset in mcp_toolsets:
@@ -240,21 +181,12 @@ async def get_agent_tools(
 
         allowed_remote_names = allowed_remote_names_by_key.get(server_key)
         if not allowed_remote_names:
-            # logger.debug("MCP server '%s' has no allowed tools, skipping", server_key)
             continue
 
         # Pydantic prefixes tool names with the toolset id (e.g. 'corp-github_add_issue_comment').
         # Build a set that includes both the raw remote names and the prefixed variants so that
-        # tool_def.name comparisons succeed regardless of prefix handling.
         prefixed_names = {f"{server_key}_{name}" for name in allowed_remote_names}
         allowed_name_set = set(allowed_remote_names) | prefixed_names
-
-        # logger.debug(
-        #     "Filtering MCP toolset '%s' with allowed names (raw=%s, prefixed=%s)",
-        #     server_key,
-        #     sorted(allowed_remote_names),
-        #     sorted(prefixed_names)
-        # )
 
         try:
             filtered_toolset = toolset.filtered(
@@ -266,48 +198,10 @@ async def get_agent_tools(
                 registered_tools['mcp'].append(f"{server_key}:{tool_name}")
                 registered_tools['total_count'] += 1
 
-            # logger.debug(
-            #     "✓ Configured MCP toolset '%s' with %d filtered tools",
-            #     server_key,
-            #     len(allowed_remote_names)
-            # )
-
         except Exception as exc:
             logger.warning("Failed to filter MCP toolset '%s': %s", server_key, str(exc))
 
-    # Count unique MCP servers from registered tools for logging purposes
-    mcp_servers_used = set()
-    for tool_key in registered_tools['mcp']:
-        if ':' in tool_key:
-            server_key = tool_key.split(':', 1)[0]
-            mcp_servers_used.add(server_key)
-
-    if filtered_mcp_toolsets:
-        logger.info(
-            "Registered %d MCP tool(s) from %d server(s) for agent %s: %s",
-            len(registered_tools['mcp']),
-            len(mcp_servers_used),
-            agent_type,
-            ", ".join(sorted(mcp_servers_used)),
-        )
-    else:
+    if not filtered_mcp_toolsets:
         logger.warning("No MCP tools were successfully registered for agent %s after filtering", agent_type)
-
-    logger.info(
-        "✅ Agent '%s' configured with %d total tool(s) (backend: %d, mcp: %d from %d server(s))",
-        agent_type,
-        registered_tools['total_count'],
-        len(registered_tools['backend']),
-        len(registered_tools['mcp']),
-        len(mcp_servers_used)
-    )
-
-    # if registered_tools['backend'] or registered_tools['mcp']:
-        # logger.debug(
-        #     "Tool breakdown for agent '%s':\n  Backend tools: %s\n  MCP tools: %s",
-        #     agent_type,
-        #     registered_tools['backend'] if registered_tools['backend'] else "none",
-        #     registered_tools['mcp'] if registered_tools['mcp'] else "none"
-        # )
 
     return (all_tools, filtered_mcp_toolsets)

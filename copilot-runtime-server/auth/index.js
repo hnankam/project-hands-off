@@ -11,6 +11,34 @@ import { defaultAc } from "better-auth/plugins/organization/access";
 import { getPool } from '../config/database.js';
 import { sendOrganizationInvitation } from './email.js';
 
+// Helper to check if user is admin/owner in an organization
+async function isAdminOrOwner(userId, organizationId) {
+  try {
+    const pool = getPool();
+    const result = await pool.query(
+      'SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2',
+      [organizationId, userId]
+    );
+    
+    if (result.rows.length > 0) {
+      const roles = Array.isArray(result.rows[0].role) ? result.rows[0].role : [result.rows[0].role];
+      return roles.includes('owner') || roles.includes('admin');
+    }
+  } catch (err) {
+    console.error('[Auth] Error checking member role:', err);
+  }
+  return false;
+}
+
+// Helper to create team member using direct database access
+async function addUserToTeam(teamId, userId) {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO "teamMember" (id, "teamId", "userId", "createdAt") VALUES ($1, $2, $3, $4)`,
+    [crypto.randomUUID(), teamId, userId, new Date()]
+  );
+}
+
 /**
  * Initialize Better Auth with organization plugin
  * Uses the shared database pool to avoid connection conflicts
@@ -66,15 +94,9 @@ export const auth = betterAuth({
       // Enable teams functionality
       teams: {
         enabled: true,
-        maximumTeams: 10, // Optional: limit teams per organization
+        maximumTeams: 100, // Optional: limit teams per organization
         allowRemovingAllTeams: false, // Optional: prevent removing the last team
       },
-      
-      // Debug: Log to confirm plugin is loaded
-      ...(() => {
-        console.log('🔧 Organization plugin loaded with team hooks');
-        return {};
-      })(),
       
       // Access control configuration - use statement-based AC
       ac: {
@@ -85,36 +107,8 @@ export const auth = betterAuth({
             action: "team:listMembers",
             effect: "allow",
             condition: async ({ session, organization }) => {
-              console.log('[ACL Statement] team:listMembers check:', {
-                sessionUser: session?.user?.id,
-                orgId: organization?.id
-              });
-              
-              // Get the organization member info for this user
-              if (organization && session?.user) {
-                try {
-                  const pool = getPool();
-                  const result = await pool.query(
-                    'SELECT role FROM members WHERE organization_id = $1 AND user_id = $2',
-                    [organization.id, session.user.id]
-                  );
-                  
-                  if (result.rows.length > 0) {
-                    const roles = Array.isArray(result.rows[0].role) ? result.rows[0].role : [result.rows[0].role];
-                    console.log('[ACL Statement] User roles:', roles);
-                    
-                    if (roles.includes('owner') || roles.includes('admin')) {
-                      console.log('[ACL Statement] ✅ Admin/Owner access granted');
-                      return true;
-                    }
-                  }
-                } catch (err) {
-                  console.error('[ACL Statement] Error checking member role:', err);
-                }
-              }
-              
-              console.log('[ACL Statement] ❌ Not admin/owner or error occurred');
-              return false;
+              if (!organization || !session?.user) return false;
+              return await isAdminOrOwner(session.user.id, organization.id);
             },
           },
         ],
@@ -130,9 +124,7 @@ export const auth = betterAuth({
       // Organization creation hooks
       organizationHooks: {
         // Before creating an organization
-        beforeCreateOrganization: async ({ organization, user }) => {
-          console.log(`User ${user.email} is creating organization: ${organization.name}`);
-          
+        beforeCreateOrganization: async ({ organization, user }) => {          
           // You can modify organization data here
           return {
             data: {
@@ -146,52 +138,18 @@ export const auth = betterAuth({
           };
         },
         
-        // After creating an organization
-        afterCreateOrganization: async ({ organization, member, user, context }) => {
-          console.log(`Organization created: ${organization.name} (${organization.id})`);
-          console.log(`Creator ${user.email} added as member with role: ${member.role}`);
-          
-          try {
-            // Create a default team for the organization
-            const defaultTeam = await context.adapter.create({
-              model: 'team',
-              data: {
-                id: crypto.randomUUID(),
-                name: 'Default Team',
-                organizationId: organization.id,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              },
-            });
-            
-            console.log(`✅ Default team created: ${defaultTeam.name} (${defaultTeam.id})`);
-            
-            // Add the organization creator to the default team
-            await context.adapter.create({
-              model: 'teamMember',
-              data: {
-                id: crypto.randomUUID(),
-                teamId: defaultTeam.id,
-                userId: user.id,
-                createdAt: new Date(),
-              },
-            });
-            
-            console.log(`✅ User ${user.email} added to default team`);
-          } catch (error) {
-            console.error('❌ Error creating default team or adding member:', error);
-          }
-        },
+        // Note: Better Auth automatically creates a team with the organization's name
+        // and adds the creator to it when teams are enabled. No need for custom afterCreate hook.
         
         // Before updating an organization
         beforeUpdateOrganization: async ({ organization, user, member }) => {
-          console.log(`User ${user.email} is updating organization: ${organization.name}`);
+          // console.log(`User ${user.email} is updating organization: ${organization.name}`);
           return { data: organization };
         },
         
         // After updating an organization
         afterUpdateOrganization: async ({ organization, user, member }) => {
-          console.log(`Organization updated: ${organization.name}`);
+          // console.log(`Organization updated: ${organization.name}`);
         },
       },
       
@@ -199,14 +157,12 @@ export const auth = betterAuth({
       memberHooks: {
         // Before adding a member
         beforeAddMember: async ({ member, user, organization }) => {
-          console.log(`Adding member to organization: ${organization.name}`);
           return { data: member };
         },
         
         // After adding a member
-        afterAddMember: async ({ member, user, organization, context }) => {
-          console.log(`Member added: ${member.email || member.userId} to ${organization.name}`);
-          
+        afterAddMember: async (params) => {
+          const { member, user, organization } = params;          
           // Note: Team assignment is now handled by the invite process
           // The frontend must specify which team to add the member to
           // This ensures single-team membership is enforced at invitation time
@@ -214,13 +170,11 @@ export const auth = betterAuth({
         
         // Before removing a member
         beforeRemoveMember: async ({ member, user, organization }) => {
-          console.log(`Removing member from organization: ${organization.name}`);
           return { data: member };
         },
         
         // After removing a member
         afterRemoveMember: async ({ member, user, organization }) => {
-          console.log(`Member removed from ${organization.name}`);
         },
       },
       
@@ -228,51 +182,35 @@ export const auth = betterAuth({
       invitationHooks: {
         // Before sending an invitation
         beforeSendInvitation: async ({ invitation, user, organization }) => {
-          console.log(`Sending invitation to ${invitation.email} for ${organization.name}`);
           return { data: invitation };
         },
         
-        // After sending an invitation
+        // After sending an invitation - email is sent via sendInvitationEmail below
         afterSendInvitation: async ({ invitation, user, organization }) => {
-          console.log(`Invitation sent to ${invitation.email}`);
-          // Send invitation email here
         },
       },
       
       // Team hooks
       teamHooks: {
         // After creating a team
-        afterCreateTeam: async ({ team, user, organization, context }) => {
-          console.log(`Team created: ${team.name} (${team.id}) in ${organization.name}`);
-          console.log(`Creator: ${user.email} (${user.id})`);
-          
+        afterCreateTeam: async (params) => {
+          const { team, user, organization } = params;
+                    
           try {
             // Automatically add the team creator as a team member
-            await context.adapter.create({
-              model: 'teamMember',
-              data: {
-                id: crypto.randomUUID(),
-                teamId: team.id,
-                userId: user.id,
-                createdAt: new Date(),
-              },
-            });
-            
-            console.log(`✅ User ${user.email} automatically added to team ${team.name}`);
+            await addUserToTeam(team.id, user.id);
           } catch (error) {
-            console.error('❌ Error adding creator to team:', error);
+            console.error('Error adding creator to team:', error);
           }
         },
         
         // Before removing a team
         beforeRemoveTeam: async ({ team, user, organization }) => {
-          console.log(`Removing team: ${team.name} from ${organization.name}`);
           return { data: team };
         },
         
         // After removing a team
         afterRemoveTeam: async ({ team, user, organization }) => {
-          console.log(`Team ${team.name} removed from ${organization.name}`);
         },
       },
       
@@ -281,15 +219,12 @@ export const auth = betterAuth({
       
       // Send invitation email function
       sendInvitationEmail: async (data) => {
-        // Log the data we receive from Better Auth for debugging
-        console.log('📧 sendInvitationEmail called with data:', JSON.stringify(data, null, 2));
         
         try {
-          // Call our email service
           await sendOrganizationInvitation(data);
           return { success: true };
         } catch (error) {
-          console.error('❌ Failed to send invitation email:', error);
+          console.error('Failed to send invitation email:', error.message);
           // Don't throw - we don't want to block the invitation creation
           return { success: false, error: error.message };
         }

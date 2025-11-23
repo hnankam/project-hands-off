@@ -1,8 +1,8 @@
 """WebSocket connection management for real-time updates."""
 
 from collections import defaultdict
-from typing import Dict, Set
-from datetime import datetime
+from typing import Any, Dict, Set
+from datetime import datetime, timezone
 from fastapi import WebSocket
 
 from config import logger
@@ -51,7 +51,7 @@ class ConnectionManager:
             del self.active_connections[session_id]
         # logger.debug(f"WS disconnected for session={session_id}")
     
-    async def broadcast_to_session(self, session_id: str, message: dict) -> None:
+    async def broadcast_to_session(self, session_id: str, message: Dict[str, Any]) -> None:
         """Broadcast a message to all connections for a specific session.
         
         Args:
@@ -62,8 +62,8 @@ class ConnectionManager:
             # logger.debug(f"No WebSocket connections for session={session_id}")
             return
         
-        # Add timestamp
-        message["timestamp"] = datetime.now().isoformat()
+        # Add UTC timestamp for consistent client-side handling
+        message["timestamp"] = datetime.now(timezone.utc).isoformat()
         
         # Broadcast to all connected clients for this session
         disconnected = set()

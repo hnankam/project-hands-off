@@ -15,17 +15,18 @@ from config import (
     DEBUG,
     logger,
     get_models,
-    model_settings,
-    google_model_settings,
-    anthropic_model_settings,
-    bedrock_model_settings,
-    AGENT_PROMPTS,
+    get_agent_prompts,
 )
 
-# Lazy load MODELS
+# Lazy load constants and functions
 def __getattr__(name):
     if name == 'MODELS':
         return get_models()
+    if name == 'AGENT_PROMPTS':
+        return get_agent_prompts()
+    if name == 'keep_recent_messages':
+        from utils import keep_recent_messages
+        return keep_recent_messages
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 from core import (
@@ -38,10 +39,6 @@ from core import (
     get_agent,
 )
 
-from utils import (
-    keep_recent_messages,
-)
-
 from services import (
     create_usage_tracking_callback,
 )
@@ -52,10 +49,6 @@ __all__ = [
     'DEBUG',
     'logger',
     'get_models',
-    'model_settings',
-    'google_model_settings',
-    'anthropic_model_settings',
-    'bedrock_model_settings',
     'AGENT_PROMPTS',
     'Step',
     'Plan',

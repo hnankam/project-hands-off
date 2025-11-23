@@ -1,30 +1,37 @@
+/**
+ * Base Instructions API Routes
+ * 
+ * Provides CRUD operations for base instructions (system prompts/guidelines)
+ * that can be configured per organization. These instructions are used to
+ * customize agent behavior and responses.
+ * 
+ * Endpoints:
+ * - GET    /api/admin/base-instructions - List instructions
+ * - POST   /api/admin/base-instructions - Create instruction
+ * - PUT    /api/admin/base-instructions/:instructionId - Update instruction
+ * - DELETE /api/admin/base-instructions/:instructionId - Delete instruction
+ */
+
 import express from 'express';
-import { auth } from '../auth/index.js';
 import { getPool } from '../config/database.js';
 import { log } from '../utils/logger.js';
+import {
+  sanitizeJSON,
+  ensureAuthenticated,
+  ensureOrgAdmin,
+} from '../utils/route-helpers.js';
 
 const router = express.Router();
 
-const sanitizeJSON = (value, fallback = {}) => {
-  if (value == null) {
-    return fallback;
-  }
+// ============================================================================
+// Data Transformation
+// ============================================================================
 
-  if (typeof value === 'object') {
-    return value;
-  }
-
-  if (typeof value === 'string' && value.trim() === '') {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(value);
-  } catch (err) {
-    throw new Error('Invalid JSON payload');
-  }
-};
-
+/**
+ * Convert database row to camelCase instruction object
+ * @param {Object} row - Database row
+ * @returns {Object} Camel-cased instruction object
+ */
 const toCamelInstruction = row => ({
   id: row.id,
   instructionKey: row.instruction_key,
@@ -35,49 +42,19 @@ const toCamelInstruction = row => ({
   updatedAt: row.updated_at,
 });
 
-async function ensureAuthenticated(req, res) {
-  const session = await auth.api.getSession({ headers: req.headers });
+// Authentication & Authorization helpers imported from route-helpers.js
 
-  if (!session || !session.user) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return null;
-  }
+// ============================================================================
+// Database Queries
+// ============================================================================
 
-  return session;
-}
-
-async function ensureOrgAdmin(pool, organizationId, userId, res) {
-  if (!organizationId) {
-    res.status(400).json({ error: 'organizationId is required' });
-    return null;
-  }
-
-  const memberResult = await pool.query(
-    'SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2',
-    [organizationId, userId],
-  );
-
-  if (memberResult.rows.length === 0) {
-    res.status(403).json({ error: 'Forbidden: user is not a member of the organization' });
-    return null;
-  }
-
-  const roleValue = memberResult.rows[0].role;
-  const roles = Array.isArray(roleValue)
-    ? roleValue
-    : typeof roleValue === 'string'
-      ? [roleValue]
-      : [];
-
-  if (!roles.includes('owner') && !roles.includes('admin')) {
-    res.status(403).json({ error: 'Forbidden: admin or owner role required' });
-    return null;
-  }
-
-  return roles;
-}
-
-
+/**
+ * Fetch instruction by ID
+ * @param {Object} pool - Database pool
+ * @param {string} id - Instruction ID
+ * @param {string} organizationId - Organization ID
+ * @returns {Promise<Object|null>} Instruction object or null if not found
+ */
 async function fetchInstructionById(pool, id, organizationId) {
   const { rows } = await pool.query(
     `SELECT bi.*
@@ -89,6 +66,19 @@ async function fetchInstructionById(pool, id, organizationId) {
   return rows[0] ? toCamelInstruction(rows[0]) : null;
 }
 
+// ============================================================================
+// Route Handlers
+// ============================================================================
+
+/**
+ * GET /api/admin/base-instructions
+ * List all base instructions for an organization
+ * 
+ * Query params:
+ * - organizationId (required): Organization ID
+ * 
+ * Returns: { instructions: Instruction[], count: number }
+ */
 router.get('/', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -108,12 +98,27 @@ router.get('/', async (req, res, next) => {
       [organizationId],
     );
 
-    res.json({ instructions: rows.map(toCamelInstruction), count: rows.length });
+    res.json({ 
+      instructions: rows.map(toCamelInstruction), 
+      count: rows.length 
+    });
   } catch (err) {
     next(err);
   }
 });
 
+/**
+ * POST /api/admin/base-instructions
+ * Create a new base instruction
+ * 
+ * Body:
+ * - organizationId (required): Organization ID
+ * - instructionKey (required): Unique identifier for the instruction
+ * - instructionValue (required): The instruction text/content
+ * - description (optional): Description of the instruction's purpose
+ * 
+ * Returns: { instruction: Instruction }
+ */
 router.post('/', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -126,6 +131,7 @@ router.post('/', async (req, res, next) => {
       description,
     } = req.body || {};
 
+    // Validate required fields
     if (!organizationId) {
       return res.status(400).json({ error: 'organizationId is required' });
     }
@@ -143,14 +149,16 @@ router.post('/', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    // Check for duplicate instruction_key
+    // Check for duplicate instruction_key in organization
     const duplicateCheck = await pool.query(
       'SELECT id FROM base_instructions WHERE instruction_key = $1 AND organization_id = $2',
       [instructionKey.trim(), organizationId],
     );
 
     if (duplicateCheck.rows.length > 0) {
-      return res.status(409).json({ error: 'Instruction key already exists in this organization' });
+      return res.status(409).json({ 
+        error: 'Instruction key already exists in this organization' 
+      });
     }
 
     const insertResult = await pool.query(
@@ -169,13 +177,33 @@ router.post('/', async (req, res, next) => {
       ],
     );
 
-    const createdInstruction = await fetchInstructionById(pool, insertResult.rows[0].id, organizationId);
+    const createdInstruction = await fetchInstructionById(
+      pool, 
+      insertResult.rows[0].id, 
+      organizationId
+    );
+    
     res.status(201).json({ instruction: createdInstruction });
   } catch (err) {
     next(err);
   }
 });
 
+/**
+ * PUT /api/admin/base-instructions/:instructionId
+ * Update an existing base instruction
+ * 
+ * Params:
+ * - instructionId: Instruction UUID
+ * 
+ * Body: (all optional except organizationId)
+ * - organizationId (required): Organization ID
+ * - instructionKey: Unique identifier for the instruction
+ * - instructionValue: The instruction text/content
+ * - description: Description of the instruction's purpose
+ * 
+ * Returns: { instruction: Instruction }
+ */
 router.put('/:instructionId', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -211,7 +239,9 @@ router.put('/:instructionId', async (req, res, next) => {
       );
 
       if (duplicateCheck.rows.length > 0) {
-        return res.status(409).json({ error: 'Instruction key already exists in this organization' });
+        return res.status(409).json({ 
+          error: 'Instruction key already exists in this organization' 
+        });
       }
     }
 
@@ -239,6 +269,18 @@ router.put('/:instructionId', async (req, res, next) => {
   }
 });
 
+/**
+ * DELETE /api/admin/base-instructions/:instructionId
+ * Delete a base instruction
+ * 
+ * Params:
+ * - instructionId: Instruction UUID
+ * 
+ * Query params:
+ * - organizationId (required): Organization ID
+ * 
+ * Returns: { ok: true }
+ */
 router.delete('/:instructionId', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -256,7 +298,10 @@ router.delete('/:instructionId', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    const { rowCount } = await pool.query('DELETE FROM base_instructions WHERE id = $1 AND organization_id = $2', [instructionId, organizationId]);
+    const { rowCount } = await pool.query(
+      'DELETE FROM base_instructions WHERE id = $1 AND organization_id = $2',
+      [instructionId, organizationId]
+    );
 
     if (rowCount === 0) {
       return res.status(404).json({ error: 'Base instruction not found' });

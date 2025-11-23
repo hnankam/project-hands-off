@@ -1,7 +1,31 @@
 /**
  * Team Association Helpers
- * Utilities for managing many-to-many team relationships
+ * Utilities for managing many-to-many team relationships with resources
+ * 
+ * Provides functions for:
+ * - Syncing team associations (with and without transactions)
+ * - Querying resources by team access
+ * - Building SQL clauses for team-based filtering
+ * - Case conversion utilities (camelCase <-> snake_case)
  */
+
+// Valid table/column name pattern (alphanumeric and underscore only)
+const SQL_IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+/**
+ * Validate SQL identifier (table or column name) to prevent SQL injection
+ * @param {string} identifier - Table or column name
+ * @param {string} type - Type of identifier for error message
+ * @throws {Error} If identifier is invalid
+ */
+function validateSQLIdentifier(identifier, type = 'identifier') {
+  if (!identifier || typeof identifier !== 'string') {
+    throw new Error(`Invalid ${type}: must be a non-empty string`);
+  }
+  if (!SQL_IDENTIFIER_PATTERN.test(identifier)) {
+    throw new Error(`Invalid ${type}: '${identifier}' contains invalid characters`);
+  }
+}
 
 /**
  * Sync team associations using an existing client (no transaction management)
@@ -15,6 +39,10 @@
  * @returns {Promise<void>}
  */
 async function syncTeamAssociationsWithClient(client, junctionTable, resourceIdColumn, resourceId, teamIds) {
+  // Validate SQL identifiers to prevent injection
+  validateSQLIdentifier(junctionTable, 'junction table name');
+  validateSQLIdentifier(resourceIdColumn, 'resource ID column name');
+  
   // Delete existing associations
   await client.query(
     `DELETE FROM ${junctionTable} WHERE ${resourceIdColumn} = $1`,
@@ -86,6 +114,10 @@ async function syncTeamAssociations(pool, junctionTable, resourceIdColumn, resou
  * @returns {Promise<Array<{id: string, name: string}>>}
  */
 async function getTeamsForResource(pool, junctionTable, resourceIdColumn, resourceId) {
+  // Validate SQL identifiers to prevent injection
+  validateSQLIdentifier(junctionTable, 'junction table name');
+  validateSQLIdentifier(resourceIdColumn, 'resource ID column name');
+  
   const result = await pool.query(
     `SELECT t.id, t.name
      FROM ${junctionTable} jt
@@ -109,6 +141,11 @@ async function getTeamsForResource(pool, junctionTable, resourceIdColumn, resour
  * @returns {{clause: string, params: any[]}}
  */
 function buildTeamAccessClause(resourceTable, junctionTable, resourceIdColumn, userTeamIds, paramOffset = 1) {
+  // Validate SQL identifiers to prevent injection
+  validateSQLIdentifier(resourceTable, 'resource table name');
+  validateSQLIdentifier(junctionTable, 'junction table name');
+  validateSQLIdentifier(resourceIdColumn, 'resource ID column name');
+  
   // If no teams provided, only show org-wide resources
   if (!userTeamIds || userTeamIds.length === 0) {
     return {
@@ -144,6 +181,10 @@ function buildTeamAccessClause(resourceTable, junctionTable, resourceIdColumn, u
  * @returns {Promise<Array>}
  */
 async function getResourcesWithTeams(pool, viewName, organizationId, userTeamIds = [], orderByColumn = 'created_at') {
+  // Validate SQL identifiers to prevent injection
+  validateSQLIdentifier(viewName, 'view name');
+  validateSQLIdentifier(orderByColumn, 'order by column name');
+  
   // Build team access filter
   let teamFilter = '';
   const params = [organizationId];
@@ -176,22 +217,37 @@ async function getResourcesWithTeams(pool, viewName, organizationId, userTeamIds
 
 /**
  * Convert camelCase to snake_case
+ * @param {string} str - String in camelCase
+ * @returns {string} String in snake_case
+ * @example toSnakeCase('userId') // 'user_id'
  */
 function toSnakeCase(str) {
+  if (!str) return str;
   return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 }
 
 /**
  * Convert snake_case to camelCase
+ * @param {string} str - String in snake_case
+ * @returns {string} String in camelCase
+ * @example toCamelCase('user_id') // 'userId'
  */
 function toCamelCase(str) {
+  if (!str) return str;
   return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 }
 
 /**
  * Convert database row to camelCase object
+ * Transforms all snake_case keys to camelCase
+ * @param {Object} row - Database row with snake_case keys
+ * @returns {Object} Object with camelCase keys
+ * @example rowToCamel({ user_id: '123', user_name: 'John' }) 
+ *          // { userId: '123', userName: 'John' }
  */
 function rowToCamel(row) {
+  if (!row || typeof row !== 'object') return row;
+  
   const result = {};
   for (const [key, value] of Object.entries(row)) {
     result[toCamelCase(key)] = value;
@@ -199,14 +255,30 @@ function rowToCamel(row) {
   return result;
 }
 
+/**
+ * Convert array of database rows to camelCase objects
+ * @param {Array<Object>} rows - Array of database rows
+ * @returns {Array<Object>} Array of camelCase objects
+ */
+function rowsToCamel(rows) {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map(row => rowToCamel(row));
+}
+
 export {
+  // Team association management
   syncTeamAssociations,
   syncTeamAssociationsWithClient,
   getTeamsForResource,
+  
+  // Query building and filtering
   buildTeamAccessClause,
   getResourcesWithTeams,
+  
+  // Case conversion utilities
   toSnakeCase,
   toCamelCase,
   rowToCamel,
+  rowsToCamel,
 };
 

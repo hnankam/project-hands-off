@@ -1,3 +1,32 @@
+/**
+ * Usage Analytics API Routes
+ * 
+ * Provides comprehensive usage analytics and reporting for AI model consumption.
+ * Tracks tokens, costs, sessions, and requests across organizations, teams, agents,
+ * models, and users with role-based access control.
+ * 
+ * Features:
+ * - Multi-dimensional analytics (time, teams, agents, models, users)
+ * - Role-based data filtering (owner, admin, member)
+ * - Time-range presets (1h, 24h, 7d, 30d, 90d, all time)
+ * - Real-time and historical data aggregation
+ * - Token usage tracking (request, response, total)
+ * - Cost tracking and budgeting
+ * - Session and request counting
+ * - Paginated recent activity logs
+ * - Multi-series timeseries charts
+ * 
+ * Access Control:
+ * - Owner: Full access to all org data
+ * - Admin: Access to assigned teams only
+ * - Member: Access to own data only
+ * 
+ * Endpoints:
+ * - GET /api/admin/usage - Comprehensive usage analytics dashboard
+ * 
+ * @module routes/usage
+ */
+
 import express from 'express';
 import { auth } from '../auth/index.js';
 import { getPool } from '../config/database.js';
@@ -5,6 +34,14 @@ import { log } from '../utils/logger.js';
 
 const router = express.Router();
 
+// ============================================================================
+// Constants and Configuration
+// ============================================================================
+
+/**
+ * Time range presets for analytics queries
+ * Each preset defines duration, bucket granularity, and minimum data points
+ */
 const RANGE_PRESETS = {
   '1h': { label: 'Last hour', durationMs: 60 * 60 * 1000, bucket: 'minute', minBuckets: 12 },
   '24h': { label: 'Last 24 hours', durationMs: 24 * 60 * 60 * 1000, bucket: 'hour', minBuckets: 12 },
@@ -14,11 +51,23 @@ const RANGE_PRESETS = {
   all: { label: 'All time', durationMs: null, bucket: 'day', minBuckets: 12 },
 };
 
+/**
+ * Formatted range options for client-side display
+ */
 const RANGE_OPTIONS = Object.entries(RANGE_PRESETS).map(([value, config]) => ({
   value,
   label: config.label,
 }));
 
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/**
+ * Parse role value from database (handles both array and string formats)
+ * @param {string|string[]|null} roleValue - Role value from database
+ * @returns {string[]} Array of role strings
+ */
 const parseRoleValue = roleValue => {
   if (!roleValue) {
     return [];
@@ -40,6 +89,16 @@ const parseRoleValue = roleValue => {
   return [];
 };
 
+// ============================================================================
+// Context Resolution Functions
+// ============================================================================
+
+/**
+ * Resolves the active organization and team context from session
+ * @param {Object} pool - Database connection pool
+ * @param {Object} session - Better Auth session object
+ * @returns {Promise<{organizationId: string|null, teamId: string|null}>}
+ */
 async function resolveActiveContext(pool, session) {
   if (!session?.session) {
     return { organizationId: null, teamId: null };
@@ -66,6 +125,13 @@ async function resolveActiveContext(pool, session) {
   return { organizationId, teamId };
 }
 
+/**
+ * Fetches member roles for a user in an organization
+ * @param {Object} pool - Database connection pool
+ * @param {string} organizationId - Organization ID
+ * @param {string} userId - User ID
+ * @returns {Promise<string[]>} Array of role strings
+ */
 async function fetchMemberRoles(pool, organizationId, userId) {
   const { rows } = await pool.query(
     'SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2 LIMIT 1',
@@ -79,6 +145,21 @@ async function fetchMemberRoles(pool, organizationId, userId) {
   return parseRoleValue(rows[0].role);
 }
 
+// ============================================================================
+// Scope Resolution Functions (Teams, Agents, Models, Users)
+// ============================================================================
+
+/**
+ * Fetches accessible teams based on user role
+ * - Owner: All organization teams
+ * - Admin/Member: Teams where user is a member
+ * 
+ * @param {Object} pool - Database connection pool
+ * @param {string} organizationId - Organization ID
+ * @param {string} userId - User ID
+ * @param {string} role - User role (owner, admin, member)
+ * @returns {Promise<Array<{id: string, name: string}>>}
+ */
 async function fetchTeamsForScope(pool, organizationId, userId, role) {
   if (!organizationId) {
     return [];
@@ -106,6 +187,17 @@ async function fetchTeamsForScope(pool, organizationId, userId, role) {
   return rows;
 }
 
+/**
+ * Fetches accessible agents based on user role and team access
+ * - Owner: All organization agents
+ * - Admin/Member: Agents with no team restrictions OR assigned to accessible teams
+ * 
+ * @param {Object} pool - Database connection pool
+ * @param {string} organizationId - Organization ID
+ * @param {string[]} accessibleTeamIds - Team IDs user has access to
+ * @param {string} role - User role (owner, admin, member)
+ * @returns {Promise<Array<{id: string, name: string, code: string, team_ids: string[]}>>}
+ */
 async function fetchAgentsForScope(pool, organizationId, accessibleTeamIds, role) {
   if (!organizationId) {
     return [];
@@ -160,6 +252,17 @@ async function fetchAgentsForScope(pool, organizationId, accessibleTeamIds, role
   return rows;
 }
 
+/**
+ * Fetches accessible models based on user role and team access
+ * - Owner: All organization models
+ * - Admin/Member: Models with no team restrictions OR assigned to accessible teams
+ * 
+ * @param {Object} pool - Database connection pool
+ * @param {string} organizationId - Organization ID
+ * @param {string[]} accessibleTeamIds - Team IDs user has access to
+ * @param {string} role - User role (owner, admin, member)
+ * @returns {Promise<Array<{id: string, name: string, code: string, provider: string, team_ids: string[]}>>}
+ */
 async function fetchModelsForScope(pool, organizationId, accessibleTeamIds, role) {
   if (!organizationId) {
     return [];
@@ -217,6 +320,19 @@ async function fetchModelsForScope(pool, organizationId, accessibleTeamIds, role
   return rows;
 }
 
+/**
+ * Fetches accessible users based on user role and team access
+ * - Owner: All organization members
+ * - Admin: Members of accessible teams
+ * - Member: Only self
+ * 
+ * @param {Object} pool - Database connection pool
+ * @param {string} organizationId - Organization ID
+ * @param {string[]|null} teamIds - Team IDs to filter by
+ * @param {string} role - User role (owner, admin, member)
+ * @param {string} activeUserId - Current user's ID
+ * @returns {Promise<Array<{id: string, label: string}>>}
+ */
 async function fetchUsersForScope(pool, organizationId, teamIds, role, activeUserId) {
   if (!organizationId) {
     return [];
@@ -287,6 +403,15 @@ async function fetchUsersForScope(pool, organizationId, teamIds, role, activeUse
   return rows;
 }
 
+// ============================================================================
+// Query Building Functions
+// ============================================================================
+
+/**
+ * Resolves range configuration from query parameter
+ * @param {string} rangeKey - Range key (1h, 24h, 7d, 30d, 90d, all)
+ * @returns {{key: string, label: string, durationMs: number|null, bucket: string, minBuckets: number}}
+ */
 function resolveRangeConfig(rangeKey) {
   const normalized = (rangeKey || '').toLowerCase();
   if (RANGE_PRESETS[normalized]) {
@@ -295,6 +420,26 @@ function resolveRangeConfig(rangeKey) {
   return { key: '24h', ...RANGE_PRESETS['24h'] };
 }
 
+/**
+ * Builds SQL WHERE conditions and parameters for usage queries
+ * Supports multi-dimensional filtering by organization, teams, users, agents, models, sessions
+ * 
+ * @param {Object} options - Filter options
+ * @param {string} options.organizationId - Organization ID filter
+ * @param {Date} options.startDate - Start date filter
+ * @param {string} options.teamId - Single team ID (legacy)
+ * @param {string[]} options.teamIds - Multiple team IDs
+ * @param {string} options.userId - Single user ID (legacy)
+ * @param {string[]} options.userIds - Multiple user IDs
+ * @param {string} options.agentId - Single agent ID (legacy)
+ * @param {string[]} options.agentIds - Multiple agent IDs
+ * @param {string} options.modelId - Single model ID (legacy)
+ * @param {string[]} options.modelIds - Multiple model IDs
+ * @param {string} options.sessionId - Session ID filter
+ * @param {boolean} options.includeOrgLevelWithTeam - Include org-wide data when filtering by team
+ * @param {number} options.paramOffset - Parameter offset for parameterized queries
+ * @returns {{clause: string, params: any[]}}
+ */
 function buildUsageConditions({
   organizationId,
   startDate,
@@ -366,6 +511,15 @@ function buildUsageConditions({
   };
 }
 
+// ============================================================================
+// Data Transformation Functions
+// ============================================================================
+
+/**
+ * Maps database row to breakdown result object
+ * @param {Object} row - Database row
+ * @returns {{id: string, label: string, requestTokens: number, responseTokens: number, totalTokens: number, count: number, sessionCount: number}}
+ */
 function mapBreakdownRow(row) {
   return {
     id: row.id,
@@ -378,6 +532,46 @@ function mapBreakdownRow(row) {
   };
 }
 
+// ============================================================================
+// Route Handlers
+// ============================================================================
+
+/**
+ * GET /api/admin/usage
+ * Comprehensive usage analytics dashboard endpoint
+ * 
+ * Features:
+ * - Summary statistics (tokens, costs, sessions, requests)
+ * - Time-series data with configurable granularity
+ * - Multi-dimensional breakdowns (models, agents, teams, users)
+ * - Multi-series timeseries for top resources
+ * - Paginated recent activity log
+ * - Role-based access control and filtering
+ * 
+ * Query Parameters:
+ * - organizationId: string (optional) - Filter by organization (if user has access)
+ * - range: string (optional) - Time range (1h, 24h, 7d, 30d, 90d, all) - default: 24h
+ * - teamId/teamIds: string/string[] (optional) - Filter by team(s)
+ * - userId/userIds: string/string[] (optional) - Filter by user(s)
+ * - agentId/agentIds: string/string[] (optional) - Filter by agent(s)
+ * - modelId/modelIds: string/string[] (optional) - Filter by model(s)
+ * - sessionId: string (optional) - Filter by session
+ * - page: number (optional) - Page number for recent activity - default: 1
+ * - limit: number (optional) - Items per page - default: 25
+ * - metric: string (optional) - Grouping metric (tokens, sessions, requests) - default: tokens
+ * 
+ * Response:
+ * - scope: User's access level and enforced filters
+ * - filters: Available filter options and current selections
+ * - summary: Aggregate statistics
+ * - timeseries: Time-bucketed data points
+ * - breakdowns: Top 10 by dimension (models, agents, teams, users)
+ * - modelsTimeseries: Time series for top models
+ * - agentsTimeseries: Time series for top agents
+ * - teamsTimeseries: Time series for top teams
+ * - usersTimeseries: Time series for top users
+ * - recent: Paginated recent activity with metadata
+ */
 router.get('/', async (req, res, next) => {
   try {
     const session = await auth.api.getSession({ headers: req.headers });

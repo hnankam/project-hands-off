@@ -10,30 +10,24 @@ config();
 
 // Email configuration
 const EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || 'console'; // 'console', 'resend', 'sendgrid', 'ses'
-const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@yourapp.com';
-const EMAIL_FROM_NAME = process.env.EMAIL_FROM_NAME || 'Your App';
+const EMAIL_FROM = process.env.EMAIL_FROM || 'onboarding@handsoff.dev';
+const EMAIL_FROM_NAME = process.env.EMAIL_FROM_NAME || 'Hands-Off';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3001';
 
+// Validate email provider configuration
+const VALID_PROVIDERS = ['console', 'resend', 'sendgrid', 'ses'];
+if (!VALID_PROVIDERS.includes(EMAIL_PROVIDER)) {
+  console.warn(`Invalid EMAIL_PROVIDER: ${EMAIL_PROVIDER}. Falling back to 'console'.`);
+}
+
 /**
- * Send organization invitation email
- * @param {Object} data - Invitation data from Better Auth
- * @param {string} data.email - Recipient email address
- * @param {Object} data.organization - Organization details
- * @param {string} data.organization.name - Organization name
- * @param {Object} data.inviter - Inviter details
- * @param {string} data.inviter.email - Inviter email
- * @param {string} data.inviter.user.name - Inviter name
- * @param {string} data.id - Invitation ID
+ * Generate email content for organization invitation
  */
-export async function sendOrganizationInvitation(data) {
-  const { email, organization, inviter, id } = data;
+function generateInvitationEmail(email, organization, inviter, invitationLink) {
+  const inviterName = inviter.user?.name || inviter.email;
+  const subject = `You've been invited to join ${organization.name}`;
   
-  // Construct the invitation link
-  const invitationLink = `${FRONTEND_URL}/accept-invitation/${id}`;
-  
-  // Email content
-  const emailSubject = `You've been invited to join ${organization.name}`;
-  const emailHtml = `
+  const html = `
     <!DOCTYPE html>
     <html>
     <head>
@@ -96,7 +90,7 @@ export async function sendOrganizationInvitation(data) {
         <p>Hi there,</p>
         
         <p>
-          <strong>${inviter.user?.name || inviter.email}</strong> has invited you to join 
+          <strong>${inviterName}</strong> has invited you to join 
           <strong>${organization.name}</strong>.
         </p>
         
@@ -124,50 +118,63 @@ export async function sendOrganizationInvitation(data) {
     </html>
   `;
   
-  const emailText = `
+  const text = `
 You've been invited to join ${organization.name}!
 
-${inviter.user?.name || inviter.email} has invited you to collaborate.
+${inviterName} has invited you to collaborate.
 
 Accept your invitation by visiting:
 ${invitationLink}
 
 If you didn't expect this invitation, you can safely ignore this email.
   `.trim();
+  
+  return { subject, html, text };
+}
+
+/**
+ * Send organization invitation email
+ * @param {Object} data - Invitation data from Better Auth
+ * @param {string} data.email - Recipient email address
+ * @param {Object} data.organization - Organization details
+ * @param {string} data.organization.name - Organization name
+ * @param {Object} data.inviter - Inviter details
+ * @param {string} data.inviter.email - Inviter email
+ * @param {string} data.inviter.user.name - Inviter name
+ * @param {string} data.id - Invitation ID
+ */
+export async function sendOrganizationInvitation(data) {
+  const { email, organization, inviter, id } = data;
+  
+  if (!email || !organization?.name || !id) {
+    throw new Error('Missing required invitation data: email, organization.name, or id');
+  }
+  
+  // Construct the invitation link
+  const invitationLink = `${FRONTEND_URL}/accept-invitation/${id}`;
+  
+  // Generate email content
+  const { subject, html, text } = generateInvitationEmail(email, organization, inviter, invitationLink);
+  const inviterName = inviter.user?.name || inviter.email;
 
   try {
     switch (EMAIL_PROVIDER) {
       case 'resend':
-        await sendWithResend(email, emailSubject, emailHtml, emailText);
+        await sendWithResend(email, subject, html, text);
         break;
       
       case 'sendgrid':
-        await sendWithSendGrid(email, emailSubject, emailHtml, emailText);
+        await sendWithSendGrid(email, subject, html, text);
         break;
       
       case 'ses':
-        await sendWithSES(email, emailSubject, emailHtml, emailText);
+        await sendWithSES(email, subject, html, text);
         break;
       
       case 'console':
       default:
         // Development mode - log to console
-        console.log(`
-╔════════════════════════════════════════════════════════════════════════════╗
-║                      INVITATION EMAIL (Dev Mode)                           ║
-╠════════════════════════════════════════════════════════════════════════════╣
-║ To: ${email.padEnd(70)}║
-║ From: ${(inviter.user?.name || inviter.email).padEnd(67)}║
-║ Organization: ${organization.name.padEnd(59)}║
-╠════════════════════════════════════════════════════════════════════════════╣
-║ Subject: ${emailSubject.padEnd(64)}║
-╠════════════════════════════════════════════════════════════════════════════╣
-║                                                                            ║
-║ Click to accept invitation:                                               ║
-║ ${invitationLink.padEnd(74)}║
-║                                                                            ║
-╚════════════════════════════════════════════════════════════════════════════╝
-        `);
+        logInvitationToConsole(email, inviterName, organization.name, subject, invitationLink);
         break;
     }
     
@@ -179,21 +186,56 @@ If you didn't expect this invitation, you can safely ignore this email.
 }
 
 /**
+ * Log invitation email to console (development mode)
+ */
+function logInvitationToConsole(to, from, orgName, subject, link) {
+  console.log(`
+╔════════════════════════════════════════════════════════════════════════════╗
+║                      INVITATION EMAIL (Dev Mode)                           ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║ To: ${to.padEnd(70)}║
+║ From: ${from.padEnd(67)}║
+║ Organization: ${orgName.padEnd(59)}║
+╠════════════════════════════════════════════════════════════════════════════╣
+║ Subject: ${subject.padEnd(64)}║
+╠════════════════════════════════════════════════════════════════════════════╣
+║                                                                            ║
+║ Click to accept invitation:                                                ║
+║ ${link.padEnd(74)}║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+  `);
+}
+
+/**
  * Send email using Resend
  * Install: npm install resend
  * Set: EMAIL_PROVIDER=resend, RESEND_API_KEY=your_key
  */
 async function sendWithResend(to, subject, html, text) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY environment variable is required for Resend provider');
+  }
+  
   const { Resend } = await import('resend');
   const resend = new Resend(process.env.RESEND_API_KEY);
   
-  await resend.emails.send({
+  const emailData = {
     from: `${EMAIL_FROM_NAME} <${EMAIL_FROM}>`,
     to,
     subject,
     html,
     text,
-  });
+  };
+  
+  const response = await resend.emails.send(emailData);
+  
+  // Check for errors in the response
+  if (response.error) {
+    throw new Error(`Resend API Error: ${response.error.message} (${response.error.name})`);
+  }
+  
+  return response;
 }
 
 /**
@@ -202,6 +244,10 @@ async function sendWithResend(to, subject, html, text) {
  * Set: EMAIL_PROVIDER=sendgrid, SENDGRID_API_KEY=your_key
  */
 async function sendWithSendGrid(to, subject, html, text) {
+  if (!process.env.SENDGRID_API_KEY) {
+    throw new Error('SENDGRID_API_KEY environment variable is required for SendGrid provider');
+  }
+  
   const sgMail = await import('@sendgrid/mail');
   sgMail.default.setApiKey(process.env.SENDGRID_API_KEY);
   

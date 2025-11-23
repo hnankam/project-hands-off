@@ -1,12 +1,63 @@
+/**
+ * Provider Routes (Admin)
+ * 
+ * Manages LLM provider configurations for organizations.
+ * Providers define the API credentials and settings for accessing LLM services
+ * (e.g., OpenAI, Anthropic, Google Gemini, Azure OpenAI, AWS Bedrock).
+ * 
+ * **Features:**
+ * - CRUD operations for providers
+ * - Multi-team support (org-wide or team-specific)
+ * - Provider connectivity testing
+ * - Credential validation
+ * - Team scope validation
+ * 
+ * **Multi-Tenancy:**
+ * - Organization-scoped (all providers belong to an organization)
+ * - Team-scoped (providers can be restricted to specific teams)
+ * - Models must use providers within compatible team scopes
+ * 
+ * **Supported Provider Types:**
+ * - `openai` - OpenAI API (GPT models)
+ * - `azure_openai` - Azure OpenAI Service (GPT models via Azure)
+ * - `google` - Google Generative AI (Gemini models)
+ * - `anthropic` - Anthropic API (Claude models)
+ * - `anthropic_bedrock` - AWS Bedrock (Claude models via Bedrock)
+ * 
+ * **Connectivity Testing:**
+ * Each provider type has dedicated test functions that verify:
+ * - Valid API credentials
+ * - Service accessibility
+ * - Proper configuration
+ * 
+ * @module routes/providers
+ */
+
 import express from 'express';
-import { auth } from '../auth/index.js';
 import { getPool } from '../config/database.js';
-import { log } from '../utils/logger.js';
+import { log, logError } from '../utils/logger.js';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { syncTeamAssociations } from '../lib/team-helpers.js';
+import {
+  sanitizeJSON,
+  ensureHttps,
+  safeJsonParse,
+  extractErrorMessage,
+  ensureAuthenticated,
+  ensureOrgAdmin,
+  validateTeamBelongsToOrg,
+} from '../utils/route-helpers.js';
 
 const router = express.Router();
 
+// ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * Supported LLM provider types
+ * @constant {Set<string>}
+ */
 const SUPPORTED_PROVIDER_TYPES = new Set([
   'anthropic',
   'anthropic_bedrock',
@@ -15,90 +66,20 @@ const SUPPORTED_PROVIDER_TYPES = new Set([
   'azure_openai',
 ]);
 
-const sanitizeJSON = (value, fallback = {}) => {
-  if (value == null) {
-    return fallback;
-  }
+// Utility functions imported from route-helpers.js
 
-  if (typeof value === 'object') {
-    return value;
-  }
+// ============================================================================
+// Provider Connectivity Test Functions
+// ============================================================================
 
-  if (typeof value === 'string' && value.trim() === '') {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(value);
-  } catch (err) {
-    throw new Error('Invalid JSON payload');
-  }
-};
-
-const ensureHttps = (value) => {
-  if (!value) return value;
-  if (value.startsWith('http://') || value.startsWith('https://')) {
-    return value;
-  }
-  return `https://${value}`;
-};
-
-const safeJsonParse = async (response) => {
-  try {
-    return await response.json();
-  } catch (err) {
-    return null;
-  }
-};
-
-const extractErrorMessage = (payload, fallback) => {
-  if (!payload) return fallback;
-
-  if (typeof payload === 'string') {
-    return payload;
-  }
-
-  const errField = payload.error;
-  if (errField) {
-    if (typeof errField === 'string') {
-      return errField;
-    }
-    if (typeof errField.message === 'string') {
-      return errField.message;
-    }
-    if (typeof errField.error === 'string') {
-      return errField.error;
-    }
-    if (errField.error && typeof errField.error.message === 'string') {
-      return errField.error.message;
-    }
-  }
-
-  if (typeof payload.message === 'string') {
-    return payload.message;
-  }
-
-  if (Array.isArray(payload.errors) && payload.errors.length > 0) {
-    const first = payload.errors[0];
-    if (typeof first === 'string') {
-      return first;
-    }
-    if (first && typeof first.message === 'string') {
-      return first.message;
-    }
-  }
-
-  if (typeof payload.detail === 'string') {
-    return payload.detail;
-  }
-
-  if (typeof payload.title === 'string') {
-    return payload.title;
-  }
-
-  return fallback;
-};
-
+/**
+ * Test OpenAI provider connectivity
+ * Lists available models to verify API key validity
+ * @param {Object} credentials - Provider credentials
+ * @param {string} credentials.api_key - OpenAI API key
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails
+ */
 async function testOpenAIProvider(credentials) {
   const apiKey = credentials?.api_key || credentials?.apiKey;
   if (!apiKey) {
@@ -123,6 +104,16 @@ async function testOpenAIProvider(credentials) {
   };
 }
 
+/**
+ * Test Azure OpenAI provider connectivity
+ * Attempts to list deployments, falls back to models endpoint on 404
+ * @param {Object} credentials - Provider credentials
+ * @param {string} credentials.api_key - Azure OpenAI API key
+ * @param {string} credentials.endpoint - Azure OpenAI endpoint
+ * @param {string} credentials.api_version - API version (default: 2024-02-15-preview)
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails
+ */
 async function testAzureOpenAIProvider(credentials) {
   const apiKey = credentials?.api_key || credentials?.apiKey;
   const endpointRaw = credentials?.endpoint || credentials?.api_base || credentials?.resourceName;
@@ -155,9 +146,9 @@ async function testAzureOpenAIProvider(credentials) {
     const fallbackMessage = `Azure OpenAI API responded with status ${response.status}`;
     const message = extractErrorMessage(payload, fallbackMessage);
 
+    // Some Azure OpenAI resources return 404 for deployments listing
+    // Try fallback to models endpoint
     if (response.status === 404) {
-      // Some Azure OpenAI resources return 404 for the deployments listing even when the
-      // resource exists. Attempt a secondary check against the models endpoint instead.
       const modelsUrl = `${endpoint}/openai/models?api-version=${encodeURIComponent(apiVersion)}`;
       const modelsResponse = await fetch(modelsUrl, {
         method: 'GET',
@@ -195,6 +186,14 @@ async function testAzureOpenAIProvider(credentials) {
   };
 }
 
+/**
+ * Test Anthropic provider connectivity
+ * Lists available models to verify API key validity
+ * @param {Object} credentials - Provider credentials
+ * @param {string} credentials.api_key - Anthropic API key
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails
+ */
 async function testAnthropicProvider(credentials) {
   const apiKey = credentials?.api_key || credentials?.apiKey;
   if (!apiKey) {
@@ -220,15 +219,26 @@ async function testAnthropicProvider(credentials) {
   };
 }
 
+/**
+ * Test Google Generative AI provider connectivity
+ * Lists available models to verify API key validity and model availability
+ * @param {Object} credentials - Provider credentials
+ * @param {string} credentials.api_key - Google API key
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails
+ */
 async function testGoogleProvider(credentials) {
   const apiKey = credentials?.api_key || credentials?.apiKey;
   if (!apiKey) {
     throw new Error('api_key is required to test Google Generative AI connectivity');
   }
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`, {
-    method: 'GET',
-  });
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'GET',
+    }
+  );
 
   const payload = await safeJsonParse(response);
 
@@ -236,6 +246,7 @@ async function testGoogleProvider(credentials) {
     throw new Error(extractErrorMessage(payload, `Google Generative AI API responded with status ${response.status}`));
   }
 
+  // Check for error in payload (Google sometimes returns 200 with error)
   if (payload && typeof payload === 'object' && payload.error) {
     throw new Error(extractErrorMessage(payload.error, 'Google Generative AI API reported an error'));
   }
@@ -250,6 +261,17 @@ async function testGoogleProvider(credentials) {
   };
 }
 
+/**
+ * Test AWS Bedrock provider connectivity
+ * Attempts to invoke a test model to validate AWS credentials
+ * @param {Object} credentials - Provider credentials
+ * @param {string} credentials.aws_access_key_id - AWS access key ID
+ * @param {string} credentials.aws_secret_access_key - AWS secret access key
+ * @param {string} credentials.region - AWS region
+ * @param {string} credentials.aws_session_token - AWS session token (optional)
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails
+ */
 async function testBedrockProvider(credentials) {
   const accessKeyId =
     credentials?.aws_access_key_id || credentials?.accessKeyId || credentials?.access_key_id;
@@ -272,7 +294,7 @@ async function testBedrockProvider(credentials) {
   });
 
   try {
-    // Attempt a minimal invocation against a well-known model. This validates the signature.
+    // Attempt a minimal invocation against a well-known model to validate credentials
     const command = new InvokeModelCommand({
       modelId: 'amazon.titan-embed-text-v1',
       contentType: 'application/json',
@@ -290,6 +312,8 @@ async function testBedrockProvider(credentials) {
     const errorName = err?.name || err?.Code;
     const errorMessage = err?.message || err?.Message;
 
+    // Some errors indicate credentials are valid but model access is restricted
+    // This is still considered a successful connectivity test
     if (
       errorName === 'AccessDeniedException' ||
       errorName === 'ModelNotReadyException' ||
@@ -305,6 +329,16 @@ async function testBedrockProvider(credentials) {
   }
 }
 
+/**
+ * Test provider connectivity based on provider type
+ * Routes to the appropriate provider-specific test function
+ * @param {string} providerType - Provider type (openai, azure_openai, google, anthropic, anthropic_bedrock)
+ * @param {Object} credentials - Provider credentials
+ * @param {Object} bedrockModelSettings - Bedrock-specific settings (unused, for API compatibility)
+ * @param {Object} _extra - Additional settings (unused, reserved for future use)
+ * @returns {Promise<{provider: string, message: string}>} Success result
+ * @throws {Error} If connectivity test fails or provider type unsupported
+ */
 async function testProviderConnectivity(providerType, credentials, bedrockModelSettings, _extra = {}) {
   switch (providerType) {
     case 'openai':
@@ -322,6 +356,15 @@ async function testProviderConnectivity(providerType, credentials, bedrockModelS
   }
 }
 
+// ============================================================================
+// Data Transformation Functions
+// ============================================================================
+
+/**
+ * Transform database row to camelCase provider object
+ * @param {Object} row - Database row from providers_with_teams view
+ * @returns {Object} Camel-cased provider object
+ */
 const toCamelProvider = (row) => ({
   id: row.id,
   providerKey: row.provider_key,
@@ -337,61 +380,33 @@ const toCamelProvider = (row) => ({
   updatedAt: row.updated_at,
 });
 
-async function ensureAuthenticated(req, res) {
-  const session = await auth.api.getSession({ headers: req.headers });
+// Authentication & Authorization helpers imported from route-helpers.js
 
-  if (!session || !session.user) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return null;
-  }
+// ============================================================================
+// Route Handlers
+// ============================================================================
 
-  return session;
-}
-
-async function ensureOrgAdmin(pool, organizationId, userId, res) {
-  if (!organizationId) {
-    res.status(400).json({ error: 'organizationId is required' });
-    return null;
-  }
-
-  const memberResult = await pool.query(
-    'SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2',
-    [organizationId, userId],
-  );
-
-  if (memberResult.rows.length === 0) {
-    res.status(403).json({ error: 'Forbidden: user is not a member of the organization' });
-    return null;
-  }
-
-  const roleValue = memberResult.rows[0].role;
-  const roles = Array.isArray(roleValue)
-    ? roleValue
-    : typeof roleValue === 'string'
-      ? [roleValue]
-      : [];
-
-  if (!roles.includes('owner') && !roles.includes('admin')) {
-    res.status(403).json({ error: 'Forbidden: admin or owner role required' });
-    return null;
-  }
-
-  return roles;
-}
-
-async function validateTeamBelongsToOrg(pool, organizationId, teamId) {
-  if (!teamId) {
-    return true;
-  }
-
-  const teamResult = await pool.query(
-    'SELECT id FROM team WHERE id = $1 AND "organizationId" = $2',
-    [teamId, organizationId],
-  );
-
-  return teamResult.rows.length > 0;
-}
-
+/**
+ * GET /api/admin/providers
+ * List all providers for an organization, optionally filtered by teams
+ * 
+ * Requires: Authentication, Organization Admin/Owner role
+ * 
+ * Query Parameters:
+ * - organizationId: string (required, UUID) - Organization ID
+ * - teamIds?: string | string[] (optional) - Team ID(s) to filter by
+ * 
+ * Team Filtering Logic:
+ * - If teamIds provided: Returns providers that are either org-wide OR assigned to any of the specified teams
+ * - If teamIds omitted: Returns all providers for the organization
+ * 
+ * Responses:
+ * - 200 OK: { providers: ProviderObject[], count: number }
+ * - 400 Bad Request: Missing organizationId
+ * - 401 Unauthorized: Not authenticated
+ * - 403 Forbidden: User is not admin/owner
+ * - 500 Internal Server Error: Database or server error
+ */
 router.get('/', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -449,6 +464,32 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/admin/providers
+ * Create a new provider configuration
+ * 
+ * Requires: Authentication, Organization Admin/Owner role
+ * 
+ * Body:
+ * - organizationId: string (required, UUID) - Organization ID
+ * - providerKey: string (required) - Unique provider key (e.g., 'my-openai')
+ * - providerType: string (required) - Provider type (openai, azure_openai, google, anthropic, anthropic_bedrock)
+ * - enabled?: boolean - Whether provider is enabled (default: true)
+ * - credentials: object (required) - Provider-specific credentials
+ * - modelSettings?: object - Default model settings
+ * - bedrockModelSettings?: object - Bedrock-specific settings
+ * - metadata?: object - Additional metadata
+ * - teamIds?: string[] - Array of team IDs to associate (empty = org-wide)
+ * 
+ * Responses:
+ * - 201 Created: { provider: ProviderObject }
+ * - 400 Bad Request: Invalid input or validation error
+ * - 401 Unauthorized: Not authenticated
+ * - 403 Forbidden: User is not admin/owner
+ * - 404 Not Found: Team not found
+ * - 409 Conflict: Provider key already exists
+ * - 500 Internal Server Error: Database or server error
+ */
 router.post('/', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -548,6 +589,35 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+/**
+ * PUT /api/admin/providers/:providerId
+ * Update an existing provider configuration
+ * 
+ * Requires: Authentication, Organization Admin/Owner role
+ * 
+ * Path Parameters:
+ * - providerId: string (UUID) - Provider ID to update
+ * 
+ * Body:
+ * - organizationId: string (required, UUID) - Organization ID
+ * - providerKey?: string - Provider key to update
+ * - providerType?: string - Provider type to update
+ * - enabled?: boolean - Enabled status to update
+ * - credentials?: object - Credentials to update
+ * - modelSettings?: object - Model settings to update
+ * - bedrockModelSettings?: object | null - Bedrock settings to update (null to clear)
+ * - metadata?: object - Metadata to update
+ * - teamIds?: string[] - Team associations to update (replaces all)
+ * 
+ * Responses:
+ * - 200 OK: { provider: ProviderObject }
+ * - 400 Bad Request: Invalid input or validation error
+ * - 401 Unauthorized: Not authenticated
+ * - 403 Forbidden: User is not admin/owner
+ * - 404 Not Found: Provider or team not found
+ * - 409 Conflict: Provider key already exists
+ * - 500 Internal Server Error: Database or server error
+ */
 router.put('/:providerId', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -661,6 +731,36 @@ router.put('/:providerId', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/admin/providers/:providerId/test
+ * Test connectivity for an existing provider configuration
+ * 
+ * Tests that the provider is accessible with the configured credentials.
+ * Optionally allows testing with override parameters before saving.
+ * 
+ * Requires: Authentication, Organization Admin/Owner role
+ * 
+ * Path Parameters:
+ * - providerId: string (UUID) - Provider ID to test
+ * 
+ * Body:
+ * - organizationId: string (required, UUID) - Organization ID
+ * - teamIds?: string[] - Team IDs for validation (not used in test)
+ * - providerType?: string - Override provider type for testing
+ * - credentials?: object - Override credentials for testing
+ * - modelSettings?: object - Override model settings for testing (not saved)
+ * - bedrockModelSettings?: object - Override Bedrock settings for testing (not saved)
+ * - metadata?: object - Override metadata for testing (not saved)
+ * 
+ * Responses:
+ * - 200 OK: { ok: true, result: { provider, message } }
+ * - 400 Bad Request: Invalid input or validation error
+ * - 401 Unauthorized: Not authenticated
+ * - 403 Forbidden: User is not admin/owner
+ * - 404 Not Found: Provider or team not found
+ * - 502 Bad Gateway: Connectivity test failed
+ * - 500 Internal Server Error: Database or server error
+ */
 router.post('/:providerId/test', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -765,6 +865,31 @@ router.post('/:providerId/test', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/admin/providers/test-new
+ * Test connectivity for a new provider before creating it
+ * 
+ * Allows testing provider connectivity without saving the configuration.
+ * Useful for validating credentials and service availability before creation.
+ * 
+ * Requires: Authentication, Organization Admin/Owner role
+ * 
+ * Body:
+ * - organizationId: string (required, UUID) - Organization ID
+ * - providerType: string (required) - Provider type to test
+ * - credentials: object (required) - Credentials to test
+ * - modelSettings?: object - Model settings for testing (not saved)
+ * - bedrockModelSettings?: object - Bedrock settings for testing (not saved)
+ * - metadata?: object - Metadata for testing (not saved)
+ * 
+ * Responses:
+ * - 200 OK: { ok: true, result: { provider, message } }
+ * - 400 Bad Request: Invalid input or validation error
+ * - 401 Unauthorized: Not authenticated
+ * - 403 Forbidden: User is not admin/owner
+ * - 502 Bad Gateway: Connectivity test failed
+ * - 500 Internal Server Error: Database or server error
+ */
 router.post('/test-new', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);
@@ -826,6 +951,29 @@ router.post('/test-new', async (req, res, next) => {
   }
 });
 
+/**
+ * DELETE /api/admin/providers/:providerId
+ * Delete a provider configuration
+ * 
+ * Note: Deleting a provider will affect all models that depend on it.
+ * Ensure models are updated or removed before deleting a provider.
+ * 
+ * Requires: Authentication, Organization Admin/Owner role
+ * 
+ * Path Parameters:
+ * - providerId: string (UUID) - Provider ID to delete
+ * 
+ * Query Parameters:
+ * - organizationId: string (required, UUID) - Organization ID
+ * 
+ * Responses:
+ * - 204 No Content: Provider deleted successfully
+ * - 400 Bad Request: Missing organizationId
+ * - 401 Unauthorized: Not authenticated
+ * - 403 Forbidden: User is not admin/owner
+ * - 404 Not Found: Provider not found
+ * - 500 Internal Server Error: Database or server error
+ */
 router.delete('/:providerId', async (req, res, next) => {
   try {
     const session = await ensureAuthenticated(req, res);

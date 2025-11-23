@@ -1,28 +1,82 @@
 /**
  * CopilotKit Runtime Server
  * 
- * Main entry point for the server. This server provides REST API endpoints
- * for CopilotKit with dynamic agent routing based on headers.
+ * Main entry point for the Express server providing AI copilot functionality
+ * with multi-tenant support, dynamic agent routing, and comprehensive admin APIs.
+ * 
+ * Architecture:
+ * - Express.js web server with security middleware
+ * - CopilotKit runtime integration for AI chat
+ * - Dynamic agent/model selection based on request headers
+ * - Multi-tenant configuration (organization/team scoped)
+ * - Better Auth for authentication and organization management
+ * - PostgreSQL database for configuration and usage tracking
+ * 
+ * Key Features:
+ * - Dynamic LLM provider/model selection per request
+ * - Role-based access control (owner, admin, member)
+ * - Organization and team management
+ * - Real-time usage analytics
+ * - MCP (Model Context Protocol) server integration
+ * - Invitation system for organization onboarding
+ * 
+ * API Categories:
+ * - /api/copilotkit - Main AI chat endpoint
+ * - /api/auth - Authentication (Better Auth)
+ * - /api/invitations - Organization invitations
+ * - /api/admin - Configuration management (models, providers, agents, tools)
+ * - /api/config - Runtime configuration for clients
+ * - /health - Health check endpoint
+ * 
+ * @module server
  */
+
+// ============================================================================
+// External Dependencies
+// ============================================================================
 
 import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { CopilotRuntime } from "@copilotkit/runtime";
 
+// ============================================================================
 // Configuration
-import { PORT, AGENT_BASE_URL, BODY_LIMIT_MB, RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX, REQUEST_TIMEOUT_MS, HEADERS_TIMEOUT_MS, TRUST_PROXY } from './config/index.js';
+// ============================================================================
 
+import { 
+  PORT, 
+  AGENT_BASE_URL, 
+  BODY_LIMIT_MB, 
+  RATE_LIMIT_WINDOW_MS, 
+  RATE_LIMIT_MAX, 
+  REQUEST_TIMEOUT_MS, 
+  HEADERS_TIMEOUT_MS, 
+  TRUST_PROXY 
+} from './config/index.js';
+
+// ============================================================================
 // Utilities
+// ============================================================================
+
 import { log } from './utils/index.js';
 
+// ============================================================================
 // Adapters
-import { createDynamicServiceAdapter } from './adapters/index.js';
+// ============================================================================
 
+import { createDynamicServiceAdapter, captureRequestContext } from './adapters/index.js';
+
+// ============================================================================
 // Agents
+// ============================================================================
+
 import { createDefaultAgent } from './agents/index.js';
 
+// ============================================================================
 // Middleware
+// ============================================================================
+
 import { 
   createCorsMiddleware,
   requestIdMiddleware,
@@ -32,7 +86,10 @@ import {
 } from './middleware/index.js';
 import { teamMembersBypassMiddleware } from './middleware/team-members-bypass.js';
 
+// ============================================================================
 // Routes
+// ============================================================================
+
 import { 
   createCopilotKitEndpoint,
   healthCheckHandler,
@@ -51,82 +108,183 @@ import {
   toolsRouter,
 } from './routes/index.js';
 
-// Create Express app
+// ============================================================================
+// Express Application Setup
+// ============================================================================
+
+/**
+ * Main Express application instance
+ * Configured with security, rate limiting, and multi-tenant routing
+ */
 const app = express();
 
-// Trust proxy if behind load balancer
+// ============================================================================
+// Middleware Configuration (Order Matters!)
+// ============================================================================
+
+/**
+ * 1. Proxy Configuration
+ * Trust proxy headers when behind a load balancer (e.g., nginx, AWS ELB)
+ */
 if (TRUST_PROXY) {
   app.set('trust proxy', 1);
 }
 
-// CORS middleware MUST be first to handle OPTIONS preflight
+/**
+ * 2. CORS Middleware (MUST BE FIRST)
+ * Handles preflight OPTIONS requests before any other middleware
+ */
 app.use(createCorsMiddleware());
 
-// Team members bypass middleware - allow org admins to view all team members
-// Must be before auth routes to intercept the request
+/**
+ * 3. Better Auth Special Middleware
+ * Allows organization owners/admins to view all team members
+ * Must intercept before auth routes process the request
+ */
 app.use('/api/auth/organization', teamMembersBypassMiddleware);
 
-// CRITICAL: Mount auth routes BEFORE body parsing middleware
-// Per Better Auth docs: https://www.better-auth.com/docs/integrations/express
+/**
+ * 4. Authentication Routes (BEFORE body parsing!)
+ * Per Better Auth docs: https://www.better-auth.com/docs/integrations/express
+ * Better Auth handles its own body parsing internally
+ */
 app.use('/api/auth', authRouter);
 
-// Mount invitations routes with JSON body parsing for POST /create endpoint
+/**
+ * 5. Invitations Routes (with body parsing)
+ * Needs JSON body parsing for POST /create endpoint
+ */
 app.use('/api/invitations', express.json({ limit: `${BODY_LIMIT_MB}mb` }), invitationsRouter);
 
-// Security headers (after auth to avoid interfering)
+/**
+ * 6. Security Headers
+ * Applied after auth to avoid interfering with Better Auth's internal processing
+ * Allows popups for OAuth flows (same-origin-allow-popups)
+ */
 app.use(helmet({
   crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
 }));
 
-// Request ID middleware
+/**
+ * 7. Request ID Middleware
+ * Generates unique ID for each request for correlation and tracing
+ * Format: rt_<timestamp>_<random>
+ */
 app.use(requestIdMiddleware);
 
-// Rate limiting for non-auth API routes
+/**
+ * 8. Rate Limiting
+ * Protects non-auth API routes from abuse
+ * Auth routes are skipped (they have their own protection)
+ */
 const apiRateLimiter = rateLimit({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
-  standardHeaders: true,
-  legacyHeaders: false,
+  standardHeaders: true,  // Return rate limit info in `RateLimit-*` headers
+  legacyHeaders: false,   // Disable `X-RateLimit-*` headers
   skip: (req) => req.path.startsWith('/auth'), // Skip auth routes
 });
 app.use('/api', apiRateLimiter);
 
-// Initialize server with async configuration loading
+// ============================================================================
+// Async Server Initialization
+// ============================================================================
+
+/**
+ * Initializes the server with async configuration loading
+ * 
+ * Initialization Steps:
+ * 1. Create dynamic service adapter (LLM provider selector)
+ * 2. Create default agent (fallback agent)
+ * 3. Initialize CopilotKit runtime
+ * 4. Mount CopilotKit middleware chain
+ * 5. Mount remaining API routes
+ * 6. Start HTTP server
+ */
 (async () => {
   try {
-    // Create dynamic adapter (selects provider per-request model)
+    // ========================================================================
+    // CopilotKit Initialization
+    // ========================================================================
+
+    /**
+     * Dynamic Service Adapter
+     * Selects appropriate LLM provider based on requested model
+     * Supports: OpenAI, Azure OpenAI, Anthropic (Bedrock), Google Gemini
+     */
     const serviceAdapter = await createDynamicServiceAdapter();
 
-    // Create default agent (await since it's async now)
+    /**
+     * Default Agent
+     * Fallback agent when no specific agent is requested
+     * Points to Python backend for processing
+     */
     const defaultAgent = await createDefaultAgent();
 
-    // Create runtime with dynamic agent
-    // console.log('Creating runtime with dynamic agent');
-    // console.log('defaultAgent', defaultAgent);
+    /**
+     * CopilotKit Runtime
+     * Core runtime that manages agents and processes chat requests
+     */
     const runtime = new CopilotRuntime({
       agents: {
         "dynamic_agent": defaultAgent,
       },
     });
 
-    // console.log('Runtime', runtime);
+    // ========================================================================
+    // CopilotKit Endpoint Middleware Chain
+    // ========================================================================
 
-    // Dynamic routing middleware (must be before copilotkit endpoint)
+    /**
+     * 1. Dynamic Routing Middleware
+     * - Extracts agent/model from headers
+     * - Validates authentication
+     * - Selects organization/team context
+     * - Updates runtime with correct agent dynamically
+     */
     const dynamicRoutingMiddleware = createDynamicRoutingMiddleware(runtime);
     app.use('/api/copilotkit', dynamicRoutingMiddleware);
 
-    // CopilotKit endpoint
+    /**
+     * 2. Context Capture Middleware
+     * - Captures auth context (org/team/user)
+     * - Makes context available to service adapter
+     * - Enables multi-tenant model/provider selection
+     */
+    app.use('/api/copilotkit', captureRequestContext);
+
+    /**
+     * 3. CopilotKit Endpoint
+     * - Main chat/completion endpoint
+     * - Handles GraphQL mutations from client
+     * - Streams responses back to client
+     */
     const copilotKitEndpoint = createCopilotKitEndpoint(serviceAdapter, runtime);
     app.use('/api/copilotkit', copilotKitEndpoint);
 
-    // Health check endpoint
+    // ========================================================================
+    // Health Check & Monitoring
+    // ========================================================================
+
+    /**
+     * Health check endpoint for load balancers and monitoring
+     * Returns: { status: "ok|degraded", db: boolean }
+     */
     app.get('/health', healthCheckHandler);
 
-    // Body parsing middleware for all other routes (AFTER auth routes per Better Auth docs)
+    // ========================================================================
+    // Body Parsing Middleware
+    // Applied AFTER auth routes per Better Auth requirements
+    // ========================================================================
+
     app.use(express.json({ limit: `${BODY_LIMIT_MB}mb` }));
     app.use(express.urlencoded({ extended: true, limit: `${BODY_LIMIT_MB}mb` }));
 
-    // Admin management endpoints
+    // ========================================================================
+    // Admin API Routes (Configuration Management)
+    // Require authentication and admin/owner role
+    // ========================================================================
+
     app.use('/api/admin/providers', providersRouter);
     app.use('/api/admin/models', modelsRouter);
     app.use('/api/admin/agents', agentsRouter);
@@ -134,48 +292,126 @@ app.use('/api', apiRateLimiter);
     app.use('/api/admin/tools', toolsRouter);
     app.use('/api/admin/usage', usageRouter);
 
-    // Configuration endpoints for side panel
+    // ========================================================================
+    // Public Configuration Endpoints
+    // Used by client (Chrome extension, web app) to get available options
+    // ========================================================================
+
     app.get('/api/config', getCompleteConfigHandler);
     app.get('/api/config/agents', getAgentsHandler);
     app.get('/api/config/models', getModelsHandler);
     app.get('/api/config/defaults', getDefaultsHandler);
     app.get('/api/config/teams', getTeamsHandler);
 
-    // 404 handler for unmatched routes (JSON)
+    // ========================================================================
+    // Error Handlers (Must be last!)
+    // ========================================================================
+
+    /**
+     * 404 handler for unmatched routes
+     * Returns consistent JSON error response
+     */
     app.use(notFoundMiddleware);
 
-    // Global error handler
+    /**
+     * Global error handler
+     * Catches all errors and formats consistent JSON responses
+     */
     app.use(errorHandlerMiddleware);
 
-    // Start server
+    // ========================================================================
+    // HTTP Server Startup
+    // ========================================================================
+
+    /**
+     * Start the HTTP server and log available endpoints
+     */
     const server = app.listen(PORT, () => {
-      log(`🚀 CopilotKit Runtime Server running on http://0.0.0.0:${PORT}`);
-      log(`   Health check: http://0.0.0.0:${PORT}/health`);
-      log(`   Authentication: http://0.0.0.0:${PORT}/api/auth/*`);
-      log(`   Invitations: http://0.0.0.0:${PORT}/api/invitations/*`);
-      log(`   Admin: http://0.0.0.0:${PORT}/api/admin/{providers,models,tools}`);
-      log(`   CopilotKit endpoint: http://0.0.0.0:${PORT}/api/copilotkit`);
-      log(`   Configuration endpoints:`);
-      log(`     - GET http://0.0.0.0:${PORT}/api/config (complete config)`);
-      log(`     - GET http://0.0.0.0:${PORT}/api/config/agents`);
-      log(`     - GET http://0.0.0.0:${PORT}/api/config/models`);
-      log(`     - GET http://0.0.0.0:${PORT}/api/config/defaults`);
-      log(`     - GET http://0.0.0.0:${PORT}/api/config/teams`);
-      log(`   Configured to forward requests to agent base: ${AGENT_BASE_URL}`);
+      log('═══════════════════════════════════════════════════════════════════');
+      log('CopilotKit Runtime Server - Ready');
+      log('═══════════════════════════════════════════════════════════════════');
+      log('');
+      log(`Server:        http://0.0.0.0:${PORT}`);
+      log(`Health Check:  http://0.0.0.0:${PORT}/health`);
+      log('');
+      log('Authentication & Organizations:');
+      log(`   - POST   ${PORT}/api/auth/sign-in/email`);
+      log(`   - POST   ${PORT}/api/auth/sign-up/email`);
+      log(`   - GET    ${PORT}/api/auth/session`);
+      log(`   - POST   ${PORT}/api/invitations/create`);
+      log(`   - POST   ${PORT}/api/invitations/:id/accept`);
+      log('');
+      log('AI Chat Endpoint:');
+      log(`   - POST   ${PORT}/api/copilotkit`);
+      log('');
+      log('Admin APIs (require auth + admin/owner role):');
+      log(`   - /api/admin/providers`);
+      log(`   - /api/admin/models`);
+      log(`   - /api/admin/agents`);
+      log(`   - /api/admin/tools`);
+      log(`   - /api/admin/base-instructions`);
+      log(`   - /api/admin/usage`);
+      log('');
+      log('Public Configuration APIs:');
+      log(`   - GET    ${PORT}/api/config (complete)`);
+      log(`   - GET    ${PORT}/api/config/agents`);
+      log(`   - GET    ${PORT}/api/config/models`);
+      log(`   - GET    ${PORT}/api/config/defaults`);
+      log(`   - GET    ${PORT}/api/config/teams`);
+      log('');
+      log(`Python Backend: ${AGENT_BASE_URL}`);
+      log('═══════════════════════════════════════════════════════════════════');
     });
 
-    // Configure timeouts
+    // ========================================================================
+    // Server Timeout Configuration
+    // ========================================================================
+
+    /**
+     * Set request timeout (default: 120 seconds)
+     * Long timeout needed for streaming LLM responses
+     */
     server.setTimeout(REQUEST_TIMEOUT_MS);
+
+    /**
+     * Set headers timeout (must be > setTimeout)
+     * Prevents premature connection closure
+     */
     server.headersTimeout = HEADERS_TIMEOUT_MS;
 
-    // Graceful shutdown
+    // ========================================================================
+    // Graceful Shutdown Handler
+    // ========================================================================
+
+    /**
+     * Handle SIGINT (Ctrl+C) and SIGTERM (kill command)
+     * Allows in-flight requests to complete before shutdown
+     */
     const shutdown = () => {
-      server.close(() => process.exit(0));
+      log('');
+      log('Shutting down gracefully...');
+      server.close(() => {
+        log('Server closed. Goodbye!');
+        process.exit(0);
+      });
     };
+
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
+
   } catch (error) {
-    console.error('Failed to initialize server:', error);
+    // ========================================================================
+    // Initialization Error Handler
+    // ========================================================================
+
+    console.error('═══════════════════════════════════════════════════════════════════');
+    console.error('Failed to initialize server');
+    console.error('═══════════════════════════════════════════════════════════════════');
+    console.error('Error:', error.message);
+    if (error.stack) {
+      console.error('Stack:', error.stack);
+    }
+    console.error('═══════════════════════════════════════════════════════════════════');
     process.exit(1);
   }
 })();

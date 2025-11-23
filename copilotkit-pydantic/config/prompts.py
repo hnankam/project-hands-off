@@ -32,7 +32,6 @@ def _load_config() -> Dict[str, Any]:
     from .db_loaders import get_agents_config_from_db
     from . import logger
 
-    logger.info("Loading agents configuration from database")
     return get_agents_config_from_db()
 
 
@@ -125,9 +124,11 @@ def get_agent_types_for_context(organization_id: str | None, team_id: str | None
 
 
 def get_agent_info(agent_type: str) -> Dict[str, Any] | None:
-    config = _load_config()
-    _, _, agent_info = _build_agent_prompts(config)
-    return agent_info.get(agent_type)
+    key = context_tuple(None, None)
+    if key not in _agent_info_by_context:
+        config = _load_config()
+        store_prompts_for_context(None, None, config)
+    return _agent_info_by_context[key].get(agent_type)
 
 
 def get_agent_info_for_context(
@@ -143,18 +144,4 @@ def get_agent_info_for_context(
             "Warm the context via the deployment manager first."
         )
     return info_map.get(agent_type)
-
-
-# Backward-compat exports
-AGENT_PROMPTS = None
-agent_types = None
-
-
-# Provide attribute access for lazy loading
-def __getattr__(name):
-    if name == 'AGENT_PROMPTS':
-        return get_agent_prompts()
-    if name == 'agent_types':
-        return get_agent_types()
-    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

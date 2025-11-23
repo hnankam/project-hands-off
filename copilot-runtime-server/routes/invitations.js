@@ -1,25 +1,170 @@
 /**
  * Invitation Routes
  * 
- * Simple wrappers around Better Auth's invitation APIs for browser extension.
+ * Manages organization invitation lifecycle for the browser extension.
+ * Extends Better Auth's invitation system with multi-team support.
+ * 
+ * **Features:**
+ * - Create invitations with team assignments
+ * - Public invitation viewing (no auth required)
+ * - Accept invitations with automatic team membership
+ * - Reject invitations without authentication
+ * - List pending invitations by email
+ * 
+ * **Multi-Team Support:**
+ * This module extends Better Auth's single-team invitations with support
+ * for inviting users to multiple teams simultaneously via the `invitation_teams`
+ * junction table.
+ * 
+ * **Security Model:**
+ * - GET /:invitationId - Public (invitation ID is the security token)
+ * - POST /create - Requires authentication (via Better Auth)
+ * - POST /:invitationId/accept - Requires authentication
+ * - POST /:invitationId/reject - Public (allows declining before signup)
+ * - GET /user/:email - Public (users need to see pending invitations)
+ * 
+ * @module routes/invitations
  */
 
 import crypto from 'crypto';
 import { Router } from 'express';
 import { auth } from '../auth/index.js';
+import { logError } from '../utils/logger.js';
 
 const router = Router();
 
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Extracts invitation ID from Better Auth response
+ * Better Auth may return the ID in different formats depending on version
+ * @param {Object} result - Better Auth API response
+ * @returns {string|null} Invitation ID or null if not found
+ */
+function extractInvitationId(result) {
+  return result?.data?.id || result?.data?.invitation?.id || result?.id || null;
+}
+
+/**
+ * Associates teams with an invitation in the junction table
+ * @param {Object} db - Database connection
+ * @param {string} invitationId - Invitation ID
+ * @param {string[]} teamIds - Array of team IDs
+ * @returns {Promise<number>} Number of teams successfully associated
+ */
+async function associateTeamsWithInvitation(db, invitationId, teamIds) {
+  let successCount = 0;
+  
+  for (const teamId of teamIds) {
+    try {
+      await db.query(
+        'INSERT INTO invitation_teams ("invitationId", "teamId", "createdAt") VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+        [invitationId, teamId, new Date()]
+      );
+      successCount++;
+    } catch (err) {
+      console.error(`[Invitations] Failed to associate team ${teamId}:`, err.message);
+    }
+  }
+  
+  return successCount;
+}
+
+/**
+ * Adds a user to a team if not already a member
+ * @param {Object} db - Database connection
+ * @param {string} teamId - Team ID
+ * @param {string} userId - User ID
+ * @returns {Promise<boolean>} True if user was added, false if already a member
+ */
+async function addUserToTeam(db, teamId, userId) {
+  // Check if already a member
+  const existingMember = await db.query(
+    'SELECT id FROM "teamMember" WHERE "teamId" = $1 AND "userId" = $2',
+    [teamId, userId]
+  );
+
+  if (existingMember.rows && existingMember.rows.length > 0) {
+    return false; // Already a member
+  }
+
+  // Add user to team
+  const memberEntryId = crypto.randomUUID();
+  await db.query(
+    'INSERT INTO "teamMember" (id, "teamId", "userId", "createdAt") VALUES ($1, $2, $3, $4)',
+    [memberEntryId, teamId, userId, new Date()]
+  );
+  
+  return true; // Successfully added
+}
+
+/**
+ * Retrieves all team IDs associated with an invitation
+ * Supports both legacy single-team (invitation.teamId) and new multi-team (invitation_teams table)
+ * @param {Object} db - Database connection
+ * @param {string} invitationId - Invitation ID
+ * @param {string|null} legacyTeamId - Legacy teamId from invitation table
+ * @returns {Promise<string[]>} Array of unique team IDs
+ */
+async function getInvitationTeams(db, invitationId, legacyTeamId = null) {
+  const teamIds = [];
+  
+  // Include legacy single teamId if present
+  if (legacyTeamId) {
+    teamIds.push(legacyTeamId);
+  }
+  
+  // Fetch from invitation_teams junction table
+  try {
+    const teamsQuery = await db.query(
+      'SELECT "teamId" FROM invitation_teams WHERE "invitationId" = $1',
+      [invitationId]
+    );
+    
+    if (teamsQuery.rows && teamsQuery.rows.length > 0) {
+      teamIds.push(...teamsQuery.rows.map(row => row.teamId));
+    }
+  } catch (err) {
+    console.warn('[Invitations] Error fetching invitation teams:', err.message);
+  }
+  
+  // Remove duplicates and return
+  return [...new Set(teamIds)];
+}
+
+// ============================================================================
+// Route Handlers
+// ============================================================================
+
 /**
  * POST /api/invitations/create
- * Create an invitation with team assignments
+ * Create an invitation with optional team assignments
+ * 
+ * Requires: Authentication (enforced by Better Auth)
+ * 
+ * Body:
+ * - email: string (required) - Email address to invite
+ * - role: string (required) - Role for the member ('owner', 'admin', 'member')
+ * - organizationId: string (required, UUID) - Organization ID
+ * - teamIds?: string[] (optional) - Array of team IDs to assign
+ * 
+ * Responses:
+ * - 200 OK: { success: true, message, data, invitationId }
+ * - 400 Bad Request: Missing required fields or Better Auth error
+ * - 401 Unauthorized: Not authenticated
+ * - 500 Internal Server Error: Database or server error
  */
 router.post('/create', async (req, res) => {
+  const reqId = res.locals?.reqId || 'unknown';
+  
   try {
     const { email, role, organizationId, teamIds } = req.body;
 
-    console.log('📧 Creating invitation with data:', { email, role, organizationId, teamIds });
+    console.log(`[${reqId}] [Invitations] Creating invitation:`, { email, role, organizationId, teams: teamIds?.length || 0 });
 
+    // Validate required fields
     if (!email || !role || !organizationId) {
       return res.status(400).json({
         success: false,
@@ -44,38 +189,39 @@ router.post('/create', async (req, res) => {
       });
     }
 
-    // Extract invitation ID from response (Better Auth may return it in different formats)
-    const invitationId = result.data?.id || result.data?.invitation?.id || result.id;
-    console.log('✅ Invitation created:', invitationId);
+    // Extract invitation ID from Better Auth response
+    const invitationId = extractInvitationId(result);
+    
+    if (!invitationId) {
+      console.error(`[${reqId}] [Invitations] Failed to extract invitation ID from result:`, result);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to extract invitation ID',
+      });
+    }
+    
+    console.log(`[${reqId}] [Invitations] Invitation created:`, invitationId);
 
-    // If teams are specified, store them in the invitation_teams junction table
-    // Note: The invitation_teams table must be created via migration 015_create_invitation_teams_table.sql
-    if (teamIds && Array.isArray(teamIds) && teamIds.length > 0 && invitationId) {
+    // Associate teams with invitation if specified
+    if (teamIds && Array.isArray(teamIds) && teamIds.length > 0) {
       const db = auth.options.database;
-
-      // Insert team associations
-      for (const teamId of teamIds) {
-        try {
-          await db.query(
-            'INSERT INTO invitation_teams ("invitationId", "teamId", "createdAt") VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-            [invitationId, teamId, new Date()]
-          );
-        } catch (err) {
-          console.error(`Failed to associate team ${teamId} with invitation:`, err);
-        }
+      const associatedCount = await associateTeamsWithInvitation(db, invitationId, teamIds);
+      
+      if (associatedCount > 0) {
+        console.log(`[${reqId}] [Invitations] Associated ${associatedCount}/${teamIds.length} team(s)`);
+      } else {
+        console.warn(`[${reqId}] [Invitations] Failed to associate any teams`);
       }
-
-      console.log(`✅ Invitation created with ${teamIds.length} team(s)`);
     }
 
     res.json({
       success: true,
       message: 'Invitation created successfully',
       data: result.data || result,
-      invitationId, // Include invitation ID in response
+      invitationId,
     });
   } catch (error) {
-    console.error('Error creating invitation:', error);
+    logError(reqId, '[Invitations] Error creating invitation', error);
     res.status(500).json({
       success: false,
       error: 'Failed to create invitation',
@@ -88,11 +234,19 @@ router.post('/create', async (req, res) => {
  * GET /api/invitations/:invitationId
  * Get invitation details (PUBLIC - no authentication required)
  * 
- * Invitations should be accessible without authentication since users
- * need to view them before creating an account or logging in.
- * The invitation ID itself acts as the security token.
+ * This endpoint is public because users need to view invitation details
+ * before creating an account or logging in. The invitation ID itself
+ * acts as the security token (similar to password reset links).
+ * 
+ * Responses:
+ * - 200 OK: { success: true, invitation: InvitationObject }
+ * - 400 Bad Request: Invalid invitation ID
+ * - 404 Not Found: Invitation not found
+ * - 500 Internal Server Error: Database or server error
  */
 router.get('/:invitationId', async (req, res) => {
+  const reqId = res.locals?.reqId || 'unknown';
+  
   try {
     const { invitationId } = req.params;
 
@@ -103,13 +257,11 @@ router.get('/:invitationId', async (req, res) => {
       });
     }
 
-    // Query the database directly to bypass authentication requirements
-    // Invitations should be publicly accessible (like password reset links)
     const db = auth.options.database;
     
     // Get invitation with organization details
-    const invitationQuery = await db.query(`
-      SELECT 
+    const invitationQuery = await db.query(
+      `SELECT 
         i.id,
         i.email,
         i.role,
@@ -118,13 +270,14 @@ router.get('/:invitationId', async (req, res) => {
         i."inviterId",
         i."expiresAt",
         i."createdAt",
-        o.name as "organizationName",
-        o.slug as "organizationSlug",
-        o.logo as "organizationLogo"
+        o.name AS "organizationName",
+        o.slug AS "organizationSlug",
+        o.logo AS "organizationLogo"
       FROM invitation i
       LEFT JOIN organization o ON i."organizationId" = o.id
-      WHERE i.id = $1
-    `, [invitationId]);
+      WHERE i.id = $1`,
+      [invitationId]
+    );
 
     if (!invitationQuery.rows || invitationQuery.rows.length === 0) {
       return res.status(404).json({
@@ -135,7 +288,7 @@ router.get('/:invitationId', async (req, res) => {
 
     const invitationData = invitationQuery.rows[0];
     
-    // Fetch inviter details
+    // Fetch inviter details (optional, non-blocking)
     let inviterInfo = { email: null, name: null };
     if (invitationData.inviterId) {
       try {
@@ -143,14 +296,14 @@ router.get('/:invitationId', async (req, res) => {
           'SELECT email, name FROM "user" WHERE id = $1',
           [invitationData.inviterId]
         );
-        if (inviterQuery.rows.length > 0) {
+        if (inviterQuery.rows?.length > 0) {
           inviterInfo = {
             email: inviterQuery.rows[0].email,
             name: inviterQuery.rows[0].name,
           };
         }
       } catch (err) {
-        console.log('Could not fetch inviter info:', err.message);
+        console.warn(`[${reqId}] [Invitations] Could not fetch inviter info:`, err.message);
       }
     }
 
@@ -166,22 +319,19 @@ router.get('/:invitationId', async (req, res) => {
         slug: invitationData.organizationSlug,
         logo: invitationData.organizationLogo || null,
       },
-      inviter: {
-        email: inviterInfo.email,
-        name: inviterInfo.name,
-      },
+      inviter: inviterInfo,
       expiresAt: invitationData.expiresAt,
       createdAt: invitationData.createdAt,
     };
 
-    console.log('✅ Invitation fetched successfully:', invitation.id);
+    console.log(`[${reqId}] [Invitations] Fetched invitation:`, invitation.id);
 
     res.json({
       success: true,
-      invitation: invitation,
+      invitation,
     });
   } catch (error) {
-    console.error('Error fetching invitation:', error);
+    logError(reqId, '[Invitations] Error fetching invitation', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch invitation',
@@ -192,13 +342,29 @@ router.get('/:invitationId', async (req, res) => {
 
 /**
  * POST /api/invitations/:invitationId/accept
- * Accept an invitation (requires authentication)
+ * Accept an invitation and automatically add user to associated teams
+ * 
+ * Requires: Authentication (enforced by Better Auth)
+ * 
+ * Flow:
+ * 1. Accept invitation via Better Auth (adds user to organization)
+ * 2. Retrieve all teams associated with the invitation
+ * 3. Automatically add user to those teams
+ * 
+ * Responses:
+ * - 200 OK: { success: true, message, data }
+ * - 400 Bad Request: Better Auth error or invalid invitation
+ * - 401 Unauthorized: Not authenticated
+ * - 404 Not Found: Invitation not found
+ * - 500 Internal Server Error: Database or server error
  */
 router.post('/:invitationId/accept', async (req, res) => {
+  const reqId = res.locals?.reqId || 'unknown';
+  
   try {
     const { invitationId } = req.params;
 
-    // Get invitation details to check if it includes a team
+    // Get invitation details
     const db = auth.options.database;
     const invitationQuery = await db.query(
       'SELECT id, "organizationId", "teamId", email FROM invitation WHERE id = $1',
@@ -214,11 +380,9 @@ router.post('/:invitationId/accept', async (req, res) => {
 
     const invitation = invitationQuery.rows[0];
 
-    // Use Better Auth's acceptInvitation API
+    // Accept invitation via Better Auth (adds user to organization)
     const result = await auth.api.acceptInvitation({
-      body: {
-        invitationId,
-      },
+      body: { invitationId },
       headers: req.headers,
     });
 
@@ -229,36 +393,15 @@ router.post('/:invitationId/accept', async (req, res) => {
       });
     }
 
-    // Get teams associated with this invitation
-    // Note: The invitation_teams table must be created via migration 015_create_invitation_teams_table.sql
-    let teamIds = [];
-    
-    // Check for single teamId (legacy)
-    if (invitation.teamId) {
-      teamIds.push(invitation.teamId);
-    }
-    
-    // Check for multiple teams in invitation_teams table
-    try {
-      const teamsQuery = await db.query(
-        'SELECT "teamId" FROM invitation_teams WHERE "invitationId" = $1',
-        [invitationId]
-      );
-      
-      if (teamsQuery.rows && teamsQuery.rows.length > 0) {
-        teamIds = teamIds.concat(teamsQuery.rows.map(row => row.teamId));
-      }
-    } catch (err) {
-      console.warn('Error fetching invitation teams:', err);
-    }
+    console.log(`[${reqId}] [Invitations] Invitation accepted:`, invitationId);
 
-    // Remove duplicates
-    teamIds = [...new Set(teamIds)];
+    // Get all teams associated with this invitation (legacy + multi-team)
+    const teamIds = await getInvitationTeams(db, invitationId, invitation.teamId);
 
-    // If invitation includes teams, automatically add user to those teams
+    // Automatically add user to associated teams
     if (teamIds.length > 0) {
       try {
-        // Get the user ID from the email
+        // Get the user ID from the invitation email
         const userQuery = await db.query(
           'SELECT id FROM "user" WHERE email = $1',
           [invitation.email]
@@ -267,41 +410,32 @@ router.post('/:invitationId/accept', async (req, res) => {
         if (userQuery.rows && userQuery.rows.length > 0) {
           const userId = userQuery.rows[0].id;
           let addedCount = 0;
+          let skippedCount = 0;
 
           // Add user to each team
           for (const teamId of teamIds) {
             try {
-              // Check if team member entry already exists
-              const existingMember = await db.query(
-                'SELECT id FROM "teamMember" WHERE "teamId" = $1 AND "userId" = $2',
-                [teamId, userId]
-              );
-
-              if (!existingMember.rows || existingMember.rows.length === 0) {
-                // Generate a unique ID for the team member entry
-                const memberEntryId = crypto.randomUUID();
-                
-                // Add user to the team
-                await db.query(
-                  'INSERT INTO "teamMember" (id, "teamId", "userId", "createdAt") VALUES ($1, $2, $3, $4)',
-                  [memberEntryId, teamId, userId, new Date()]
-                );
+              const wasAdded = await addUserToTeam(db, teamId, userId);
+              if (wasAdded) {
                 addedCount++;
-                console.log(`  ✅ User ${userId} added to team ${teamId}`);
+                console.log(`[${reqId}] [Invitations] Added user to team ${teamId}`);
               } else {
-                console.log(`  ℹ️ User ${userId} already member of team ${teamId}`);
+                skippedCount++;
+                console.log(`[${reqId}] [Invitations] User already in team ${teamId}`);
               }
             } catch (err) {
-              console.error(`  ❌ Failed to add user to team ${teamId}:`, err);
+              console.error(`[${reqId}] [Invitations] Failed to add user to team ${teamId}:`, err.message);
             }
           }
 
           if (addedCount > 0) {
-            console.log(`✅ User ${userId} automatically added to ${addedCount} team(s)`);
+            console.log(`[${reqId}] [Invitations] Added user to ${addedCount} team(s) (${skippedCount} skipped)`);
           }
+        } else {
+          console.warn(`[${reqId}] [Invitations] User not found for email:`, invitation.email);
         }
       } catch (teamError) {
-        console.error('Error adding user to teams:', teamError);
+        console.error(`[${reqId}] [Invitations] Error adding user to teams:`, teamError.message);
         // Don't fail the invitation acceptance if team addition fails
       }
     }
@@ -312,7 +446,7 @@ router.post('/:invitationId/accept', async (req, res) => {
       data: result.data,
     });
   } catch (error) {
-    console.error('Error accepting invitation:', error);
+    logError(reqId, '[Invitations] Error accepting invitation', error);
     res.status(500).json({
       success: false,
       error: 'Failed to accept invitation',
@@ -323,9 +457,20 @@ router.post('/:invitationId/accept', async (req, res) => {
 
 /**
  * POST /api/invitations/:invitationId/reject
- * Reject/cancel an invitation (no authentication required)
+ * Reject/cancel an invitation (PUBLIC - no authentication required)
+ * 
+ * This endpoint is public to allow users to decline invitations
+ * without creating an account or logging in.
+ * 
+ * Responses:
+ * - 200 OK: { success: true, message }
+ * - 400 Bad Request: Invitation already processed or invalid ID
+ * - 404 Not Found: Invitation not found
+ * - 500 Internal Server Error: Database or server error
  */
 router.post('/:invitationId/reject', async (req, res) => {
+  const reqId = res.locals?.reqId || 'unknown';
+  
   try {
     const { invitationId } = req.params;
 
@@ -336,11 +481,9 @@ router.post('/:invitationId/reject', async (req, res) => {
       });
     }
 
-    // Directly update the database to mark invitation as rejected
-    // This allows unauthenticated users to decline invitations
     const db = auth.options.database;
     
-    // First check if invitation exists and is pending
+    // Check if invitation exists and is pending
     const checkQuery = await db.query(
       'SELECT id, status FROM invitation WHERE id = $1',
       [invitationId]
@@ -368,14 +511,14 @@ router.post('/:invitationId/reject', async (req, res) => {
       ['rejected', invitationId]
     );
 
-    console.log('✅ Invitation rejected successfully:', invitationId);
+    console.log(`[${reqId}] [Invitations] Invitation rejected:`, invitationId);
 
     res.json({
       success: true,
       message: 'Invitation rejected successfully',
     });
   } catch (error) {
-    console.error('Error rejecting invitation:', error);
+    logError(reqId, '[Invitations] Error rejecting invitation', error);
     res.status(500).json({
       success: false,
       error: 'Failed to reject invitation',
@@ -386,19 +529,27 @@ router.post('/:invitationId/reject', async (req, res) => {
 
 /**
  * GET /api/invitations/user/:email
- * Get all pending invitations for a user's email
+ * Get all pending invitations for a user's email (PUBLIC)
+ * 
+ * Returns only pending, non-expired invitations for the specified email.
+ * This endpoint is public to allow users to see their pending invitations
+ * before logging in or creating an account.
+ * 
+ * Responses:
+ * - 200 OK: { success: true, invitations: InvitationObject[], count: number }
+ * - 500 Internal Server Error: Database or server error
  */
 router.get('/user/:email', async (req, res) => {
+  const reqId = res.locals?.reqId || 'unknown';
+  
   try {
     const { email } = req.params;
 
-    // Use Better Auth's listInvitations for the organization
-    // Note: This may need to iterate through user's organizations
-    // For now, query database for pending invitations by email
     const db = auth.options.database;
     
-    const result = await db.query(`
-      SELECT 
+    // Query pending, non-expired invitations for this email
+    const result = await db.query(
+      `SELECT 
         i.id,
         i.email,
         i.role,
@@ -406,34 +557,41 @@ router.get('/user/:email', async (req, res) => {
         i."organizationId",
         i."expiresAt",
         i."createdAt",
-        o.name as "organizationName",
-        o.slug as "organizationSlug",
-        o.logo as "organizationLogo"
+        o.name AS "organizationName",
+        o.slug AS "organizationSlug",
+        o.logo AS "organizationLogo"
       FROM invitation i
       LEFT JOIN organization o ON i."organizationId" = o.id
-      WHERE i.email = $1 AND i.status = 'pending' AND i."expiresAt" > $2
-      ORDER BY i."createdAt" DESC
-    `, [email, new Date()]);
+      WHERE i.email = $1 
+        AND i.status = 'pending' 
+        AND i."expiresAt" > $2
+      ORDER BY i."createdAt" DESC`,
+      [email, new Date()]
+    );
+
+    const invitations = result.rows.map(inv => ({
+      id: inv.id,
+      email: inv.email,
+      role: inv.role,
+      organization: {
+        id: inv.organizationId,
+        name: inv.organizationName,
+        slug: inv.organizationSlug,
+        logo: inv.organizationLogo || null,
+      },
+      expiresAt: inv.expiresAt,
+      createdAt: inv.createdAt,
+    }));
+
+    console.log(`[${reqId}] [Invitations] Found ${invitations.length} pending invitation(s) for ${email}`);
 
     res.json({
       success: true,
-      invitations: result.rows.map(inv => ({
-        id: inv.id,
-        email: inv.email,
-        role: inv.role,
-        organization: {
-          id: inv.organizationId,
-          name: inv.organizationName,
-          slug: inv.organizationSlug,
-          logo: inv.organizationLogo,
-        },
-        expiresAt: inv.expiresAt,
-        createdAt: inv.createdAt,
-      })),
-      count: result.rows.length,
+      invitations,
+      count: invitations.length,
     });
   } catch (error) {
-    console.error('Error fetching user invitations:', error);
+    logError(reqId, '[Invitations] Error fetching user invitations', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch invitations',

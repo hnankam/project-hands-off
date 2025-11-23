@@ -39,6 +39,54 @@ class LoadToolsResponse(BaseModel):
 router = APIRouter(prefix="/api/admin/mcp-servers", tags=["admin"])
 
 
+def _create_mcp_server(config_dict: Dict[str, Any]):
+    """Create an MCP server instance from configuration."""
+    transport = config_dict.get("transport", "stdio")
+    
+    if transport == "stdio":
+        command = config_dict.get("command")
+        if not command:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "command is required for stdio transport"}
+            )
+        
+        args = config_dict.get("args", [])
+        env = config_dict.get("env", {})
+        
+        return MCPServerStdio(
+                command=command,
+                args=args,
+                env=env if env else None,
+            )
+        
+    elif transport == "sse":
+        url = config_dict.get("url")
+        if not url:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "url is required for sse transport"}
+            )
+        
+        return MCPServerSSE(url=url)
+        
+    elif transport == "http":
+        url = config_dict.get("url")
+        if not url:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "url is required for http transport"}
+            )
+        
+        return MCPServerStreamableHTTP(url=url)
+        
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": f"Unsupported transport type: {transport}. Supported types: stdio, sse, http"}
+        )
+
+
 @router.post("/test", response_model=TestServerResponse)
 async def test_mcp_server_connectivity(request: TestServerRequest):
     """Test connectivity to an MCP server.
@@ -55,54 +103,9 @@ async def test_mcp_server_connectivity(request: TestServerRequest):
     try:
         config_dict = request.serverConfig.model_dump(exclude_none=True)
         transport = config_dict.get("transport", "stdio")
-        
-        logger.info(f"Testing MCP server connectivity: transport={transport}")
-        
+                
         # Create the appropriate MCP server instance based on transport
-        mcp_server = None
-        
-        if transport == "stdio":
-            command = config_dict.get("command")
-            if not command:
-                raise HTTPException(
-                    status_code=400,
-                    detail={"error": "command is required for stdio transport"}
-                )
-            
-            args = config_dict.get("args", [])
-            env = config_dict.get("env", {})
-            
-            mcp_server = MCPServerStdio(
-                command=command,
-                args=args,
-                env=env if env else None,
-            )
-            
-        elif transport == "sse":
-            url = config_dict.get("url")
-            if not url:
-                raise HTTPException(
-                    status_code=400,
-                    detail={"error": "url is required for sse transport"}
-                )
-            
-            mcp_server = MCPServerSSE(url=url)
-            
-        elif transport == "http":
-            url = config_dict.get("url")
-            if not url:
-                raise HTTPException(
-                    status_code=400,
-                    detail={"error": "url is required for http transport"}
-                )
-            
-            mcp_server = MCPServerStreamableHTTP(url=url)
-            
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": f"Unsupported transport type: {transport}. Supported types: stdio, sse, http"}
-            )
+        mcp_server = _create_mcp_server(config_dict)
         
         # Test connectivity by listing tools with timeout
         try:
@@ -159,55 +162,9 @@ async def load_mcp_server_tools(server_id: str, request: LoadToolsRequest):
     """
     try:
         config_dict = request.serverConfig.model_dump(exclude_none=True)
-        transport = config_dict.get("transport", "stdio")
-        
-        logger.info(f"Loading tools from MCP server: {server_id}")
-        
+                
         # Create the appropriate MCP server instance based on transport
-        mcp_server = None
-        
-        if transport == "stdio":
-            command = config_dict.get("command")
-            if not command:
-                raise HTTPException(
-                    status_code=400,
-                    detail={"error": "command is required for stdio transport"}
-                )
-            
-            args = config_dict.get("args", [])
-            env = config_dict.get("env", {})
-            
-            mcp_server = MCPServerStdio(
-                command=command,
-                args=args,
-                env=env if env else None,
-            )
-            
-        elif transport == "sse":
-            url = config_dict.get("url")
-            if not url:
-                raise HTTPException(
-                    status_code=400,
-                    detail={"error": "url is required for sse transport"}
-                )
-            
-            mcp_server = MCPServerSSE(url=url)
-            
-        elif transport == "http":
-            url = config_dict.get("url")
-            if not url:
-                raise HTTPException(
-                    status_code=400,
-                    detail={"error": "url is required for http transport"}
-                )
-            
-            mcp_server = MCPServerStreamableHTTP(url=url)
-            
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": f"Unsupported transport type: {transport}. Supported types: stdio, sse, http"}
-            )
+        mcp_server = _create_mcp_server(config_dict)
         
         # List tools with timeout
         try:
@@ -215,24 +172,19 @@ async def load_mcp_server_tools(server_id: str, request: LoadToolsRequest):
                 mcp_server.list_tools(),
                 timeout=10.0
             )
-            
-            logger.info(f"Tools result type: {type(tools_result)}, has tools attr: {hasattr(tools_result, 'tools')}")
-            
+                        
             # Handle both list and object with tools attribute
             tools_to_process = []
             if isinstance(tools_result, list):
                 tools_to_process = tools_result
-                logger.info(f"Got direct list with {len(tools_result)} tools")
             elif hasattr(tools_result, 'tools'):
                 tools_to_process = tools_result.tools or []
-                logger.info(f"Got object with tools attribute containing {len(tools_to_process)} tools")
             else:
                 logger.warning(f"Unexpected tools_result type: {type(tools_result)}")
             
             # Convert tools to dict format
             tools_list = []
             for tool in tools_to_process:
-                logger.info(f"Processing tool: {tool.name}")
                 tool_dict = {
                     "name": tool.name,
                     "description": tool.description or "",
@@ -246,11 +198,9 @@ async def load_mcp_server_tools(server_id: str, request: LoadToolsRequest):
                 
                 tools_list.append(tool_dict)
             
-            logger.info(f"Loaded {len(tools_list)} tools from MCP server {server_id}")
             return LoadToolsResponse(tools=tools_list)
             
         except asyncio.TimeoutError:
-            logger.error(f"Timeout loading tools from MCP server {server_id}")
             raise HTTPException(
                 status_code=504,
                 detail={
