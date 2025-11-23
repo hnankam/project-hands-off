@@ -23,9 +23,9 @@ try {
   html = html.replace(/src="\/offscreen\.js"/g, 'src="../offscreen.js"');
   
   writeFileSync(htmlPath, html);
-  console.log('[fix-html-paths] ✅ Fixed HTML paths to use relative paths');
+  console.log('[fix-html-paths] Fixed HTML paths to use relative paths');
 } catch (error) {
-  console.error('[fix-html-paths] ❌ Error fixing HTML paths:', error.message);
+  console.error('[fix-html-paths] Error fixing HTML paths:', error.message);
   process.exit(1);
 }
 

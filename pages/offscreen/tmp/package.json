@@ -6,7 +6,7 @@
   "sideEffects": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && node fix-html-paths.js",
     "ready": "echo 'Offscreen has no ready step'",
     "dev": "vite build --watch"
   },

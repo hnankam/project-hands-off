@@ -1,0 +1,156 @@
+/**
+ * Skeleton Loading Styles
+ * 
+ * Provides a polished loading state while the React app initializes.
+ * Uses CSS variables for easy theming and maintenance.
+ */
+
+:root {
+  /* Light theme colors */
+  --skeleton-bg: #f9fafb;
+  --skeleton-border: #e5e7eb;
+  --skeleton-shimmer-start: #e5e7eb;
+  --skeleton-shimmer-mid: #f3f4f6;
+  --skeleton-shimmer-end: #e5e7eb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Dark theme colors */
+    --skeleton-bg: #111827;
+    --skeleton-border: #374151;
+    --skeleton-shimmer-start: #374151;
+    --skeleton-shimmer-mid: #4b5563;
+    --skeleton-shimmer-end: #374151;
+  }
+}
+
+/* Base shimmer gradient - reusable */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--skeleton-shimmer-start) 25%,
+    var(--skeleton-shimmer-mid) 50%,
+    var(--skeleton-shimmer-end) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Container */
+.skeleton-container {
+  height: 100vh;
+  background-color: var(--skeleton-bg);
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Header */
+.skeleton-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--skeleton-border);
+}
+
+.skeleton-title {
+  width: 120px;
+  height: 20px;
+  border-radius: 4px;
+}
+
+.skeleton-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.skeleton-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+/* Chat area */
+.skeleton-chat {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.skeleton-message {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.skeleton-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.skeleton-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeleton-line {
+  height: 16px;
+  border-radius: 4px;
+}
+
+.skeleton-line.short {
+  width: 60%;
+}
+
+/* Input area */
+.skeleton-input {
+  padding: 16px;
+  border-top: 1px solid var(--skeleton-border);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.skeleton-input-field {
+  flex: 1;
+  height: 40px;
+  border-radius: 20px;
+}
+
+.skeleton-send-button {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+/* Session tabs */
+.skeleton-tabs {
+  padding: 8px 16px;
+  border-top: 1px solid var(--skeleton-border);
+  display: flex;
+  gap: 8px;
+}
+
+.skeleton-tab {
+  width: 80px;
+  height: 28px;
+  border-radius: 14px;
+}
+

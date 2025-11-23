@@ -1,4 +1,5 @@
 import '@src/index.css';
+import '@src/skeleton.css';
 import SidePanel from '@src/SidePanel';
 import { createRoot } from 'react-dom/client';
 import { AuthProvider } from '@src/context/AuthContext';

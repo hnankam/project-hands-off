@@ -4,23 +4,79 @@ import { sampleFunction } from '@src/sample-function';
 const DEBUG = true;
 const log = (...args: any[]) => DEBUG && console.log(...args);
 const warn = (...args: any[]) => DEBUG && console.warn(...args);
+
+// Configuration constants
+const IDLE_CALLBACK_TIMEOUT_MS = 500;
+const IDLE_FALLBACK_DELAY_MS = 0;
+const NOTIFY_DEBOUNCE_MS = 1000;
+const RETRY_TIMEOUT_BASE_MS = 2000;
+const CHANGE_VALIDITY_MS = 30000;
+const MAX_RETRY_ATTEMPTS = 3;
+const MAX_CAPTURED_MUTATIONS = 1000;
+const MAX_DOM_ELEMENTS_PER_TYPE = 20;
+const TEXT_TRUNCATE_LENGTH = 500;
+const DOM_READY_RETRY_MS = 100;
+
 // Schedule heavy work during idle time when possible
 const scheduleIdle = (fn: () => void) => {
   // @ts-ignore
   const ric: any = (window as any).requestIdleCallback;
   if (typeof ric === 'function') {
     // @ts-ignore
-    return ric(fn, { timeout: 500 });
+    return ric(fn, { timeout: IDLE_CALLBACK_TIMEOUT_MS });
   }
-  return setTimeout(fn, 0);
+  return setTimeout(fn, IDLE_FALLBACK_DELAY_MS);
 };
 
 log('[CEB] All content script loaded');
+
+// Check if extension context is valid before initializing
+if (!chrome.runtime?.id) {
+  console.warn('[CEB] Extension context invalidated - content script will not initialize');
+  console.warn('[CEB] Please refresh this page after reloading the extension');
+  // Exit early - don't initialize anything
+  throw new Error('Extension context invalidated');
+}
 
 // Add a global indicator that the content script is loaded
 (window as any).__CEB_CONTENT_SCRIPT_LOADED__ = true;
 
 void sampleFunction();
+
+// Type definitions
+interface DOMElementInfo {
+  tagName: string;
+  id: string | null;
+  className: string | null;
+  textContent: string;
+  innerHTML?: string;
+  attributes?: {
+    href?: string | null;
+    src?: string | null;
+    alt?: string | null;
+    title?: string | null;
+    value?: string;
+  };
+}
+
+interface TextChangeInfo {
+  type: 'added' | 'removed' | 'modified';
+  text: string;
+  parentTag: string | null;
+}
+
+interface DOMUpdateInfo {
+  timestamp: number;
+  url: string;
+  summary: {
+    addedCount: number;
+    removedCount: number;
+    textChangesCount: number;
+  };
+  addedElements: DOMElementInfo[];
+  removedElements: DOMElementInfo[];
+  textChanges: TextChangeInfo[];
+}
 
 // Page Analysis Functionality - MUST be defined before instantiation
 class PageAnalyzer {
@@ -30,6 +86,7 @@ class PageAnalyzer {
   private lastAnalysisTime: number = 0;
   private rapidChangeCount: number = 0;
   private rapidChangeTimer: NodeJS.Timeout | null = null;
+  private shadowObservers: Map<Element, MutationObserver> = new Map();
 
   constructor() {
     log('[CEB] PageAnalyzer constructor called');
@@ -79,227 +136,16 @@ class PageAnalyzer {
     });
   }
 
-  // Removed automatic mutation handling - now using on-demand analysis only
-
-
-  private isMinorFrameworkChange(mutation: MutationRecord): boolean {
-    // Detect framework-specific changes that are less significant
-    if (mutation.type === 'attributes') {
-      const target = mutation.target as Element;
-      const attributeName = mutation.attributeName;
-      
-      // Framework internal attributes and state changes
-      if (attributeName?.startsWith('__') || 
-          attributeName?.startsWith('data-react') ||
-          attributeName?.startsWith('data-v-') || // Vue
-          attributeName?.startsWith('ng-') || // Angular
-          attributeName === 'style' && target.getAttribute('style')?.includes('--')) {
-        return true;
-      }
-    }
-    
-    if (mutation.type === 'childList') {
-      // Check if it's just framework reconciliation (small styling/text changes)
-      const hasOnlySmallChanges = Array.from(mutation.addedNodes).every(node => 
-        node.nodeType === Node.TEXT_NODE || 
-        (node.nodeType === Node.ELEMENT_NODE && 
-         ['SPAN', 'EM', 'STRONG', 'I', 'B', 'SMALL'].includes((node as Element).tagName))
-      ) && Array.from(mutation.removedNodes).every(node => 
-        node.nodeType === Node.TEXT_NODE || 
-        (node.nodeType === Node.ELEMENT_NODE && 
-         ['SPAN', 'EM', 'STRONG', 'I', 'B', 'SMALL'].includes((node as Element).tagName))
-      );
-      
-      return hasOnlySmallChanges;
-    }
-    
-    return false;
-  }
-
-  private isSignificantNode(node: Node): boolean {
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      return false;
-    }
-    
-    const element = node as Element;
-    const tagName = element.tagName;
-    
-    // Significant structural elements
-    const significantTags = [
-      'SECTION', 'ARTICLE', 'HEADER', 'FOOTER', 'NAV', 'MAIN', 'ASIDE',
-      'FORM', 'TABLE', 'UL', 'OL', 'DL',
-      'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
-      'P', 'IMG', 'VIDEO', 'AUDIO', 'IFRAME', 'CANVAS', 'SVG'
-    ];
-    
-    if (significantTags.includes(tagName)) {
-      return true;
-    }
-    
-    // DIVs are significant if they have meaningful content or structure
-    if (tagName === 'DIV') {
-      const textContent = element.textContent?.trim() || '';
-      const hasSignificantContent = element.children.length > 2 || textContent.length > 30;
-      
-      const hasStructuralRole = element.hasAttribute('role') || 
-                               element.hasAttribute('data-testid') ||
-                               element.className.includes('container') ||
-                               element.className.includes('wrapper') ||
-                               element.className.includes('section') ||
-                               element.className.includes('message') ||
-                               element.className.includes('chat') ||
-                               element.className.includes('conversation') ||
-                               element.className.includes('content') ||
-                               element.className.includes('item') ||
-                               element.className.includes('component');
-      
-      return hasSignificantContent || hasStructuralRole;
-    }
-    
-    return false;
-  }
-
-
-  private isSignificantAttributeChange(mutation: MutationRecord, target: Element): boolean {
-    const attributeName = mutation.attributeName;
-    if (!attributeName) return false;
-    
-    // Always significant attributes
-    const alwaysSignificant = ['src', 'href', 'alt', 'title', 'role', 'aria-label', 'aria-describedby'];
-    if (alwaysSignificant.includes(attributeName)) {
-      return true;
-    }
-    
-    // Class changes are significant if they affect layout/visibility
-    if (attributeName === 'class') {
-      const oldValue = mutation.oldValue || '';
-      const newValue = target.getAttribute('class') || '';
-      
-      // Check for layout/visibility related class changes
-      const layoutClasses = ['hidden', 'visible', 'show', 'hide', 'active', 'inactive', 'open', 'closed', 'expanded', 'collapsed'];
-      const hasLayoutChange = layoutClasses.some(cls => 
-        (oldValue.includes(cls) && !newValue.includes(cls)) ||
-        (!oldValue.includes(cls) && newValue.includes(cls))
-      );
-      
-      return hasLayoutChange;
-    }
-    
-    // Style changes are significant if they affect visibility/layout
-    if (attributeName === 'style') {
-      const style = target.getAttribute('style') || '';
-      const hasLayoutStyle = /display|visibility|opacity|position|transform|width|height/.test(style);
-      return hasLayoutStyle;
-    }
-    
-    // Data attributes are less significant unless they're semantic
-    if (attributeName.startsWith('data-')) {
-      const semanticDataAttrs = ['data-id', 'data-value', 'data-state', 'data-status'];
-      return semanticDataAttrs.some(attr => attributeName.startsWith(attr));
-    }
-    
-    return false;
-  }
-
-  private isSignificantTextChange(parent: Element, mutation: MutationRecord): boolean {
-    const tagName = parent.tagName;
-    
-    // Always significant in these elements
-    const significantTextElements = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TITLE', 'BUTTON', 'A'];
-    if (significantTextElements.includes(tagName)) {
-      return true;
-    }
-    
-    // Significant in paragraphs if the change is substantial
-    if (tagName === 'P') {
-      const oldText = mutation.oldValue || '';
-      const newText = mutation.target.textContent || '';
-      const changeRatio = Math.abs(oldText.length - newText.length) / Math.max(oldText.length, newText.length, 1);
-      return changeRatio > 0.3; // More than 30% change
-    }
-    
-    // Significant in labels and spans if they're form-related
-    if (['LABEL', 'SPAN'].includes(tagName)) {
-      return parent.closest('form') !== null || parent.hasAttribute('for');
-    }
-    
-    return false;
-  }
-
-  private debouncedAnalysisLong() {
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-    }
-    
-    this.debounceTimer = setTimeout(() => {
-      this.analyzePageContent();
-    }, 3000); // Longer debounce for React component changes
-  }
-
-  private debouncedAnalysisMedium() {
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-    }
-    
-    // For text/content changes, use medium debounce to capture dynamic updates
-    this.debounceTimer = setTimeout(() => {
-      this.analyzePageContent();
-    }, 800); // Medium debounce for text/content changes
-  }
-
-  private debouncedAnalysis() {
-    // Implement rate limiting to prevent excessive updates
-    const now = Date.now();
-    const timeSinceLastAnalysis = now - this.lastAnalysisTime;
-    
-    // If we've analyzed recently, increase the debounce time
-    if (timeSinceLastAnalysis < 2000) {
-      this.rapidChangeCount++;
-      
-      // Reset rapid change counter after a period of calm
-      if (this.rapidChangeTimer) {
-        clearTimeout(this.rapidChangeTimer);
-      }
-      this.rapidChangeTimer = setTimeout(() => {
-        this.rapidChangeCount = 0;
-      }, 5000);
-    } else {
-      this.rapidChangeCount = 0;
-    }
-    
-    // Calculate adaptive debounce time based on change frequency
-    let debounceTime = 500; // Base debounce time
-    
-    if (this.rapidChangeCount > 5) {
-      debounceTime = 5000; // 5 seconds for very rapid changes
-    } else if (this.rapidChangeCount > 3) {
-      debounceTime = 3000; // 3 seconds for frequent changes
-    } else if (this.rapidChangeCount > 1) {
-      debounceTime = 1500; // 1.5 seconds for moderate changes
-    }
-    
-    console.log(`[CEB] Scheduling analysis with ${debounceTime}ms debounce (rapid changes: ${this.rapidChangeCount})`);
-    
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-    }
-    
-    this.debounceTimer = setTimeout(() => {
-      this.analyzePageContent();
-    }, debounceTime);
-  }
-
   private setupNavigationMonitoring() {
     let currentUrl = window.location.href;
     
     const handleUrlChange = (source: string) => {
       const newUrl = window.location.href;
       if (newUrl !== currentUrl) {
-        console.log(`[CEB] Navigation detected (${source}):`, newUrl);
+        log(`[CEB] Navigation detected (${source}):`, newUrl);
         currentUrl = newUrl;
         
         // Notify background script about URL change to clear cached content
-        // Check if extension context is still valid
         if (chrome.runtime?.id) {
           chrome.runtime.sendMessage({
             type: 'urlChanged',
@@ -311,7 +157,7 @@ class PageAnalyzer {
       }
     };
     
-    // Monitor browser navigation
+    // Monitor browser navigation events
     window.addEventListener('popstate', () => handleUrlChange('popstate'));
     window.addEventListener('hashchange', () => handleUrlChange('hashchange'));
     
@@ -329,8 +175,64 @@ class PageAnalyzer {
       handleUrlChange('replaceState');
     };
     
-    // Monitor URL changes (fallback)
-    setInterval(() => handleUrlChange('polling'), 2000);
+  }
+
+  /**
+   * Monitor a single shadow root and its descendants
+   * Only scans the provided element, not the entire document
+   */
+  private monitorShadowRoot(element: Element, depth: number, capturedMutations: MutationRecord[], shadowObservers: Map<Element, MutationObserver>, changeDetectedRef: { value: boolean }, notifyCallback: () => void) {
+    if (!element.shadowRoot || shadowObservers.has(element)) {
+      return;
+    }
+
+    const hostIdentifier = `${element.tagName}${element.id ? '#' + element.id : ''}`;
+    
+    const shadowObserver = new MutationObserver((mutations) => {
+      log(`[CEB] Shadow DOM change detected in ${hostIdentifier} (depth: ${depth})`);
+      capturedMutations.push(...mutations);
+      
+      // Enforce mutation limit
+      if (capturedMutations.length > MAX_CAPTURED_MUTATIONS) {
+        const removed = capturedMutations.length - MAX_CAPTURED_MUTATIONS;
+        capturedMutations.splice(0, removed);
+        log(`[CEB] Mutation buffer full, removed ${removed} oldest mutations`);
+      }
+      
+      changeDetectedRef.value = true;
+      notifyCallback();
+    });
+
+    shadowObserver.observe(element.shadowRoot, {
+      childList: true,
+      subtree: true,
+      attributes: false,
+      characterData: true,
+      characterDataOldValue: false
+    });
+
+    shadowObservers.set(element, shadowObserver);
+    log(`[CEB] Shadow DOM monitoring started for ${hostIdentifier} (depth: ${depth})`);
+
+    // Recursively monitor nested shadow roots ONLY within this shadow root
+    const nestedElements = element.shadowRoot.querySelectorAll('*');
+    nestedElements.forEach(child => {
+      if (child.shadowRoot) {
+        this.monitorShadowRoot(child, depth + 1, capturedMutations, shadowObservers, changeDetectedRef, notifyCallback);
+      }
+    });
+  }
+
+  /**
+   * Recursively find and monitor all shadow roots in a subtree
+   */
+  private monitorAllShadowRoots(root: Document | ShadowRoot | Element, depth: number, capturedMutations: MutationRecord[], shadowObservers: Map<Element, MutationObserver>, changeDetectedRef: { value: boolean }, notifyCallback: () => void) {
+    const elements = root.querySelectorAll('*');
+    elements.forEach(element => {
+      if (element.shadowRoot) {
+        this.monitorShadowRoot(element, depth, capturedMutations, shadowObservers, changeDetectedRef, notifyCallback);
+      }
+    });
   }
 
   // REMOVED: setupDynamicContentMonitoring()
@@ -340,52 +242,13 @@ class PageAnalyzer {
   private setupDOMChangeMonitoring() {
     // Monitor significant DOM changes to detect when content becomes stale
     // This notifies the extension about changes without auto-refreshing
-    let changeDetected = false;
+    const changeDetectedRef = { value: false };
     let notifyTimer: NodeJS.Timeout | null = null;
     let observer: MutationObserver | null = null;
-    let shadowObservers: Map<Element, MutationObserver> = new Map(); // Track shadow DOM observers
+    const shadowObservers: Map<Element, MutationObserver> = new Map();
     let lastChangeTimestamp = 0;
     let retryAttempts = 0;
-    const MAX_RETRY_ATTEMPTS = 3;
-    let capturedMutations: MutationRecord[] = []; // Store mutations for incremental update
-
-    // Monitor Shadow DOM changes (with recursive traversal for nested shadow roots)
-    const setupShadowDOMMonitoring = () => {
-      // Recursive function to find and monitor all shadow roots (including nested ones)
-          const monitorShadowRoots = (root: Document | ShadowRoot | Element, depth: number = 0) => {
-        // Use querySelectorAll lazily in idle time to avoid blocking
-        const elements = root.querySelectorAll('*');
-        
-        elements.forEach((element) => {
-          if (element.shadowRoot && !shadowObservers.has(element)) {
-            const shadowObserver = new MutationObserver((mutations) => {
-              const hostIdentifier = `${element.tagName}${element.id ? '#' + element.id : ''}`;
-              log(`[CEB] Shadow DOM change detected in ${hostIdentifier} (depth: ${depth})`);
-              capturedMutations.push(...mutations);
-              changeDetected = true;
-              notifyContentChanged();
-            });
-            
-            shadowObserver.observe(element.shadowRoot, {
-              childList: true,
-              subtree: true,
-              attributes: false,
-              characterData: true,
-              characterDataOldValue: false
-            });
-            
-            shadowObservers.set(element, shadowObserver);
-            log(`[CEB] Shadow DOM monitoring started for ${element.tagName} ${element.id || 'no-id'} (depth: ${depth})`);
-            
-            // Recursively monitor nested shadow roots within this shadow root
-            monitorShadowRoots(element.shadowRoot, depth + 1);
-          }
-        });
-      };
-      
-      // Start recursive monitoring from document root
-      monitorShadowRoots(document, 0);
-    };
+    const capturedMutations: MutationRecord[] = [];
 
     // Clean up shadow observers
     const cleanupShadowObservers = () => {
@@ -397,16 +260,15 @@ class PageAnalyzer {
     };
 
     const notifyContentChanged = () => {
-      if (changeDetected) {
+      if (changeDetectedRef.value) {
         lastChangeTimestamp = Date.now();
         
         // Check if extension context is still valid before sending message
         if (!chrome.runtime?.id) {
           // Extension context invalidated - content script is orphaned
-          // This is normal after extension reload - just skip silently
-          changeDetected = false;
-          retryAttempts = 0; // Reset since we can't recover
-          capturedMutations = [];
+          changeDetectedRef.value = false;
+          retryAttempts = 0;
+          capturedMutations.length = 0;
           return;
         }
         
@@ -420,8 +282,8 @@ class PageAnalyzer {
         
         if (!hasActualChanges) {
           log('[CEB] DOM mutations detected but no significant changes to report, skipping notification');
-          changeDetected = false;
-          capturedMutations = [];
+          changeDetectedRef.value = false;
+          capturedMutations.length = 0;
           return;
         }
         
@@ -429,12 +291,11 @@ class PageAnalyzer {
             `(+${domUpdate.summary.addedCount} -${domUpdate.summary.removedCount} ~${domUpdate.summary.textChangesCount})`);
         chrome.runtime.sendMessage({
           type: 'domContentChanged',
-          tabId: chrome.runtime.id, // Will be set by background script
+          tabId: chrome.runtime.id,
           url: window.location.href,
           timestamp: Date.now(),
-          domUpdate: domUpdate // Include the incremental update
+          domUpdate: domUpdate
         }).then(() => {
-          // Success - reset retry counter
           retryAttempts = 0;
         }).catch((error) => {
           // Failed - retry with backoff
@@ -442,17 +303,17 @@ class PageAnalyzer {
             log(`[CEB] Send failed, will retry (attempt ${retryAttempts + 1}/${MAX_RETRY_ATTEMPTS})`);
             retryAttempts++;
             setTimeout(() => {
-              if (Date.now() - lastChangeTimestamp < 30000) {
-                changeDetected = true;
+              if (Date.now() - lastChangeTimestamp < CHANGE_VALIDITY_MS) {
+                changeDetectedRef.value = true;
                 notifyContentChanged();
               }
-            }, 2000 * retryAttempts);
+            }, RETRY_TIMEOUT_BASE_MS * retryAttempts);
           } else {
             retryAttempts = 0;
           }
         });
-        changeDetected = false;
-        capturedMutations = []; // Clear after sending
+        changeDetectedRef.value = false;
+        capturedMutations.length = 0;
       }
     };
 
@@ -463,16 +324,17 @@ class PageAnalyzer {
           mutation.addedNodes.forEach(node => {
             if (node.nodeType === Node.ELEMENT_NODE) {
               const element = node as Element;
-              // Check if the new element has a shadow root
+              // Check if the new element has a shadow root - only monitor THIS element
               if (element.shadowRoot && !shadowObservers.has(element)) {
                 log('[CEB] New shadow root detected, setting up monitoring');
-                setupShadowDOMMonitoring();
+                this.monitorShadowRoot(element, 0, capturedMutations, shadowObservers, changeDetectedRef, notifyContentChanged);
               }
-              // Check if any descendant has a shadow root
-              element.querySelectorAll('*').forEach(descendant => {
+              // Check descendants for shadow roots - only scan THIS subtree
+              const descendants = element.querySelectorAll('*');
+              descendants.forEach(descendant => {
                 if (descendant.shadowRoot && !shadowObservers.has(descendant)) {
                   log('[CEB] New shadow root detected in descendant, setting up monitoring');
-                  setupShadowDOMMonitoring();
+                  this.monitorShadowRoot(descendant, 1, capturedMutations, shadowObservers, changeDetectedRef, notifyContentChanged);
                 }
               });
             }
@@ -544,23 +406,28 @@ class PageAnalyzer {
       });
 
       if (hasChanges) {
-        changeDetected = true;
+        changeDetectedRef.value = true;
         
-        // Store mutations for incremental update
+        // Store mutations for incremental update with size limit
         capturedMutations.push(...mutations);
+        if (capturedMutations.length > MAX_CAPTURED_MUTATIONS) {
+          const removed = capturedMutations.length - MAX_CAPTURED_MUTATIONS;
+          capturedMutations.splice(0, removed);
+          log(`[CEB] Mutation buffer full, removed ${removed} oldest mutations`);
+        }
         
-        // Debounce notifications (wait 1 second after last change - optimal for agent responsiveness)
+        // Debounce notifications (wait for changes to settle)
         if (notifyTimer) {
           clearTimeout(notifyTimer);
         }
-        notifyTimer = setTimeout(notifyContentChanged, 1000);
+        notifyTimer = setTimeout(notifyContentChanged, NOTIFY_DEBOUNCE_MS);
       }
     });
 
     // Observe the entire document body for changes
     const startObserving = () => {
       if (!document.body) {
-        setTimeout(startObserving, 100);
+        setTimeout(startObserving, DOM_READY_RETRY_MS);
         return;
       }
 
@@ -571,15 +438,15 @@ class PageAnalyzer {
         // Defer observer start to an idle period to avoid blocking page load
         scheduleIdle(() => {
           observer!.observe(document.body, {
-            childList: true,        // Track node additions/removals
-            subtree: true,          // Monitor entire tree
-            attributes: false,      // Don't track attribute changes (reduces noise)
-            characterData: true,    // Track text content changes
+            childList: true,
+            subtree: true,
+            attributes: false,
+            characterData: true,
             characterDataOldValue: false
           });
 
           // Set up initial shadow DOM monitoring in idle time
-          scheduleIdle(() => setupShadowDOMMonitoring());
+          scheduleIdle(() => this.monitorAllShadowRoots(document, 0, capturedMutations, shadowObservers, changeDetectedRef, notifyContentChanged));
 
           log('[CEB] DOM change monitoring active (including Shadow DOM)');
         });
@@ -594,9 +461,12 @@ class PageAnalyzer {
   // REMOVED: setupFormMonitoring(), setupMediaMonitoring(), setupViewportMonitoring()
   // PERFORMANCE: These caused constant event listeners and expensive analysis triggers
 
-  // Extract meaningful DOM update information from mutations
-  private extractDOMUpdate(mutations: MutationRecord[]) {
-    // Inline HTML cleaner for DOM updates
+  /**
+   * Extract meaningful DOM update information from mutations
+   * Inline HTML cleaner is intentionally simplified for performance (not the same as full cleaner)
+   */
+  private extractDOMUpdate(mutations: MutationRecord[]): DOMUpdateInfo {
+    // Inline HTML cleaner for DOM updates (lightweight version for real-time updates)
     const cleanHtmlQuick = (html: string): string => {
       if (!html || html.length === 0) return '';
       
@@ -621,9 +491,9 @@ class PageAnalyzer {
       return cleaned;
     };
     
-    const addedElements: any[] = [];
-    const removedElements: any[] = [];
-    const textChanges: any[] = [];
+    const addedElements: DOMElementInfo[] = [];
+    const removedElements: DOMElementInfo[] = [];
+    const textChanges: TextChangeInfo[] = [];
     
     mutations.forEach((mutation) => {
       // Capture added nodes
@@ -662,7 +532,7 @@ class PageAnalyzer {
             if (text.length > 0) {
               textChanges.push({
                 type: 'added',
-                text: text.substring(0, 500),
+                text: text.substring(0, TEXT_TRUNCATE_LENGTH),
                 parentTag: node.parentElement?.tagName || null
               });
             }
@@ -685,7 +555,7 @@ class PageAnalyzer {
                 tagName,
                 id: element.id || null,
                 className: element.className || null,
-                textContent: textContent.substring(0, 500)
+                textContent: textContent.substring(0, TEXT_TRUNCATE_LENGTH)
               });
             }
           } else if (node.nodeType === Node.TEXT_NODE && node.textContent) {
@@ -693,7 +563,7 @@ class PageAnalyzer {
             if (text.length > 0) {
               textChanges.push({
                 type: 'removed',
-                text: text.substring(0, 500),
+                text: text.substring(0, TEXT_TRUNCATE_LENGTH),
                 parentTag: node.parentElement?.tagName || null
               });
             }
@@ -707,7 +577,7 @@ class PageAnalyzer {
         if (text.length > 0) {
           textChanges.push({
             type: 'modified',
-            text: text.substring(0, 500),
+            text: text.substring(0, TEXT_TRUNCATE_LENGTH),
             parentTag: mutation.target.parentElement?.tagName || null
           });
         }
@@ -722,9 +592,9 @@ class PageAnalyzer {
         removedCount: removedElements.length,
         textChangesCount: textChanges.length
       },
-      addedElements: addedElements.slice(0, 20), // Limit to 20 most recent
-      removedElements: removedElements.slice(0, 20),
-      textChanges: textChanges.slice(0, 20)
+      addedElements: addedElements.slice(0, MAX_DOM_ELEMENTS_PER_TYPE),
+      removedElements: removedElements.slice(0, MAX_DOM_ELEMENTS_PER_TYPE),
+      textChanges: textChanges.slice(0, MAX_DOM_ELEMENTS_PER_TYPE)
     };
   }
   // Form data is now extracted on-demand when needed, not monitored continuously

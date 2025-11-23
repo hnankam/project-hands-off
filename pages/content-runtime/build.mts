@@ -33,16 +33,52 @@ const configs = Object.entries(getContentScriptEntries(matchesDir)).map(([name, 
   }),
 }));
 
+// Add extraction script as a separate build target
+const extractionConfig = {
+  name: 'extraction',
+  config: withPageConfig({
+    mode: IS_DEV ? 'development' : undefined,
+    resolve: {
+      alias: {
+        '@src': srcDir,
+      },
+    },
+    build: {
+      lib: {
+        name: '__extractPageContent',
+        formats: ['iife'],
+        entry: resolve(srcDir, 'extraction', 'index.ts'),
+        fileName: 'extraction',
+      },
+      rollupOptions: {
+        output: {
+          extend: true, // Extend window object
+          exports: 'default', // Export as default
+        },
+      },
+      outDir: resolve(rootDir, '..', '..', 'dist', 'content-runtime'),
+      emptyOutDir: false,
+      minify: !IS_DEV,
+    },
+  }),
+};
+
+// Add extraction to configs
+configs.push(extractionConfig);
+
 // Build in parallel (faster)
 const builds = configs.map(async ({ name, config }) => {
-  const folder = resolve(matchesDir, name);
-  const args = {
-    ['--input']: resolve(folder, 'index.css'),
-    ['--output']: resolve(rootDir, 'dist', name, 'index.css'),
-    ['--config']: resolve(rootDir, 'tailwind.config.ts'),
-    ['--watch']: IS_DEV,
-  };
-  await buildTW(args);
+  // Skip CSS build for extraction script (it doesn't need Tailwind)
+  if (name !== 'extraction') {
+    const folder = resolve(matchesDir, name);
+    const args = {
+      ['--input']: resolve(folder, 'index.css'),
+      ['--output']: resolve(rootDir, 'dist', name, 'index.css'),
+      ['--config']: resolve(rootDir, 'tailwind.config.ts'),
+      ['--watch']: IS_DEV,
+    };
+    await buildTW(args);
+  }
   //@ts-expect-error This is hidden property into vite's resolveConfig()
   config.configFile = false;
   await build(config);

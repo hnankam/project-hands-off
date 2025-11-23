@@ -4,26 +4,13 @@
  */
 
 import { pipeline, env } from '@huggingface/transformers';
+import { EMBEDDING_MODEL, EMBEDDING_DIMENSION, BATCH_SIZE, getDtype } from './embedding-config.js';
 
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
 
 // Debug toggle (set to false in production)
 const DEBUG = true;
 const log = (...args: any[]) => DEBUG && console.log(...args);
-
-// ===== EMBEDDING MODEL SELECTION =====
-// Choose your embedding model (comment/uncomment to switch):
-const EMBEDDING_MODEL = 'Xenova/paraphrase-MiniLM-L3-v2'; // 🚀 FASTEST (14MB, ~40% faster, good quality)
-// const EMBEDDING_MODEL = 'Supabase/gte-small';          // ⭐ RECOMMENDED (33MB, most stable, best accuracy)
-// const EMBEDDING_MODEL = 'Xenova/bge-small-en-v1.5';    // ⭐ ALTERNATIVE (33MB, state-of-the-art small model)
-// const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2';     // 📊 ORIGINAL (23MB, baseline)
-// const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L12-v2';    // 🎯 HIGHEST QUALITY (45MB, slower but best quality)
-
-// ===== QUANTIZATION SELECTION =====
-// Choose quantization level (comment/uncomment to switch):
-const USE_AGGRESSIVE_QUANTIZATION = true;  // ⚡ FASTEST (q4, ~40% faster, minimal quality loss)
-// const USE_AGGRESSIVE_QUANTIZATION = false; // 🎯 BALANCED (q8, default quality)
-// =====================================
 
 // Configure environment for worker context
 env.allowRemoteModels = true;
@@ -44,7 +31,7 @@ async function ensurePipeline() {
   if (embeddingPipeline) return;
   if (!pipelineInitPromise) {
     pipelineInitPromise = (async () => {
-      const dtype = USE_AGGRESSIVE_QUANTIZATION ? 'q4' : 'q8';
+      const dtype = getDtype('wasm');
       log(ts(), `[EmbeddingWorker] Initializing transformers pipeline with model: ${EMBEDDING_MODEL} (WASM, ${dtype})...`);
       const start = performance.now();
       // WebGPU is not available in workers; use WASM
@@ -53,7 +40,7 @@ async function ensurePipeline() {
         dtype: dtype,
       });
       log(ts(), `[EmbeddingWorker] Pipeline ready in ${(performance.now() - start).toFixed(0)}ms`);
-      log(ts(), `[EmbeddingWorker] Model: ${EMBEDDING_MODEL} (${dtype}) ${USE_AGGRESSIVE_QUANTIZATION ? '(aggressive quantization)' : '(balanced quantization)'}`);
+      log(ts(), `[EmbeddingWorker] Model: ${EMBEDDING_MODEL} (${dtype})`);
     })();
   }
   await pipelineInitPromise;
@@ -63,7 +50,7 @@ async function embedText(text: string): Promise<number[]> {
   await ensurePipeline();
   // Fast-path: empty/whitespace text → zero vector
   if (!text || (typeof text === 'string' && text.trim().length === 0)) {
-    return new Array(384).fill(0);
+    return new Array(EMBEDDING_DIMENSION).fill(0);
   }
   const output = await embeddingPipeline(text, { pooling: 'mean', normalize: true });
   const arr: number[] = Array.from(output.data as Iterable<number>).map((v: number) => Number(v));
@@ -74,7 +61,7 @@ async function embedBatch(texts: string[]): Promise<number[][]> {
   await ensurePipeline();
   // Fast-path: no inputs
   if (!texts || texts.length === 0) return [];
-  const BATCH_SIZE = 16; // Reduced to 16 to prevent GPU/CPU contention
+  
   // Clamp concurrency by available cores
   const hc = (self as any)?.navigator?.hardwareConcurrency || 4;
   const MAX_CONCURRENT = Math.max(2, Math.min(8, (hc as number) - 1));
@@ -86,10 +73,9 @@ async function embedBatch(texts: string[]): Promise<number[][]> {
     const startIdx = batchIndex * BATCH_SIZE;
     const batch = texts.slice(startIdx, Math.min(startIdx + BATCH_SIZE, texts.length));
     const output = await embeddingPipeline(batch, { pooling: 'mean', normalize: true });
-    const size = 384;
     const batchEmbeddings: number[][] = [];
     for (let j = 0; j < batch.length; j++) {
-      const slice = (output.data as Float32Array | number[]).slice(j * size, (j + 1) * size) as number[];
+      const slice = (output.data as Float32Array | number[]).slice(j * EMBEDDING_DIMENSION, (j + 1) * EMBEDDING_DIMENSION) as number[];
       const vec: number[] = Array.from(slice as Iterable<number>).map((v: number) => Number(v));
       batchEmbeddings.push(vec);
     }
