@@ -1,0 +1,729 @@
+/**
+ * Side Panel - Main Stylesheet (Refactored)
+ * 
+ * Modular CSS architecture for better maintainability and performance.
+ * 
+ * Structure:
+ * 0-base/      - Variables, resets, typography
+ * 1-layout/    - Scrollbars, animations, layout utilities
+ * 2-components/ - CopilotKit, editors, diagrams
+ * 3-utilities/ - Fade effects, helpers
+ * 
+ * Note: This is a partial refactoring. The remaining styles from the original
+ * SidePanel.css have been preserved below for compatibility.
+ */
+
+/* ============================================================
+   MODULAR IMPORTS
+   ============================================================ */
+@import './styles/0-base/variables.css';
+@import './styles/0-base/reset.css';
+@import './styles/1-layout/scrollbars.css';
+@import './styles/1-layout/animations.css';
+@import './styles/2-components/copilotkit/chat-layout.css';
+@import './styles/2-components/copilotkit/messages.css';
+
+/* ============================================================
+   REMAINING STYLES FROM ORIGINAL FILE
+   (To be further modularized in future iterations)
+   ============================================================ */
+
+/* Typography */
+.copilot-chat-container p,
+.copilot-chat-container div:not([role='group']):not([class*='controls']):not([class*='actions']):not([class*='suggestions']):not([class*='gallery']),
+.copilot-chat-container span:not([role='group'] span):not([class*='gallery']) {
+  font-size: 12.5px;
+}
+
+.copilot-chat-container .text-sm,
+.copilot-chat-container .text-base,
+.copilot-chat-container .text-lg,
+.copilot-chat-container .text-xl {
+  font-size: 10px;
+}
+
+.copilot-chat-container input,
+.copilot-chat-container textarea {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.copilot-chat-container [class*='message'] p,
+.copilot-chat-container [class*='message'] div:not([role='group']),
+.copilot-chat-container [class*='message'] span:not(button span) {
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+/* Suggestion buttons */
+.copilot-chat-container button[class*='suggestion'],
+.copilot-chat-container button[class*='Suggestion'] {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+footer div[class*='suggestions'] button {
+  padding: 3px 9px;
+  margin: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
+  flex-grow: 0;
+  flex-basis: auto;
+  border-radius: var(--radius-full);
+  min-width: max-content;
+  max-width: none;
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  word-wrap: normal;
+  overflow-wrap: normal;
+}
+
+/* Suggestions Footer */
+.copilotKitMessagesFooter,
+footer.copilotKitMessagesFooter,
+.copilotKitChat > footer,
+[class*='MessagesFooter'] {
+  position: relative;
+  overflow: hidden;
+  flex: 0 0 auto;
+  order: 1;
+  contain: layout style;
+  max-width: 56rem;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+.copilotKitMessagesFooter::-webkit-scrollbar,
+footer.copilotKitMessagesFooter::-webkit-scrollbar,
+.copilotKitMessages footer::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.copilotKitMessagesFooter,
+footer.copilotKitMessagesFooter,
+.copilotKitMessages footer {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.copilotKitMessagesFooter > div[class='suggestions'] {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  gap: var(--space-sm);
+  padding: 0;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.copilotKitMessagesFooter::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 60px;
+  background: linear-gradient(to right, transparent 0%, var(--copilot-kit-background-color) 80%);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.copilotKitMessagesFooter > div[class='suggestions']::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.copilotKitMessagesFooter > div[class='suggestions']:hover::-webkit-scrollbar {
+  width: 1px;
+  height: 1px;
+}
+
+.copilotKitMessagesFooter > div[class='suggestions']::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.copilotKitMessagesFooter > div[class='suggestions']::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-light);
+  border-radius: 1px;
+}
+
+.copilotKitMessagesFooter > div[class='suggestions']::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-light-hover);
+}
+
+.dark .copilotKitMessagesFooter > div[class='suggestions']::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-dark);
+}
+
+.dark .copilotKitMessagesFooter > div[class='suggestions']::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-dark-hover);
+}
+
+/* Hide suggestions when toggle is off */
+body.hide-copilot-suggestions .copilotKitMessagesFooter [class*='suggestion'] {
+  display: none;
+  visibility: hidden;
+  opacity: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Input Controls */
+.copilot-chat-container .copilotKitInputControls svg {
+  width: auto;
+  height: auto;
+}
+
+.copilotKitInputControlButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-base) ease;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.copilotKitInputControls > div {
+  display: inline-flex;
+  align-items: flex-start;
+  margin: 0;
+  padding: 0;
+  vertical-align: top;
+}
+
+.copilotKitInputControls > .copilotKitInputControlButton:not(:last-child),
+.copilotKitInputControls > * > .copilotKitInputControlButton,
+.copilotKitInputControls > div button.copilotKitInputControlButton,
+.copilotKitInputControls button.copilotKitInputControlButton:not(:last-child) {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  max-width: 20px;
+  max-height: 20px;
+  margin-top: 5px;
+  box-sizing: border-box;
+}
+
+.copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) > svg,
+.copilotKitInputControls > * > .copilotKitInputControlButton > svg,
+.copilotKitInputControls > div button.copilotKitInputControlButton svg,
+.copilotKitInputControls button.copilotKitInputControlButton:not(:last-child) svg {
+  width: 14px;
+  height: 14px;
+  max-width: 14px;
+  max-height: 14px;
+  display: block;
+  flex-shrink: 0;
+}
+
+.copilotKitInputControls > .copilotKitInputControlButton:last-child {
+  width: 25px;
+  height: 25px;
+  min-width: 25px;
+  min-height: 25px;
+  margin-left: 5px;
+}
+
+.copilotKitInputControls > .copilotKitInputControlButton:last-child > svg {
+  width: 24px;
+  height: 24px;
+}
+
+.copilotKitInputControlButton {
+  background-color: transparent;
+}
+
+.copilotKitInputControlButton:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.copilotKitInputControls > .copilotKitInputControlButton:not(:last-child):not([disabled]),
+.copilotKitInputControls > * > .copilotKitInputControlButton:not([disabled]),
+.copilotKitInputControls .copilotKitInputControlButton:not(:last-child):not([disabled]) {
+  color: var(--color-text-primary);
+}
+
+.copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) svg,
+.copilotKitInputControls > * > .copilotKitInputControlButton svg,
+.copilotKitInputControls .copilotKitInputControlButton:not(:last-child) svg {
+  color: var(--color-text-primary);
+}
+
+.copilotKitInputControls > .copilotKitInputControlButton:last-child svg {
+  color: var(--color-accent-blue);
+}
+
+.copilotKitInputControls > .copilotKitInputControlButton:last-child:disabled svg {
+  color: var(--color-text-muted);
+}
+
+.dark .copilotKitInputControlButton:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child):not([disabled]),
+.dark .copilotKitInputControls > * > .copilotKitInputControlButton:not([disabled]),
+.dark .copilotKitInputControls .copilotKitInputControlButton:not(:last-child):not([disabled]) {
+  color: var(--color-text-secondary);
+}
+
+.dark .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) svg,
+.dark .copilotKitInputControls > * > .copilotKitInputControlButton svg,
+.dark .copilotKitInputControls .copilotKitInputControlButton svg {
+  color: var(--color-text-secondary);
+}
+
+.dark .copilotKitInputControls > .copilotKitInputControlButton:last-child svg {
+  color: var(--color-accent-blue);
+}
+
+.dark .copilotKitInputControls > .copilotKitInputControlButton:last-child svg path,
+.dark .copilotKitInputControls > .copilotKitInputControlButton:last-child svg rect {
+  stroke: var(--color-bg-secondary);
+  fill: var(--color-bg-secondary);
+}
+
+.dark .copilotKitInputControls > .copilotKitInputControlButton:last-child:disabled svg {
+  color: var(--color-border-medium);
+}
+
+.copilotKitInputControls > .copilotKitInputControlButton:last-child:not(:disabled):hover {
+  background-color: var(--color-accent-blue-light);
+}
+
+.dark .copilotKitInputControls > .copilotKitInputControlButton:last-child:not(:disabled):hover {
+  background-color: rgba(96, 165, 250, 0.15);
+}
+
+.copilotKitInputControlButton:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.copilotKitPushToTalkRecording {
+  background-color: var(--color-accent-red-light);
+}
+
+.copilotKitPushToTalkRecording svg {
+  color: var(--color-accent-red);
+}
+
+.dark .copilotKitPushToTalkRecording {
+  background-color: rgba(239, 68, 68, 0.2);
+}
+
+.dark .copilotKitPushToTalkRecording svg {
+  color: #f87171;
+}
+
+/* Input placeholder */
+.copilotKitInputTextarea::placeholder,
+.copilotKitInput textarea::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+.dark .copilotKitInputTextarea::placeholder,
+.dark .copilotKitInput textarea::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+/* Code blocks - MODULARIZE IN NEXT ITERATION */
+.copilot-chat-container .copilotKitCodeBlock {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--copilot-kit-border-color);
+  background: var(--copilot-kit-response-background-color);
+  overflow: hidden;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  will-change: auto;
+  contain: paint;
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlock {
+  background: var(--copilot-kit-secondary-color);
+  border-color: var(--copilot-kit-border-color);
+}
+
+.copilot-chat-container .copilotKitCodeBlockToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 var(--space-sm);
+  background: rgba(0, 0, 0, 0.03);
+  border-bottom: 1px solid var(--copilot-kit-separator-color);
+  color: var(--copilot-kit-text-muted-color);
+  font-size: 11px;
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlockToolbar {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.copilot-chat-container .copilotKitCodeBlockToolbar button,
+.copilot-chat-container .copilotKitCodeBlockToolbar a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  width: 20px;
+  padding: 0;
+  border-radius: var(--radius-xs);
+  color: inherit;
+  background: transparent;
+}
+
+.copilot-chat-container .copilotKitCodeBlockToolbar button:hover,
+.copilot-chat-container .copilotKitCodeBlockToolbar a:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlockToolbar button:hover,
+.copilot-chat-container.dark .copilotKitCodeBlockToolbar a:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.copilot-chat-container .copilotKitCodeBlockToolbar svg {
+  width: 14px;
+  height: 14px;
+}
+
+.copilot-chat-container .copilotKitCodeBlock pre,
+.copilot-chat-container .copilotKitCodeBlock code {
+  background: transparent;
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.copilot-chat-container:not(.dark) .copilotKitCodeBlock code {
+  filter: brightness(0.7) saturate(2.08) contrast(1.5);
+}
+
+.copilot-chat-container .copilotKitCodeBlock pre {
+  margin: 0;
+  padding: var(--space-md) 14px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.copilot-chat-container .copilotKitCodeBlock pre::-webkit-scrollbar {
+  width: var(--scrollbar-width);
+  height: var(--scrollbar-width);
+}
+
+.copilot-chat-container .copilotKitCodeBlock pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.copilot-chat-container .copilotKitCodeBlock pre::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.35);
+  border-radius: var(--radius-sm);
+}
+
+.copilot-chat-container .copilotKitCodeBlock pre::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlock pre::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.35);
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlock pre::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5);
+}
+
+.copilot-chat-container .copilotKitCodeBlock > div[style] {
+  background: var(--copilot-kit-response-background-color);
+  color: var(--copilot-kit-text-color);
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  will-change: auto;
+  contain: paint;
+  scrollbar-width: thin;
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlock > div[style] {
+  background: rgb(30, 30, 30);
+  color: #e5e7eb;
+}
+
+.copilot-chat-container .copilotKitAssistantMessage .copilotKitInlineCode {
+  font-size: 13px;
+  border-width: 0;
+  border-radius: var(--radius-xs);
+}
+
+.copilot-chat-container:not(.dark) .copilotKitAssistantMessage .copilotKitInlineCode {
+  background: var(--color-bg-tertiary);
+}
+
+.copilot-chat-container.dark .copilotKitAssistantMessage .copilotKitInlineCode {
+  background: rgba(55, 65, 81, 0.5);
+}
+
+/* Fade text effects */
+.fade-text {
+  position: relative;
+}
+
+.fade-text::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: max(10%, 60px);
+  background-color: var(--fade-bg-color, var(--color-bg-secondary));
+  mask: linear-gradient(
+    to right,
+    transparent 0%,
+    transparent 10%,
+    rgba(0, 0, 0, 0.2) 50%,
+    rgba(0, 0, 0, 0.8) 80%,
+    rgba(0, 0, 0, 1) 100%
+  );
+  -webkit-mask: linear-gradient(
+    to right,
+    transparent 0%,
+    transparent 10%,
+    rgba(0, 0, 0, 0.2) 50%,
+    rgba(0, 0, 0, 0.8) 80%,
+    rgba(0, 0, 0, 1) 100%
+  );
+  pointer-events: none;
+}
+
+.tab-fade-text {
+  position: relative;
+}
+
+.tab-fade-text::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: max(15%, 30px);
+  background-color: var(--fade-bg-color, #ffffff);
+  mask: linear-gradient(
+    to right,
+    transparent 0%,
+    transparent 10%,
+    rgba(0, 0, 0, 0.2) 50%,
+    rgba(0, 0, 0, 0.8) 80%,
+    rgba(0, 0, 0, 1) 100%
+  );
+  -webkit-mask: linear-gradient(
+    to right,
+    transparent 0%,
+    transparent 10%,
+    rgba(0, 0, 0, 0.2) 50%,
+    rgba(0, 0, 0, 0.8) 80%,
+    rgba(0, 0, 0, 1) 100%
+  );
+  pointer-events: none;
+  transition: background-color var(--transition-base) ease;
+}
+
+.group:hover .tab-fade-text::after {
+  background-color: var(--fade-hover-bg-color, var(--fade-bg-color, #ffffff));
+}
+
+/* ThinkingBlock */
+.thinking-block {
+  contain: layout style;
+  will-change: auto;
+}
+
+.thinking-block-content {
+  margin: 0;
+  padding: 0;
+}
+
+.thinking-block-content > * {
+  margin: 0;
+  padding: 0;
+}
+
+.thinking-block-content ul,
+.thinking-block-content ol {
+  margin: 0.5em 0;
+  padding-left: 20px;
+  display: block;
+  line-height: 1.5;
+}
+
+.thinking-block-content li {
+  margin: 0.3em 0;
+  padding-left: var(--space-xs);
+  display: list-item;
+  list-style-position: outside;
+  line-height: 1.5;
+}
+
+.thinking-block-content ul > li {
+  list-style-type: disc;
+  list-style-position: outside;
+}
+
+.thinking-block-content ol > li {
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
+.thinking-block-content .markdown-content {
+  margin: 0;
+  padding: 0;
+}
+
+.thinking-block-content .markdown-content ul,
+.thinking-block-content .markdown-content ol {
+  margin: 0.5em 0;
+  padding-left: 20px;
+  display: block;
+  line-height: 1.5;
+}
+
+.thinking-block-content .markdown-content li {
+  margin: 0.3em 0;
+  padding-left: var(--space-xs);
+  display: list-item;
+  list-style-position: outside;
+  line-height: 1.5;
+}
+
+/* Wait Action Sparkle Effect */
+.copilot-action-sparkle-text {
+  position: relative;
+  display: inline-block;
+}
+
+.copilot-action-sparkle-text > .sparkle-base {
+  color: inherit;
+}
+
+.copilot-action-sparkle-text > .sparkle-overlay {
+  position: absolute;
+  inset: 0;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  background: linear-gradient(
+      120deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0) 38%,
+      rgba(255, 255, 255, 0.85) 50%,
+      rgba(255, 255, 255, 0) 62%,
+      rgba(255, 255, 255, 0) 100%
+    )
+    no-repeat;
+  background-size: 220% 100%;
+  opacity: 1;
+  pointer-events: none;
+  animation: copilot-sparkle-sweep 2.5s ease-in-out infinite;
+}
+
+.dark .copilot-action-sparkle-text > .sparkle-base {
+  color: #919598;
+}
+
+/* Sticky Messages */
+.copilotKitUserMessage.is-sticky {
+  background-color: var(--copilot-kit-input-background-color);
+  border: 1px solid var(--copilot-kit-separator-color);
+  border-top: none;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  margin-top: 0;
+  overflow: visible;
+  transition: all var(--transition-fast);
+}
+
+div:has(> .copilotKitUserMessage.is-sticky) {
+  margin-top: 0;
+  transition: margin var(--transition-fast), padding var(--transition-fast);
+}
+
+.copilotKitUserMessage.is-sticky::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background-color: var(--copilot-kit-input-background-color);
+  z-index: -1;
+}
+
+.dark .copilotKitUserMessage.is-sticky,
+.copilot-chat-container.dark .copilotKitUserMessage.is-sticky {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 1px 0 var(--copilot-kit-input-background-color);
+}
+
+.dark .copilotKitUserMessage.is-sticky::before,
+.copilot-chat-container.dark .copilotKitUserMessage.is-sticky::before {
+  background-color: var(--copilot-kit-input-background-color);
+}
+
+/* Chat Input Disabled State */
+.chat-input-disabled .copilotKitInput,
+.chat-input-disabled .copilotKitInput textarea,
+.chat-input-disabled .copilotKitInput .tiptap-editor,
+.chat-input-disabled .copilotKitInputControls,
+.chat-input-disabled .copilotKitInputControlButton {
+  pointer-events: none;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chat-input-disabled .copilotKitInput textarea,
+.chat-input-disabled .copilotKitInput .tiptap-editor {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.dark .chat-input-disabled .copilotKitInput textarea,
+.dark .chat-input-disabled .copilotKitInput .tiptap-editor {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.chat-input-disabled .copilotKitMessagesFooter,
+.chat-input-disabled .copilotKitMessagesFooter button,
+.chat-input-disabled footer.copilotKitMessagesFooter,
+.chat-input-disabled footer.copilotKitMessagesFooter button {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* 
+ * ============================================================
+ * REMAINING STYLES TO BE MODULARIZED:
+ * - Tiptap Rich Text Editor (400+ lines)
+ * - Markdown Content (300+ lines)
+ * - Mermaid Diagrams (400+ lines)
+ * - Admin Page Editor (200+ lines)
+ * - CodeMirror Editor (50+ lines)
+ * 
+ * Total Remaining: ~1,350 lines
+ * ============================================================
+ */
+

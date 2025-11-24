@@ -1,0 +1,59 @@
+/* ==========================================================
+   CODEMIRROR JSON EDITOR
+   ========================================================== */
+.codemirror-json-editor {
+  display: flex;
+  flex-direction: column;
+}
+
+.codemirror-json-editor > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Ensure CodeMirror editor is flexible */
+.codemirror-json-editor .cm-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.codemirror-json-editor .cm-scroller {
+  flex: 1;
+  min-height: 0;
+}
+
+/* CodeMirror scrollbar styling */
+.codemirror-json-editor .cm-scroller::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.codemirror-json-editor .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.codemirror-json-editor .cm-scroller::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 2px;
+}
+
+.codemirror-json-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+.dark .codemirror-json-editor .cm-scroller::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3);
+}
+
+.dark .codemirror-json-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5);
+}
+
+/* CodeMirror line height fix */
+.codemirror-json-editor .cm-line {
+  line-height: 1;
+}
+

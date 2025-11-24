@@ -1,0 +1,453 @@
+/* =============================================================================
+   COPILOTKIT CHAT MESSAGES
+   User/assistant messages, controls visibility, typography, and scrollbars
+   ============================================================================= */
+
+.copilotKitUserMessage {
+  border-radius: 10px !important;
+  margin-left: 0 !important; /* Remove auto margin that pushes to right */
+  max-width: 100% !important; /* Allow full width instead of 80% */
+  width: 100% !important; /* Force full width */
+  margin-bottom: 0 !important;
+  overflow: visible !important; /* Ensure dropdowns can extend beyond message bounds */
+  margin-top: 40px !important;
+  border: 1px solid var(--copilot-kit-border-color) !important;
+  
+  /* Smooth transitions for all user messages */
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Ensure the very first user message in the list has a margin-top of 1rem */
+/* Account for Virtua's 2 wrapper divs */
+/* Exclude sticky messages from this rule */
+.copilotKitMessagesContainer > div > div > .copilotKitMessage[data-message-role="user"]:first-child:not(.is-sticky),
+.copilotKitMessagesContainer > div > div > [data-message-role="user"]:first-child:not(.is-sticky) {
+  margin-top: 1.2rem !important;
+}
+
+/* Light mode user message - match status bar background */
+.copilot-chat-container:not(.dark) .copilotKitUserMessage,
+:not(.dark) .copilotKitUserMessage {
+  background-color: #f9fafb !important; /* bg-gray-50 - matches status bar */
+  border-color: #e5e7eb !important; /* border-gray-200 - matches status bar */
+  color: #374151 !important; /* gray-700 - dark grey instead of black */
+}
+
+/* Dark mode user message */
+.dark .copilotKitUserMessage,
+.copilot-chat-container.dark .copilotKitUserMessage {
+  background-color: var(--copilot-kit-secondary-color) !important;
+  border-color: var(--copilot-kit-border-color) !important;
+  color: #bcc1c7 !important; /* gray-350 - slightly greyer text */
+}
+
+.copilotKitAssistantMessage {
+  max-width: 100% !important; /* Allow full width instead of 80% */
+  width: 100% !important; /* Force full width */
+  padding-right: 12px !important;
+  padding-left: 12px !important;
+  position: relative !important; /* Ensure controls position relative to message */
+  overflow: visible !important; /* Allow controls to overflow outside message bounds */
+  margin-bottom: 1.5rem !important;
+  padding-bottom: 0 !important;
+}
+
+/* Override padding for empty assistant messages at the base level */
+.copilotKitAssistantMessage:has(> .copilotKitMarkdown:empty),
+.copilotKitAssistantMessage:has(> .copilotKitMarkdown:not(:has(*))) {
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  background: red !important;
+}
+
+/* Remove padding from empty assistant messages - must come after other assistant message rules */
+/* Target assistant messages that contain an empty markdown div */
+.copilotKitMessage.copilotKitAssistantMessage:has(> .copilotKitMarkdown:empty) {
+  padding: 0 !important;
+}
+
+/* Maintain horizontal scroll for assistant message content while allowing controls to overflow */
+.copilotKitAssistantMessage > *:not(.copilotKitMessageControls) {
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  max-width: 100%;
+  scrollbar-width: thin;
+}
+
+/* ==========================================================
+   MESSAGE CONTROLS
+   ========================================================== */
+/* Move message controls to the bottom right and ensure they stay within viewport */
+.copilotKitMessage.copilotKitAssistantMessage .copilotKitMessageControls {
+  position: absolute !important;
+  right: 0px !important;
+  top: auto !important;
+  left: auto !important;
+  padding-left: 3rem !important;
+  border-radius: 6px !important;
+  z-index: 10000 !important; /* Below sticky messages (10001) */
+}
+
+.copilot-chat-container .copilotKitAssistantMessage .copilotKitMessageControls {
+  background: transparent !important;
+}
+
+.copilotKitMessageControlButton {
+  color: #4b5563 !important; /* gray-600 for light mode (matches tool display text) */
+  margin-bottom: 0.75rem !important;
+  transition: all 0.2s ease !important;
+}
+
+.copilotKitMessageControlButton:hover {
+  transform: scale(1.15) !important;
+}
+
+.copilotKitMessageControlButton > svg {
+  width: 13px !important;
+  height: 13px !important;
+  min-width: 13px !important;
+  min-height: 13px !important;
+  max-width: 13px !important;
+  max-height: 13px !important;
+  stroke-width: 2 !important;
+  shape-rendering: geometricPrecision !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  display: block !important;
+}
+
+.dark .copilotKitMessageControlButton {
+  color: #6b7280 !important; /* gray-500 for dark mode (matches tool display text) */
+  margin-bottom: 0.75rem !important;
+}
+
+.dark .copilotKitMessageControlButton > svg {
+  width: 13px !important;
+  height: 13px !important;
+  min-width: 13px !important;
+  min-height: 13px !important;
+  max-width: 13px !important;
+  max-height: 13px !important;
+  stroke-width: 2 !important;
+  shape-rendering: geometricPrecision !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  display: block !important;
+}
+
+.copilotKitActivityDot {
+  background-color: #4b5563 !important; /* gray-600 - matches main text colors */
+  margin-top: 0.5rem !important;
+}
+
+.dark .copilotKitActivityDot{
+  background-color: #6b7280 !important; /* gray-500 - matches main text colors */
+  margin-top: 0.5rem !important;
+}
+
+.copilotKitInput {
+  border-radius: 10px !important;
+  border-bottom-left-radius: 0.75rem;
+  border-bottom-right-radius: 0.75rem;
+  border-top-left-radius: 0.75rem;
+  border-top-right-radius: 0.75rem;
+  border: 1px solid var(--copilot-kit-separator-color) !important;
+  margin-bottom: 0.5rem !important;
+}
+
+/* ==========================================================
+   TYPOGRAPHY & FONT SIZES
+   ========================================================== */
+/* More specific selectors to avoid affecting message controls */
+.copilot-chat-container p,
+.copilot-chat-container div:not([role="group"]):not([class*="controls"]):not([class*="actions"]):not([class*="suggestions"]):not([class*="gallery"]),
+.copilot-chat-container span:not([role="group"] span):not([class*="gallery"]) {
+  font-size: 12.5px !important;
+}
+
+/* Specific targeting for common CopilotKit classes */
+.copilot-chat-container .text-sm {
+  font-size: 10px !important;
+}
+
+.copilot-chat-container .text-base {
+  font-size: 10px !important;
+}
+
+.copilot-chat-container .text-lg {
+  font-size: 10px !important;
+}
+
+.copilot-chat-container .text-xl {
+  font-size: 10px !important;
+}
+
+/* Input field specific styling */
+.copilot-chat-container input,
+.copilot-chat-container textarea {
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+}
+
+/* Message content styling - more specific to avoid controls */
+.copilot-chat-container [class*="message"] p,
+.copilot-chat-container [class*="message"] div:not([role="group"]),
+.copilot-chat-container [class*="message"] span:not(button span) {
+  font-size: 9px !important;
+  line-height: 1.4 !important;
+}
+
+/* Ensure suggestion buttons are visible and interactive */
+.copilot-chat-container button[class*="suggestion"],
+.copilot-chat-container button[class*="Suggestion"] {
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* ==========================================================
+   MESSAGE CONTROLS VISIBILITY
+   ========================================================== */
+/* Hide all message controls by default (will be shown on hover or for assistant messages) */
+.copilot-chat-container .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitUserMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessage:last-child .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessages > div:last-child .copilotKitMessageControls,
+.copilot-chat-container [class*="copilotKitMessage"]:last-child .copilotKitMessageControls {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out !important;
+  overflow: visible !important; /* Ensure dropdowns can extend beyond */
+}
+
+/* NOTE: Assistant message controls are intentionally excluded from the hidden rule above.
+   They are always visible - see rules below */
+
+/* Ensure non-sticky user message controls are visible and have proper z-index */
+.copilot-chat-container .copilotKitUserMessage:not(.is-sticky) .copilotKitMessageControls {
+  z-index: 10000 !important; /* Same as assistant controls, below sticky messages */
+  overflow: visible !important;
+}
+
+/* Ensure sticky user message controls are visible but below dropdown */
+.copilot-chat-container .copilotKitUserMessage.is-sticky .copilotKitMessageControls {
+  z-index: 10000 !important; /* Below dropdown (10002) but above assistant controls */
+  overflow: visible !important;
+}
+
+/* Ensure delete dropdown container and menu are always visible regardless of parent controls visibility */
+.copilot-chat-container .copilotKitUserMessage .copilotKitMessageControls .copilotKitDeleteDropdownContainer {
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.copilot-chat-container .copilotKitUserMessage .copilotKitMessageControls .copilotKitDeleteDropdownMenu {
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  display: block !important;
+  z-index: 10002 !important;
+}
+
+/* When dropdown is open, ensure parent controls container is also visible */
+.copilot-chat-container .copilotKitUserMessage .copilotKitMessageControls:has(.copilotKitDeleteDropdownMenu) {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* Ensure parent containers don't clip the dropdown */
+.copilot-chat-container .copilotKitUserMessage:has(.copilotKitDeleteDropdownMenu),
+.copilot-chat-container .copilotKitUserMessage:has(.copilotKitDeleteDropdownContainer) {
+  overflow: visible !important;
+}
+
+.copilot-chat-container .copilotKitMessages:has(.copilotKitDeleteDropdownMenu),
+.copilot-chat-container .copilotKitMessages:has(.copilotKitDeleteDropdownContainer) {
+  overflow-y: auto !important; /* Keep scroll */
+  overflow-x: visible !important; /* Allow dropdown to overflow horizontally */
+}
+
+.copilot-chat-wrapper:has(.copilotKitDeleteDropdownMenu),
+.copilot-chat-wrapper:has(.copilotKitDeleteDropdownContainer) {
+  overflow: visible !important;
+}
+
+/* ==========================================================
+   ASSISTANT MESSAGE CONTROLS - ALWAYS VISIBLE
+   ========================================================== */
+/* Assistant controls should ALWAYS be visible (no hover required) - highest specificity */
+.copilot-chat-container .copilotKitAssistantMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessages .copilotKitAssistantMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessages > div .copilotKitAssistantMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessages > div > div .copilotKitAssistantMessage .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessagesContainer .copilotKitAssistantMessage .copilotKitMessageControls {
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: flex !important;
+  pointer-events: auto !important;
+}
+
+/* ==========================================================
+   USER MESSAGE CONTROLS - ONLY VISIBLE ON HOVER
+   ========================================================== */
+/* Show user message controls ONLY when hovering the specific user message element itself */
+/* Do NOT use parent hover selectors - they would match all messages in the container */
+.copilot-chat-container .copilotKitUserMessage:hover .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessages .copilotKitUserMessage:hover .copilotKitMessageControls,
+.copilot-chat-container .copilotKitMessagesContainer .copilotKitUserMessage:hover .copilotKitMessageControls {
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: flex !important;
+  pointer-events: auto !important;
+}
+
+.copilotKitUserMessage > .copilotKitMessageControls > .copilotKitMessageControlButton {
+  margin-bottom: 0rem !important;
+}
+
+.dark .copilotKitUserMessage > .copilotKitMessageControls > .copilotKitMessageControlButton {
+  margin-bottom: 0rem !important;
+}
+
+/* Individual suggestion buttons - ABSOLUTELY NO WRAP OR SHRINK */
+footer div[class*="suggestions"] button {
+  padding: 3px 9px !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  flex-grow: 0 !important;
+  flex-basis: auto !important;
+  border-radius: 9999px !important;
+  min-width: max-content !important;
+  max-width: none !important;
+  width: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+  word-wrap: normal !important;
+  overflow-wrap: normal !important;
+}
+
+/* ==========================================================
+   MESSAGE SCROLLBARS
+   ========================================================== */
+/* Vertical and horizontal scrollbars */
+.copilot-chat-container .overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+  height: 6px; /* Thin horizontal scrollbar (only shows when needed) */
+}
+
+.copilot-chat-container .overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 3px;
+}
+
+.copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+/* Dark theme scrollbar */
+.dark .copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3);
+}
+
+.dark .copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5);
+}
+
+/* Scrollbar corner (where horizontal and vertical meet) */
+.copilot-chat-container .overflow-y-auto::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Individual message containers - allow horizontal scroll when content overflows */
+.copilot-chat-container .copilotKitToolMessage,
+.copilot-chat-container [class*="copilotKitMessageBody"],
+.copilot-chat-container [class*="copilotKitToolCall"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+/* Set max height for user message content (similar to chat input max of ~6 rows) */
+/* Target the content div (not in edit mode) */
+.copilot-chat-container .copilotKitUserMessage > div:not(.copilotKitMessageControls):not(.edit-mode) {
+  max-height: 150px !important;
+  overflow-y: auto !important;
+  overflow-x: visible !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: transparent transparent !important;
+}
+
+/* Reduce max height in sticky mode for more compact display */
+.copilot-chat-container .copilotKitUserMessage.is-sticky > div:not(.copilotKitMessageControls):not(.edit-mode) {
+  max-height: 70px !important;
+}
+
+/* In edit mode, make the edit-mode container a flex column */
+.copilot-chat-container .copilotKitUserMessage .edit-mode {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Set max height for textarea in edit mode, keep buttons outside scroll area */
+.copilot-chat-container .copilotKitUserMessage .edit-mode textarea {
+  max-height: 150px !important;
+  overflow-y: auto !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: transparent transparent !important;
+}
+
+/* Light mode: slightly grey background for edit textarea */
+.copilot-chat-container:not(.dark) .copilotKitUserMessage .edit-mode textarea {
+  background-color: #f3f4f6 !important; /* bg-gray-100 - subtle grey */
+}
+
+/* Match thin scrollbar styling for message-level horizontal scrollbars */
+.copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar,
+.copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar,
+.copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar,
+.copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar {
+  height: 6px;
+}
+
+.copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb,
+.copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar-thumb,
+.copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb,
+.copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 3px;
+}
+
+.copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb:hover,
+.copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar-thumb:hover,
+.copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb:hover,
+.copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+.dark .copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb,
+.dark .copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar-thumb,
+.dark .copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb,
+.dark .copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3);
+}
+
+.dark .copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb:hover,
+.dark .copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar-thumb:hover,
+.dark .copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb:hover,
+.dark .copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5);
+}
+

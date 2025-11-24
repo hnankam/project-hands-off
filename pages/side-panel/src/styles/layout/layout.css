@@ -1,0 +1,16 @@
+/* ==========================================================
+   SIDE PANEL LAYOUT
+   ========================================================== */
+/* Side panel specific styles */
+.side-panel {
+  height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Input focus styles */
+input:focus {
+  outline: none;
+}
+

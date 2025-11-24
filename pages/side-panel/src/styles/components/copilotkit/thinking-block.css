@@ -1,0 +1,74 @@
+/* ThinkingBlock - Isolate layout to prevent affecting parent/sibling components */
+.thinking-block {
+  contain: layout style !important; /* Isolate layout and style recalculations */
+  will-change: auto !important; /* Let browser optimize naturally */
+}
+
+/* ThinkingBlock content - ensure lists render properly */
+.thinking-block-content {
+  margin: 0;
+  padding: 0;
+}
+
+.thinking-block-content > * {
+  margin: 0;
+  padding: 0;
+}
+
+/* Lists in ThinkingBlock need proper spacing - target all ul/ol/li regardless of nesting */
+.thinking-block-content ul,
+.thinking-block-content ol {
+  margin: 0.5em 0 !important;
+  margin-top: 0.5em !important;
+  margin-bottom: 0.5em !important;
+  padding-left: 20px !important;
+  display: block !important;
+  line-height: 1.5 !important;
+}
+
+.thinking-block-content li {
+  margin: 0.3em 0 !important;
+  margin-top: 0.3em !important;
+  margin-bottom: 0.3em !important;
+  padding-left: 4px !important;
+  display: list-item !important;
+  list-style-position: outside !important;
+  line-height: 1.5 !important;
+}
+
+.thinking-block-content ul > li {
+  list-style-type: disc !important;
+  list-style-position: outside !important;
+}
+
+.thinking-block-content ol > li {
+  list-style-type: decimal !important;
+  list-style-position: outside !important;
+}
+
+/* Ensure markdown-content wrapper doesn't interfere */
+.thinking-block-content .markdown-content {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.thinking-block-content .markdown-content ul,
+.thinking-block-content .markdown-content ol {
+  margin: 0.5em 0 !important;
+  margin-top: 0.5em !important;
+  margin-bottom: 0.5em !important;
+  padding-left: 20px !important;
+  display: block !important;
+  line-height: 1.5 !important;
+}
+
+.thinking-block-content .markdown-content li {
+  margin: 0.3em 0 !important;
+  margin-top: 0.3em !important;
+  margin-bottom: 0.3em !important;
+  padding-left: 4px !important;
+  display: list-item !important;
+  list-style-position: outside !important;
+  line-height: 1.5 !important;
+}
+

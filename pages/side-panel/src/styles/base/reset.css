@@ -1,0 +1,50 @@
+/* ==========================================================
+   RESET & BASE
+   Note: Keep base resets minimal to avoid fighting Tailwind
+   and CopilotKit component styles
+   ========================================================== */
+/* Reset and base styles */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #f9fafb; /* Light theme background - prevents gray flash */
+}
+
+/* ==========================================================
+   THEME BACKGROUNDS
+   Light/Dark body and container backgrounds
+   ========================================================== */
+/* Dark theme background */
+.dark body {
+  background-color: #0C1117; /* Dark theme background */
+}
+
+#root {
+  height: 100vh;
+  overflow: hidden;
+  background-color: #f9fafb; /* Light theme background - prevents gray flash */
+}
+
+/* Dark theme background for root */
+.dark #root {
+  background-color: #0C1117; /* Dark theme background */
+}
+
+/* App container background */
+#app-container {
+  height: 100%;
+  min-height: 100vh;
+  background-color: #f9fafb; /* Light theme background - prevents gray flash */
+}
+
+/* Dark theme background for app container */
+.dark #app-container {
+  background-color: #0C1117; /* Dark theme background */
+}
+

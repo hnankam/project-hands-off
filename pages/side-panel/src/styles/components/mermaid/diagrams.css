@@ -1,0 +1,317 @@
+/* =============================================================================
+   MERMAID DIAGRAMS COMPONENT
+   =============================================================================
+   
+   Component Structure:
+   - Diagram container & sizing (margin, overflow handling)
+   - SVG styling (nodes, edges, text, max-width)
+   - Control buttons (toggle, download, refresh)
+   - Settings panel with sliders (zoom, pan)
+   - Loading & error states
+   - Responsive styles (mobile, tablet)
+   
+   Key Features:
+   - Horizontal scrolling for large diagrams
+   - Dark mode support (inverted colors)
+   - Loading spinner animation
+   - Control buttons positioned top-right
+   - Settings panel slides out from right
+   - Interactive sliders for zoom/pan control
+   - Error state with red border and message
+   
+   ========================================================================== */
+
+.mermaid-block {
+  margin: 12px 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.mermaid-block svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Ensure mermaid diagrams work well in dark mode */
+.dark .mermaid-block {
+  color-scheme: dark;
+}
+
+/* Mermaid loading state animation */
+@keyframes mermaid-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.mermaid-loading svg {
+  animation: mermaid-spin 1s linear infinite;
+}
+
+/* Mermaid error state styling */
+.mermaid-error {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+}
+
+.mermaid-error details {
+  cursor: pointer;
+  user-select: none;
+}
+
+.mermaid-error details summary {
+  list-style: none;
+  outline: none;
+}
+
+.mermaid-error details summary::-webkit-details-marker {
+  display: none;
+}
+
+.mermaid-error details summary::marker {
+  display: none;
+}
+
+.mermaid-error details[open] summary {
+  margin-bottom: 8px;
+}
+
+/* Ensure proper spacing in markdown content */
+.markdown-content .mermaid-block {
+  margin: 16px 0;
+}
+
+/* Responsive mermaid diagrams */
+@media (max-width: 640px) {
+  .mermaid-block {
+    font-size: 12px;
+  }
+}
+
+/* Minimal Mermaid styling - let Mermaid handle layout naturally */
+
+/* Container should allow proper sizing */
+.mermaid-block > div {
+  width: 100%;
+  display: block;
+}
+
+/* Remove borders from subgraphs */
+.mermaid-block svg .cluster rect {
+  stroke: transparent !important;
+}
+
+/* Remove node borders and apply rounded corners */
+.mermaid-block svg .node rect,
+.mermaid-block svg .node circle,
+.mermaid-block svg .node ellipse,
+.mermaid-block svg .node polygon,
+.mermaid-block svg .node path {
+  stroke: transparent !important;
+  stroke-width: 0 !important;
+  rx: 8px;
+  ry: 8px;
+}
+
+/* Ensure SVG renders properly with proper width */
+.mermaid-block svg {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Let text render naturally without clipping */
+.mermaid-block svg text {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Ensure labels have proper text rendering */
+.mermaid-block svg .nodeLabel,
+.mermaid-block svg .edgeLabel {
+  overflow: visible;
+}
+
+/* Allow foreignObject to expand with content */
+.mermaid-block svg foreignObject {
+  overflow: visible;
+}
+
+/* Ensure tspan elements don't truncate */
+.mermaid-block svg tspan {
+  overflow: visible;
+}
+
+/* Control buttons - hide by default, show on hover */
+.mermaid-controls {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.mermaid-block:hover .mermaid-controls {
+  opacity: 1 !important;
+}
+
+.mermaid-toggle-btn:hover {
+  opacity: 0.8 !important;
+  transform: translateY(-1px);
+}
+
+.dark .mermaid-toggle-btn:hover {
+  background-color: #374151 !important;
+  opacity: 1 !important;
+}
+
+/* Download button hover */
+.mermaid-download-btn:hover {
+  background-color: #e5e7eb !important;
+  opacity: 1 !important;
+}
+
+.dark .mermaid-download-btn:hover {
+  background-color: #374151 !important;
+  opacity: 1 !important;
+}
+
+/* Refresh button hover */
+.mermaid-refresh-btn:hover {
+  background-color: #e5e7eb !important;
+  opacity: 1 !important;
+}
+
+.dark .mermaid-refresh-btn:hover {
+  background-color: #374151 !important;
+  opacity: 1 !important;
+}
+
+/* Settings panel - hide by default, show on hover or when active */
+.mermaid-settings-panel {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  overflow: visible !important;
+}
+
+.mermaid-block:hover .mermaid-settings-panel {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* Ensure select dropdowns can render outside the panel */
+.mermaid-settings-panel select {
+  position: relative;
+  z-index: 22;
+}
+
+/* Select hover and focus states */
+.mermaid-select:hover {
+  border-color: #d1d5db !important;
+  background-color: #f9fafb !important;
+}
+
+.dark .mermaid-select:hover {
+  border-color: #4b5563 !important;
+  background-color: #1f2937 !important;
+}
+
+.mermaid-select:focus {
+  outline: none !important;
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+}
+
+/* Clean modern range slider styling */
+.mermaid-modern-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: all 0.15s ease;
+  margin-top: -5px;
+}
+
+.mermaid-modern-slider::-webkit-slider-thumb:hover {
+  background: #2563eb;
+  transform: scale(1.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+.mermaid-modern-slider::-webkit-slider-thumb:active {
+  transform: scale(0.95);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.mermaid-modern-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: all 0.15s ease;
+}
+
+.mermaid-modern-slider::-moz-range-thumb:hover {
+  background: #2563eb;
+  transform: scale(1.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+.mermaid-modern-slider::-moz-range-thumb:active {
+  transform: scale(0.95);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Slider track styling */
+.mermaid-modern-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 1.5px;
+  background: #cbd5e1;
+}
+
+.dark .mermaid-modern-slider::-webkit-slider-runnable-track {
+  background: #475569;
+}
+
+.mermaid-modern-slider::-moz-range-track {
+  height: 3px;
+  border-radius: 1.5px;
+  background: #cbd5e1;
+}
+
+.dark .mermaid-modern-slider::-moz-range-track {
+  background: #475569;
+}
+
+.mermaid-modern-slider::-moz-range-progress {
+  height: 3px;
+  border-radius: 1.5px;
+  background: #3b82f6;
+}
+
+/* Slider track progress fill */
+.mermaid-slider::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, #3b82f6 0%, #3b82f6 var(--value), #e5e7eb var(--value), #e5e7eb 100%);
+}
+
+.dark .mermaid-slider::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, #3b82f6 0%, #3b82f6 var(--value), #374151 var(--value), #374151 100%);
+}
+
+/* Set CSS variables for toggle button */
+.mermaid-block {
+  --toggle-hover-bg: #f8fafc;
+}
+
+.dark .mermaid-block {
+  --toggle-hover-bg: #334155;
+}
+

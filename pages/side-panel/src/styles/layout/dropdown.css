@@ -1,0 +1,16 @@
+/* ==========================================================
+   DROPDOWN
+   Ensure stacked above content
+   ========================================================== */
+/* Dropdown menu styles to ensure proper display */
+.dropdown-menu {
+  position: relative;
+  z-index: 9999;
+}
+
+.dropdown-menu-content {
+  position: absolute;
+  z-index: 10000;
+  overflow: visible;
+}
+

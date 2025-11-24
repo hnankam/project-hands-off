@@ -1,0 +1,361 @@
+   10. MARKDOWN RENDERER COMPONENT
+   =============================================================================
+   
+   Component Structure:
+   - Base markdown styles (font size, line height, colors)
+   - Paragraph & text formatting
+   - Links styled like editor links (blue, underline on hover)
+   - Mentions styled like editor mentions (purple background)
+   - Headings (h1-h6) with proper sizing & spacing
+   - Lists (ul, ol) with nested support
+   - Blockquotes with left border
+   - Code blocks in markdown (distinct from inline code)
+   - Horizontal rules (CopilotKit specific styling)
+   
+   Key Features:
+   - Consistent styling with TipTap editor
+   - 12.5px base font size (compact)
+   - Links and mentions match editor appearance
+   - Dark mode support for all elements
+   - Reduced spacing after code blocks
+   - Force background colors for code blocks
+   
+   ========================================================================== */
+  .markdown-content {
+    font-size: 12.5px;
+    color: inherit;
+    line-height: 0 !important;
+  }
+  
+  .markdown-content .markdown-paragraph {
+    margin: 0.5em 0;
+    line-height: 1.5 !important;
+  }
+  
+  .markdown-content .markdown-paragraph:first-child {
+    margin-top: 0;
+  }
+  
+  .markdown-content .markdown-paragraph:last-child {
+    margin-bottom: 0;
+  }
+  
+  /* Ensure all text elements have proper line-height */
+  .markdown-content p,
+  .markdown-content code,
+  .markdown-content pre code {
+    line-height: 1.5 !important;
+  }
+
+.markdown-content .markdown-link {
+  color: #3b82f6;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.3);
+  transition: all 150ms;
+}
+
+.markdown-content .markdown-link:hover {
+  border-bottom-color: #3b82f6;
+}
+
+.dark .markdown-content .markdown-link {
+  color: #60a5fa;
+  border-bottom-color: rgba(96, 165, 250, 0.3);
+}
+
+.dark .markdown-content .markdown-link:hover {
+  border-bottom-color: #60a5fa;
+}
+
+/* Markdown links styled like editor links */
+.markdown-content a.editor-link-style {
+  color: #6b7280; /* gray-500 */
+  background-color: rgba(107, 114, 128, 0.1);
+  border-radius: 3px;
+  padding: 1px 4px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 150ms;
+  display: inline-block;
+  border-bottom: none;
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.markdown-content a.editor-link-style > * {
+  vertical-align: middle;
+}
+
+.markdown-content a.editor-link-style::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%236b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>');
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+.markdown-content a.editor-link-style:hover {
+  background-color: rgba(107, 114, 128, 0.2);
+}
+
+.dark .markdown-content a.editor-link-style {
+  color: #9ca3af; /* gray-400 */
+  background-color: rgba(156, 163, 175, 0.15);
+}
+
+.dark .markdown-content a.editor-link-style::before {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%239ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>');
+}
+
+.dark .markdown-content a.editor-link-style:hover {
+  background-color: rgba(156, 163, 175, 0.25);
+}
+
+/* Markdown mentions styled like editor mentions */
+.markdown-content .mention {
+  color: #3b82f6; /* blue-500 */
+  background-color: rgba(59, 130, 246, 0.1);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-weight: 500;
+  cursor: default;
+  text-decoration: none;
+  transition: background-color 150ms;
+}
+
+.markdown-content .mention:hover {
+  background-color: rgba(59, 130, 246, 0.2);
+}
+
+.dark .markdown-content .mention {
+  color: #60a5fa; /* blue-400 */
+  background-color: rgba(96, 165, 250, 0.15);
+}
+
+.dark .markdown-content .mention:hover {
+  background-color: rgba(96, 165, 250, 0.25);
+}
+
+.markdown-content .markdown-bold {
+  font-weight: 700;
+}
+
+.markdown-content .markdown-italic {
+  font-style: italic;
+}
+
+/* Headings in markdown */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0.8em 0 0.4em 0;
+  color: inherit;
+}
+
+.markdown-content h1 {
+  font-size: 1.5em;
+}
+
+.markdown-content h2 {
+  font-size: 1.3em;
+}
+
+.markdown-content h3 {
+  font-size: 1.15em;
+}
+
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  font-size: 1em;
+}
+
+/* Blockquote in markdown */
+.markdown-content blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 12px;
+  margin: 0.8em 0;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.dark .markdown-content blockquote {
+  border-left-color: #4b5563;
+  color: #9ca3af;
+}
+
+/* Horizontal Rule in markdown */
+.markdown-content hr {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 1.2em 0;
+}
+
+.dark .markdown-content hr {
+  border-top-color: #1f2937 !important;
+}
+
+/* Horizontal Rule in CopilotKit markdown */
+.copilotKitAssistantMessage hr,
+.copilotKitMarkdownElement hr,
+.copilotKitMarkdown hr,
+.copilotKitMessage hr {
+  border: none !important;
+  border-top: 1px solid #e5e7eb !important;
+  margin: 10px 0 !important;
+}
+
+.dark .copilotKitAssistantMessage hr,
+.dark .copilotKitMarkdownElement hr,
+.dark .copilotKitMarkdown hr,
+.dark .copilotKitMessage hr {
+  border: none !important;
+  border-top: 1px solid #1f2937 !important;
+  border-top-color: #1f2937 !important;
+  color: transparent !important;
+  margin: 10px 0 !important;
+}
+
+/* Lists in markdown */
+.markdown-content ul,
+.markdown-content ol {
+  margin: 0.4em 0;
+  padding-left: 20px;
+}
+
+.markdown-content li {
+  margin: 0.2em 0;
+}
+
+.markdown-content ul > li {
+  list-style-type: disc;
+}
+
+.markdown-content ol > li {
+  list-style-type: decimal;
+}
+
+/* Nested lists in markdown */
+.markdown-content ul ul,
+.markdown-content ol ul {
+  list-style-type: circle;
+}
+
+.markdown-content ul ul ul,
+.markdown-content ol ul ul,
+.markdown-content ol ol ul {
+  list-style-type: square;
+}
+
+.markdown-content code {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12.5px;
+}
+
+.dark .markdown-content code {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.markdown-content pre {
+  margin: 0.25em 0 0 0;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5 !important;
+}
+
+.markdown-content pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  line-height: 1.5 !important;
+}
+
+/* Reduce spacing for paragraphs that follow code blocks */
+.markdown-content pre + p,
+.markdown-content pre + .markdown-paragraph,
+.markdown-content > div:has(> pre) + p,
+.markdown-content > div:has(> pre) + .markdown-paragraph,
+.markdown-content > div > pre + p,
+.markdown-content > div > pre + .markdown-paragraph {
+  margin-top: 0.15em !important;
+  margin-bottom: 0 !important;
+}
+
+/* Force background colors for code blocks in markdown */
+.markdown-content div[class*="language-"],
+.markdown-content pre[class*="language-"] {
+  background-color: #e8eaed !important;
+  margin: 0.25em 0 0 0 !important;
+}
+
+.dark .markdown-content div[class*="language-"],
+.dark .markdown-content pre[class*="language-"] {
+  background-color: #0d1117 !important;
+}
+
+/* Ensure SyntaxHighlighter divs have proper background and no extra margin */
+.markdown-content > div:has(> pre) {
+  margin: 0.25em 0 0 0 !important;
+  padding: 0 !important;
+  display: block !important;
+  line-height: 0 !important;
+}
+
+.markdown-content > div > pre {
+  background-color: #e8eaed !important;
+  margin: 0 !important;
+  padding: 12px !important;
+  line-height: 1.5 !important;
+}
+
+.dark .markdown-content > div > pre {
+  background-color: #0d1117 !important;
+}
+
+/* ==========================================================
+   CHAT INPUT DISABLED STATE
+   Disable input when agent or model not selected
+   ========================================================== */
+/* Disable the chat input when agent or model is not selected */
+.chat-input-disabled .copilotKitInput,
+.chat-input-disabled .copilotKitInput textarea,
+.chat-input-disabled .copilotKitInput .tiptap-editor,
+.chat-input-disabled .copilotKitInputControls,
+.chat-input-disabled .copilotKitInputControlButton {
+  pointer-events: none !important;
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+.chat-input-disabled .copilotKitInput textarea,
+.chat-input-disabled .copilotKitInput .tiptap-editor {
+  background-color: rgba(0, 0, 0, 0.02) !important;
+}
+
+.dark .chat-input-disabled .copilotKitInput textarea,
+.dark .chat-input-disabled .copilotKitInput .tiptap-editor {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+}
+
+.chat-input-disabled .copilotKitMessagesFooter,
+.chat-input-disabled .copilotKitMessagesFooter button,
+.chat-input-disabled footer.copilotKitMessagesFooter,
+.chat-input-disabled footer.copilotKitMessagesFooter button {
+  pointer-events: none !important;
+  opacity: 0.5 !important;
+}
