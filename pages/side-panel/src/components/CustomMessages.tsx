@@ -14,8 +14,9 @@ import type { Message } from "@copilotkit/shared";
  * Features:
  * - Renders all chat messages with custom message components
  * - Virtual scrolling with Virtua for optimal performance with large message lists
- * - Sticky user messages using Virtua's official pattern
+ * - Sticky user messages using Virtua's official pattern (disabled in agent mode)
  * - Auto-scrolls to bottom when new messages arrive
+ * - Agent mode: scrolls user message to top when streaming starts (Virtua Chat pattern)
  * - Handles initial messages from labels
  * - Supports custom AssistantMessage and UserMessage components
  * - Supports custom markdown renderers and image renderer
@@ -23,19 +24,16 @@ import type { Message } from "@copilotkit/shared";
  * - Maintains user scroll position when scrolled up
  */
 
-// Layout and timing constants
-const TOP_MARGIN = 5; // Small margin to ensure message is fully visible at top
-const SPACER_VISIBILITY_THRESHOLD = 5; // Minimum height to consider spacer visible
-const AUTO_SCROLL_FLAG_DURATION = 50; // Duration to keep auto-scroll flag active (ms)
-const INITIAL_SCROLL_DELAY = 100; // Delay before initial scroll on mount (ms)
-const SCROLL_VERIFY_DELAY = 100; // Delay before verifying scroll position (ms)
-const SCROLL_BOTTOM_THRESHOLD = 20; // Distance from bottom to consider "at bottom" (px)
-const MAX_ELEMENT_QUERY_RETRIES = 5; // Max retries for finding DOM elements
+  // Layout and timing constants
+  const AUTO_SCROLL_FLAG_DURATION = 50; // Duration to keep auto-scroll flag active (ms)
+  const INITIAL_SCROLL_DELAY = 300; // Delay before initial scroll on mount (ms)
+  const SCROLL_BOTTOM_THRESHOLD = 20; // Distance from bottom to consider "at bottom" (px)
+const USER_MESSAGE_TOP_PADDING = 28; // Space between user message and top of viewport (px)
 
 interface CustomMessagesProps extends MessagesProps {
   /**
-   * Agent mode: when true, latest user message stays at top with dynamic
-   * spacer that shrinks as assistant response streams in
+   * Agent mode: when true, disables sticky messages and scrolls user message to top
+   * when streaming starts (like the Virtua Chat example pattern)
    */
   agentMode?: boolean;
 }
@@ -67,17 +65,8 @@ export const CustomMessages = ({
   // Helper to get container efficiently
   const getContainer = useContainerRef();
 
-  // Dynamic spacer height for agent mode
-  const { spacerHeight, latestUserMessageIdRef } = useAgentSpacer(
-    messages,
-    messagesRef,
-    agentMode,
-    inProgress,
-    getContainer
-  );
-
   // Handle auto-scrolling behavior
-  const { isAutoScrollingRef } = useAutoScroll(
+  const { isAutoScrollingRef, shouldStickToBottomRef } = useAutoScroll(
     messages,
     messagesRef,
     inProgress,
@@ -90,18 +79,183 @@ export const CustomMessages = ({
   const MessageRenderer = RenderMessage;
 
   // Internal sticky state - managed entirely in this component
+  // In agent mode: disabled during streaming, enabled when not streaming
   const { stickyMessageId, keepMounted, handleScroll } = useStickyUserMessage(
     messages,
     messagesRef,
     agentMode,
-    spacerHeight,
-    latestUserMessageIdRef,
     vListRef,
     getContainer,
     MessageRenderer,
     isAutoScrollingRef,
     inProgress
   );
+
+  // Combined function to calculate minHeight and optionally scroll user message to top
+  // Returns the minHeight value needed to push user message to top of viewport
+  const positionUserMessageAtTop = useCallback((
+    userMessageId: string, 
+    options: { scroll?: boolean } = {}
+  ): number => {
+    const container = getContainer();
+    if (!container) return 0;
+    
+    const viewportHeight = container.clientHeight;
+    
+    // Find the user message element
+    const userMessageEl = container.querySelector(
+      `[data-message-id="${userMessageId}"]`
+    ) as HTMLElement;
+    
+    if (!userMessageEl) {
+      return viewportHeight; // Fallback to full viewport
+    }
+    
+    // Find the wrapper div (our data-message-wrapper or Virtua's wrapper)
+    let wrapper = userMessageEl.closest('[data-message-wrapper]') as HTMLElement;
+    if (!wrapper) {
+      wrapper = userMessageEl.parentElement as HTMLElement;
+    }
+    
+    const targetElement = wrapper || userMessageEl;
+    const userMessageHeight = targetElement.offsetHeight;
+    
+    // Calculate minHeight: space needed below assistant message for user message to reach top
+    const minHeight = Math.max(viewportHeight - userMessageHeight - USER_MESSAGE_TOP_PADDING - 34, 0);
+    
+    // Optionally scroll the user message to the top of viewport
+    if (options.scroll) {
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = targetElement.getBoundingClientRect();
+      const elementTopRelativeToContainer = elementRect.top - containerRect.top;
+      const newScrollTop = container.scrollTop + elementTopRelativeToContainer - USER_MESSAGE_TOP_PADDING;
+      container.scrollTop = newScrollTop;
+    }
+    
+    return minHeight;
+  }, [getContainer]);
+  
+  // ============== AGENT MODE MINHEIGHT LOGIC ==============
+  // Rules:
+  // 1. When a new message is added: set minHeight on latest assistant message
+  // 2. When a message is deleted: reset minHeight to 0 (do nothing)
+  // 3. minHeight persists until user scrolls past the user message or a new user message is sent
+  
+  const [trackedUserMessageId, setTrackedUserMessageId] = useState<string | null>(null);
+  const [agentModeMinHeight, setAgentModeMinHeight] = useState<number>(0);
+  const previousMessagesLengthRef = useRef<number>(0);
+  const previousInProgressRef = useRef<boolean>(false);
+  const hasScrolledToUserMessageRef = useRef<boolean>(false);
+  
+  // Ref for current inProgress value (used by callbacks to avoid stale closures)
+  const inProgressRef = useRef<boolean>(inProgress);
+  useEffect(() => {
+    inProgressRef.current = inProgress;
+  }, [inProgress]);
+  
+  // Main effect: Handle message changes and streaming transitions
+  // Consolidated to avoid race conditions between separate effects
+  useLayoutEffect(() => {
+    const currentMessages = messagesRef.current;
+    const prevLength = previousMessagesLengthRef.current;
+    const wasStreaming = previousInProgressRef.current;
+    const isNowStreaming = inProgress;
+    
+    // Update refs for next render
+    previousMessagesLengthRef.current = currentMessages.length;
+    previousInProgressRef.current = inProgress;
+    
+    if (!agentMode) return;
+    
+    // When streaming starts - disable auto-scroll temporarily
+    // This prevents auto-scroll from fighting with scroll-to-top
+    if (!wasStreaming && isNowStreaming) {
+      shouldStickToBottomRef.current = false;
+    }
+    
+    // When streaming ends - disable auto-scroll to prevent jump
+    if (wasStreaming && !isNowStreaming) {
+      shouldStickToBottomRef.current = false;
+    }
+    
+    // RULE 2: Messages deleted - reset everything, do NOT set minHeight
+    if (currentMessages.length < prevLength) {
+      setAgentModeMinHeight(0);
+      setTrackedUserMessageId(null);
+      hasScrolledToUserMessageRef.current = false;
+      return;
+    }
+    
+    // RULE 1: New message added - set minHeight on latest assistant message
+    const messagesAdded = currentMessages.length > prevLength && prevLength > 0;
+    const streamingJustStarted = !wasStreaming && isNowStreaming;
+    
+    // Only proceed if messages were added or streaming just started
+    if (!messagesAdded && !streamingJustStarted) return;
+    
+    // Find the latest user message
+    const latestUserMessage = findLatestUserMessage(currentMessages);
+    if (!latestUserMessage) return;
+    
+    // Check if this is a NEW user message (different from what we're tracking)
+    const isNewUserMessage = latestUserMessage.id !== trackedUserMessageId;
+    
+    if (isNewUserMessage) {
+      setTrackedUserMessageId(latestUserMessage.id);
+      hasScrolledToUserMessageRef.current = false;
+    }
+    
+    // Calculate and set minHeight for the tracked user message
+    const userMessageIdToUse = isNewUserMessage ? latestUserMessage.id : trackedUserMessageId;
+    if (userMessageIdToUse) {
+      const newMinHeight = positionUserMessageAtTop(userMessageIdToUse);
+      if (newMinHeight !== agentModeMinHeight) {
+        setAgentModeMinHeight(newMinHeight);
+      }
+    }
+  }, [agentMode, inProgress, messages.length, trackedUserMessageId, positionUserMessageAtTop, agentModeMinHeight, shouldStickToBottomRef]);
+  
+  // Scroll effect: Scroll user message to top of viewport (once when minHeight is first applied)
+  // Then enable auto-scroll to follow content growth
+  useLayoutEffect(() => {
+    if (!agentMode || agentModeMinHeight === 0) return;
+    if (!trackedUserMessageId || hasScrolledToUserMessageRef.current) return;
+    
+    // Scroll to top synchronously (no requestAnimationFrame to avoid race conditions)
+    positionUserMessageAtTop(trackedUserMessageId, { scroll: true });
+    hasScrolledToUserMessageRef.current = true;
+    
+    // Enable auto-scroll AFTER scroll-to-top (use setTimeout to ensure scroll completes)
+    // Check inProgressRef to get current streaming state (not stale closure)
+    setTimeout(() => {
+      if (inProgressRef.current) {
+        shouldStickToBottomRef.current = true;
+      }
+    }, 50);
+  }, [agentMode, agentModeMinHeight, trackedUserMessageId, positionUserMessageAtTop, shouldStickToBottomRef, inProgressRef]);
+  
+  // Reset minHeight when user scrolls past the tracked user message
+  const handleAgentModeScroll = useCallback(() => {
+    if (!agentMode || !trackedUserMessageId || agentModeMinHeight === 0) return;
+    
+    const container = getContainer();
+    if (!container) return;
+    
+    const userMessageEl = container.querySelector(
+      `[data-message-id="${trackedUserMessageId}"]`
+    ) as HTMLElement;
+    
+    if (!userMessageEl) return;
+    
+    const containerRect = container.getBoundingClientRect();
+    const elementRect = userMessageEl.getBoundingClientRect();
+    
+    // If the bottom of the user message is above the container's top, user has scrolled past it
+    if (elementRect.bottom < containerRect.top) {
+      setAgentModeMinHeight(0);
+      setTrackedUserMessageId(null);
+    }
+  }, [agentMode, trackedUserMessageId, agentModeMinHeight, getContainer]);
 
   // Early return if no valid messages to prevent rendering errors
   if (!MessageRenderer) {
@@ -120,19 +274,42 @@ export const CustomMessages = ({
         ref={vListRef} 
         className="copilotKitMessagesContainer"
         keepMounted={keepMounted}
-        onScroll={handleScroll}
+        onScroll={(offset) => {
+          handleScroll(offset);
+          handleAgentModeScroll();
+        }}
       >
           {messages.map((message, index) => {
           // Ensure key is always a string (messages are already filtered to have id)
           const messageKey = String(message.id || `message-${index}`);
+          const isLastMessage = index === messages.length - 1;
+          const messageRole = (message as any)?.role;
+          
+          // Find the index of the tracked user message
+          const trackedUserIndex = trackedUserMessageId 
+            ? messages.findIndex(m => 'id' in m && String(m.id) === trackedUserMessageId)
+            : -1;
+          
+          // Apply minHeight to the LATEST assistant message after the tracked user message
+          // This ensures only the latest assistant message has minHeight (older ones get 0)
+          const isAssistantAfterTrackedUser = messageRole === 'assistant' && trackedUserIndex !== -1 && index > trackedUserIndex;
+          const isLatestAssistantAfterTrackedUser = isAssistantAfterTrackedUser && isLastMessage;
+          
+          // Agent mode minHeight: only on latest assistant message when we have a tracked user message
+          const shouldApplyAgentMinHeight = agentMode && isLatestAssistantAfterTrackedUser && agentModeMinHeight > 0;
+          const shouldApplyMinHeight = shouldApplyAgentMinHeight && agentModeMinHeight > 0;
             
             return (
-              <MessageRenderer
+              <div
               key={messageKey}
+                data-message-wrapper="true"
+                style={shouldApplyMinHeight ? { minHeight: `${agentModeMinHeight}px` } : undefined}
+              >
+                <MessageRenderer
                 message={message}
                 inProgress={inProgress}
                 index={index}
-              isCurrentMessage={index === messages.length - 1}
+                  isCurrentMessage={isLastMessage}
                 AssistantMessage={AssistantMessage}
                 UserMessage={UserMessage}
                 ImageRenderer={ImageRenderer}
@@ -142,32 +319,9 @@ export const CustomMessages = ({
                 onThumbsDown={onThumbsDown}
                 markdownTagRenderers={markdownTagRenderers}
               />
+              </div>
             );
           })}
-        
-        {/* Dynamic spacer for agent mode - shrinks as assistant response streams */}
-        {(() => {
-          const hasTrackedUserMessage = latestUserMessageIdRef.current !== null;
-          // Allow rendering even if height is 0 to support smooth entry/exit animations
-          const shouldRenderSpacer = agentMode && hasTrackedUserMessage;
-          
-          return shouldRenderSpacer && (
-            <div 
-              key="viewport-spacer"
-              data-spacer="true"
-              style={{ 
-                height: spacerHeight,
-                flexShrink: 0,
-                pointerEvents: 'none',
-                transition: 'height 0.15s cubic-bezier(0.25, 0.1, 0.25, 1)',
-                willChange: 'height',
-                backgroundColor: 'transparent',
-                transform: 'translateZ(0)', // Force hardware acceleration
-                backfaceVisibility: 'hidden' as const, // Prevent flickering
-              }} 
-            />
-          );
-        })()}
         </VList>
         {interrupt}
         {chatError && ErrorMessage && <ErrorMessage error={chatError} isCurrentMessage />}
@@ -216,6 +370,13 @@ const useContainerRef = () => {
 
 /**
  * Hook to handle all auto-scroll behavior
+ * 
+ * In agent mode, follows the Virtua Chat example pattern:
+ * https://github.com/inokawa/virtua/blob/main/stories/react/advanced/Chat.stories.tsx
+ * - When streaming starts, scroll the AI message to the top of viewport (align: "start")
+ * - This places the user message at/near the top, with AI response streaming below
+ * - Disable auto-scroll to bottom during streaming
+ * - Re-enable after streaming completes
  */
 const useAutoScroll = (
   messages: Message[],
@@ -226,6 +387,17 @@ const useAutoScroll = (
   getContainer: () => HTMLElement
 ) => {
   const isAutoScrollingRef = useRef(false);
+  const shouldStickToBottomRef = useRef(true);
+  
+  // Use refs for values that callbacks need to read (avoids stale closures)
+  const inProgressRef = useRef(inProgress);
+  const agentModeRef = useRef(agentMode);
+
+  // Keep refs in sync
+  useEffect(() => {
+    inProgressRef.current = inProgress;
+    agentModeRef.current = agentMode;
+  }, [inProgress, agentMode]);
 
   // Unified scroll logic for streaming and content changes
   useEffect(() => {
@@ -233,44 +405,47 @@ const useAutoScroll = (
     if (!vListRef.current || currentMessages.length === 0) {
       return;
     }
-    
+
     const container = getContainer();
     if (!container) return undefined;
-    
-    // Helper to scroll to bottom if needed
+
+    // Helper to scroll to bottom during streaming
+    // Uses refs to always get current values (avoids stale closure issues)
     const maintainBottomScroll = () => {
       if (!vListRef.current) return;
       
-      // Check if spacer is visible (content fits in viewport)
-      const spacerElement = container.querySelector('[data-spacer="true"]') as HTMLElement;
-      const spacerIsVisible = spacerElement && spacerElement.offsetHeight > SPACER_VISIBILITY_THRESHOLD;
+      // Check current values via refs (not stale closure values)
+      const isCurrentlyStreaming = inProgressRef.current;
+      const shouldScroll = shouldStickToBottomRef.current;
       
-      // If spacer is visible, let it handle the layout (pushing content to top).
-      // ONLY force scroll to bottom if the spacer has shrunk to near zero (content overflows).
-      if (inProgress && !spacerIsVisible) {
+      // Auto-scroll during streaming when enabled
+      if (isCurrentlyStreaming && shouldScroll) {
         isAutoScrollingRef.current = true;
-        scrollToBottom(container);
-        
+        // Use Virtua's API for virtual list scrolling (not browser scrollTop)
+        const currentMessages = messagesRef.current;
+        if (currentMessages.length > 0) {
+          vListRef.current.scrollToIndex(currentMessages.length - 1, { align: "end" });
+        }
         setTimeout(() => {
           isAutoScrollingRef.current = false;
         }, AUTO_SCROLL_FLAG_DURATION);
       }
     };
-    
-    // 1. Initial scroll to bottom on mount/update
-    requestAnimationFrame(() => {
-      requestAnimationFrame(maintainBottomScroll);
-    });
-    
+
+    // 1. Initial scroll to bottom on mount/update (skip in agent mode)
+    if (!agentMode) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(maintainBottomScroll);
+      });
+    }
+
     // 2. Observer for content changes (streaming growth)
     const resizeObserver = new ResizeObserver(() => {
-      if (inProgress) {
+      // Use ref to get current streaming state
+      if (inProgressRef.current) {
         maintainBottomScroll();
-      } else {
-        // If not streaming, only auto-scroll if we were already at the bottom
-        if (isAtBottom(container)) {
-          maintainBottomScroll();
-        }
+      } else if (!agentModeRef.current && isAtBottom(container)) {
+        maintainBottomScroll();
       }
     });
     
@@ -282,78 +457,67 @@ const useAutoScroll = (
     let intervalId: NodeJS.Timeout | null = null;
     if (inProgress) {
       intervalId = setInterval(maintainBottomScroll, 100);
-    }
+        }
     
     return () => {
       resizeObserver.disconnect();
       if (intervalId) clearInterval(intervalId);
     };
-  }, [inProgress, messages.length, agentMode, getContainer]);
+  }, [inProgress, messages.length, agentMode, getContainer, vListRef]);
 
-  // Initial scroll to bottom on tab open (agent mode)
+  // Initial scroll to bottom on tab open - runs ONCE on mount
+  // Empty dependency array ensures this only runs on mount
   useEffect(() => {
-    if (!agentMode || !vListRef.current || messages.length === 0) {
-      return;
-    }
-    
-    // Only run once when component mounts or when messages first load
-    const container = getContainer();
-    if (!container) return;
-    
-    // Wait for content to be fully rendered
-    const initialScroll = () => {
+    const scrollToEnd = () => {
       if (!vListRef.current) return;
-      
-      isAutoScrollingRef.current = true;
-      
-      // Use Virtua's API
-      vListRef.current.scrollToIndex(messages.length - 1, { align: "end" });
-      
-      // Then force scroll to absolute bottom
-      requestAnimationFrame(() => {
-        scrollToBottom(container);
-        
-        // Verify and correct if needed
-        setTimeout(() => {
-          if (!isAtBottom(container, SPACER_VISIBILITY_THRESHOLD)) {
-            scrollToBottom(container);
-          }
-          isAutoScrollingRef.current = false;
-        }, SCROLL_VERIFY_DELAY);
-      });
+      const len = messagesRef.current.length;
+      if (len === 0) return;
+      vListRef.current.scrollToIndex(len - 1, { align: "end" });
     };
     
-    // Use multiple delays to ensure content is rendered
+    isAutoScrollingRef.current = true;
+    
+    // Wait for VList to fully render before scrolling
     setTimeout(() => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          initialScroll();
-        });
-      });
+      scrollToEnd();
+      isAutoScrollingRef.current = false;
     }, INITIAL_SCROLL_DELAY);
-  }, [agentMode, messages.length, getContainer]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps = runs once on mount
 
-  // Auto-scroll when new messages arrive (normal mode only - agent mode handled by spacer effects)
+  // Track previous messages length to detect new messages (not initial load)
+  const prevMessagesLengthRef = useRef(messages.length);
+  
+  // Auto-scroll when new messages arrive (not on initial load)
   useEffect(() => {
+    const prevLength = prevMessagesLengthRef.current;
+    prevMessagesLengthRef.current = messages.length;
+    
     if (!vListRef.current || messages.length === 0) {
       return;
     }
     
-    // Skip in agent mode - handled by spacer scroll effects
-    if (agentMode) {
+    // Only scroll when messages are ADDED (not on initial load or deletion)
+    if (messages.length <= prevLength) {
       return;
     }
     
-    // Normal mode - scroll to bottom
+    // In agent mode when NOT streaming, don't auto-scroll (preserve user message position)
+    // Use ref to get current streaming state
+    if (agentModeRef.current && !inProgressRef.current) {
+      return;
+    }
+    
+    // Scroll to bottom when new messages arrive
     isAutoScrollingRef.current = true;
     vListRef.current.scrollToIndex(messages.length - 1, { align: "end" });
     
     setTimeout(() => {
       isAutoScrollingRef.current = false;
     }, 100);
-  }, [messages.length, agentMode]);
+  }, [messages.length]);
 
-  return { isAutoScrollingRef };
+  return { isAutoScrollingRef, shouldStickToBottomRef };
 };
 
 /**
@@ -363,8 +527,6 @@ const useStickyUserMessage = (
   messages: Message[],
   messagesRef: React.MutableRefObject<Message[]>,
   agentMode: boolean,
-  spacerHeight: number,
-  latestUserMessageIdRef: React.MutableRefObject<string | null>,
   vListRef: React.RefObject<VListHandle | null>,
   getContainer: () => HTMLElement,
   MessageRenderer: React.ComponentType<any> | undefined,
@@ -376,8 +538,26 @@ const useStickyUserMessage = (
   const previousStickyIdRef = useRef<string | null>(null);
   const currentStickyWrapperRef = useRef<HTMLElement | null>(null);
 
+  // Disable sticky in agent mode ONLY when streaming
+  // When not streaming, sticky messages are enabled in agent mode
+  useEffect(() => {
+    if (agentMode && inProgress && stickyMessageId !== null) {
+      setStickyMessageId(null);
+      setStickyMessageIndex(null);
+    }
+  }, [agentMode, inProgress, stickyMessageId]);
+
   // Handle scroll using VList's findItemIndex API
   const handleScroll = useCallback((offset: number) => {
+    // Disable sticky in agent mode only when streaming
+    if (agentMode && inProgress) {
+      if (stickyMessageId !== null) {
+        setStickyMessageId(null);
+        setStickyMessageIndex(null);
+      }
+      return;
+    }
+
     const currentMessages = messagesRef.current;
 
     // Skip during auto-scroll or if no messages
@@ -439,32 +619,20 @@ const useStickyUserMessage = (
       }
     }
 
-    // Check specific agent mode condition
-    // Disable sticky if:
-    // 1. We have a spacer (content fits in viewport)
-    // 2. OR we are streaming (allow message to scroll off screen)
-    if (agentMode && (spacerHeight > 0 || inProgress) && newStickyId === latestUserMessageIdRef.current) {
-      newStickyId = null;
-      newStickyIndex = null;
-    }
-
     // Update sticky state if changed
     if (stickyMessageId !== newStickyId) {
       setStickyMessageId(newStickyId);
       setStickyMessageIndex(newStickyIndex);
     }
-  }, [stickyMessageId, agentMode, spacerHeight, inProgress]);
-
-  // Clear sticky when agent mode is enabled and (spacer exists OR streaming in progress)
-  useEffect(() => {
-    if (agentMode && (spacerHeight > 0 || inProgress) && stickyMessageId !== null && stickyMessageId === latestUserMessageIdRef.current) {
-      setStickyMessageId(null);
-      setStickyMessageIndex(null);
-    }
-  }, [agentMode, spacerHeight, stickyMessageId, inProgress]);
+  }, [stickyMessageId, agentMode, inProgress]);
 
   // Calculate keepMounted array
   const keepMounted = useMemo(() => {
+    // Disable sticky in agent mode only when streaming
+    if (agentMode && inProgress) {
+      return undefined;
+    }
+    
     if (stickyMessageIndex !== null && 
         stickyMessageIndex !== undefined && 
         stickyMessageIndex >= 0 && 
@@ -472,10 +640,15 @@ const useStickyUserMessage = (
       return [stickyMessageIndex];
     }
     return undefined;
-  }, [stickyMessageIndex, stickyMessageId, messages.length, agentMode, spacerHeight]);
+  }, [stickyMessageIndex, stickyMessageId, messages.length, agentMode, inProgress]);
 
   // Apply sticky styles
   useEffect(() => {
+    // Disable sticky in agent mode only when streaming
+    if (agentMode && inProgress) {
+      return;
+    }
+    
     if (messagesRef.current.length === 0 || !MessageRenderer) return;
     
     const previousStickyId = previousStickyIdRef.current;
@@ -633,137 +806,9 @@ const useStickyUserMessage = (
         }
       });
     });
-  }, [stickyMessageId, MessageRenderer, agentMode, getContainer]);
+  }, [stickyMessageId, MessageRenderer, agentMode, inProgress, getContainer]);
 
   return { stickyMessageId, keepMounted, handleScroll };
-};
-
-/**
- * Hook to handle the dynamic spacer in Agent Mode
- */
-const useAgentSpacer = (
-  messages: Message[],
-  messagesRef: React.MutableRefObject<Message[]>,
-  agentMode: boolean,
-  inProgress: boolean,
-  getContainer: () => HTMLElement
-) => {
-  const [spacerHeight, setSpacerHeight] = useState(0);
-  const latestUserMessageIdRef = useRef<string | null>(null);
-  const previousMessagesLengthRef = useRef(0);
-
-  // Step 3: Observer shrinks spacer as assistant message grows
-  useLayoutEffect(() => {
-    // Sync latestUserMessageIdRef immediately
-    const latestUserMessageId = findLatestUserMessageId(messages);
-    if (latestUserMessageId && latestUserMessageIdRef.current !== latestUserMessageId) {
-      latestUserMessageIdRef.current = latestUserMessageId;
-    }
-    previousMessagesLengthRef.current = messages.length;
-
-    if (!agentMode) {
-      setSpacerHeight(0);
-      return;
-    }
-    
-    const container = getContainer();
-    if (!container) {
-      return;
-    }
-    
-    let retryCount = 0;
-    
-    const updateSpacer = (isRetry = false) => {
-      const currentMessages = messagesRef.current;
-      
-      // Only calculate spacer if we have messages and a tracked user message
-      if (currentMessages.length === 0 || latestUserMessageIdRef.current === null) {
-        if (spacerHeight > 0) {
-          setSpacerHeight(0);
-        }
-        return;
-      }
-      
-      const containerHeight = container.clientHeight;
-      
-      // Find the tracked user message element using helper function
-      const trackedMessageElement = findTrackedMessageElement(container, latestUserMessageIdRef.current);
-      
-      if (!trackedMessageElement) {
-        // Retry if the message might not be rendered yet
-        if (retryCount < MAX_ELEMENT_QUERY_RETRIES) {
-          retryCount++;
-          requestAnimationFrame(() => updateSpacer(true));
-          return;
-        }
-        // Don't clear tracking - keep trying with observer
-        return;
-      }
-      
-      // Reset retry count on success
-      retryCount = 0;
-      
-      // Get the Virtua wrapper for this message
-      const messageWrapper = findVirtuaWrapper(trackedMessageElement);
-      
-      if (!messageWrapper) {
-        return;
-      }
-      
-      const trackedMessageHeight = messageWrapper.offsetHeight;
-      
-      // Calculate height of content after the tracked message
-      const contentAfterHeight = calculateSiblingsHeight(messageWrapper);
-      
-      // Spacer calculation to ensure message is fully visible at top
-      const newSpacerHeight = Math.max(
-        containerHeight - trackedMessageHeight - contentAfterHeight - TOP_MARGIN, 
-        0
-      );
-      
-      setSpacerHeight(newSpacerHeight);
-    };
-    
-    // Initial calculation - try immediately
-    updateSpacer();
-    
-    // Watch for content size changes (streaming, images, etc.)
-    const resizeObserver = new ResizeObserver(() => {
-      // Use requestAnimationFrame for resize events to avoid Loop Limit errors
-      requestAnimationFrame(() => updateSpacer());
-    });
-    
-    resizeObserver.observe(container);
-    
-    // Also observe inner wrapper for content changes
-    const innerWrapper = container.querySelector('[style*="position: relative"]');
-    if (innerWrapper) {
-      resizeObserver.observe(innerWrapper);
-    }
-    
-    // Also observe the tracked user message element directly (if it exists)
-    if (latestUserMessageIdRef.current) {
-      const trackedMessage = container.querySelector(
-        `.copilotKitUserMessage[data-message-id="${latestUserMessageIdRef.current}"][data-message-role="user"]`
-      );
-      if (trackedMessage) {
-        resizeObserver.observe(trackedMessage);
-      }
-    }
-    
-    return () => {
-      resizeObserver.disconnect();
-      // Clear tracking when observer is cleaned up (agent mode disabled)
-      if (!agentMode) {
-        latestUserMessageIdRef.current = null;
-        if (spacerHeight > 0) {
-          setSpacerHeight(0);
-        }
-      }
-    };
-  }, [agentMode, inProgress, messages.length, getContainer]); // Uses messagesRef internally
-
-  return { spacerHeight, latestUserMessageIdRef };
 };
 
 /**
@@ -794,41 +839,14 @@ function makeInitialMessages(initial: string | string[] | undefined): Message[] 
 /**
  * Finds the latest user message in the messages array
  */
-function findLatestUserMessageId(messages: Message[]): string | null {
+function findLatestUserMessage(messages: Message[]): { id: string; index: number } | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    if (msg && typeof msg === 'object' && 'role' in msg && msg.role === 'user' && 'id' in msg) {
-      return String(msg.id);
+    if (msg && typeof msg === 'object' && 'role' in msg && (msg as any).role === 'user' && 'id' in msg) {
+      return { id: String(msg.id), index: i };
     }
   }
   return null;
-}
-
-/**
- * Finds a tracked message element in the DOM using multiple selector strategies
- */
-function findTrackedMessageElement(
-  container: HTMLElement,
-  messageId: string
-): HTMLElement | null {
-  // Try with role attribute first
-  let element = container.querySelector(
-    `.copilotKitUserMessage[data-message-id="${messageId}"][data-message-role="user"]`
-  ) as HTMLElement;
-  
-  if (element) return element;
-  
-  // Try without role attribute
-  element = container.querySelector(
-    `.copilotKitUserMessage[data-message-id="${messageId}"]`
-  ) as HTMLElement;
-  
-  if (element) return element;
-  
-  // Try with just data-message-id
-  return container.querySelector(
-    `[data-message-id="${messageId}"]`
-  ) as HTMLElement;
 }
 
 /**
@@ -840,27 +858,6 @@ function findVirtuaWrapper(element: HTMLElement): HTMLElement | null {
     wrapper = wrapper.parentElement;
   }
   return wrapper;
-}
-
-/**
- * Calculates the total height of sibling elements after the given element
- * Stops when hitting the spacer element
- */
-function calculateSiblingsHeight(element: HTMLElement): number {
-  let height = 0;
-  let nextSibling = element.nextElementSibling;
-  
-  while (nextSibling) {
-    // Stop if we hit the spacer
-    if (nextSibling.hasAttribute('data-spacer') || nextSibling.querySelector('[data-spacer="true"]')) {
-      break;
-    }
-    
-    height += (nextSibling as HTMLElement).offsetHeight;
-    nextSibling = nextSibling.nextElementSibling;
-  }
-  
-  return height;
 }
 
 /**
