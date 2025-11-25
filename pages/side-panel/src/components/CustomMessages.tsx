@@ -24,11 +24,10 @@ import type { Message } from "@copilotkit/shared";
  * - Maintains user scroll position when scrolled up
  */
 
-  // Layout and timing constants
-  const AUTO_SCROLL_FLAG_DURATION = 50; // Duration to keep auto-scroll flag active (ms)
+// Layout and timing constants
+const AUTO_SCROLL_FLAG_DURATION = 50; // Duration to keep auto-scroll flag active (ms)
   const INITIAL_SCROLL_DELAY = 300; // Delay before initial scroll on mount (ms)
-  const SCROLL_BOTTOM_THRESHOLD = 20; // Distance from bottom to consider "at bottom" (px)
-const USER_MESSAGE_TOP_PADDING = 28; // Space between user message and top of viewport (px)
+const SCROLL_BOTTOM_THRESHOLD = 20; // Distance from bottom to consider "at bottom" (px)
 
 interface CustomMessagesProps extends MessagesProps {
   /**
@@ -91,171 +90,122 @@ export const CustomMessages = ({
     inProgress
   );
 
-  // Combined function to calculate minHeight and optionally scroll user message to top
-  // Returns the minHeight value needed to push user message to top of viewport
-  const positionUserMessageAtTop = useCallback((
-    userMessageId: string, 
-    options: { scroll?: boolean } = {}
-  ): number => {
-    const container = getContainer();
-    if (!container) return 0;
-    
-    const viewportHeight = container.clientHeight;
-    
-    // Find the user message element
-    const userMessageEl = container.querySelector(
-      `[data-message-id="${userMessageId}"]`
-    ) as HTMLElement;
-    
-    if (!userMessageEl) {
-      return viewportHeight; // Fallback to full viewport
-    }
-    
-    // Find the wrapper div (our data-message-wrapper or Virtua's wrapper)
-    let wrapper = userMessageEl.closest('[data-message-wrapper]') as HTMLElement;
-    if (!wrapper) {
-      wrapper = userMessageEl.parentElement as HTMLElement;
-    }
-    
-    const targetElement = wrapper || userMessageEl;
-    const userMessageHeight = targetElement.offsetHeight;
-    
-    // Calculate minHeight: space needed below assistant message for user message to reach top
-    const minHeight = Math.max(viewportHeight - userMessageHeight - USER_MESSAGE_TOP_PADDING - 34, 0);
-    
-    // Optionally scroll the user message to the top of viewport
-    if (options.scroll) {
-      const containerRect = container.getBoundingClientRect();
-      const elementRect = targetElement.getBoundingClientRect();
-      const elementTopRelativeToContainer = elementRect.top - containerRect.top;
-      const newScrollTop = container.scrollTop + elementTopRelativeToContainer - USER_MESSAGE_TOP_PADDING;
-      container.scrollTop = newScrollTop;
-    }
-    
-    return minHeight;
-  }, [getContainer]);
+  // ============== AGENT MODE BLANKSIZE LOGIC ==============
+  // Based on Virtua Chatbot example with dynamic calculation for tool messages:
+  // https://github.com/inokawa/virtua/blob/main/stories/react/advanced/Chatbot.stories.tsx
+  //
+  // Key formula: blankSize = viewport - userHeight - heightOfAllMessagesBetweenUserAndLast
+  // This keeps user message at top as new messages arrive (blankSize shrinks proportionally)
   
-  // ============== AGENT MODE MINHEIGHT LOGIC ==============
-  // Rules:
-  // 1. When a new message is added: set minHeight on latest assistant message
-  // 2. When a message is deleted: reset minHeight to 0 (do nothing)
-  // 3. minHeight persists until user scrolls past the user message or a new user message is sent
-  
-  const [trackedUserMessageId, setTrackedUserMessageId] = useState<string | null>(null);
-  const [agentModeMinHeight, setAgentModeMinHeight] = useState<number>(0);
-  const previousMessagesLengthRef = useRef<number>(0);
+  const [trackedUserIndex, setTrackedUserIndex] = useState<number | null>(null);
+  const [measureTrigger, setMeasureTrigger] = useState(0); // Trigger re-calculation after VList measures
   const previousInProgressRef = useRef<boolean>(false);
-  const hasScrolledToUserMessageRef = useRef<boolean>(false);
+  const previousMessagesLengthRef = useRef<number>(0);
+  const lastValidBlankSizeRef = useRef<number>(0); // Store last valid blankSize to avoid flicker
   
-  // Ref for current inProgress value (used by callbacks to avoid stale closures)
-  const inProgressRef = useRef<boolean>(inProgress);
-  useEffect(() => {
-    inProgressRef.current = inProgress;
-  }, [inProgress]);
-  
-  // Main effect: Handle message changes and streaming transitions
-  // Consolidated to avoid race conditions between separate effects
-  useLayoutEffect(() => {
+  // Calculate blankSize synchronously using useMemo (prevents flash)
+  // This runs during render, before paint, so UI never shows wrong position
+  const blankSize = useMemo(() => {
+    // Include measureTrigger in deps to allow re-calculation after VList measures
+    void measureTrigger;
+    
+    if (!agentMode || trackedUserIndex === null) {
+      lastValidBlankSizeRef.current = 0;
+      return 0;
+    }
+    
+    const handle = vListRef.current;
+    if (!handle) return lastValidBlankSizeRef.current;
+    
     const currentMessages = messagesRef.current;
-    const prevLength = previousMessagesLengthRef.current;
-    const wasStreaming = previousInProgressRef.current;
-    const isNowStreaming = inProgress;
+    const lastIndex = currentMessages.length - 1;
     
-    // Update refs for next render
-    previousMessagesLengthRef.current = currentMessages.length;
-    previousInProgressRef.current = inProgress;
+    if (lastIndex <= trackedUserIndex) {
+      lastValidBlankSizeRef.current = 0;
+      return 0;
+    }
     
+    // Sum heights of all messages from user to second-to-last (excluding last which gets blankSize)
+    let totalHeight = 0;
+    let allMeasured = true;
+    
+    for (let i = trackedUserIndex; i < lastIndex; i++) {
+      const size = handle.getItemSize(i);
+      if (size <= 0) {
+        allMeasured = false;
+        break; // Stop if any item is unmeasured
+      }
+      totalHeight += size;
+    }
+    
+    // If not all items are measured, keep the previous valid blankSize
+    // This prevents flicker when new messages arrive before VList measures them
+    if (!allMeasured) {
+      return lastValidBlankSizeRef.current;
+    }
+    
+    // blankSize = viewport - totalHeight (user + all messages between user and last)
+    const newBlankSize = Math.max(handle.viewportSize - totalHeight, 0);
+    lastValidBlankSizeRef.current = newBlankSize;
+    return newBlankSize;
+  }, [agentMode, trackedUserIndex, messages.length, measureTrigger]);
+  
+  // Effect: Trigger re-calculation after VList has time to measure new items
+  useEffect(() => {
+    if (!agentMode || trackedUserIndex === null) return;
+    
+    // Wait for VList to measure, then trigger re-calculation
+    const timeoutId = setTimeout(() => {
+      setMeasureTrigger(prev => prev + 1);
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, [agentMode, trackedUserIndex, messages.length]);
+  
+  // Effect: Handle streaming start and message deletion
+  useEffect(() => {
     if (!agentMode) return;
     
-    // When streaming starts - disable auto-scroll temporarily
-    // This prevents auto-scroll from fighting with scroll-to-top
-    if (!wasStreaming && isNowStreaming) {
-      shouldStickToBottomRef.current = false;
-    }
+    const handle = vListRef.current;
+    if (!handle) return;
     
-    // When streaming ends - disable auto-scroll to prevent jump
-    if (wasStreaming && !isNowStreaming) {
-      shouldStickToBottomRef.current = false;
-    }
+    const currentMessages = messagesRef.current;
+    const wasStreaming = previousInProgressRef.current;
+    const isNowStreaming = inProgress;
+    const prevLength = previousMessagesLengthRef.current;
     
-    // RULE 2: Messages deleted - reset everything, do NOT set minHeight
+    // Update refs
+    previousInProgressRef.current = inProgress;
+    previousMessagesLengthRef.current = currentMessages.length;
+    
+    // Messages deleted - clear tracking
     if (currentMessages.length < prevLength) {
-      setAgentModeMinHeight(0);
-      setTrackedUserMessageId(null);
-      hasScrolledToUserMessageRef.current = false;
+      setTrackedUserIndex(null);
       return;
     }
     
-    // RULE 1: New message added - set minHeight on latest assistant message
-    const messagesAdded = currentMessages.length > prevLength && prevLength > 0;
-    const streamingJustStarted = !wasStreaming && isNowStreaming;
-    
-    // Only proceed if messages were added or streaming just started
-    if (!messagesAdded && !streamingJustStarted) return;
-    
-    // Find the latest user message
-    const latestUserMessage = findLatestUserMessage(currentMessages);
-    if (!latestUserMessage) return;
-    
-    // Check if this is a NEW user message (different from what we're tracking)
-    const isNewUserMessage = latestUserMessage.id !== trackedUserMessageId;
-    
-    if (isNewUserMessage) {
-      setTrackedUserMessageId(latestUserMessage.id);
-      hasScrolledToUserMessageRef.current = false;
-    }
-    
-    // Calculate and set minHeight for the tracked user message
-    const userMessageIdToUse = isNewUserMessage ? latestUserMessage.id : trackedUserMessageId;
-    if (userMessageIdToUse) {
-      const newMinHeight = positionUserMessageAtTop(userMessageIdToUse);
-      if (newMinHeight !== agentModeMinHeight) {
-        setAgentModeMinHeight(newMinHeight);
-      }
-    }
-  }, [agentMode, inProgress, messages.length, trackedUserMessageId, positionUserMessageAtTop, agentModeMinHeight, shouldStickToBottomRef]);
-  
-  // Scroll effect: Scroll user message to top of viewport (once when minHeight is first applied)
-  // Then enable auto-scroll to follow content growth
-  useLayoutEffect(() => {
-    if (!agentMode || agentModeMinHeight === 0) return;
-    if (!trackedUserMessageId || hasScrolledToUserMessageRef.current) return;
-    
-    // Scroll to top synchronously (no requestAnimationFrame to avoid race conditions)
-    positionUserMessageAtTop(trackedUserMessageId, { scroll: true });
-    hasScrolledToUserMessageRef.current = true;
-    
-    // Enable auto-scroll AFTER scroll-to-top (use setTimeout to ensure scroll completes)
-    // Check inProgressRef to get current streaming state (not stale closure)
-    setTimeout(() => {
-      if (inProgressRef.current) {
+    // Streaming just started (new user message sent)
+    if (!wasStreaming && isNowStreaming) {
+      shouldStickToBottomRef.current = false;
+      
+      // Find user message index (second to last, since assistant message is added after)
+      const userIndex = currentMessages.length - 2;
+      if (userIndex < 0) return;
+      
+      setTrackedUserIndex(userIndex);
+      
+      // Wait for items to mount, then scroll
+      setTimeout(() => {
+        if (!vListRef.current) return;
+        vListRef.current.scrollToIndex(userIndex, { align: "start", smooth: true });
+      }, 50);
+      
+      // Enable stick-to-bottom after delay
+      setTimeout(() => {
         shouldStickToBottomRef.current = true;
-      }
-    }, 50);
-  }, [agentMode, agentModeMinHeight, trackedUserMessageId, positionUserMessageAtTop, shouldStickToBottomRef, inProgressRef]);
-  
-  // Reset minHeight when user scrolls past the tracked user message
-  const handleAgentModeScroll = useCallback(() => {
-    if (!agentMode || !trackedUserMessageId || agentModeMinHeight === 0) return;
-    
-    const container = getContainer();
-    if (!container) return;
-    
-    const userMessageEl = container.querySelector(
-      `[data-message-id="${trackedUserMessageId}"]`
-    ) as HTMLElement;
-    
-    if (!userMessageEl) return;
-    
-    const containerRect = container.getBoundingClientRect();
-    const elementRect = userMessageEl.getBoundingClientRect();
-    
-    // If the bottom of the user message is above the container's top, user has scrolled past it
-    if (elementRect.bottom < containerRect.top) {
-      setAgentModeMinHeight(0);
-      setTrackedUserMessageId(null);
+      }, 200);
     }
-  }, [agentMode, trackedUserMessageId, agentModeMinHeight, getContainer]);
+  }, [agentMode, inProgress, messages.length, shouldStickToBottomRef]);
 
   // Early return if no valid messages to prevent rendering errors
   if (!MessageRenderer) {
@@ -274,36 +224,22 @@ export const CustomMessages = ({
         ref={vListRef} 
         className="copilotKitMessagesContainer"
         keepMounted={keepMounted}
-        onScroll={(offset) => {
-          handleScroll(offset);
-          handleAgentModeScroll();
-        }}
+        onScroll={handleScroll}
       >
           {messages.map((message, index) => {
-          // Ensure key is always a string (messages are already filtered to have id)
           const messageKey = String(message.id || `message-${index}`);
           const isLastMessage = index === messages.length - 1;
-          const messageRole = (message as any)?.role;
           
-          // Find the index of the tracked user message
-          const trackedUserIndex = trackedUserMessageId 
-            ? messages.findIndex(m => 'id' in m && String(m.id) === trackedUserMessageId)
-            : -1;
-          
-          // Apply minHeight to the LATEST assistant message after the tracked user message
-          // This ensures only the latest assistant message has minHeight (older ones get 0)
-          const isAssistantAfterTrackedUser = messageRole === 'assistant' && trackedUserIndex !== -1 && index > trackedUserIndex;
-          const isLatestAssistantAfterTrackedUser = isAssistantAfterTrackedUser && isLastMessage;
-          
-          // Agent mode minHeight: only on latest assistant message when we have a tracked user message
-          const shouldApplyAgentMinHeight = agentMode && isLatestAssistantAfterTrackedUser && agentModeMinHeight > 0;
-          const shouldApplyMinHeight = shouldApplyAgentMinHeight && agentModeMinHeight > 0;
+          // Apply blankSize to LAST message (dynamically)
+          // blankSize is recalculated to account for all messages between user and last
+          // Formula: blankSize = viewport - userHeight - allMessageHeightsBetween
+          const shouldApplyBlankSize = agentMode && isLastMessage && blankSize > 0;
             
             return (
               <div
               key={messageKey}
                 data-message-wrapper="true"
-                style={shouldApplyMinHeight ? { minHeight: `${agentModeMinHeight}px` } : undefined}
+                style={shouldApplyBlankSize ? { minHeight: `${blankSize}px` } : undefined}
               >
                 <MessageRenderer
                 message={message}
@@ -420,16 +356,16 @@ const useAutoScroll = (
       
       // Auto-scroll during streaming when enabled
       if (isCurrentlyStreaming && shouldScroll) {
-        isAutoScrollingRef.current = true;
+      isAutoScrollingRef.current = true;
         // Use Virtua's API for virtual list scrolling (not browser scrollTop)
         const currentMessages = messagesRef.current;
         if (currentMessages.length > 0) {
           vListRef.current.scrollToIndex(currentMessages.length - 1, { align: "end" });
         }
-        setTimeout(() => {
-          isAutoScrollingRef.current = false;
-        }, AUTO_SCROLL_FLAG_DURATION);
-      }
+      setTimeout(() => {
+        isAutoScrollingRef.current = false;
+      }, AUTO_SCROLL_FLAG_DURATION);
+    }
     };
 
     // 1. Initial scroll to bottom on mount/update (skip in agent mode)
@@ -466,22 +402,35 @@ const useAutoScroll = (
   }, [inProgress, messages.length, agentMode, getContainer, vListRef]);
 
   // Initial scroll to bottom on tab open - runs ONCE on mount
-  // Empty dependency array ensures this only runs on mount
+  // Uses multiple attempts because VList needs time to render virtualized items
   useEffect(() => {
     const scrollToEnd = () => {
       if (!vListRef.current) return;
       const len = messagesRef.current.length;
       if (len === 0) return;
+      // Use VList's scrollToIndex (DOM scroll won't work with virtualized items)
       vListRef.current.scrollToIndex(len - 1, { align: "end" });
     };
     
     isAutoScrollingRef.current = true;
     
-    // Wait for VList to fully render before scrolling
-    setTimeout(() => {
-      scrollToEnd();
+    // Multiple scroll attempts to ensure we reach the end
+    // VList needs time to render items, so we retry a few times
+    const attempts = [50, 150, INITIAL_SCROLL_DELAY, 500];
+    const timeoutIds: NodeJS.Timeout[] = [];
+    
+    attempts.forEach((delay) => {
+      timeoutIds.push(setTimeout(scrollToEnd, delay));
+    });
+    
+    // Reset auto-scroll flag after all attempts
+    timeoutIds.push(setTimeout(() => {
       isAutoScrollingRef.current = false;
-    }, INITIAL_SCROLL_DELAY);
+    }, 600));
+    
+    return () => {
+      timeoutIds.forEach(id => clearTimeout(id));
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps = runs once on mount
 
@@ -496,7 +445,7 @@ const useAutoScroll = (
     if (!vListRef.current || messages.length === 0) {
       return;
     }
-    
+
     // Only scroll when messages are ADDED (not on initial load or deletion)
     if (messages.length <= prevLength) {
       return;
@@ -509,11 +458,11 @@ const useAutoScroll = (
     }
     
     // Scroll to bottom when new messages arrive
-    isAutoScrollingRef.current = true;
+        isAutoScrollingRef.current = true;
     vListRef.current.scrollToIndex(messages.length - 1, { align: "end" });
-    
-    setTimeout(() => {
-      isAutoScrollingRef.current = false;
+
+            setTimeout(() => {
+              isAutoScrollingRef.current = false;
     }, 100);
   }, [messages.length]);
 
