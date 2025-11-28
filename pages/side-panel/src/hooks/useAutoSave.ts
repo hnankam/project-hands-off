@@ -14,10 +14,8 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
+import { debug } from '@extension/shared';
 import { TIMING_CONSTANTS } from '../constants';
-
-// Timestamp helper for consistent logging
-const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
 
 interface MessageData {
   allMessages: any[];
@@ -49,23 +47,28 @@ export const useAutoSave = ({
 }: UseAutoSaveParams) => {
   // Track previous active state
   const previousIsActiveRef = useRef(isActive);
-  const debouncedSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedSaveRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Safely read current messages from the provided ref
+  /**
+   * Safely read current messages from the provided ref.
+   * Always returns an array, never null or undefined.
+   */
   const getAllMessagesSafely = useCallback((): any[] => {
     try {
       const fn = saveMessagesRef.current;
       if (!fn) return [];
       const messageData = fn();
-      const allMessages = (messageData && (messageData as MessageData).allMessages) || [];
-      return Array.isArray(allMessages) ? allMessages : [];
+      return messageData?.allMessages || [];
     } catch (error) {
-      console.error(ts(), '[useAutoSave] Failed to gather messages for save', error);
+      debug.error('[useAutoSave] Failed to gather messages for save', error);
       return [];
     }
   }, [saveMessagesRef]);
 
-  // Debounced save function
+  /**
+   * Debounced save function to prevent excessive writes.
+   * Clears any pending save and schedules a new one.
+   */
   const debouncedSave = useCallback(
     (messagesToSave: any[]) => {
       if (debouncedSaveRef.current) {
@@ -73,8 +76,8 @@ export const useAutoSave = ({
       }
 
       debouncedSaveRef.current = setTimeout(() => {
-        Promise.resolve(saveMessagesToStorage(messagesToSave)).catch((error) => {
-          console.error(ts(), '[useAutoSave] Debounced save failed', error);
+        saveMessagesToStorage(messagesToSave).catch((error) => {
+          debug.error('[useAutoSave] Debounced save failed', error);
         });
         debouncedSaveRef.current = null;
       }, TIMING_CONSTANTS.DEBOUNCE_DELAY);
@@ -82,49 +85,57 @@ export const useAutoSave = ({
     [saveMessagesToStorage],
   );
 
-  // Auto-save when session becomes inactive
+  /**
+   * Auto-save when session becomes inactive.
+   * Detects transition from active to inactive state.
+   * 
+   * TEMPORARILY DISABLED: Sanitization only runs when streaming ends
+   */
   useEffect(() => {
     const wasActive = previousIsActiveRef.current;
     const isBecomingInactive = wasActive && !isActive;
 
     if (isBecomingInactive) {
-      console.log(ts(), '[useAutoSave] Session becoming inactive, auto-saving messages');
-      const allMessages = getAllMessagesSafely();
-      if (allMessages && allMessages.length > 0) {
-        debouncedSave(allMessages);
-      }
+      debug.log('[useAutoSave] Session becoming inactive - SKIPPING auto-save (sanitization disabled)');
+      // COMMENTED OUT: Auto-save on session switch - only sanitize when streaming ends
+      // const allMessages = getAllMessagesSafely();
+      // if (allMessages.length > 0) {
+      //   debouncedSave(allMessages);
+      // }
     }
 
     previousIsActiveRef.current = isActive;
-  }, [isActive, debouncedSave, getAllMessagesSafely]);
+  }, [isActive]);
 
-  // Auto-save when panel is closing
+  /**
+   * Auto-save when panel is closing.
+   * Clears any pending debounced saves and saves immediately.
+   * 
+   * TEMPORARILY DISABLED: Sanitization only runs when streaming ends
+   */
   useEffect(() => {
     const handlePanelClosing = (_event: Event) => {
-      console.log(ts(), '[useAutoSave] Panel closing, auto-saving messages immediately');
-      const allMessages = getAllMessagesSafely();
-      if (allMessages && allMessages.length > 0) {
-        // Clear any debounced save and save immediately
-        if (debouncedSaveRef.current) {
-          clearTimeout(debouncedSaveRef.current);
-          debouncedSaveRef.current = null;
-        }
-        Promise.resolve(saveMessagesToStorage(allMessages)).catch((error) => {
-          console.error(ts(), '[useAutoSave] Immediate save on panel closing failed', error);
-        });
-      }
+      debug.log('[useAutoSave] Panel closing - SKIPPING auto-save (sanitization disabled)');
+      
+      // COMMENTED OUT: Auto-save on panel close - only sanitize when streaming ends
+      // const allMessages = getAllMessagesSafely();
+      // if (allMessages.length > 0) {
+      //   // Clear any debounced save and save immediately
+      //   if (debouncedSaveRef.current) {
+      //     clearTimeout(debouncedSaveRef.current);
+      //     debouncedSaveRef.current = null;
+      //   }
+      //   saveMessagesToStorage(allMessages).catch((error) => {
+      //     debug.error('[useAutoSave] Immediate save on panel closing failed', error);
+      //   });
+      // }
     };
 
     window.addEventListener('panelClosing', handlePanelClosing as EventListener);
 
     return () => {
       window.removeEventListener('panelClosing', handlePanelClosing as EventListener);
-    };
-  }, [saveMessagesToStorage, getAllMessagesSafely]);
-
-  // Cleanup debounced save on unmount
-  useEffect(() => {
-    return () => {
+      // Cleanup any pending debounced saves
       if (debouncedSaveRef.current) {
         clearTimeout(debouncedSaveRef.current);
         debouncedSaveRef.current = null;
@@ -132,7 +143,5 @@ export const useAutoSave = ({
     };
   }, []);
 
-  // This hook doesn't return anything - it only has side effects
-  return null;
 };
 

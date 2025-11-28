@@ -59,6 +59,9 @@ importers:
       onnxruntime-web:
         specifier: ^1.23.0
         version: 1.23.0
+      pnpm:
+        specifier: ^10.23.0
+        version: 10.23.0
       react:
         specifier: ^19.1.0
         version: 19.1.1
@@ -6024,6 +6027,11 @@ packages:
     resolution: {integrity: sha512-B7+VDyb8Tl6oMJT9oSO2CW8XC/T4UcJGrwOVoNGwOQsQYhlpfajmrMj5xeejqaASq3V/EqThyOeATEOMuSEXiA==}
     engines: {node: '>=12'}
 
+  pnpm@10.23.0:
+    resolution: {integrity: sha512-IcTlaYACrel+Tv6Li0qJqN48haN5GflX56DzDzj7xbvdBZgP/ikXmy+25uaRJC4JjZRdFgF3LK0P71+2QR4qSw==}
+    engines: {node: '>=18.12'}
+    hasBin: true
+
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
     engines: {node: '>= 0.4'}
@@ -7825,7 +7833,7 @@ snapshots:
       '@urql/core': 5.2.0(graphql@16.11.0)
       react: 19.1.1
       untruncate-json: 0.0.1
-      urql: 4.2.2(@urql/core@5.2.0)(react@19.1.1)
+      urql: 4.2.2(@urql/core@5.2.0(graphql@16.11.0))(react@19.1.1)
     transitivePeerDependencies:
       - encoding
       - graphql
@@ -14031,6 +14039,8 @@ snapshots:
     dependencies:
       queue-lit: 1.5.2
 
+  pnpm@10.23.0: {}
+
   possible-typed-array-names@1.1.0: {}
 
   postcss-import@15.1.0(postcss@8.5.6):
@@ -15670,7 +15680,7 @@ snapshots:
 
   urlpattern-polyfill@10.1.0: {}
 
-  urql@4.2.2(@urql/core@5.2.0)(react@19.1.1):
+  urql@4.2.2(@urql/core@5.2.0(graphql@16.11.0))(react@19.1.1):
     dependencies:
       '@urql/core': 5.2.0(graphql@16.11.0)
       react: 19.1.1

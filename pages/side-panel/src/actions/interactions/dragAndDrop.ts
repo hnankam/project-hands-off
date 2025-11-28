@@ -1,76 +1,187 @@
-import { debug as baseDebug } from '@extension/shared';
+/**
+ * Drag and Drop Action
+ *
+ * Performs animated drag and drop operations between two elements.
+ */
 
-// Timestamped debug wrappers
-const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
-const debug = {
-  log: (...args: any[]) => baseDebug.log(ts(), ...args),
-  warn: (...args: any[]) => baseDebug.warn(ts(), ...args),
-  error: (...args: any[]) => baseDebug.error(ts(), ...args),
+import { debug as baseDebug } from '@extension/shared';
+import { QUERY_SELECTOR_SHADOW_DOM_CODE } from '../dom/shadowDOMHelper';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Log prefix for consistent logging */
+const LOG_PREFIX = '[DragAndDrop]';
+
+/** Timeout for script execution in ms */
+const SCRIPT_TIMEOUT_MS = 15000;
+
+/** Content script injection lock timeout in ms */
+const INJECTION_LOCK_TIMEOUT_MS = 5000;
+
+/** Maximum text length for element descriptions */
+const MAX_TEXT_LENGTH = 50;
+
+/** Timing constants for drag and drop animation */
+const TIMING = {
+  SCROLL_DELAY: 600,
+  ANIMATION_DURATION: 1500,
+  ANIMATION_SETUP_DELAY: 300,
+  DROP_EFFECT_DELAY: 200,
+  CLEANUP_DELAY: 800,
 } as const;
 
-// Timing constants for drag and drop animation
-const TIMING = {
-  SCROLL_DELAY: 600, // Time to wait for smooth scroll completion
-  ANIMATION_DURATION: 1500, // Duration of drag animation
-  ANIMATION_SETUP_DELAY: 300, // Delay before starting drag animation
-  DROP_EFFECT_DELAY: 200, // Delay before showing drop effect
-  CLEANUP_DELAY: 800, // Time to keep visual feedback before cleanup
-};
-
-// Visual styling constants
+/** Visual styling constants */
 const VISUAL_STYLES = {
-  INDICATOR_SIZE: 40, // Size of drag indicator circle
-  PATH_STROKE_WIDTH: 3, // Width of drag path line
-  OUTLINE_WIDTH: 3, // Width of element outlines
-  DROP_RIPPLE_SIZE: 60, // Size of drop ripple effect
-};
+  INDICATOR_SIZE: 40,
+  PATH_STROKE_WIDTH: 3,
+  OUTLINE_WIDTH: 3,
+  DROP_RIPPLE_SIZE: 60,
+} as const;
 
-/**
- * Result type for drag and drop operation
- */
-interface DragAndDropResult {
+// ============================================================================
+// DEBUG HELPERS
+// ============================================================================
+
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: unknown[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: unknown[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: unknown[]) => baseDebug.error(ts(), ...args),
+} as const;
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/** Position information */
+interface Position {
+  x: number;
+  y: number;
+}
+
+/** Element drag info */
+interface ElementDragInfo {
+  selector: string;
+  tag: string;
+  text: string;
+  position: Position;
+  foundInShadowDOM?: boolean;
+  shadowHost?: string | null;
+}
+
+/** Result type for drag and drop operation */
+export interface DragAndDropResult {
   status: 'success' | 'error';
   message: string;
   dragInfo?: {
-    source: {
-      selector: string;
-      tag: string;
-      text: string;
-      position: { x: number; y: number };
-      foundInShadowDOM?: boolean;
-      shadowHost?: string | null;
-    };
-    target: {
-      selector: string;
-      tag: string;
-      text: string;
-      position: { x: number; y: number };
-      foundInShadowDOM?: boolean;
-      shadowHost?: string | null;
-    };
+    source: ElementDragInfo;
+    target: ElementDragInfo;
     usedDropPoint?: { x: number; y: number; mode: string };
   };
 }
 
-// Extra options to support dragging from component lists to canvases
+/** Drop point configuration */
+type DropPoint =
+  | { mode: 'offset'; x: number; y: number }
+  | { mode: 'percent'; x: number; y: number }
+  | { mode: 'absolute'; x: number; y: number }
+  | { mode: 'center'; x?: number; y?: number };
+
+/** Extra options to support dragging from component lists to canvases */
 export interface DragAndDropOptions {
-  dropPoint?:
-    | { mode: 'offset'; x: number; y: number } // from target top-left in px
-    | { mode: 'percent'; x: number; y: number } // 0..1 relative to target size
-    | { mode: 'absolute'; x: number; y: number } // viewport client coords
-    | { mode: 'center'; x?: number; y?: number }; // center, optional offsets
-  dataTransfer?: Record<string, string>; // additional payload
+  dropPoint?: DropPoint;
+  dataTransfer?: Record<string, string>;
   effectAllowed?: DataTransfer['effectAllowed'];
   dropEffect?: DataTransfer['dropEffect'];
-  dragImageSelector?: string; // element to use as drag image
+  dragImageSelector?: string;
+}
+
+/** Script execution result shape */
+interface ScriptDragResult {
+  success: boolean;
+  message: string;
+  dragInfo?: {
+    source: ElementDragInfo;
+    target: ElementDragInfo;
+    usedDropPoint?: { x: number; y: number; mode: string };
+  };
+}
+
+/** Window with drag injection state */
+interface WindowWithDragState {
+  [key: `__copilotDragInjected_${string}`]: boolean | undefined;
+  querySelectorWithShadowDOM?: (selector: string) => Element | null;
+}
+
+// ============================================================================
+// HANDLER-LEVEL DEDUPLICATION
+// ============================================================================
+
+// Use globalThis to ensure the Map persists across module reloads/HMR
+declare global {
+  // eslint-disable-next-line no-var
+  var __dragDropRequestLocks__: Map<string, { timestamp: number; promise: Promise<DragAndDropResult> }> | undefined;
+}
+
+if (!globalThis.__dragDropRequestLocks__) {
+  globalThis.__dragDropRequestLocks__ = new Map();
+  debug.log(LOG_PREFIX, 'Initializing global drag-drop lock Map');
+}
+
+const dragDropRequestLocks = globalThis.__dragDropRequestLocks__;
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Get error message from unknown error
+ */
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error';
 }
 
 /**
+ * Create a timeout promise for Promise.race
+ */
+function createTimeoutPromise<T>(ms: number, fallbackValue: T): Promise<T> {
+  return new Promise(resolve => setTimeout(() => resolve(fallbackValue), ms));
+}
+
+/**
+ * Create request signature for deduplication
+ */
+function createRequestSignature(sourceSelector: string, targetSelector: string): string {
+  return `drag:${sourceSelector}|${targetSelector}`;
+}
+
+/**
+ * Type guard for valid script result
+ */
+function isValidScriptResult(result: unknown): result is { result: ScriptDragResult } {
+  return (
+    result !== null &&
+    typeof result === 'object' &&
+    'result' in result &&
+    result.result !== null &&
+    typeof result.result === 'object'
+  );
+}
+
+// ============================================================================
+// MAIN HANDLER
+// ============================================================================
+
+/**
  * Drag and drop an element from source to target location
+ *
  * @param sourceCssSelector - CSS selector for the element to drag
  * @param targetCssSelector - CSS selector for the drop target element
  * @param offsetX - Optional horizontal offset from target center (default: 0)
  * @param offsetY - Optional vertical offset from target center (default: 0)
+ * @param options - Additional drag and drop options
  * @returns Promise with status and message object
  */
 export async function handleDragAndDrop(
@@ -80,9 +191,71 @@ export async function handleDragAndDrop(
   offsetY: number = 0,
   options?: DragAndDropOptions,
 ): Promise<DragAndDropResult> {
-  try {
-    debug.log('[DragAndDrop] Drag and drop:', { sourceCssSelector, targetCssSelector, offsetX, offsetY, options });
+  const requestSignature = createRequestSignature(sourceCssSelector, targetCssSelector);
 
+  debug.log(LOG_PREFIX, 'Request:', { sourceCssSelector, targetCssSelector, offsetX, offsetY, options });
+
+  // Check for in-flight request
+  const lockMap = globalThis.__dragDropRequestLocks__ ?? new Map();
+  if (!globalThis.__dragDropRequestLocks__) {
+    globalThis.__dragDropRequestLocks__ = lockMap;
+  }
+
+  const existingLock = lockMap.get(requestSignature);
+  const lockAge = existingLock ? Date.now() - existingLock.timestamp : -1;
+
+  if (existingLock && lockAge < INJECTION_LOCK_TIMEOUT_MS) {
+    debug.log(LOG_PREFIX, 'Duplicate request blocked, reusing existing execution');
+    return existingLock.promise;
+  }
+
+  // Create execution promise
+  const executionPromise = executeDragDropOperation(
+    sourceCssSelector,
+    targetCssSelector,
+    offsetX,
+    offsetY,
+    options,
+    requestSignature,
+  );
+
+  // Store lock
+  lockMap.set(requestSignature, {
+    timestamp: Date.now(),
+    promise: executionPromise,
+  });
+
+  // Cleanup lock after completion
+  executionPromise.finally(() => {
+    // Delayed cleanup to allow rapid duplicate detection
+    setTimeout(() => {
+      lockMap.delete(requestSignature);
+    }, INJECTION_LOCK_TIMEOUT_MS);
+  });
+
+  // Passive cleanup of stale locks
+  const now = Date.now();
+  for (const [key, lock] of lockMap.entries()) {
+    if (now - lock.timestamp > 30000) {
+      lockMap.delete(key);
+    }
+  }
+
+  return executionPromise;
+}
+
+/**
+ * Execute the actual drag and drop operation
+ */
+async function executeDragDropOperation(
+  sourceCssSelector: string,
+  targetCssSelector: string,
+  offsetX: number,
+  offsetY: number,
+  options: DragAndDropOptions | undefined,
+  requestSignature: string,
+): Promise<DragAndDropResult> {
+  try {
     if (!sourceCssSelector || !sourceCssSelector.trim()) {
       return { status: 'error', message: 'Source selector is empty' };
     }
@@ -93,13 +266,10 @@ export async function handleDragAndDrop(
     // Get the current active tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tabs[0]?.id) {
-      return {
-        status: 'error',
-        message: 'Unable to access current tab',
-      };
+      return { status: 'error', message: 'Unable to access current tab' };
     }
 
-    // Execute script in content page to perform drag and drop
+    // Execute script in content page
     const execPromise = chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
       world: 'MAIN',
@@ -108,123 +278,83 @@ export async function handleDragAndDrop(
         targetSelector: string,
         xOffset: number,
         yOffset: number,
-        timing: any,
-        visualStyles: any,
-        extraOpts?: any,
-      ): any => {
-        // Prevent duplicate injection
-        const injectionKey = `__copilotDragInjected_${sourceSelector}_${targetSelector}`;
-        if ((window as any)[injectionKey]) {
-          return { success: true, message: 'Drag skipped (script already injected)' };
+        timing: typeof TIMING,
+        visualStyles: typeof VISUAL_STYLES,
+        extraOpts: DragAndDropOptions | undefined,
+        shadowHelperCode: string,
+        injectionLockTimeout: number,
+        maxTextLen: number,
+      ) => {
+        // Inject shadow DOM helpers
+        // eslint-disable-next-line no-eval
+        eval(shadowHelperCode);
+
+        const win = window as unknown as WindowWithDragState;
+
+        // Prevent duplicate injection using content-script-level lock
+        const injectionKey = `__copilotDragInjected_${sourceSelector}_${targetSelector}` as const;
+        if (win[injectionKey]) {
+          return { success: true, message: 'Drag skipped (script already in progress)' };
         }
-        (window as any)[injectionKey] = true;
-        setTimeout(() => delete (window as any)[injectionKey], 3000);
-        
+        win[injectionKey] = true;
+        setTimeout(() => delete win[injectionKey], injectionLockTimeout);
+
+        // Access injected function
+        const querySelectorWithShadowDOM =
+          win.querySelectorWithShadowDOM ||
+          ((sel: string) => document.querySelector(sel));
+
         // Helper function to check if element is visible
         const isVisible = (el: Element): boolean => {
           const style = window.getComputedStyle(el);
+          const htmlEl = el as HTMLElement;
           const hasBox =
-            (el as HTMLElement).offsetWidth > 0 ||
-            (el as HTMLElement).offsetHeight > 0 ||
-            el.getClientRects().length > 0;
+            htmlEl.offsetWidth > 0 || htmlEl.offsetHeight > 0 || el.getClientRects().length > 0;
           return hasBox && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
         };
 
         // Helper function for delays
-        const delay = (ms: number): Promise<void> => {
-          return new Promise(resolve => setTimeout(resolve, ms));
-        };
+        const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
         try {
-          // Shadow DOM helper - supports >> notation
-          const querySelectorWithShadowDOM = (selector: string): Element | null => {
-            if (!selector.includes(' >> ')) {
-              return document.querySelector(selector);
-            }
-
-            const parts = selector.split(' >> ');
-            if (parts.length !== 2) {
-              throw new Error('Invalid shadow DOM selector format. Expected "shadowPath >> elementSelector"');
-            }
-
-            const shadowPath = parts[0].trim();
-            const elementSelector = parts[1].trim();
-
-            const pathSegments = shadowPath
-              .split(' > ')
-              .map(s => s.trim())
-              .filter(s => s && s !== 'document');
-
-            if (pathSegments.length === 0) {
-              throw new Error('Shadow path must contain at least one element');
-            }
-
-            let currentRoot: Document | ShadowRoot = document;
-            
-            for (const segment of pathSegments) {
-              const hostElement: Element | null = currentRoot.querySelector(segment);
-              
-              if (!hostElement) {
-                throw new Error('Shadow host not found: ' + segment);
-              }
-              
-              if (!hostElement.shadowRoot) {
-                throw new Error('Element does not have a shadow root: ' + segment);
-              }
-              
-              currentRoot = hostElement.shadowRoot;
-            }
-
-            return currentRoot.querySelector(elementSelector);
-          };
-
-          // Helper function to find element in main DOM or Shadow DOM
-          const findElement = (selector: string, elementName: string) => {
+          // Helper function to find element
+          const findElement = (selector: string) => {
             const element = querySelectorWithShadowDOM(selector);
             const foundInShadowDOM = selector.includes(' >> ');
             const shadowHostInfo = foundInShadowDOM ? selector.split(' >> ')[0].trim() : '';
-
             return { element, foundInShadowDOM, shadowHostInfo };
           };
 
           // Find source element
-          const sourceResult = findElement(sourceSelector, 'source');
+          const sourceResult = findElement(sourceSelector);
           const sourceElement = sourceResult.element;
           if (!sourceElement) {
             return {
               success: false,
-              message: `Source element not found with selector: "${sourceSelector}" in main DOM or Shadow DOM. Please analyze the HTML and provide a valid CSS selector.`,
+              message: `Source element not found: "${sourceSelector}"`,
             };
           }
 
           // Find target element
-          const targetResult = findElement(targetSelector, 'target');
+          const targetResult = findElement(targetSelector);
           const targetElement = targetResult.element;
           if (!targetElement) {
             return {
               success: false,
-              message: `Target element not found with selector: "${targetSelector}" in main DOM or Shadow DOM. Please analyze the HTML and provide a valid CSS selector.`,
+              message: `Target element not found: "${targetSelector}"`,
             };
           }
 
-          // Check if elements are visible
+          // Check visibility
           if (!isVisible(sourceElement)) {
-            return {
-              success: false,
-              message: `Source element is hidden: "${sourceSelector}"`,
-            };
+            return { success: false, message: `Source element is hidden: "${sourceSelector}"` };
           }
-
           if (!isVisible(targetElement)) {
-            return {
-              success: false,
-              message: `Target element is hidden: "${targetSelector}"`,
-            };
+            return { success: false, message: `Target element is hidden: "${targetSelector}"` };
           }
 
-          // Main async function to perform drag and drop with proper cleanup
+          // Main async function
           return (async () => {
-            // Variables for cleanup (declared outside try block)
             let dragIndicator: HTMLElement | null = null;
             let pathLine: SVGElement | null = null;
             let dropEffect: HTMLElement | null = null;
@@ -232,25 +362,26 @@ export async function handleDragAndDrop(
             let targetOriginalStyle = '';
 
             try {
-              // Scroll source element into view
+              // Scroll elements into view
               sourceElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
               await delay(timing.SCROLL_DELAY);
-
-              // Scroll target element into view
               targetElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
               await delay(timing.SCROLL_DELAY);
-              // Get element positions
+
+              // Get positions
               const sourceRect = sourceElement.getBoundingClientRect();
               const targetRect = targetElement.getBoundingClientRect();
 
               const sourceX = sourceRect.left + sourceRect.width / 2;
               const sourceY = sourceRect.top + sourceRect.height / 2;
-              // Resolve drop coordinates according to options
+
+              // Resolve drop coordinates
               let targetX = targetRect.left + targetRect.width / 2 + xOffset;
               let targetY = targetRect.top + targetRect.height / 2 + yOffset;
               let usedMode = 'center+offset';
-              if (extraOpts && extraOpts.dropPoint) {
-                const dp = extraOpts.dropPoint as any;
+
+              if (extraOpts?.dropPoint) {
+                const dp = extraOpts.dropPoint;
                 if (dp.mode === 'offset') {
                   targetX = targetRect.left + dp.x;
                   targetY = targetRect.top + dp.y;
@@ -270,15 +401,15 @@ export async function handleDragAndDrop(
                 }
               }
 
-              // Save original styles for cleanup
+              // Save original styles
               sourceOriginalStyle = (sourceElement as HTMLElement).style.cssText;
               targetOriginalStyle = (targetElement as HTMLElement).style.cssText;
 
-              // Mark elements with data attribute for cleanup
+              // Mark elements
               (sourceElement as HTMLElement).setAttribute('data-copilot-drag-source', 'true');
               (targetElement as HTMLElement).setAttribute('data-copilot-drag-target', 'true');
 
-              // Highlight source element
+              // Highlight source
               (sourceElement as HTMLElement).style.cssText += `
                 outline: ${visualStyles.OUTLINE_WIDTH}px solid #FF9800 !important;
                 outline-offset: 4px !important;
@@ -286,14 +417,14 @@ export async function handleDragAndDrop(
                 cursor: grabbing !important;
               `;
 
-              // Highlight target element
+              // Highlight target
               (targetElement as HTMLElement).style.cssText += `
                 outline: ${visualStyles.OUTLINE_WIDTH}px dashed #4CAF50 !important;
                 outline-offset: 4px !important;
                 background-color: rgba(76, 175, 80, 0.1) !important;
               `;
 
-              // Create visual drag indicator
+              // Create drag indicator
               dragIndicator = document.createElement('div');
               dragIndicator.id = '__copilot_drag_indicator__';
               dragIndicator.style.cssText = `
@@ -338,64 +469,68 @@ export async function handleDragAndDrop(
               pathLine.appendChild(path);
               document.body.appendChild(pathLine);
 
-              // Wait before starting animation
               await delay(timing.ANIMATION_SETUP_DELAY);
 
-              // Animate drag movement & emit pointer/dragover moves for builder canvases
-              const animateDrag = async (): Promise<void> => {
-                const steps = 60;
-                const stepDuration = timing.ANIMATION_DURATION / steps;
+              // Setup dataTransfer
+              const dataTransfer = new DataTransfer();
+              dataTransfer.setData('text/html', sourceElement.outerHTML);
+              dataTransfer.setData('text/plain', (sourceElement.textContent || '').trim());
+              dataTransfer.effectAllowed = extraOpts?.effectAllowed || 'move';
+              if (extraOpts?.dropEffect) dataTransfer.dropEffect = extraOpts.dropEffect;
+              if (extraOpts?.dataTransfer) {
+                for (const [k, v] of Object.entries(extraOpts.dataTransfer)) {
+                  dataTransfer.setData(k, String(v));
+                }
+              }
 
-                for (let currentStep = 0; currentStep <= steps; currentStep++) {
-                  const progress = currentStep / steps;
-                  const easeProgress =
-                    progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2; // Ease in-out
+              // Animate drag
+              const steps = 60;
+              const stepDuration = timing.ANIMATION_DURATION / steps;
 
-                  const currentX = sourceX + (targetX - sourceX) * easeProgress;
-                  const currentY = sourceY + (targetY - sourceY) * easeProgress;
+              for (let currentStep = 0; currentStep <= steps; currentStep++) {
+                const progress = currentStep / steps;
+                const easeProgress =
+                  progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
 
-                  // Update drag indicator position
-                  if (dragIndicator) {
-                    dragIndicator.style.left = currentX + 'px';
-                    dragIndicator.style.top = currentY + 'px';
-                    dragIndicator.style.transform = `scale(${1 + Math.sin(progress * Math.PI) * 0.3}) rotate(${progress * 360}deg)`;
-                  }
+                const currentX = sourceX + (targetX - sourceX) * easeProgress;
+                const currentY = sourceY + (targetY - sourceY) * easeProgress;
 
-                  // Update path
-                  path.setAttribute(
-                    'd',
-                    `M ${sourceX} ${sourceY} Q ${(sourceX + currentX) / 2} ${Math.min(sourceY, currentY) - 50} ${currentX} ${currentY}`,
-                  );
+                if (dragIndicator) {
+                  dragIndicator.style.left = currentX + 'px';
+                  dragIndicator.style.top = currentY + 'px';
+                  dragIndicator.style.transform = `scale(${1 + Math.sin(progress * Math.PI) * 0.3}) rotate(${progress * 360}deg)`;
+                }
 
-                  // Emit pointer move along the path
-                  const moveEvt = new PointerEvent('pointermove', {
+                path.setAttribute(
+                  'd',
+                  `M ${sourceX} ${sourceY} Q ${(sourceX + currentX) / 2} ${Math.min(sourceY, currentY) - 50} ${currentX} ${currentY}`,
+                );
+
+                // Emit events during animation
+                document.dispatchEvent(
+                  new PointerEvent('pointermove', {
                     bubbles: true,
                     clientX: currentX,
                     clientY: currentY,
                     pointerType: 'mouse',
-                  });
-                  document.dispatchEvent(moveEvt);
+                  }),
+                );
 
-                  // Feed continuous dragover coordinates to the canvas/target
-                  targetElement.dispatchEvent(
-                    new DragEvent('dragover', {
-                      bubbles: true,
-                      cancelable: true,
-                      clientX: currentX,
-                      clientY: currentY,
-                      dataTransfer,
-                    }),
-                  );
+                targetElement.dispatchEvent(
+                  new DragEvent('dragover', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: currentX,
+                    clientY: currentY,
+                    dataTransfer,
+                  }),
+                );
 
-                  await delay(stepDuration);
-                }
-              };
+                await delay(stepDuration);
+              }
 
-              // Perform the drag animation
-              await animateDrag();
-
-              // Wait before drop effect
               await delay(timing.DROP_EFFECT_DELAY);
+
               // Create drop effect
               dropEffect = document.createElement('div');
               dropEffect.id = '__copilot_drop_effect__';
@@ -413,7 +548,6 @@ export async function handleDragAndDrop(
                 transform: translate(-50%, -50%);
               `;
 
-              // Add animation style (if not already present)
               if (!document.getElementById('__copilot_drag_drop_style__')) {
                 const styleEl = document.createElement('style');
                 styleEl.id = '__copilot_drag_drop_style__';
@@ -428,108 +562,89 @@ export async function handleDragAndDrop(
 
               document.body.appendChild(dropEffect);
 
-              // Dispatch drag and drop events with data
-              const dataTransfer = new DataTransfer();
-              // Add drag data for better compatibility
-              dataTransfer.setData('text/html', sourceElement.outerHTML);
-              dataTransfer.setData('text/plain', (sourceElement.textContent || '').trim());
-              dataTransfer.effectAllowed = 'move';
-              if (extraOpts && extraOpts.effectAllowed) dataTransfer.effectAllowed = extraOpts.effectAllowed;
-              if (extraOpts && extraOpts.dropEffect) dataTransfer.dropEffect = extraOpts.dropEffect;
-              if (extraOpts && extraOpts.dataTransfer) {
-                try {
-                  for (const [k, v] of Object.entries(extraOpts.dataTransfer)) {
-                    dataTransfer.setData(k, String(v));
-                  }
-                } catch {}
-              }
-              // Ensure draggable attribute for HTML5 DnD sources
+              // Ensure draggable
               if (!(sourceElement as HTMLElement).draggable) {
                 (sourceElement as HTMLElement).setAttribute('draggable', 'true');
               }
 
               // Optional custom drag image
-              if (extraOpts && extraOpts.dragImageSelector) {
-                const imgEl = document.querySelector(extraOpts.dragImageSelector) as Element | null;
+              if (extraOpts?.dragImageSelector) {
+                const imgEl = document.querySelector(extraOpts.dragImageSelector);
                 if (imgEl) {
                   const r = (imgEl as HTMLElement).getBoundingClientRect();
-                  dataTransfer.setDragImage(imgEl as any, r.width / 2, r.height / 2);
+                  dataTransfer.setDragImage(imgEl, r.width / 2, r.height / 2);
                 }
               }
 
-              // Dragstart on source
+              // Dispatch drag events
               sourceElement.dispatchEvent(
                 new DragEvent('dragstart', {
                   bubbles: true,
                   cancelable: true,
-                  dataTransfer: dataTransfer,
+                  dataTransfer,
                   clientX: sourceX,
                   clientY: sourceY,
                 }),
               );
 
-              // Suggest drop allowance via preventing default on synthetic dragover if no handlers
               targetElement.addEventListener('dragover', e => e.preventDefault(), { once: true });
 
-              // Dragenter on target
               targetElement.dispatchEvent(
                 new DragEvent('dragenter', {
                   bubbles: true,
                   cancelable: true,
-                  dataTransfer: dataTransfer,
+                  dataTransfer,
                   clientX: targetX,
                   clientY: targetY,
                 }),
               );
 
-              // Dragover on target
               targetElement.dispatchEvent(
                 new DragEvent('dragover', {
                   bubbles: true,
                   cancelable: true,
-                  dataTransfer: dataTransfer,
+                  dataTransfer,
                   clientX: targetX,
                   clientY: targetY,
                 }),
               );
 
-              // Also emit a few extra dragover events to mimic real dragging
+              // Extra dragover events
               for (let i = 0; i < 3; i++) {
                 await delay(20);
                 targetElement.dispatchEvent(
                   new DragEvent('dragover', {
                     bubbles: true,
                     cancelable: true,
-                    dataTransfer: dataTransfer,
+                    dataTransfer,
                     clientX: targetX,
                     clientY: targetY,
                   }),
                 );
               }
 
-              // Drop on target
+              // Drop and dragend
               targetElement.dispatchEvent(
                 new DragEvent('drop', {
                   bubbles: true,
                   cancelable: true,
-                  dataTransfer: dataTransfer,
+                  dataTransfer,
                   clientX: targetX,
                   clientY: targetY,
                 }),
               );
 
-              // Dragend on source
               sourceElement.dispatchEvent(
                 new DragEvent('dragend', {
                   bubbles: true,
                   cancelable: true,
-                  dataTransfer: dataTransfer,
+                  dataTransfer,
                   clientX: targetX,
                   clientY: targetY,
                 }),
               );
 
-              // Also dispatch mouse/pointer events for compatibility
+              // Mouse/pointer events for compatibility
               sourceElement.dispatchEvent(
                 new MouseEvent('mousedown', {
                   bubbles: true,
@@ -566,27 +681,24 @@ export async function handleDragAndDrop(
                 }),
               );
 
-              // Wait before cleanup
               await delay(timing.CLEANUP_DELAY);
 
-              // Create success message with Shadow DOM info
+              // Build success message
               const sourceShadowInfo = sourceResult.foundInShadowDOM
                 ? ` (source in Shadow DOM: ${sourceResult.shadowHostInfo})`
                 : '';
               const targetShadowInfo = targetResult.foundInShadowDOM
                 ? ` (target in Shadow DOM: ${targetResult.shadowHostInfo})`
                 : '';
-              const successMessage = `Drag and drop completed${sourceShadowInfo}${targetShadowInfo}`;
 
-              // Return success
               return {
                 success: true,
-                message: successMessage,
+                message: `Drag and drop completed${sourceShadowInfo}${targetShadowInfo}`,
                 dragInfo: {
                   source: {
                     selector: sourceSelector,
                     tag: sourceElement.tagName,
-                    text: (sourceElement.textContent || '').trim().substring(0, 50),
+                    text: (sourceElement.textContent || '').trim().substring(0, maxTextLen),
                     position: { x: Math.round(sourceX), y: Math.round(sourceY) },
                     foundInShadowDOM: sourceResult.foundInShadowDOM,
                     shadowHost: sourceResult.foundInShadowDOM ? sourceResult.shadowHostInfo : null,
@@ -594,7 +706,7 @@ export async function handleDragAndDrop(
                   target: {
                     selector: targetSelector,
                     tag: targetElement.tagName,
-                    text: (targetElement.textContent || '').trim().substring(0, 50),
+                    text: (targetElement.textContent || '').trim().substring(0, maxTextLen),
                     position: { x: Math.round(targetX), y: Math.round(targetY) },
                     foundInShadowDOM: targetResult.foundInShadowDOM,
                     shadowHost: targetResult.foundInShadowDOM ? targetResult.shadowHostInfo : null,
@@ -603,15 +715,15 @@ export async function handleDragAndDrop(
                 },
               };
             } finally {
-              // CRITICAL: Always cleanup, even if error occurs
+              // Always cleanup
               if (dragIndicator) dragIndicator.remove();
               if (pathLine) pathLine.remove();
               if (dropEffect) dropEffect.remove();
-              if (sourceOriginalStyle) {
+              if (sourceOriginalStyle !== undefined) {
                 (sourceElement as HTMLElement).style.cssText = sourceOriginalStyle;
                 (sourceElement as HTMLElement).removeAttribute('data-copilot-drag-source');
               }
-              if (targetOriginalStyle) {
+              if (targetOriginalStyle !== undefined) {
                 (targetElement as HTMLElement).style.cssText = targetOriginalStyle;
                 (targetElement as HTMLElement).removeAttribute('data-copilot-drag-target');
               }
@@ -624,48 +736,32 @@ export async function handleDragAndDrop(
           };
         }
       },
-      args: [sourceCssSelector, targetCssSelector, offsetX, offsetY, TIMING, VISUAL_STYLES] as [
-        string,
-        string,
-        number,
-        number,
-        typeof TIMING,
-        typeof VISUAL_STYLES,
-      ],
+      args: [
+        sourceCssSelector,
+        targetCssSelector,
+        offsetX,
+        offsetY,
+        TIMING,
+        VISUAL_STYLES,
+        options,
+        QUERY_SELECTOR_SHADOW_DOM_CODE,
+        INJECTION_LOCK_TIMEOUT_MS,
+        MAX_TEXT_LENGTH,
+      ] as const,
     });
 
-    const results = await Promise.race([
-      execPromise,
-      new Promise<any>(resolve =>
-        setTimeout(() => resolve([{ result: { success: false, message: 'Timeout during drag and drop' } }]), 15000),
-      ),
-    ]);
+    const timeoutFallback = [{ result: { success: false, message: 'Timeout during drag and drop' } }];
+    const results = await Promise.race([execPromise, createTimeoutPromise(SCRIPT_TIMEOUT_MS, timeoutFallback)]);
 
-    if (results && results[0]?.result) {
+    if (results && results[0] && isValidScriptResult(results[0])) {
       const result = results[0].result;
-      debug.log('[DragAndDrop] Script result:', result);
+      debug.log(LOG_PREFIX, 'Script result:', result);
+
       if (result.success && result.dragInfo) {
         return {
           status: 'success',
           message: result.message,
-          dragInfo: {
-            source: {
-              selector: result.dragInfo.source.selector,
-              tag: result.dragInfo.source.tag,
-              text: result.dragInfo.source.text,
-              position: result.dragInfo.source.position,
-              foundInShadowDOM: result.dragInfo.source.foundInShadowDOM || false,
-              shadowHost: result.dragInfo.source.shadowHost || null,
-            },
-            target: {
-              selector: result.dragInfo.target.selector,
-              tag: result.dragInfo.target.tag,
-              text: result.dragInfo.target.text,
-              position: result.dragInfo.target.position,
-              foundInShadowDOM: result.dragInfo.target.foundInShadowDOM || false,
-              shadowHost: result.dragInfo.target.shadowHost || null,
-            },
-          },
+          dragInfo: result.dragInfo,
         };
       } else {
         return {
@@ -675,15 +771,9 @@ export async function handleDragAndDrop(
       }
     }
 
-    return {
-      status: 'error',
-      message: 'Unable to perform drag and drop',
-    };
+    return { status: 'error', message: 'Unable to perform drag and drop' };
   } catch (error) {
-    debug.error('[DragAndDrop] Error during drag and drop:', error);
-    return {
-      status: 'error',
-      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    };
+    debug.error(LOG_PREFIX, 'Error:', error);
+    return { status: 'error', message: `Error: ${getErrorMessage(error)}` };
   }
 }

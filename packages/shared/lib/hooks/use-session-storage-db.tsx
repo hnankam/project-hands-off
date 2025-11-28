@@ -8,6 +8,7 @@
 import { useState, useEffect, useSyncExternalStore } from 'react';
 import { sessionStorageDB } from '../db/session-storage-db.js';
 import type { SessionAgentState, SessionMetadata, SessionUsageStats } from '../db/session-schema.js';
+import { debug } from '../utils/debug.js';
 
 /**
  * Session storage state (matches old interface)
@@ -25,40 +26,101 @@ function createSessionStore() {
   let cache: SessionStorageState | null = null;
   let listeners: Array<() => void> = [];
   const syncKeyPrefix = 'session_storage_sync_';
+  
+  // Refetch deduplication and debouncing
+  let refetchInProgress = false;
+  let refetchDebounceTimer: NodeJS.Timeout | null = null;
+  let pendingRefetch = false;
+  let lastRefetchTime = 0;
+  const REFETCH_DEBOUNCE_MS = 150; // Wait 150ms to batch multiple refetch requests (increased from 100ms)
+  const MIN_REFETCH_INTERVAL_MS = 300; // Minimum time between refetches to prevent cascade
 
-  // Helper function to trigger refetch and notify listeners
+  // Helper to safely notify all listeners
+  const notifyListeners = () => {
+    listeners.forEach(listener => {
+      try {
+        listener();
+      } catch (err) {
+        debug.error('[SessionStore] Listener error:', err);
+      }
+    });
+  };
+
+  // Helper function to trigger refetch and notify listeners (debounced and deduplicated)
   const triggerRefetch = () => {
-    console.log('[SessionStore] 🔔 ========== TRIGGERING REFETCH ==========');
+    // Check if we've refetched too recently (prevents cascade)
+    const now = Date.now();
+    const timeSinceLastRefetch = now - lastRefetchTime;
+    
+    if (timeSinceLastRefetch < MIN_REFETCH_INTERVAL_MS && !refetchInProgress) {
+      // Too soon since last refetch - queue it instead
+      if (!refetchDebounceTimer) {
+        const remainingWait = MIN_REFETCH_INTERVAL_MS - timeSinceLastRefetch;
+        debug.log(`[SessionStore] Refetch too soon (${timeSinceLastRefetch}ms), waiting ${remainingWait}ms`);
+        pendingRefetch = true;
+        refetchDebounceTimer = setTimeout(() => {
+          refetchDebounceTimer = null;
+          if (pendingRefetch) {
+            pendingRefetch = false;
+            triggerRefetch();
+          }
+        }, remainingWait);
+      } else {
+        pendingRefetch = true;
+      }
+      return;
+    }
+    
+    // If already pending, just mark that we want another refetch
+    if (refetchDebounceTimer) {
+      pendingRefetch = true;
+      return;
+    }
+    
+    // If refetch is already in progress, queue another one
+    if (refetchInProgress) {
+      debug.log('[SessionStore] Refetch in progress, queueing');
+      pendingRefetch = true;
+      return;
+    }
+    
+    // Debounce: Wait for a short period to batch multiple refetch requests
+    refetchDebounceTimer = setTimeout(() => {
+      refetchDebounceTimer = null;
+      pendingRefetch = false;
+      
+      debug.log('[SessionStore] Triggering refetch');
+      refetchInProgress = true;
+      lastRefetchTime = Date.now();
+      
       fetchData()
         .then(() => {
-          console.log('[SessionStore] ✅ Data refetched successfully');
-          console.log('[SessionStore] Notifying', listeners.length, 'listeners');
-          listeners.forEach(listener => {
-            try {
-              listener();
-            } catch (err) {
-              console.error('[SessionStore] Listener error:', err);
-            }
-          });
+          debug.log('[SessionStore] Refetch complete, notifying', listeners.length, 'listeners');
+          notifyListeners();
         })
         .catch(error => {
-          console.error('[SessionStore] ❌ Failed to refetch after change:', error);
+          debug.error('[SessionStore] Refetch failed:', error);
           // Still notify listeners even on error so UI can update
-          listeners.forEach(listener => {
-            try {
-              listener();
-            } catch (err) {
-              console.error('[SessionStore] Listener error:', err);
-            }
-          });
+          notifyListeners();
+        })
+        .finally(() => {
+          refetchInProgress = false;
+          
+          // If another refetch was requested while this one was in progress, trigger it now
+          if (pendingRefetch) {
+            debug.log('[SessionStore] Processing queued refetch');
+            pendingRefetch = false;
+            // Small delay to avoid immediate cascade
+            setTimeout(() => triggerRefetch(), 50);
+          }
         });
+    }, REFETCH_DEBOUNCE_MS);
   };
 
   // Subscribe to DB changes (local window)
   const unsubscribeDB = sessionStorageDB.subscribe((event) => {
     if (event.type === 'sessionsUpdated' || event.type === 'sessionChanged') {
-      console.log('[SessionStore] 🔔 ========== DB EVENT RECEIVED ==========');
-      console.log('[SessionStore] Event type:', event.type);
+      debug.log('[SessionStore] DB event received:', event.type);
       triggerRefetch();
     }
   });
@@ -91,7 +153,7 @@ function createSessionStore() {
           
           // Filter out self-notifications: ignore if windowId matches ours
           if (newValue?.windowId === ourWindowId) {
-            console.log('[SessionStore] 🚫 Ignoring self-notification (same window ID)');
+            debug.log('[SessionStore] Ignoring self-notification (same window ID)');
             continue;
           }
           
@@ -101,10 +163,9 @@ function createSessionStore() {
             // Verify userId matches (only sync for same user)
             const currentUserId = sessionStorageDB.getCurrentUserId();
             if (!currentUserId || newValue.userId === currentUserId) {
-              console.log('[SessionStore] 🌐 ========== CROSS-WINDOW SYNC DETECTED ==========');
-              console.log('[SessionStore] Change from another window:', {
+              debug.log('[SessionStore] Cross-window sync detected:', {
                 event: newValue.event,
-                sessionId: newValue.sessionId,
+                sessionId: newValue.sessionId?.slice(0, 8),
                 timestamp: new Date(newValue.timestamp).toISOString(),
                 fromWindowId: newValue.windowId?.slice(0, 12) + '...',
               });
@@ -130,9 +191,7 @@ function createSessionStore() {
   }
 
   const fetchData = async (): Promise<SessionStorageState> => {
-    console.log('[SessionStore] 📦 ========== FETCHING DATA ==========');
-    console.log('[SessionStore] Timestamp:', new Date().toISOString());
-    console.log('[SessionStore] Current userId:', sessionStorageDB.getCurrentUserId()?.slice(0, 8));
+    debug.log('[SessionStore] Fetching data for userId:', sessionStorageDB.getCurrentUserId()?.slice(0, 8));
     try {
       const [sessions, currentSessionId] = await Promise.all([
         sessionStorageDB.getAllSessions(),
@@ -142,16 +201,15 @@ function createSessionStore() {
       // Ensure sessions is always an array
       const validSessions = Array.isArray(sessions) ? sessions : [];
       
-      console.log('[SessionStore] ✅ Fetch complete:', { 
+      debug.log('[SessionStore] Fetch complete:', { 
         sessionsCount: validSessions.length, 
         currentSessionId: currentSessionId?.slice(0, 8), 
-        sessionIds: validSessions.map(s => s.id.slice(0, 8)),
       });
       
       cache = { sessions: validSessions, currentSessionId };
       return cache;
     } catch (error) {
-      console.error('[SessionStore] ❌ Failed to fetch data:', error);
+      debug.error('[SessionStore] Failed to fetch data:', error);
       // Return empty state on error instead of throwing
       const emptyState = { sessions: [], currentSessionId: null };
       cache = emptyState;
@@ -173,6 +231,13 @@ function createSessionStore() {
     subscribe, 
     getSnapshot, 
     cleanup: () => {
+      // Clean up debounce timer
+      if (refetchDebounceTimer) {
+        clearTimeout(refetchDebounceTimer);
+        refetchDebounceTimer = null;
+      }
+      
+      // Clean up subscriptions
       unsubscribeDB();
       if (unsubscribeStorage) {
         unsubscribeStorage();
@@ -188,7 +253,8 @@ let hasInitialized = false; // Prevent duplicate initialization
 
 function getOrCreateStore() {
   if (!globalStore) {
-    console.log('[useSessionStorageDB] Creating new session store instance');
+    // Only log store creation once (rare event)
+    // console.log('[useSessionStorageDB] Creating new session store instance');
     globalStore = createSessionStore();
   }
   return globalStore;
@@ -208,30 +274,28 @@ export const useSessionStorageDB = (): SessionStorageState => {
   // Initialize data on mount (only once)
   useEffect(() => {
     if (!data && !initPromise && !hasInitialized) {
-      console.log('[useSessionStorageDB] 🔄 Starting initial data fetch...');
       setIsLoading(true);
       hasInitialized = true; // Mark as started
       initPromise = store.fetchData()
         .then((fetchedData) => {
-          console.log('[useSessionStorageDB] ✅ Data fetch completed:', { sessionsCount: fetchedData.sessions.length, currentSessionId: fetchedData.currentSessionId });
+          debug.log('[useSessionStorageDB] Initial data loaded:', { 
+            sessionsCount: fetchedData.sessions.length, 
+            currentSessionId: fetchedData.currentSessionId?.slice(0, 8) 
+          });
           return fetchedData;
         })
         .catch((error) => {
-          console.error('[useSessionStorageDB] ❌ Failed to fetch session data:', error);
+          debug.error('[useSessionStorageDB] Failed to fetch session data:', error);
           hasInitialized = false; // Allow retry on error
           // Return empty state on error
           return { sessions: [], currentSessionId: null };
         })
         .finally(() => {
-          console.log('[useSessionStorageDB] 🏁 Fetch promise completed, setting isLoading = false');
           initPromise = null;
           setIsLoading(false);
         });
     } else if (data) {
-      console.log('[useSessionStorageDB] Data already available, setting isLoading = false');
       setIsLoading(false);
-    } else {
-      console.log('[useSessionStorageDB] Waiting for data... hasInitialized:', hasInitialized, 'initPromise:', !!initPromise);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]); // Re-run when data changes
@@ -253,17 +317,17 @@ export const sessionStorageDBWrapper = {
    * Requires userId to be set via setCurrentUserId() first
    */
   async addSession(title: string): Promise<void> {
-    console.log('[sessionStorageDBWrapper:addSession] 📝 Creating session:', title);
+    debug.log('[sessionStorageDBWrapper] Creating session:', title);
     
     // Verify userId is set
     const userId = sessionStorageDB.getCurrentUserId();
     if (!userId) {
-      const error = new Error('[sessionStorageDBWrapper:addSession] ❌ Cannot create session: No user is logged in. Call setCurrentUserId() first.');
-      console.error(error.message);
+      const error = new Error('[sessionStorageDBWrapper] Cannot create session: No user is logged in. Call setCurrentUserId() first.');
+      debug.error(error.message);
       throw error;
     }
 
-    console.log('[sessionStorageDBWrapper:addSession] ℹ️  User ID verified:', userId);
+    debug.log('[sessionStorageDBWrapper] User ID verified:', userId?.slice(0, 8));
 
     // Find the last selected agent and model from existing sessions
     const sessions = await sessionStorageDB.getAllSessions();
@@ -279,7 +343,7 @@ export const sessionStorageDBWrapper = {
         lastSelectedModel = sessionWithModel.selectedModel || lastSelectedModel;
       }
       
-      console.log('[sessionStorageDBWrapper:addSession] ℹ️  Using last selected:', { lastSelectedAgent, lastSelectedModel });
+      debug.log('[sessionStorageDBWrapper] Using last selected:', { lastSelectedAgent, lastSelectedModel });
     }
 
     await sessionStorageDB.addSession({
@@ -291,7 +355,7 @@ export const sessionStorageDBWrapper = {
       selectedModel: lastSelectedModel,
     });
     
-    console.log('[sessionStorageDBWrapper:addSession] ✅ Session created successfully');
+    debug.log('[sessionStorageDBWrapper] Session created successfully');
   },
 
   /**
@@ -305,7 +369,7 @@ export const sessionStorageDBWrapper = {
    * Set active session
    */
   async setActiveSession(sessionId: string): Promise<void> {
-    console.log('[sessionStorageDBWrapper] setActiveSession called with:', sessionId);
+    debug.log('[sessionStorageDBWrapper] setActiveSession:', sessionId.slice(0, 8));
     await sessionStorageDB.setActiveSession(sessionId);
   },
 
@@ -361,16 +425,6 @@ export const sessionStorageDBWrapper = {
   /**
    * Get all messages for a session
    */
-  getAllMessages(sessionId: string): any[] {
-    // Note: This is synchronous in the old API, but we need async for IndexedDB
-    // We'll handle this by caching messages in the component that needs them
-    console.warn('[useSessionStorageDB] getAllMessages called synchronously - returning empty array. Use async version.');
-    return [];
-  },
-
-  /**
-   * Async version of getAllMessages
-   */
   async getAllMessagesAsync(sessionId: string): Promise<any[]> {
     return await sessionStorageDB.getMessages(sessionId);
   },
@@ -414,15 +468,6 @@ export const sessionStorageDBWrapper = {
   /**
    * Get usage stats
    */
-  getUsageStats(sessionId: string): SessionUsageStats | null {
-    // Note: Synchronous version - will need to be replaced with async
-    console.warn('[useSessionStorageDB] getUsageStats called synchronously - returning null. Use async version.');
-    return null;
-  },
-
-  /**
-   * Async version of getUsageStats
-   */
   async getUsageStatsAsync(sessionId: string): Promise<SessionUsageStats | null> {
     return await sessionStorageDB.getUsageStats(sessionId);
   },
@@ -437,15 +482,6 @@ export const sessionStorageDBWrapper = {
   /**
    * Get agent step state
    */
-  getAgentStepState(sessionId: string): SessionAgentState | null {
-    // Note: Synchronous version - will need to be replaced with async
-    console.warn('[useSessionStorageDB] getAgentStepState called synchronously - returning null. Use async version.');
-    return null;
-  },
-
-  /**
-   * Async version of getAgentStepState
-   */
   async getAgentStepStateAsync(sessionId: string): Promise<SessionAgentState | null> {
     return await sessionStorageDB.getAgentState(sessionId);
   },
@@ -456,18 +492,15 @@ export const sessionStorageDBWrapper = {
    * Only sessions belonging to this user will be returned
    */
   setCurrentUserId(userId: string | null): void {
-    console.log('[sessionStorageDBWrapper:setCurrentUserId] 🔐 Setting user ID:', userId || 'null');
+    debug.log('[sessionStorageDBWrapper] Setting user ID:', userId?.slice(0, 8) || 'null');
     sessionStorageDB.setCurrentUserId(userId);
-    console.log('[sessionStorageDBWrapper:setCurrentUserId] ✅ User ID set successfully');
   },
 
   /**
    * Get the current user ID
    */
   getCurrentUserId(): string | null {
-    const userId = sessionStorageDB.getCurrentUserId();
-    console.log('[sessionStorageDBWrapper:getCurrentUserId] Current user ID:', userId || 'null');
-    return userId;
+    return sessionStorageDB.getCurrentUserId();
   },
 
   /**

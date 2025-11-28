@@ -1,6 +1,6 @@
 /**
  * DOM Manipulation CopilotKit Actions
- * 
+ *
  * Actions for interacting with page DOM elements (cursor movement, clicks, verification, etc.)
  */
 
@@ -18,23 +18,234 @@ import {
   handleKeystrokeSequence,
 } from '../index';
 
-// Timestamp helper for consistent logging
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Maximum length for selector display */
+const MAX_SELECTOR_LENGTH = 60;
+
+/** Maximum length for target selector display */
+const MAX_TARGET_SELECTOR_LENGTH = 40;
+
+/** Maximum keystroke repeat count */
+const MAX_KEYSTROKE_REPEAT = 50;
+
+/** Icon size in pixels */
+const ICON_SIZE = 14;
+
+/** Icon margin right in pixels */
+const ICON_MARGIN_RIGHT = 6;
+
+/** Icon colors by theme */
+const ICON_COLORS = {
+  light: '#4b5563',
+  dark: '#6b7280',
+} as const;
+
+/** Log prefix for agent actions */
+const LOG_PREFIX = {
+  request: '[Agent Request]',
+  response: '[Agent Response]',
+} as const;
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/** Timestamp helper for consistent logging */
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
 
+/** Status values for action render */
+type ActionPhase = 'pending' | 'inProgress' | 'complete' | 'error';
+
+/** Page content structure - accepts any object with optional url/pageURL */
+interface PageContentLike {
+  url?: string;
+  pageURL?: string;
+}
+
+/** Page data reference structure */
+interface PageDataRef {
+  embeddings: unknown;
+  pageContent: PageContentLike | unknown;
+}
+
+/** Props passed to action render functions */
+interface ActionRenderProps<TArgs = Record<string, unknown>, TResult = unknown> {
+  status: ActionPhase;
+  args?: TArgs;
+  result?: TResult;
+  error?: Error | string;
+}
+
+/** Single keystroke definition */
+interface Keystroke {
+  key: string;
+  ctrl?: boolean;
+  meta?: boolean;
+  alt?: boolean;
+  shift?: boolean;
+  repeat?: number;
+}
+
+/** Normalized keystroke for handler */
+interface NormalizedKeystroke {
+  key: string;
+  ctrl: boolean;
+  meta: boolean;
+  alt: boolean;
+  shift: boolean;
+  repeat: number;
+}
+
+/** Point coordinates */
+interface Point {
+  x: number;
+  y: number;
+}
+
+
+/** Dependencies for DOM actions */
 interface DOMActionDependencies {
   isLight: boolean;
-  clipText: (text: any, maxLength?: number) => string;
-  pageDataRef: React.MutableRefObject<{ embeddings: any; pageContent: any }>;
+  clipText: (text: string, maxLength?: number) => string;
+  pageDataRef: React.MutableRefObject<PageDataRef>;
   triggerManualRefresh?: () => void;
 }
+
+/** Dependencies for actions that need clipText */
+type ClipTextDependencies = Pick<DOMActionDependencies, 'isLight' | 'clipText'>;
+
+/** Dependencies for simple actions (isLight only) */
+type SimpleDependencies = Pick<DOMActionDependencies, 'isLight'>;
+
+/** Dependencies for refresh action */
+type RefreshDependencies = Pick<DOMActionDependencies, 'isLight' | 'pageDataRef' | 'triggerManualRefresh'>;
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+/**
+ * Get icon style based on theme
+ */
+function getIconStyle(isLight: boolean): React.CSSProperties {
+  return {
+    flexShrink: 0,
+    marginRight: ICON_MARGIN_RIGHT,
+    color: isLight ? ICON_COLORS.light : ICON_COLORS.dark,
+  };
+}
+
+/**
+ * Common SVG props for all icons
+ */
+const svgProps = {
+  width: ICON_SIZE,
+  height: ICON_SIZE,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  strokeWidth: 2,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+};
+
+/**
+ * Format a keystroke for display
+ */
+function formatKeystroke(stroke: Partial<Keystroke>): string {
+  const mods: string[] = [];
+  if (stroke.ctrl) mods.push('Ctrl');
+  if (stroke.meta) mods.push('Cmd');
+  if (stroke.alt) mods.push('Alt');
+  if (stroke.shift) mods.push('Shift');
+  const key = String(stroke.key ?? '');
+  const repeat = stroke.repeat && stroke.repeat > 1 ? `×${stroke.repeat}` : '';
+  return mods.length > 0 ? `${mods.join('+')}+${key}${repeat}` : `${key}${repeat}`;
+}
+
+/**
+ * Safely convert to number with fallback
+ */
+function safeNumber(value: unknown, fallback: number = 0): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+/**
+ * Normalize keystroke sequence for handler
+ */
+function normalizeKeystrokeSequence(sequence: unknown[]): NormalizedKeystroke[] {
+  if (!Array.isArray(sequence)) return [];
+
+  return sequence
+    .map((s): NormalizedKeystroke | null => {
+      if (!s || typeof s !== 'object') return null;
+      const stroke = s as Partial<Keystroke>;
+      const key = String(stroke.key ?? '');
+      if (!key) return null;
+
+      return {
+        key,
+        ctrl: Boolean(stroke.ctrl),
+        meta: Boolean(stroke.meta),
+        alt: Boolean(stroke.alt),
+        shift: Boolean(stroke.shift),
+        repeat: Math.max(1, Math.min(MAX_KEYSTROKE_REPEAT, safeNumber(stroke.repeat, 1))),
+      };
+    })
+    .filter((s): s is NormalizedKeystroke => s !== null);
+}
+
+/**
+ * Normalize points array for handler
+ */
+function normalizePoints(points: unknown): Point[] {
+  if (!Array.isArray(points)) return [];
+
+  return points
+    .map((p): Point | null => {
+      if (!p || typeof p !== 'object') return null;
+      const point = p as Partial<Point>;
+      return {
+        x: safeNumber(point.x),
+        y: safeNumber(point.y),
+      };
+    })
+    .filter((p): p is Point => p !== null);
+}
+
+// ============================================================================
+// ICONS
+// ============================================================================
+
+/** Keyboard icon for keystroke actions */
+function KeyboardIcon({ style }: { style: React.CSSProperties }): React.ReactElement {
+  return (
+    <svg {...svgProps} style={style}>
+      <rect stroke="currentColor" x="2" y="6" width="20" height="12" rx="2" />
+      <line stroke="currentColor" strokeWidth="1.5" x1="6" y1="10" x2="6" y2="10" opacity="0.7" />
+      <line stroke="currentColor" strokeWidth="1.5" x1="10" y1="10" x2="10" y2="10" opacity="0.7" />
+      <line stroke="currentColor" strokeWidth="1.5" x1="14" y1="10" x2="14" y2="10" opacity="0.7" />
+      <line stroke="currentColor" strokeWidth="1.5" x1="18" y1="10" x2="18" y2="10" opacity="0.7" />
+      <line stroke="currentColor" strokeWidth="1.5" x1="8" y1="14" x2="16" y2="14" opacity="0.7" />
+    </svg>
+  );
+}
+
+// ============================================================================
+// ACTION CREATORS
+// ============================================================================
 
 /**
  * Creates the moveCursorToElement action
  * Shows/moves cursor to a specific element on the page
  */
-export const createMoveCursorToElementAction = ({ isLight, clipText }: Omit<DOMActionDependencies, 'pageDataRef'>) => ({
+export const createMoveCursorToElementAction = ({ isLight, clipText }: ClipTextDependencies) => ({
   name: 'moveCursorToElement',
-  description: 'Show/move cursor to the element matching the selector. Supports Shadow DOM with >> notation. Auto-hides after 5 minutes.',
+  description:
+    'Show/move cursor to the element matching the selector. Supports Shadow DOM with >> notation. Auto-hides after 5 minutes.',
   parameters: [
     {
       name: 'cssSelector',
@@ -44,21 +255,24 @@ export const createMoveCursorToElementAction = ({ isLight, clipText }: Omit<DOMA
       required: true,
     },
   ],
-  render: ({ status, args, result, error }: any) => (
-    <ActionStatus
-      toolName={`Move cursor to ${clipText((args as any)?.cssSelector, 60)}`}
-      status={status as any}
-      isLight={isLight}
-      messages={{ pending: 'Moving cursor…', inProgress: 'Moving cursor…', complete: 'Cursor moved' }}
-      args={args}
-      result={result}
-      error={error}
-    />
-  ),
+  render: ({ status, args, result, error }: ActionRenderProps<{ cssSelector?: string }>) => {
+    const selector = args?.cssSelector ?? '';
+    return (
+      <ActionStatus
+        toolName={`Move cursor to ${clipText(selector, MAX_SELECTOR_LENGTH)}`}
+        status={status}
+        isLight={isLight}
+        messages={{ pending: 'Moving cursor…', inProgress: 'Moving cursor…', complete: 'Cursor moved' }}
+        args={args}
+        result={result}
+        error={error}
+      />
+    );
+  },
   handler: async ({ cssSelector }: { cssSelector: string }) => {
-    debug.log(ts(), '[Agent Request] moveCursorToElement:', { cssSelector });
+    debug.log(ts(), LOG_PREFIX.request, 'moveCursorToElement:', { cssSelector });
     const result = await handleMoveCursorToElement(cssSelector);
-    debug.log(ts(), '[Agent Response] moveCursorToElement:', result);
+    debug.log(ts(), LOG_PREFIX.response, 'moveCursorToElement:', result);
     return result;
   },
 });
@@ -67,26 +281,30 @@ export const createMoveCursorToElementAction = ({ isLight, clipText }: Omit<DOMA
  * Creates the refreshPageContent action
  * Refreshes current page HTML for latest content/embeddings
  */
-export const createRefreshPageContentAction = ({ isLight, pageDataRef, triggerManualRefresh }: Omit<DOMActionDependencies, 'clipText'>) => ({
+export const createRefreshPageContentAction = ({ isLight, pageDataRef, triggerManualRefresh }: RefreshDependencies) => ({
   name: 'refreshPageContent',
   description: 'Refresh current page HTML (for latest content/embeddings).',
   parameters: [],
-  render: ({ status, args, result, error }: any) => (
+  render: ({ status, args, result, error }: ActionRenderProps) => (
     <ActionStatus
       toolName="Refresh page content"
-      status={status as any}
+      status={status}
       isLight={isLight}
-      messages={{ pending: 'Refreshing page content…', inProgress: 'Refreshing page content…', complete: 'Page refreshed' }}
+      messages={{
+        pending: 'Refreshing page content…',
+        inProgress: 'Refreshing page content…',
+        complete: 'Page refreshed',
+      }}
       args={args}
       result={result}
       error={error}
     />
   ),
   handler: async () => {
-    debug.log(ts(), '[Agent Request] refreshPageContent');
-    const getCurrentPageContent = () => pageDataRef.current?.pageContent;
+    debug.log(ts(), LOG_PREFIX.request, 'refreshPageContent');
+    const getCurrentPageContent = () => pageDataRef.current?.pageContent ?? undefined;
     const result = await handleRefreshPageContent(getCurrentPageContent, triggerManualRefresh);
-    debug.log(ts(), '[Agent Response] refreshPageContent:', result);
+    debug.log(ts(), LOG_PREFIX.response, 'refreshPageContent:', result);
     return result;
   },
 });
@@ -95,14 +313,14 @@ export const createRefreshPageContentAction = ({ isLight, pageDataRef, triggerMa
  * Creates the cleanupExtensionUI action
  * Removes all extension UI elements and styles from the page
  */
-export const createCleanupExtensionUIAction = ({ isLight }: Omit<DOMActionDependencies, 'clipText' | 'pageDataRef'>) => ({
+export const createCleanupExtensionUIAction = ({ isLight }: SimpleDependencies) => ({
   name: 'cleanupExtensionUI',
   description: 'Remove all extension UI elements and styles from the page.',
   parameters: [],
-  render: ({ status, args, result, error }: any) => (
+  render: ({ status, args, result, error }: ActionRenderProps) => (
     <ActionStatus
       toolName="Clean up UI"
-      status={status as any}
+      status={status}
       isLight={isLight}
       messages={{ pending: 'Cleaning up UI…', inProgress: 'Cleaning up UI…', complete: 'UI cleaned' }}
       args={args}
@@ -111,9 +329,9 @@ export const createCleanupExtensionUIAction = ({ isLight }: Omit<DOMActionDepend
     />
   ),
   handler: async () => {
-    debug.log(ts(), '[Agent Request] cleanupExtensionUI');
+    debug.log(ts(), LOG_PREFIX.request, 'cleanupExtensionUI');
     const result = await handleCleanupExtensionUI();
-    debug.log(ts(), '[Agent Response] cleanupExtensionUI:', result);
+    debug.log(ts(), LOG_PREFIX.response, 'cleanupExtensionUI:', result);
     return result;
   },
 });
@@ -122,9 +340,10 @@ export const createCleanupExtensionUIAction = ({ isLight }: Omit<DOMActionDepend
  * Creates the clickElement action
  * Clicks an element on the page
  */
-export const createClickElementAction = ({ isLight, clipText }: Omit<DOMActionDependencies, 'pageDataRef'>) => ({
+export const createClickElementAction = ({ isLight, clipText }: ClipTextDependencies) => ({
   name: 'clickElement',
-  description: 'Click the element matching the provided CSS selector. Supports Shadow DOM with >> notation (e.g., "shadowPath >> #element").',
+  description:
+    'Click the element matching the provided CSS selector. Supports Shadow DOM with >> notation (e.g., "shadowPath >> #element").',
   parameters: [
     {
       name: 'cssSelector',
@@ -140,21 +359,30 @@ export const createClickElementAction = ({ isLight, clipText }: Omit<DOMActionDe
       required: false,
     },
   ],
-  render: ({ status, args, result, error }: any) => (
-    <ActionStatus
-      toolName={`Click ${clipText((args as any)?.cssSelector, 60)}`}
-      status={status as any}
-      isLight={isLight}
-      messages={{ pending: 'Clicking…', inProgress: 'Clicking…', complete: 'Click done' }}
-      args={args}
-      result={result}
-      error={error}
-    />
-  ),
-  handler: async ({ cssSelector, autoMoveCursor }: { cssSelector: string; autoMoveCursor?: boolean }) => {
-    debug.log(ts(), '[Agent Request] clickElement:', { cssSelector, autoMoveCursor });
+  render: ({ status, args, result, error }: ActionRenderProps<{ cssSelector?: string; autoMoveCursor?: boolean }>) => {
+    const selector = args?.cssSelector ?? '';
+    return (
+      <ActionStatus
+        toolName={`Click ${clipText(selector, MAX_SELECTOR_LENGTH)}`}
+        status={status}
+        isLight={isLight}
+        messages={{ pending: 'Clicking…', inProgress: 'Clicking…', complete: 'Click done' }}
+        args={args}
+        result={result}
+        error={error}
+      />
+    );
+  },
+  handler: async ({
+    cssSelector,
+    autoMoveCursor,
+  }: {
+    cssSelector: string;
+    autoMoveCursor?: boolean;
+  }) => {
+    debug.log(ts(), LOG_PREFIX.request, 'clickElement:', { cssSelector, autoMoveCursor });
     const result = await handleClickElement(cssSelector, autoMoveCursor);
-    debug.log(ts(), '[Agent Response] clickElement:', result);
+    debug.log(ts(), LOG_PREFIX.response, 'clickElement:', result);
     return result;
   },
 });
@@ -163,32 +391,41 @@ export const createClickElementAction = ({ isLight, clipText }: Omit<DOMActionDe
  * Creates the verifySelector action
  * Validates a CSS selector (syntax, match count, shadow DOM info, element details)
  */
-export const createVerifySelectorAction = ({ isLight, clipText }: Omit<DOMActionDependencies, 'pageDataRef'>) => ({
+export const createVerifySelectorAction = ({ isLight, clipText }: ClipTextDependencies) => ({
   name: 'verifySelector',
-  description: 'Validate a CSS selector (syntax, match count, shadow DOM info, element details). Supports Shadow DOM with >> notation.',
+  description:
+    'Validate a CSS selector (syntax, match count, shadow DOM info, element details). Supports Shadow DOM with >> notation.',
   parameters: [
     {
       name: 'cssSelector',
       type: 'string',
-      description: "The CSS selector to verify (e.g., '#submit-btn', 'document > x-app >> #input'). Use >> to traverse shadow DOM.",
+      description:
+        "The CSS selector to verify (e.g., '#submit-btn', 'document > x-app >> #input'). Use >> to traverse shadow DOM.",
       required: true,
     },
   ],
-  render: ({ status, args, result, error }: any) => (
-    <ActionStatus
-      toolName={`Verify ${clipText((args as any)?.cssSelector, 60)}`}
-      status={status as any}
-      isLight={isLight}
-      messages={{ pending: 'Verifying selector…', inProgress: 'Verifying selector…', complete: 'Selector verified' }}
-      args={args}
-      result={result}
-      error={error}
-    />
-  ),
+  render: ({ status, args, result, error }: ActionRenderProps<{ cssSelector?: string }>) => {
+    const selector = args?.cssSelector ?? '';
+    return (
+      <ActionStatus
+        toolName={`Verify ${clipText(selector, MAX_SELECTOR_LENGTH)}`}
+        status={status}
+        isLight={isLight}
+        messages={{
+          pending: 'Verifying selector…',
+          inProgress: 'Verifying selector…',
+          complete: 'Selector verified',
+        }}
+        args={args}
+        result={result}
+        error={error}
+      />
+    );
+  },
   handler: async ({ cssSelector }: { cssSelector: string }) => {
-    debug.log(ts(), '[Agent Request] verifySelector:', { cssSelector });
+    debug.log(ts(), LOG_PREFIX.request, 'verifySelector:', { cssSelector });
     const result = await handleVerifySelector(cssSelector);
-    debug.log(ts(), '[Agent Response] verifySelector:', result);
+    debug.log(ts(), LOG_PREFIX.response, 'verifySelector:', result);
     return result;
   },
 });
@@ -197,28 +434,37 @@ export const createVerifySelectorAction = ({ isLight, clipText }: Omit<DOMAction
  * Creates the getSelectorAtPoint action
  * Returns a unique CSS selector for the element at given viewport coordinates
  */
-export const createGetSelectorAtPointAction = ({ isLight }: Omit<DOMActionDependencies, 'clipText' | 'pageDataRef'>) => ({
+export const createGetSelectorAtPointAction = ({ isLight }: SimpleDependencies) => ({
   name: 'getSelectorAtPoint',
-  description: `Return a unique CSS selector for the element at the given viewport coordinates (x, y). Coordinates are in CSS pixels relative to the viewport (0,0 is top-left).`,
+  description:
+    'Return a unique CSS selector for the element at the given viewport coordinates (x, y). Coordinates are in CSS pixels relative to the viewport (0,0 is top-left).',
   parameters: [
     { name: 'x', type: 'number', description: 'Viewport X coordinate in CSS px', required: true },
     { name: 'y', type: 'number', description: 'Viewport Y coordinate in CSS px', required: true },
   ],
-  render: ({ status, args, result, error }: any) => (
-    <ActionStatus
-      toolName={`Selector at (${Number((args as any)?.x)}, ${Number((args as any)?.y)})`}
-      status={status as any}
-      isLight={isLight}
-      messages={{ pending: 'Finding selector at point…', inProgress: 'Finding selector at point…', complete: 'Selector found' }}
-      args={args}
-      result={result}
-      error={error}
-    />
-  ),
+  render: ({ status, args, result, error }: ActionRenderProps<{ x?: number; y?: number }>) => {
+    const x = safeNumber(args?.x);
+    const y = safeNumber(args?.y);
+    return (
+      <ActionStatus
+        toolName={`Selector at (${x}, ${y})`}
+        status={status}
+        isLight={isLight}
+        messages={{
+          pending: 'Finding selector at point…',
+          inProgress: 'Finding selector at point…',
+          complete: 'Selector found',
+        }}
+        args={args}
+        result={result}
+        error={error}
+      />
+    );
+  },
   handler: async ({ x, y }: { x: number; y: number }) => {
-    debug.log(ts(), '[Agent Request] getSelectorAtPoint:', { x, y });
-    const result = await handleGetSelectorAtPoint(Number(x), Number(y));
-    debug.log(ts(), '[Agent Response] getSelectorAtPoint:', result);
+    debug.log(ts(), LOG_PREFIX.request, 'getSelectorAtPoint:', { x, y });
+    const result = await handleGetSelectorAtPoint(safeNumber(x), safeNumber(y));
+    debug.log(ts(), LOG_PREFIX.response, 'getSelectorAtPoint:', result);
     return result;
   },
 });
@@ -227,28 +473,32 @@ export const createGetSelectorAtPointAction = ({ isLight }: Omit<DOMActionDepend
  * Creates the getSelectorsAtPoints action
  * Returns unique CSS selectors for elements at multiple viewport coordinates
  */
-export const createGetSelectorsAtPointsAction = ({ isLight }: Omit<DOMActionDependencies, 'clipText' | 'pageDataRef'>) => ({
+export const createGetSelectorsAtPointsAction = ({ isLight }: SimpleDependencies) => ({
   name: 'getSelectorsAtPoints',
-  description: `Return unique CSS selectors for elements at the provided list of viewport coordinates. Each item is { x, y } in CSS pixels relative to the viewport.`,
+  description:
+    'Return unique CSS selectors for elements at the provided list of viewport coordinates. Each item is { x, y } in CSS pixels relative to the viewport.',
   parameters: [
     { name: 'points', type: 'object[]', description: 'Array of points {x:number,y:number}', required: true },
   ],
-  render: ({ status, args, result, error }: any) => (
-    <ActionStatus
-      toolName={`Selectors at ${Array.isArray((args as any)?.points) ? (args as any).points.length : 0} point(s)`}
-      status={status as any}
-      isLight={isLight}
-      messages={{ pending: 'Finding selectors…', inProgress: 'Finding selectors…', complete: 'Selectors found' }}
-      args={args}
-      result={result}
-      error={error}
-    />
-  ),
-  handler: async ({ points }: { points: Array<{ x: number; y: number }> }) => {
-    debug.log(ts(), '[Agent Request] getSelectorsAtPoints:', { pointsCount: points?.length });
-    const safe = Array.isArray(points) ? points.map((p: any) => ({ x: Number(p.x), y: Number(p.y) })) : [];
-    const result = await handleGetSelectorsAtPoints(safe);
-    debug.log(ts(), '[Agent Response] getSelectorsAtPoints:', result);
+  render: ({ status, args, result, error }: ActionRenderProps<{ points?: unknown[] }>) => {
+    const pointCount = Array.isArray(args?.points) ? args.points.length : 0;
+    return (
+      <ActionStatus
+        toolName={`Selectors at ${pointCount} point(s)`}
+        status={status}
+        isLight={isLight}
+        messages={{ pending: 'Finding selectors…', inProgress: 'Finding selectors…', complete: 'Selectors found' }}
+        args={args}
+        result={result}
+        error={error}
+      />
+    );
+  },
+  handler: async ({ points }: { points: unknown[] }) => {
+    debug.log(ts(), LOG_PREFIX.request, 'getSelectorsAtPoints:', { pointsCount: points?.length });
+    const normalizedPoints = normalizePoints(points);
+    const result = await handleGetSelectorsAtPoints(normalizedPoints);
+    debug.log(ts(), LOG_PREFIX.response, 'getSelectorsAtPoints:', result);
     return result;
   },
 });
@@ -257,7 +507,7 @@ export const createGetSelectorsAtPointsAction = ({ isLight }: Omit<DOMActionDepe
  * Creates the sendKeystrokes action
  * Sends keyboard shortcuts and sequences to the active page (supports modifiers and repeats)
  */
-export const createSendKeystrokesAction = ({ isLight, clipText }: Omit<DOMActionDependencies, 'pageDataRef'>) => ({
+export const createSendKeystrokesAction = ({ isLight, clipText }: ClipTextDependencies) => ({
   name: 'sendKeystrokes',
   description:
     'Send keyboard shortcuts or sequences to the page. Supports modifiers (ctrl/meta/alt/shift), repeats, optional target focus via selector (supports shadow >>), and per-key delay.',
@@ -282,71 +532,34 @@ export const createSendKeystrokesAction = ({ isLight, clipText }: Omit<DOMAction
       required: false,
     },
   ],
-  render: ({ status, args, result, error }: any) => {
-    // Format keystrokes for display
-    const formatKeystroke = (s: any): string => {
-      const mods: string[] = [];
-      if (s?.ctrl) mods.push('Ctrl');
-      if (s?.meta) mods.push('Cmd');
-      if (s?.alt) mods.push('Alt');
-      if (s?.shift) mods.push('Shift');
-      const key = String(s?.key ?? '');
-      const repeat = s?.repeat && s.repeat > 1 ? `×${s.repeat}` : '';
-      return mods.length > 0 ? `${mods.join('+')}+${key}${repeat}` : `${key}${repeat}`;
-    };
-    
-    const sequence = (args as any)?.sequence;
-    const formattedKeys = Array.isArray(sequence) && sequence.length > 0 
-      ? sequence.map(formatKeystroke).join(' ')
-      : '';
-    const targetSelector = (args as any)?.targetSelector;
-    
+  render: ({
+    status,
+    args,
+    result,
+    error,
+  }: ActionRenderProps<{ sequence?: Keystroke[]; targetSelector?: string; delayMs?: number }>) => {
+    const sequence = args?.sequence ?? [];
+    const formattedKeys = Array.isArray(sequence) && sequence.length > 0 ? sequence.map(formatKeystroke).join(' ') : '';
+    const targetSelector = args?.targetSelector;
+
     // Build tool name with keys
-    const keysDisplay = formattedKeys ? `: ${clipText(formattedKeys, 60)}` : '';
-    const targetDisplay = targetSelector ? ` to ${clipText(targetSelector, 40)}` : '';
+    const keysDisplay = formattedKeys ? `: ${clipText(formattedKeys, MAX_SELECTOR_LENGTH)}` : '';
+    const targetDisplay = targetSelector ? ` to ${clipText(targetSelector, MAX_TARGET_SELECTOR_LENGTH)}` : '';
     const toolName = `Send keystrokes${keysDisplay}${targetDisplay}`;
-    
+
     // Build messages with keys
-    const keysMsg = formattedKeys ? ` (${clipText(formattedKeys, 60)})` : '';
-    
-    // Keyboard icon
-    const keyboardIcon = (
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{ 
-          flexShrink: 0, 
-          marginRight: 6,
-          color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
-        }}
-      >
-        {/* Keyboard body */}
-        <rect stroke="currentColor" x="2" y="6" width="20" height="12" rx="2" />
-        {/* Keys */}
-        <line stroke="currentColor" strokeWidth="1.5" x1="6" y1="10" x2="6" y2="10" opacity="0.7" />
-        <line stroke="currentColor" strokeWidth="1.5" x1="10" y1="10" x2="10" y2="10" opacity="0.7" />
-        <line stroke="currentColor" strokeWidth="1.5" x1="14" y1="10" x2="14" y2="10" opacity="0.7" />
-        <line stroke="currentColor" strokeWidth="1.5" x1="18" y1="10" x2="18" y2="10" opacity="0.7" />
-        {/* Spacebar */}
-        <line stroke="currentColor" strokeWidth="1.5" x1="8" y1="14" x2="16" y2="14" opacity="0.7" />
-      </svg>
-    );
-    
+    const keysMsg = formattedKeys ? ` (${clipText(formattedKeys, MAX_SELECTOR_LENGTH)})` : '';
+
     return (
       <ActionStatus
         toolName={toolName}
-        status={status as any}
+        status={status}
         isLight={isLight}
-        icon={keyboardIcon}
-        messages={{ 
-          pending: `Sending keystrokes${keysMsg}…`, 
-          inProgress: `Sending keystrokes${keysMsg}…`, 
-          complete: `Keystrokes sent${keysMsg}`
+        icon={<KeyboardIcon style={getIconStyle(isLight)} />}
+        messages={{
+          pending: `Sending keystrokes${keysMsg}…`,
+          inProgress: `Sending keystrokes${keysMsg}…`,
+          complete: `Keystrokes sent${keysMsg}`,
         }}
         args={args}
         result={result}
@@ -354,49 +567,42 @@ export const createSendKeystrokesAction = ({ isLight, clipText }: Omit<DOMAction
       />
     );
   },
-  handler: async ({ sequence, targetSelector, delayMs }: { sequence: any[]; targetSelector?: string; delayMs?: number }) => {
+  handler: async ({
+    sequence,
+    targetSelector,
+    delayMs,
+  }: {
+    sequence: Keystroke[];
+    targetSelector?: string;
+    delayMs?: number;
+  }) => {
     // Validate sequence is not empty
     if (!Array.isArray(sequence) || sequence.length === 0) {
-      const error = { status: 'error', message: 'Keystroke sequence cannot be empty' };
-      debug.log(ts(), '[Agent Request] sendKeystrokes: ERROR - empty sequence');
-      return error;
+      debug.log(ts(), LOG_PREFIX.request, 'sendKeystrokes: ERROR - empty sequence');
+      return { status: 'error', message: 'Keystroke sequence cannot be empty' };
     }
-    
+
     // Format keystrokes for logging
-    const formatKeystroke = (s: any): string => {
-      const mods: string[] = [];
-      if (s?.ctrl) mods.push('Ctrl');
-      if (s?.meta) mods.push('Cmd');
-      if (s?.alt) mods.push('Alt');
-      if (s?.shift) mods.push('Shift');
-      const key = String(s?.key ?? '');
-      const repeat = s?.repeat && s.repeat > 1 ? `×${s.repeat}` : '';
-      return mods.length > 0 ? `${mods.join('+')}+${key}${repeat}` : `${key}${repeat}`;
-    };
     const formattedKeys = sequence.map(formatKeystroke).join(' ');
-    
-    debug.log(ts(), `[Agent Request] sendKeystrokes: ${formattedKeys}`, { targetSelector, delayMs });
-    
-    const safeSeq = sequence.map((s: any) => ({
-      key: String(s?.key ?? ''),
-      ctrl: !!s?.ctrl,
-      meta: !!s?.meta,
-      alt: !!s?.alt,
-      shift: !!s?.shift,
-      repeat: Number.isFinite(s?.repeat) ? Math.max(1, Math.min(50, Number(s.repeat))) : 1,
-    })).filter(s => s.key !== ''); // Filter out any strokes with empty keys
-    
+    debug.log(ts(), LOG_PREFIX.request, `sendKeystrokes: ${formattedKeys}`, { targetSelector, delayMs });
+
+    // Normalize sequence
+    const normalizedSequence = normalizeKeystrokeSequence(sequence);
+
     // Double-check after filtering
-    if (safeSeq.length === 0) {
-      const error = { status: 'error', message: 'No valid keystrokes in sequence' };
-      debug.log(ts(), '[Agent Response] sendKeystrokes: ERROR - no valid keys after filtering');
-      return error;
+    if (normalizedSequence.length === 0) {
+      debug.log(ts(), LOG_PREFIX.response, 'sendKeystrokes: ERROR - no valid keys after filtering');
+      return { status: 'error', message: 'No valid keystrokes in sequence' };
     }
-    
-    const req = { sequence: safeSeq, targetSelector: targetSelector ? String(targetSelector) : undefined, delayMs: Number(delayMs) } as any;
-    const result = await handleKeystrokeSequence(req);
-    debug.log(ts(), '[Agent Response] sendKeystrokes:', result);
+
+    const request = {
+      sequence: normalizedSequence,
+      targetSelector: targetSelector ? String(targetSelector) : undefined,
+      delayMs: safeNumber(delayMs),
+    };
+
+    const result = await handleKeystrokeSequence(request);
+    debug.log(ts(), LOG_PREFIX.response, 'sendKeystrokes:', result);
     return result;
   },
 });
-

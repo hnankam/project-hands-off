@@ -1,16 +1,74 @@
-import { InputHandler, InputDataResult, InputHandlerOptions, ContentEditableOptions, InputType } from './types';
+/**
+ * ContentEditable Handler
+ *
+ * Specialized handler for contenteditable elements.
+ * Handles rich text editing, HTML content, and modern web app patterns.
+ */
+
+import { debug as baseDebug } from '@extension/shared';
+import { InputHandler, InputDataResult, ContentEditableOptions, InputType } from './types';
 import {
   findElement,
   isElementVisible,
   scrollIntoView,
   focusAndHighlight,
-  streamText,
   showSuccessFeedback,
-  getElementValue,
   triggerInputEvents,
   detectModernInput,
   moveCursorToElement,
 } from './utils';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Log prefix for consistent logging */
+const LOG_PREFIX = '[ContentEditable]';
+
+/** Minimum typing speed (ms per character) */
+const MIN_TYPING_SPEED_MS = 10;
+
+/** Maximum typing speed (ms per character) */
+const MAX_TYPING_SPEED_MS = 50;
+
+/** Default typing speed (ms per character) */
+const DEFAULT_TYPING_SPEED_MS = 20;
+
+/** Character limit warning threshold (percentage) */
+const CHAR_LIMIT_WARNING_THRESHOLD = 0.9;
+
+// ============================================================================
+// DEBUG HELPERS
+// ============================================================================
+
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: unknown[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: unknown[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: unknown[]) => baseDebug.error(ts(), ...args),
+} as const;
+
+// ============================================================================
+// HANDLER-LEVEL DEDUPLICATION
+// ============================================================================
+
+/** Active operation tracking to prevent duplicate executions */
+const activeOperations = new Map<string, Promise<InputDataResult>>();
+
+/**
+ * Create operation key for deduplication
+ */
+function createOperationKey(element: HTMLElement, value: string): string {
+  const id = element.id || '';
+  const tagName = element.tagName;
+  // Use first 50 chars of value for key
+  const valueKey = value.substring(0, 50);
+  return `contenteditable:${id}:${tagName}:${valueKey}`;
+}
+
+// ============================================================================
+// HANDLER CLASS
+// ============================================================================
 
 /**
  * Specialized handler for contenteditable elements
@@ -24,15 +82,43 @@ export class ContentEditableHandler implements InputHandler {
   }
 
   async handle(element: HTMLElement, value: string, options: ContentEditableOptions = {}): Promise<InputDataResult> {
+    const operationKey = createOperationKey(element, value);
+
+    // Check for in-flight operation
+    const existingOperation = activeOperations.get(operationKey);
+    if (existingOperation) {
+      debug.log(LOG_PREFIX, 'Duplicate operation blocked, reusing existing');
+      return existingOperation;
+    }
+
+    // Create and track operation
+    const operation = this.executeHandle(element, value, options);
+    activeOperations.set(operationKey, operation);
+
+    // Cleanup after completion
+    operation.finally(() => {
+      activeOperations.delete(operationKey);
+    });
+
+    return operation;
+  }
+
+  private async executeHandle(
+    element: HTMLElement,
+    value: string,
+    options: ContentEditableOptions,
+  ): Promise<InputDataResult> {
     try {
+      debug.log(LOG_PREFIX, 'Handling:', { id: element.id, valueLen: value.length });
+
       // Ensure interactable state
       if (!isElementVisible(element)) {
         await scrollIntoView(element);
       }
       await focusAndHighlight(element);
+
       const insertMode = options.insertMode || 'replace';
       const htmlContent = options.htmlContent || false;
-      const preserveFormatting = options.preserveFormatting || false;
 
       // Move cursor to element if requested
       if (options.moveCursor) {
@@ -51,9 +137,11 @@ export class ContentEditableHandler implements InputHandler {
         return await this.handleTextContent(element, value, options);
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Error:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling contenteditable: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling contenteditable: ${errorMessage}`,
       };
     }
   }
@@ -63,7 +151,6 @@ export class ContentEditableHandler implements InputHandler {
     value: string,
     options: ContentEditableOptions,
   ): Promise<InputDataResult> {
-    const modern = detectModernInput(element);
     const insertMode = options.insertMode || 'replace';
     const preserveFormatting = options.preserveFormatting || false;
 
@@ -83,7 +170,7 @@ export class ContentEditableHandler implements InputHandler {
       contentToInsert = this.preserveTextFormatting(element, contentToInsert);
     }
 
-    // Use streaming for text content
+    // Use streaming for text content if typing speed specified
     if (options.typingSpeed && options.typingSpeed > 0) {
       await this.streamTextContent(element, contentToInsert, options);
     } else {
@@ -96,6 +183,8 @@ export class ContentEditableHandler implements InputHandler {
     if (options.showSuccessFeedback !== false) {
       showSuccessFeedback(element);
     }
+
+    debug.log(LOG_PREFIX, 'Text content updated');
 
     return {
       status: 'success',
@@ -116,7 +205,6 @@ export class ContentEditableHandler implements InputHandler {
     options: ContentEditableOptions,
   ): Promise<InputDataResult> {
     const insertMode = options.insertMode || 'replace';
-    const modern = detectModernInput(element);
 
     // Prepare HTML content based on insert mode
     let contentToInsert = value;
@@ -140,6 +228,8 @@ export class ContentEditableHandler implements InputHandler {
       showSuccessFeedback(element);
     }
 
+    debug.log(LOG_PREFIX, 'HTML content updated');
+
     return {
       status: 'success',
       message: 'Contenteditable HTML content updated successfully',
@@ -159,18 +249,19 @@ export class ContentEditableHandler implements InputHandler {
     options: ContentEditableOptions,
   ): Promise<void> {
     const chars = content.split('');
-    const typingSpeed = Math.max(10, Math.min(50, options.typingSpeed || 20));
+    const typingSpeed = Math.max(
+      MIN_TYPING_SPEED_MS,
+      Math.min(MAX_TYPING_SPEED_MS, options.typingSpeed || DEFAULT_TYPING_SPEED_MS),
+    );
 
     for (let i = 0; i < chars.length; i++) {
       const currentContent = content.substring(0, i + 1);
       element.textContent = currentContent;
-      // Fire a richer set of events during streaming for framework bindings
+      // Fire events during streaming for framework bindings
       this.triggerContentEditableEvents(element, options, i === chars.length - 1);
 
-      // Small delay between characters
       await new Promise(resolve => setTimeout(resolve, typingSpeed));
     }
-    // Final events ensured by last iteration
   }
 
   private triggerContentEditableEvents(
@@ -180,6 +271,7 @@ export class ContentEditableHandler implements InputHandler {
   ): void {
     const modernDetection = detectModernInput(element);
     const events = ['input'];
+
     if (modernDetection.isReactComponent) {
       events.unshift('focus');
       events.push('keyup');
@@ -188,33 +280,29 @@ export class ContentEditableHandler implements InputHandler {
     if (modernDetection.isVueComponent) {
       events.push('keyup');
     }
+
     // Some editors rely on selection changes
     document.dispatchEvent(new Event('selectionchange'));
     triggerInputEvents(element, events);
   }
 
   private clearContent(element: HTMLElement): void {
-    // Clear both text and HTML content
     element.textContent = '';
     element.innerHTML = '';
     this.triggerContentEditableEvents(element, {}, false);
   }
 
   private preserveTextFormatting(element: HTMLElement, content: string): string {
-    // Get current formatting from the element
-    const currentFormatting = this.getCurrentFormatting(element);
+    const currentFormatting = this.getCurrentFormatting();
 
-    // Apply formatting to the new content
     let formattedContent = content;
 
     if (currentFormatting.bold) {
       formattedContent = `<strong>${formattedContent}</strong>`;
     }
-
     if (currentFormatting.italic) {
       formattedContent = `<em>${formattedContent}</em>`;
     }
-
     if (currentFormatting.underline) {
       formattedContent = `<u>${formattedContent}</u>`;
     }
@@ -222,7 +310,7 @@ export class ContentEditableHandler implements InputHandler {
     return formattedContent;
   }
 
-  private getCurrentFormatting(element: HTMLElement): {
+  private getCurrentFormatting(): {
     bold: boolean;
     italic: boolean;
     underline: boolean;
@@ -231,9 +319,8 @@ export class ContentEditableHandler implements InputHandler {
     color: string;
   } {
     const selection = window.getSelection();
-    const range = selection?.getRangeAt(0);
 
-    if (!range || range.collapsed) {
+    if (!selection || selection.rangeCount === 0) {
       return {
         bold: false,
         italic: false,
@@ -244,7 +331,21 @@ export class ContentEditableHandler implements InputHandler {
       };
     }
 
-    // Get formatting from the current selection
+    const range = selection.getRangeAt(0);
+
+    if (range.collapsed) {
+      return {
+        bold: false,
+        italic: false,
+        underline: false,
+        fontSize: '',
+        fontFamily: '',
+        color: '',
+      };
+    }
+
+    // Get formatting from current selection
+    // Note: execCommand is deprecated but still works for querying state
     const isBold = document.queryCommandState('bold');
     const isItalic = document.queryCommandState('italic');
     const isUnderline = document.queryCommandState('underline');
@@ -261,6 +362,7 @@ export class ContentEditableHandler implements InputHandler {
 
   /**
    * Handle rich text formatting
+   * Note: Uses deprecated execCommand API - consider modern alternatives for new features
    */
   async applyFormatting(
     selector: string,
@@ -275,6 +377,8 @@ export class ContentEditableHandler implements InputHandler {
     options: ContentEditableOptions = {},
   ): Promise<InputDataResult> {
     try {
+      debug.log(LOG_PREFIX, 'Applying formatting:', { selector, formatting });
+
       const elementInfo = findElement(selector);
       if (!elementInfo) {
         return {
@@ -295,23 +399,19 @@ export class ContentEditableHandler implements InputHandler {
       // Focus the element
       element.focus();
 
-      // Apply formatting commands
+      // Apply formatting commands (deprecated but still functional)
       if (formatting.bold !== undefined) {
         document.execCommand('bold', false, undefined);
       }
-
       if (formatting.italic !== undefined) {
         document.execCommand('italic', false, undefined);
       }
-
       if (formatting.underline !== undefined) {
         document.execCommand('underline', false, undefined);
       }
-
       if (formatting.fontSize) {
-        document.execCommand('fontSize', false, '3'); // This is a basic implementation
+        document.execCommand('fontSize', false, '3');
       }
-
       if (formatting.color) {
         document.execCommand('foreColor', false, formatting.color);
       }
@@ -322,6 +422,8 @@ export class ContentEditableHandler implements InputHandler {
       if (options.showSuccessFeedback !== false) {
         showSuccessFeedback(element);
       }
+
+      debug.log(LOG_PREFIX, 'Formatting applied');
 
       return {
         status: 'success',
@@ -335,9 +437,11 @@ export class ContentEditableHandler implements InputHandler {
         },
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Formatting error:', errorMessage);
       return {
         status: 'error',
-        message: `Error applying formatting: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error applying formatting: ${errorMessage}`,
       };
     }
   }
@@ -352,6 +456,8 @@ export class ContentEditableHandler implements InputHandler {
     options: ContentEditableOptions = {},
   ): Promise<InputDataResult> {
     try {
+      debug.log(LOG_PREFIX, 'Handling with placeholder:', { selector, placeholder });
+
       const elementInfo = findElement(selector);
       if (!elementInfo) {
         return {
@@ -392,6 +498,8 @@ export class ContentEditableHandler implements InputHandler {
         showSuccessFeedback(element);
       }
 
+      debug.log(LOG_PREFIX, 'Placeholder content updated');
+
       return {
         status: 'success',
         message: 'Contenteditable with placeholder updated successfully',
@@ -404,9 +512,11 @@ export class ContentEditableHandler implements InputHandler {
         },
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Placeholder handling error:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling contenteditable with placeholder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling contenteditable with placeholder: ${errorMessage}`,
       };
     }
   }
@@ -421,6 +531,8 @@ export class ContentEditableHandler implements InputHandler {
     options: ContentEditableOptions = {},
   ): Promise<InputDataResult> {
     try {
+      debug.log(LOG_PREFIX, 'Handling with auto-save:', { selector });
+
       const elementInfo = findElement(selector);
       if (!elementInfo) {
         return {
@@ -437,13 +549,16 @@ export class ContentEditableHandler implements InputHandler {
       if (result.status === 'success' && saveCallback) {
         // Trigger auto-save
         saveCallback(element.textContent || '');
+        debug.log(LOG_PREFIX, 'Auto-save triggered');
       }
 
       return result;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Auto-save handling error:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling contenteditable with auto-save: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling contenteditable with auto-save: ${errorMessage}`,
       };
     }
   }
@@ -458,6 +573,8 @@ export class ContentEditableHandler implements InputHandler {
     options: ContentEditableOptions = {},
   ): Promise<InputDataResult> {
     try {
+      debug.log(LOG_PREFIX, 'Handling with character limit:', { selector, maxLength, valueLen: value.length });
+
       if (value.length > maxLength) {
         return {
           status: 'error',
@@ -479,15 +596,17 @@ export class ContentEditableHandler implements InputHandler {
       const result = await this.handle(element, value, options);
 
       if (result.status === 'success') {
-        // Add character count display if not already present
+        // Add character count display
         this.addCharacterCountDisplay(element, maxLength);
       }
 
       return result;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Character limit handling error:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling contenteditable with character limit: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling contenteditable with character limit: ${errorMessage}`,
       };
     }
   }
@@ -513,7 +632,7 @@ export class ContentEditableHandler implements InputHandler {
       const currentLength = element.textContent?.length || 0;
       counter.textContent = `${currentLength}/${maxLength}`;
 
-      if (currentLength > maxLength * 0.9) {
+      if (currentLength > maxLength * CHAR_LIMIT_WARNING_THRESHOLD) {
         counter.style.color = '#ff9800';
       } else if (currentLength > maxLength) {
         counter.style.color = '#f44336';

@@ -1,15 +1,10 @@
 /**
- * Embeddings Storage Service using SurrealDB in-memory
- * Stores page embeddings for fast semantic search
+ * Embeddings Storage Service using SurrealDB with IndexedDB
+ * Stores page embeddings persistently for fast semantic search
  */
 
 import { DBWorkerClient } from './db-worker-client.js';
-
-// Debug logging toggle (development only)
-const DEBUG = true;
-
-// Timestamp helper for consistent logging
-const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+import { debug } from '../utils/debug.js';
 
 /**
  * Embeddings Storage Manager
@@ -38,9 +33,9 @@ class EmbeddingsStorageManager {
   /**
    * Initialize the embeddings storage
    */
-  async initialize(useMemory = true): Promise<void> {
+  async initialize(useMemory = false): Promise<void> {
     if (this.isInitialized) {
-      DEBUG && console.log(`${ts()} [EmbeddingsStorage] Already initialized`);
+      debug.log('[EmbeddingsStorage] Already initialized');
       return;
     }
 
@@ -49,14 +44,34 @@ class EmbeddingsStorageManager {
     }
 
     try {
-      // Initialize DB worker (in-memory by default) and schema
+      // Initialize DB worker (IndexedDB by default for persistence)
       await this.getWorkerClient().initialize(useMemory);
 
       this.isInitialized = true;
-      DEBUG && console.log(`${ts()} [EmbeddingsStorage] Initialized successfully`);
+      debug.log('[EmbeddingsStorage] Initialized successfully');
     } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to initialize:', error);
+      debug.error('[EmbeddingsStorage] Failed to initialize:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Helper method to count records in a table
+   */
+  private async count(table: string, pageURL: string, errorContext: string): Promise<number> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+    try {
+      const res = await this.getWorkerClient().query<any[]>(
+        `SELECT count() AS c FROM ${table} WHERE pageURL = $url;`,
+        { url: pageURL }
+      );
+      const row = res?.[0]?.[0];
+      return typeof row?.c === 'number' ? row.c : 0;
+    } catch (error) {
+      debug.error(`[EmbeddingsStorage] Failed to count ${errorContext}:`, error);
+      return 0;
     }
   }
 
@@ -64,54 +79,15 @@ class EmbeddingsStorageManager {
    * Count helpers for pagination/non-semantic access
    */
   async countHTMLChunks(pageURL: string): Promise<number> {
-    if (!this.isInitialized) {
-      await this.initialize();
-    }
-    try {
-      const res = await this.getWorkerClient().query<any[]>(
-        `SELECT count() AS c FROM html_chunks WHERE pageURL = $url;`,
-        { url: pageURL }
-      );
-      const row = res?.[0]?.[0];
-      return typeof row?.c === 'number' ? row.c : 0;
-    } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to count HTML chunks:', error);
-      return 0;
-    }
+    return this.count('html_chunks', pageURL, 'HTML chunks');
   }
 
   async countFormFields(pageURL: string): Promise<number> {
-    if (!this.isInitialized) {
-      await this.initialize();
-    }
-    try {
-      const res = await this.getWorkerClient().query<any[]>(
-        `SELECT count() AS c FROM form_fields WHERE pageURL = $url;`,
-        { url: pageURL }
-      );
-      const row = res?.[0]?.[0];
-      return typeof row?.c === 'number' ? row.c : 0;
-    } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to count form fields:', error);
-      return 0;
-    }
+    return this.count('form_fields', pageURL, 'form fields');
   }
 
   async countClickableElements(pageURL: string): Promise<number> {
-    if (!this.isInitialized) {
-      await this.initialize();
-    }
-    try {
-      const res = await this.getWorkerClient().query<any[]>(
-        `SELECT count() AS c FROM clickable_elements WHERE pageURL = $url;`,
-        { url: pageURL }
-      );
-      const row = res?.[0]?.[0];
-      return typeof row?.c === 'number' ? row.c : 0;
-    } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to count clickable elements:', error);
-      return 0;
-    }
+    return this.count('clickable_elements', pageURL, 'clickable elements');
   }
 
   // ========================================
@@ -146,7 +122,7 @@ class EmbeddingsStorageManager {
         html: r.html || ''
       }));
     } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to fetch HTML chunks range:', error);
+      debug.error('[EmbeddingsStorage] Failed to fetch HTML chunks range:', error);
       return [];
     }
   }
@@ -175,11 +151,15 @@ class EmbeddingsStorageManager {
       const rows = res?.[0] || [];
       return rows.map((r: any) => {
         let fields: any[] = [];
-        try { fields = JSON.parse(r.fieldsJSON); } catch {}
+        try { 
+          fields = JSON.parse(r.fieldsJSON);
+        } catch (err) {
+          debug.error('[EmbeddingsStorage] Failed to parse fieldsJSON:', err);
+        }
         return { groupIndex: r.groupIndex, fields: Array.isArray(fields) ? fields : [] };
       });
     } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to fetch form chunks range:', error);
+      debug.error('[EmbeddingsStorage] Failed to fetch form chunks range:', error);
       return [];
     }
   }
@@ -208,11 +188,15 @@ class EmbeddingsStorageManager {
       const rows = res?.[0] || [];
       return rows.map((r: any) => {
         let elements: any[] = [];
-        try { elements = JSON.parse(r.elementsJSON); } catch {}
+        try { 
+          elements = JSON.parse(r.elementsJSON);
+        } catch (err) {
+          debug.error('[EmbeddingsStorage] Failed to parse elementsJSON:', err);
+        }
         return { groupIndex: r.groupIndex, elements: Array.isArray(elements) ? elements : [] };
       });
     } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to fetch clickable chunks range:', error);
+      debug.error('[EmbeddingsStorage] Failed to fetch clickable chunks range:', error);
       return [];
     }
   }
@@ -240,12 +224,12 @@ class EmbeddingsStorageManager {
       await this.getWorkerClient().storeHTMLChunks({
         pageURL: data.pageURL,
         pageTitle: data.pageTitle,
-        chunks: data.chunks.map(c => ({ text: c.text, html: c.html, embedding: c.embedding, index: c.index })),
+        chunks: data.chunks,
         sessionId: data.sessionId,
       });
-      DEBUG && console.log(`[EmbeddingsStorage] ✅ Stored ${data.chunks.length} HTML chunks via worker`);
+      debug.log(`[EmbeddingsStorage] Stored ${data.chunks.length} HTML chunks via worker`);
     } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to store HTML chunks:', error);
+      debug.error('[EmbeddingsStorage] Failed to store HTML chunks:', error);
       throw error;
     }
   }
@@ -269,12 +253,12 @@ class EmbeddingsStorageManager {
     try {
       await this.getWorkerClient().storeFormFields({
         pageURL: data.pageURL,
-        groups: data.groups.map(g => ({ groupIndex: g.groupIndex, fieldsJSON: g.fieldsJSON, embedding: g.embedding })),
+        groups: data.groups,
         sessionId: data.sessionId,
       });
-      DEBUG && console.log(`[EmbeddingsStorage] ✅ Stored ${data.groups.length} form field groups via worker`);
+      debug.log(`[EmbeddingsStorage] Stored ${data.groups.length} form field groups via worker`);
     } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to store form fields:', error);
+      debug.error('[EmbeddingsStorage] Failed to store form fields:', error);
       throw error;
     }
   }
@@ -298,12 +282,12 @@ class EmbeddingsStorageManager {
     try {
       await this.getWorkerClient().storeClickableElements({
         pageURL: data.pageURL,
-        groups: data.groups.map(g => ({ groupIndex: g.groupIndex, elementsJSON: g.elementsJSON, embedding: g.embedding })),
+        groups: data.groups,
         sessionId: data.sessionId,
       });
-      DEBUG && console.log(`[EmbeddingsStorage] ✅ Stored ${data.groups.length} clickable element groups via worker`);
+      debug.log(`[EmbeddingsStorage] Stored ${data.groups.length} clickable element groups via worker`);
     } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to store clickable elements:', error);
+      debug.error('[EmbeddingsStorage] Failed to store clickable elements:', error);
       throw error;
     }
   }
@@ -323,7 +307,7 @@ class EmbeddingsStorageManager {
     }
 
     if (!data.domUpdate || !data.embedding || data.embedding.length === 0) {
-      DEBUG && console.warn('[EmbeddingsStorage] Skipping DOM update storage - invalid data');
+      debug.log('[EmbeddingsStorage] Skipping DOM update storage - invalid data');
       return;
     }
 
@@ -341,9 +325,9 @@ class EmbeddingsStorageManager {
         sessionId: data.sessionId,
       });
       
-      DEBUG && console.log(`${ts()} [EmbeddingsStorage] ✅ Stored DOM update via worker`);
+      debug.log('[EmbeddingsStorage] Stored DOM update via worker');
     } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to store DOM update:', error);
+      debug.error('[EmbeddingsStorage] Failed to store DOM update:', error);
       throw error;
     }
   }
@@ -413,19 +397,15 @@ class EmbeddingsStorageManager {
     }
 
     try {
-      DEBUG && console.log(`${ts()} [EmbeddingsStorage] 🔍 HNSW search - HTML chunks:`, { pageURL, topK });
-
-      // HNSW operator requires TWO parameters: <|K,EF|>
-      // K = number of neighbors, EF = efSearch (search width, typically 2-4x K for better recall)
-      const efSearch = Math.max(topK * 3, 100);
+      debug.log('[EmbeddingsStorage] HNSW search - HTML chunks:', { pageURL, topK });
       
       // Use dedicated search method in worker client (optimized path)
       const results = await this.getWorkerClient().searchHTMLChunks(pageURL, queryEmbedding, topK);
 
-      DEBUG && console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${results.length} HTML chunks`);
+      debug.log(`[EmbeddingsStorage] HNSW: Found ${results.length} HTML chunks`);
       return results;
     } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to search HTML chunks:', error);
+      debug.error('[EmbeddingsStorage] Failed to search HTML chunks:', error);
       return [];
     }
   }
@@ -454,19 +434,15 @@ class EmbeddingsStorageManager {
     }
 
     try {
-      DEBUG && console.log(`${ts()} [EmbeddingsStorage] 🔍 HNSW search - Form fields:`, { pageURL, topK });
-
-      // HNSW search for form field groups (each group contains ~100 fields as JSON string)
-      const groupTopK = Math.ceil(topK / 10); // Fewer groups needed since each has multiple fields
-      const efSearch = Math.max(groupTopK * 3, 50);
+      debug.log('[EmbeddingsStorage] HNSW search - Form fields:', { pageURL, topK });
       
       // Use dedicated search method in worker client (optimized path)
       const results = await this.getWorkerClient().searchFormFields(pageURL, queryEmbedding, topK);
 
-      DEBUG && console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${results.length} form fields`);
+      debug.log(`[EmbeddingsStorage] HNSW: Found ${results.length} form fields`);
       return results;
     } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to search form fields:', error);
+      debug.error('[EmbeddingsStorage] Failed to search form fields:', error);
       return [];
     }
   }
@@ -493,19 +469,15 @@ class EmbeddingsStorageManager {
     }
 
     try {
-      DEBUG && console.log(`${ts()} [EmbeddingsStorage] 🔍 HNSW search - Clickable elements:`, { pageURL, topK });
-
-      // HNSW search for clickable element groups (each group contains ~100 elements as JSON string)
-      const groupTopK = Math.ceil(topK / 10); // Fewer groups needed since each has multiple elements
-      const efSearch = Math.max(groupTopK * 3, 50);
+      debug.log('[EmbeddingsStorage] HNSW search - Clickable elements:', { pageURL, topK });
       
       // Use dedicated search method in worker client (optimized path)
       const results = await this.getWorkerClient().searchClickableElements(pageURL, queryEmbedding, topK);
 
-      DEBUG && console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${results.length} clickable elements`);
+      debug.log(`[EmbeddingsStorage] HNSW: Found ${results.length} clickable elements`);
       return results;
     } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to search clickable elements:', error);
+      debug.error('[EmbeddingsStorage] Failed to search clickable elements:', error);
       return [];
     }
   }
@@ -533,7 +505,7 @@ class EmbeddingsStorageManager {
     }
 
     try {
-      DEBUG && console.log(`${ts()} [EmbeddingsStorage] 🔍 HNSW search - DOM updates (with recency):`, { pageURL, topK });
+      debug.log('[EmbeddingsStorage] HNSW search - DOM updates (with recency):', { pageURL, topK });
 
       // Get more results than needed so we can apply recency weighting
       const searchK = Math.min(topK * 3, 20);
@@ -562,7 +534,7 @@ class EmbeddingsStorageManager {
 
       // Results are in index 1 (because of LET statement)
       if (!results || results.length < 2 || !results[1] || results[1].length === 0) {
-        DEBUG && console.log(`${ts()} [EmbeddingsStorage] ⚠️  No DOM updates found`);
+        debug.log('[EmbeddingsStorage] No DOM updates found');
         return [];
       }
 
@@ -579,7 +551,7 @@ class EmbeddingsStorageManager {
         try {
           domUpdate = JSON.parse(record.updateJSON);
         } catch (e) {
-          console.error('[EmbeddingsStorage] Failed to parse updateJSON:', e);
+          debug.error('[EmbeddingsStorage] Failed to parse updateJSON:', e);
           domUpdate = { error: 'Failed to parse update' };
         }
 
@@ -600,10 +572,10 @@ class EmbeddingsStorageManager {
       domUpdates.sort((a: any, b: any) => b.combinedScore - a.combinedScore);
       const topResults = domUpdates.slice(0, topK);
 
-      DEBUG && console.log(`[EmbeddingsStorage] ✅ HNSW: Found ${topResults.length} DOM updates (semantic + recency weighted)`);
+      debug.log(`[EmbeddingsStorage] HNSW: Found ${topResults.length} DOM updates (semantic + recency weighted)`);
       return topResults;
     } catch (error) {
-      console.error('[EmbeddingsStorage] Failed to search DOM updates:', error);
+      debug.error('[EmbeddingsStorage] Failed to search DOM updates:', error);
       return [];
     }
   }

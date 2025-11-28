@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
 import { useStorage, sessionStorageDBWrapper } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 
 // Persist expanded state across remounts per session
 const expandedStateBySession: Map<string, boolean> = new Map();
@@ -75,7 +75,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   showControls = true
 }) => {
   // Always read theme directly from storage for reactivity to theme changes
-  const { isLight: isLightFromStorage } = useStorage(exampleThemeStorage);
+  const { isLight: isLightFromStorage } = useStorage(themeStorage);
   const theme = isLightFromStorage ? 'light' : 'dark';
   
   // Use a per-session sticky expanded state to avoid accidental collapses on remount
@@ -144,6 +144,13 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   // Load expanded state from database on mount (only for fixed card, not historical)
   React.useEffect(() => {
     if (!showControls || isHistorical) return; // Only for fixed card
+    
+    // Check in-memory cache first to avoid DB query
+    const cachedExpanded = expandedStateBySession.get(sessionKey);
+    if (cachedExpanded !== undefined) {
+      setIsExpanded(cachedExpanded);
+      return;
+    }
     
     const loadExpandedState = async () => {
       try {

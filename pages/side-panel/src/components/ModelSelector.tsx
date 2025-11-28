@@ -8,6 +8,7 @@ interface ModelSelectorProps {
   selectedModel: string;
   onModelChange: (model: string) => void;
   selectedAgent?: string;
+  isLoadingSession?: boolean;
   agents?: Array<{ id: string; allowedModels?: string[] | null }>;
 }
 
@@ -18,7 +19,7 @@ interface Model {
   enabled?: boolean;
 }
 
-export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedModel, onModelChange, selectedAgent, agents }) => {
+export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedModel, onModelChange, selectedAgent, isLoadingSession = false, agents }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [models, setModels] = React.useState<Model[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -152,24 +153,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
         }
         setModels(sortedModels);
         
-        // Auto-select first model if none is selected or current selection is invalid
-        // Filter by allowed models for the selected agent
-        const allowedModelIds = allowedModels === null ? null : new Set(allowedModels);
-        const hasValidSelection = selectedModel && sortedModels.some((model: Model) => {
-          const isAllowed = allowedModelIds === null || allowedModelIds.has(model.id);
-          return model.id === selectedModel && model.enabled !== false && isAllowed;
-        });
-        
-        if (!hasValidSelection && sortedModels.length > 0) {
-          const firstEnabledModel = sortedModels.find((model: Model) => {
-            const isAllowed = allowedModelIds === null || allowedModelIds.has(model.id);
-            return model.enabled !== false && isAllowed;
-          }) || sortedModels.find((model: Model) => model.enabled !== false) || sortedModels[0];
-          
-          if (firstEnabledModel) {
-            onModelChange(firstEnabledModel.id);
-          }
-        }
+        // Removed: Auto-selection moved to separate effect to handle session loading state
       } catch (error) {
         if ((error as Error)?.name === 'AbortError') {
           return;
@@ -196,6 +180,31 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
       controller.abort();
     };
   }, [organization?.id, activeTeam, authLoading, allowedModels]);
+
+  // Handle auto-selection when models are loaded and session is not loading
+  React.useEffect(() => {
+    if (loading || isLoadingSession || models.length === 0) {
+      return;
+    }
+
+    const allowedModelIds = allowedModels === null ? null : new Set(allowedModels);
+    const hasValidSelection = selectedModel && models.some((model: Model) => {
+      const isAllowed = allowedModelIds === null || allowedModelIds.has(model.id);
+      return model.id === selectedModel && model.enabled !== false && isAllowed;
+    });
+
+    if (!hasValidSelection) {
+      const firstEnabledModel = models.find((model: Model) => {
+        const isAllowed = allowedModelIds === null || allowedModelIds.has(model.id);
+        return model.enabled !== false && isAllowed;
+      }) || models.find((model: Model) => model.enabled !== false) || models[0];
+      
+      if (firstEnabledModel) {
+        console.log('[ModelSelector] Auto-selecting default model:', firstEnabledModel.id);
+        onModelChange(firstEnabledModel.id);
+      }
+    }
+  }, [models, selectedModel, loading, isLoadingSession, allowedModels, onModelChange]);
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

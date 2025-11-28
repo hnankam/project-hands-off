@@ -2,6 +2,10 @@
  * Shared types and interfaces for all input handlers
  */
 
+// ============================================================================
+// RESULT TYPES
+// ============================================================================
+
 export interface InputDataResult {
   status: 'success' | 'error';
   message: string;
@@ -13,10 +17,14 @@ export interface InputDataResult {
     value: string;
     foundInShadowDOM?: boolean;
     shadowHost?: string | null;
-    // Optional bounding box of the interacted element (for diagnostics/UX)
+    /** Optional bounding box of the interacted element (for diagnostics/UX) */
     bbox?: { x: number; y: number; width: number; height: number };
   };
 }
+
+// ============================================================================
+// OPTIONS TYPES
+// ============================================================================
 
 export interface InputHandlerOptions {
   clearFirst?: boolean;
@@ -25,16 +33,8 @@ export interface InputHandlerOptions {
   highlightElement?: boolean;
   showSuccessFeedback?: boolean;
   moveCursor?: boolean;
-  // Optional per-call timeout budget for complex handlers (ms)
+  /** Optional per-call timeout budget for complex handlers (ms) */
   timeoutMs?: number;
-}
-
-export interface ElementInfo {
-  element: HTMLElement;
-  foundInShadowDOM: boolean;
-  shadowHostInfo: string;
-  inputType: string;
-  tagName: string;
 }
 
 export interface StreamingOptions {
@@ -42,17 +42,8 @@ export interface StreamingOptions {
   triggerInputEvents: boolean;
   triggerChangeEvents: boolean;
   triggerKeyboardEvents: boolean;
-  // Emit selectionchange for editors
+  /** Emit selectionchange for editors */
   triggerSelectionChange?: boolean;
-}
-
-export interface ModernInputDetection {
-  isReactComponent: boolean;
-  isVueComponent: boolean;
-  isCustomInput: boolean;
-  framework: 'react' | 'vue' | 'angular' | 'svelte' | 'vanilla' | 'unknown';
-  componentName?: string;
-  props?: Record<string, any>;
 }
 
 export interface DateInputOptions extends InputHandlerOptions {
@@ -72,7 +63,7 @@ export interface SelectInputOptions extends InputHandlerOptions {
   matchBy?: 'value' | 'text' | 'index' | 'both';
   caseSensitive?: boolean;
   partialMatch?: boolean;
-  // If true, prefers value match over text when both match
+  /** If true, prefers value match over text when both match */
   preferValueOverText?: boolean;
 }
 
@@ -85,7 +76,7 @@ export interface ContentEditableOptions extends InputHandlerOptions {
   preserveFormatting?: boolean;
   insertMode?: 'replace' | 'append' | 'prepend';
   htmlContent?: boolean;
-  // When streaming, stream by lines if large multi-line content
+  /** When streaming, stream by lines if large multi-line content */
   streamByLinesThreshold?: number;
 }
 
@@ -94,9 +85,41 @@ export interface TextInputOptions extends InputHandlerOptions {
   validation?: RegExp;
   maxLength?: number;
   autoComplete?: boolean;
-  // If provided, enforce input to match this regex after input
+  /** If provided, enforce input to match this regex after input */
   enforcePattern?: RegExp;
 }
+
+// ============================================================================
+// ELEMENT TYPES
+// ============================================================================
+
+export interface ElementInfo {
+  element: HTMLElement;
+  foundInShadowDOM: boolean;
+  shadowHostInfo: string;
+  inputType: string;
+  tagName: string;
+}
+
+// ============================================================================
+// DETECTION TYPES
+// ============================================================================
+
+/** Supported framework types */
+export type FrameworkType = 'react' | 'vue' | 'angular' | 'svelte' | 'vanilla' | 'unknown';
+
+export interface ModernInputDetection {
+  isReactComponent: boolean;
+  isVueComponent: boolean;
+  isCustomInput: boolean;
+  framework: FrameworkType;
+  componentName?: string;
+  props?: Record<string, unknown>;
+}
+
+// ============================================================================
+// INPUT TYPES
+// ============================================================================
 
 export type InputType =
   | 'text'
@@ -124,6 +147,10 @@ export type InputType =
   | 'reset'
   | 'color'
   | 'image';
+
+// ============================================================================
+// HANDLER INTERFACE
+// ============================================================================
 
 export interface InputHandler {
   canHandle(inputType: InputType, element: HTMLElement): boolean;

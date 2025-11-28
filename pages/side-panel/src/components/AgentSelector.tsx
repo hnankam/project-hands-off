@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 interface AgentSelectorProps {
   isLight: boolean;
   selectedAgent: string;
+  isLoadingSession?: boolean;
   onAgentChange: (agent: string) => void;
 }
 
@@ -74,6 +75,7 @@ const getAgentIcon = (agentId: string): React.ReactNode => {
 export const AgentSelector: React.FC<AgentSelectorProps> = ({
   isLight,
   selectedAgent,
+  isLoadingSession = false,
   onAgentChange,
 }) => {
   const [isOpen, setIsOpen] = React.useState(false);
@@ -153,14 +155,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
         }
         setAgents(agentsWithIcons);
         
-        // Auto-select first agent if none is selected or current selection is invalid
-        const hasValidSelection = selectedAgent && agentsWithIcons.some((agent: Agent) => agent.id === selectedAgent);
-        if (!hasValidSelection && agentsWithIcons.length > 0) {
-          const firstEnabledAgent = agentsWithIcons.find((agent: Agent) => agent.enabled !== false) || agentsWithIcons[0];
-          if (firstEnabledAgent) {
-            onAgentChange(firstEnabledAgent.id);
-          }
-        }
+        // Removed: Auto-selection moved to separate effect to handle session loading state
       } catch (error) {
         if ((error as Error)?.name === 'AbortError') {
           return;
@@ -189,6 +184,24 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
       controller.abort();
     };
   }, [organization?.id, activeTeam, authLoading]);
+
+  // Handle auto-selection when agents are loaded and session is not loading
+  React.useEffect(() => {
+    if (loading || isLoadingSession || agents.length === 0) {
+      return;
+    }
+
+    // Auto-select first agent if none is selected or current selection is invalid
+    const hasValidSelection = selectedAgent && agents.some((agent: Agent) => agent.id === selectedAgent);
+    
+    if (!hasValidSelection) {
+      const firstEnabledAgent = agents.find((agent: Agent) => agent.enabled !== false) || agents[0];
+      if (firstEnabledAgent) {
+        console.log('[AgentSelector] Auto-selecting default agent:', firstEnabledAgent.id);
+        onAgentChange(firstEnabledAgent.id);
+      }
+    }
+  }, [agents, selectedAgent, loading, isLoadingSession, onAgentChange]);
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

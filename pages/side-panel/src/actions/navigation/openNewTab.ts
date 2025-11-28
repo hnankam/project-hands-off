@@ -1,306 +1,358 @@
+/**
+ * Open New Tab Action
+ *
+ * Opens a new browser tab with the specified URL, with deduplication and security validation.
+ */
+
 import { debug as baseDebug } from '@extension/shared';
 
-// Timestamped debug wrappers
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Log prefix for consistent logging */
+const LOG_PREFIX = '[OpenNewTab]';
+
+/** Lock timeout for deduplication (covers slower agent calls) */
+const LOCK_TIMEOUT_MS = 10000;
+
+/** Stale lock cleanup threshold */
+const STALE_LOCK_THRESHOLD_MS = 30000;
+
+/** Dangerous URL patterns to block */
+const DANGEROUS_URL_PATTERNS = [/^javascript:/i, /^data:/i, /^vbscript:/i, /^file:/i];
+
+/** Supported URL protocols */
+const SUPPORTED_PROTOCOLS = ['http:', 'https:'];
+
+// ============================================================================
+// DEBUG HELPERS
+// ============================================================================
+
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
 const debug = {
-  log: (...args: any[]) => baseDebug.log(ts(), ...args),
-  warn: (...args: any[]) => baseDebug.warn(ts(), ...args),
-  error: (...args: any[]) => baseDebug.error(ts(), ...args),
+  log: (...args: unknown[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: unknown[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: unknown[]) => baseDebug.error(ts(), ...args),
 } as const;
 
-/**
- * Result type for open new tab operation
- */
-interface OpenNewTabResult {
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/** Tab information in result */
+interface TabInfo {
+  tabId: number;
+  url: string;
+  domain: string;
+  path: string;
+  isActive: boolean;
+  pinned?: boolean;
+  windowId?: number;
+}
+
+/** Result type for open new tab operation */
+export interface OpenNewTabResult {
   status: 'success' | 'error';
   message: string;
-  tabInfo?: {
-    tabId: number;
-    url: string;
-    domain: string;
-    path: string;
-    isActive: boolean;
-    pinned?: boolean;
-    windowId?: number;
-  };
+  tabInfo?: TabInfo;
 }
 
-interface OpenNewTabOptions {
-  active?: boolean; // default true
-  pinned?: boolean; // default false
-  adjacent?: boolean; // place next to current tab (default true)
-  reuseExisting?: boolean; // focus existing tab with same URL if present
-  bringWindowToFront?: boolean; // focus window when activating (default true)
-  index?: number; // explicit index overrides adjacent
-  waitForCompleteMs?: number; // wait until tab completes loading
+/** Options for opening a new tab */
+export interface OpenNewTabOptions {
+  active?: boolean;
+  pinned?: boolean;
+  adjacent?: boolean;
+  reuseExisting?: boolean;
+  bringWindowToFront?: boolean;
+  index?: number;
+  waitForCompleteMs?: number;
 }
+
+/** Lock entry for deduplication */
+interface LockEntry {
+  timestamp: number;
+  promise: Promise<OpenNewTabResult>;
+}
+
+// ============================================================================
+// HANDLER-LEVEL DEDUPLICATION
+// ============================================================================
 
 // Use globalThis to ensure the Map persists across module reloads/HMR
-// This is critical for extension background scripts where modules may be reloaded
 declare global {
-  var __openTabRequestLocks__: Map<string, { timestamp: number; promise: Promise<OpenNewTabResult> }> | undefined;
+  // eslint-disable-next-line no-var
+  var __openTabRequestLocks__: Map<string, LockEntry> | undefined;
 }
 
-// Static map to track in-flight tab opening requests (background-side deduplication)
-// Use globalThis to survive module reloads
 if (!globalThis.__openTabRequestLocks__) {
-  globalThis.__openTabRequestLocks__ = new Map<string, { timestamp: number; promise: Promise<OpenNewTabResult> }>();
-  console.log('[OpenNewTab] 🏗️  Initializing global lock Map');
+  globalThis.__openTabRequestLocks__ = new Map<string, LockEntry>();
+  debug.log(LOG_PREFIX, 'Initializing global lock Map');
 }
+
 const openTabRequestLocks = globalThis.__openTabRequestLocks__;
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Get error message from unknown error
+ */
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error';
+}
+
+/**
+ * Normalize URL for comparison and signature generation
+ */
+function normalizeUrl(url: string): string {
+  try {
+    const tempUrl = url.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:/) ? url : 'https://' + url;
+    return new URL(tempUrl).toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Create request signature for deduplication
+ */
+function createRequestSignature(normalizedUrl: string, active: boolean, pinned: boolean): string {
+  return `${normalizedUrl}|${active}|${pinned}`;
+}
+
+/**
+ * Validate URL and return validated URL or error
+ */
+function validateUrl(url: string): { valid: true; url: string; urlObj: URL } | { valid: false; error: string } {
+  // Check dangerous patterns
+  if (DANGEROUS_URL_PATTERNS.some(pattern => pattern.test(url))) {
+    return {
+      valid: false,
+      error: 'Security: Blocked potentially dangerous URL scheme. Only HTTP/HTTPS URLs are allowed.',
+    };
+  }
+
+  // Add protocol if missing
+  const urlWithProtocol = url.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:/) ? url : 'https://' + url;
+
+  try {
+    const urlObj = new URL(urlWithProtocol);
+
+    // Check protocol
+    if (!SUPPORTED_PROTOCOLS.includes(urlObj.protocol)) {
+      return {
+        valid: false,
+        error: `Unsupported protocol "${urlObj.protocol}". Only HTTP/HTTPS URLs are allowed.`,
+      };
+    }
+
+    // Validate domain
+    const hostname = urlObj.hostname;
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+    const isIPv4 = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname);
+    const isIPv6 = /:/.test(hostname);
+    const domainPattern = /^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*(?:\.[a-zA-Z0-9-]+)+$/;
+
+    if (!(isLocalhost || isIPv4 || isIPv6 || domainPattern.test(hostname))) {
+      return {
+        valid: false,
+        error: `Invalid domain format: "${hostname}". Please provide a valid domain or localhost/IP.`,
+      };
+    }
+
+    return { valid: true, url: urlWithProtocol, urlObj };
+  } catch {
+    return {
+      valid: false,
+      error: `Invalid URL format: "${url}". Please provide a valid URL (e.g., "https://example.com" or "example.com")`,
+    };
+  }
+}
+
+/**
+ * Clean up stale locks from the lock map
+ */
+function cleanupStaleLocks(lockMap: Map<string, LockEntry>): number {
+  const now = Date.now();
+  let cleaned = 0;
+
+  for (const [key, lock] of lockMap.entries()) {
+    if (now - lock.timestamp > STALE_LOCK_THRESHOLD_MS) {
+      lockMap.delete(key);
+      cleaned++;
+    }
+  }
+
+  return cleaned;
+}
+
+// ============================================================================
+// MAIN HANDLER
+// ============================================================================
 
 /**
  * Open a new tab with the specified URL
+ *
  * @param url - The URL to open in a new tab
  * @param active - Whether to make the new tab active (default: true)
- * @returns Promise with status and message object
+ * @param options - Additional options for tab creation
+ * @returns Promise with status and tab info
+ *
+ * @example
+ * await handleOpenNewTab('https://example.com')
+ * await handleOpenNewTab('example.com', true, { reuseExisting: true })
  */
 export async function handleOpenNewTab(
   url: string,
   active: boolean = true,
   options?: OpenNewTabOptions,
 ): Promise<OpenNewTabResult> {
-  // Generate unique call ID for tracking FIRST
   const callId = Math.random().toString(36).substring(2, 9);
-  console.log(`[OpenNewTab:${callId}] 🚀 FUNCTION CALLED with:`, { url, active, options });
-  
+  debug.log(LOG_PREFIX, `[${callId}] Request:`, { url, active, options });
+
   try {
-    const opts: OpenNewTabOptions = {
+    const opts: Required<Omit<OpenNewTabOptions, 'index' | 'waitForCompleteMs'>> & Pick<OpenNewTabOptions, 'index' | 'waitForCompleteMs'> = {
       active,
       adjacent: true,
       bringWindowToFront: true,
       pinned: false,
-      reuseExisting: true, // default to reusing existing tab to avoid duplicates
+      reuseExisting: true,
       ...options,
     };
-    
-    console.log(`[OpenNewTab:${callId}] 📝 Merged options:`, opts);
-    
-    // Normalize URL early for signature
-    let normalizedUrl: string;
-    try {
-      const tempUrl = url.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:/) ? url : 'https://' + url;
-      normalizedUrl = new URL(tempUrl).toString();
-      console.log(`[OpenNewTab:${callId}] ✅ URL normalized: ${normalizedUrl.substring(0, 80)}`);
-    } catch (err) {
-      normalizedUrl = url; // fallback to original if normalization fails
-      console.log(`[OpenNewTab:${callId}] ⚠️  URL normalization failed, using original: ${url}`);
-    }
-    
-    // Create stable signature for background-side deduplication
-    const requestSignature = `${normalizedUrl}|${opts.active}|${opts.pinned}`;
-    console.log(`[OpenNewTab:${callId}] 🔑 Request signature: ${requestSignature.substring(0, 100)}`);
-    
-    // Check if identical request is already in-flight
-    // Force refresh the reference in case it was reset
-    const lockMap = globalThis.__openTabRequestLocks__ || new Map();
+
+    // Normalize URL for signature
+    const normalizedUrl = normalizeUrl(url);
+    debug.log(LOG_PREFIX, `[${callId}] Normalized URL:`, normalizedUrl.substring(0, 80));
+
+    // Create request signature
+    const requestSignature = createRequestSignature(normalizedUrl, opts.active, opts.pinned);
+
+    // Get or create lock map
+    const lockMap = globalThis.__openTabRequestLocks__ ?? new Map<string, LockEntry>();
     if (!globalThis.__openTabRequestLocks__) {
-      console.log(`[OpenNewTab:${callId}] ⚠️  WARNING: Global lock Map was undefined, recreating it!`);
       globalThis.__openTabRequestLocks__ = lockMap;
     }
-    
-    console.log(`[OpenNewTab:${callId}] 🔍 Pre-check - Map reference:`, {
-      mapExists: !!globalThis.__openTabRequestLocks__,
-      mapSize: globalThis.__openTabRequestLocks__?.size || 0,
-      mapKeys: Array.from(globalThis.__openTabRequestLocks__?.keys() || []).map(k => k.substring(0, 50)),
-    });
-    
+
+    // Check for existing lock
     const existingLock = lockMap.get(requestSignature);
     const lockAge = existingLock ? Date.now() - existingLock.timestamp : -1;
-    
-    console.log(`[OpenNewTab:${callId}] 🔍 Lock check:`, { 
-      signature: requestSignature.substring(0, 60),
+
+    debug.log(LOG_PREFIX, `[${callId}] Lock check:`, {
       hasLock: !!existingLock,
       lockAge,
-      lockTimestamp: existingLock?.timestamp,
-      currentTime: Date.now(),
-      willReuse: existingLock && lockAge < 10000,
-      totalLocksInMap: lockMap.size,
+      willReuse: existingLock && lockAge < LOCK_TIMEOUT_MS,
     });
-    
-    // Reuse existing promise if request came within 10 seconds (covers slower agent calls)
-    if (existingLock && lockAge < 10000) {
-      console.log(`[OpenNewTab:${callId}] ⚠️  DUPLICATE REQUEST BLOCKED - Reusing existing execution (lock age: ${lockAge}ms)`);
+
+    // Reuse existing promise if within timeout
+    if (existingLock && lockAge < LOCK_TIMEOUT_MS) {
+      debug.log(LOG_PREFIX, `[${callId}] Duplicate request blocked, reusing existing execution`);
       return existingLock.promise;
     }
-    
-    console.log(`[OpenNewTab:${callId}] ✅ No active lock found, proceeding with tab creation`);
-    
+
+    debug.log(LOG_PREFIX, `[${callId}] No active lock, proceeding with tab creation`);
+
     // Create execution promise
-    const executionPromise = (async (): Promise<OpenNewTabResult> => {
-      console.log(`[OpenNewTab:${callId}] 🏃 Starting async execution`);
-      try {
-        const result = await executeOpenNewTabInternal(url, opts, normalizedUrl, requestSignature, callId);
-        
-        console.log(`[OpenNewTab:${callId}] ✅ Execution completed successfully:`, {
-          status: result.status,
-          tabId: result.tabInfo?.tabId,
-          url: result.tabInfo?.url?.substring(0, 60),
-        });
-        
-        // DON'T delete lock immediately - let it expire naturally via timestamp check
-        // This allows subsequent rapid requests (within 5s) to reuse the same result
-        console.log(`[OpenNewTab:${callId}] 🔒 Lock retained (will expire via timestamp check)`);
-        
-        return result;
-      } catch (error) {
-        console.error(`[OpenNewTab:${callId}] ❌ Execution failed:`, error);
-        // Delete lock immediately on error so retries can proceed
-        if (globalThis.__openTabRequestLocks__) {
-          globalThis.__openTabRequestLocks__.delete(requestSignature);
-          console.log(`[OpenNewTab:${callId}] 🗑️  Lock deleted due to error`);
-        }
-        throw error;
-      }
-    })();
-    
-    // Store the promise to prevent duplicate execution
-    const lockTimestamp = Date.now();
-    
-    // Ensure we're using the global Map reference
-    if (!globalThis.__openTabRequestLocks__) {
-      console.error(`[OpenNewTab:${callId}] ❌ CRITICAL: Global Map is undefined when trying to set lock!`);
-      globalThis.__openTabRequestLocks__ = new Map();
-    }
-    
-    globalThis.__openTabRequestLocks__.set(requestSignature, {
-      timestamp: lockTimestamp,
+    const executionPromise = executeOpenNewTabInternal(url, opts, normalizedUrl, callId);
+
+    // Store lock
+    lockMap.set(requestSignature, {
+      timestamp: Date.now(),
       promise: executionPromise,
     });
-    
-    console.log(`[OpenNewTab:${callId}] 🔒 Lock acquired at ${lockTimestamp}, total locks:`, globalThis.__openTabRequestLocks__.size);
-    console.log(`[OpenNewTab:${callId}] 🗺️  All lock keys:`, Array.from(globalThis.__openTabRequestLocks__.keys()).map(k => k.substring(0, 80)));
-    console.log(`[OpenNewTab:${callId}] 🔗 Map reference check:`, {
-      globalMapSize: globalThis.__openTabRequestLocks__?.size,
-      localMapSize: openTabRequestLocks.size,
-      areSame: globalThis.__openTabRequestLocks__ === openTabRequestLocks,
-    });
-    
-    // Passive cleanup: Remove stale locks older than 30 seconds when new requests come in
-    if (globalThis.__openTabRequestLocks__) {
-      const now = Date.now();
-      let cleaned = 0;
-      for (const [key, lock] of globalThis.__openTabRequestLocks__.entries()) {
-        if (now - lock.timestamp > 30000) {
-          globalThis.__openTabRequestLocks__.delete(key);
-          cleaned++;
-        }
-      }
-      if (cleaned > 0) {
-        console.log(`[OpenNewTab:${callId}] 🧹 Passively cleaned ${cleaned} stale lock(s)`);
-      }
+
+    debug.log(LOG_PREFIX, `[${callId}] Lock acquired, total locks:`, lockMap.size);
+
+    // Cleanup on completion (delayed to allow duplicate detection)
+    executionPromise
+      .catch(() => {
+        // On error, delete lock immediately for retries
+        lockMap.delete(requestSignature);
+        debug.log(LOG_PREFIX, `[${callId}] Lock deleted due to error`);
+      });
+
+    // Passive cleanup of stale locks
+    const cleaned = cleanupStaleLocks(lockMap);
+    if (cleaned > 0) {
+      debug.log(LOG_PREFIX, `[${callId}] Cleaned ${cleaned} stale lock(s)`);
     }
-    
-    console.log(`[OpenNewTab:${callId}] 📤 Returning execution promise`);
+
     return executionPromise;
   } catch (error) {
-    console.error(`[OpenNewTab:${callId}] ❌ Error in handleOpenNewTab:`, error);
+    debug.error(LOG_PREFIX, `[${callId}] Error:`, error);
     return {
       status: 'error',
-      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      message: `Error: ${getErrorMessage(error)}`,
     };
   }
 }
 
+/**
+ * Internal function to execute tab opening
+ */
 async function executeOpenNewTabInternal(
   url: string,
-  opts: OpenNewTabOptions,
+  opts: Required<Omit<OpenNewTabOptions, 'index' | 'waitForCompleteMs'>> & Pick<OpenNewTabOptions, 'index' | 'waitForCompleteMs'>,
   normalizedUrl: string,
-  requestSignature: string,
   callId: string,
 ): Promise<OpenNewTabResult> {
-  console.log(`[OpenNewTab:${callId}] 🔧 executeOpenNewTabInternal called`);
+  debug.log(LOG_PREFIX, `[${callId}] Executing tab creation`);
+
   try {
-    // Validate URL format and security
-    let validUrl: string;
-    try {
-      // Block potentially dangerous URL schemes
-      const dangerousPatterns = [/^javascript:/i, /^data:/i, /^vbscript:/i, /^file:/i];
-
-      if (dangerousPatterns.some(pattern => pattern.test(url))) {
-        return {
-          status: 'error',
-          message: 'Security: Blocked potentially dangerous URL scheme. Only HTTP/HTTPS URLs are allowed.',
-        };
-      }
-
-      // If URL doesn't have a protocol, add https://
-      if (!url.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:/)) {
-        validUrl = 'https://' + url;
-      } else {
-        validUrl = url;
-      }
-
-      // Validate URL and check supported protocols
-      const urlObj = new URL(validUrl);
-      const supportedProtocols = ['http:', 'https:'];
-
-      if (!supportedProtocols.includes(urlObj.protocol)) {
-        return {
-          status: 'error',
-          message: `Unsupported protocol "${urlObj.protocol}". Only HTTP/HTTPS URLs are allowed.`,
-        };
-      }
-
-      // Additional domain validation for better security (allow localhost and IPs)
-      const hostname = urlObj.hostname;
-      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
-      const isIPv4 = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname);
-      const isIPv6 = /:/.test(hostname);
-      const domainPattern = /^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*(?:\.[a-zA-Z0-9-]+)+$/; // at least one dot
-      if (!(isLocalhost || isIPv4 || isIPv6 || domainPattern.test(hostname))) {
-        return {
-          status: 'error',
-          message: `Invalid domain format: "${urlObj.hostname}". Please provide a valid domain or localhost/IP.`,
-        };
-      }
-    } catch (urlError) {
-      return {
-        status: 'error',
-        message: `Invalid URL format: "${url}". Please provide a valid URL (e.g., "https://example.com" or "example.com")`,
-      };
+    // Validate URL
+    const validation = validateUrl(url);
+    if (!validation.valid) {
+      return { status: 'error', message: validation.error };
     }
 
-    // Determine placement relative to current tab
+    const { url: validUrl, urlObj } = validation;
+    const finalNormalizedUrl = urlObj.toString();
+
+    // Get current tab for placement
     const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    // Build create properties
     const createProps: chrome.tabs.CreateProperties = {
       url: validUrl,
-      active: !!opts.active,
-      pinned: !!opts.pinned,
+      active: opts.active,
+      pinned: opts.pinned,
     };
+
     if (typeof opts.index === 'number') {
       createProps.index = opts.index;
     } else if (opts.adjacent && currentTab && typeof currentTab.index === 'number') {
       createProps.index = currentTab.index + 1;
     }
-    if (currentTab && typeof currentTab.id === 'number') {
-      (createProps as any).openerTabId = currentTab.id;
-    }
 
-    // Normalize URL (again) so we can use it as a stable key and comparison value
-    const normalizedUrlObj = new URL(validUrl);
-    const finalNormalizedUrl = normalizedUrlObj.toString();
+    if (currentTab && typeof currentTab.id === 'number') {
+      createProps.openerTabId = currentTab.id;
+    }
 
     // Reuse existing tab if requested
     if (opts.reuseExisting) {
       const candidates = await chrome.tabs.query({ currentWindow: true });
       const found = candidates.find(t => t.url === finalNormalizedUrl);
+
       if (found && found.id) {
-        await chrome.tabs.update(found.id, { active: !!opts.active, pinned: !!opts.pinned });
+        await chrome.tabs.update(found.id, { active: opts.active, pinned: opts.pinned });
+
         if (opts.active && opts.bringWindowToFront && found.windowId) {
           await chrome.windows.update(found.windowId, { focused: true });
         }
-        const uo = normalizedUrlObj;
+
+        debug.log(LOG_PREFIX, `[${callId}] Focused existing tab:`, found.id);
+
         return {
           status: 'success',
-          message: `Focused existing tab for ${uo.hostname}`,
+          message: `Focused existing tab for ${urlObj.hostname}`,
           tabInfo: {
             tabId: found.id,
             url: finalNormalizedUrl,
-            domain: uo.hostname,
-            path: uo.pathname + uo.search + uo.hash,
-            isActive: !!opts.active,
-            pinned: !!opts.pinned,
+            domain: urlObj.hostname,
+            path: urlObj.pathname + urlObj.search + urlObj.hash,
+            isActive: opts.active,
+            pinned: opts.pinned,
             windowId: found.windowId,
           },
         };
@@ -308,30 +360,28 @@ async function executeOpenNewTabInternal(
     }
 
     // Create new tab
-    console.log(`[OpenNewTab:${callId}] 🌐 Calling chrome.tabs.create with:`, createProps);
+    debug.log(LOG_PREFIX, `[${callId}] Creating tab with:`, createProps);
     const newTab = await chrome.tabs.create(createProps);
-    console.log(`[OpenNewTab:${callId}] ✅ chrome.tabs.create returned:`, { id: newTab?.id, url: newTab?.url?.substring(0, 60) });
 
     if (!newTab || !newTab.id) {
-      console.error(`[OpenNewTab:${callId}] ❌ Tab creation failed - no ID returned`);
-      return {
-        status: 'error',
-        message: 'Failed to create new tab',
-      };
+      debug.error(LOG_PREFIX, `[${callId}] Tab creation failed - no ID returned`);
+      return { status: 'error', message: 'Failed to create new tab' };
     }
-    
-    console.log(`[OpenNewTab:${callId}] 🎉 Tab ${newTab.id} created successfully`);
+
+    debug.log(LOG_PREFIX, `[${callId}] Tab created:`, newTab.id);
 
     // Optionally wait for tab to complete loading
     if (opts.waitForCompleteMs && opts.waitForCompleteMs > 0) {
       await new Promise<void>(resolve => {
         let done = false;
+
         const timeout = setTimeout(() => {
           if (!done) {
             done = true;
             resolve();
           }
         }, opts.waitForCompleteMs);
+
         const listener = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
           if (tabId === newTab.id && changeInfo.status === 'complete') {
             if (!done) {
@@ -342,37 +392,34 @@ async function executeOpenNewTabInternal(
             }
           }
         };
+
         chrome.tabs.onUpdated.addListener(listener);
       });
     }
 
-    // Enhanced success message with URL preview
-    const urlObj = normalizedUrlObj;
-    const domain = urlObj.hostname;
-    const path = urlObj.pathname + urlObj.search + urlObj.hash;
-
+    // Focus window if needed
     if (opts.active && opts.bringWindowToFront && newTab.windowId) {
       await chrome.windows.update(newTab.windowId, { focused: true });
     }
 
     return {
       status: 'success',
-      message: `New tab ${opts.reuseExisting ? 'focused or' : ''} opened successfully; ${opts.active ? 'active' : 'background'}.`,
+      message: `New tab opened successfully; ${opts.active ? 'active' : 'background'}.`,
       tabInfo: {
         tabId: newTab.id,
         url: finalNormalizedUrl,
-        domain: domain,
-        path: path || '/',
-        isActive: !!opts.active,
-        pinned: !!opts.pinned,
+        domain: urlObj.hostname,
+        path: urlObj.pathname + urlObj.search + urlObj.hash || '/',
+        isActive: opts.active,
+        pinned: opts.pinned,
         windowId: newTab.windowId,
       },
     };
   } catch (error) {
-    debug.error('[OpenNewTab] Error opening new tab:', error);
+    debug.error(LOG_PREFIX, `[${callId}] Error opening tab:`, error);
     return {
       status: 'error',
-      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      message: `Error: ${getErrorMessage(error)}`,
     };
   }
 }

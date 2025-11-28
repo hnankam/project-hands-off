@@ -1,10 +1,115 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { debug as baseDebug, sessionStorageDBWrapper, persistenceLock } from '@extension/shared';
+import { debug, sessionStorageDBWrapper, persistenceLock } from '@extension/shared';
 import type { CopilotMessage } from '@extension/storage';
-import { TIMING_CONSTANTS } from '../constants';
 import { useSessionRuntimeState } from '../context/SessionRuntimeContext';
 
-// Message data structure returned by saveMessagesRef
+// ============================================================================
+// UTILITY FUNCTIONS (Pure - no deps)
+// ============================================================================
+
+/**
+ * Counts filtered messages (excludes thinking messages starting with **).
+ */
+function countFilteredMessages(messages: any[]): number {
+  if (!messages || messages.length === 0) return 0;
+
+  return messages.filter(message => {
+    if (typeof message.content === 'string') {
+      return !message.content.startsWith('**') && message.content.trim() !== '';
+    } else if (typeof message.content === 'object' && message.content !== null) {
+      const contentStr = JSON.stringify(message.content);
+      return !contentStr.includes('"**');
+    } else if (message.content === undefined || message.content === null) {
+      return false;
+    }
+    return true;
+  }).length;
+}
+
+/**
+ * Sanitizes a single message via JSON round-trip.
+ */
+function sanitizeSingleMessage(msg: any): any {
+  try {
+    return JSON.parse(JSON.stringify(msg));
+  } catch (error) {
+    // Fallback: copy only serializable properties
+    return {
+      id: msg.id,
+      role: msg.role,
+      content: typeof msg.content === 'string' ? msg.content : String(msg.content || ''),
+      createdAt: msg.createdAt,
+      ...(msg.toolCalls && { toolCalls: msg.toolCalls }),
+      ...(msg.metadata && { metadata: msg.metadata }),
+    };
+  }
+}
+
+/**
+ * Checks if a value is "empty" (for state/content checking).
+ */
+function isEmpty(value: any): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === 'string') return value.trim().length === 0;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === 'object') return Object.keys(value).length === 0;
+  return false;
+}
+
+// ============================================================================
+// CONSTANTS - All timing values extracted for easy tuning
+// ============================================================================
+
+/** Delay after manual reset before re-enabling stabilization guard */
+const MANUAL_RESET_STABILIZATION_DELAY = 2000; // 2 seconds
+
+/** Fallback timeout for hydration if it doesn't complete naturally */
+const HYDRATION_FALLBACK_TIMEOUT = 1000; // 1 second
+
+/** Delay to verify messages were set after restore */
+const MESSAGE_RESTORE_VERIFY_DELAY = 150; // 150ms
+
+/** Maximum number of restore attempts before giving up */
+const MAX_RESTORE_ATTEMPTS = 2; // initial + one retry
+
+/** Initial delay before first auto-restore attempt */
+const AUTO_RESTORE_INITIAL_DELAY = 50; // 50ms
+
+/** Increment for retry delays in auto-restore */
+const AUTO_RESTORE_RETRY_INCREMENT = 30; // 30ms
+
+/** Maximum retry delay for auto-restore */
+const AUTO_RESTORE_MAX_RETRY_DELAY = 200; // 200ms
+
+/** Maximum auto-restore attempts before failing */
+const AUTO_RESTORE_MAX_ATTEMPTS = 10;
+
+/** Delay for force restore when messages are missing */
+const FORCE_RESTORE_DELAY = 150; // 150ms
+
+/** Interval for stabilization guard to check for message clearing */
+const STABILIZATION_CHECK_INTERVAL = 100; // 100ms
+
+/** Interval for pre-stabilization watchdog */
+const WATCHDOG_CHECK_INTERVAL = 200; // 200ms
+
+/** Timeout for watchdog to stop checking */
+const WATCHDOG_TIMEOUT = 600; // 600ms
+
+/** Safety timeout to force hydration completion */
+const HYDRATION_SAFETY_TIMEOUT = 2000; // 2 seconds
+
+/** Delay to check if streaming completed for deferred reload */
+const STREAMING_CHECK_DELAY = 300; // 300ms
+
+/** Delay before cross-window message reload */
+const CROSS_WINDOW_RELOAD_DELAY = 100; // 100ms
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/** Message data structure returned by saveMessagesRef */
 export interface MessageData {
   allMessages: any[];
   filteredMessages: any[];
@@ -20,23 +125,54 @@ export interface UseMessagePersistenceProps {
 }
 
 export interface UseMessagePersistenceReturn {
-  storedMessages: CopilotMessage[]; // All messages stored
-  storedFilteredMessagesCount: number; // Count of filtered messages for display
+  storedMessages: CopilotMessage[];
+  storedFilteredMessagesCount: number;
   setStoredMessages: React.Dispatch<React.SetStateAction<CopilotMessage[]>>;
   handleSaveMessages: () => Promise<void>;
   handleLoadMessages: () => Promise<void>;
   saveMessagesToStorage: (messages: CopilotMessage[]) => Promise<void>;
   isHydrating: boolean;
-  hydrationCompleted: boolean; // True when initial message loading is complete
+  hydrationCompleted: boolean;
 }
 
+// ============================================================================
+// HOOK
+// ============================================================================
+
 /**
- * useMessagePersistence Hook
+ * Message Persistence Hook
  *
- * Manages chat message persistence to Chrome storage
- * - Save messages manually or automatically
- * - Load messages from storage
+ * Manages chat message persistence to IndexedDB with cross-window sync,
+ * auto-restore, stabilization guards, and streaming awareness.
+ *
+ * Key Features:
  * - Auto-restore messages when session becomes active
+ * - Stabilization guard to prevent message clearing after hydration
+ * - Cross-window message synchronization
+ * - Streaming-aware reload deferral
+ * - Manual reset handling with persistence lock coordination
+ * - Message deduplication and sanitization
+ *
+ * @param props - Hook configuration
+ * @returns Message persistence state and handlers
+ *
+ * @example
+ * ```tsx
+ * const {
+ *   storedMessages,
+ *   handleLoadMessages,
+ *   saveMessagesToStorage,
+ *   isHydrating,
+ *   hydrationCompleted
+ * } = useMessagePersistence({
+ *   sessionId,
+ *   isActive,
+ *   isPanelVisible,
+ *   saveMessagesRef,
+ *   restoreMessagesRef,
+ *   resetChatRef
+ * });
+ * ```
  */
 export const useMessagePersistence = ({
   sessionId,
@@ -46,22 +182,46 @@ export const useMessagePersistence = ({
   restoreMessagesRef,
   resetChatRef,
 }: UseMessagePersistenceProps): UseMessagePersistenceReturn => {
-  // Timestamped debug wrappers
-  const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
-  const debug = {
-    log: (...args: any[]) => baseDebug.log(ts(), ...args),
-    warn: (...args: any[]) => baseDebug.warn(ts(), ...args),
-    error: (...args: any[]) => baseDebug.error(ts(), ...args),
-  } as const;
+  // ============================================================================
+  // STATE
+  // ============================================================================
 
   const [storedMessages, setStoredMessages] = useState<CopilotMessage[]>([]);
   const [storedFilteredMessagesCount, setStoredFilteredMessagesCount] = useState<number>(0);
   const [isHydrating, setIsHydrating] = useState<boolean>(false);
   const [hydrationCompleted, setHydrationCompleted] = useState<boolean>(false);
+
+  // ============================================================================
+  // REFS
+  // ============================================================================
+
   const hydrationFallbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const storedMessagesRef = useRef<CopilotMessage[]>([]);
-  const manualResetInProgressRef = useRef<boolean>(false);
+  const manualResetInProgressRef = useRef(false);
   const lastSavedSignatureRef = useRef<string | null>(null);
+  const restoreAttemptsRef = useRef(0);
+  const hasAutoRestoredRef = useRef(false);
+  const lastRestoredSessionRef = useRef('');
+  const panelOpenTimeRef = useRef(0);
+  const wasPanelVisibleRef = useRef(isPanelVisible);
+  const pendingReloadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Get runtime state to check if streaming is in progress
+  const runtimeState = useSessionRuntimeState(sessionId);
+  const runtimeStateRef = useRef(runtimeState);
+
+  // ============================================================================
+  // HELPER FUNCTIONS
+  // ============================================================================
+
+  /**
+   * Computes a signature for a set of messages to detect changes.
+   * Uses JSON stringification for accurate comparison.
+   * Falls back to length-based signature if stringification fails.
+   *
+   * @param msgs - Messages to compute signature for
+   * @returns Signature string
+   */
   const computeMessageSignature = useCallback((msgs: CopilotMessage[] | any[]): string => {
     try {
       return JSON.stringify(msgs ?? []);
@@ -69,53 +229,11 @@ export const useMessagePersistence = ({
       debug.warn('[useMessagePersistence] Failed to compute message signature, falling back to length', error);
       return `len:${Array.isArray(msgs) ? msgs.length : 0}`;
     }
-  }, [debug]);
+  }, []);
 
-  useEffect(() => {
-    storedMessagesRef.current = storedMessages;
-  }, [storedMessages]);
-
-  // Wrap the reset function to track manual resets
-  useEffect(() => {
-    if (!resetChatRef?.current) return;
-    
-    const originalReset = resetChatRef.current;
-    
-    // Wrap the reset function
-    const wrappedReset = () => {
-      debug.log('[useMessagePersistence] Manual reset initiated - disabling stabilization guard');
-      manualResetInProgressRef.current = true;
-      
-      // Signal to persistence lock that manual reset is in progress
-      // This allows RuntimeStateBridge to permit the empty write
-      persistenceLock.setManualReset(sessionId, true);
-      
-      // Call the original reset
-      originalReset();
-      
-      // Clear stored messages immediately
-      setStoredMessages([]);
-      setStoredFilteredMessagesCount(0);
-      lastSavedSignatureRef.current = computeMessageSignature([]);
-      
-      // Re-enable stabilization after a delay (allow time for reset to complete)
-      setTimeout(() => {
-        manualResetInProgressRef.current = false;
-        debug.log('[useMessagePersistence] Manual reset complete - re-enabling stabilization guard');
-      }, 2000);
-    };
-    
-    // Replace the reset function with our wrapped version
-    resetChatRef.current = wrappedReset;
-    
-    // Cleanup: restore original function on unmount
-    return () => {
-      if (resetChatRef?.current === wrappedReset) {
-        resetChatRef.current = originalReset;
-      }
-    };
-  }, [resetChatRef, sessionId, computeMessageSignature, debug]); // Only re-run when resetChatRef or sessionId changes
-
+  /**
+   * Clears the hydration fallback timeout.
+   */
   const clearHydrationFallback = useCallback(() => {
     if (hydrationFallbackTimeoutRef.current) {
       clearTimeout(hydrationFallbackTimeoutRef.current);
@@ -123,118 +241,107 @@ export const useMessagePersistence = ({
     }
   }, []);
 
+  /**
+   * Schedules a fallback timeout to complete hydration if it doesn't finish naturally.
+   */
   const scheduleHydrationFallback = useCallback(() => {
     clearHydrationFallback();
     hydrationFallbackTimeoutRef.current = setTimeout(() => {
       setIsHydrating(false);
       hydrationFallbackTimeoutRef.current = null;
-    }, 1500);
+    }, HYDRATION_FALLBACK_TIMEOUT);
   }, [clearHydrationFallback]);
 
-  // Helper function to count filtered messages
-  const countFilteredMessages = useCallback((messages: any[]): number => {
-    if (!messages || messages.length === 0) return 0;
-
-    return messages.filter(message => {
-      if (typeof message.content === 'string') {
-        return !message.content.startsWith('**') && message.content.trim() !== '';
-      } else if (typeof message.content === 'object' && message.content !== null) {
-        const contentStr = JSON.stringify(message.content);
-        return !contentStr.includes('"**');
-      } else if (message.content === undefined || message.content === null) {
-        return false;
-      }
-      return true;
-    }).length;
-  }, []);
-  const sanitizeNormalizedMessages = useCallback((messages: CopilotMessage[]): CopilotMessage[] => {
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return [];
+  /**
+   * Gets the current in-memory message count safely.
+   */
+  const getInMemoryMessageCount = useCallback((): number | null => {
+    try {
+      if (!saveMessagesRef.current) return null;
+      const data = saveMessagesRef.current();
+      return data?.allMessages?.length ?? null;
+    } catch (err) {
+      return null;
     }
+  }, [saveMessagesRef]);
+
+  /**
+   * Updates stored messages state and refs in one place.
+   */
+  const updateStoredMessagesState = useCallback((messages: CopilotMessage[]) => {
+    setStoredMessages(messages);
+    setStoredFilteredMessagesCount(countFilteredMessages(messages));
+    lastSavedSignatureRef.current = computeMessageSignature(messages);
+  }, [computeMessageSignature]);
+  /**
+   * Sanitizes and deduplicates normalized messages.
+   */
+  const sanitizeNormalizedMessages = useCallback((messages: CopilotMessage[]): CopilotMessage[] => {
+    if (!Array.isArray(messages) || messages.length === 0) return [];
 
     const seenIds = new Set<string>();
     const validRoles = new Set(['user', 'assistant', 'tool', 'system']);
-    let removedEmptyAssistants = 0;
-    let deduplicated = 0;
-    let removedInvalidRoles = 0;
-    let preservedStatefulAssistants = 0;
+    let removedCount = 0;
     const sanitized: CopilotMessage[] = [];
 
     for (const rawMessage of messages) {
       const message = rawMessage as CopilotMessage;
-      if (!message || typeof message !== 'object') {
-        continue;
-      }
+      if (!message || typeof message !== 'object') continue;
 
       const id = typeof (message as any).id === 'string' ? (message as any).id : undefined;
       const role = (message as any).role;
+      
+      // Skip invalid roles
       if (!validRoles.has(role)) {
-        removedInvalidRoles += 1;
+        removedCount++;
         continue;
       }
-      const toolCalls = Array.isArray((message as any).toolCalls) ? (message as any).toolCalls : [];
-      const hasToolCalls = toolCalls.length > 0;
-      const statePayload = (message as any).state;
-      let hasState = false;
-      if (Array.isArray(statePayload)) {
-        hasState = statePayload.length > 0;
-      } else if (statePayload && typeof statePayload === 'object') {
-        hasState = Object.keys(statePayload).length > 0;
-      } else if (typeof statePayload === 'string') {
-        hasState = statePayload.trim().length > 0;
-      } else if (statePayload != null) {
-        hasState = Boolean(statePayload);
-      }
 
-      let hasContent = false;
-      const content = (message as any).content;
-      if (typeof content === 'string') {
-        hasContent = content.trim().length > 0;
-      } else if (Array.isArray(content)) {
-        hasContent = content.length > 0;
-      } else if (content && typeof content === 'object') {
-        hasContent = Object.keys(content).length > 0;
-      } else if (content != null) {
-        hasContent = true;
-      }
-
-      if (role === 'assistant' && !hasContent && !hasToolCalls) {
-        if (hasState) {
-          preservedStatefulAssistants += 1;
-        } else {
-          removedEmptyAssistants += 1;
+      // Skip duplicates
+      if (id && seenIds.has(id)) {
+        removedCount++;
           continue;
         }
-      }
 
-      if (id && seenIds.has(id)) {
-        deduplicated += 1;
+      // Check for empty assistants
+      if (role === 'assistant') {
+        const hasToolCalls = Array.isArray((message as any).toolCalls) && (message as any).toolCalls.length > 0;
+        const hasContent = !isEmpty((message as any).content);
+        const hasState = !isEmpty((message as any).state);
+
+        // Remove empty assistants unless they have state
+        if (!hasContent && !hasToolCalls && !hasState) {
+          removedCount++;
         continue;
       }
-
-      if (id) {
-        seenIds.add(id);
       }
 
+      if (id) seenIds.add(id);
       sanitized.push(message);
     }
 
-    if (removedEmptyAssistants > 0 || deduplicated > 0 || removedInvalidRoles > 0) {
-      debug.log('[useMessagePersistence] Sanitized messages before saving/loading:', {
+    if (removedCount > 0) {
+      debug.log('[useMessagePersistence] Sanitized messages:', {
         before: messages.length,
         after: sanitized.length,
-        removedEmptyAssistants,
-        deduplicated,
-        removedInvalidRoles,
-        preservedStatefulAssistants,
+        removed: removedCount,
       });
     }
 
     return sanitized;
-  }, [debug]);
+  }, []);
 
-  // PERFORMANCE OPTIMIZATION: Consolidated save function to avoid code duplication
-  // Now stores ALL messages (including thinking messages)
+  // ============================================================================
+  // SAVE FUNCTIONS
+  // ============================================================================
+
+  /**
+   * Saves messages to IndexedDB storage.
+   * Stores ALL messages (including thinking messages).
+   * Skips save if messages haven't changed since last save.
+   *
+   * @param messagesToSave - Messages to persist
+   */
   const saveMessagesToStorage = useCallback(
     async (messagesToSave: CopilotMessage[]) => {
       if (!messagesToSave || messagesToSave.length === 0) {
@@ -242,118 +349,49 @@ export const useMessagePersistence = ({
       }
 
       try {
-        // 📝 LOG FULL RAW MESSAGES BEING SAVED
-        // debug.log('========== SAVING MESSAGES TO STORAGE ==========');
-        // debug.log(`Session ID: ${sessionId}`);
-        // debug.log(`Total messages to save: ${messagesToSave.length}`);
-        // debug.log(`Filtered messages count: ${countFilteredMessages(messagesToSave)}`);
-        // debug.log(`Timestamp: ${new Date().toISOString()}`);
-
-        // messagesToSave.forEach((msg, index) => {
-        //   // Guard against undefined/null messages
-        //   if (!msg) {
-        //     debug.warn(`⚠️ Message ${index + 1} is undefined or null, skipping`);
-        //     return;
-        //   }
-
-        //   debug.log(`\n--- Message ${index + 1} to Save ---`);
-
-        //   try {
-        //     debug.log('Full raw message (JSON):', JSON.stringify(msg, null, 2));
-        //   } catch (e) {
-        //     debug.warn('Failed to stringify message:', e);
-        //   }
-
-        //   debug.log('Message summary:', {
-        //     role: msg.role || 'unknown',
-        //     content:
-        //       typeof msg.content === 'string'
-        //         ? msg.content
-        //         : msg.content
-        //           ? JSON.stringify(msg.content)
-        //           : '[no content]',
-        //     id: msg.id || 'no-id',
-        //     hasToolCalls: !!(msg as any).toolCalls,
-        //     contentLength:
-        //       typeof msg.content === 'string'
-        //         ? msg.content.length
-        //         : msg.content
-        //           ? JSON.stringify(msg.content).length
-        //           : 0,
-        //   });
-
-        //   // Highlight message type
-        //   if (msg.role === 'assistant') {
-        //     debug.log('💾 Saving AGENT message');
-        //   } else if (msg.role === 'user') {
-        //     debug.log('💾 Saving USER message');
-        //   } else {
-        //     debug.log(`💾 Saving ${msg.role || 'unknown'} message`);
-        //   }
-        // });
-        // debug.log('==============================================\n');
-
         // Filter out any undefined/null messages before saving
         const validMessages = messagesToSave.filter(msg => msg !== null && msg !== undefined);
 
         if (validMessages.length !== messagesToSave.length) {
-          debug.warn(`⚠️ Filtered out ${messagesToSave.length - validMessages.length} undefined/null messages`);
+          debug.warn(
+            `[useMessagePersistence] Filtered out ${messagesToSave.length - validMessages.length} undefined/null messages`
+          );
         }
 
-        // Sanitize messages to remove non-serializable data (functions, React components, etc.)
-        // Uses JSON round-trip which is more reliable than Blob serialization for Chrome storage
-        const sanitizedMessages = validMessages.map((msg: any) => {
-          try {
-            // Deep clone through JSON to remove non-serializable data
-            // This preserves: primitives, plain objects, arrays, dates, regex
-            // This removes: functions, React components, circular refs, symbols
-            return JSON.parse(JSON.stringify(msg));
-          } catch (error) {
-            debug.error('Failed to sanitize message, using basic copy:', error);
-            // Fallback: copy only serializable properties
-            return {
-              id: msg.id,
-              role: msg.role,
-              content: typeof msg.content === 'string' ? msg.content : String(msg.content || ''),
-              createdAt: msg.createdAt,
-              // Preserve toolCalls if present and serializable
-              ...(msg.toolCalls && { toolCalls: msg.toolCalls }),
-              // Preserve metadata if present
-              ...(msg.metadata && { metadata: msg.metadata }),
-            };
-          }
-        });
-
+        // Sanitize messages to remove non-serializable data
+        const sanitizedMessages = validMessages.map(sanitizeSingleMessage);
         const normalizedMessages = sanitizeNormalizedMessages(sanitizedMessages as CopilotMessage[]);
         const newSignature = computeMessageSignature(normalizedMessages);
 
+        // Skip save if messages haven't changed
         if (lastSavedSignatureRef.current === newSignature) {
-          debug.log('[useMessagePersistence] 🔁 Skipping save - messages unchanged since last sync');
-          setStoredMessages(normalizedMessages);
-          setStoredFilteredMessagesCount(countFilteredMessages(normalizedMessages));
+          debug.log('[useMessagePersistence] Skipping save - messages unchanged since last sync');
+          updateStoredMessagesState(normalizedMessages);
           return;
         }
 
         await sessionStorageDBWrapper.updateAllMessages(sessionId, normalizedMessages);
-        setStoredMessages(normalizedMessages);
-        setStoredFilteredMessagesCount(countFilteredMessages(normalizedMessages));
-        lastSavedSignatureRef.current = newSignature;
+        updateStoredMessagesState(normalizedMessages);
         debug.log(
-          `✅ [useMessagePersistence] Successfully saved ${normalizedMessages.length} messages (${countFilteredMessages(normalizedMessages)} filtered) for session ${sessionId}`,
+          `[useMessagePersistence] Saved ${normalizedMessages.length} messages ` +
+          `(${countFilteredMessages(normalizedMessages)} filtered) for session ${sessionId.slice(0, 8)}`
         );
       } catch (error) {
-        debug.error('❌ [useMessagePersistence] Failed to save messages to storage:', error);
+        debug.error('[useMessagePersistence] Failed to save messages to storage:', error);
       }
     },
-    [sessionId, countFilteredMessages, computeMessageSignature, debug, sanitizeNormalizedMessages],
+    [sessionId, computeMessageSignature, sanitizeNormalizedMessages, updateStoredMessagesState],
   );
 
-  // Manual save function using CopilotKit API
+  /**
+   * Manual save function using CopilotKit API.
+   * Triggered by user action (e.g., save button click).
+   *
+   * @returns Promise that resolves when save completes
+   */
   const handleSaveMessages = useCallback(async () => {
-    // minimal log
-
     if (!saveMessagesRef.current) {
-      debug.log('[useMessagePersistence] saveMessagesRef.current is null, returning');
+      debug.log('[useMessagePersistence] saveMessagesRef.current is null, skipping save');
       return;
     }
 
@@ -363,111 +401,54 @@ export const useMessagePersistence = ({
       const allMessages = messageData.allMessages || [];
       const filteredMessages = messageData.filteredMessages || [];
 
-      debug.log('[useMessagePersistence] Messages to save:', {
+      debug.log('[useMessagePersistence] Manual save:', {
         total: allMessages.length,
         filtered: filteredMessages.length,
-      });
-
-      // 📝 LOG FULL RAW MESSAGES BEING MANUALLY SAVED
-      debug.log('========== MANUAL SAVE TO STORAGE ==========');
-      debug.log(`Session ID: ${sessionId}`);
-      debug.log(`Total messages: ${allMessages.length}`);
-      debug.log(`Filtered messages: ${filteredMessages.length}`);
-      debug.log(`Timestamp: ${new Date().toISOString()}`);
-
-      allMessages.forEach((msg: any, index: number) => {
-        // Guard against undefined/null messages
-        if (!msg) {
-          debug.warn(`⚠️ Message ${index + 1} (Manual Save) is undefined or null, skipping`);
-          return;
-        }
-
-        debug.log(`\n--- Message ${index + 1} (Manual Save) ---`);
-
-        try {
-          debug.log('Full raw message (JSON):', JSON.stringify(msg, null, 2));
-        } catch (e) {
-          debug.warn('Failed to stringify message:', e);
-        }
-
-        debug.log('Message summary:', {
-          role: msg.role || 'unknown',
-          content:
-            typeof msg.content === 'string' ? msg.content : msg.content ? JSON.stringify(msg.content) : '[no content]',
-          id: msg.id || 'no-id',
-          hasToolCalls: !!msg.toolCalls,
-          contentLength:
-            typeof msg.content === 'string' ? msg.content.length : msg.content ? JSON.stringify(msg.content).length : 0,
+        session: sessionId.slice(0, 8),
         });
-
-        // Highlight message type
-        if (msg.role === 'assistant') {
-          debug.log('💾 Manually saving AGENT message');
-        } else if (msg.role === 'user') {
-          debug.log('💾 Manually saving USER message');
-        } else {
-          debug.log(`💾 Manually saving ${msg.role || 'unknown'} message`);
-        }
-      });
-      debug.log('===========================================\n');
 
       // Filter out any undefined/null messages before saving
       const validMessages = allMessages.filter((msg: any) => msg !== null && msg !== undefined);
 
       if (validMessages.length !== allMessages.length) {
         debug.warn(
-          `⚠️ Filtered out ${allMessages.length - validMessages.length} undefined/null messages (Manual Save)`,
+          `[useMessagePersistence] Filtered out ${allMessages.length - validMessages.length} undefined/null messages`
         );
       }
 
-      // Sanitize messages to remove non-serializable data (functions, React components, etc.)
-      // Uses JSON round-trip which is more reliable than Blob serialization for Chrome storage
-      const sanitizedMessages = validMessages.map((msg: any) => {
-        try {
-          // Deep clone through JSON to remove non-serializable data
-          // This preserves: primitives, plain objects, arrays, dates, regex
-          // This removes: functions, React components, circular refs, symbols
-          return JSON.parse(JSON.stringify(msg));
-        } catch (error) {
-          debug.error('Failed to sanitize message, using basic copy:', error);
-          // Fallback: copy only serializable properties
-          return {
-            id: msg.id,
-            role: msg.role,
-            content: typeof msg.content === 'string' ? msg.content : String(msg.content || ''),
-            createdAt: msg.createdAt,
-            // Preserve toolCalls if present and serializable
-            ...(msg.toolCalls && { toolCalls: msg.toolCalls }),
-            // Preserve metadata if present
-            ...(msg.metadata && { metadata: msg.metadata }),
-          };
-        }
-      });
-
+      // Sanitize and normalize messages
+      const sanitizedMessages = validMessages.map(sanitizeSingleMessage);
       const normalizedMessages = sanitizeNormalizedMessages(sanitizedMessages as CopilotMessage[]);
 
       await saveMessagesToStorage(normalizedMessages as unknown as CopilotMessage[]);
     } catch (error) {
-      debug.error('❌ [useMessagePersistence] Failed to save messages:', error);
+      debug.error('[useMessagePersistence] Failed to manually save messages:', error);
     }
-  }, [sessionId, saveMessagesRef, saveMessagesToStorage, sanitizeNormalizedMessages, debug]);
+  }, [sessionId, saveMessagesRef, saveMessagesToStorage, sanitizeNormalizedMessages]);
 
-  // Manual load function using CopilotKit API
-  const restoreAttemptsRef = useRef(0);
-  const MAX_RESTORE_ATTEMPTS = 2; // initial + one retry
+  // ============================================================================
+  // LOAD FUNCTIONS
+  // ============================================================================
 
+  /**
+   * Manual load function using CopilotKit API.
+   * Loads messages from IndexedDB and restores them to CopilotKit.
+   * Streaming-aware: aborts reload if streaming is in progress.
+   *
+   * @returns Promise that resolves when load completes
+   */
   const handleLoadMessages = useCallback(async () => {
-    console.log(`[useMessagePersistence] 📥 ========== LOAD MESSAGES START ==========`);
-    console.log(`[useMessagePersistence] Session: ${sessionId.slice(0, 8)}`);
-    console.log(`[useMessagePersistence] isActive: ${isActive}`);
-    debug.log(`📥 [useMessagePersistence] handleLoadMessages called for session ${sessionId}`);
+    debug.log(`[useMessagePersistence] Load messages start for session ${sessionId.slice(0, 8)}, isActive: ${isActive}`);
+    
+    // Mark as restored to prevent duplicate auto-restore from triggering
+    // This is critical to prevent double hydration when called from ChatSessionContainer
+    hasAutoRestoredRef.current = true;
     
     // CRITICAL: Check if streaming is in progress before loading messages
     // This prevents activity dots from disappearing when reload happens during streaming
     const isStreaming = runtimeStateRef.current?.isInProgress ?? false;
     if (isStreaming) {
-      debug.log(`⏸️ [useMessagePersistence] Streaming in progress, aborting message reload to preserve activity dots`);
-      console.log(`[useMessagePersistence] ⏸️ Aborting reload - streaming active`);
+      debug.log(`[useMessagePersistence] Streaming in progress, aborting reload to preserve activity dots`);
       return;
     }
     
@@ -475,7 +456,7 @@ export const useMessagePersistence = ({
     scheduleHydrationFallback();
 
     if (!restoreMessagesRef.current) {
-      debug.log('[useMessagePersistence] restoreMessagesRef.current is null, returning');
+      debug.log('[useMessagePersistence] restoreMessagesRef is null, aborting load');
       clearHydrationFallback();
       setIsHydrating(false);
       return;
@@ -486,17 +467,14 @@ export const useMessagePersistence = ({
 
     // Reset restore attempts counter on manual load to allow fresh attempts
     restoreAttemptsRef.current = 0;
-    debug.log('[useMessagePersistence] Reset restore attempts counter for fresh load');
 
     try {
       const rawMessages = await sessionStorageDBWrapper.getAllMessagesAsync(sessionId);
-
-      console.log(`[useMessagePersistence] 📦 Loaded ${rawMessages?.length || 0} messages from storage`);
-      debug.log('[useMessagePersistence] Messages to load:', rawMessages.length);
+      debug.log(`[useMessagePersistence] Loaded ${rawMessages?.length || 0} messages from storage`);
 
       const sanitizedFromStorage = sanitizeNormalizedMessages(rawMessages as CopilotMessage[] ?? []);
       if (sanitizedFromStorage.length !== rawMessages.length) {
-        debug.log('[useMessagePersistence] 🧽 Cleaning invalid assistant/duplicate messages from storage', {
+        debug.log('[useMessagePersistence] Cleaning invalid/duplicate messages from storage', {
           before: rawMessages.length,
           after: sanitizedFromStorage.length,
         });
@@ -507,35 +485,17 @@ export const useMessagePersistence = ({
         }
       }
 
-      const previousMessages = storedMessagesRef.current;
-      const previousSignature = computeMessageSignature(previousMessages as CopilotMessage[]);
-      const incomingSignature = computeMessageSignature(sanitizedFromStorage as CopilotMessage[]);
+      const previousSignature = computeMessageSignature(storedMessagesRef.current);
+      const incomingSignature = computeMessageSignature(sanitizedFromStorage);
+      const currentInMemoryCount = getInMemoryMessageCount();
 
-      const currentInMemoryMessagesCount = (() => {
-        try {
-          if (!saveMessagesRef.current) return null;
-          const data = saveMessagesRef.current();
-          return data?.allMessages?.length ?? null;
-        } catch (err) {
-          debug.warn(`[useMessagePersistence] Failed to inspect in-memory messages for session ${sessionId}:`, err);
-          return null;
-        }
-      })();
-
-      const signaturesMatch = previousSignature === incomingSignature;
-      let shouldRestoreMessages = false;
-
+      // Handle empty session
       if (sanitizedFromStorage.length === 0) {
-        console.log(`[useMessagePersistence] 📭 No messages to load for session ${sessionId.slice(0, 8)}`);
-        debug.log(`[useMessagePersistence] No messages to load for session ${sessionId}`);
+        debug.log(`[useMessagePersistence] No messages to load for session ${sessionId.slice(0, 8)}`);
 
-        // Ensure local state reflects an empty session immediately
-        setStoredMessages([]);
-        setStoredFilteredMessagesCount(0);
-        lastSavedSignatureRef.current = incomingSignature;
+        updateStoredMessagesState([]);
         if (restoreMessagesRef.current) {
           try {
-            console.log('[useMessagePersistence] 🧹 Clearing messages in UI');
             restoreMessagesRef.current([]);
           } catch (restoreError) {
             debug.warn('[useMessagePersistence] Failed to clear messages via restore ref:', restoreError);
@@ -545,98 +505,112 @@ export const useMessagePersistence = ({
         clearHydrationFallback();
         setIsHydrating(false);
         setHydrationCompleted(true);
-        console.log(`[useMessagePersistence] ✅ ========== LOAD COMPLETE (empty) ==========`);
-        debug.log(`🎯 [useMessagePersistence] Hydration COMPLETED for session ${sessionId} (no messages)`);
+        debug.log(`[useMessagePersistence] Hydration completed (no messages)`);
         return;
-      } else {
-        if (!signaturesMatch) {
-          shouldRestoreMessages = true;
-          debug.log('[useMessagePersistence] Detected different message signatures - will restore from storage');
-        } else if (currentInMemoryMessagesCount !== null) {
-          // When signatures match but in-memory state is empty (e.g., CopilotKit lost messages), force a restore
-          if (currentInMemoryMessagesCount === 0 && sanitizedFromStorage.length > 0) {
-            shouldRestoreMessages = true;
-            debug.warn(
-              `[useMessagePersistence] Signatures match but in-memory messages are empty for session ${sessionId}; forcing restore`,
-            );
-          }
-        }
+      }
 
-        if (!shouldRestoreMessages) {
-          debug.log(`[useMessagePersistence] Messages unchanged in storage for session ${sessionId}, skipping restore`);
-          setStoredMessages(sanitizedFromStorage);
-          setStoredFilteredMessagesCount(countFilteredMessages(sanitizedFromStorage));
-          lastSavedSignatureRef.current = incomingSignature;
+      // Determine if restore is needed
+      const signaturesMatch = previousSignature === incomingSignature;
+      const shouldRestore = !signaturesMatch || (currentInMemoryCount === 0 && sanitizedFromStorage.length > 0);
+
+      if (!shouldRestore) {
+        debug.log(`[useMessagePersistence] Messages unchanged, skipping restore`);
+        updateStoredMessagesState(sanitizedFromStorage);
           clearHydrationFallback();
           setIsHydrating(false);
           setHydrationCompleted(true);
-          debug.log(
-            `🎯 [useMessagePersistence] Hydration COMPLETED for session ${sessionId} (messages unchanged, no restore needed)`,
-          );
+        debug.log('[useMessagePersistence] Hydration completed (no restore needed)');
           return;
         }
 
-        if (restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS && sanitizedFromStorage.length > 0) {
+      if (shouldRestore) {
+        debug.log(`[useMessagePersistence] ${signaturesMatch ? 'Memory empty' : 'Signatures differ'} - restoring from storage`);
+      }
+
+      // Attempt restore
+      if (restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS) {
           restoreAttemptsRef.current += 1;
           restoreMessagesRef.current(sanitizedFromStorage);
-        } else if (sanitizedFromStorage.length === 0) {
-          debug.warn('[useMessagePersistence] No messages to restore after sanitization');
         } else {
           debug.log('[useMessagePersistence] Skipping restore - max attempts reached');
         }
-        setStoredMessages(sanitizedFromStorage);
-        setStoredFilteredMessagesCount(countFilteredMessages(sanitizedFromStorage));
-        lastSavedSignatureRef.current = incomingSignature;
-        debug.log('✅ [useMessagePersistence] Messages loaded successfully');
+      
+      updateStoredMessagesState(sanitizedFromStorage);
+      debug.log('[useMessagePersistence] Messages loaded successfully');
 
         clearHydrationFallback();
         setIsHydrating(false);
 
-        // Verify messages were actually set after a short delay
-        // If they were cleared, try restoring again (handles CopilotKit initialization race)
-        // OPTIMIZATION: Reduced to 150ms to complete quickly (target: ~250ms total)
+      // Verify messages were set after a short delay (handles CopilotKit init race)
         setTimeout(() => {
-          // Check if we have access to the current messages through saveMessagesRef
-          if (saveMessagesRef.current) {
-            const currentMessageData = saveMessagesRef.current();
-            if (currentMessageData.allMessages.length === 0 && sanitizedFromStorage.length > 0) {
-              if (restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS) {
-                debug.log('[useMessagePersistence] Messages cleared after restore, retrying once...');
+        const currentCount = getInMemoryMessageCount();
+        if (currentCount === 0 && sanitizedFromStorage.length > 0 && restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS) {
+          debug.log('[useMessagePersistence] Messages cleared after restore, retrying...');
                 restoreAttemptsRef.current += 1;
                 if (restoreMessagesRef.current) {
                   restoreMessagesRef.current(sanitizedFromStorage);
-                  debug.log('[useMessagePersistence] Messages re-restored successfully');
+            debug.log('[useMessagePersistence] Messages re-restored');
                 }
-              } else {
-                debug.log('[useMessagePersistence] Not retrying restore - max attempts reached');
               }
-            }
-          }
-          // Signal hydration completion after retry logic completes
           setHydrationCompleted(true);
-          debug.log(`🎯 [useMessagePersistence] Hydration COMPLETED for session ${sessionId} (messages restored and verified)`);
-        }, 150); // Reduced to keep total restoration under 600ms
-      }
+        debug.log('[useMessagePersistence] Hydration completed (restored and verified)');
+      }, MESSAGE_RESTORE_VERIFY_DELAY);
     } catch (error) {
-      debug.error(`❌ [useMessagePersistence] Failed to load messages for session ${sessionId}:`, error);
+      debug.error(`[useMessagePersistence] Failed to load messages:`, error);
       setHydrationCompleted(true); // Complete even on error to unblock UI
-      debug.log(`🎯 [useMessagePersistence] Hydration COMPLETED for session ${sessionId} (with error, unblocking UI)`);
+      debug.log('[useMessagePersistence] Hydration completed (with error, unblocking UI)');
     } finally {
       // Always release the loading lock
       unlock();
       clearHydrationFallback();
       setIsHydrating(false);
     }
-  }, [sessionId, restoreMessagesRef, saveMessagesRef, countFilteredMessages, scheduleHydrationFallback, clearHydrationFallback, computeMessageSignature, sanitizeNormalizedMessages]);
+  }, [sessionId, restoreMessagesRef, getInMemoryMessageCount, scheduleHydrationFallback, clearHydrationFallback, computeMessageSignature, sanitizeNormalizedMessages, updateStoredMessagesState, isActive]);
 
-  // Auto-restore messages when session becomes active or panel is reopened
-  const hasAutoRestoredRef = useRef(false);
-  const autoRestoreAttemptRef = useRef(0);
-  const lastRestoredSessionRef = useRef<string>('');
-  const panelOpenTimeRef = useRef<number>(0);
+  // ============================================================================
+  // EFFECTS
+  // ============================================================================
 
-  // Track when panel becomes visible and reset auto-restore flag when it becomes hidden
-  const wasPanelVisibleRef = useRef(isPanelVisible);
+  // Sync storedMessages to ref for stabilization guard
+  useEffect(() => {
+    storedMessagesRef.current = storedMessages;
+  }, [storedMessages]);
+
+  // Keep runtime state ref updated
+  useEffect(() => {
+    runtimeStateRef.current = runtimeState;
+  }, [runtimeState]);
+
+  // Wrap reset function to track manual resets
+  useEffect(() => {
+    if (!resetChatRef?.current) return;
+    
+    const originalReset = resetChatRef.current;
+    
+    const wrappedReset = () => {
+      debug.log('[useMessagePersistence] Manual reset initiated');
+      manualResetInProgressRef.current = true;
+      persistenceLock.setManualReset(sessionId, true);
+      
+      originalReset();
+      updateStoredMessagesState([]);
+      
+      setTimeout(() => {
+        manualResetInProgressRef.current = false;
+        debug.log('[useMessagePersistence] Manual reset complete');
+      }, MANUAL_RESET_STABILIZATION_DELAY);
+    };
+    
+    resetChatRef.current = wrappedReset;
+    
+    return () => {
+      if (resetChatRef?.current === wrappedReset) {
+        resetChatRef.current = originalReset;
+      }
+    };
+  }, [resetChatRef, sessionId, updateStoredMessagesState]);
+
+  // Track panel visibility and reset auto-restore on panel reopen
   useEffect(() => {
     // Panel just became visible
     if (isPanelVisible && isActive && !wasPanelVisibleRef.current) {
@@ -644,7 +618,6 @@ export const useMessagePersistence = ({
       
       // Reset auto-restore flag when panel reopens
       hasAutoRestoredRef.current = false;
-      autoRestoreAttemptRef.current = 0;
       restoreAttemptsRef.current = 0;
       setIsHydrating(true);
       setHydrationCompleted(false);
@@ -652,158 +625,135 @@ export const useMessagePersistence = ({
     }
     
     wasPanelVisibleRef.current = isPanelVisible;
-  }, [isPanelVisible, isActive, sessionId, scheduleHydrationFallback]);
+  }, [isPanelVisible, isActive, scheduleHydrationFallback]);
   
-  // Reset auto-restore flag and attempts counter when session changes
+  // Reset auto-restore flag when session changes
   useEffect(() => {
     if (lastRestoredSessionRef.current !== sessionId) {
-      debug.log(`🔄 [useMessagePersistence] Session changed from ${lastRestoredSessionRef.current || 'none'} to ${sessionId}, resetting restore flags`);
+      debug.log(
+        `[useMessagePersistence] Session changed to ${sessionId.slice(0, 8)}, resetting restore flags`
+      );
       hasAutoRestoredRef.current = false;
-      restoreAttemptsRef.current = 0; // Reset attempts for new session
+      restoreAttemptsRef.current = 0;
       lastRestoredSessionRef.current = sessionId;
       setIsHydrating(true);
-      setHydrationCompleted(false); // Reset completion flag for new session
+      setHydrationCompleted(false);
       scheduleHydrationFallback();
-      autoRestoreAttemptRef.current = 0;
     }
   }, [sessionId, scheduleHydrationFallback]);
 
+  // Auto-restore messages when session becomes active or panel reopens
+  // NOTE: storedMessages.length is intentionally NOT in dependencies to prevent
+  // re-triggering when messages load (which would cause double hydration)
+  const storedMessagesLengthRef = useRef(storedMessages.length);
   useEffect(() => {
+    storedMessagesLengthRef.current = storedMessages.length;
+  }, [storedMessages.length]);
+  
+  useEffect(() => {
+    if (!isActive || !isPanelVisible) return;
+
     let timeoutId: NodeJS.Timeout | undefined;
 
-    // Auto-restore when:
-    // 1. Session becomes active and hasn't been restored yet
-    // 2. Panel becomes visible again (reopened) for an active session
-    if (isActive && isPanelVisible) {
       const scheduleAttempt = (delay: number, attempt: number) => {
         timeoutId = setTimeout(() => {
           const ready = Boolean(saveMessagesRef.current && restoreMessagesRef.current);
 
           if (!ready) {
-            if (attempt < 10) {
-              autoRestoreAttemptRef.current = attempt;
-              debug.warn(
-                `⏳ [useMessagePersistence] CopilotKit not ready for restore (attempt ${attempt}) - retrying in ${delay}ms`,
-              );
-              scheduleAttempt(Math.min(delay + 100, 500), attempt + 1);
+          if (attempt < AUTO_RESTORE_MAX_ATTEMPTS) {
+            debug.warn(`[useMessagePersistence] CopilotKit not ready (attempt ${attempt}), retrying`);
+            scheduleAttempt(Math.min(delay + AUTO_RESTORE_RETRY_INCREMENT, AUTO_RESTORE_MAX_RETRY_DELAY), attempt + 1);
               return;
             }
-
-            debug.error(
-              `❌ [useMessagePersistence] Auto-restore failed after ${attempt} attempts - CopilotKit not ready (session ${sessionId})`,
-            );
+          debug.error(`[useMessagePersistence] Auto-restore failed - CopilotKit not ready after ${attempt} attempts`);
             return;
           }
 
-          autoRestoreAttemptRef.current = attempt;
-          hasAutoRestoredRef.current = true;
-          debug.log(
-            `🔄 [useMessagePersistence] Auto-restore triggered for session ${sessionId} (attempt ${attempt}) - CopilotKit ready`,
-          );
+        debug.log(`[useMessagePersistence] Auto-restore triggered (attempt ${attempt})`);
           handleLoadMessages();
+          // Note: hasAutoRestoredRef is now set inside handleLoadMessages
         }, delay);
       };
 
-      // Check if messages exist in memory
-      const currentInMemoryMessagesCount = (() => {
-        try {
-          if (!saveMessagesRef.current) return null;
-          const data = saveMessagesRef.current();
-          return data?.allMessages?.length ?? null;
-        } catch (err) {
-          return null;
-        }
-      })();
+    const currentCount = getInMemoryMessageCount();
+    const storedCount = storedMessagesLengthRef.current;
 
-      // Reset auto-restore flag if messages are empty in memory but exist in storage (safety net)
-      if (hasAutoRestoredRef.current && currentInMemoryMessagesCount === 0 && storedMessages.length > 0) {
-        debug.warn(`⚠️ [useMessagePersistence] Messages missing in memory, resetting auto-restore for session ${sessionId}`);
-        hasAutoRestoredRef.current = false;
-        autoRestoreAttemptRef.current = 0;
+    // Safety net: reset if messages missing
+    // Only trigger if we haven't just completed auto-restore (give CopilotKit time to sync)
+    if (hasAutoRestoredRef.current && currentCount === 0 && storedCount > 0) {
+      // Don't immediately reset - this might be a race condition during hydration
+      // The stabilization guard will handle true message loss
+      debug.log('[useMessagePersistence] Messages appear empty, deferring to stabilization guard');
       }
 
       if (!hasAutoRestoredRef.current) {
-        scheduleAttempt(100, 1);
-      } else {
-        // If we're skipping but messages are actually empty, force restore
-        if (currentInMemoryMessagesCount === 0 && storedMessages.length > 0) {
-          debug.error(`❌ [useMessagePersistence] Skipping restore but messages empty - forcing restore`);
-          hasAutoRestoredRef.current = false;
-          autoRestoreAttemptRef.current = 0;
-          restoreAttemptsRef.current = 0;
-          scheduleAttempt(150, 1);
-        }
-      }
+      scheduleAttempt(AUTO_RESTORE_INITIAL_DELAY, 1);
     }
-
-    // Only reset flag when session changes, NOT on visibility toggles
-    // However, we DO check above if messages are missing and reset the flag if needed
+    // Removed: Force restore on empty messages - this was causing double hydration
+    // The stabilization guard (lines 697+) handles message recovery after hydration
 
     return () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
+      if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [isActive, isPanelVisible, handleLoadMessages, sessionId, saveMessagesRef, storedMessages.length]);
+  }, [isActive, isPanelVisible, handleLoadMessages, getInMemoryMessageCount]);
+  // NOTE: storedMessages.length intentionally removed from deps to prevent double hydration
 
+  // Cleanup hydration fallback on unmount
   useEffect(() => {
     return () => {
       clearHydrationFallback();
     };
   }, [clearHydrationFallback]);
 
-  // STABILIZATION GUARD: Actively protect messages from being cleared after hydration completes
-  // This runs AFTER hydration and prevents any code (including CopilotKit internals) from clearing messages
-  const stabilizationActiveRef = useRef(false);
-  
+  // Stabilization guard: protect messages from being cleared after hydration completes
   useEffect(() => {
     if (!saveMessagesRef.current || !restoreMessagesRef.current) return;
     if (!isActive || !isPanelVisible) return;
     if (!hydrationCompleted) return;
     if (storedMessages.length === 0) return;
 
-    // Activate stabilization guard only after hydration completes
-    stabilizationActiveRef.current = true;
+    // Track consecutive empty checks to avoid false positives during tab switches
+    let consecutiveEmptyChecks = 0;
+    const EMPTY_CHECKS_THRESHOLD = 2; // Require 2 consecutive empty checks before restoring
 
-    // Monitor for any unexpected clearing and immediately restore
+    // Monitor for unexpected clearing and immediately restore
     const guardIntervalId = setInterval(() => {
-      if (saveMessagesRef.current && restoreMessagesRef.current) {
-        const currentMessageData = saveMessagesRef.current();
+      if (!saveMessagesRef.current || !restoreMessagesRef.current) return;
+      if (manualResetInProgressRef.current) return; // Skip if manual reset in progress
+      
+      const currentMessageData = saveMessagesRef.current();
+      if (currentMessageData.allMessages.length === 0 && storedMessages.length > 0) {
+        consecutiveEmptyChecks++;
         
-        // Skip restoration if a manual reset is in progress
-        if (manualResetInProgressRef.current) {
-          return;
-        }
-        
-        // If messages were cleared after stabilization, immediately restore them
-        if (currentMessageData.allMessages.length === 0 && storedMessages.length > 0) {
+        // Only restore if we've seen empty messages multiple times
+        // This prevents false positives during session switches
+        if (consecutiveEmptyChecks >= EMPTY_CHECKS_THRESHOLD) {
           debug.error(
-            `🚨 [useMessagePersistence] Messages cleared after stabilization! Force-restoring ${storedMessages.length} messages`,
+            `[useMessagePersistence] Messages cleared after stabilization! Force-restoring ${storedMessages.length} messages`
           );
           restoreMessagesRef.current(storedMessages);
+          consecutiveEmptyChecks = 0; // Reset after restore
         }
+      } else {
+        consecutiveEmptyChecks = 0; // Reset if messages are present
       }
-    }, 100);
+    }, STABILIZATION_CHECK_INTERVAL);
 
-    return () => {
-      clearInterval(guardIntervalId);
-      stabilizationActiveRef.current = false;
-    };
+    return () => clearInterval(guardIntervalId);
   }, [isActive, isPanelVisible, storedMessages, saveMessagesRef, restoreMessagesRef, hydrationCompleted]);
 
-  // Pre-stabilization watchdog: Monitor for unexpected message clearing during initial load
-  // DISABLED once hydration completes (replaced by stabilization guard above)
+  // Pre-stabilization watchdog: monitor for unexpected clearing during initial load
   useEffect(() => {
     if (!saveMessagesRef.current || !restoreMessagesRef.current) return;
     if (!isActive || !isPanelVisible) return;
     
-    // Disable watchdog once hydration completes - stabilization guard takes over
+    // Disable once hydration completes - stabilization guard takes over
     if (hydrationCompleted) {
       return;
     }
 
     const timeSincePanelOpen = Date.now() - panelOpenTimeRef.current;
-    if (timeSincePanelOpen > 600) return;
+    if (timeSincePanelOpen > WATCHDOG_TIMEOUT) return;
 
     let watchdogRestoreDone = false;
     const intervalId = setInterval(() => {
@@ -811,18 +761,18 @@ export const useMessagePersistence = ({
         const currentMessageData = saveMessagesRef.current();
         if (!watchdogRestoreDone && currentMessageData.allMessages.length === 0) {
           if (restoreAttemptsRef.current < MAX_RESTORE_ATTEMPTS) {
-            debug.warn('⚠️ [useMessagePersistence] Watchdog: messages cleared during load, restoring...');
+            debug.warn('[useMessagePersistence] Watchdog: messages cleared during load, restoring...');
             restoreAttemptsRef.current += 1;
             restoreMessagesRef.current(storedMessages);
           }
           watchdogRestoreDone = true;
         }
       }
-    }, 200);
+    }, WATCHDOG_CHECK_INTERVAL);
 
     const stopTimeoutId = setTimeout(() => {
       clearInterval(intervalId);
-    }, 600);
+    }, WATCHDOG_TIMEOUT);
 
     return () => {
       clearInterval(intervalId);
@@ -830,121 +780,107 @@ export const useMessagePersistence = ({
     };
   }, [isActive, isPanelVisible, storedMessages, saveMessagesRef, restoreMessagesRef, hydrationCompleted]);
 
-  // Safety timeout: ensure hydrationCompleted is set to true after max wait time
-  // This prevents the UI from getting stuck waiting for hydration
+  // Safety timeout: force hydration completion if it doesn't finish
   useEffect(() => {
     if (!hydrationCompleted && isActive) {
       const safetyTimeoutId = setTimeout(() => {
         if (!hydrationCompleted) {
-          debug.warn(`⚠️ [useMessagePersistence] Safety timeout triggered for session ${sessionId} - forcing hydration completion after 2s`);
+          debug.warn(
+            `[useMessagePersistence] Safety timeout - forcing hydration completion after ${HYDRATION_SAFETY_TIMEOUT}ms`
+          );
           setHydrationCompleted(true);
         }
-      }, 2000); // 2s max wait time as safety net
+      }, HYDRATION_SAFETY_TIMEOUT);
 
       return () => clearTimeout(safetyTimeoutId);
     }
     return undefined;
-  }, [hydrationCompleted, isActive, sessionId]);
+  }, [hydrationCompleted, isActive]);
 
-  // Get runtime state to check if streaming is in progress
-  const runtimeState = useSessionRuntimeState(sessionId);
-  const runtimeStateRef = useRef(runtimeState);
-  const pendingReloadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Keep ref updated with latest runtime state
+  // Cross-window message sync: listen for updates from other windows
   useEffect(() => {
-    runtimeStateRef.current = runtimeState;
-  }, [runtimeState]);
-  
-  // Cross-window message sync: Listen for message updates from other windows
-  useEffect(() => {
-    // Only listen if chrome.storage is available and session is active
     if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.onChanged || !isActive) {
       return;
     }
 
-    const syncKeyPrefix = 'session_storage_sync_';
-    const messagesUpdatedKey = `${syncKeyPrefix}messagesUpdated`;
-    
-    // Get our window ID to filter out self-notifications
+    const messagesUpdatedKey = 'session_storage_sync_messagesUpdated';
     const ourWindowId = sessionStorageDBWrapper.getWindowId();
 
     const handleStorageChange = (
       changes: { [key: string]: chrome.storage.StorageChange },
       areaName: string
     ) => {
-      // Only process changes from chrome.storage.local
       if (areaName !== 'local') return;
 
       const change = changes[messagesUpdatedKey];
       if (!change || !change.newValue) return;
 
-      const syncData = change.newValue as { event: string; sessionId?: string; timestamp: number; userId?: string; windowId?: string };
+      const syncData = change.newValue as {
+        event: string;
+        sessionId?: string;
+        timestamp: number;
+        userId?: string;
+        windowId?: string;
+      };
       
-      // Filter out self-notifications: ignore if windowId matches ours
+      // Filter out self-notifications
       if (syncData.windowId === ourWindowId) {
-        debug.log(`🚫 [useMessagePersistence] Ignoring self-notification (same window ID) for session ${sessionId}`);
         return;
       }
       
-      // Only reload if this is for the current session and came from another window
+      // Only reload if for current session
       if (syncData.sessionId === sessionId && syncData.event === 'messagesUpdated') {
         const oldTimestamp = change.oldValue?.timestamp;
         const newTimestamp = syncData.timestamp;
         
-        // Only reload if timestamp changed (indicating it came from another window)
+        // Only reload if timestamp changed
         if (!oldTimestamp || newTimestamp !== oldTimestamp) {
-          // CRITICAL: Don't reload messages if streaming is in progress
-          // This prevents activity dots from disappearing when cross-window sync triggers reloads
+          // Don't reload if streaming is in progress
           const isStreaming = runtimeStateRef.current?.isInProgress ?? false;
           
           if (isStreaming) {
-            debug.log(`⏸️ [useMessagePersistence] Streaming in progress for session ${sessionId}, deferring cross-window reload...`);
+            debug.log('[useMessagePersistence] Streaming active, deferring cross-window reload');
             
-            // Clear any existing pending reload
+            // Clear existing pending reload
             if (pendingReloadTimeoutRef.current) {
               clearTimeout(pendingReloadTimeoutRef.current);
             }
             
-            // Set up a listener to reload when streaming completes
-            // Use a ref to track the notification timestamp to avoid stale reloads
-            const notificationTimestamp = newTimestamp;
+            // Check for streaming completion
             const checkStreamingComplete = () => {
               const stillStreaming = runtimeStateRef.current?.isInProgress ?? false;
+              
               if (!stillStreaming && isActive) {
-                // Double-check: verify streaming is still not active right before reload
-                // This prevents race conditions where streaming might restart between checks
-                const finalCheck = runtimeStateRef.current?.isInProgress ?? false;
-                if (!finalCheck) {
-                  debug.log(`▶️ [useMessagePersistence] Streaming completed, reloading messages from cross-window sync...`);
-                  debug.log(`   Notification timestamp: ${new Date(notificationTimestamp).toISOString()}`);
+                // Double-check before reload
+                if (!(runtimeStateRef.current?.isInProgress ?? false)) {
+                  debug.log('[useMessagePersistence] Streaming completed, reloading from cross-window sync');
                   handleLoadMessages();
                   pendingReloadTimeoutRef.current = null;
-                } else {
-                  // Streaming restarted, continue checking
-                  debug.log(`🔄 [useMessagePersistence] Streaming restarted, continuing to defer reload...`);
-                  pendingReloadTimeoutRef.current = setTimeout(checkStreamingComplete, 300);
+                  return;
                 }
-              } else if (stillStreaming) {
-                // Still streaming, check again in 300ms
-                pendingReloadTimeoutRef.current = setTimeout(checkStreamingComplete, 300);
+                debug.log('[useMessagePersistence] Streaming restarted, continuing to defer');
+                }
+              
+              if (stillStreaming) {
+                pendingReloadTimeoutRef.current = setTimeout(checkStreamingComplete, STREAMING_CHECK_DELAY);
               }
             };
             
-            // Start checking after a short delay
-            pendingReloadTimeoutRef.current = setTimeout(checkStreamingComplete, 300);
+            pendingReloadTimeoutRef.current = setTimeout(checkStreamingComplete, STREAMING_CHECK_DELAY);
             return;
           }
           
-          debug.log(`🌐 [useMessagePersistence] Cross-window message update detected for session ${sessionId}, reloading messages...`);
-          debug.log(`   From window: ${syncData.windowId?.slice(0, 12) + '...' || 'unknown'}`);
+          debug.log(
+            `[useMessagePersistence] Cross-window update detected, reloading messages ` +
+            `(from window: ${syncData.windowId?.slice(0, 12) || 'unknown'})`
+          );
           
-          // Small delay to ensure IndexedDB has been updated
+          // Delay to ensure IndexedDB has been updated
           setTimeout(() => {
             if (isActive) {
               handleLoadMessages();
             }
-          }, 100);
+          }, CROSS_WINDOW_RELOAD_DELAY);
         }
       }
     };
@@ -953,7 +889,6 @@ export const useMessagePersistence = ({
 
     return () => {
       chrome.storage.onChanged.removeListener(handleStorageChange);
-      // Clear any pending reload timeout
       if (pendingReloadTimeoutRef.current) {
         clearTimeout(pendingReloadTimeoutRef.current);
         pendingReloadTimeoutRef.current = null;

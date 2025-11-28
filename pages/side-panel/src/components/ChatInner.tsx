@@ -28,14 +28,11 @@
 // IMPORTS
 // ================================================================================
 
-// React Core
 import type { FC } from 'react';
-import React, { useEffect, useRef, useMemo, useState } from 'react';
-import ReactDOM from 'react-dom';
+import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 
 // CopilotKit Hooks & Components
 import {
-  useCopilotChat,
   useCoAgent,
   useCoAgentStateRender,
   useCopilotReadable,
@@ -44,40 +41,45 @@ import {
   useHumanInTheLoop,
   useDefaultTool,
   useRenderToolCall,
-  useCopilotContext,
 } from '@copilotkit/react-core';
 import { CopilotChat, useCopilotChatSuggestions } from '@copilotkit/react-ui';
-
-import { useCopilotMessagesContext } from "@copilotkit/react-core";
-import { ActionExecutionMessage, ResultMessage, TextMessage } from "@copilotkit/runtime-client-gql";
+import type { InputProps, MessagesProps } from '@copilotkit/react-ui';
 
 // Extension Utilities & Storage
-import { debug, useStorage, cosineSimilarity, embeddingService, sessionStorageDBWrapper } from '@extension/shared';
-import { embeddingsStorage } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { debug, useStorage, sessionStorageDBWrapper } from '@extension/shared';
+import { themeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';
 
 // UI Components
-import { WeatherCard } from './WeatherCard';
 import { ActionStatus } from './ActionStatus';
-import { WaitCountdown } from './WaitCountdown';
 import { TaskProgressCard, AgentStepState } from './TaskProgressCard';
-import { StreamingContext } from '../context/StreamingContext';
 import { CustomUserMessage } from './CustomUserMessage';
 import { CustomAssistantMessage } from './CustomAssistantMessage';
 import { CustomInput } from './CustomInput';
 import { CustomMessages } from './CustomMessages';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MermaidBlock } from './MermaidBlock';
-const EmptyThinkingBlock: React.FC<{ children?: React.ReactNode }> = () => null;
 import { ChatErrorDisplay } from './ChatErrorDisplay';
 
 // Custom Hooks
 import { useMessageSanitization, MessageData } from '../hooks/useMessageSanitization';
 import { useContextMenuPrefill } from '../hooks/useContextMenuPrefill';
 import { useProgressBarState } from '../hooks/useProgressBarState';
-import { usePageMetadata } from '../hooks/usePageMetadata';
+import { usePageMetadata, type PageContent } from '../hooks/usePageMetadata';
 import { useProgressCardCollapse } from '../hooks/useProgressCardCollapse';
+import { useAgentStateManagement } from '../hooks/useAgentStateManagement';
+
+// Note: Scroll management is handled entirely by CustomMessages via Virtua's VList API
+// Do NOT add duplicate scroll logic here - it won't work with virtualized lists
+
+// Utilities
+import {
+  runCachedSanitization,
+  applySanitizationIfChanged,
+  filterValidMessages,
+  findLastMessageByRole,
+  computeMessagesSignature
+} from '../utils/sanitizationHelper';
 
 // Constants
 import { CHAT_SUGGESTIONS_INSTRUCTIONS, DEFAULT_MAX_SUGGESTIONS } from '../constants/chatSuggestions';
@@ -103,8 +105,8 @@ import {
   createVerifySelectorAction,
   createGetSelectorAtPointAction,
   createGetSelectorsAtPointsAction,
+  createSendKeystrokesAction,
 } from '../actions/copilot/domActions';
-import { createSendKeystrokesAction } from '../actions/copilot/domActions';
 import { createInputDataAction } from '../actions/copilot/formActions';
 import {
   createOpenNewTabAction,
@@ -122,26 +124,17 @@ import {
 } from '../actions/copilot/builtinToolActions';
 
 // Types & Libraries
-import { AgentState } from '../lib/types';
 import { SemanticSearchManager } from '../lib/SemanticSearchManager';
-import { z } from 'zod';
 
-// Action Handlers
-import { 
-  handleMoveCursorToElement, 
-  handleCleanupExtensionUI, 
-  handleClickElement, 
-  handleInputData,
-  handleOpenNewTab,
-  handleScroll,
-  handleDragAndDrop,
-  handleRefreshPageContent,
-  handleTakeScreenshot,
-  handleVerifySelector,
-  handleGetSelectorAtPoint,
-  handleGetSelectorsAtPoints,
-} from '../actions';
+// Local type for CopilotKit agent state
+// interface AgentState {
+//   proverbs: string[];
+// }
 
+// Empty component for hiding thinking blocks
+const EmptyThinkingBlock: React.FC<{ children?: React.ReactNode }> = () => null;
+
+// Default tool icon component
 const DefaultToolIcon: React.FC<{ isLight: boolean }> = ({ isLight }) => (
   <svg
     width="14"
@@ -154,7 +147,7 @@ const DefaultToolIcon: React.FC<{ isLight: boolean }> = ({ isLight }) => (
     style={{ 
       flexShrink: 0, 
       marginRight: 6,
-      color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+      color: isLight ? '#4b5563' : '#6b7280'
     }}
   >
     <path
@@ -170,42 +163,34 @@ const DefaultToolIcon: React.FC<{ isLight: boolean }> = ({ isLight }) => (
 // TYPES & INTERFACES
 // ================================================================================
 
-// ChatInner Props Interface
 export interface ChatInnerProps {
   sessionId: string;
-  sessionTitle: string | undefined;
-  currentPageContent: any;
+  // Removed: sessionTitle (was never used in the component)
+  currentPageContent: PageContent | null;
   dbTotals?: { html: number; form: number; click: number };
   pageContentEmbedding?: {
     fullEmbedding: number[];
     chunks?: Array<{ text: string; html: string; embedding: number[] }>;
     timestamp: number;
   } | null;
-  latestDOMUpdate: any;
+  latestDOMUpdate: unknown;
   themeColor: string;
   setThemeColor: (color: string) => void;
-  setCurrentMessages: (messages: any[]) => void;
-  saveMessagesToStorage: (messages: any[]) => Promise<void>;
+  saveMessagesToStorage: (messages: unknown[]) => Promise<void>;
   setHeadlessMessagesCount: (count: number) => void;
   saveMessagesRef: React.MutableRefObject<(() => MessageData) | null>;
-  restoreMessagesRef: React.MutableRefObject<((messages: any[]) => void) | null>;
+  restoreMessagesRef: React.MutableRefObject<((messages: unknown[]) => void) | null>;
   resetChatRef: React.MutableRefObject<(() => void) | null>;
   setIsAgentLoading: (loading: boolean) => void;
   showSuggestions: boolean;
   showThoughtBlocks: boolean;
   agentModeChat: boolean;
-  // Progress bar state callbacks
   onProgressBarStateChange?: (hasProgressBar: boolean, showProgressBar: boolean, onToggle: () => void) => void;
-  // Agent step state management
   initialAgentStepState?: AgentStepState;
   onAgentStepStateChange?: (state: AgentStepState) => void;
-  // Context menu message to send
   contextMenuMessage?: string | null;
-  // Manual refresh callback
   triggerManualRefresh?: () => void;
-  // Agent and model selection state
   isAgentAndModelSelected?: boolean;
-  // Agent and model configuration for generic tool actions
   agentType?: string;
   modelType?: string;
   organizationId?: string;
@@ -216,28 +201,15 @@ export interface ChatInnerProps {
 // COMPONENT DEFINITION
 // ================================================================================
 
-/**
- * ChatInner Component
- * 
- * Inner component that uses CopilotKit hooks - MUST be inside <CopilotKit> wrapper
- * Handles all agent interactions, actions, and chat functionality
- * 
- * @param props - ChatInnerProps with session, content, and callback configurations
- */
 const ChatInnerComponent: FC<ChatInnerProps> = ({
   sessionId,
-  sessionTitle,
+  // Removed: sessionTitle (was never used)
   currentPageContent,
   pageContentEmbedding,
   latestDOMUpdate,
   themeColor,
   setThemeColor,
-  setCurrentMessages,
   saveMessagesToStorage,
-  agentType = 'dynamic_agent',
-  modelType = '',
-  organizationId = '',
-  teamId = '',
   setHeadlessMessagesCount,
   saveMessagesRef,
   restoreMessagesRef,
@@ -255,17 +227,9 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   isAgentAndModelSelected = true,
 }) => {
   // ================================================================================
-  // RENDER TRACKING
-  // ================================================================================
-  const renderCountRef = useRef(0);
-  renderCountRef.current += 1;
-  // console.log(`[ChatInner:${sessionId.slice(0, 8)}] Render #${renderCountRef.current}`);
-
-  // ================================================================================
   // THEME & STORAGE
   // ================================================================================
-  const { isLight } = useStorage(exampleThemeStorage);
-  const theme = isLight ? 'light' : 'dark';
+  const { isLight } = useStorage(themeStorage);
 
   // ================================================================================
   // STATE MANAGEMENT
@@ -278,7 +242,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
       chunks?: Array<{ text: string; html: string; embedding: number[] }>;
       timestamp: number;
     } | null;
-    pageContent: any;
+    pageContent: unknown;
   }>({
     embeddings: null,
     pageContent: null,
@@ -291,18 +255,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // COPILOTKIT HOOKS
   // ================================================================================
   
-  // CopilotKit Context - Thread and instructions management
-  const {
-    threadId,
-    setThreadId,
-    chatInstructions,
-    setChatInstructions,
-    additionalInstructions,
-    setAdditionalInstructions,
-    runtimeClient,
-  } = useCopilotContext();
-  
-  // Chat messages and loading state
   const {
     messages,
     setMessages,
@@ -313,236 +265,41 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     stopGeneration,
   } = useCopilotChatHeadless_c();
   
-  // console.log(`[ChatInner:${sessionId.slice(0, 8)}] CopilotKit state:`, {
-  //   messagesCount: messages.length,
-  //   isLoading,
-  // });
-  
   // Track streaming state to avoid restoring messages after edits/deletes
   const wasStreamingRef = useRef(false);
-  const planDeletionInfoRef = useRef<{ deleted: boolean; lastAssistantId: string | null }>({
-    deleted: false,
-    lastAssistantId: null,
+  
+  // Loading state ref for callbacks
+  const isLoadingRef = useRef(false);
+
+  // ================================================================================
+  // CUSTOM HOOKS
+  // ================================================================================
+  
+  // Note: Scroll management is handled by CustomMessages via Virtua's VList API
+  // No duplicate scroll logic needed here
+  
+  // Agent state management (extracted to hook)
+  const {
+    dynamicAgentState,
+    setDynamicAgentState,
+    latestAssistantMessageIdRef
+  } = useAgentStateManagement({
+    sessionId,
+    messages,
+    initialAgentStepState,
+    onAgentStepStateChange
   });
-  const latestAssistantMessageIdRef = useRef<string | null>(null);
-  
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const isLoadingRef = useRef(false); // Track loading state for interval callbacks
-  const actualScrollContainerRef = useRef<HTMLElement | null>(null);
-  const [scrollContainerReady, setScrollContainerReady] = useState(false);
-  
-  // NOTE: Sticky message logic has been moved to CustomMessages.tsx
-  // These refs are kept only for agent mode scroll functionality
-  const isAutoScrollingRef = useRef(false);
-  const lastUserMessageIdRef = useRef<string | null>(null);
-  const previousMessagesLengthRef = useRef(messages.length);
-  const previousUserMessageCountRef = useRef(0);
-  
-  // Helper function to find the actual scrolling container
-  // With Virtua, we need to find the element that actually has overflow-y: auto
-  const getActualScrollContainer = React.useCallback((): HTMLElement | null => {
-    if (!scrollContainerRef.current) {
-      console.log('[STICKY] getActualScrollContainer: No scrollContainerRef');
-      return null;
-    }
-    
-    // Virtua's VList creates a structure like:
-    // .copilotKitMessagesContainer (VList root)
-    //   └─ div (scrollable container with overflow-y: auto)
-    //       └─ div (virtualized content)
-    
-    // First try to find the VList container
-    const vListContainer = scrollContainerRef.current.querySelector('.copilotKitMessagesContainer') as HTMLElement;
-    if (vListContainer) {
-      console.log('[STICKY] Inspecting VList DOM structure:', {
-        vListScrollHeight: vListContainer.scrollHeight,
-        vListClientHeight: vListContainer.clientHeight,
-        childrenCount: vListContainer.children.length,
-        children: Array.from(vListContainer.children).map((child, i) => ({
-          index: i,
-          tagName: (child as HTMLElement).tagName,
-          className: (child as HTMLElement).className,
-          scrollHeight: (child as HTMLElement).scrollHeight,
-          clientHeight: (child as HTMLElement).clientHeight,
-          overflowY: window.getComputedStyle(child as HTMLElement).overflowY
-        }))
-      });
-
-      // Check if VList itself is scrollable
-      const computedStyle = window.getComputedStyle(vListContainer);
-      if (computedStyle.overflowY === 'auto' || computedStyle.overflowY === 'scroll') {
-        console.log('[STICKY] ✅ Using VList itself as scroll container (has overflow)');
-        return vListContainer;
-        }
-      
-      // If VList isn't scrollable, find its scrollable child
-      // Virtua wraps content in a div that has the actual scroll
-      const scrollableChild = Array.from(vListContainer.children).find((child) => {
-        const style = window.getComputedStyle(child as HTMLElement);
-        return style.overflowY === 'auto' || style.overflowY === 'scroll';
-      }) as HTMLElement | undefined;
-      
-      if (scrollableChild) {
-        console.log('[STICKY] ✅ Using scrollable child of VList');
-        return scrollableChild;
-      }
-      
-      // Fallback: return VList container anyway (may not be scrollable yet)
-      console.log('[STICKY] ⚠️  Using VList container as fallback (no overflow detected)');
-      return vListContainer;
-    }
-    
-    // Fallback to .copilotKitMessages for backwards compatibility
-    const messagesContainer = scrollContainerRef.current.querySelector('.copilotKitMessages') as HTMLElement;
-    if (messagesContainer) {
-      console.log('[STICKY] Using .copilotKitMessages as fallback');
-      return messagesContainer;
-    }
-    
-    // Last resort: wrapper itself
-    console.log('[STICKY] Using scrollContainerRef as last resort');
-    return scrollContainerRef.current;
-  }, []);
-  
-  // Find and cache the actual scrolling container
-  // Wait for Virtua to render before measuring dimensions
-  useEffect(() => {
-    const checkContainer = () => {
-      const container = getActualScrollContainer();
-      if (!container) return;
-      
-      // Wait a bit for Virtua to render and calculate dimensions
-      // Use requestAnimationFrame to ensure DOM is updated
-      requestAnimationFrame(() => {
-        const scrollHeight = container.scrollHeight;
-        const clientHeight = container.clientHeight;
-        const hasOverflow = scrollHeight > clientHeight;
-        
-        if (container !== actualScrollContainerRef.current) {
-          console.log('[STICKY] Setting scroll container:', {
-            tagName: container.tagName,
-            className: container.className,
-            scrollTop: container.scrollTop,
-            scrollHeight,
-            clientHeight,
-            hasOverflow
-          });
-          actualScrollContainerRef.current = container;
-          setScrollContainerReady(true);
-        } else {
-          // Log dimensions even if same container to debug
-          if (scrollHeight > 0 || hasOverflow) {
-            console.log('[STICKY] Scroll container dimensions:', {
-              scrollTop: container.scrollTop,
-              scrollHeight,
-              clientHeight,
-              hasOverflow
-            });
-          }
-        }
-      });
-    };
-    
-    // Initial check
-    checkContainer();
-                
-    // Also check after a short delay to catch Virtua's delayed rendering
-    const timeoutId = setTimeout(checkContainer, 100);
-    
-    return () => clearTimeout(timeoutId);
-  }, [getActualScrollContainer, messages.length]); // Re-run when messages change in case structure updates
-  
-  // Helper function to scroll so a user message becomes sticky (Virtua implementation)
-  // NOTE: This function is currently unused - sticky logic is now in CustomMessages.tsx
-  const scrollToMakeSticky = React.useCallback((container: HTMLElement, messageElement: HTMLDivElement) => {
-    console.log('[STICKY] scrollToMakeSticky called (unused)');
-    // This function is no longer used - sticky logic is handled in CustomMessages
-  }, []);
-  
-  // Initialize lastUserMessageIdRef on first render
-  const hasInitializedRef = useRef(false);
-
-  useEffect(() => {
-    if (!hasInitializedRef.current && messages.length > 0) {
-      const userMessages = messages.filter((m: any) => m.role === 'user');
-      if (userMessages.length > 0) {
-        const latestUserMessage = userMessages[userMessages.length - 1];
-        lastUserMessageIdRef.current = latestUserMessage?.id || null;
-        previousUserMessageCountRef.current = userMessages.length;
-      }
-      hasInitializedRef.current = true;
-    }
-  }, [messages]); // Depend on messages to initialize on first message load
-  
-  // Auto-scroll to position new user message at top when sent in agent mode (makes it sticky)
-  // DISABLED: Ignoring agent mode for now - sticky logic is handled in CustomMessages.tsx
-  useEffect(() => {
-    return; // Early exit - agent mode disabled, sticky logic is in CustomMessages
-  }, [messages, scrollContainerReady, agentModeChat]);
-
-  // Auto-scroll to bottom when new assistant messages arrive (if user is already at bottom)
-  useEffect(() => {
-    const container = actualScrollContainerRef.current;
-    if (!container) return;
-
-    const currentLength = messages.length;
-    const previousLength = previousMessagesLengthRef.current;
-    
-    // Check if the last message is NOT from user (could be assistant, system, tool, etc.)
-    if (currentLength === 0) {
-      previousMessagesLengthRef.current = currentLength;
-      return;
-    }
-    
-    const lastMessage = messages[messages.length - 1];
-    const isLastMessageFromAssistant = (lastMessage as any)?.role !== 'user';
-    
-    // Only auto-scroll if messages were added (not removed/edited)
-    // Auto-scroll if user is near bottom
-    if (currentLength > previousLength && isLastMessageFromAssistant) {
-      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-      
-      // Auto-scroll if user is already near bottom
-      if (isNearBottom || previousLength === 0) {
-        isAutoScrollingRef.current = true;
-        requestAnimationFrame(() => {
-          container.scrollTo({
-            top: container.scrollHeight,
-            behavior: 'smooth'
-          });
-          // Reset flag after scroll completes
-          setTimeout(() => {
-            isAutoScrollingRef.current = false;
-          }, 500);
-        });
-      }
-    }
-    
-    previousMessagesLengthRef.current = currentLength;
-  }, [messages]);
-
-  // Cache for element positions to avoid repeated getBoundingClientRect calls
-  const elementCacheRef = useRef<{
-    userMessages: Array<{ id: string; index: number; top: number }>;
-    assistantMessages: Array<{ index: number; top: number; bottom: number }>;
-    allElements: HTMLDivElement[];
-    timestamp: number;
-  } | null>(null);
-
-  // All sticky message logic has been moved to CustomMessages.tsx for better encapsulation
-  // This component no longer manages sticky state - it's handled entirely within CustomMessages
-
-  // Sticky initialization on tab open is now handled in CustomMessages.tsx
-
-  // Sticky-related useEffects removed - all sticky logic is now in CustomMessages.tsx
 
   // Shared agent state for maintaining agent context across interactions
-    const { state, setState } = useCoAgent<AgentState>({
-    name: 'dynamic_agent',
-      initialState: {
-      proverbs: ['CopilotKit may be new, but its the best thing since sliced bread.'],
-    },
-  });
+  //   const { state, setState } = useCoAgent<AgentState>({
+  //   name: 'dynamic_agent',
+  //     initialState: {
+  //     proverbs: ['CopilotKit may be new, but its the best thing since sliced bread.'],
+  //   },
+  // });
+
+  // Totals for DB-backed counts (HTML, form, clickable element chunks)
+  const [totals, setTotals] = useState<{ html: number; form: number; click: number }>({ html: 0, form: 0, click: 0 });
 
   // ================================================================================
   // EFFECTS & SIDE EFFECTS
@@ -551,12 +308,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // Update parent component with loading state
   useEffect(() => {
     setIsAgentLoading(isLoading);
-  }, [isLoading, setIsAgentLoading]);
-  
-  // Sync isLoadingRef for use in interval callbacks
-  useEffect(() => {
     isLoadingRef.current = isLoading;
-  }, [isLoading]);
+  }, [isLoading, setIsAgentLoading]);
   
   // Expose reset function via ref
   useEffect(() => {
@@ -565,21 +318,20 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     }
   }, [reset, resetChatRef]);
   
-  // Clear streaming flag when messages are cleared (reset/delete all)
+  // Clear streaming flag when messages are cleared
   useEffect(() => {
     if (messages.length === 0) {
       wasStreamingRef.current = false;
     }
   }, [messages.length]);
 
+  // Persist immediately when messages are removed (e.g., user deletion)
   const previousMessageCountRef = useRef(messages.length);
 
   useEffect(() => {
     const previousCount = previousMessageCountRef.current;
     previousMessageCountRef.current = messages.length;
 
-    // Persist immediately when messages are removed (e.g., user deletion) to prevent
-    // the persistence layer from restoring stale copies from storage.
     if (isLoading || messages.length >= previousCount) {
       return;
     }
@@ -592,9 +344,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           : messages) ?? [];
 
       if (sanitizedMessages.length > 0) {
-        void saveMessagesToStorage(sanitizedMessages);
+        void saveMessagesToStorage(sanitizedMessages as unknown[]);
       } else {
-        // When all messages are deleted, explicitly clear storage so nothing is restored.
         void sessionStorageDBWrapper.updateAllMessages(sessionId, []);
       }
     } catch (error) {
@@ -602,47 +353,27 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     }
   }, [messages, isLoading, saveMessagesRef, saveMessagesToStorage, sessionId]);
   
-  // Comprehensive ref cleanup on session change to prevent cross-session contamination
+  // Comprehensive ref cleanup on session change
   useEffect(() => {
-    debug.log('[ChatInner] Session changed, cleaning up refs and intervals');
+    debug.log('[ChatInner] Session changed, cleaning up refs');
     
-    // Clear sanitization cache
     cachedSanitizedRef.current = null;
     wasStreamingRef.current = false;
-    
-    // Clear message tracking refs
-    lastUserMessageIdRef.current = null;
-    latestAssistantMessageIdRef.current = null;
-    
-    // Clear page data
     pageDataRef.current = { embeddings: null, pageContent: null };
-    
-    // Reset plan deletion tracking
-    planDeletionInfoRef.current = { deleted: false, lastAssistantId: null };
-    
-    // Reset scroll flags
-    isAutoScrollingRef.current = false;
-    
-    // Reset initialization flags
-    hasInitializedRef.current = false;
-    previousUserMessageCountRef.current = 0;
     previousMessageCountRef.current = 0;
     
-    debug.log('[ChatInner] ✅ Ref cleanup complete');
+    debug.log('[ChatInner] Ref cleanup complete');
   }, [sessionId]);
-
-  // Totals for DB-backed counts (HTML, form, clickable element chunks)
-  const [totals, setTotals] = useState<{ html: number; form: number; click: number }>({ html: 0, form: 0, click: 0 });
 
   // Adopt embed-time totals from container if available
   useEffect(() => {
     if (dbTotals && (dbTotals.html || dbTotals.form || dbTotals.click)) {
       setTotals(dbTotals);
-      debug.log('[ChatInner] Adopted embed-time totals from container:', dbTotals);
+      debug.log('[ChatInner] Adopted embed-time totals:', dbTotals);
     }
   }, [dbTotals?.html, dbTotals?.form, dbTotals?.click]);
 
-  // Context menu prefill handling (extracted to custom hook)
+  // Context menu prefill handling
   useContextMenuPrefill(sessionId, contextMenuMessage);
 
   // Add/remove class to body to hide suggestions via CSS
@@ -661,12 +392,9 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ========================================
   // MESSAGE SANITIZATION & FILTERING
   // ========================================
-  // Extracted to custom hook for better organization and testability
-  // Handles message truncation, deduplication, filtering, and persistence
   const { 
     filteredMessages, 
     sanitizeMessages, 
-    computeMessagesSignature,
     cachedSanitizedRef 
   } = useMessageSanitization(
     messages,
@@ -676,30 +404,21 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     setHeadlessMessagesCount
   );
 
-  // Update pageDataRef when embeddings or content changes (store locally, not sent to agent)
+  // Update pageDataRef when embeddings or content changes
   useEffect(() => {
     pageDataRef.current.embeddings = pageContentEmbedding || null;
     pageDataRef.current.pageContent = currentPageContent;
   }, [pageContentEmbedding, currentPageContent]);
 
-  // Removed continuous normalization effect to avoid render churn
-
   // ================================================================================
   // PAGE METADATA
   // ================================================================================
-  // Extracted to custom hook for better organization
-  // Constructs minimal metadata for agent (no large HTML/form data)
   const pageMetadataForAgent = usePageMetadata({
     currentPageContent,
     pageContentEmbedding,
     totals,
-    enableLogging: true,
+    enableLogging: false,
   });
-
-  // Suggestions are generated only when streaming stops (see onInProgress handler)
-
-  // DOM updates are now stored in database and don't trigger suggestion regeneration
-  // Suggestions will regenerate when agent actions complete
 
   useCopilotReadable({
     description:
@@ -707,20 +426,26 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     value: pageMetadataForAgent,
   });
 
-  /*** Define CopilotKit Actions ***/
+  // ================================================================================
+  // HELPER FUNCTIONS
+  // ================================================================================
 
-  // Helpers for concise, natural-language status lines
-  const clipText = React.useCallback((v: any, n: number = 60) => {
+  const clipText = useCallback((v: unknown, n: number = 60) => {
     const s = typeof v === 'string' ? v : String(v ?? '');
     return s.length > n ? `${s.slice(0, n - 1)}…` : s;
   }, []);
 
-  const yesNo = React.useCallback((b: any) => (b ? 'yes' : 'no'), []);
+  const yesNo = useCallback((b: unknown) => (b ? 'yes' : 'no'), []);
 
-  const defaultToolRender = React.useCallback(
-    (props: any) => {
+  // ================================================================================
+  // DEFAULT TOOL RENDER
+  // ================================================================================
+
+  const defaultToolRender = useCallback(
+    (props: { name?: string; status?: string; args?: Record<string, unknown>; result?: unknown; error?: unknown }) => {
       const { name, status, args, result } = props;
-      const error = props?.error ?? (typeof result === 'object' && result ? (result as any)?.error : undefined);
+      const error = props?.error ?? (typeof result === 'object' && result ? (result as Record<string, unknown>)?.error : undefined);
+      
       const formatName = (value: string) => {
         const cleaned = value
           .replace(/^(mcp_|builtin_)/, '')
@@ -737,7 +462,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         if (args && Object.keys(args).length > 0) {
           argsSummary = clipText(JSON.stringify(args), 80);
         }
-      } catch (err) {
+      } catch {
         argsSummary = '';
       }
 
@@ -754,7 +479,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
       return (
         <ActionStatus
           toolName={displayName}
-          status={status as any}
+          status={status as 'pending' | 'executing' | 'complete'}
           isLight={isLight}
           icon={<DefaultToolIcon isLight={isLight} />}
           messages={messages}
@@ -772,11 +497,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ================================================================================
   // COPILOTKIT ACTIONS
   // ================================================================================
-  // Actions registered with CopilotKit that the AI agent can invoke.
-  // All actions are now defined in separate files under actions/copilot/ for better organization.
   
-  // Create shared dependencies object for action factories (memoized to avoid re-registering actions)
-  const actionDeps = React.useMemo(() => ({
+  const actionDeps = useMemo(() => ({
     searchManager,
     isLight,
     clipText,
@@ -784,231 +506,66 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     currentPageContent,
     pageDataRef,
     themeColor,
-  }), [searchManager, isLight, clipText, yesNo, currentPageContent, pageDataRef, themeColor]);
+  }), [searchManager, isLight, clipText, yesNo, currentPageContent, themeColor]);
   
-  // --- THEME ACTIONS ---
-  useFrontendTool(createSetThemeColorAction(setThemeColor) as any, [setThemeColor]);
+  // Theme Actions
+  useFrontendTool(createSetThemeColorAction(setThemeColor) as Parameters<typeof useFrontendTool>[0], [setThemeColor]);
 
-  // --- SEARCH ACTIONS ---
-  useFrontendTool(createSearchPageContentAction(actionDeps) as any, [actionDeps]);
-  useFrontendTool(createSearchFormDataAction(actionDeps) as any, [actionDeps]);
-  useFrontendTool(createSearchDOMUpdatesAction(actionDeps) as any, [actionDeps]);
-  useFrontendTool(createSearchClickableElementsAction(actionDeps) as any, [actionDeps]);
+  // Search Actions
+  useFrontendTool(createSearchPageContentAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
+  useFrontendTool(createSearchFormDataAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
+  useFrontendTool(createSearchDOMUpdatesAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
+  useFrontendTool(createSearchClickableElementsAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
 
-  // --- DATA RETRIEVAL ACTIONS ---
-  const retrievalDeps = React.useMemo(() => ({ currentPageContent, isLight }), [currentPageContent, isLight]);
-  useFrontendTool(createGetHtmlChunksByRangeAction(retrievalDeps) as any, [retrievalDeps]);
-  useFrontendTool(createGetFormChunksByRangeAction(retrievalDeps) as any, [retrievalDeps]);
-  useFrontendTool(createGetClickableChunksByRangeAction(retrievalDeps) as any, [retrievalDeps]);
+  // Data Retrieval Actions
+  const retrievalDeps = useMemo(() => ({ currentPageContent, isLight }), [currentPageContent, isLight]);
+  useFrontendTool(createGetHtmlChunksByRangeAction(retrievalDeps) as Parameters<typeof useFrontendTool>[0], [retrievalDeps]);
+  useFrontendTool(createGetFormChunksByRangeAction(retrievalDeps) as Parameters<typeof useFrontendTool>[0], [retrievalDeps]);
+  useFrontendTool(createGetClickableChunksByRangeAction(retrievalDeps) as Parameters<typeof useFrontendTool>[0], [retrievalDeps]);
 
-  // --- DOM MANIPULATION ACTIONS ---
-  const domDeps = React.useMemo(() => ({ isLight, clipText, pageDataRef, triggerManualRefresh }), [isLight, clipText, pageDataRef, triggerManualRefresh]);
-  useFrontendTool(createMoveCursorToElementAction({ isLight, clipText }) as any, [domDeps]);
-  useFrontendTool(createRefreshPageContentAction({ isLight, pageDataRef, triggerManualRefresh }) as any, [domDeps]);
-  useFrontendTool(createCleanupExtensionUIAction({ isLight }) as any, [isLight]);
-  useFrontendTool(createClickElementAction({ isLight, clipText }) as any, [domDeps]);
-  useFrontendTool(createVerifySelectorAction({ isLight, clipText }) as any, [domDeps]);
-  useFrontendTool(createGetSelectorAtPointAction({ isLight }) as any, [isLight]);
-  useFrontendTool(createGetSelectorsAtPointsAction({ isLight }) as any, [isLight]);
-  useFrontendTool(createSendKeystrokesAction({ isLight, clipText }) as any, [domDeps]);
+  // DOM Manipulation Actions
+  const domDeps = useMemo(() => ({ isLight, clipText, pageDataRef, triggerManualRefresh }), [isLight, clipText, triggerManualRefresh]);
+  useFrontendTool(createMoveCursorToElementAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [domDeps]);
+  useFrontendTool(createRefreshPageContentAction({ isLight, pageDataRef, triggerManualRefresh }) as Parameters<typeof useFrontendTool>[0], [domDeps]);
+  useFrontendTool(createCleanupExtensionUIAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
+  useFrontendTool(createClickElementAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [domDeps]);
+  useFrontendTool(createVerifySelectorAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [domDeps]);
+  useFrontendTool(createGetSelectorAtPointAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
+  useFrontendTool(createGetSelectorsAtPointsAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
+  useFrontendTool(createSendKeystrokesAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [domDeps]);
 
-  // --- FORM ACTIONS ---
-  useFrontendTool(createInputDataAction({ isLight, clipText }) as any, [isLight, clipText]);
+  // Form Actions
+  useFrontendTool(createInputDataAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [isLight, clipText]);
 
-  // --- NAVIGATION ACTIONS ---
-  useFrontendTool(createOpenNewTabAction({ isLight, clipText }) as any, [isLight, clipText]);
-  useFrontendTool(createScrollAction({ isLight, clipText, yesNo }) as any, [isLight, clipText, yesNo]);
-  useFrontendTool(createDragAndDropAction({ isLight, clipText }) as any, [isLight, clipText]);
+  // Navigation Actions
+  useFrontendTool(createOpenNewTabAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [isLight, clipText]);
+  useFrontendTool(createScrollAction({ isLight, clipText, yesNo }) as Parameters<typeof useFrontendTool>[0], [isLight, clipText, yesNo]);
+  useFrontendTool(createDragAndDropAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [isLight, clipText]);
 
-  // --- SCREENSHOT ACTIONS ---
-  useFrontendTool(createTakeScreenshotAction({ isLight }) as any);
+  // Screenshot Actions
+  useFrontendTool(createTakeScreenshotAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
 
-  // --- WEATHER ACTIONS ---
-  useFrontendTool(createGetWeatherAction({ themeColor }) as any, [themeColor]);
+  // Weather Actions
+  useFrontendTool(createGetWeatherAction({ themeColor }) as Parameters<typeof useFrontendTool>[0], [themeColor]);
 
-  // --- IMAGE GENERATION ACTIONS ---
-  useRenderToolCall(createGenerateImagesAction({ themeColor }) as any, [themeColor]);
+  // Image Generation Actions
+  useRenderToolCall(createGenerateImagesAction({ themeColor }) as Parameters<typeof useRenderToolCall>[0], [themeColor]);
 
-  // --- BUILTIN TOOL RENDERS ---
-  useRenderToolCall(createWebSearchRender({ isLight, clipText }) as any, [isLight, clipText]);
-  useRenderToolCall(createCodeExecutionRender({ isLight, clipText }) as any, [isLight, clipText]);
-  useRenderToolCall(createUrlContextRender({ isLight, clipText }) as any, [isLight, clipText]);
+  // Builtin Tool Renders
+  useRenderToolCall(createWebSearchRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [isLight, clipText]);
+  useRenderToolCall(createCodeExecutionRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [isLight, clipText]);
+  useRenderToolCall(createUrlContextRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [isLight, clipText]);
 
-  // --- UTILITY ACTIONS ---
-  useFrontendTool(createWaitAction({ isLight }) as any, [isLight]);
-
-  // --- HUMAN IN THE LOOP ---
-  // Enable human confirmation for the confirmAction tool
-  useHumanInTheLoop(createConfirmActionHumanInTheLoop({ isLight }) as any);
-
-  // ================================================================================
-  // AGENT STATE MANAGEMENT
-  // ================================================================================
+  // Utility Actions
+  useFrontendTool(createWaitAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
   
-  // Dynamic agent state for progress tracking and step management
-  // State is automatically synced to backend on next agent interaction
-  const {
-    state: rawDynamicAgentState,
-    setState: setRawDynamicAgentState,
-  } = useCoAgent<AgentStepState>({
-    name: 'dynamic_agent',
-    initialState:
-      initialAgentStepState && initialAgentStepState.sessionId === sessionId
-        ? initialAgentStepState
-        : {
-            sessionId,
-      steps: [],
-    },
-  });
-
-  const dynamicAgentState = React.useMemo<AgentStepState>(() => {
-    console.log('[COAGENT_STATE_MEMO] Computing dynamicAgentState from rawDynamicAgentState:', {
-      hasRaw: !!rawDynamicAgentState,
-      rawStepsCount: rawDynamicAgentState?.steps?.length,
-      rawSessionId: rawDynamicAgentState?.sessionId,
-      currentSessionId: sessionId,
-      planDeleted: planDeletionInfoRef.current.deleted,
-    });
-    
-    if (!rawDynamicAgentState) {
-      console.log('[COAGENT_STATE_MEMO] No raw state, returning empty');
-      return { sessionId, steps: [] };
-    }
-    if (planDeletionInfoRef.current.deleted && (rawDynamicAgentState.steps?.length ?? 0) > 0) {
-      console.log('[COAGENT_STATE_MEMO] Plan deleted, returning empty');
-      return { sessionId, steps: [] };
-    }
-    if (rawDynamicAgentState.sessionId && rawDynamicAgentState.sessionId !== sessionId) {
-      console.log('[COAGENT_STATE_MEMO] Session mismatch, returning empty');
-      return { sessionId, steps: [] };
-    }
-    if (rawDynamicAgentState.sessionId === sessionId) {
-      console.log('[COAGENT_STATE_MEMO] Session match, returning raw state with', rawDynamicAgentState.steps?.length, 'steps');
-      return rawDynamicAgentState;
-    }
-    if (!rawDynamicAgentState.sessionId && Array.isArray(rawDynamicAgentState.steps)) {
-      console.log('[COAGENT_STATE_MEMO] No session ID on raw, adding it with', rawDynamicAgentState.steps?.length, 'steps');
-      return {
-        sessionId,
-        steps: rawDynamicAgentState.steps,
-      };
-    }
-    console.log('[COAGENT_STATE_MEMO] Fallback, returning empty');
-    return { sessionId, steps: [] };
-  }, [rawDynamicAgentState, sessionId]);
-
-  const setDynamicAgentState = React.useCallback(
-    (nextState: AgentStepState) => {
-      console.log('[COAGENT_STATE_UPDATE] setDynamicAgentState called with:', {
-        sessionId,
-        stepsCount: nextState?.steps?.length,
-        steps: nextState?.steps?.map(s => ({ desc: s.description?.substring(0, 30), status: s.status })),
-      });
-      
-      const nextSteps = nextState?.steps ?? [];
-      if (nextSteps.length === 0) {
-        console.log('[COAGENT_STATE_UPDATE] Clearing all steps (plan deleted)');
-        planDeletionInfoRef.current = {
-          deleted: true,
-          lastAssistantId: latestAssistantMessageIdRef.current,
-        };
-        setRawDynamicAgentState({
-          sessionId,
-          steps: [],
-        });
-        return;
-      }
-
-      console.log('[COAGENT_STATE_UPDATE] Updating coAgent state via setRawDynamicAgentState');
-      planDeletionInfoRef.current = {
-        deleted: false,
-        lastAssistantId: latestAssistantMessageIdRef.current,
-      };
-      setRawDynamicAgentState({
-        ...nextState,
-        sessionId,
-      });
-    },
-    [sessionId, setRawDynamicAgentState],
-  );
-  
-  // If co-agent state arrives without a sessionId but with steps, proactively clear it
-  useEffect(() => {
-    if (
-      rawDynamicAgentState &&
-      !rawDynamicAgentState.sessionId &&
-      Array.isArray(rawDynamicAgentState.steps) &&
-      rawDynamicAgentState.steps.length > 0 &&
-      !planDeletionInfoRef.current.deleted
-    ) {
-      setRawDynamicAgentState({
-        ...rawDynamicAgentState,
-        sessionId,
-      });
-    }
-  }, [rawDynamicAgentState, sessionId, setRawDynamicAgentState]);
-
-  useEffect(() => {
-    const lastAssistant = [...messages].reverse().find(message => (message as any)?.role === 'assistant');
-    const latestAssistantId = (lastAssistant as any)?.id ?? null;
-    const previousAssistantId = latestAssistantMessageIdRef.current;
-    latestAssistantMessageIdRef.current = latestAssistantId;
-
-    if (
-      planDeletionInfoRef.current.deleted &&
-      planDeletionInfoRef.current.lastAssistantId !== null &&
-      latestAssistantId !== planDeletionInfoRef.current.lastAssistantId &&
-      latestAssistantId !== previousAssistantId
-    ) {
-      planDeletionInfoRef.current = {
-        deleted: false,
-        lastAssistantId: latestAssistantId,
-      };
-    }
-  }, [messages]);
-  
-  const initialScopedSteps = React.useMemo(() => {
-    if (!initialAgentStepState) {
-      return null;
-    }
-    if (initialAgentStepState.sessionId && initialAgentStepState.sessionId !== sessionId) {
-      return null;
-    }
-    return initialAgentStepState.steps ?? [];
-  }, [initialAgentStepState, sessionId]);
-
-  useEffect(() => {
-    if (!initialScopedSteps || initialScopedSteps.length === 0) {
-      return;
-    }
-    if (dynamicAgentState.sessionId === sessionId && (dynamicAgentState.steps?.length ?? 0) > 0) {
-      return;
-    }
-    setRawDynamicAgentState({
-      sessionId,
-      steps: [...initialScopedSteps],
-    });
-  }, [initialScopedSteps, dynamicAgentState.sessionId, dynamicAgentState.steps, sessionId, setRawDynamicAgentState]);
-  
-  // Notify parent component when agent step state changes
-  useEffect(() => {
-    if (onAgentStepStateChange && dynamicAgentState) {
-      onAgentStepStateChange(dynamicAgentState);
-    }
-  }, [dynamicAgentState, onAgentStepStateChange]);
-
-  // Progress bar state management (extracted to custom hook)
-  const hasProgressBar = dynamicAgentState.steps && dynamicAgentState.steps.length > 0;
-  const { showProgressBar, toggleProgressBar: toggleProgressBarFn } = useProgressBarState(
-    hasProgressBar,
-    onProgressBarStateChange
-  );
+  // Human in the Loop
+  useHumanInTheLoop(createConfirmActionHumanInTheLoop({ isLight }) as Parameters<typeof useHumanInTheLoop>[0]);
 
   // ================================================================================
   // AGENT STATE RENDERING
   // ================================================================================
   
-  // Render inline progress cards with chat messages using useCoAgentStateRender
   useCoAgentStateRender<AgentStepState>({
     name: 'dynamic_agent',
     render: ({ state: scopedState }) => {
@@ -1016,22 +573,14 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         return null;
       }
       
-      // Render only if the plan belongs to this session.
       if (scopedState.sessionId && scopedState.sessionId !== sessionId) {
         return null;
       }
 
-      // Plans created by the backend for the first time may have no sessionId yet—accept them.
-      if (!scopedState.sessionId && scopedState.steps.length > 0) {
-        scopedState = {
-          ...scopedState,
-          sessionId,
-        };
-      }
-
-      if (planDeletionInfoRef.current.deleted && (!scopedState.steps || scopedState.steps.length === 0)) {
-        return null;
-      }
+      // Add sessionId if missing
+      const stateWithSession = scopedState.sessionId 
+        ? scopedState 
+        : { ...scopedState, sessionId };
       
       return (
         <div
@@ -1040,14 +589,14 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           data-timestamp={Date.now()}
           className="w-full pt-2 pl-3 pr-3"
           style={{
-            ['--copilot-kit-input-background-color' as any]: 'transparent',
-            ['--copilot-kit-separator-color' as any]: isLight ? '#e5e7eb' : '#374151',
-            ['--copilot-kit-border-color' as any]: isLight ? '#e5e7eb' : '#374151',
-          ['--task-progress-rendered-border-color' as any]: isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151',
+            ['--copilot-kit-input-background-color' as string]: 'transparent',
+            ['--copilot-kit-separator-color' as string]: isLight ? '#e5e7eb' : '#374151',
+            ['--copilot-kit-border-color' as string]: isLight ? '#e5e7eb' : '#374151',
+            ['--task-progress-rendered-border-color' as string]: isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151',
           }}
         >
           <TaskProgressCard 
-            state={{ ...scopedState, sessionId }}
+            state={stateWithSession}
             setState={setDynamicAgentState}
             isCollapsed={true}
             isHistorical={true}
@@ -1058,34 +607,42 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     },
   });
 
-  // Auto-collapse older progress cards and mark them as historical
+  // Auto-collapse older progress cards
   useProgressCardCollapse();
 
-  // 🪁 Chat Suggestions: Smart suggestions based on context
-  // Only initialize the CopilotKit suggestions system when the setting is enabled.
-  // We intentionally call this hook conditionally, and rely on the parent to
-  // remount this component when the setting changes (see key in ChatSessionContainer).
-  if (showSuggestions) {
+  // ================================================================================
+  // CHAT SUGGESTIONS
+  // ================================================================================
+  // Note: useCopilotChatSuggestions must be called unconditionally per React rules.
+  // We control behavior via the disabled parameter.
     useCopilotChatSuggestions({
-      instructions: CHAT_SUGGESTIONS_INSTRUCTIONS,
-      minSuggestions: 2,
-      maxSuggestions: DEFAULT_MAX_SUGGESTIONS,
+    instructions: showSuggestions ? CHAT_SUGGESTIONS_INSTRUCTIONS : '',
+    minSuggestions: showSuggestions ? 2 : 0,
+    maxSuggestions: showSuggestions ? DEFAULT_MAX_SUGGESTIONS : 0,
     });
-  }
+
+  // ================================================================================
+  // PROGRESS BAR STATE
+  // ================================================================================
+  
+  const hasProgressBar = dynamicAgentState.steps && dynamicAgentState.steps.length > 0;
+  const { showProgressBar, toggleProgressBar: toggleProgressBarFn } = useProgressBarState(
+    hasProgressBar,
+    onProgressBarStateChange
+  );
 
   // ================================================================================
   // COMPONENT CONFIGURATION
   // ================================================================================
   
-  // Custom markdown renderers for chat messages (stable reference)
-  const customMarkdownTagRenderers = React.useMemo(() => ({
+  const customMarkdownTagRenderers = useMemo(() => ({
     think: showThoughtBlocks ? ThinkingBlock : EmptyThinkingBlock,
     mermaid: MermaidBlock,
   }), [showThoughtBlocks]);
 
-  // Create a stable, session-scoped Input component to avoid remounts
+  // Scoped Input component - receives InputProps from CopilotChat
   const ScopedInput = useMemo(() => {
-    const Comp = (props: any) => (
+    const Comp = (props: InputProps) => (
       <CustomInput
         {...props}
         listenSessionId={sessionId}
@@ -1101,192 +658,141 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   }, [sessionId, isAgentAndModelSelected, dynamicAgentState, setDynamicAgentState, showProgressBar, toggleProgressBarFn]);
 
   // ================================================================================
-  // RENDER
+  // EVENT HANDLERS
   // ================================================================================
     
-    return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* CopilotChat with inline historical cards - TaskProgressCard moved to CustomInput */}
-      <div 
-        ref={scrollContainerRef}
-        className={cn("copilot-chat-wrapper relative min-h-0 flex-1 overflow-y-auto", !isAgentAndModelSelected && "chat-input-disabled")}>
-        <StreamingContext.Provider value={{ isStreaming: !!isLoading }}>
-        <CopilotChat
-          // labels={{
-          //   title: sessionTitle || `Session ${sessionId.slice(0, 8)}`,
-          //   initial: `Work in autopilot mode.`,
-          // }}
-          imageUploadsEnabled={false} // Disable image uploads for now, using custom input for attachments
-          onSubmitMessage={React.useCallback((message: string) => {
-            debug.log('[ChatInner] User submitted message:', message);
-            try {
-              // Sanitize current messages immediately after user submits a prompt
-              const current = messages || [];
-              const signature = computeMessagesSignature(current);
-              // Use cached result when possible to avoid redundant work
-              let result: { messages: any[]; hasChanges: boolean };
-              if (cachedSanitizedRef.current && cachedSanitizedRef.current.signature === signature) {
-                result = cachedSanitizedRef.current.result;
-              } else {
-                result = sanitizeMessages(current);
-                cachedSanitizedRef.current = { signature, result };
-              }
-              if (result.hasChanges) {
-                const resultSignature = computeMessagesSignature(result.messages);
-                if (resultSignature !== signature) {
-                  setMessages(result.messages);
-                  debug.log('[ChatInner] onSubmit sanitization applied. Count:', result.messages.length);
-                }
-              }
-              // Auto-save shortly after submit to ensure the just-submitted
-              // user message is captured in storage (uses ref to read latest)
-              setTimeout(() => {
-                try {
-                  const fn = saveMessagesRef?.current;
-                  if (!fn) return;
-                  const data = fn();
-                  const all = (data && (data as any).allMessages) || [];
-                  if (all && all.length > 0) {
-                    void saveMessagesToStorage(all);
-                  }
-                } catch (e) {
-                  debug.warn?.('[ChatInner] Auto-save after submit failed:', e);
-                }
-              }, 150);
-            } catch (e) {
-              debug.warn?.('[ChatInner] onSubmit sanitization skipped due to error:', e);
-            }
-          }, [messages, computeMessagesSignature, sanitizeMessages, setMessages, saveMessagesRef, saveMessagesToStorage])}
-          onError={errorEvent => {
-            console.log('[ChatInner] Error:', errorEvent);
-          }}
-          onInProgress={React.useCallback(async (inProgress: boolean) => {
-            // Track streaming state - only sanitize when transitioning from streaming to not-streaming
+  /**
+   * Handle message submission
+   * 
+   * NOTE: Sanitization disabled on submit - only runs when streaming ends
+   * Auto-save is still active to persist user messages immediately
+   */
+  const handleSubmitMessage = useCallback((message: string) => {
+    debug.log('[ChatInner] User submitted message');
+    
+    // COMMENTED OUT: Sanitization on submit - only sanitize when streaming ends
+    // try {
+    //   const current = messages || [];
+    //   const result = runCachedSanitization(current, cachedSanitizedRef, sanitizeMessages as (msgs: unknown[]) => { messages: unknown[]; hasChanges: boolean });
+    //   
+    //   if (result.hasChanges) {
+    //     const currentSignature = computeMessagesSignature(current);
+    //     applySanitizationIfChanged(result, currentSignature, setMessages);
+    //   }
+    // } catch (e) {
+    //   debug.warn?.('[ChatInner] onSubmit sanitization skipped:', e);
+    // }
+    
+    // ACTIVE: Auto-save shortly after submit (without sanitization)
+    setTimeout(() => {
+      try {
+        const fn = saveMessagesRef?.current;
+        if (!fn) return;
+        const data = fn();
+        const all = (data && data.allMessages) || [];
+        if (all.length > 0) {
+          void saveMessagesToStorage(all as unknown[]);
+        }
+      } catch (e) {
+        debug.warn?.('[ChatInner] Auto-save after submit failed:', e);
+      }
+    }, 100);
+  }, [saveMessagesRef, saveMessagesToStorage]);
+
+  /**
+   * Handle progress state changes
+   */
+  const handleInProgress = useCallback(async (inProgress: boolean) => {
             if (inProgress) {
               wasStreamingRef.current = true;
               return;
             }
             
-            // If we weren't streaming, this is likely a message edit/delete - don't restore
             if (!wasStreamingRef.current) {
               return;
             }
             
-            // Reset flag - we're handling the streaming completion
             wasStreamingRef.current = false;
             
-            // Streaming stopped - sanitize current messages immediately to fix thinking tags
             try {
-              // Get messages from ref to avoid dependency loop
               const fn = saveMessagesRef?.current;
               if (!fn) return;
               
               const data = fn();
-              const all = (data && (data as any).allMessages) || [];
-              
-              // Sanitize the messages
-              const signature = computeMessagesSignature(all);
-              let result: { messages: any[]; hasChanges: boolean };
-              
-              if (cachedSanitizedRef.current && cachedSanitizedRef.current.signature === signature) {
-                result = cachedSanitizedRef.current.result;
-              } else {
-                result = sanitizeMessages(all);
-                cachedSanitizedRef.current = { signature, result } as any;
-              }
-              
-              // PERFORMANCE: Apply sanitization if changes were made - use rAF to batch with next paint
+      const all = (data && data.allMessages) || [];
+      
+      const result = runCachedSanitization(all, cachedSanitizedRef, sanitizeMessages as (msgs: unknown[]) => { messages: unknown[]; hasChanges: boolean });
+      
               if (result.hasChanges) {
-                // Schedule for next animation frame to avoid blocking but still be fast
-                // result.messages is already a new array from sanitizeMessages, no need to spread
-                if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
-                  requestAnimationFrame(() => setMessages(result.messages));
-                } else {
-                  setMessages(result.messages);
+        const currentSignature = computeMessagesSignature(all);
+        applySanitizationIfChanged(result, currentSignature, setMessages);
                 }
+      
+      if (all.length > 0) {
+        void saveMessagesToStorage(all as unknown[]);
               }
               
-              // Save to storage
-              if (all && all.length > 0) {
-                void saveMessagesToStorage(all);
-              }
-              
-              // Generate suggestions only after the assistant stops streaming
+      // Generate suggestions after streaming stops
               if (showSuggestions && generateSuggestions) {
-                debug.log('🧠 [ChatInner] Assistant stopped, generating suggestions...');
+        debug.log('[ChatInner] Generating suggestions...');
                 try {
                   await Promise.resolve(generateSuggestions());
                 } catch (err) {
-                  debug.warn?.('❌ [ChatInner] Failed to generate suggestions:', err);
+          debug.warn?.('[ChatInner] Failed to generate suggestions:', err);
                 }
               }
             } catch (e) {
-              debug.warn?.('[ChatInner] Auto-save on assistant stop failed:', e);
+      debug.warn?.('[ChatInner] Auto-save on stop failed:', e);
             }
-          }, [saveMessagesRef, saveMessagesToStorage, showSuggestions, generateSuggestions, computeMessagesSignature, sanitizeMessages, setMessages])}
-          renderError={React.useCallback((err: { message: string; operation?: string; timestamp: number; onDismiss: () => void; onRetry?: () => void; }) => {
-            const { message, operation /* onDismiss, timestamp */ } = err;
-            // Create an Error object from the message
+  }, [saveMessagesRef, saveMessagesToStorage, showSuggestions, generateSuggestions, cachedSanitizedRef, sanitizeMessages, setMessages]);
+
+  /**
+   * Handle error display with retry functionality
+   */
+  const renderError = useCallback((err: { message: string; operation?: string }) => {
+    const { message, operation } = err;
             const error = new Error(operation ? `${operation}: ${message}` : message);
             error.name = operation || 'Error';
             
-            // Create retry handler using reloadMessages
             const handleRetry = () => {
-              console.log('[ChatInner] 🔄 Calling reloadMessages...');
+      debug.log('[ChatInner] Retrying...');
 
               const currentMessages = messages || [];
-              let sanitizedMessagesArr = currentMessages;
+      let sanitizedMessagesArr: unknown[] = currentMessages;
 
               try {
-                const signature = computeMessagesSignature(currentMessages);
-                let result: { messages: any[]; hasChanges: boolean } | null = null;
-
-                if (cachedSanitizedRef.current && cachedSanitizedRef.current.signature === signature) {
-                  result = cachedSanitizedRef.current.result;
-                } else {
-                  result = sanitizeMessages(currentMessages);
-                  cachedSanitizedRef.current = { signature, result } as any;
-                }
-
-                if (result) {
+        const result = runCachedSanitization(currentMessages, cachedSanitizedRef, sanitizeMessages as (msgs: unknown[]) => { messages: unknown[]; hasChanges: boolean });
                   sanitizedMessagesArr = result.messages;
 
                   if (result.hasChanges) {
+          const currentSignature = computeMessagesSignature(currentMessages);
                     const newSignature = computeMessagesSignature(result.messages);
-                    if (newSignature !== signature) {
-                      setMessages(result.messages);
-                    }
+          if (newSignature !== currentSignature) {
+            setMessages(result.messages as typeof messages);
                   }
                 }
               } catch (err) {
-                console.warn('[ChatInner] Failed to sanitize messages before retry:', err);
+        debug.warn?.('[ChatInner] Failed to sanitize before retry:', err);
               }
 
-              // Validate messages have proper roles before calling reloadMessages
-              const validMessages = sanitizedMessagesArr.filter(m => 
-                m && typeof m === 'object' && 
-                m.role && typeof m.role === 'string' && 
-                ['user', 'assistant', 'tool', 'system'].includes(m.role)
-              );
+      const validMessages = filterValidMessages(sanitizedMessagesArr);
               
               if (validMessages.length === 0) {
-                console.error('[ChatInner] No valid messages found to reload (all messages have invalid roles)');
+        debug.error('[ChatInner] No valid messages to reload');
                 return;
               }
               
-              // Try to find the last assistant message (failed/incomplete response)
-              const lastAssistantMessage = [...validMessages].reverse().find(m => m.role === 'assistant');
-              if (lastAssistantMessage?.id) {
-                console.log('[ChatInner] Reloading from last assistant message:', lastAssistantMessage.id);
-                reloadMessages(lastAssistantMessage.id);
+      const lastAssistant = findLastMessageByRole(validMessages, 'assistant');
+      if (lastAssistant?.id) {
+        debug.log('[ChatInner] Reloading from assistant message:', lastAssistant.id);
+        reloadMessages(lastAssistant.id);
               } else {
-                // If no assistant message, reload from last user message to retry generation
-                const lastUserMessage = [...validMessages].reverse().find(m => m.role === 'user');
-                if (lastUserMessage?.id) {
-                  console.log('[ChatInner] No assistant message found, reloading from last user message:', lastUserMessage.id);
-                  reloadMessages(lastUserMessage.id);
+        const lastUser = findLastMessageByRole(validMessages, 'user');
+        if (lastUser?.id) {
+          debug.log('[ChatInner] Reloading from user message:', lastUser.id);
+          reloadMessages(lastUser.id);
                 } else {
-                  console.warn('[ChatInner] No valid user or assistant message found to reload');
+          debug.warn?.('[ChatInner] No valid message found to reload');
                 }
               }
             };
@@ -1294,55 +800,63 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
             return (
               <ChatErrorDisplay
                 error={error}
-                retry={handleRetry} // Use reloadMessages from useCopilotChat
+        retry={handleRetry}
                 isLight={isLight}
                 autoDismissMs={15000}
               />
             );
-          }, [
-            isLight,
-            reloadMessages,
-            messages,
-            sanitizeMessages,
-            computeMessagesSignature,
-            setMessages,
-            cachedSanitizedRef,
-          ])}
-          // onInProgress={(isInProgress) => {
-          //     console.log('[ChatInner] In progress:', isInProgress);
-          // }}
-          // onReloadMessages={() => {
-          //   console.log('[ChatInner] Reload messages');
-          // }}
+  }, [isLight, reloadMessages, messages, sanitizeMessages, cachedSanitizedRef, setMessages]);
+
+  /**
+   * Custom Messages wrapper - receives MessagesProps from CopilotChat
+   */
+  const MessagesComponent = useCallback((props: MessagesProps) => (
+    <CustomMessages {...props} agentMode={agentModeChat} />
+  ), [agentModeChat]);
+
+  // ================================================================================
+  // RENDER
+  // ================================================================================
+    
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      <div 
+        className={cn("copilot-chat-wrapper relative min-h-0 flex-1 overflow-y-auto", !isAgentAndModelSelected && "chat-input-disabled")}
+      >
+        <CopilotChat
+          imageUploadsEnabled={false}
+          onSubmitMessage={handleSubmitMessage}
+          onError={errorEvent => {
+            debug.log('[ChatInner] Error:', errorEvent);
+          }}
+          onInProgress={handleInProgress}
+          renderError={renderError}
           onRegenerate={() => {
-            console.log('[ChatInner] Regenerate');
+            debug.log('[ChatInner] Regenerate');
           }}
           onCopy={(text: string) => {
-            console.log('[ChatInner] 📋 Copy clicked:', text.substring(0, 50));
+            debug.log('[ChatInner] Copy:', text.substring(0, 50));
           }}
           onStopGeneration={() => {
-            console.log('[ChatInner] ⏹️ Stop generation clicked');
+            debug.log('[ChatInner] Stop generation');
             try {
               stopGeneration?.();
             } catch (error) {
-              console.warn('[ChatInner] Failed to stop generation', error);
+              debug.warn?.('[ChatInner] Failed to stop generation', error);
             }
           }}
           onThumbsDown={() => {
-            console.log('[ChatInner] 👎 Thumbs down clicked');
+            debug.log('[ChatInner] Thumbs down');
           }}
           onThumbsUp={() => {
-            console.log('[ChatInner] 👍 Thumbs up clicked');
+            debug.log('[ChatInner] Thumbs up');
           }}
           markdownTagRenderers={customMarkdownTagRenderers}
           AssistantMessage={CustomAssistantMessage}
           UserMessage={CustomUserMessage}
-          Messages={React.useCallback((props: any) => (
-            <CustomMessages {...props} agentMode={agentModeChat} />
-          ), [agentModeChat])}
+          Messages={MessagesComponent}
           Input={ScopedInput}
         />
-        </StreamingContext.Provider>
       </div>
     </div>
   );

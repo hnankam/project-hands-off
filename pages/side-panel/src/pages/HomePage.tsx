@@ -1,16 +1,39 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@extension/ui';
 import { useStorage, useSessionStorageDB, sessionStorageDBWrapper } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 import UserMenu from '../components/UserMenu';
 import InfoMenu from '../components/InfoMenu';
 import { ViewOptionsMenu } from '../components/ViewOptionsMenu';
 import { InstallAppHelper } from '../components/InstallAppHelper';
+import { SettingsButton } from '../components/SettingsButton';
 import { useAuth } from '../context/AuthContext';
 import { UsageDisplay } from '../components/UsageDisplay';
 import type { CumulativeUsage } from '../hooks/useUsageStream';
 import { API_CONFIG } from '../constants';
+import { Z_INDEX, POLLING_INTERVALS } from '../constants/ui';
 import { teamsCache } from '../components/TeamSelectorDropdown';
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface Team {
+  id: string;
+  name: string;
+  organizationId: string;
+  createdAt: string | Date;
+}
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const SESSIONS_PER_PAGE = 10;
+
+// ============================================================================
+// INTERFACES
+// ============================================================================
 
 interface HomePageProps {
   isLight: boolean;
@@ -134,166 +157,12 @@ const PRODUCTIVITY_TIPS: Array<{ title: string; description: string }> = [
   },
 ];
 
-// Simple settings button component with upward-opening dropdown
-const SettingsButton: React.FC<{ isLight: boolean; theme: string; onOpenSettings: () => void }> = ({ isLight, theme, onOpenSettings }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-    return undefined;
-  }, [isOpen]);
-
-  return (
-    <div className="relative" ref={dropdownRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={cn(
-          'p-1 rounded transition-colors',
-          isLight
-            ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-        )}
-        title="Settings">
-        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      </button>
-
-      {isOpen && (
-        <div
-          className={cn(
-            'absolute bottom-full right-0 mb-1 w-64 rounded-md border shadow-lg z-[9999]',
-            isLight
-              ? 'bg-white border-gray-200'
-              : 'bg-[#151C24] border-gray-700'
-          )}
-        >
-          {/* Theme Selection */}
-          <div
-            className={cn(
-              'px-3 py-2.5 border-b',
-              isLight ? 'border-gray-200' : 'border-gray-700'
-            )}
-          >
-            <label
-              className={cn(
-                'text-xs font-medium block mb-2',
-                isLight ? 'text-gray-700' : 'text-[#bcc1c7]'
-              )}
-            >
-              Theme
-            </label>
-            <div className="flex gap-1">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  exampleThemeStorage.setTheme('light');
-                }}
-                className={cn(
-                  'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
-                  theme === 'light'
-                    ? 'bg-blue-500 text-white'
-                    : isLight
-                    ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                )}
-                title="Light theme"
-              >
-                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-                <span>Light</span>
-              </button>
-              
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  exampleThemeStorage.setTheme('dark');
-                }}
-                className={cn(
-                  'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
-                  theme === 'dark'
-                    ? 'bg-blue-500 text-white'
-                    : isLight
-                    ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                )}
-                title="Dark theme"
-              >
-                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                </svg>
-                <span>Dark</span>
-              </button>
-              
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  exampleThemeStorage.setTheme('system');
-                }}
-                className={cn(
-                  'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
-                  theme === 'system'
-                    ? 'bg-blue-500 text-white'
-                    : isLight
-                    ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                )}
-                title="System theme"
-              >
-                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                <span>System</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Divider */}
-          {/* <div
-            className={cn(
-              'border-t',
-              isLight ? 'border-gray-200' : 'border-gray-700'
-            )}
-          /> */}
-
-          {/* More Settings Button */}
-          <button
-            onClick={() => {
-              setIsOpen(false);
-              onOpenSettings();
-            }}
-            className={cn(
-              'w-full px-3 py-2 text-xs font-medium text-left transition-colors flex items-center gap-2',
-              isLight
-                ? 'text-gray-700 hover:bg-gray-100'
-                : 'text-gray-200 hover:bg-gray-700/50'
-            )}
-          >
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-            </svg>
-            <span>More Settings</span>
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
+// ============================================================================
+// HOME PAGE COMPONENT
+// ============================================================================
 
 export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onGoAdmin }) => {
-  const { theme } = useStorage(exampleThemeStorage);
+  const { theme } = useStorage(themeStorage);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const version = chrome.runtime?.getManifest?.()?.version || '1.0.0';
   const { organization, activeTeam, user } = useAuth();
@@ -313,7 +182,6 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const [teamsRefreshKey, setTeamsRefreshKey] = useState(0);
   const [currentTipIndex, setCurrentTipIndex] = useState(0);
   const [sessionsPage, setSessionsPage] = useState(1);
-  const sessionsPerPage = 10;
   
   // Initialize activeHomeTab from localStorage
   const [activeHomeTab, setActiveHomeTab] = useState<'sessions' | 'usage' | 'insights'>(() => {
@@ -345,7 +213,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     }
 
     // Check the shared teams cache first (used by TeamSelectorDropdown)
-    const currentTeam = teamsCache.teams.find((t: any) => t.id === activeTeam);
+    const currentTeam = teamsCache.teams.find((t: Team) => t.id === activeTeam);
     if (currentTeam) {
       setActiveTeamName(currentTeam.name);
       return;
@@ -361,7 +229,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
         if (response.ok) {
           const data = await response.json();
           const teams = data.teams || [];
-          const team = teams.find((t: any) => t.id === activeTeam);
+          const team = teams.find((t: Team) => t.id === activeTeam);
           if (team) {
             setActiveTeamName(team.name);
           } else {
@@ -383,19 +251,15 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
 
   // Listen for team data updates from TeamSelectorDropdown
   useEffect(() => {
-    const handleTeamUpdate = () => {
-      setTeamsRefreshKey(prev => prev + 1);
-    };
-
     // Check cache periodically for updates (lightweight)
     const intervalId = setInterval(() => {
       if (activeTeam && teamsCache.teams.length > 0) {
-        const currentTeam = teamsCache.teams.find((t: any) => t.id === activeTeam);
+        const currentTeam = teamsCache.teams.find((t: Team) => t.id === activeTeam);
         if (currentTeam && currentTeam.name !== activeTeamName) {
           setActiveTeamName(currentTeam.name);
         }
       }
-    }, 500); // Check every 500ms
+    }, POLLING_INTERVALS.teamCacheCheck);
 
     return () => {
       clearInterval(intervalId);
@@ -480,12 +344,12 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     return [...sessions].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }, [sessions]);
 
-  const totalSessionPages = useMemo(() => Math.ceil(sortedSessions.length / sessionsPerPage), [sortedSessions.length, sessionsPerPage]);
+  const totalSessionPages = useMemo(() => Math.ceil(sortedSessions.length / SESSIONS_PER_PAGE), [sortedSessions.length]);
 
   const paginatedSessions = useMemo(() => {
-    const startIndex = (sessionsPage - 1) * sessionsPerPage;
-    return sortedSessions.slice(startIndex, startIndex + sessionsPerPage);
-  }, [sortedSessions, sessionsPage, sessionsPerPage]);
+    const startIndex = (sessionsPage - 1) * SESSIONS_PER_PAGE;
+    return sortedSessions.slice(startIndex, startIndex + SESSIONS_PER_PAGE);
+  }, [sortedSessions, sessionsPage]);
 
   const totalSessions = sessions.length;
   const activeSessionsCount = useMemo(() => sessions.filter(session => session.isActive).length, [sessions]);
@@ -950,8 +814,8 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         <span className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           {sortedSessions.length === 0
                             ? 'No sessions'
-                            : `${((sessionsPage - 1) * sessionsPerPage) + 1}-${Math.min(
-                                sessionsPage * sessionsPerPage,
+                            : `${((sessionsPage - 1) * SESSIONS_PER_PAGE) + 1}-${Math.min(
+                                sessionsPage * SESSIONS_PER_PAGE,
                                 sortedSessions.length,
                               )} of ${sortedSessions.length}`}
                         </span>
@@ -1392,12 +1256,16 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            style={{ zIndex: Z_INDEX.modalBackdrop }}
             onClick={() => setSettingsOpen(false)}
           />
 
           {/* Modal */}
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
+          <div 
+            className="fixed inset-0 flex items-center justify-center p-4"
+            style={{ zIndex: Z_INDEX.modal }}
+          >
             <div
               className={cn(
                 'w-full max-w-sm rounded-lg shadow-xl',
@@ -1449,7 +1317,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                 </label>
                 <div className="flex gap-1">
                   <button
-                    onClick={() => exampleThemeStorage.setTheme('light')}
+                    onClick={() => themeStorage.setTheme('light')}
                     className={cn(
                       'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
                       theme === 'light'
@@ -1467,7 +1335,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                   </button>
                   
                   <button
-                    onClick={() => exampleThemeStorage.setTheme('dark')}
+                    onClick={() => themeStorage.setTheme('dark')}
                     className={cn(
                       'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
                       theme === 'dark'
@@ -1485,7 +1353,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                   </button>
                   
                   <button
-                    onClick={() => exampleThemeStorage.setTheme('system')}
+                    onClick={() => themeStorage.setTheme('system')}
                     className={cn(
                       'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
                       theme === 'system'

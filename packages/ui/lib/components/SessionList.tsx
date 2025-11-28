@@ -83,8 +83,9 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
 
   return (
     <>
-      <div className={cn("flex flex-col", className)}>
-        <div className="flex items-center justify-between px-2 h-[34px]">
+      <div className={cn("flex flex-col py-1.5", className)}>
+        {/* Match footer bar height from HomePage: px-4 py-1.5 */}
+        <div className="flex items-center justify-between px-3 py-1.5">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
             className={cn(

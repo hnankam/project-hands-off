@@ -8,11 +8,8 @@ export interface UseTabManagementProps {
 export interface UseTabManagementReturn {
   currentTabId: number | null;
   setCurrentTabId: React.Dispatch<React.SetStateAction<number | null>>;
-  currentTabTitle: string;
-  setCurrentTabTitle: React.Dispatch<React.SetStateAction<string>>;
   currentTabTitleRef: React.MutableRefObject<string>;
   tabTitleVersion: number;
-  setTabTitleVersion: React.Dispatch<React.SetStateAction<number>>;
   getCurrentTabTitle: () => string;
 }
 
@@ -30,7 +27,6 @@ export const useTabManagement = ({
 }: UseTabManagementProps): UseTabManagementReturn => {
   
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
-  const [currentTabTitle, setCurrentTabTitle] = useState<string>('');
   
   // Track tab title in ref to avoid heavy re-renders
   const currentTabTitleRef = useRef<string>('');
@@ -39,15 +35,13 @@ export const useTabManagement = ({
   const [tabTitleVersion, setTabTitleVersion] = useState(0);
   
   // Helper to get the most current tab title
-  // tabTitleVersion in the dependency ensures this updates when ref changes
+  // tabTitleVersion in the dependency ensures components re-read when title changes
   const getCurrentTabTitle = useCallback(() => {
-    return currentTabTitleRef.current || currentTabTitle;
-  }, [currentTabTitle, tabTitleVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+    return currentTabTitleRef.current;
+  }, [tabTitleVersion]);
   
   // Listen to tab changes and update title
   // Only active when session is active
-  const titleUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
   useEffect(() => {
     if (!isActive) return; // Only run for the active session
     
@@ -62,9 +56,10 @@ export const useTabManagement = ({
           currentTabTitleRef.current = newTitle;
           
           // Increment version to trigger minimal re-render (just updates the status bar)
-          setTabTitleVersion(prev => prev + 1);
-          
-          debug.log(`[useTabManagement] Tab title updated: ${newTitle} (version: ${tabTitleVersion + 1})`);
+          setTabTitleVersion(prev => {
+            debug.log(`[useTabManagement] Tab title updated: ${newTitle} (version: ${prev + 1})`);
+            return prev + 1;
+          });
         }
       });
     };
@@ -77,9 +72,10 @@ export const useTabManagement = ({
         currentTabTitleRef.current = newTitle;
         
         // Increment version to trigger minimal re-render
-        setTabTitleVersion(prev => prev + 1);
-        
-        debug.log(`[useTabManagement] Tab title updated: ${newTitle} (version: ${tabTitleVersion + 1})`);
+        setTabTitleVersion(prev => {
+          debug.log(`[useTabManagement] Tab title updated: ${newTitle} (version: ${prev + 1})`);
+          return prev + 1;
+        });
       }
     };
 
@@ -89,20 +85,14 @@ export const useTabManagement = ({
     return () => {
       chrome.tabs.onActivated.removeListener(handleTabActivatedForTitle);
       chrome.tabs.onUpdated.removeListener(handleTabUpdatedForTitle);
-      if (titleUpdateTimeoutRef.current) {
-        clearTimeout(titleUpdateTimeoutRef.current);
-      }
     };
-  }, [currentTabId, isActive, tabTitleVersion]);
+  }, [currentTabId, isActive]);
 
   return {
     currentTabId,
     setCurrentTabId,
-    currentTabTitle,
-    setCurrentTabTitle,
     currentTabTitleRef,
     tabTitleVersion,
-    setTabTitleVersion,
     getCurrentTabTitle
   };
 };

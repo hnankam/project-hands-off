@@ -4,8 +4,7 @@
  * All database operations are non-blocking and happen in the worker
  */
 
-// Timestamp helper for consistent logging
-const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+import { debug } from '../utils/debug.js';
 
 // Typed message contracts and error type
 type DBOp =
@@ -17,7 +16,8 @@ type DBOp =
   | 'searchHTMLChunks'
   | 'searchFormFields'
   | 'searchClickableElements'
-  | 'query';
+  | 'query'
+  | 'terminate';
 
 interface WorkerRequest {
   id: string;
@@ -57,8 +57,9 @@ class DBWorkerClient {
     reject: (error: Error) => void;
     timeout?: number;
   }>();
-  private debug = true;
+  private enableDebug = true;
   private defaultDbName = 'embeddings_db';
+  private boundHandleWorkerMessage: ((event: MessageEvent<WorkerResponse>) => void) | null = null;
 
   // Constructor accepts optional config for advanced use cases
   constructor(private config?: { worker?: Worker; debug?: boolean; defaultDbName?: string }) {
@@ -68,7 +69,7 @@ class DBWorkerClient {
     });
 
     if (config) {
-      if (config.debug !== undefined) this.debug = config.debug;
+      if (config.debug !== undefined) this.enableDebug = config.debug;
       if (config.defaultDbName) this.defaultDbName = config.defaultDbName;
       if (config.worker) {
         this.worker = config.worker;
@@ -83,7 +84,7 @@ class DBWorkerClient {
    */
   async initialize(useMemory = true, dbName: string = this.defaultDbName): Promise<void> {
     if (this.isInitialized) {
-      if (this.debug) console.log(`${ts()} [DB Worker Client] Already initialized`);
+      if (this.enableDebug) debug.log('[DB Worker Client] Already initialized');
       return;
     }
 
@@ -102,12 +103,12 @@ class DBWorkerClient {
           this.attachWorkerListeners();
         }
 
-        if (this.debug) console.log(`${ts()} [DB Worker Client] Worker created, waiting for ready signal...`);
+        if (this.enableDebug) debug.log('[DB Worker Client] Worker created, waiting for ready signal...');
 
         // Wait for worker to signal it's ready
         await this.workerReadyPromise;
 
-        if (this.debug) console.log(`${ts()} [DB Worker Client] Worker ready, initializing database...`);
+        if (this.enableDebug) debug.log('[DB Worker Client] Worker ready, initializing database...');
 
         // Send initialization message
         // IMPORTANT: useMemory=true for in-memory storage (fast, no IndexedDB persistence)
@@ -117,10 +118,12 @@ class DBWorkerClient {
         });
 
         this.isInitialized = true;
-        if (this.debug) console.log(`${ts()} [DB Worker Client] ✅ Initialized successfully`);
+        if (this.enableDebug) debug.log('[DB Worker Client] Initialized successfully');
       } catch (error) {
-        console.error(`${ts()} [DB Worker Client] ❌ Failed to initialize:`, error);
+        debug.error('[DB Worker Client] Failed to initialize:', error);
         this.initializationPromise = null;
+        // Clean up worker on failure
+        this.cleanup();
         throw error;
       }
     })();
@@ -136,7 +139,7 @@ class DBWorkerClient {
 
     // Handle ready signal
     if (response.type === 'ready') {
-      if (this.debug) console.log(`${ts()} [DB Worker Client] Received ready signal from worker`);
+      if (this.enableDebug) debug.log('[DB Worker Client] Received ready signal from worker');
       if (this.workerReadyResolve) {
         this.workerReadyResolve();
         this.workerReadyResolve = null;
@@ -151,7 +154,7 @@ class DBWorkerClient {
       if (pending.timeout) clearTimeout(pending.timeout);
       
       if (response.success) {
-        pending.resolve(response.data as unknown as any);
+        pending.resolve(response.data);
       } else {
         pending.reject(new DBWorkerError(response.error || 'Unknown error'));
       }
@@ -160,18 +163,33 @@ class DBWorkerClient {
 
   private attachWorkerListeners() {
     if (!this.worker) return;
-    this.worker.addEventListener('message', this.handleWorkerMessage.bind(this));
+    
+    // Store bound handler to prevent memory leaks
+    this.boundHandleWorkerMessage = this.handleWorkerMessage.bind(this);
+    this.worker.addEventListener('message', this.boundHandleWorkerMessage);
+    
     this.worker.addEventListener('error', (error: ErrorEvent) => {
-      console.error(`${ts()} [DB Worker Client] Worker error:`, {
+      debug.error('[DB Worker Client] Worker error:', {
         message: error.message,
         filename: error.filename,
         lineno: error.lineno,
         colno: error.colno,
       });
     });
+    
     this.worker.addEventListener('messageerror', (event) => {
-      console.error(`${ts()} [DB Worker Client] Worker messageerror:`, event);
+      debug.error('[DB Worker Client] Worker messageerror:', event);
     });
+  }
+
+  /**
+   * Clean up worker and listeners
+   */
+  private cleanup(): void {
+    if (this.worker && this.boundHandleWorkerMessage) {
+      this.worker.removeEventListener('message', this.boundHandleWorkerMessage);
+      this.boundHandleWorkerMessage = null;
+    }
   }
 
   /**
@@ -230,13 +248,22 @@ class DBWorkerClient {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    const batch = opts?.maxBatchSize && opts.maxBatchSize > 0 ? opts.maxBatchSize : data.chunks.length;
-    for (let i = 0; i < data.chunks.length; i += batch) {
-      const portion = data.chunks.slice(i, i + batch);
-      if (this.debug) console.log(`[DB Worker Client] 📤 Sending ${portion.length} HTML chunks (batch ${i}-${i + portion.length - 1})`);
-      await this.sendMessage('storeHTMLChunks', { ...data, chunks: portion }, opts);
+    
+    // Worker already batches internally - send all chunks at once for simplicity
+    // If maxBatchSize is specified, respect it for memory constraints
+    if (opts?.maxBatchSize && opts.maxBatchSize > 0 && opts.maxBatchSize < data.chunks.length) {
+      const batch = opts.maxBatchSize;
+      for (let i = 0; i < data.chunks.length; i += batch) {
+        const portion = data.chunks.slice(i, i + batch);
+        if (this.enableDebug) debug.log(`[DB Worker Client] Sending ${portion.length} HTML chunks (batch ${i + 1}/${Math.ceil(data.chunks.length / batch)})`);
+        await this.sendMessage('storeHTMLChunks', { ...data, chunks: portion }, opts);
+      }
+    } else {
+      if (this.enableDebug) debug.log(`[DB Worker Client] Sending ${data.chunks.length} HTML chunks`);
+      await this.sendMessage('storeHTMLChunks', data, opts);
     }
-    if (this.debug) console.log(`${ts()} [DB Worker Client] ✅ HTML chunks stored`);
+    
+    if (this.enableDebug) debug.log('[DB Worker Client] HTML chunks stored');
   }
 
   /**
@@ -254,13 +281,20 @@ class DBWorkerClient {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    const batch = opts?.maxBatchSize && opts.maxBatchSize > 0 ? opts.maxBatchSize : data.groups.length;
-    for (let i = 0; i < data.groups.length; i += batch) {
-      const portion = data.groups.slice(i, i + batch);
-      if (this.debug) console.log(`[DB Worker Client] 📤 Sending ${portion.length} form field groups`);
-      await this.sendMessage('storeFormFields', { ...data, groups: portion }, opts);
+    
+    if (opts?.maxBatchSize && opts.maxBatchSize > 0 && opts.maxBatchSize < data.groups.length) {
+      const batch = opts.maxBatchSize;
+      for (let i = 0; i < data.groups.length; i += batch) {
+        const portion = data.groups.slice(i, i + batch);
+        if (this.enableDebug) debug.log(`[DB Worker Client] Sending ${portion.length} form field groups (batch ${i + 1}/${Math.ceil(data.groups.length / batch)})`);
+        await this.sendMessage('storeFormFields', { ...data, groups: portion }, opts);
+      }
+    } else {
+      if (this.enableDebug) debug.log(`[DB Worker Client] Sending ${data.groups.length} form field groups`);
+      await this.sendMessage('storeFormFields', data, opts);
     }
-    if (this.debug) console.log(`${ts()} [DB Worker Client] ✅ Form fields stored`);
+    
+    if (this.enableDebug) debug.log('[DB Worker Client] Form fields stored');
   }
 
   /**
@@ -278,13 +312,20 @@ class DBWorkerClient {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    const batch = opts?.maxBatchSize && opts.maxBatchSize > 0 ? opts.maxBatchSize : data.groups.length;
-    for (let i = 0; i < data.groups.length; i += batch) {
-      const portion = data.groups.slice(i, i + batch);
-      if (this.debug) console.log(`[DB Worker Client] 📤 Sending ${portion.length} clickable element groups`);
-      await this.sendMessage('storeClickableElements', { ...data, groups: portion }, opts);
+    
+    if (opts?.maxBatchSize && opts.maxBatchSize > 0 && opts.maxBatchSize < data.groups.length) {
+      const batch = opts.maxBatchSize;
+      for (let i = 0; i < data.groups.length; i += batch) {
+        const portion = data.groups.slice(i, i + batch);
+        if (this.enableDebug) debug.log(`[DB Worker Client] Sending ${portion.length} clickable element groups (batch ${i + 1}/${Math.ceil(data.groups.length / batch)})`);
+        await this.sendMessage('storeClickableElements', { ...data, groups: portion }, opts);
+      }
+    } else {
+      if (this.enableDebug) debug.log(`[DB Worker Client] Sending ${data.groups.length} clickable element groups`);
+      await this.sendMessage('storeClickableElements', data, opts);
     }
-    if (this.debug) console.log(`${ts()} [DB Worker Client] ✅ Clickable elements stored`);
+    
+    if (this.enableDebug) debug.log('[DB Worker Client] Clickable elements stored');
   }
 
   /**
@@ -301,9 +342,9 @@ class DBWorkerClient {
     if (!this.isInitialized) {
       await this.initialize();
     }
-    if (this.debug) console.log(`${ts()} [DB Worker Client] 📤 Storing DOM update`);
+    if (this.enableDebug) debug.log('[DB Worker Client] Storing DOM update');
     await this.sendMessage('storeDOMUpdate', data, opts);
-    if (this.debug) console.log(`${ts()} [DB Worker Client] ✅ DOM update stored`);
+    if (this.enableDebug) debug.log('[DB Worker Client] DOM update stored');
   }
 
   /**
@@ -326,7 +367,7 @@ class DBWorkerClient {
       await this.initialize();
     }
 
-    if (this.debug) console.log(`[DB Worker Client] 🔍 Searching HTML chunks (topK=${topK})...`);
+    if (this.enableDebug) debug.log(`[DB Worker Client] Searching HTML chunks (topK=${topK})...`);
     const results = await this.sendMessage<Array<{
       id: string;
       pageURL: string;
@@ -340,7 +381,7 @@ class DBWorkerClient {
       queryEmbedding,
       topK,
     });
-    if (this.debug) console.log(`[DB Worker Client] ✅ Found ${results.length} results`);
+    if (this.enableDebug) debug.log(`[DB Worker Client] Found ${results.length} results`);
     return results;
   }
 
@@ -367,7 +408,7 @@ class DBWorkerClient {
       await this.initialize();
     }
 
-    if (this.debug) console.log(`[DB Worker Client] 🔍 Searching form fields (topK=${topK})...`);
+    if (this.enableDebug) debug.log(`[DB Worker Client] Searching form fields (topK=${topK})...`);
     const results = await this.sendMessage<Array<{
       id: string;
       pageURL: string;
@@ -383,8 +424,8 @@ class DBWorkerClient {
       pageURL,
       queryEmbedding,
       topK,
-    }, { timeoutMs: 10000 }); // 10s timeout for debugging
-    if (this.debug) console.log(`[DB Worker Client] ✅ Found ${results.length} results`);
+    }, { timeoutMs: 10000 });
+    if (this.enableDebug) debug.log(`[DB Worker Client] Found ${results.length} results`);
     return results;
   }
 
@@ -409,7 +450,7 @@ class DBWorkerClient {
       await this.initialize();
     }
 
-    if (this.debug) console.log(`[DB Worker Client] 🔍 Searching clickable elements (topK=${topK})...`);
+    if (this.enableDebug) debug.log(`[DB Worker Client] Searching clickable elements (topK=${topK})...`);
     const results = await this.sendMessage<Array<{
       id: string;
       pageURL: string;
@@ -424,7 +465,7 @@ class DBWorkerClient {
       queryEmbedding,
       topK,
     });
-    if (this.debug) console.log(`[DB Worker Client] ✅ Found ${results.length} results`);
+    if (this.enableDebug) debug.log(`[DB Worker Client] Found ${results.length} results`);
     return results;
   }
 
@@ -440,17 +481,29 @@ class DBWorkerClient {
   }
 
   /**
-   * Terminate the worker
+   * Terminate the worker gracefully
    */
-  terminate(): void {
+  async terminate(): Promise<void> {
     if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
-      this.isInitialized = false;
-      this.initializationPromise = null;
-      this.pendingMessages.forEach(entry => entry.timeout && clearTimeout(entry.timeout));
-      this.pendingMessages.clear();
-      if (this.debug) console.log(`${ts()} [DB Worker Client] Worker terminated`);
+      try {
+        // Send terminate message to allow graceful DB cleanup
+        if (this.isInitialized) {
+          await this.sendMessage('terminate', undefined, { timeoutMs: 5000 });
+        }
+      } catch (error) {
+        debug.warn('[DB Worker Client] Failed to send terminate message:', error);
+      } finally {
+        this.cleanup();
+        this.worker.terminate();
+        this.worker = null;
+        this.isInitialized = false;
+        this.initializationPromise = null;
+        this.workerReadyPromise = null;
+        this.workerReadyResolve = null;
+        this.pendingMessages.forEach(entry => entry.timeout && clearTimeout(entry.timeout));
+        this.pendingMessages.clear();
+        if (this.enableDebug) debug.log('[DB Worker Client] Worker terminated');
+      }
     }
   }
 }

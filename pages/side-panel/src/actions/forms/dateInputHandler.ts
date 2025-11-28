@@ -1,37 +1,117 @@
-import { InputHandler, InputDataResult, InputHandlerOptions, DateInputOptions, InputType } from './types';
+/**
+ * Date Input Handler
+ *
+ * Specialized handler for date inputs (date, datetime-local, time, month, week).
+ * Handles various date formats and modern web app patterns.
+ */
+
+import { debug as baseDebug } from '@extension/shared';
+import { InputHandler, InputDataResult, DateInputOptions, InputType } from './types';
 import {
   findElement,
   isElementVisible,
   scrollIntoView,
   focusAndHighlight,
-  streamText,
   showSuccessFeedback,
-  getElementValue,
   triggerInputEvents,
   detectModernInput,
   moveCursorToElement,
 } from './utils';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Log prefix for consistent logging */
+const LOG_PREFIX = '[DateInput]';
+
+/** Milliseconds per week for week number calculation */
+const MS_PER_WEEK = 604800000;
+
+/** Supported date input types */
+const SUPPORTED_DATE_TYPES: InputType[] = ['date', 'datetime-local', 'time', 'month', 'week'];
+
+// ============================================================================
+// DEBUG HELPERS
+// ============================================================================
+
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: unknown[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: unknown[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: unknown[]) => baseDebug.error(ts(), ...args),
+} as const;
+
+// ============================================================================
+// HANDLER-LEVEL DEDUPLICATION
+// ============================================================================
+
+/** Active operation tracking to prevent duplicate executions */
+const activeOperations = new Map<string, Promise<InputDataResult>>();
+
+/**
+ * Create operation key for deduplication
+ */
+function createOperationKey(element: HTMLElement, value: string): string {
+  const id = element.id || '';
+  const name = (element as HTMLInputElement).name || '';
+  const type = (element as HTMLInputElement).type || '';
+  return `date:${type}:${id}:${name}:${value}`;
+}
+
+// ============================================================================
+// HANDLER CLASS
+// ============================================================================
 
 /**
  * Specialized handler for date inputs (date, datetime-local, time, month, week)
  * Handles various date formats and modern web app patterns
  */
 export class DateInputHandler implements InputHandler {
-  private supportedTypes: InputType[] = ['date', 'datetime-local', 'time', 'month', 'week'];
+  private supportedTypes: InputType[] = SUPPORTED_DATE_TYPES;
 
   canHandle(inputType: InputType, element: HTMLElement): boolean {
     return this.supportedTypes.includes(inputType) && element.tagName === 'INPUT';
   }
 
   async handle(element: HTMLElement, value: string, options: DateInputOptions = {}): Promise<InputDataResult> {
+    const operationKey = createOperationKey(element, value);
+
+    // Check for in-flight operation
+    const existingOperation = activeOperations.get(operationKey);
+    if (existingOperation) {
+      debug.log(LOG_PREFIX, 'Duplicate operation blocked, reusing existing');
+      return existingOperation;
+    }
+
+    // Create and track operation
+    const operation = this.executeHandle(element, value, options);
+    activeOperations.set(operationKey, operation);
+
+    // Cleanup after completion
+    operation.finally(() => {
+      activeOperations.delete(operationKey);
+    });
+
+    return operation;
+  }
+
+  private async executeHandle(
+    element: HTMLElement,
+    value: string,
+    options: DateInputOptions,
+  ): Promise<InputDataResult> {
     try {
       const inputElement = element as HTMLInputElement;
-      const inputType = inputElement.type;
+      const inputType = inputElement.type as InputType;
+
+      debug.log(LOG_PREFIX, 'Handling:', { type: inputType, id: inputElement.id, value });
 
       // Move cursor to element if requested
       if (options.moveCursor) {
         moveCursorToElement(element);
       }
+
       // Ensure visible and focused for realistic interaction
       if (!isElementVisible(inputElement)) {
         await scrollIntoView(inputElement);
@@ -39,12 +119,13 @@ export class DateInputHandler implements InputHandler {
       await focusAndHighlight(inputElement);
 
       // Parse and format the date value
-      const formattedValue = this.formatDateValue(value, inputType as InputType, options);
+      const formattedValue = this.formatDateValue(value, inputType, options);
 
       if (!formattedValue) {
+        debug.warn(LOG_PREFIX, 'Invalid date format:', { value, type: inputType });
         return {
           status: 'error',
-          message: `Invalid date format for ${inputType} input. Expected format: ${this.getExpectedFormat(inputType as InputType)}`,
+          message: `Invalid date format for ${inputType} input. Expected format: ${this.getExpectedFormat(inputType)}`,
         };
       }
 
@@ -55,6 +136,7 @@ export class DateInputHandler implements InputHandler {
 
       // Early exit if value already matches
       if (inputElement.value === formattedValue) {
+        debug.log(LOG_PREFIX, 'Value already set');
         return {
           status: 'success',
           message: `${inputType} already set`,
@@ -86,6 +168,8 @@ export class DateInputHandler implements InputHandler {
         showSuccessFeedback(inputElement);
       }
 
+      debug.log(LOG_PREFIX, 'Date input successful:', { formattedValue });
+
       return {
         status: 'success',
         message: `${inputType} input successful`,
@@ -98,9 +182,11 @@ export class DateInputHandler implements InputHandler {
         },
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Error:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling ${(element as HTMLInputElement).type} input: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling ${(element as HTMLInputElement).type} input: ${errorMessage}`,
       };
     }
   }
@@ -115,53 +201,27 @@ export class DateInputHandler implements InputHandler {
 
       switch (inputType) {
         case 'date':
-          return this.formatDate(date, options);
+          return this.formatDate(date);
         case 'datetime-local':
-          return this.formatDateTimeLocal(date, options);
+          return this.formatDateTimeLocal(date);
         case 'time':
-          return this.formatTime(date, options);
+          return this.formatTime(date);
         case 'month':
-          return this.formatMonth(date, options);
+          return this.formatMonth(date);
         case 'week':
-          return this.formatWeek(date, options);
+          return this.formatWeek(date);
         default:
           return null;
       }
     } catch (error) {
-      console.error('Error formatting date value:', error);
+      debug.error(LOG_PREFIX, 'Error formatting date value:', error);
       return null;
     }
   }
 
   private parseDate(value: string, options: DateInputOptions): Date | null {
-    // Try to parse various date formats
-    const formats = [
-      // ISO formats
-      /^\d{4}-\d{2}-\d{2}$/, // YYYY-MM-DD
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/, // ISO datetime
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/, // ISO datetime without seconds
-
-      // US formats
-      /^\d{1,2}\/\d{1,2}\/\d{4}$/, // MM/DD/YYYY
-      /^\d{1,2}-\d{1,2}-\d{4}$/, // MM-DD-YYYY
-
-      // EU formats
-      /^\d{1,2}\.\d{1,2}\.\d{4}$/, // DD.MM.YYYY
-      /^\d{1,2}\/\d{1,2}\/\d{4}$/, // DD/MM/YYYY
-
-      // Time formats
-      /^\d{1,2}:\d{2}$/, // HH:MM
-      /^\d{1,2}:\d{2}:\d{2}$/, // HH:MM:SS
-
-      // Relative dates
-      /^(today|now)$/i,
-      /^(tomorrow|next day)$/i,
-      /^(yesterday|previous day)$/i,
-      /^(\d+)\s*(days?|weeks?|months?|years?)\s*(ago|from now)$/i,
-    ];
-
     // Try native Date parsing first
-    let date = new Date(value);
+    const date = new Date(value);
     if (!isNaN(date.getTime())) {
       return date;
     }
@@ -190,32 +250,32 @@ export class DateInputHandler implements InputHandler {
       const unit = relativeMatch[2].toLowerCase();
       const direction = relativeMatch[3].toLowerCase();
 
-      const date = new Date();
+      const relativeDate = new Date();
       const multiplier = direction === 'ago' ? -1 : 1;
 
       switch (unit) {
         case 'day':
         case 'days':
-          date.setDate(date.getDate() + amount * multiplier);
+          relativeDate.setDate(relativeDate.getDate() + amount * multiplier);
           break;
         case 'week':
         case 'weeks':
-          date.setDate(date.getDate() + amount * 7 * multiplier);
+          relativeDate.setDate(relativeDate.getDate() + amount * 7 * multiplier);
           break;
         case 'month':
         case 'months':
-          date.setMonth(date.getMonth() + amount * multiplier);
+          relativeDate.setMonth(relativeDate.getMonth() + amount * multiplier);
           break;
         case 'year':
         case 'years':
-          date.setFullYear(date.getFullYear() + amount * multiplier);
+          relativeDate.setFullYear(relativeDate.getFullYear() + amount * multiplier);
           break;
       }
 
-      return date;
+      return relativeDate;
     }
 
-    // Try parsing with different formats
+    // Try parsing with different formats based on options
     const format = options.format || 'ISO';
 
     switch (format) {
@@ -231,13 +291,12 @@ export class DateInputHandler implements InputHandler {
   }
 
   private parseISODate(value: string): Date | null {
-    // Try ISO format parsing
     const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?/);
     if (isoMatch) {
       const [, year, month, day, hour = '0', minute = '0', second = '0'] = isoMatch;
       return new Date(
         parseInt(year),
-        parseInt(month) - 1, // Month is 0-indexed
+        parseInt(month) - 1,
         parseInt(day),
         parseInt(hour),
         parseInt(minute),
@@ -248,7 +307,6 @@ export class DateInputHandler implements InputHandler {
   }
 
   private parseUSDate(value: string): Date | null {
-    // MM/DD/YYYY or MM-DD-YYYY
     const usMatch = value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
     if (usMatch) {
       const [, month, day, year] = usMatch;
@@ -258,7 +316,6 @@ export class DateInputHandler implements InputHandler {
   }
 
   private parseEUDate(value: string): Date | null {
-    // DD.MM.YYYY or DD/MM/YYYY
     const euMatch = value.match(/^(\d{1,2})[\.\/](\d{1,2})[\.\/](\d{4})/);
     if (euMatch) {
       const [, day, month, year] = euMatch;
@@ -267,53 +324,45 @@ export class DateInputHandler implements InputHandler {
     return null;
   }
 
-  private parseCustomDate(value: string, format?: string): Date | null {
-    // Basic custom format parsing - can be extended
-    if (!format) return null;
-
-    // This is a simplified implementation
-    // In a real-world scenario, you might want to use a library like date-fns or moment.js
+  private parseCustomDate(value: string, _format?: string): Date | null {
+    // Basic custom format parsing - returns native parse result
+    // In production, consider using date-fns or similar
+    if (!_format) return null;
     return new Date(value);
   }
 
-  private formatDate(date: Date, options: DateInputOptions): string {
-    // HTML date input expects YYYY-MM-DD format
+  private formatDate(date: Date): string {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   }
 
-  private formatDateTimeLocal(date: Date, options: DateInputOptions): string {
-    // HTML datetime-local input expects YYYY-MM-DDTHH:MM format
-    const dateStr = this.formatDate(date, options);
-    const timeStr = this.formatTime(date, options);
+  private formatDateTimeLocal(date: Date): string {
+    const dateStr = this.formatDate(date);
+    const timeStr = this.formatTime(date);
     return `${dateStr}T${timeStr}`;
   }
 
-  private formatTime(date: Date, options: DateInputOptions): string {
-    // HTML time input expects HH:MM format
+  private formatTime(date: Date): string {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${hours}:${minutes}`;
   }
 
-  private formatMonth(date: Date, options: DateInputOptions): string {
-    // HTML month input expects YYYY-MM format
+  private formatMonth(date: Date): string {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     return `${year}-${month}`;
   }
 
-  private formatWeek(date: Date, options: DateInputOptions): string {
-    // HTML week input expects YYYY-W## format
+  private formatWeek(date: Date): string {
     const year = date.getFullYear();
     const week = this.getWeekNumber(date);
     return `${year}-W${String(week).padStart(2, '0')}`;
   }
 
   private getWeekNumber(date: Date): number {
-    // Calculate ISO week number
     const target = new Date(date.valueOf());
     const dayNr = (date.getDay() + 6) % 7;
     target.setDate(target.getDate() - dayNr + 3);
@@ -322,7 +371,7 @@ export class DateInputHandler implements InputHandler {
     if (target.getDay() !== 4) {
       target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
     }
-    return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
+    return 1 + Math.ceil((firstThursday - target.valueOf()) / MS_PER_WEEK);
   }
 
   private getExpectedFormat(inputType: InputType): string {
@@ -353,6 +402,8 @@ export class DateInputHandler implements InputHandler {
     options: DateInputOptions = {},
   ): Promise<InputDataResult> {
     try {
+      debug.log(LOG_PREFIX, 'Handling date range:', { fromSelector, toSelector, fromValue, toValue });
+
       // Handle from date
       const fromResult = await this.handleDateBySelector(fromSelector, fromValue, options);
       if (fromResult.status === 'error') {
@@ -364,6 +415,8 @@ export class DateInputHandler implements InputHandler {
       if (toResult.status === 'error') {
         return toResult;
       }
+
+      debug.log(LOG_PREFIX, 'Date range set successfully');
 
       return {
         status: 'success',
@@ -377,9 +430,11 @@ export class DateInputHandler implements InputHandler {
         },
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Date range error:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling date range: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling date range: ${errorMessage}`,
       };
     }
   }

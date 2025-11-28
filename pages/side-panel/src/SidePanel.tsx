@@ -22,7 +22,7 @@ import {
   useSessionStorageDB,
   withErrorBoundary,
 } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 import {
   cn,
   ErrorDisplay,
@@ -57,7 +57,7 @@ const SidePanel = () => {
   const { isReady: dbWorkerReady, error: dbWorkerError } = useDBWorkerClient();
   
   // Theme
-  const { isLight, theme } = useStorage(exampleThemeStorage);
+  const { isLight, theme } = useStorage(themeStorage);
   useThemeManager(isLight, theme);
   
   // Sessions
@@ -72,21 +72,20 @@ const SidePanel = () => {
     navigateToHome,
     navigateToSessions,
     navigateToAdmin,
-    navigateToInvitation,
     setInvitationId,
   } = useNavigationManager();
   
   // Session URL synchronization
-  useSessionUrlSync(
+  useSessionUrlSync({
     sessions,
     currentSessionId,
     activePage,
-    (page) => {
+    onPageChange: (page) => {
       if (page === 'sessions') {
         navigateToSessions();
       }
     }
-  );
+  });
   
   // Message handlers (context menu, close events)
   const { contextMenuMessage } = useMessageHandlers();

@@ -1,33 +1,93 @@
 /**
- * @fileoverview Session URL Synchronization Hook
+ * ================================================================================
+ * useSessionUrlSync Hook
+ * ================================================================================
  * 
  * Manages synchronization between URL session ID and active session.
  * Only applies URL session ID once on initial load to avoid interfering
  * with manual tab switches.
+ * 
+ * Features:
+ * - Applies URL session ID on initial load (newtab/popup mode)
+ * - Prevents overriding manual tab switches
+ * - Validates session existence before switching
+ * - Ensures user is on sessions page
+ * 
+ * @module useSessionUrlSync
+ * ================================================================================
  */
 
 import { useEffect, useRef } from 'react';
-import { sessionStorageDBWrapper } from '@extension/shared';
+import { sessionStorageDBWrapper, debug } from '@extension/shared';
 import { getCurrentViewMode, getSessionIdFromUrl } from '../utils/windowManager';
 
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/**
+ * Minimal session interface for URL sync.
+ * Compatible with SessionMetadata from session-schema.
+ */
 export interface Session {
+  /** Unique session identifier */
   id: string;
-  [key: string]: any;
 }
 
-export function useSessionUrlSync(
-  sessions: Session[],
-  currentSessionId: string | null,
-  activePage: string,
-  onPageChange: (page: 'sessions') => void
-): void {
+/**
+ * Props for useSessionUrlSync hook
+ */
+export interface UseSessionUrlSyncProps {
+  /** List of available sessions */
+  sessions: Session[];
+  /** Currently active session ID */
+  currentSessionId: string | null;
+  /** Current active page */
+  activePage: string;
+  /** Callback to change page */
+  onPageChange: (page: 'sessions') => void;
+}
+
+// ============================================================================
+// HOOK
+// ============================================================================
+
+/**
+ * Hook to synchronize URL session ID with active session.
+ * 
+ * This hook applies the session ID from the URL to the active session,
+ * but only on initial load. It won't override manual tab switches.
+ * 
+ * @param props - Configuration object
+ * @param props.sessions - List of available sessions
+ * @param props.currentSessionId - Currently active session ID
+ * @param props.activePage - Current active page
+ * @param props.onPageChange - Callback to change page
+ * 
+ * @example
+ * ```tsx
+ * useSessionUrlSync({
+ *   sessions,
+ *   currentSessionId,
+ *   activePage,
+ *   onPageChange: (page) => setActivePage(page)
+ * });
+ * ```
+ */
+export function useSessionUrlSync({
+  sessions,
+  currentSessionId,
+  activePage,
+  onPageChange
+}: UseSessionUrlSyncProps): void {
+  // Track which URL session ID has been applied to prevent re-application
   const urlSessionIdAppliedRef = useRef<string | null>(null);
   
   useEffect(() => {
     const viewMode = getCurrentViewMode();
     const urlSessionId = getSessionIdFromUrl();
     
-    console.log('[SessionUrlSync] View mode:', { viewMode, urlSessionId, currentSessionId });
+    debug.log('[useSessionUrlSync] View mode:', { viewMode, urlSessionId, currentSessionId });
     
     // Only apply URL session ID if:
     // 1. We're in a new tab or popup context
@@ -47,11 +107,11 @@ export function useSessionUrlSync(
       if (sessionExists) {
         // Only apply if current session doesn't match (initial load scenario)
         if (urlSessionId !== currentSessionId) {
-          console.log('[SessionUrlSync] Setting active session from URL (initial load):', urlSessionId);
+          debug.log('[useSessionUrlSync] Setting active session from URL (initial load):', urlSessionId);
           
           // Switch to the specified session
           sessionStorageDBWrapper.setActiveSession(urlSessionId).catch(err => {
-            console.error('[SessionUrlSync] Failed to set active session from URL:', err);
+            debug.error('[useSessionUrlSync] Failed to set active session from URL:', err);
           });
           
           // Mark this URL session ID as applied
@@ -66,9 +126,8 @@ export function useSessionUrlSync(
           urlSessionIdAppliedRef.current = urlSessionId;
         }
       } else {
-        console.warn('[SessionUrlSync] Session ID from URL not found:', urlSessionId);
+        debug.warn('[useSessionUrlSync] Session ID from URL not found:', urlSessionId);
       }
     }
   }, [sessions, currentSessionId, activePage, onPageChange]);
 }
-

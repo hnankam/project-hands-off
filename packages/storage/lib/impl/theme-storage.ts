@@ -29,7 +29,7 @@ const storage = createStorage<ThemeStateType>(
   },
 );
 
-export const exampleThemeStorage: ThemeStorageType = {
+export const themeStorage: ThemeStorageType = {
   ...storage,
   toggle: async () => {
     await storage.set(currentState => {
@@ -57,3 +57,4 @@ export const exampleThemeStorage: ThemeStorageType = {
     }));
   },
 };
+

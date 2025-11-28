@@ -1,44 +1,129 @@
-import { debug as baseDebug } from '@extension/shared';
+/**
+ * Verify Selector Action
+ *
+ * Validates CSS selectors and checks if they can find elements in DOM or Shadow DOM.
+ */
 
-// Timestamped debug wrappers
+import { debug as baseDebug } from '@extension/shared';
+import { QUERY_SELECTOR_SHADOW_DOM_CODE } from './shadowDOMHelper';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Log prefix for consistent logging */
+const LOG_PREFIX = '[VerifySelector]';
+
+/** Timeout for script execution in ms */
+const SCRIPT_TIMEOUT_MS = 8000;
+
+/** Maximum text content length to return */
+const MAX_TEXT_LENGTH = 100;
+
+/** Maximum number of elements to process */
+const MAX_ELEMENTS_TO_PROCESS = 5;
+
+// ============================================================================
+// DEBUG HELPERS
+// ============================================================================
+
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
 const debug = {
-  log: (...args: any[]) => baseDebug.log(ts(), ...args),
-  warn: (...args: any[]) => baseDebug.warn(ts(), ...args),
-  error: (...args: any[]) => baseDebug.error(ts(), ...args),
+  log: (...args: unknown[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: unknown[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: unknown[]) => baseDebug.error(ts(), ...args),
 } as const;
 
-/**
- * Result type for verify selector operation
- */
-interface VerifySelectorResult {
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/** Details about a found element */
+interface ElementDetails {
+  tag: string;
+  text: string;
+  id: string;
+  className: string;
+  foundInShadowDOM: boolean;
+  shadowHost: string | null;
+}
+
+/** Information about selector validation */
+interface SelectorInfo {
+  isValid: boolean;
+  foundInMainDOM: boolean;
+  foundInShadowDOM: boolean;
+  elementCount: number;
+  shadowHosts: string[];
+  elementDetails: ElementDetails[];
+}
+
+/** Result type for verify selector operation */
+export interface VerifySelectorResult {
   status: 'success' | 'error';
   message: string;
-  selectorInfo?: {
-    isValid: boolean;
-    foundInMainDOM: boolean;
-    foundInShadowDOM: boolean;
-    elementCount: number;
-    shadowHosts: string[];
-    elementDetails: {
-      tag: string;
-      text: string;
-      id: string;
-      className: string;
-      foundInShadowDOM: boolean;
-      shadowHost: string | null;
-    }[];
-  };
+  selectorInfo?: SelectorInfo;
+}
+
+/** Script execution result shape */
+interface ScriptVerifyResult {
+  success: boolean;
+  message: string;
+  selectorInfo?: SelectorInfo;
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Get error message from unknown error
+ */
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error';
 }
 
 /**
+ * Create a timeout promise for Promise.race
+ */
+function createTimeoutPromise<T>(ms: number, fallbackValue: T): Promise<T> {
+  return new Promise(resolve => setTimeout(() => resolve(fallbackValue), ms));
+}
+
+/**
+ * Type guard for valid script result
+ */
+function isValidScriptResult(result: unknown): result is { result: ScriptVerifyResult } {
+  return (
+    result !== null &&
+    typeof result === 'object' &&
+    'result' in result &&
+    result.result !== null &&
+    typeof result.result === 'object'
+  );
+}
+
+// ============================================================================
+// MAIN HANDLER
+// ============================================================================
+
+/**
  * Verify if a CSS selector is valid and can find elements in DOM or Shadow DOM
+ *
  * @param cssSelector - A CSS selector string to validate
  * @returns Promise with validation results and element information
+ *
+ * @example
+ * // Verify a simple selector
+ * await handleVerifySelector('#my-button')
+ *
+ * // Verify a shadow DOM selector
+ * await handleVerifySelector('document > x-app >> #my-button')
  */
 export async function handleVerifySelector(cssSelector: string): Promise<VerifySelectorResult> {
   try {
-    debug.log('[VerifySelector] Verifying selector:', cssSelector);
+    debug.log(LOG_PREFIX, 'Verifying selector:', cssSelector);
+
     if (!cssSelector || cssSelector.trim().length === 0) {
       return {
         status: 'error',
@@ -55,80 +140,39 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
       };
     }
 
-    // Execute script in content page to validate the selector (with timeout)
+    // Execute script in content page to validate the selector
     const execPromise = chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
       world: 'MAIN',
-      func: (selector: string): any => {
+      func: (selector: string, maxTextLen: number, maxElements: number, shadowHelperCode: string) => {
+        // Inject shadow DOM helpers
+        // eslint-disable-next-line no-eval
+        eval(shadowHelperCode);
+
+        // Access injected functions
+        const querySelectorAllWithShadowDOM = (
+          window as unknown as { querySelectorAllWithShadowDOM: (sel: string) => Element[] }
+        ).querySelectorAllWithShadowDOM;
+
         try {
-          const elementDetails: any[] = [];
+          interface ElementDetailItem {
+            tag: string;
+            text: string;
+            id: string;
+            className: string;
+            foundInShadowDOM: boolean;
+            shadowHost: string | null;
+          }
+
+          const elementDetails: ElementDetailItem[] = [];
           const shadowHosts: string[] = [];
           let foundInMainDOM = false;
           let foundInShadowDOM = false;
           let totalElementCount = 0;
 
-          // Helper: Parse and query shadow DOM selectors with >> notation
-          const querySelectorWithShadowDOM = (selector: string): Element[] => {
-            // Check if this is a shadow DOM selector with >> notation
-            if (!selector.includes(' >> ')) {
-              // Regular selector - just query the document
-              try {
-                return Array.from(document.querySelectorAll(selector));
-              } catch (e) {
-                throw new Error(`Invalid CSS selector: ${selector}`);
-              }
-            }
-
-            // Shadow DOM selector: "shadowPath >> elementSelector"
-            const parts = selector.split(' >> ');
-            if (parts.length !== 2) {
-              throw new Error(`Invalid shadow DOM selector format. Expected "shadowPath >> elementSelector", got: ${selector}`);
-            }
-
-            const shadowPath = parts[0].trim();
-            const elementSelector = parts[1].trim();
-
-            // Parse shadow path: "document > element1 > element2 > ..."
-            const pathSegments = shadowPath
-              .split(' > ')
-              .map(s => s.trim())
-              .filter(s => s && s !== 'document');
-
-            if (pathSegments.length === 0) {
-              throw new Error(`Shadow path must contain at least one element, got: ${shadowPath}`);
-            }
-
-            // Traverse the shadow path
-            let currentRoot: Document | ShadowRoot = document;
-            
-            for (const segment of pathSegments) {
-              // Query for the host element in the current root
-              const hostElement: Element | null = currentRoot.querySelector(segment);
-              
-              if (!hostElement) {
-                throw new Error(`Shadow host not found: ${segment} in path ${shadowPath}`);
-              }
-              
-              if (!hostElement.shadowRoot) {
-                throw new Error(`Element ${segment} does not have a shadow root in path ${shadowPath}`);
-              }
-              
-              // Move into the shadow root
-              currentRoot = hostElement.shadowRoot;
-            }
-
-            // Now query for the element selector within the final shadow root
-            try {
-              return Array.from(currentRoot.querySelectorAll(elementSelector));
-            } catch (e) {
-              throw new Error(`Invalid element selector in shadow DOM: ${elementSelector}`);
-            }
-          };
-
-          // First, check if selector is syntactically valid by trying to use it
+          // First, check if selector is syntactically valid
           try {
-            // Test selector validity by attempting to parse and use it
-            querySelectorWithShadowDOM(selector);
+            querySelectorAllWithShadowDOM(selector);
           } catch (selectorError) {
             return {
               success: false,
@@ -144,13 +188,13 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
             };
           }
 
-          // Use the shadow-aware query helper
-          const elements = querySelectorWithShadowDOM(selector);
+          // Query elements using the shadow-aware helper
+          const elements = querySelectorAllWithShadowDOM(selector);
           totalElementCount = elements.length;
-          
+
           // Determine if elements are in shadow DOM based on selector syntax
           const isShadowDOMSelector = selector.includes(' >> ');
-          
+
           if (elements.length > 0) {
             if (isShadowDOMSelector) {
               foundInShadowDOM = true;
@@ -161,15 +205,15 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
               foundInMainDOM = true;
             }
 
-            // Collect details for first few elements (limit to avoid overwhelming response)
-            const elementsToProcess = Math.min(elements.length, 5);
+            // Collect details for first few elements
+            const elementsToProcess = Math.min(elements.length, maxElements);
             for (let i = 0; i < elementsToProcess; i++) {
               const element = elements[i];
               elementDetails.push({
                 tag: element.tagName,
-                text: (element.textContent || '').trim().substring(0, 100),
+                text: (element.textContent || '').trim().substring(0, maxTextLen),
                 id: element.id || '',
-                className: element.className || '',
+                className: typeof element.className === 'string' ? element.className : '',
                 foundInShadowDOM: isShadowDOMSelector,
                 shadowHost: isShadowDOMSelector ? selector.split(' >> ')[0].trim() : null,
               });
@@ -216,17 +260,20 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
           };
         }
       },
-      args: [cssSelector] as [string],
+      args: [cssSelector, MAX_TEXT_LENGTH, MAX_ELEMENTS_TO_PROCESS, QUERY_SELECTOR_SHADOW_DOM_CODE] as [
+        string,
+        number,
+        number,
+        string,
+      ],
     });
 
-    const results = await Promise.race([
-      execPromise,
-      new Promise<any>(resolve =>
-        setTimeout(() => resolve([{ result: { success: false, message: 'Timeout while verifying selector' } }]), 8000),
-      ),
-    ]);
+    const timeoutFallback = [
+      { result: { success: false, message: 'Timeout while verifying selector' } as ScriptVerifyResult },
+    ];
+    const results = await Promise.race([execPromise, createTimeoutPromise(SCRIPT_TIMEOUT_MS, timeoutFallback)]);
 
-    if (results && results[0]?.result) {
+    if (results && results[0] && isValidScriptResult(results[0])) {
       const result = results[0].result;
       if (result.success && result.selectorInfo) {
         return {
@@ -248,10 +295,10 @@ export async function handleVerifySelector(cssSelector: string): Promise<VerifyS
       message: 'Unable to verify selector',
     };
   } catch (error) {
-    debug.error('[VerifySelector] Error verifying selector:', error);
+    debug.error(LOG_PREFIX, 'Error verifying selector:', error);
     return {
       status: 'error',
-      message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      message: `Error: ${getErrorMessage(error)}`,
     };
   }
 }

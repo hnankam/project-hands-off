@@ -6,17 +6,13 @@
  */
 
 import type { DBWorkerClient } from './db-worker-client.js';
-
-// Debug logging
-const DEBUG = true;
-const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
-const log = (...args: any[]) => DEBUG && console.log(ts(), ...args);
+import { debug } from '../utils/debug.js';
 
 /**
  * Initialize session storage schema in SurrealDB
  */
 export async function initializeSessionSchema(worker: DBWorkerClient): Promise<void> {
-  log('[SessionSchema] Initializing session storage schema...');
+  debug.log('[SessionSchema] Initializing session storage schema...');
 
   try {
     await worker.query(`
@@ -87,7 +83,7 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
     `);
     
     if (sessionsWithoutCreatedAt && sessionsWithoutCreatedAt[0]?.length > 0) {
-      log('[SessionSchema] Backfilling createdAt for', sessionsWithoutCreatedAt[0].length, 'sessions...');
+      debug.log('[SessionSchema] Backfilling createdAt for', sessionsWithoutCreatedAt[0].length, 'sessions...');
       for (const session of sessionsWithoutCreatedAt[0]) {
         const sessionId = typeof session.id === 'object' ? session.id.id : session.id;
         const createdAt = session.timestamp || Date.now();
@@ -95,7 +91,7 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
           UPDATE session_metadata SET createdAt = $createdAt WHERE sessionId = $sessionId;
         `, { sessionId, createdAt });
       }
-      log('[SessionSchema] ✅ createdAt backfill completed');
+      debug.log('[SessionSchema] createdAt backfill completed');
     }
 
     // Migration: Delete sessions without userId (no backward compatibility)
@@ -104,13 +100,13 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
     `);
     
     if (sessionsWithoutUserId && sessionsWithoutUserId[0]?.length > 0) {
-      log('[SessionSchema] ⚠️  Found', sessionsWithoutUserId[0].length, 'sessions without userId - deleting them (no backward compatibility)');
+      debug.log('[SessionSchema] Found', sessionsWithoutUserId[0].length, 'sessions without userId - deleting them (no backward compatibility)');
       await worker.query(`
         DELETE FROM session_metadata WHERE userId = NONE;
       `);
-      log('[SessionSchema] ✅ Deleted sessions without userId');
+      debug.log('[SessionSchema] Deleted sessions without userId');
     } else {
-      log('[SessionSchema] ℹ️  No sessions without userId found');
+      debug.log('[SessionSchema] No sessions without userId found');
     }
 
     // Backfill version and lastModified for existing message records
@@ -136,18 +132,18 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
       const modifiedCount = (modifiedResult && modifiedResult[0] && Array.isArray(modifiedResult[0])) ? modifiedResult[0].length : 0;
       
       if (versionCount > 0 || modifiedCount > 0) {
-        log(`[SessionSchema] ✅ Backfilled ${versionCount} version records, ${modifiedCount} lastModified records`);
+        debug.log(`[SessionSchema] Backfilled ${versionCount} version records, ${modifiedCount} lastModified records`);
       } else {
-        log('[SessionSchema] ℹ️  No message records needed backfill');
+        debug.log('[SessionSchema] No message records needed backfill');
       }
     } catch (backfillError) {
-      console.error('[SessionSchema] ⚠️  Backfill failed (non-critical):', backfillError);
+      debug.error('[SessionSchema] Backfill failed (non-critical):', backfillError);
       // Non-critical error - the optional field allows NONE values
     }
  
-    log('[SessionSchema] ✅ Session storage schema initialized successfully');
+    debug.log('[SessionSchema] Session storage schema initialized successfully');
   } catch (error) {
-    console.error('[SessionSchema] ❌ Failed to initialize schema:', error);
+    debug.error('[SessionSchema] Failed to initialize schema:', error);
     throw error;
   }
 }

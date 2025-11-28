@@ -7,7 +7,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authClient, Session, User, Organization, Member } from '../lib/auth-client';
 import { API_CONFIG } from '../constants';
-import { sessionStorageDBWrapper } from '@extension/shared';
+import { sessionStorageDBWrapper, debug } from '@extension/shared';
 
 interface AuthContextType {
   // State
@@ -31,6 +31,78 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+/**
+ * Helper: Auto-select first team the user is a member of
+ * Reduces code duplication across loadSession and setActiveOrganization
+ */
+async function autoSelectFirstTeam(
+  setActiveTeamState: (teamId: string | null) => void,
+  updateSessionContext: (updates: { activeTeamId: string | null }) => void
+): Promise<boolean> {
+  try {
+    const teamsResponse = await fetch(`${API_CONFIG.BASE_URL}/api/config/teams`, {
+      credentials: 'include',
+    });
+    
+    if (!teamsResponse.ok) {
+      return false;
+    }
+    
+    const teamsData = await teamsResponse.json();
+    const teams = teamsData.teams || [];
+    
+    // Filter to only teams the user is a member of
+    const memberTeams = teams.filter((t: any) => t.isMember);
+    
+    if (memberTeams.length > 0) {
+      const firstTeamId = memberTeams[0].id;
+      const firstTeamName = memberTeams[0].name;
+      
+      debug.log('[AuthContext] Auto-selecting first team:', firstTeamName);
+      
+      // Set the active team on backend
+      const setTeamResponse = await fetch(`${API_CONFIG.BASE_URL}/api/auth/set-active-team`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ teamId: firstTeamId }),
+      });
+      
+      if (setTeamResponse.ok) {
+        setActiveTeamState(firstTeamId);
+        updateSessionContext({ activeTeamId: firstTeamId });
+        debug.log('[AuthContext] Successfully set active team');
+        return true;
+      } else {
+        debug.error('[AuthContext] Failed to set active team on backend');
+        return false;
+      }
+    } else {
+      // No teams available, clear active team
+      debug.log('[AuthContext] No member teams available');
+      setActiveTeamState(null);
+      updateSessionContext({ activeTeamId: null });
+      
+      // Also clear it in the backend
+      await fetch(`${API_CONFIG.BASE_URL}/api/auth/set-active-team`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ teamId: null }),
+      });
+      
+      return false;
+    }
+  } catch (error) {
+    debug.error('[AuthContext] Error auto-selecting team:', error);
+    return false;
+  }
+}
 
 /**
  * Auth Provider Component
@@ -76,7 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setMember(null);
         }
       } catch (memberError) {
-        console.error('[AuthContext] Error fetching member info:', memberError);
+        debug.error('[AuthContext] Error fetching member info:', memberError);
         setMember(null);
       }
     },
@@ -102,17 +174,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const activeOrgId = sessionData?.activeOrganizationId;
         const activeTeamId = sessionData?.activeTeamId || null;
         
-        console.log('[AuthContext] loadSession - activeOrgId:', activeOrgId);
-        console.log('[AuthContext] loadSession - activeTeamId:', activeTeamId);
+        debug.log('[AuthContext] loadSession - activeOrgId:', activeOrgId?.slice(0, 8));
+        debug.log('[AuthContext] loadSession - activeTeamId:', activeTeamId?.slice(0, 8));
         
         const currentUserId = sessionResult.data.user?.id || null;
         
         // Set userId for session storage (required for multi-user support)
         if (currentUserId) {
-          console.log('[AuthContext] 🔐 Setting userId for session storage:', currentUserId);
+          debug.log('[AuthContext] Setting userId for session storage:', currentUserId.slice(0, 8));
           sessionStorageDBWrapper.setCurrentUserId(currentUserId);
         } else {
-          console.log('[AuthContext] ⚠️  No userId found, clearing session storage userId');
+          debug.log('[AuthContext] No userId found, clearing session storage userId');
           sessionStorageDBWrapper.setCurrentUserId(null);
         }
 
@@ -125,43 +197,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             
             // If we have an org but no active team, auto-select the first team
             if (!activeTeamId) {
-              try {
-                const teamsResponse = await fetch(`${API_CONFIG.BASE_URL}/api/config/teams`, {
-                  credentials: 'include',
-                });
-                
-                if (teamsResponse.ok) {
-                  const teamsData = await teamsResponse.json();
-                  const teams = teamsData.teams || [];
-                  
-                  // Filter to only teams the user is a member of
-                  const memberTeams = teams.filter((t: any) => t.isMember);
-                  
-                  // If there are teams user is a member of, auto-select the first one
-                  if (memberTeams.length > 0) {
-                    const firstTeamId = memberTeams[0].id;
-                    
-                    // Set the active team
-                    const setTeamResponse = await fetch(`${API_CONFIG.BASE_URL}/api/auth/set-active-team`, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
-                      credentials: 'include',
-                      body: JSON.stringify({ teamId: firstTeamId }),
-                    });
-                    
-                    if (setTeamResponse.ok) {
-                      setActiveTeamState(firstTeamId);
-                      updateSessionContext({ activeTeamId: firstTeamId });
-                    }
-                  }
-                }
-              } catch (teamError) {
-                console.error('[AuthContext] Error auto-selecting team on load:', teamError);
-              }
+              await autoSelectFirstTeam(setActiveTeamState, updateSessionContext);
             } else {
-              console.log('[AuthContext] Setting activeTeamState from session:', activeTeamId);
+              debug.log('[AuthContext] Setting activeTeamState from session:', activeTeamId.slice(0, 8));
               setActiveTeamState(activeTeamId);
             }
 
@@ -172,14 +210,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           // No active organization - auto-select the first one the user belongs to
-          console.log('[AuthContext] No active organization, attempting auto-select...');
+          debug.log('[AuthContext] No active organization, attempting auto-select');
           try {
             const orgsResult = await authClient.organization.list();
             const userOrgs = orgsResult.data || [];
             
             if (userOrgs.length > 0) {
               const firstOrg = userOrgs[0];
-              console.log('[AuthContext] Auto-selecting first organization:', firstOrg.name);
+              debug.log('[AuthContext] Auto-selecting first organization:', firstOrg.name);
               
               // Set this organization as active
               await authClient.organization.setActive({
@@ -190,49 +228,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               updateSessionContext({ activeOrganizationId: firstOrg.id });
               
               // Now auto-select the first team in this organization
-              try {
-                const teamsResponse = await fetch(`${API_CONFIG.BASE_URL}/api/config/teams`, {
-                  credentials: 'include',
-                });
-                
-                if (teamsResponse.ok) {
-                  const teamsData = await teamsResponse.json();
-                  const teams = teamsData.teams || [];
-                  const memberTeams = teams.filter((t: any) => t.isMember);
-                  
-                  if (memberTeams.length > 0) {
-                    const firstTeamId = memberTeams[0].id;
-                    console.log('[AuthContext] Auto-selecting first team:', memberTeams[0].name);
-                    
-                    const setTeamResponse = await fetch(`${API_CONFIG.BASE_URL}/api/auth/set-active-team`, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
-                      credentials: 'include',
-                      body: JSON.stringify({ teamId: firstTeamId }),
-                    });
-                    
-                    if (setTeamResponse.ok) {
-                      setActiveTeamState(firstTeamId);
-                      updateSessionContext({ activeTeamId: firstTeamId });
-                      console.log('[AuthContext] Auto-selection complete: org and team set');
-                    }
-                  }
-                }
-              } catch (teamError) {
-                console.error('[AuthContext] Error auto-selecting team:', teamError);
-              }
+              await autoSelectFirstTeam(setActiveTeamState, updateSessionContext);
 
               await fetchAndSetMember(firstOrg.id, currentUserId);
             } else {
-              console.log('[AuthContext] No organizations found for user');
+              debug.log('[AuthContext] No organizations found for user');
               setOrganization(null);
               setActiveTeamState(null);
               setMember(null);
             }
           } catch (orgError) {
-            console.error('[AuthContext] Error auto-selecting organization:', orgError);
+            debug.error('[AuthContext] Error auto-selecting organization:', orgError);
             setOrganization(null);
             setActiveTeamState(null);
             setMember(null);
@@ -247,11 +253,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setActiveTeamState(null);
         
         // Clear userId from session storage
-        console.log('[AuthContext] No session found, clearing session storage userId');
+        debug.log('[AuthContext] No session found, clearing session storage userId');
         sessionStorageDBWrapper.setCurrentUserId(null);
       }
     } catch (error) {
-      console.error('[AuthContext] Error loading session:', error);
+      debug.error('[AuthContext] Error loading session:', error);
       setSession(null);
       setUser(null);
       setOrganization(null);
@@ -259,7 +265,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setActiveTeamState(null);
       
       // Clear userId from session storage on error
-      console.log('[AuthContext] Error loading session, clearing session storage userId');
+      debug.log('[AuthContext] Error loading session, clearing session storage userId');
       sessionStorageDBWrapper.setCurrentUserId(null);
     } finally {
       setIsLoading(false);
@@ -283,7 +289,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await loadSession();
       return {};
     } catch (error: any) {
-      console.error('Sign in error:', error);
+      debug.error('Sign in error:', error);
       return { error: error.message || 'An error occurred during sign in' };
     }
   };
@@ -306,7 +312,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await loadSession();
       return {};
     } catch (error: any) {
-      console.error('Sign up error:', error);
+      debug.error('Sign up error:', error);
       return { error: error.message || 'An error occurred during sign up' };
     }
   };
@@ -316,20 +322,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const signOut = async () => {
     try {
-      console.log('[AuthContext] Signing out user');
+      debug.log('[AuthContext] Signing out user');
       await authClient.signOut();
       setSession(null);
       setUser(null);
       setOrganization(null);
       setMember(null);
       setActiveTeamState(null);
-      setMember(null);
       
       // Clear userId from session storage
-      console.log('[AuthContext] Clearing session storage userId on sign out');
+      debug.log('[AuthContext] Clearing session storage userId on sign out');
       sessionStorageDBWrapper.setCurrentUserId(null);
     } catch (error) {
-      console.error('[AuthContext] Sign out error:', error);
+      debug.error('[AuthContext] Sign out error:', error);
       // Still clear userId even if sign out fails
       sessionStorageDBWrapper.setCurrentUserId(null);
     }
@@ -340,7 +345,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const setActiveOrganization = async (organizationId: string) => {
     try {
-      console.log('[AuthContext] Switching to organization:', organizationId);
+      debug.log('[AuthContext] Switching to organization:', organizationId.slice(0, 8));
       
       // First, clear the active team (it belongs to the old organization)
       setActiveTeamState(null);
@@ -362,78 +367,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setOrganization(newOrg);
         }
       } catch (orgError) {
-        console.error('[AuthContext] Error fetching new organization:', orgError);
+        debug.error('[AuthContext] Error fetching new organization:', orgError);
       }
       
-      // After setting organization, fetch teams and auto-select the first one
-      try {
-        const teamsResponse = await fetch(`${API_CONFIG.BASE_URL}/api/config/teams`, {
-          credentials: 'include',
-        });
-        
-        if (teamsResponse.ok) {
-          const teamsData = await teamsResponse.json();
-          const teams = teamsData.teams || [];
-          
-          console.log('[AuthContext] Teams in new organization:', teams.map((t: any) => ({ id: t.id, name: t.name, isMember: t.isMember })));
-          
-          // Filter to only teams the user is a member of
-          const memberTeams = teams.filter((t: any) => t.isMember);
-          
-          console.log('[AuthContext] Member teams:', memberTeams.length);
-          
-          // ALWAYS select a team if available
-          if (memberTeams.length > 0) {
-            const firstTeamId = memberTeams[0].id;
-            const firstTeamName = memberTeams[0].name;
-            
-            console.log('[AuthContext] Auto-selecting first team:', { id: firstTeamId, name: firstTeamName });
-            
-            // Set the active team
-            const setTeamResponse = await fetch(`${API_CONFIG.BASE_URL}/api/auth/set-active-team`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              credentials: 'include',
-              body: JSON.stringify({ teamId: firstTeamId }),
-            });
-            
-            if (setTeamResponse.ok) {
-              setActiveTeamState(firstTeamId);
-              updateSessionContext({ activeTeamId: firstTeamId });
-              console.log('[AuthContext] Successfully set active team to:', firstTeamName);
-            } else {
-              console.error('[AuthContext] Failed to set active team on backend');
-            }
-          } else {
-            // No teams available, clear active team
-            console.log('[AuthContext] No member teams available, clearing active team');
-            setActiveTeamState(null);
-            updateSessionContext({ activeTeamId: null });
-            
-            // Also clear it in the backend
-            await fetch(`${API_CONFIG.BASE_URL}/api/auth/set-active-team`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              credentials: 'include',
-              body: JSON.stringify({ teamId: null }),
-            });
-          }
-        }
-      } catch (teamError) {
-        console.error('[AuthContext] Error auto-selecting team:', teamError);
-      }
+      // After setting organization, auto-select the first team
+      await autoSelectFirstTeam(setActiveTeamState, updateSessionContext);
       
       // Don't call loadSession() here - it causes a full re-render
       // The state updates above are sufficient
-      console.log('[AuthContext] Organization switch complete');
+      debug.log('[AuthContext] Organization switch complete');
 
       await fetchAndSetMember(organizationId, user?.id || null);
     } catch (error) {
-      console.error('[AuthContext] Error setting active organization:', error);
+      debug.error('[AuthContext] Error setting active organization:', error);
     }
   };
 
@@ -442,7 +388,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const setActiveTeam = async (teamId: string | null) => {
     try {
-      console.log('[AuthContext] Setting active team:', teamId);
+      debug.log('[AuthContext] Setting active team:', teamId?.slice(0, 8));
       
       // Call backend API to update active team in session
       const response = await fetch(`${API_CONFIG.BASE_URL}/api/auth/set-active-team`, {
@@ -460,18 +406,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       const result = await response.json();
       const updatedTeamId = result?.activeTeamId ?? teamId;
-      console.log('[AuthContext] Set active team result:', result);
+      debug.log('[AuthContext] Set active team result:', { activeTeamId: updatedTeamId?.slice(0, 8) });
       
       // Update local state immediately
       setActiveTeamState(updatedTeamId);
       updateSessionContext({ activeTeamId: updatedTeamId });
-      console.log('[AuthContext] Local activeTeam state updated to:', updatedTeamId);
+      debug.log('[AuthContext] Local activeTeam state updated');
 
       await fetchAndSetMember(organization?.id ?? null, user?.id || null);
 
       return { success: true, activeTeamId: updatedTeamId };
     } catch (error) {
-      console.error('[AuthContext] Error setting active team:', error);
+      debug.error('[AuthContext] Error setting active team:', error);
       return { success: false, activeTeamId: activeTeam ?? null };
     }
   };

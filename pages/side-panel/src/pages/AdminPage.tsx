@@ -3,12 +3,12 @@
  * Refactored to use separate tab components
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { authClient } from '../lib/auth-client';
 import { useAuth } from '../context/AuthContext';
-import { cn, Button, DropdownMenu, DropdownMenuItem } from '@extension/ui';
+import { cn, Button } from '@extension/ui';
 import { useStorage } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 import { OrganizationsTab } from '../components/admin/OrganizationsTab';
 import { TeamsTab } from '../components/admin/TeamsTab';
 import { UsersTab } from '../components/admin/UsersTab';
@@ -23,13 +23,19 @@ import UserMenu from '../components/UserMenu';
 import InfoMenu from '../components/InfoMenu';
 import { ViewOptionsMenu } from '../components/ViewOptionsMenu';
 import { InstallAppHelper } from '../components/InstallAppHelper';
+import { SettingsButton } from '../components/SettingsButton';
+import { Z_INDEX, ANIMATION_DURATIONS, AUTO_DISMISS_DELAYS } from '../constants/ui';
+
+// ============================================================================
+// TYPES
+// ============================================================================
 
 interface Organization {
   id: string;
   name: string;
   slug: string;
   logo?: string | null;
-  metadata?: any;
+  metadata?: Record<string, unknown> | null;
   createdAt: string | Date;
 }
 
@@ -50,167 +56,13 @@ interface AdminPageProps {
   initialTab?: AdminTabKey;
 }
 
-// Simple settings button component with upward-opening dropdown
-const SettingsButton: React.FC<{ isLight: boolean; theme: string; onOpenSettings: () => void }> = ({ isLight, theme, onOpenSettings }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-    return undefined;
-  }, [isOpen]);
-
-  return (
-    <div className="relative" ref={dropdownRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={cn(
-          'p-1 rounded transition-colors',
-          isLight
-            ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
-            : 'text-gray-400 hover:bg-gray-700 hover:text-[#bcc1c7]',
-        )}
-        title="Settings">
-        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      </button>
-
-      {isOpen && (
-        <div
-          className={cn(
-            'absolute bottom-full right-0 mb-1 w-64 rounded-md border shadow-lg z-[9999]',
-            isLight
-              ? 'bg-gray-50 border-gray-200'
-              : 'bg-[#151C24] border-gray-700'
-          )}
-        >
-          {/* Theme Selection */}
-          <div
-            className={cn(
-              'px-3 py-2.5 border-b',
-              isLight ? 'border-gray-200' : 'border-gray-700'
-            )}
-          >
-            <label
-              className={cn(
-                'text-xs font-medium block mb-2',
-                isLight ? 'text-gray-700' : 'text-[#bcc1c7]'
-              )}
-            >
-              Theme
-            </label>
-            <div className="flex gap-1">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  exampleThemeStorage.setTheme('light');
-                }}
-                className={cn(
-                  'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
-                  theme === 'light'
-                    ? 'bg-blue-500 text-white'
-                    : isLight
-                    ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                )}
-                title="Light theme"
-              >
-                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-                <span>Light</span>
-              </button>
-              
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  exampleThemeStorage.setTheme('dark');
-                }}
-                className={cn(
-                  'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
-                  theme === 'dark'
-                    ? 'bg-blue-500 text-white'
-                    : isLight
-                    ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                )}
-                title="Dark theme"
-              >
-                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                </svg>
-                <span>Dark</span>
-              </button>
-              
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  exampleThemeStorage.setTheme('system');
-                }}
-                className={cn(
-                  'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
-                  theme === 'system'
-                    ? 'bg-blue-500 text-white'
-                    : isLight
-                    ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                )}
-                title="System theme"
-              >
-                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                <span>System</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Divider */}
-          {/* <div
-            className={cn(
-              'border-t',
-              isLight ? 'border-gray-200' : 'border-gray-700'
-            )}
-          /> */}
-
-          {/* More Settings Button */}
-          <button
-            onClick={() => {
-              setIsOpen(false);
-              onOpenSettings();
-            }}
-            className={cn(
-              'w-full px-3 py-2 text-xs font-medium text-left transition-colors flex items-center gap-2',
-              isLight
-                ? 'text-gray-700 hover:bg-gray-100'
-                : 'text-gray-200 hover:bg-gray-700/50'
-            )}
-          >
-            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-            </svg>
-            <span>More Settings</span>
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
+// ============================================================================
+// ADMIN PAGE COMPONENT
+// ============================================================================
 
 export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organizations' }: AdminPageProps) {
-  const { user, organization, activeTeam, member } = useAuth();
-  const { isLight, theme } = useStorage(exampleThemeStorage);
+  const { user, organization, member } = useAuth();
+  const { isLight, theme } = useStorage(themeStorage);
 
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
@@ -252,6 +104,73 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
     }
   }, [activeTab]);
 
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [errorVisible, setErrorVisible] = useState(false);
+  const [successVisible, setSuccessVisible] = useState(false);
+  const [errorClosing, setErrorClosing] = useState(false);
+  const [successClosing, setSuccessClosing] = useState(false);
+
+  // Load organizations for team selector
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+
+  // Check for pending invitations
+  const { invitations: pendingInvitations, hasPendingInvitations } = usePendingInvitations();
+  const [showInvitationBanner, setShowInvitationBanner] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Memoized callbacks
+  const loadOrganizations = useCallback(async () => {
+    try {
+      const { data, error } = await authClient.organization.list();
+      if (error) throw new Error(error.message);
+      setOrganizations(data || []);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Error loading organizations';
+      console.error('[AdminPage]', errorMessage, err);
+    }
+  }, []);
+
+  const handleDismissError = useCallback(() => {
+    setErrorClosing(true);
+    setTimeout(() => {
+      setError('');
+      setErrorVisible(false);
+      setErrorClosing(false);
+    }, ANIMATION_DURATIONS.dismiss);
+  }, []);
+
+  const handleDismissSuccess = useCallback(() => {
+    setSuccessClosing(true);
+    setTimeout(() => {
+      setSuccess('');
+      setSuccessVisible(false);
+      setSuccessClosing(false);
+    }, ANIMATION_DURATIONS.dismiss);
+  }, []);
+
+  // Load organizations on mount and when user changes (e.g., after login)
+  useEffect(() => {
+    if (user) {
+      loadOrganizations();
+    }
+  }, [user, loadOrganizations]);
+
+  // Only update activeTab when initialTab changes and is not the default
+  // This allows navigation from HomePage to work while preserving the last active tab on reopen
+  useEffect(() => {
+    if (initialTab !== 'organizations') {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
+  // Preselect active organization when component mounts or organization ID changes
+  useEffect(() => {
+    if (organization?.id && !selectedOrgForTeams) {
+      setSelectedOrgForTeams(organization.id);
+    }
+  }, [organization?.id, selectedOrgForTeams]);
+
   // Auto-scroll to active tab when it changes
   useEffect(() => {
     const activeTabElement = tabRefs.current.get(activeTab);
@@ -263,7 +182,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
           block: 'nearest',
           inline: 'center'
         });
-      }, 100);
+      }, ANIMATION_DURATIONS.scrollDelay);
     }
   }, [activeTab]);
 
@@ -281,60 +200,13 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
     window.addEventListener('resize', checkOverflow);
     
     // Also check after a short delay to ensure tabs are rendered
-    const timer = setTimeout(checkOverflow, 100);
+    const timer = setTimeout(checkOverflow, ANIMATION_DURATIONS.scrollDelay);
 
     return () => {
       window.removeEventListener('resize', checkOverflow);
       clearTimeout(timer);
     };
   }, [activeTab, isOwnerOrAdmin]); // Re-check when tabs might change
-
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [errorVisible, setErrorVisible] = useState(false);
-  const [successVisible, setSuccessVisible] = useState(false);
-  const [errorClosing, setErrorClosing] = useState(false);
-  const [successClosing, setSuccessClosing] = useState(false);
-
-  // Load organizations for team selector
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-
-  // Check for pending invitations
-  const { invitations: pendingInvitations, hasPendingInvitations } = usePendingInvitations();
-  const [showInvitationBanner, setShowInvitationBanner] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
-  // Load organizations on mount and when user changes (e.g., after login)
-  useEffect(() => {
-    if (user) {
-      loadOrganizations();
-    }
-  }, [user]);
-
-  // Only update activeTab when initialTab changes and is not the default
-  // This allows navigation from HomePage to work while preserving the last active tab on reopen
-  useEffect(() => {
-    if (initialTab !== 'organizations') {
-      setActiveTab(initialTab);
-    }
-  }, [initialTab]);
-
-  // Preselect active organization when component mounts or organization ID changes
-  useEffect(() => {
-    if (organization?.id && !selectedOrgForTeams) {
-      setSelectedOrgForTeams(organization.id);
-    }
-  }, [organization?.id]); // Only trigger when the ID changes, not the object reference
-
-  const loadOrganizations = async () => {
-    try {
-      const { data, error } = await authClient.organization.list();
-      if (error) throw new Error(error.message);
-      setOrganizations(data || []);
-    } catch (err: any) {
-      console.error('Error loading organizations:', err);
-    }
-  };
 
   // Error auto-dismiss
   useEffect(() => {
@@ -349,8 +221,8 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
         setError('');
         setErrorVisible(false);
         setErrorClosing(false);
-      }, 300);
-    }, 8000);
+      }, ANIMATION_DURATIONS.dismiss);
+    }, AUTO_DISMISS_DELAYS.error);
 
     return () => clearTimeout(timer);
   }, [error]);
@@ -368,29 +240,11 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
         setSuccess('');
         setSuccessVisible(false);
         setSuccessClosing(false);
-      }, 300);
-    }, 5000);
+      }, ANIMATION_DURATIONS.dismiss);
+    }, AUTO_DISMISS_DELAYS.success);
 
     return () => clearTimeout(timer);
   }, [success]);
-
-  const handleDismissError = () => {
-    setErrorClosing(true);
-    setTimeout(() => {
-      setError('');
-      setErrorVisible(false);
-      setErrorClosing(false);
-    }, 300);
-  };
-
-  const handleDismissSuccess = () => {
-    setSuccessClosing(true);
-    setTimeout(() => {
-      setSuccess('');
-      setSuccessVisible(false);
-      setSuccessClosing(false);
-    }, 300);
-  };
 
   return (
     <div className={cn('flex h-full max-h-full min-h-0 flex-col overflow-hidden relative', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
@@ -816,12 +670,16 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            style={{ zIndex: Z_INDEX.modalBackdrop }}
             onClick={() => setSettingsOpen(false)}
           />
 
           {/* Modal */}
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
+          <div 
+            className="fixed inset-0 flex items-center justify-center p-4"
+            style={{ zIndex: Z_INDEX.modal }}
+          >
             <div
               className={cn(
                 'w-full max-w-sm rounded-lg shadow-xl',
@@ -873,7 +731,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
                 </label>
                 <div className="flex gap-1">
                   <button
-                    onClick={() => exampleThemeStorage.setTheme('light')}
+                    onClick={() => themeStorage.setTheme('light')}
                     className={cn(
                       'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
                       theme === 'light'
@@ -891,7 +749,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
                   </button>
                   
                   <button
-                    onClick={() => exampleThemeStorage.setTheme('dark')}
+                    onClick={() => themeStorage.setTheme('dark')}
                     className={cn(
                       'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
                       theme === 'dark'
@@ -909,7 +767,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
                   </button>
                   
                   <button
-                    onClick={() => exampleThemeStorage.setTheme('system')}
+                    onClick={() => themeStorage.setTheme('system')}
                     className={cn(
                       'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
                       theme === 'system'

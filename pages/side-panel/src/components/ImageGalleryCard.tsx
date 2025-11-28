@@ -1,7 +1,7 @@
 import type { FC } from 'react';
 import React, { useState, useEffect, useRef } from 'react';
 import { useStorage } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 
 export interface ImageGalleryCardProps {
   status?: string;
@@ -17,7 +17,7 @@ export interface ImageGalleryCardProps {
  * Similar to productivity tips carousel on HomePage
  */
 const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrls = [], prompt }) => {
-  const { isLight } = useStorage(exampleThemeStorage);
+  const { isLight } = useStorage(themeStorage);
   const [currentIndex, setCurrentIndex] = useState(0);
   
   // Cards default to closed, but newly created ones (being generated) are kept open

@@ -1,8 +1,28 @@
 import { useRef, useEffect } from 'react';
 import { debug } from '@extension/shared';
 
-// Timestamp helper for consistent logging
-const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+/**
+ * Schedule a callback using requestAnimationFrame with setTimeout fallback.
+ * Returns a frame ID that can be cancelled.
+ */
+const scheduleCallback = (cb: () => void): number => {
+  if (typeof requestAnimationFrame === 'function') {
+    return requestAnimationFrame(cb);
+  }
+  // Fallback in environments without RAF
+  return setTimeout(cb, 0) as unknown as number;
+};
+
+/**
+ * Cancel a scheduled callback from scheduleCallback.
+ */
+const cancelScheduledCallback = (frameId: number): void => {
+  if (typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(frameId);
+  } else {
+    clearTimeout(frameId);
+  }
+};
 
 /**
  * useContextMenuPrefill Hook
@@ -31,9 +51,6 @@ export const useContextMenuPrefill = (
   sessionId: string,
   contextMenuMessage: string | null | undefined
 ) => {
-  // Track prefill data (not currently used but kept for potential future needs)
-  const inputPrefillRef = useRef<{ text: string; timestamp: number } | null>(null);
-  
   // Track which messages have already been processed
   const contextMenuUsedRef = useRef<string | null>(null);
   
@@ -41,8 +58,8 @@ export const useContextMenuPrefill = (
   const pendingAnimationFrameRef = useRef<number | null>(null);
 
   /**
-   * Effect: Handle context menu messages
-   * Dispatches custom window event when context menu action occurs
+   * Effect: Handle context menu messages.
+   * Dispatches custom window event when context menu action occurs.
    */
   useEffect(() => {
     // Normalize once and guard
@@ -52,37 +69,23 @@ export const useContextMenuPrefill = (
 
     // Cancel any pending animation frame to prevent duplicate dispatches
     if (pendingAnimationFrameRef.current !== null) {
-      // Use the available cancel method (raf or timeout fallback)
-      if (typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(pendingAnimationFrameRef.current as number);
-      } else {
-        clearTimeout(pendingAnimationFrameRef.current as unknown as number);
-      }
+      cancelScheduledCallback(pendingAnimationFrameRef.current);
       pendingAnimationFrameRef.current = null;
     }
 
     debug.log(
-      ts(),
-      '[useContextMenuPrefill] Received context menu message, setting prefill ref:',
+      '[useContextMenuPrefill] Received context menu message:',
       normalized.substring(0, 100)
     );
+    
     const timestamp = Date.now();
-    inputPrefillRef.current = { text: normalized, timestamp };
 
     // Mark as used IMMEDIATELY to prevent duplicate processing
     contextMenuUsedRef.current = normalized;
 
     // Use requestAnimationFrame to defer the event dispatch to avoid triggering during render
     // This prevents issues with React's reconciliation and state updates
-    const schedule = (cb: () => void): number => {
-      if (typeof requestAnimationFrame === 'function') {
-        return requestAnimationFrame(() => cb());
-      }
-      // Fallback in environments without RAF
-      return setTimeout(() => cb(), 0) as unknown as number;
-    };
-
-    pendingAnimationFrameRef.current = schedule(() => {
+    pendingAnimationFrameRef.current = scheduleCallback(() => {
       pendingAnimationFrameRef.current = null;
       
       // Dispatch custom event with session scoping
@@ -97,28 +100,16 @@ export const useContextMenuPrefill = (
       });
       
       window.dispatchEvent(event);
-      debug.log(ts(), '[useContextMenuPrefill] Dispatched copilot-prefill-text event');
+      debug.log('[useContextMenuPrefill] Dispatched copilot-prefill-text event');
     });
 
     // Cleanup function: cancel pending animation frame on unmount or change
     return () => {
       if (pendingAnimationFrameRef.current !== null) {
-        if (typeof cancelAnimationFrame === 'function') {
-          cancelAnimationFrame(pendingAnimationFrameRef.current as number);
-        } else {
-          clearTimeout(pendingAnimationFrameRef.current as unknown as number);
-        }
+        cancelScheduledCallback(pendingAnimationFrameRef.current);
         pendingAnimationFrameRef.current = null;
       }
     };
   }, [contextMenuMessage, sessionId]);
-
-  // Hook doesn't return anything currently
-  // Could return refs or state if needed in future
-  return {
-    // Expose for debugging or advanced use cases
-    inputPrefillRef,
-    contextMenuUsedRef,
-  };
 };
 

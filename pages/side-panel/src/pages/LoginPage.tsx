@@ -4,13 +4,17 @@
  * Provides email/password authentication for users.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useStorage } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';
+import { AUTO_DISMISS_DELAYS } from '../constants/ui';
 
-// Flag to control invitation-only mode
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
 const INVITATION_ONLY = true;
 
 interface LoginPageProps {
@@ -19,18 +23,18 @@ interface LoginPageProps {
 
 export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
   const { signIn, signUp } = useAuth();
-  const { isLight } = useStorage(exampleThemeStorage);
+  const { isLight } = useStorage(themeStorage);
   const [isSignUp, setIsSignUp] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
   // Auto-dismiss error after 15 seconds
-  React.useEffect(() => {
+  useEffect(() => {
     if (error) {
       const timer = setTimeout(() => {
         setError(null);
-      }, 15000);
+      }, AUTO_DISMISS_DELAYS.errorLong);
       return () => clearTimeout(timer);
     }
     return undefined;
@@ -51,8 +55,9 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
       if (result.error) {
         setError(result.error);
       }
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

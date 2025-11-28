@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { ChatSessionContainer } from '../components/ChatSessionContainer';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ChatSkeleton, MessagesOnlySkeleton, StatusBarSkeleton, SelectorsBarSkeleton } from '../components/LoadingStates';
@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import UserMenu from '../components/UserMenu';
 import { ViewOptionsMenu } from '../components/ViewOptionsMenu';
 import { getCurrentViewMode } from '../utils/windowManager';
+import { ConfirmationModal } from '../components/ConfirmationModal';
 import {
   cn,
   Button,
@@ -16,10 +17,20 @@ import {
   DropdownMenu,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownSubmenu,
   DropdownAccordion,
 } from '@extension/ui';
 import { SessionRuntimeProvider } from '../context/SessionRuntimeContext';
+import { Z_INDEX, ANIMATION_DURATIONS, SKELETON_TIMINGS } from '../constants/ui';
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string | unknown[];
+  image?: string;
+}
 
 interface SessionsPageProps {
   isLight: boolean;
@@ -58,17 +69,15 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   // Ensure sessions is always an array (defensive programming)
   const sessions = useMemo(() => {
     const validSessions = Array.isArray(sessionsProp) ? sessionsProp : [];
-    console.log('[SessionsPage] Sessions validation:', { 
-      isArray: Array.isArray(sessionsProp), 
-      count: validSessions.length 
-    });
+    // Removed noisy log - fires on every session update
+    // console.log('[SessionsPage] Sessions validation:', { isArray: Array.isArray(sessionsProp), count: validSessions.length });
     return validSessions;
   }, [sessionsProp]);
   
   // Loading state for initial render
   const [isEnsuringInitialSession, setIsEnsuringInitialSession] = useState(false);
   const [isSessionReady, setIsSessionReady] = useState(false);
-  const sessionReadyTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const sessionReadyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [clearMessagesConfirmOpen, setClearMessagesConfirmOpen] = useState(false);
   const [resetSessionConfirmOpen, setResetSessionConfirmOpen] = useState(false);
   const [messageCount, setMessageCount] = useState(0);
@@ -79,16 +88,14 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   // Track if messages are currently loading for the active session
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   // Track when skeleton started showing to enforce minimum display time
-  const skeletonStartTimeRef = React.useRef<number | null>(null);
-  const MIN_SKELETON_DISPLAY_TIME = 100; // milliseconds
-  const SKELETON_FALLBACK_TIMEOUT = 900; // milliseconds
+  const skeletonStartTimeRef = useRef<number | null>(null);
   
   // Ref to store reset functions per session
-  const resetFunctionsRef = React.useRef<Record<string, () => void>>({});
-  const hasAttemptedInitialSessionRef = React.useRef(false);
-  const lastStorageUserIdRef = React.useRef<string | null>(null);
-  const hasSeenSessionsForCurrentUserRef = React.useRef<boolean>(false);
-  const renderCountRef = React.useRef(0);
+  const resetFunctionsRef = useRef<Record<string, () => void>>({});
+  const hasAttemptedInitialSessionRef = useRef(false);
+  const lastStorageUserIdRef = useRef<string | null>(null);
+  const hasSeenSessionsForCurrentUserRef = useRef<boolean>(false);
+  const renderCountRef = useRef(0);
 
   // Track render count
   renderCountRef.current += 1;
@@ -103,20 +110,14 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   // Track when the storage userId changes; require at least one sessions fetch after change
   useEffect(() => {
     const storageUserId = sessionStorageDBWrapper.getCurrentUserId();
-    console.log('[SessionsPage] 👤 User ID change check:', {
-      hasUser: !!user?.id,
-      storageUserId: storageUserId?.slice(0, 8),
-      lastUserId: lastStorageUserIdRef.current?.slice(0, 8),
-    });
+    // Removed noisy log - fires on every effect run
+    // console.log('[SessionsPage] User ID change check:', { hasUser: !!user?.id, storageUserId, lastUserId });
     
     if (!user?.id || !storageUserId) {
       return;
     }
     if (lastStorageUserIdRef.current !== storageUserId) {
-      // console.log('[SessionsPage] 🔄 USER ID CHANGED - resetting session state', {
-      //   from: lastStorageUserIdRef.current?.slice(0, 8),
-      //   to: storageUserId?.slice(0, 8),
-      // });
+      console.log('[SessionsPage] User ID changed - resetting session state');
       lastStorageUserIdRef.current = storageUserId;
       hasSeenSessionsForCurrentUserRef.current = false;
       // Also reset the initial-session attempt gate when user changes
@@ -127,20 +128,15 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   // Mark that we've observed at least one sessions snapshot for the current user
   useEffect(() => {
     const storageUserId = sessionStorageDBWrapper.getCurrentUserId();
-    console.log('[SessionsPage] 📸 Sessions snapshot effect:', {
-      hasUser: !!user?.id,
-      storageUserId: storageUserId?.slice(0, 8),
-      lastUserId: lastStorageUserIdRef.current?.slice(0, 8),
-      sessionsCount: sessions.length,
-      hasSeenSessions: hasSeenSessionsForCurrentUserRef.current,
-    });
+    // Removed noisy log - fires on EVERY sessions change (very frequent)
+    // console.log('[SessionsPage] Sessions snapshot effect:', { hasUser: !!user?.id, storageUserId, sessionsCount: sessions.length });
     
     if (!user?.id || !storageUserId) {
       return;
     }
     if (lastStorageUserIdRef.current === storageUserId) {
       if (!hasSeenSessionsForCurrentUserRef.current) {
-        console.log('[SessionsPage] ✅ FIRST SESSIONS SNAPSHOT for current user observed');
+        console.log('[SessionsPage] First sessions snapshot for current user observed');
       }
       hasSeenSessionsForCurrentUserRef.current = true;
     }
@@ -150,40 +146,33 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   useEffect(() => {
     const storageUserId = sessionStorageDBWrapper.getCurrentUserId();
 
-    console.log('[SessionsPage] 🔍 Ensure initial session effect:', {
-      sessionsLoading,
-      hasUser: !!user?.id,
-      storageUserId: storageUserId?.slice(0, 8),
-      sessionsCount: sessions.length,
-      hasSeenSessions: hasSeenSessionsForCurrentUserRef.current,
-      hasAttempted: hasAttemptedInitialSessionRef.current,
-      isEnsuring: isEnsuringInitialSession,
-    });
+    // Removed noisy log - fires on every dependency change
+    // console.log('[SessionsPage] Ensure initial session effect:', { sessionsLoading, hasUser: !!user?.id, sessionsCount: sessions.length });
 
     // Don't check for sessions while still loading or before the user context is ready
     if (sessionsLoading || !user?.id || !storageUserId) {
-      console.log('[SessionsPage] ⏸️  Sessions or user not ready, waiting...');
+      // Removed noisy log - fires repeatedly while waiting
       return;
     }
 
     // Require that we've seen at least one sessions snapshot for this user
     if (!hasSeenSessionsForCurrentUserRef.current) {
-      console.log('[SessionsPage] ⏸️  Waiting for first sessions snapshot after user ID set');
+      // Removed noisy log - fires repeatedly while waiting
       return;
     }
 
     if (sessions.length > 0) {
-      console.log('[SessionsPage] ✅ Sessions exist, no need to create initial session');
+      // Removed noisy log - fires on every sessions change
       hasAttemptedInitialSessionRef.current = true;
       return;
     }
 
     if (isEnsuringInitialSession || hasAttemptedInitialSessionRef.current) {
-      console.log('[SessionsPage] ⏸️  Already ensuring or attempted initial session');
+      // Removed noisy log - fires repeatedly
       return;
     }
 
-    console.log('[SessionsPage] 🚀 NO SESSIONS FOUND - creating initial session');
+    console.log('[SessionsPage] No sessions found - creating initial session');
     let isCancelled = false;
     hasAttemptedInitialSessionRef.current = true;
 
@@ -248,7 +237,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       if (!isLoading && skeletonStartTimeRef.current) {
         const now = Date.now();
         const elapsed = now - skeletonStartTimeRef.current;
-        const remaining = MIN_SKELETON_DISPLAY_TIME - elapsed;
+        const remaining = SKELETON_TIMINGS.minDisplayTime - elapsed;
         
         if (remaining > 0) {
           // console.log(`[MSG_SKELETON] ⏱️  Messages loaded fast, waiting ${remaining}ms more for minimum display time`);
@@ -262,7 +251,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       
       setIsMessagesLoading(isLoading);
     },
-    [currentSessionId, MIN_SKELETON_DISPLAY_TIME],
+    [currentSessionId],
   );
 
   const handleSessionReady = useCallback(
@@ -284,7 +273,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       
       if (skeletonStartTime) {
         const elapsed = now - skeletonStartTime;
-        const remaining = MIN_SKELETON_DISPLAY_TIME - elapsed;
+        const remaining = SKELETON_TIMINGS.minDisplayTime - elapsed;
         
         if (remaining > 0) {
           // console.log(`[MSG_SKELETON] ⏱️  Enforcing minimum display time: waiting ${remaining}ms more`);
@@ -301,7 +290,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       setIsSessionReady(true);
       skeletonStartTimeRef.current = null;
     },
-    [currentSessionId, MIN_SKELETON_DISPLAY_TIME],
+    [currentSessionId],
   );
 
   useEffect(() => {
@@ -341,7 +330,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       sessionReadyTimeoutRef.current = null;
       setIsSessionReady(true);
       skeletonStartTimeRef.current = null;
-    }, SKELETON_FALLBACK_TIMEOUT);
+    }, SKELETON_TIMINGS.fallbackTimeout);
 
     return () => {
       if (sessionReadyTimeoutRef.current) {
@@ -1238,347 +1227,46 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
       </div>
 
       {/* Clear Messages Confirmation Modal */}
-      <>
-        {/* Backdrop - conditionally rendered */}
-        {clearMessagesConfirmOpen && (
-          <div
-            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
-            onClick={() => setClearMessagesConfirmOpen(false)}
-          />
-        )}
-
-        {/* Modal - Always mounted, visibility controlled with CSS */}
-        <div 
-          className={cn(
-            'fixed inset-0 z-[10001] flex items-center justify-center p-4 transition-opacity',
-            clearMessagesConfirmOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-          )}
-        >
-            <div
-              className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
-              )}
-              onClick={e => e.stopPropagation()}>
-              {/* Header */}
-              <div
-                className={cn(
-                  'flex items-center justify-between border-b px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
-                  Clear All Session Messages
-                </h2>
-                <button
-                  onClick={() => setClearMessagesConfirmOpen(false)}
-                  className={cn(
-                    'rounded-md p-0.5 transition-colors',
-                    isLight
-                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-                  )}>
-                  <svg
-                    width="14"
-                    height="14"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round">
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Content */}
-              <div className="space-y-3 px-3 py-4">
-                {/* Warning Icon */}
-                <div className="flex items-start gap-3">
-                  <div
-                    className={cn(
-                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
-                      isLight ? 'bg-red-100' : 'bg-red-900/30',
-                    )}>
-                    <svg
-                      className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')}
-                      fill="currentColor"
-                      viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                    </svg>
-                  </div>
-
-                  <div className="flex-1">
-                    <p className={cn('text-sm font-medium', mainTextColor)}>
-                      Permanently delete session messages?
-                    </p>
-                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      All <strong>{messageCount}</strong> {messageCount === 1 ? 'message' : 'messages'} from "
-                      {sessions.find(s => s.id === currentSessionId)?.title || 'this session'}" will be permanently
-                      deleted from storage and cannot be recovered.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div
-                className={cn(
-                  'flex items-center justify-end gap-2 border-t px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <button
-                  onClick={() => setClearMessagesConfirmOpen(false)}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    isLight
-                      ? 'bg-gray-200 hover:bg-gray-300'
-                      : 'bg-gray-700 hover:bg-gray-600',
-                  )}
-                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmClearMessages}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    'bg-red-600 text-white hover:bg-red-700',
-                  )}>
-                  Delete All
-                </button>
-              </div>
-            </div>
-        </div>
-      </>
+      <ConfirmationModal
+        isOpen={clearMessagesConfirmOpen}
+        onClose={() => setClearMessagesConfirmOpen(false)}
+        onConfirm={handleConfirmClearMessages}
+        title="Clear All Session Messages"
+        message={`Permanently delete session messages?<br/><br/>All <strong>${messageCount}</strong> ${messageCount === 1 ? 'message' : 'messages'} from "<strong>${sessions.find(s => s.id === currentSessionId)?.title || 'this session'}</strong>" will be permanently deleted from storage and cannot be recovered.`}
+        confirmLabel="Delete All"
+        cancelLabel="Cancel"
+        variant="danger"
+        isLight={isLight}
+        mainTextColor={mainTextColor}
+      />
 
       {/* Reset Session Confirmation Modal */}
-      <>
-        {/* Backdrop - conditionally rendered */}
-        {resetSessionConfirmOpen && (
-          <div
-            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
-            onClick={() => setResetSessionConfirmOpen(false)}
-          />
-        )}
-
-        {/* Modal - Always mounted, visibility controlled with CSS */}
-        <div 
-          className={cn(
-            'fixed inset-0 z-[10001] flex items-center justify-center p-4 transition-opacity',
-            resetSessionConfirmOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-          )}
-        >
-            <div
-              className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
-              )}
-              onClick={e => e.stopPropagation()}>
-              {/* Header */}
-              <div
-                className={cn(
-                  'flex items-center justify-between border-b px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
-                  Reset Session
-                </h2>
-                <button
-                  onClick={() => setResetSessionConfirmOpen(false)}
-                  className={cn(
-                    'rounded-md p-0.5 transition-colors',
-                    isLight
-                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-                  )}>
-                  <svg
-                    width="14"
-                    height="14"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round">
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Content */}
-              <div className="space-y-3 px-3 py-4">
-                {/* Warning Icon */}
-                <div className="flex items-start gap-3">
-                  <div
-                    className={cn(
-                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
-                      isLight ? 'bg-orange-100' : 'bg-orange-900/30',
-                    )}>
-                    <svg
-                      className={cn('h-3.5 w-3.5', isLight ? 'text-orange-600' : 'text-orange-400')}
-                      fill="currentColor"
-                      viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                    </svg>
-                  </div>
-
-                  <div className="flex-1">
-                    <p className={cn('text-sm font-medium', mainTextColor)}>
-                      Clear all messages in this session?
-                    </p>
-                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      All <strong>{messageCount}</strong> {messageCount === 1 ? 'message' : 'messages'} in "
-                      {sessions.find(s => s.id === currentSessionId)?.title || 'this session'}" will be cleared from
-                      the chat. This action cannot be undone, but messages may still exist in storage.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div
-                className={cn(
-                  'flex items-center justify-end gap-2 border-t px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <button
-                  onClick={() => setResetSessionConfirmOpen(false)}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    isLight
-                      ? 'bg-gray-200 hover:bg-gray-300'
-                      : 'bg-gray-700 hover:bg-gray-600',
-                  )}
-                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmResetSession}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    'bg-orange-600 text-white hover:bg-orange-700',
-                  )}>
-                  Reset Session
-                </button>
-              </div>
-            </div>
-        </div>
-      </>
+      <ConfirmationModal
+        isOpen={resetSessionConfirmOpen}
+        onClose={() => setResetSessionConfirmOpen(false)}
+        onConfirm={handleConfirmResetSession}
+        title="Reset Session"
+        message={`Clear all messages in this session?<br/><br/>All <strong>${messageCount}</strong> ${messageCount === 1 ? 'message' : 'messages'} in "<strong>${sessions.find(s => s.id === currentSessionId)?.title || 'this session'}</strong>" will be cleared from the chat. This action cannot be undone, but messages may still exist in storage.`}
+        confirmLabel="Reset Session"
+        cancelLabel="Cancel"
+        variant="warning"
+        isLight={isLight}
+        mainTextColor={mainTextColor}
+      />
 
       {/* Clear Sessions Confirmation Modal */}
-      <>
-        {/* Backdrop - conditionally rendered */}
-        {clearSessionsConfirmOpen && (
-          <div
-            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
-            onClick={() => setClearSessionsConfirmOpen(false)}
-          />
-        )}
-
-        {/* Modal - Always mounted, visibility controlled with CSS */}
-        <div 
-          className={cn(
-            'fixed inset-0 z-[10001] flex items-center justify-center p-4 transition-opacity',
-            clearSessionsConfirmOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-          )}
-        >
-            <div
-              className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
-              )}
-              onClick={e => e.stopPropagation()}>
-              {/* Header */}
-              <div
-                className={cn(
-                  'flex items-center justify-between border-b px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
-                  Clear All Sessions
-                </h2>
-                <button
-                  onClick={() => setClearSessionsConfirmOpen(false)}
-                  className={cn(
-                    'rounded-md p-0.5 transition-colors',
-                    isLight
-                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-                  )}>
-                  <svg
-                    width="14"
-                    height="14"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round">
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Content */}
-              <div className="space-y-3 px-3 py-4">
-                {/* Warning Icon */}
-                <div className="flex items-start gap-3">
-                  <div
-                    className={cn(
-                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
-                      isLight ? 'bg-red-100' : 'bg-red-900/30',
-                    )}>
-                    <svg
-                      className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')}
-                      fill="currentColor"
-                      viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                    </svg>
-                  </div>
-
-                  <div className="flex-1">
-                    <p className={cn('text-sm font-medium', mainTextColor)}>
-                      Permanently delete all sessions?
-                    </p>
-                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      This will remove all sessions and their messages from storage and cannot be undone.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div
-                className={cn(
-                  'flex items-center justify-end gap-2 border-t px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <button
-                  onClick={() => setClearSessionsConfirmOpen(false)}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    isLight
-                      ? 'bg-gray-200 hover:bg-gray-300'
-                      : 'bg-gray-700 hover:bg-gray-600',
-                  )}
-                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmClearSessions}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    'bg-red-600 text-white hover:bg-red-700',
-                  )}>
-                  Delete All
-                </button>
-              </div>
-            </div>
-        </div>
-      </>
+      <ConfirmationModal
+        isOpen={clearSessionsConfirmOpen}
+        onClose={() => setClearSessionsConfirmOpen(false)}
+        onConfirm={handleConfirmClearSessions}
+        title="Clear All Sessions"
+        message="Permanently delete all sessions?<br/><br/>This will remove all sessions and their messages from storage and cannot be undone."
+        confirmLabel="Delete All"
+        cancelLabel="Cancel"
+        variant="danger"
+        isLight={isLight}
+        mainTextColor={mainTextColor}
+      />
 
     </SessionRuntimeProvider>
   );

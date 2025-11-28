@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -60,7 +60,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onShowThoughtBlocksChange,
   onAgentModeChatChange,
 }) => {
-  const { theme } = useStorage(exampleThemeStorage);
+  const { theme } = useStorage(themeStorage);
   const [toolsExpanded, setToolsExpanded] = useState(false);
   const [categoryExpanded, setCategoryExpanded] = useState<Record<string, boolean>>({
     frontend: false,
@@ -320,7 +320,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </label>
               <div className="flex gap-1.5">
                 <button
-                  onClick={() => exampleThemeStorage.setTheme('light')}
+                  onClick={() => themeStorage.setTheme('light')}
                   className={cn(
                     'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
                     theme === 'light'
@@ -337,7 +337,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
                 
                 <button
-                  onClick={() => exampleThemeStorage.setTheme('dark')}
+                  onClick={() => themeStorage.setTheme('dark')}
                   className={cn(
                     'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
                     theme === 'dark'
@@ -354,7 +354,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
                 
                 <button
-                  onClick={() => exampleThemeStorage.setTheme('system')}
+                  onClick={() => themeStorage.setTheme('system')}
                   className={cn(
                     'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
                     theme === 'system'

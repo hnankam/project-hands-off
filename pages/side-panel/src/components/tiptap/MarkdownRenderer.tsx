@@ -6,6 +6,9 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { MermaidBlock } from '../MermaidBlock';
 
+// Type for syntax highlighter style
+type SyntaxStyle = Record<string, React.CSSProperties>;
+
 export interface MarkdownRendererProps {
   /**
    * Markdown content to render
@@ -105,21 +108,28 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
         rehypePlugins={[]}
         components={{
           // Code blocks with syntax highlighting and mermaid diagram support
-          code({ node, inline, className, children, ...props }) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          code(props: any) {
+            const { node, className, children, ...rest } = props;
             const match = /language-(\w+)/.exec(className || '');
             const language = match ? match[1] : '';
+            const codeString = String(children);
+            
+            // Determine if this is an inline code or a block
+            // Block code has newlines or a language specifier
+            const isInline = !codeString.includes('\n') && !language;
             
             // Handle mermaid diagrams
-            if (language === 'mermaid' && !inline) {
-              return <MermaidBlock>{String(children)}</MermaidBlock>;
+            if (language === 'mermaid' && !isInline) {
+              return <MermaidBlock>{codeString}</MermaidBlock>;
             }
             
             // If not inline and has multiple lines, treat as code block even without language
-            const isCodeBlock = !inline && (String(children).includes('\n') || language);
+            const isCodeBlock = !isInline;
             
             return isCodeBlock ? (
               <SyntaxHighlighter
-                style={isLight ? oneLight : oneDark}
+                style={(isLight ? oneLight : oneDark) as SyntaxStyle}
                 language={language || 'text'}
                 PreTag="div"
                 customStyle={{
@@ -134,12 +144,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
                     backgroundColor: 'transparent',
                   }
                 }}
-                {...props}
               >
-                {String(children).replace(/\n$/, '')}
+                {codeString.replace(/\n$/, '')}
               </SyntaxHighlighter>
             ) : (
-              <code className={className} {...props}>
+              <code className={className} {...rest}>
                 {children}
               </code>
             );

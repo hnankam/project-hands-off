@@ -1,48 +1,107 @@
-import { ElementInfo, ModernInputDetection, StreamingOptions } from './types';
-
 /**
  * Utility functions for input handling
  */
+
+import { debug as baseDebug } from '@extension/shared';
+import { ElementInfo, ModernInputDetection, StreamingOptions, FrameworkType } from './types';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Log prefix for consistent logging */
+const LOG_PREFIX = '[InputUtils]';
+
+/** Default highlight duration in ms */
+const DEFAULT_HIGHLIGHT_DURATION_MS = 2000;
+
+/** Typing speed bounds */
+const TYPING_SPEED = {
+  MIN_MS: 10,
+  MAX_MS: 50,
+} as const;
+
+/** Feedback animation duration in ms */
+const FEEDBACK_ANIMATION_DURATION_MS = 800;
+
+// ============================================================================
+// DEBUG HELPERS
+// ============================================================================
+
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: unknown[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: unknown[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: unknown[]) => baseDebug.error(ts(), ...args),
+} as const;
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/** Element with framework instance keys */
+interface FrameworkElement extends HTMLElement {
+  [key: string]: unknown;
+}
+
+/** React internal instance */
+interface ReactInstance {
+  type?: {
+    displayName?: string;
+    name?: string;
+  };
+}
+
+/** Vue instance */
+interface VueInstance {
+  $options?: {
+    name?: string;
+  };
+}
+
+// ============================================================================
+// ELEMENT FINDING
+// ============================================================================
 
 /**
  * Find element in DOM or Shadow DOM (with recursive traversal for nested shadow roots)
  */
 export function findElement(selector: string): ElementInfo | null {
-  // First try to find element in main DOM
   let element = document.querySelector(selector) as HTMLElement;
   let foundInShadowDOM = false;
   let shadowHostInfo = '';
-  let depth = 0;
 
   // If not found in main DOM, search in Shadow DOM recursively
   if (!element) {
-    console.log('[InputUtils] Element not found in main DOM, searching Shadow DOM recursively...');
+    debug.log(LOG_PREFIX, 'Element not found in main DOM, searching Shadow DOM recursively...');
 
-    // Recursive function to search through all shadow roots (including nested ones)
-    const searchShadowRoots = (root: Document | ShadowRoot | Element, currentDepth: number = 0): HTMLElement | null => {
+    const searchShadowRoots = (
+      root: Document | ShadowRoot | Element,
+      currentDepth: number = 0,
+    ): HTMLElement | null => {
       const elements = root.querySelectorAll('*');
 
       for (const hostElement of Array.from(elements)) {
         if (hostElement.shadowRoot) {
           try {
-            // Try to find element in this shadow root
             const shadowElement = hostElement.shadowRoot.querySelector(selector) as HTMLElement;
             if (shadowElement) {
               foundInShadowDOM = true;
-              depth = currentDepth;
-              shadowHostInfo = `${hostElement.tagName}${hostElement.id ? '#' + hostElement.id : ''}${hostElement.className && typeof hostElement.className === 'string' ? '.' + hostElement.className.split(' ')[0] : ''} (depth: ${currentDepth})`;
-              console.log('[InputUtils] Found element in Shadow DOM:', shadowHostInfo);
+              const className =
+                hostElement.className && typeof hostElement.className === 'string'
+                  ? '.' + hostElement.className.split(' ')[0]
+                  : '';
+              shadowHostInfo = `${hostElement.tagName}${hostElement.id ? '#' + hostElement.id : ''}${className} (depth: ${currentDepth})`;
+              debug.log(LOG_PREFIX, 'Found element in Shadow DOM:', shadowHostInfo);
               return shadowElement;
             }
 
-            // If not found, recursively search nested shadow roots
             const nestedResult = searchShadowRoots(hostElement.shadowRoot, currentDepth + 1);
             if (nestedResult) {
               return nestedResult;
             }
           } catch (shadowError) {
-            // Ignore shadow DOM query errors (invalid selectors, etc.)
-            console.log('[InputUtils] Shadow DOM query error:', shadowError);
+            debug.log(LOG_PREFIX, 'Shadow DOM query error:', shadowError);
           }
         }
       }
@@ -50,7 +109,6 @@ export function findElement(selector: string): ElementInfo | null {
       return null;
     };
 
-    // Start recursive search from document root
     const foundElement = searchShadowRoots(document, 1);
     if (foundElement) {
       element = foundElement;
@@ -72,6 +130,10 @@ export function findElement(selector: string): ElementInfo | null {
     tagName,
   };
 }
+
+// ============================================================================
+// ELEMENT VISIBILITY
+// ============================================================================
 
 /**
  * Check if element is visible and interactable
@@ -98,31 +160,33 @@ export function scrollIntoView(element: HTMLElement): void {
   });
 }
 
+// ============================================================================
+// FOCUS AND HIGHLIGHT
+// ============================================================================
+
 /**
  * Focus element and highlight it
  */
-export function focusAndHighlight(element: HTMLElement, duration: number = 2000, moveCursor: boolean = false): void {
-  // Store original styles
-  const originalStyle = element.style.cssText;
+export function focusAndHighlight(
+  element: HTMLElement,
+  duration: number = DEFAULT_HIGHLIGHT_DURATION_MS,
+  moveCursor: boolean = false,
+): void {
   const originalOutline = element.style.outline;
   const originalOutlineOffset = element.style.outlineOffset;
   const originalBackground = element.style.backgroundColor;
 
-  // Focus the element
   element.focus();
 
-  // Move cursor to element if requested
   if (moveCursor) {
     moveCursorToElement(element);
   }
 
-  // Highlight the element
   element.style.outline = '3px solid #2196F3';
   element.style.outlineOffset = '4px';
   element.style.backgroundColor = 'rgba(33, 150, 243, 0.1)';
   element.style.transition = 'all 0.3s ease';
 
-  // Remove highlight after duration
   setTimeout(() => {
     element.style.outline = originalOutline;
     element.style.outlineOffset = originalOutlineOffset;
@@ -130,6 +194,10 @@ export function focusAndHighlight(element: HTMLElement, duration: number = 2000,
     element.style.transition = '';
   }, duration);
 }
+
+// ============================================================================
+// TEXT STREAMING
+// ============================================================================
 
 /**
  * Stream text into an element with typing effect
@@ -146,19 +214,17 @@ export async function streamText(
   },
 ): Promise<void> {
   const chars = value.split('');
-  const typingSpeed = Math.max(10, Math.min(50, options.speed));
+  const typingSpeed = Math.max(TYPING_SPEED.MIN_MS, Math.min(TYPING_SPEED.MAX_MS, options.speed));
 
   for (let i = 0; i < chars.length; i++) {
     const currentValue = value.substring(0, i + 1);
 
-    // Set value based on element type
     if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
       (element as HTMLInputElement | HTMLTextAreaElement).value = currentValue;
     } else if (element.hasAttribute('contenteditable')) {
       element.textContent = currentValue;
     }
 
-    // Trigger events
     if (options.triggerInputEvents) {
       element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
     }
@@ -167,19 +233,22 @@ export async function streamText(
       element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true }));
       element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true }));
     }
+
     if (options.triggerSelectionChange) {
       document.dispatchEvent(new Event('selectionchange'));
     }
 
-    // Small delay between characters
     await new Promise(resolve => setTimeout(resolve, typingSpeed));
   }
 
-  // Final events after streaming completes
   if (options.triggerChangeEvents) {
     element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
   }
 }
+
+// ============================================================================
+// FEEDBACK
+// ============================================================================
 
 /**
  * Show success feedback animation
@@ -211,7 +280,6 @@ export function showSuccessFeedback(element: HTMLElement): void {
     document.head.appendChild(styleEl);
   }
 
-  // Create feedback element
   const inputFeedback = document.createElement('div');
   inputFeedback.className = '__copilot_input_feedback__';
   inputFeedback.textContent = '✓';
@@ -236,11 +304,14 @@ export function showSuccessFeedback(element: HTMLElement): void {
 
   document.body.appendChild(inputFeedback);
 
-  // Remove after animation completes
   setTimeout(() => {
     inputFeedback.remove();
-  }, 800);
+  }, FEEDBACK_ANIMATION_DURATION_MS);
 }
+
+// ============================================================================
+// FRAMEWORK DETECTION
+// ============================================================================
 
 /**
  * Detect modern web framework and component type
@@ -250,19 +321,21 @@ export function detectModernInput(element: HTMLElement): ModernInputDetection {
     isReactComponent: false,
     isVueComponent: false,
     isCustomInput: false,
-    framework: 'vanilla',
+    framework: 'vanilla' as FrameworkType,
   };
 
+  const frameworkElement = element as FrameworkElement;
+  const elementKeys = Object.keys(frameworkElement);
+
   // Check for React
-  const reactKey = Object.keys(element).find(
+  const reactKey = elementKeys.find(
     key => key.startsWith('__reactInternalInstance') || key.startsWith('_reactInternalFiber'),
   );
   if (reactKey) {
     detection.isReactComponent = true;
     detection.framework = 'react';
 
-    // Try to get component name
-    const reactInstance = (element as any)[reactKey];
+    const reactInstance = frameworkElement[reactKey] as ReactInstance | undefined;
     if (reactInstance?.type?.displayName) {
       detection.componentName = reactInstance.type.displayName;
     } else if (reactInstance?.type?.name) {
@@ -271,24 +344,24 @@ export function detectModernInput(element: HTMLElement): ModernInputDetection {
   }
 
   // Check for Vue
-  const vueKey = Object.keys(element).find(key => key.startsWith('__vue__'));
+  const vueKey = elementKeys.find(key => key.startsWith('__vue__'));
   if (vueKey) {
     detection.isVueComponent = true;
     detection.framework = 'vue';
 
-    const vueInstance = (element as any)[vueKey];
+    const vueInstance = frameworkElement[vueKey] as VueInstance | undefined;
     if (vueInstance?.$options?.name) {
       detection.componentName = vueInstance.$options.name;
     }
   }
 
   // Check for Angular
-  if ((element as any).__ngContext__) {
+  if (frameworkElement.__ngContext__ !== undefined) {
     detection.framework = 'angular';
   }
 
   // Check for Svelte
-  if ((element as any).__svelte_meta) {
+  if (frameworkElement.__svelte_meta !== undefined) {
     detection.framework = 'svelte';
   }
 
@@ -307,6 +380,10 @@ export function detectModernInput(element: HTMLElement): ModernInputDetection {
 
   return detection;
 }
+
+// ============================================================================
+// ELEMENT VALUE
+// ============================================================================
 
 /**
  * Get element's current value
@@ -338,6 +415,10 @@ export function getElementValue(element: HTMLElement): string {
   return '';
 }
 
+// ============================================================================
+// EVENT TRIGGERING
+// ============================================================================
+
 /**
  * Trigger all relevant events for an input element
  */
@@ -346,6 +427,10 @@ export function triggerInputEvents(element: HTMLElement, eventTypes: string[] = 
     element.dispatchEvent(new Event(eventType, { bubbles: true, cancelable: true }));
   });
 }
+
+// ============================================================================
+// CURSOR MOVEMENT
+// ============================================================================
 
 /**
  * Move cursor to the specified element
@@ -356,7 +441,6 @@ export function moveCursorToElement(element: HTMLElement): void {
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
-    // Create and dispatch a mouse move event
     const mouseMoveEvent = new MouseEvent('mousemove', {
       bubbles: true,
       cancelable: true,
@@ -366,10 +450,9 @@ export function moveCursorToElement(element: HTMLElement): void {
       screenY: centerY + window.screenY,
     });
 
-    // Dispatch the event on the element
     element.dispatchEvent(mouseMoveEvent);
 
-    // Also try to set the cursor position if it's a text input
+    // Try to set the cursor position if it's a text input
     if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
       const inputElement = element as HTMLInputElement | HTMLTextAreaElement;
       if (inputElement.setSelectionRange) {
@@ -378,11 +461,15 @@ export function moveCursorToElement(element: HTMLElement): void {
       }
     }
 
-    console.log('[InputUtils] Cursor moved to element:', element.tagName, element.id || element.className);
+    debug.log(LOG_PREFIX, 'Cursor moved to element:', element.tagName, element.id || element.className);
   } catch (error) {
-    console.error('[InputUtils] Error moving cursor to element:', error);
+    debug.error(LOG_PREFIX, 'Error moving cursor to element:', error);
   }
 }
+
+// ============================================================================
+// VALIDATION
+// ============================================================================
 
 /**
  * Validate input value based on element type and constraints

@@ -14,25 +14,23 @@
  * ================================================================================
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { debug } from '@extension/shared';
 import { sessionStorage } from '@extension/storage';
-
-// Timestamp helper for consistent logging
-const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
 
 type SwitchingStep = 1 | 2 | 3 | 4;
 
 // Small utility to replace nested setTimeout chains with readable awaits
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-// Centralized timing constants to keep UX intact and easy to adjust
-const SAVE_DELAY_MS = 200;
-const SWITCH_DELAY_MS = 200;
-const REMOUNT_WAIT_MS = 800;
-const RESTORE_DELAY_MS = 200;
-const COMPLETE_CHECKS_DELAY_MS = 300;
-const CLOSE_OVERLAY_DELAY_MS = 400;
-const RESET_STEP_DELAY_MS = 550; // 500ms transition + buffer
+// Centralized timing constants (tuned for optimal UX)
+const SAVE_DELAY_MS = 200;            // Allow UI to show "Saving..." state
+const SWITCH_DELAY_MS = 200;          // Buffer after save completes
+const REMOUNT_WAIT_MS = 800;          // Wait for CopilotKit to fully remount
+const RESTORE_DELAY_MS = 200;         // Allow "Restoring..." state to show
+const COMPLETE_CHECKS_DELAY_MS = 300; // Show checkmarks briefly
+const CLOSE_OVERLAY_DELAY_MS = 400;   // Keep overlay visible for user feedback
+const RESET_STEP_DELAY_MS = 550;      // Match CSS transition (500ms) + buffer
 
 interface UseAgentSwitchingParams {
   selectedAgent: string;
@@ -67,45 +65,62 @@ export const useAgentSwitching = ({
   const currentSessionIdRef = useRef(sessionId);
   // Token to cancel an in-flight switch sequence when inputs change again
   const switchRunIdRef = useRef(0);
-  // Track if this is the first render to skip modal on initial load
-  const isFirstRenderRef = useRef(true);
-  // Track if switching effect has run at least once
-  const hasSwitchingEffectRunRef = useRef(false);
+  // Track if this is the first render of session reset effect
+  const isFirstSessionResetRef = useRef(true);
+  // Track if switching effect has completed initial setup
+  const hasSwitchingEffectInitializedRef = useRef(false);
 
-  // Update current session ref whenever session changes
-  useEffect(() => {
-    if (currentSessionIdRef.current !== sessionId) {
-      console.log(ts(), '[useAgentSwitching] Session changed, incrementing runId to cancel in-flight switch');
-      switchRunIdRef.current++;
-      currentSessionIdRef.current = sessionId;
-    }
-  }, [sessionId]);
-
-  // Reset switching state when the active session changes to prevent carry-over
-  // NOTE: Only depends on sessionId - NOT on selectedAgent/selectedModel
-  // to avoid resetting the switching state when user changes agent/model
-  // NOTE: Do NOT update previousSessionIdRef here - let the switching effect detect session changes
+  /**
+   * Reset switching state when session changes.
+   * Consolidates session change handling into a single effect.
+   */
   useEffect(() => {
     // Skip on first render - this is initial mount, not a session change
-    if (isFirstRenderRef.current) {
-      isFirstRenderRef.current = false;
+    if (isFirstSessionResetRef.current) {
+      isFirstSessionResetRef.current = false;
+      currentSessionIdRef.current = sessionId;
       return;
     }
     
-    console.log(ts(), '[useAgentSwitching] Session changed, resetting switching state:', {
-      sessionId: sessionId?.slice(0, 8),
-      selectedAgent,
-      selectedModel,
+    // Check if session actually changed
+    if (currentSessionIdRef.current === sessionId) {
+      return;
+    }
+    
+    debug.log('[useAgentSwitching] Session changed, resetting state:', {
+      from: currentSessionIdRef.current?.slice(0, 8),
+      to: sessionId?.slice(0, 8),
     });
+    
+    // Cancel in-flight switches and update refs
     switchRunIdRef.current++;
-    // Don't update previousAgentRef/previousModelRef here - they will be updated by switching effect
-    // This allows the switching effect to see the old values and detect session-based changes
+    currentSessionIdRef.current = sessionId;
+    
+    // Reset switching state
     setActiveAgent(selectedAgent);
     setActiveModel(selectedModel);
     setIsSwitchingAgent(false);
     setSwitchingStep(1);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, selectedAgent, selectedModel]);
+
+  /**
+   * Helper function to update refs and optionally active state.
+   * Reduces code duplication across early returns.
+   */
+  const updateRefsAndActiveState = useCallback((
+    agent: string,
+    model: string,
+    session: string,
+    updateActive = true
+  ) => {
+    previousAgentRef.current = agent;
+    previousModelRef.current = model;
+    previousSessionIdRef.current = session;
+    if (updateActive) {
+      setActiveAgent(agent);
+      setActiveModel(model);
+    }
+  }, []);
 
   // Agent switching logic - handles the 3-step process with cancellation and precise timing
   useEffect(() => {
@@ -114,54 +129,37 @@ export const useAgentSwitching = ({
     const sessionChanged = previousSessionIdRef.current !== sessionId;
 
     // Don't trigger modal on first run of this effect - this is initial load
-    if (!hasSwitchingEffectRunRef.current) {
-      console.log(ts(), '[useAgentSwitching] First run of switching effect (initial load), skipping modal');
-      hasSwitchingEffectRunRef.current = true;
-      previousAgentRef.current = selectedAgent;
-      previousModelRef.current = selectedModel;
-      previousSessionIdRef.current = sessionId;
-      setActiveAgent(selectedAgent);
-      setActiveModel(selectedModel);
+    if (!hasSwitchingEffectInitializedRef.current) {
+      debug.log('[useAgentSwitching] First run of switching effect (initial load), skipping modal');
+      hasSwitchingEffectInitializedRef.current = true;
+      updateRefsAndActiveState(selectedAgent, selectedModel, sessionId);
       return;
     }
 
+    // No changes detected
     if (!(agentChanged || modelChanged)) {
-      previousAgentRef.current = selectedAgent;
-      previousModelRef.current = selectedModel;
-      previousSessionIdRef.current = sessionId;
+      updateRefsAndActiveState(selectedAgent, selectedModel, sessionId, false);
       return;
     }
 
     // Don't trigger switching modal when session changed - agent/model values update due to new session
     if (sessionChanged) {
-      console.log(ts(), '[useAgentSwitching] Agent/Model changed due to session switch, skipping switch process');
-      previousAgentRef.current = selectedAgent;
-      previousModelRef.current = selectedModel;
-      previousSessionIdRef.current = sessionId;
-      setActiveAgent(selectedAgent);
-      setActiveModel(selectedModel);
+      debug.log('[useAgentSwitching] Agent/Model changed due to session switch, skipping switch process');
+      updateRefsAndActiveState(selectedAgent, selectedModel, sessionId);
       return;
     }
 
     // Don't trigger modal if we're loading from DB - this is not a user-initiated change
     if (isLoadingFromDBRef.current) {
-      console.log(ts(), '[useAgentSwitching] Change from DB load detected, skipping modal');
-      previousAgentRef.current = selectedAgent;
-      previousModelRef.current = selectedModel;
-      previousSessionIdRef.current = sessionId;
-      setActiveAgent(selectedAgent);
-      setActiveModel(selectedModel);
+      debug.log('[useAgentSwitching] Change from DB load detected, skipping modal');
+      updateRefsAndActiveState(selectedAgent, selectedModel, sessionId);
       return;
     }
 
     // Don't trigger switching modal when clearing to empty values (no team/no agents)
-    // or when initially loading with empty values
     if (!selectedAgent || !selectedModel) {
-      console.log(ts(), '[useAgentSwitching] Agent/Model cleared to empty, skipping switch process');
-      previousAgentRef.current = selectedAgent;
-      previousModelRef.current = selectedModel;
-      setActiveAgent(selectedAgent);
-      setActiveModel(selectedModel);
+      debug.log('[useAgentSwitching] Agent/Model cleared to empty, skipping switch process');
+      updateRefsAndActiveState(selectedAgent, selectedModel, sessionId);
       return;
     }
 
@@ -169,29 +167,31 @@ export const useAgentSwitching = ({
     // This prevents duplicate message loading during initial page load
     const wasEmpty = !previousAgentRef.current || !previousModelRef.current;
     if (wasEmpty && selectedAgent && selectedModel) {
-      console.log(ts(), '[useAgentSwitching] Initial agent/model auto-selection detected, skipping switch process');
-      previousAgentRef.current = selectedAgent;
-      previousModelRef.current = selectedModel;
-      setActiveAgent(selectedAgent);
-      setActiveModel(selectedModel);
+      debug.log('[useAgentSwitching] Initial agent/model auto-selection detected, skipping switch process');
+      updateRefsAndActiveState(selectedAgent, selectedModel, sessionId);
       return;
     }
 
-    console.log(ts(), '[useAgentSwitching] Agent/Model change detected (user initiated)');
+    debug.log('[useAgentSwitching] Agent/Model change detected (user initiated)');
 
     // Increment run id to cancel any in-flight sequences
     const runId = ++switchRunIdRef.current;
     const switchSessionId = sessionId; // Capture session ID for this switch
+    let cancelled = false; // Local cancellation flag for cleanup
 
     (async () => {
       // Helper to check if switch is still valid
       const isValid = () => {
+        if (cancelled) {
+          debug.log('[useAgentSwitching] Cancelled: component unmounted');
+          return false;
+        }
         if (switchRunIdRef.current !== runId) {
-          console.log(ts(), '[useAgentSwitching] Cancelled: runId changed');
+          debug.log('[useAgentSwitching] Cancelled: runId changed');
           return false;
         }
         if (currentSessionIdRef.current !== switchSessionId) {
-          console.log(ts(), '[useAgentSwitching] Cancelled: session changed');
+          debug.log('[useAgentSwitching] Cancelled: session changed');
           return false;
         }
         return true;
@@ -204,19 +204,19 @@ export const useAgentSwitching = ({
       await delay(SAVE_DELAY_MS);
       if (!isValid()) return;
 
-      console.log(ts(), '[useAgentSwitching] Step 1: Saving messages');
+      debug.log('[useAgentSwitching] Step 1: Saving messages');
       try {
         await handleSaveMessages();
-        console.log(ts(), '[useAgentSwitching] Messages saved, now switching agent/model');
+        debug.log('[useAgentSwitching] Messages saved, now switching agent/model');
       } catch (error) {
-        console.error(ts(), '[useAgentSwitching] Failed to save messages, continuing with switch', error);
+        debug.error('[useAgentSwitching] Failed to save messages, continuing with switch', error);
       }
 
       await delay(SWITCH_DELAY_MS);
       if (!isValid()) return;
 
       // Step 2: NOW update the active agent/model (this will remount CopilotKit)
-      console.log(ts(), '[useAgentSwitching] Step 2: Switching agent/model');
+      debug.log('[useAgentSwitching] Step 2: Switching agent/model');
       setSwitchingStep(2);
       setActiveAgent(selectedAgent);
       setActiveModel(selectedModel);
@@ -226,7 +226,7 @@ export const useAgentSwitching = ({
       if (!isValid()) return;
 
       // Step 3: Restore messages
-      console.log(ts(), '[useAgentSwitching] Step 3: Restoring messages');
+      debug.log('[useAgentSwitching] Step 3: Restoring messages');
       setSwitchingStep(3);
 
       await delay(RESTORE_DELAY_MS);
@@ -236,33 +236,36 @@ export const useAgentSwitching = ({
       if (currentSessionIdRef.current === switchSessionId) {
       handleLoadMessages();
       } else {
-        console.log(ts(), '[useAgentSwitching] Session changed before restore, aborting');
+        debug.log('[useAgentSwitching] Session changed before restore, aborting');
         return;
       }
 
       // Set to step 4 (> 3) to show all steps as complete with green checkmarks
       await delay(COMPLETE_CHECKS_DELAY_MS);
-      if (switchRunIdRef.current !== runId) return;
-      console.log(ts(), '[useAgentSwitching] All steps complete');
+      if (!isValid()) return;
+      debug.log('[useAgentSwitching] All steps complete');
       setSwitchingStep(4 as SwitchingStep);
 
       // End switching after showing completion
       await delay(CLOSE_OVERLAY_DELAY_MS);
-      if (switchRunIdRef.current !== runId) return;
-      console.log(ts(), '[useAgentSwitching] Switch complete, closing overlay');
+      if (!isValid()) return;
+      debug.log('[useAgentSwitching] Switch complete, closing overlay');
       setIsSwitchingAgent(false);
 
       // Reset step AFTER the overlay fade-out transition completes (500ms as per CSS)
       await delay(RESET_STEP_DELAY_MS);
-      if (switchRunIdRef.current !== runId) return;
+      if (!isValid()) return;
       setSwitchingStep(1 as SwitchingStep);
     })();
 
-    previousAgentRef.current = selectedAgent;
-    previousModelRef.current = selectedModel;
-    previousSessionIdRef.current = sessionId;
+    updateRefsAndActiveState(selectedAgent, selectedModel, sessionId, false);
+
+    // Cleanup function to cancel async operations on unmount
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAgent, selectedModel, sessionId]);
+  }, [selectedAgent, selectedModel, sessionId, updateRefsAndActiveState]);
 
   return {
     activeAgent,

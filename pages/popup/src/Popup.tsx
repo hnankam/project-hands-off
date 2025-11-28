@@ -1,12 +1,12 @@
 import '@src/Popup.css';
 import '@extension/ui/global.css';
 import { useStorage, withErrorBoundary, withSuspense } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 import { cn, ErrorDisplay, LoadingSpinner, Button } from '@extension/ui';
 import { useState, useEffect } from 'react';
 
 const Popup = () => {
-  const { isLight } = useStorage(exampleThemeStorage);
+  const { isLight } = useStorage(themeStorage);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   // Check if side panel is open on component mount and listen for messages

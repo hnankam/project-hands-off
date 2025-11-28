@@ -363,6 +363,33 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
     return;
   }
   
+  // Get tab info to check URL before attempting extraction
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const url = tab.url || '';
+    
+    // Skip protected URLs that don't allow content script injection
+    const protectedProtocols = ['chrome://', 'chrome-extension://', 'edge://', 'about:', 'devtools://'];
+    const isProtectedUrl = protectedProtocols.some(protocol => url.startsWith(protocol));
+    
+    if (isProtectedUrl) {
+      logger.info(`Skipping content extraction for protected URL: ${url}`);
+      sendResponse?.({ success: false, error: 'Cannot access protected URL' });
+      return;
+    }
+    
+    // Also skip empty URLs or invalid tabs
+    if (!url || url === 'about:blank') {
+      logger.info(`Skipping content extraction for blank/empty URL`);
+      sendResponse?.({ success: false, error: 'No valid URL' });
+      return;
+    }
+  } catch (error) {
+    logger.error('Failed to get tab info:', error);
+    sendResponse?.({ success: false, error: 'Failed to get tab info' });
+    return;
+  }
+  
   try {
     // Inject utils.js first (CSS selector generator)
     await chrome.scripting.executeScript({

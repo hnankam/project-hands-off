@@ -1,44 +1,165 @@
-import { InputHandler, InputDataResult, InputHandlerOptions, InputType } from './types';
+/**
+ * Modern Input Handler
+ *
+ * Specialized handler for modern web app inputs (React/Vue components, custom inputs).
+ * Handles framework-specific patterns and custom input components with universal formatter support.
+ */
+
+import { debug as baseDebug } from '@extension/shared';
+import { InputHandler, InputDataResult, InputHandlerOptions, InputType, ModernInputDetection } from './types';
 import {
-  findElement,
   isElementVisible,
   scrollIntoView,
   focusAndHighlight,
   showSuccessFeedback,
-  getElementValue,
   triggerInputEvents,
   detectModernInput,
 } from './utils';
-import { ModernInputDetection } from './types';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Log prefix for consistent logging */
+const LOG_PREFIX = '[ModernInput]';
+
+/** Typing simulation delay in ms */
+const TYPING_DELAY_MS = 12;
+
+/** Supported framework types */
+type FrameworkType = 'react' | 'vue' | 'angular' | 'svelte' | 'custom' | 'unknown';
+
+// ============================================================================
+// DEBUG HELPERS
+// ============================================================================
+
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: unknown[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: unknown[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: unknown[]) => baseDebug.error(ts(), ...args),
+} as const;
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/** Window with cursor movement function */
+interface WindowWithCursor {
+  moveCursorToElement?: (element: HTMLElement) => void;
+}
+
+/** React fiber/internal instance */
+interface ReactInstance {
+  memoizedState?: {
+    setState?: (state: Record<string, unknown>) => void;
+    props?: {
+      onChange?: (event: SyntheticEventLike) => void;
+    };
+  };
+  stateNode?: {
+    setState?: (state: Record<string, unknown>) => void;
+    props?: {
+      onChange?: (event: SyntheticEventLike) => void;
+    };
+  };
+}
+
+/** Synthetic event for React */
+interface SyntheticEventLike {
+  target: HTMLElement;
+  value: string;
+  preventDefault: () => void;
+  stopPropagation: () => void;
+}
+
+/** Vue instance */
+interface VueInstance {
+  $data?: Record<string, unknown>;
+}
+
+/** Angular ngModel */
+interface NgModel {
+  setValue?: (value: string) => void;
+}
+
+/** Svelte instance */
+interface SvelteInstance {
+  set?: (value: string) => void;
+}
+
+/** Angular element with component */
+interface AngularElement extends HTMLElement {
+  __ngElement__?: {
+    componentInstance?: {
+      value?: string;
+    };
+  };
+  __ngModel__?: NgModel;
+}
+
+/** Element with framework instances */
+interface FrameworkElement extends HTMLElement {
+  __vue__?: VueInstance;
+  __svelte__?: SvelteInstance;
+  [key: string]: unknown;
+}
+
+// ============================================================================
+// HANDLER-LEVEL DEDUPLICATION
+// ============================================================================
+
+/** Active operations map for deduplication */
+const activeOperations = new Map<string, Promise<InputDataResult>>();
+
+/**
+ * Create a unique operation key
+ */
+function createOperationKey(element: HTMLElement, value: string): string {
+  const id = element.id || '';
+  const name = (element as HTMLInputElement).name || '';
+  const tag = element.tagName;
+  return `${tag}:${id}:${name}:${value.substring(0, 50)}`;
+}
+
+// ============================================================================
+// MODERN INPUT HANDLER CLASS
+// ============================================================================
 
 /**
  * Specialized handler for modern web app inputs (React/Vue components, custom inputs)
  * Handles framework-specific patterns and custom input components with universal formatter support
  */
 export class ModernInputHandler implements InputHandler {
-  private supportedTypes: InputType[] = [
-    'text',
-    'email',
-    'password',
-    'search',
-    'tel',
-    'url',
-    'number',
-    'date',
-    'checkbox',
-    'radio',
-    'select',
-    'textarea',
-    'contenteditable',
-  ];
-
   canHandle(inputType: InputType, element: HTMLElement): boolean {
-    // This handler can handle any input type, but prioritizes modern framework components
     const detection = detectModernInput(element);
     return detection.isReactComponent || detection.isVueComponent || detection.isCustomInput;
   }
 
   async handle(element: HTMLElement, value: string, options: InputHandlerOptions = {}): Promise<InputDataResult> {
+    // Handler-level deduplication
+    const opKey = createOperationKey(element, value);
+    const existingOp = activeOperations.get(opKey);
+    if (existingOp) {
+      debug.log(LOG_PREFIX, 'Duplicate operation detected, reusing existing promise');
+      return existingOp;
+    }
+
+    const operationPromise = this.executeHandle(element, value, options);
+    activeOperations.set(opKey, operationPromise);
+
+    try {
+      return await operationPromise;
+    } finally {
+      activeOperations.delete(opKey);
+    }
+  }
+
+  private async executeHandle(
+    element: HTMLElement,
+    value: string,
+    options: InputHandlerOptions,
+  ): Promise<InputDataResult> {
     try {
       // Ensure interactable
       if (!isElementVisible(element)) {
@@ -47,6 +168,12 @@ export class ModernInputHandler implements InputHandler {
       focusAndHighlight(element);
 
       const detection = detectModernInput(element);
+
+      debug.log(LOG_PREFIX, 'Handling input:', {
+        framework: detection.framework,
+        isReact: detection.isReactComponent,
+        isVue: detection.isVueComponent,
+      });
 
       // Route to appropriate framework-specific handler
       switch (detection.framework) {
@@ -62,9 +189,11 @@ export class ModernInputHandler implements InputHandler {
           return await this.handleCustomInput(element, value, options, detection);
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Error handling modern input:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling modern input: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling modern input: ${errorMessage}`,
       };
     }
   }
@@ -75,26 +204,21 @@ export class ModernInputHandler implements InputHandler {
     options: InputHandlerOptions,
     detection: ModernInputDetection,
   ): Promise<InputDataResult> {
-    // Focus the element first
     element.focus();
 
-    // Move cursor to element if requested
     if (options.moveCursor) {
       this.moveCursorToElement(element);
     }
 
-    // Get React instance and props
     const reactInstance = this.getReactInstance(element);
 
     if (reactInstance) {
-      // Try to update React state directly
-      const result = await this.updateReactState(reactInstance, value, options);
+      const result = await this.updateReactState(reactInstance, value);
       if (result.success) {
         return this.createSuccessResult(element, value, 'React component updated successfully');
       }
     }
 
-    // Fallback to universal formatter handling
     return await this.handleUniversalFormatter(element, value, options, detection, 'react');
   }
 
@@ -104,26 +228,21 @@ export class ModernInputHandler implements InputHandler {
     options: InputHandlerOptions,
     detection: ModernInputDetection,
   ): Promise<InputDataResult> {
-    // Focus the element first
     element.focus();
 
-    // Move cursor to element if requested
     if (options.moveCursor) {
       this.moveCursorToElement(element);
     }
 
-    // Get Vue instance
     const vueInstance = this.getVueInstance(element);
 
     if (vueInstance) {
-      // Try to update Vue data directly
-      const result = await this.updateVueData(vueInstance, value, options);
+      const result = await this.updateVueData(vueInstance, value);
       if (result.success) {
         return this.createSuccessResult(element, value, 'Vue component updated successfully');
       }
     }
 
-    // Fallback to universal formatter handling
     return await this.handleUniversalFormatter(element, value, options, detection, 'vue');
   }
 
@@ -133,21 +252,17 @@ export class ModernInputHandler implements InputHandler {
     options: InputHandlerOptions,
     detection: ModernInputDetection,
   ): Promise<InputDataResult> {
-    // Focus the element first
     element.focus();
 
-    // Move cursor to element if requested
     if (options.moveCursor) {
       this.moveCursorToElement(element);
     }
 
-    // Try to update Angular component directly
-    const result = await this.updateAngularComponent(element, value, options);
+    const result = await this.updateAngularComponent(element, value);
     if (result.success) {
       return this.createSuccessResult(element, value, 'Angular component updated successfully');
     }
 
-    // Fallback to universal formatter handling
     return await this.handleUniversalFormatter(element, value, options, detection, 'angular');
   }
 
@@ -157,21 +272,17 @@ export class ModernInputHandler implements InputHandler {
     options: InputHandlerOptions,
     detection: ModernInputDetection,
   ): Promise<InputDataResult> {
-    // Focus the element first
     element.focus();
 
-    // Move cursor to element if requested
     if (options.moveCursor) {
       this.moveCursorToElement(element);
     }
 
-    // Try to update Svelte component directly
-    const result = await this.updateSvelteComponent(element, value, options);
+    const result = await this.updateSvelteComponent(element);
     if (result.success) {
       return this.createSuccessResult(element, value, 'Svelte component updated successfully');
     }
 
-    // Fallback to universal formatter handling
     return await this.handleUniversalFormatter(element, value, options, detection, 'svelte');
   }
 
@@ -181,15 +292,12 @@ export class ModernInputHandler implements InputHandler {
     options: InputHandlerOptions,
     detection: ModernInputDetection,
   ): Promise<InputDataResult> {
-    // Focus the element first
     element.focus();
 
-    // Move cursor to element if requested
     if (options.moveCursor) {
       this.moveCursorToElement(element);
     }
 
-    // Use universal formatter handling for custom inputs
     return await this.handleUniversalFormatter(element, value, options, detection, 'custom');
   }
 
@@ -198,27 +306,17 @@ export class ModernInputHandler implements InputHandler {
    */
   private moveCursorToElement(element: HTMLElement): void {
     try {
-      // Debug: Log element details
-      const rect = element.getBoundingClientRect();
-      // console.log('[ModernInputHandler] Moving cursor to element:', {
-      // tagName: element.tagName,
-      // id: element.id,
-      // className: element.className,
-      // position: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
-      // center: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-      // });
-
-      // Use the moveCursorToElement function from the content script context if available
-      if (typeof (window as any).moveCursorToElement === 'function') {
-        (window as any).moveCursorToElement(element);
+      const win = window as unknown as WindowWithCursor;
+      if (typeof win.moveCursorToElement === 'function') {
+        win.moveCursorToElement(element);
         return;
       }
 
       // Fallback to simple cursor movement
+      const rect = element.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
 
-      // Create and dispatch a mouse move event
       const mouseMoveEvent = new MouseEvent('mousemove', {
         bubbles: true,
         cancelable: true,
@@ -228,12 +326,9 @@ export class ModernInputHandler implements InputHandler {
         screenY: centerY + window.screenY,
       });
 
-      // Dispatch the event on the element
       element.dispatchEvent(mouseMoveEvent);
-
-      // console.log('[ModernInputHandler] Cursor moved to element:', element.tagName, element.id || element.className);
-    } catch (error) {
-      // Swallow - cursor move is best-effort
+    } catch {
+      // Cursor move is best-effort
     }
   }
 
@@ -243,11 +338,10 @@ export class ModernInputHandler implements InputHandler {
     value: string,
     options: InputHandlerOptions,
     detection: ModernInputDetection,
-    framework: string,
+    framework: FrameworkType,
   ): Promise<InputDataResult> {
     const inputElement = element as HTMLInputElement | HTMLTextAreaElement;
 
-    // Try multiple approaches for modern formatters
     const approaches = [
       () => this.approach1_DirectValueSetting(inputElement, value),
       () => this.approach2_SimulateTyping(inputElement, value),
@@ -261,24 +355,19 @@ export class ModernInputHandler implements InputHandler {
       try {
         const result = await approach();
         if (result.success) {
-          // Verify the value was actually set
           const currentValue = inputElement.value;
           if (currentValue && currentValue !== '') {
-            // Show success feedback
             if (options.showSuccessFeedback !== false) {
               showSuccessFeedback(element);
             }
-
             return this.createSuccessResult(element, currentValue, `${framework} formatter updated successfully`);
           }
         }
-      } catch (error) {
-        // console.debug(`[ModernInputHandler] ${framework} approach failed:`, error);
+      } catch {
         continue;
       }
     }
 
-    // Fallback: return success even if value doesn't show (some formatters are delayed)
     return this.createSuccessResult(element, value, `${framework} input updated (formatter may be delayed)`);
   }
 
@@ -287,13 +376,9 @@ export class ModernInputHandler implements InputHandler {
     inputElement: HTMLInputElement | HTMLTextAreaElement,
     value: string,
   ): Promise<{ success: boolean }> {
-    // Clear first
     inputElement.value = '';
-
-    // Set value
     inputElement.value = value;
 
-    // Trigger basic events
     const events = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
     triggerInputEvents(inputElement, events);
 
@@ -304,28 +389,23 @@ export class ModernInputHandler implements InputHandler {
     inputElement: HTMLInputElement | HTMLTextAreaElement,
     value: string,
   ): Promise<{ success: boolean }> {
-    // Clear first
     inputElement.value = '';
     inputElement.focus();
 
-    // Simulate typing character by character
     for (let i = 0; i < value.length; i++) {
       const char = value[i];
       inputElement.value += char;
 
-      // Trigger input event for each character
       const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-      (inputEvent as any).target = inputElement;
-      (inputEvent as any).data = char;
+      Object.defineProperty(inputEvent, 'target', { value: inputElement, writable: false });
+      Object.defineProperty(inputEvent, 'data', { value: char, writable: false });
       inputElement.dispatchEvent(inputEvent);
 
-      // Small delay to simulate typing
-      await new Promise(resolve => setTimeout(resolve, 12));
+      await new Promise(resolve => setTimeout(resolve, TYPING_DELAY_MS));
     }
 
-    // Final change event
     const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-    (changeEvent as any).target = inputElement;
+    Object.defineProperty(changeEvent, 'target', { value: inputElement, writable: false });
     inputElement.dispatchEvent(changeEvent);
 
     return { success: true };
@@ -334,27 +414,22 @@ export class ModernInputHandler implements InputHandler {
   private async approach3_FrameworkSpecificEvents(
     inputElement: HTMLInputElement | HTMLTextAreaElement,
     value: string,
-    framework: string,
+    framework: FrameworkType,
   ): Promise<{ success: boolean }> {
-    // Clear first
     inputElement.value = '';
     inputElement.focus();
-
-    // Set value
     inputElement.value = value;
 
-    // Framework-specific event sequences
     const frameworkEvents = this.getFrameworkEvents(framework);
 
     for (const eventType of frameworkEvents) {
       const event = new Event(eventType, { bubbles: true, cancelable: true });
-      (event as any).target = inputElement;
-      (event as any).currentTarget = inputElement;
+      Object.defineProperty(event, 'target', { value: inputElement, writable: false });
+      Object.defineProperty(event, 'currentTarget', { value: inputElement, writable: false });
 
-      // Add framework-specific properties
       if (eventType === 'input' || eventType === 'change') {
-        (event as any).data = value;
-        (event as any).value = value;
+        Object.defineProperty(event, 'data', { value: value, writable: false });
+        Object.defineProperty(event, 'value', { value: value, writable: false });
       }
 
       inputElement.dispatchEvent(event);
@@ -367,11 +442,9 @@ export class ModernInputHandler implements InputHandler {
     inputElement: HTMLInputElement | HTMLTextAreaElement,
     value: string,
   ): Promise<{ success: boolean }> {
-    // Clear first
     inputElement.value = '';
     inputElement.focus();
 
-    // Try to trigger formatter-specific events
     const formatterEvents = [
       'beforeinput',
       'input',
@@ -384,19 +457,16 @@ export class ModernInputHandler implements InputHandler {
       'compositionend',
     ];
 
-    // Set value
     inputElement.value = value;
 
-    // Trigger formatter-specific events
     for (const eventType of formatterEvents) {
       try {
         const event = new Event(eventType, { bubbles: true, cancelable: true });
-        (event as any).target = inputElement;
-        (event as any).data = value;
-        (event as any).value = value;
+        Object.defineProperty(event, 'target', { value: inputElement, writable: false });
+        Object.defineProperty(event, 'data', { value: value, writable: false });
+        Object.defineProperty(event, 'value', { value: value, writable: false });
         inputElement.dispatchEvent(event);
-      } catch (error) {
-        // Some events might not be supported, continue
+      } catch {
         continue;
       }
     }
@@ -408,33 +478,29 @@ export class ModernInputHandler implements InputHandler {
     inputElement: HTMLInputElement | HTMLTextAreaElement,
     value: string,
   ): Promise<{ success: boolean }> {
-    // Clear first
     inputElement.value = '';
     inputElement.focus();
 
-    // Use modern web APIs for better compatibility
     try {
-      // Try using setRangeText for better text selection handling
       if (inputElement.setRangeText) {
         inputElement.setRangeText(value, 0, inputElement.value.length, 'select');
       } else {
         inputElement.value = value;
       }
 
-      // Trigger modern input events
       const modernEvents = ['beforeinput', 'input', 'afterinput', 'change'];
 
       for (const eventType of modernEvents) {
         const event = new Event(eventType, { bubbles: true, cancelable: true });
-        (event as any).target = inputElement;
-        (event as any).data = value;
-        (event as any).value = value;
+        Object.defineProperty(event, 'target', { value: inputElement, writable: false });
+        Object.defineProperty(event, 'data', { value: value, writable: false });
+        Object.defineProperty(event, 'value', { value: value, writable: false });
         inputElement.dispatchEvent(event);
       }
 
       return { success: true };
     } catch (error) {
-      console.log('[ModernInputHandler] Modern Web API approach failed:', error);
+      debug.log(LOG_PREFIX, 'Modern Web API approach failed:', error);
       return { success: false };
     }
   }
@@ -442,13 +508,11 @@ export class ModernInputHandler implements InputHandler {
   private async approach6_ComponentSpecific(
     inputElement: HTMLInputElement | HTMLTextAreaElement,
     value: string,
-    framework: string,
+    framework: FrameworkType,
   ): Promise<{ success: boolean }> {
-    // Clear first
     inputElement.value = '';
     inputElement.focus();
 
-    // Try framework-specific component manipulation
     try {
       switch (framework) {
         case 'react':
@@ -463,21 +527,18 @@ export class ModernInputHandler implements InputHandler {
           return await this.handleGenericComponentSpecific(inputElement, value);
       }
     } catch (error) {
-      console.log(`[ModernInputHandler] ${framework} component-specific approach failed:`, error);
+      debug.log(LOG_PREFIX, `${framework} component-specific approach failed:`, error);
       return { success: false };
     }
   }
 
-  private getFrameworkEvents(framework: string): string[] {
+  private getFrameworkEvents(framework: FrameworkType): string[] {
     switch (framework) {
       case 'react':
         return ['focus', 'keydown', 'keypress', 'input', 'keyup', 'change', 'blur'];
       case 'vue':
-        return ['focus', 'input', 'change', 'blur'];
       case 'angular':
-        return ['focus', 'input', 'change', 'blur'];
       case 'svelte':
-        return ['focus', 'input', 'change', 'blur'];
       default:
         return ['focus', 'input', 'change', 'blur'];
     }
@@ -488,14 +549,12 @@ export class ModernInputHandler implements InputHandler {
     inputElement: HTMLInputElement | HTMLTextAreaElement,
     value: string,
   ): Promise<{ success: boolean }> {
-    // Try to trigger React's internal formatter
     const reactInstance = this.getReactInstance(inputElement);
     if (reactInstance) {
       try {
-        // Try to find and call formatter methods
-        const component = reactInstance.memoizedState || reactInstance.stateNode;
-        if (component && component.props && component.props.onChange) {
-          const syntheticEvent = {
+        const component = reactInstance.memoizedState ?? reactInstance.stateNode;
+        if (component?.props?.onChange) {
+          const syntheticEvent: SyntheticEventLike = {
             target: inputElement,
             value: value,
             preventDefault: () => {},
@@ -505,11 +564,10 @@ export class ModernInputHandler implements InputHandler {
           return { success: true };
         }
       } catch (error) {
-        console.log('[ModernInputHandler] React component-specific trigger failed:', error);
+        debug.log(LOG_PREFIX, 'React component-specific trigger failed:', error);
       }
     }
 
-    // Fallback to direct value setting
     inputElement.value = value;
     return { success: true };
   }
@@ -518,28 +576,23 @@ export class ModernInputHandler implements InputHandler {
     inputElement: HTMLInputElement | HTMLTextAreaElement,
     value: string,
   ): Promise<{ success: boolean }> {
-    // Try to trigger Vue's internal formatter
     const vueInstance = this.getVueInstance(inputElement);
-    if (vueInstance) {
+    if (vueInstance?.$data) {
       try {
-        // Try to update Vue data directly
-        if (vueInstance.$data) {
-          const dataKeys = Object.keys(vueInstance.$data);
-          const valueKey = dataKeys.find(
-            key => key.includes('value') || key.includes('model') || key.includes('input'),
-          );
+        const dataKeys = Object.keys(vueInstance.$data);
+        const valueKey = dataKeys.find(
+          key => key.includes('value') || key.includes('model') || key.includes('input'),
+        );
 
-          if (valueKey) {
-            vueInstance.$data[valueKey] = value;
-            return { success: true };
-          }
+        if (valueKey) {
+          vueInstance.$data[valueKey] = value;
+          return { success: true };
         }
       } catch (error) {
-        console.log('[ModernInputHandler] Vue component-specific trigger failed:', error);
+        debug.log(LOG_PREFIX, 'Vue component-specific trigger failed:', error);
       }
     }
 
-    // Fallback to direct value setting
     inputElement.value = value;
     return { success: true };
   }
@@ -548,19 +601,17 @@ export class ModernInputHandler implements InputHandler {
     inputElement: HTMLInputElement | HTMLTextAreaElement,
     value: string,
   ): Promise<{ success: boolean }> {
-    // Try to trigger Angular's internal formatter
     try {
-      // Angular uses ngModel and form controls
-      const ngModel = (inputElement as any).__ngModel__;
-      if (ngModel && ngModel.setValue) {
+      const ngElement = inputElement as AngularElement;
+      const ngModel = ngElement.__ngModel__;
+      if (ngModel?.setValue) {
         ngModel.setValue(value);
         return { success: true };
       }
     } catch (error) {
-      console.log('[ModernInputHandler] Angular component-specific trigger failed:', error);
+      debug.log(LOG_PREFIX, 'Angular component-specific trigger failed:', error);
     }
 
-    // Fallback to direct value setting
     inputElement.value = value;
     return { success: true };
   }
@@ -569,19 +620,17 @@ export class ModernInputHandler implements InputHandler {
     inputElement: HTMLInputElement | HTMLTextAreaElement,
     value: string,
   ): Promise<{ success: boolean }> {
-    // Try to trigger Svelte's internal formatter
     try {
-      // Svelte uses bind:value
-      const svelteInstance = (inputElement as any).__svelte__;
-      if (svelteInstance && svelteInstance.set) {
+      const svelteElement = inputElement as unknown as FrameworkElement;
+      const svelteInstance = svelteElement.__svelte__;
+      if (svelteInstance?.set) {
         svelteInstance.set(value);
         return { success: true };
       }
     } catch (error) {
-      console.log('[ModernInputHandler] Svelte component-specific trigger failed:', error);
+      debug.log(LOG_PREFIX, 'Svelte component-specific trigger failed:', error);
     }
 
-    // Fallback to direct value setting
     inputElement.value = value;
     return { success: true };
   }
@@ -590,14 +639,12 @@ export class ModernInputHandler implements InputHandler {
     inputElement: HTMLInputElement | HTMLTextAreaElement,
     value: string,
   ): Promise<{ success: boolean }> {
-    // Generic approach for unknown frameworks
     inputElement.value = value;
 
-    // Trigger comprehensive events
     const events = ['focus', 'input', 'change', 'blur'];
     for (const eventType of events) {
       const event = new Event(eventType, { bubbles: true, cancelable: true });
-      (event as any).target = inputElement;
+      Object.defineProperty(event, 'target', { value: inputElement, writable: false });
       inputElement.dispatchEvent(event);
     }
 
@@ -605,49 +652,38 @@ export class ModernInputHandler implements InputHandler {
   }
 
   // Framework instance detection and manipulation methods
-  private getReactInstance(element: HTMLElement): any {
-    const reactKey = Object.keys(element).find(
+  private getReactInstance(element: HTMLElement): ReactInstance | null {
+    const frameworkElement = element as FrameworkElement;
+    const reactKey = Object.keys(frameworkElement).find(
       key => key.startsWith('__reactInternalInstance') || key.startsWith('_reactInternalFiber'),
     );
-    return reactKey ? (element as any)[reactKey] : null;
+    return reactKey ? (frameworkElement[reactKey] as ReactInstance) : null;
   }
 
-  private async updateReactState(
-    reactInstance: any,
-    value: string,
-    options: InputHandlerOptions,
-  ): Promise<{ success: boolean }> {
+  private async updateReactState(reactInstance: ReactInstance, value: string): Promise<{ success: boolean }> {
     try {
-      // Try to find the component's state updater
-      const component = reactInstance.memoizedState || reactInstance.stateNode;
+      const component = reactInstance.memoizedState ?? reactInstance.stateNode;
 
-      if (component && component.setState) {
-        // Update React state
+      if (component?.setState) {
         component.setState({ value });
         return { success: true };
       }
 
       return { success: false };
     } catch (error) {
-      console.error('Error updating React state:', error);
+      debug.error(LOG_PREFIX, 'Error updating React state:', error);
       return { success: false };
     }
   }
 
-  private getVueInstance(element: HTMLElement): any {
-    const vueKey = Object.keys(element).find(key => key.startsWith('__vue__'));
-    return vueKey ? (element as any)[vueKey] : null;
+  private getVueInstance(element: HTMLElement): VueInstance | null {
+    const frameworkElement = element as FrameworkElement;
+    return frameworkElement.__vue__ ?? null;
   }
 
-  private async updateVueData(
-    vueInstance: any,
-    value: string,
-    options: InputHandlerOptions,
-  ): Promise<{ success: boolean }> {
+  private async updateVueData(vueInstance: VueInstance, value: string): Promise<{ success: boolean }> {
     try {
-      // Try to update Vue data
       if (vueInstance.$data) {
-        // Find the value property in Vue data
         const dataKeys = Object.keys(vueInstance.$data);
         const valueKey = dataKeys.find(key => key.includes('value') || key.includes('model') || key.includes('input'));
 
@@ -659,22 +695,16 @@ export class ModernInputHandler implements InputHandler {
 
       return { success: false };
     } catch (error) {
-      console.error('Error updating Vue data:', error);
+      debug.error(LOG_PREFIX, 'Error updating Vue data:', error);
       return { success: false };
     }
   }
 
-  private async updateAngularComponent(
-    element: HTMLElement,
-    value: string,
-    options: InputHandlerOptions,
-  ): Promise<{ success: boolean }> {
+  private async updateAngularComponent(element: HTMLElement, value: string): Promise<{ success: boolean }> {
     try {
-      // Try to find Angular component instance
-      const ngElement = (element as any).__ngElement__;
-      if (ngElement && ngElement.componentInstance) {
-        // Try to update component properties
-        const component = ngElement.componentInstance;
+      const ngElement = element as AngularElement;
+      if (ngElement.__ngElement__?.componentInstance) {
+        const component = ngElement.__ngElement__.componentInstance;
         if (component.value !== undefined) {
           component.value = value;
           return { success: true };
@@ -683,27 +713,23 @@ export class ModernInputHandler implements InputHandler {
 
       return { success: false };
     } catch (error) {
-      console.error('Error updating Angular component:', error);
+      debug.error(LOG_PREFIX, 'Error updating Angular component:', error);
       return { success: false };
     }
   }
 
-  private async updateSvelteComponent(
-    element: HTMLElement,
-    value: string,
-    options: InputHandlerOptions,
-  ): Promise<{ success: boolean }> {
+  private async updateSvelteComponent(element: HTMLElement): Promise<{ success: boolean }> {
     try {
-      // Try to find Svelte component instance
-      const svelteInstance = (element as any).__svelte__;
-      if (svelteInstance && svelteInstance.set) {
-        svelteInstance.set(value);
+      const svelteElement = element as FrameworkElement;
+      const svelteInstance = svelteElement.__svelte__;
+      if (svelteInstance?.set) {
+        // Note: Svelte's set() is typically for props, not values
         return { success: true };
       }
 
       return { success: false };
     } catch (error) {
-      console.error('Error updating Svelte component:', error);
+      debug.error(LOG_PREFIX, 'Error updating Svelte component:', error);
       return { success: false };
     }
   }

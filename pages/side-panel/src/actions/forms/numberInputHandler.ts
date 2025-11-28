@@ -1,4 +1,12 @@
-import { InputHandler, InputDataResult, InputHandlerOptions, NumberInputOptions, InputType } from './types';
+/**
+ * Number Input Handler
+ *
+ * Specialized handler for number inputs (number, range).
+ * Handles numeric validation, formatting, and modern web app patterns.
+ */
+
+import { debug as baseDebug } from '@extension/shared';
+import { InputHandler, InputDataResult, NumberInputOptions, InputType } from './types';
 import {
   findElement,
   isElementVisible,
@@ -6,27 +14,100 @@ import {
   focusAndHighlight,
   streamText,
   showSuccessFeedback,
-  getElementValue,
   triggerInputEvents,
   detectModernInput,
   moveCursorToElement,
 } from './utils';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Log prefix for consistent logging */
+const LOG_PREFIX = '[NumberInput]';
+
+/** Supported input types */
+const SUPPORTED_TYPES: InputType[] = ['number', 'range'];
+
+/** Default animation steps for range input */
+const DEFAULT_ANIMATION_STEPS = 50;
+
+/** Default animation duration in ms */
+const DEFAULT_ANIMATION_DURATION_MS = 1000;
+
+/** Float comparison epsilon */
+const FLOAT_EPSILON = 0.0001;
+
+// ============================================================================
+// DEBUG HELPERS
+// ============================================================================
+
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: unknown[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: unknown[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: unknown[]) => baseDebug.error(ts(), ...args),
+} as const;
+
+// ============================================================================
+// HANDLER-LEVEL DEDUPLICATION
+// ============================================================================
+
+/** Active operations map for deduplication */
+const activeOperations = new Map<string, Promise<InputDataResult>>();
+
+/**
+ * Create a unique operation key
+ */
+function createOperationKey(element: HTMLElement, value: string): string {
+  const id = element.id || '';
+  const name = (element as HTMLInputElement).name || '';
+  const tag = element.tagName;
+  return `${tag}:${id}:${name}:${value}`;
+}
+
+// ============================================================================
+// NUMBER INPUT HANDLER CLASS
+// ============================================================================
 
 /**
  * Specialized handler for number inputs (number, range)
  * Handles numeric validation, formatting, and modern web app patterns
  */
 export class NumberInputHandler implements InputHandler {
-  private supportedTypes: InputType[] = ['number', 'range'];
-
   canHandle(inputType: InputType, element: HTMLElement): boolean {
-    return this.supportedTypes.includes(inputType) && element.tagName === 'INPUT';
+    return SUPPORTED_TYPES.includes(inputType) && element.tagName === 'INPUT';
   }
 
   async handle(element: HTMLElement, value: string, options: NumberInputOptions = {}): Promise<InputDataResult> {
+    // Handler-level deduplication
+    const opKey = createOperationKey(element, value);
+    const existingOp = activeOperations.get(opKey);
+    if (existingOp) {
+      debug.log(LOG_PREFIX, 'Duplicate operation detected, reusing existing promise');
+      return existingOp;
+    }
+
+    const operationPromise = this.executeHandle(element, value, options);
+    activeOperations.set(opKey, operationPromise);
+
+    try {
+      return await operationPromise;
+    } finally {
+      activeOperations.delete(opKey);
+    }
+  }
+
+  private async executeHandle(
+    element: HTMLElement,
+    value: string,
+    options: NumberInputOptions,
+  ): Promise<InputDataResult> {
     try {
       const inputElement = element as HTMLInputElement;
       const inputType = inputElement.type;
+
+      debug.log(LOG_PREFIX, 'Handling number input:', { type: inputType, value });
 
       // Move cursor to element if requested
       if (options.moveCursor) {
@@ -52,7 +133,7 @@ export class NumberInputHandler implements InputHandler {
       if (!validation.valid) {
         return {
           status: 'error',
-          message: validation.error || 'Number validation failed',
+          message: validation.error ?? 'Number validation failed',
         };
       }
 
@@ -66,21 +147,22 @@ export class NumberInputHandler implements InputHandler {
 
       // Handle different number input types
       if (inputType === 'range') {
-        return await this.handleRangeInput(inputElement, numberValue, formattedValue, options);
+        return await this.handleRangeInput(inputElement, formattedValue, options);
       } else {
-        return await this.handleNumberInput(inputElement, numberValue, formattedValue, options);
+        return await this.handleNumberInput(inputElement, formattedValue, options);
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Error:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling ${(element as HTMLInputElement).type} input: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling ${(element as HTMLInputElement).type} input: ${errorMessage}`,
       };
     }
   }
 
   private async handleNumberInput(
     inputElement: HTMLInputElement,
-    numberValue: number,
     formattedValue: string,
     options: NumberInputOptions,
   ): Promise<InputDataResult> {
@@ -112,6 +194,8 @@ export class NumberInputHandler implements InputHandler {
       showSuccessFeedback(inputElement);
     }
 
+    debug.log(LOG_PREFIX, 'Number input successful:', formattedValue);
+
     return {
       status: 'success',
       message: `Number input successful: ${formattedValue}`,
@@ -127,7 +211,6 @@ export class NumberInputHandler implements InputHandler {
 
   private async handleRangeInput(
     inputElement: HTMLInputElement,
-    numberValue: number,
     formattedValue: string,
     options: NumberInputOptions,
   ): Promise<InputDataResult> {
@@ -148,6 +231,8 @@ export class NumberInputHandler implements InputHandler {
       showSuccessFeedback(inputElement);
     }
 
+    debug.log(LOG_PREFIX, 'Range input set to:', formattedValue);
+
     return {
       status: 'success',
       message: `Range input set to: ${formattedValue}`,
@@ -161,13 +246,15 @@ export class NumberInputHandler implements InputHandler {
     };
   }
 
-  private parseNumber(value: string, options: NumberInputOptions): number | null {
+  private parseNumber(value: string, _options: NumberInputOptions): number | null {
     // Remove thousands separators and normalize decimal delimiter
-    const normalized = value
-      .trim()
-      .replace(/\s/g, '')
-      .replace(/,(?=\d{3}(\D|$))/g, '') // drop grouping commas
-      .replace(/(?<=\d),(?=\d)/g, ',');
+    // Note: Using simpler regex without lookbehind for broader browser support
+    let normalized = value.trim().replace(/\s/g, '');
+
+    // Remove grouping commas (e.g., 1,234,567 -> 1234567)
+    // This handles commas followed by exactly 3 digits
+    normalized = normalized.replace(/,(\d{3})(?=,|\D|$)/g, '$1');
+
     // Allow only digits, minus, and dot
     const cleanValue = normalized.replace(/[^\d.-]/g, '');
 
@@ -193,22 +280,22 @@ export class NumberInputHandler implements InputHandler {
     options: NumberInputOptions,
   ): { valid: boolean; error?: string } {
     // Check min constraint
-    const min = options.min !== undefined ? options.min : parseFloat(inputElement.min);
+    const min = options.min ?? parseFloat(inputElement.min);
     if (!isNaN(min) && number < min) {
       return { valid: false, error: `Number must be at least ${min}` };
     }
 
     // Check max constraint
-    const max = options.max !== undefined ? options.max : parseFloat(inputElement.max);
+    const max = options.max ?? parseFloat(inputElement.max);
     if (!isNaN(max) && number > max) {
       return { valid: false, error: `Number must be at most ${max}` };
     }
 
     // Check step constraint
-    const step = options.step !== undefined ? options.step : parseFloat(inputElement.step);
+    const step = options.step ?? parseFloat(inputElement.step);
     if (!isNaN(step) && step > 0) {
       const remainder = (number - (min || 0)) % step;
-      if (Math.abs(remainder) > 0.0001 && Math.abs(remainder - step) > 0.0001) {
+      if (Math.abs(remainder) > FLOAT_EPSILON && Math.abs(remainder - step) > FLOAT_EPSILON) {
         return { valid: false, error: `Number must be a multiple of ${step}` };
       }
     }
@@ -223,12 +310,8 @@ export class NumberInputHandler implements InputHandler {
       return number.toFixed(precision);
     }
 
-    // Default formatting - remove unnecessary decimal places
-    if (number % 1 === 0) {
-      return number.toString();
-    } else {
-      return number.toString();
-    }
+    // Default formatting - keep as-is
+    return number.toString();
   }
 
   /**
@@ -252,11 +335,15 @@ export class NumberInputHandler implements InputHandler {
       const currentValue = parseFloat(inputElement.value) || 0;
       const newValue = currentValue + increment;
 
+      debug.log(LOG_PREFIX, 'Incrementing:', { from: currentValue, by: increment, to: newValue });
+
       return await this.handle(inputElement, newValue.toString(), options);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Error incrementing number:', errorMessage);
       return {
         status: 'error',
-        message: `Error incrementing number: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error incrementing number: ${errorMessage}`,
       };
     }
   }
@@ -267,7 +354,7 @@ export class NumberInputHandler implements InputHandler {
   async handleRangeWithAnimation(
     selector: string,
     targetValue: number,
-    duration: number = 1000,
+    duration: number = DEFAULT_ANIMATION_DURATION_MS,
     options: NumberInputOptions = {},
   ): Promise<InputDataResult> {
     try {
@@ -282,9 +369,11 @@ export class NumberInputHandler implements InputHandler {
       const inputElement = elementInfo.element as HTMLInputElement;
       const startValue = parseFloat(inputElement.value) || 0;
       const difference = targetValue - startValue;
-      const steps = 50; // Number of animation steps
+      const steps = DEFAULT_ANIMATION_STEPS;
       const stepDuration = duration / steps;
       const stepIncrement = difference / steps;
+
+      debug.log(LOG_PREFIX, 'Animating range:', { from: startValue, to: targetValue, steps, duration });
 
       // Animate the range input
       for (let i = 0; i <= steps; i++) {
@@ -305,21 +394,25 @@ export class NumberInputHandler implements InputHandler {
         showSuccessFeedback(inputElement);
       }
 
+      const finalValue = this.formatNumber(targetValue, options);
+
       return {
         status: 'success',
-        message: `Range animated to: ${this.formatNumber(targetValue, options)}`,
+        message: `Range animated to: ${finalValue}`,
         elementInfo: {
           tag: inputElement.tagName,
           type: inputElement.type,
           id: inputElement.id,
           name: inputElement.name || '',
-          value: this.formatNumber(targetValue, options),
+          value: finalValue,
         },
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Error animating range:', errorMessage);
       return {
         status: 'error',
-        message: `Error animating range: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error animating range: ${errorMessage}`,
       };
     }
   }
@@ -345,7 +438,7 @@ export class NumberInputHandler implements InputHandler {
       const inputElement = elementInfo.element as HTMLInputElement;
 
       // Parse currency value
-      const numberValue = this.parseCurrency(value, currency);
+      const numberValue = this.parseCurrency(value);
       if (numberValue === null) {
         return {
           status: 'error',
@@ -355,6 +448,8 @@ export class NumberInputHandler implements InputHandler {
 
       // Format as currency
       const formattedValue = this.formatCurrency(numberValue, currency, options);
+
+      debug.log(LOG_PREFIX, 'Currency input:', { value, currency, formatted: formattedValue });
 
       // Set the value
       inputElement.value = formattedValue;
@@ -383,23 +478,25 @@ export class NumberInputHandler implements InputHandler {
         },
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Error handling currency input:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling currency input: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling currency input: ${errorMessage}`,
       };
     }
   }
 
-  private parseCurrency(value: string, currency: string): number | null {
+  private parseCurrency(value: string): number | null {
     // Remove currency symbols and formatting
     const cleanValue = value.replace(/[^\d.-]/g, '');
     return this.parseNumber(cleanValue, {});
   }
 
   private formatCurrency(number: number, currency: string, options: NumberInputOptions): string {
-    const precision = options.precision !== undefined ? options.precision : 2;
+    const precision = options.precision ?? 2;
 
-    // Basic currency formatting - in a real app you might use Intl.NumberFormat
+    // Basic currency formatting
     switch (currency.toUpperCase()) {
       case 'USD':
         return `$${number.toFixed(precision)}`;

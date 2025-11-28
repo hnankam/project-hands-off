@@ -1,22 +1,14 @@
 /**
- * ================================================================================
  * useDOMUpdateEmbedding Hook
- * ================================================================================
  * 
  * Custom hook that manages DOM update embedding and storage:
  * - Embeds summaries of DOM changes (added/removed/modified elements)
- * - Stores in SurrealDB with recency scores for temporal search
+ * - Stores in IndexedDB with recency scores for temporal search
  * - Automatically processes new DOM updates when they occur
- * 
- * @module useDOMUpdateEmbedding
- * ================================================================================
  */
 
 import { useEffect, useRef } from 'react';
-import { embeddingsStorage } from '@extension/shared';
-
-// Timestamp helper for consistent logging
-const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+import { embeddingsStorage, debug } from '@extension/shared';
 
 interface UseDOMUpdateEmbeddingParams {
   latestDOMUpdate: any;
@@ -27,8 +19,8 @@ interface UseDOMUpdateEmbeddingParams {
 }
 
 /**
- * Helper function to create a summary for DOM update
- * Converts DOM update object into a searchable text summary
+ * Helper function to create a summary for DOM update.
+ * Converts DOM update object into a searchable text summary.
  */
 const MAX_ITEMS = 6;
 const MAX_TEXT_LEN = 80;
@@ -88,7 +80,13 @@ const hasMeaningfulChanges = (u: any): boolean => {
 };
 
 /**
- * Hook to automatically embed and store DOM updates
+ * Hook to automatically embed and store DOM updates.
+ * 
+ * @param latestDOMUpdate - Latest DOM update object with changes
+ * @param isEmbeddingInitialized - Whether embedding service is ready
+ * @param currentPageContent - Current page content with URL and title
+ * @param embedTexts - Function to generate embeddings for text
+ * @param sessionId - Current session ID for scoping
  * 
  * @example
  * ```tsx
@@ -141,7 +139,7 @@ export const useDOMUpdateEmbedding = ({
 
     const embedAndStoreDOMUpdate = async () => {
       try {
-        console.log(ts(), '[useDOMUpdateEmbedding] 🔄 Embedding DOM update for storage...');
+        debug.log('[useDOMUpdateEmbedding] Embedding DOM update for storage...');
 
         // Create summary text for embedding
         const summary = createDOMUpdateSummary(latestDOMUpdate);
@@ -150,7 +148,7 @@ export const useDOMUpdateEmbedding = ({
         const embeddings = await embedTexts([summary]);
 
         if (!embeddings || embeddings.length === 0 || embeddings[0].length === 0) {
-          console.warn(ts(), '[useDOMUpdateEmbedding] ⚠️  Failed to generate embedding for DOM update');
+          debug.warn('[useDOMUpdateEmbedding] Failed to generate embedding for DOM update');
           return;
         }
 
@@ -163,17 +161,14 @@ export const useDOMUpdateEmbedding = ({
           sessionId,
         });
 
-        console.log(ts(), '[useDOMUpdateEmbedding] ✅ DOM update embedded and stored');
+        debug.log('[useDOMUpdateEmbedding] DOM update embedded and stored');
         lastSignatureRef.current = signature;
       } catch (error) {
-        console.error(ts(), '[useDOMUpdateEmbedding] ❌ Failed to embed/store DOM update:', error);
+        debug.error('[useDOMUpdateEmbedding] Failed to embed/store DOM update:', error);
       }
     };
 
     embedAndStoreDOMUpdate();
   }, [latestDOMUpdate, isEmbeddingInitialized, currentPageContent, sessionId, embedTexts]);
-
-  // This hook doesn't return anything - it only has side effects
-  return null;
 };
 

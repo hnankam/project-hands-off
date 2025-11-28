@@ -12,7 +12,8 @@ interface Team {
   id: string;
   name: string;
   organizationId: string;
-  createdAt: string;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
 }
 
 export default function TeamManager() {
@@ -39,7 +40,15 @@ export default function TeamManager() {
       });
 
       if (result.data) {
-        setTeams(result.data);
+        // Normalize team data - API may return Date objects for createdAt
+        const normalizedTeams: Team[] = result.data.map((team) => ({
+          id: team.id,
+          name: team.name,
+          organizationId: team.organizationId,
+          createdAt: team.createdAt instanceof Date ? team.createdAt.toISOString() : team.createdAt,
+          updatedAt: team.updatedAt instanceof Date ? team.updatedAt.toISOString() : team.updatedAt,
+        }));
+        setTeams(normalizedTeams);
       }
     } catch (error) {
       console.error('Error loading teams:', error);
@@ -169,8 +178,9 @@ function CreateTeamModal({ organizationId, onClose, onSuccess }: CreateTeamModal
       } else {
         onSuccess();
       }
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

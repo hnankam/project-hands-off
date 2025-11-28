@@ -21,7 +21,7 @@ export const TIMING_CONSTANTS = {
   AUTO_REFRESH_CHECK_INTERVAL: 1000, // 1 second check interval
   
   // Message persistence
-  AUTO_RESTORE_DELAY: 50, // 50ms for message restoration
+  AUTO_RESTORE_DELAY: 30, // 30ms for message restoration (reduced from 50ms)
   MESSAGE_PERSISTENCE_DELAY: 500, // 500ms for debounced saving
 } as const;
 

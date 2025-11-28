@@ -4,9 +4,10 @@ import { debug } from '@extension/shared';
 interface UseContentRefreshProps {
   setCurrentTabId: (id: number | null) => void;
   setCurrentTabTitle: (title: string) => void;
-  currentTabTitleRef: React.MutableRefObject<string>;
-  setTabTitleVersion: React.Dispatch<React.SetStateAction<number>>;
-  contentCacheRef: React.MutableRefObject<Map<string, any>>;
+  currentTabTitle: string;
+  setTabTitleVersion?: React.Dispatch<React.SetStateAction<number>>;
+  /** Content cache ref for clearing cache on refresh */
+  contentCacheRef: React.MutableRefObject<Map<string, unknown>>;
   fetchFreshPageContent: (force: boolean, tabId?: number) => Promise<void>;
   setIsPanelInteractive?: (interactive: boolean) => void;
   isPanelInteractive?: boolean;
@@ -14,13 +15,13 @@ interface UseContentRefreshProps {
 }
 
 /**
- * Custom hook to consolidate refresh logic used in multiple places
- * This eliminates code duplication and makes refresh behavior consistent
+ * Custom hook to consolidate refresh logic used in multiple places.
+ * Eliminates code duplication and makes refresh behavior consistent.
  */
 export const useContentRefresh = ({
   setCurrentTabId,
   setCurrentTabTitle,
-  currentTabTitleRef,
+  currentTabTitle,
   setTabTitleVersion,
   contentCacheRef,
   fetchFreshPageContent,
@@ -29,13 +30,17 @@ export const useContentRefresh = ({
   currentTabId
 }: UseContentRefreshProps) => {
   
-  // Helper: robustly query current tab via extension messaging
+  /**
+   * Query current tab via extension messaging.
+   * Returns tab ID and title, or null values if unavailable.
+   */
   const getCurrentTab = useCallback(async (): Promise<{ tabId: number | null; title: string | null }> => {
     try {
       const response = await new Promise<any>((resolve) => {
         try {
           chrome.runtime.sendMessage({ type: 'getCurrentTab' }, (res) => resolve(res));
         } catch (err) {
+          debug.warn('[useContentRefresh] sendMessage failed:', err);
           resolve(null);
         }
       });
@@ -50,8 +55,8 @@ export const useContentRefresh = ({
   }, []);
 
   /**
-   * Trigger a manual content refresh
-   * This fetches the current tab and forces a fresh content load
+   * Trigger a manual content refresh.
+   * Fetches the current tab and forces a fresh content load.
    */
   const triggerManualRefresh = useCallback(async () => {
     debug.log('[useContentRefresh] Manual refresh requested');
@@ -67,10 +72,10 @@ export const useContentRefresh = ({
       let tabId: number | null = null;
       let title: string | null = null;
       
-      if (currentTabId !== null && currentTabId !== undefined) {
+      if (currentTabId != null) {
         // Use the tracked tab ID (doesn't change when agent opens new tabs)
         tabId = currentTabId;
-        title = currentTabTitleRef.current || null;
+        title = currentTabTitle || null;
         debug.log('[useContentRefresh] Using tracked tab:', tabId, title);
       } else {
         // Fallback: query for current active tab
@@ -80,16 +85,15 @@ export const useContentRefresh = ({
         debug.log('[useContentRefresh] Queried for active tab:', tabId, title);
       }
       
-      if (tabId !== null) {
+      if (tabId != null) {
         // Update tab state
+        const safeTitle = title || '';
         setCurrentTabId(tabId);
-        setCurrentTabTitle(title || '');
-        currentTabTitleRef.current = title || '';
-        setTabTitleVersion(prev => prev + 1); // Force UI update
+        setCurrentTabTitle(safeTitle);
+        setTabTitleVersion?.(prev => prev + 1); // Force UI update (if provided)
         
         // Clear cache to force fresh fetch
-        const cacheKey = `${tabId}`;
-        contentCacheRef.current.delete(cacheKey);
+        contentCacheRef.current.delete(String(tabId));
         
         // Fetch fresh content immediately (no delay!)
         await fetchFreshPageContent(true, tabId);
@@ -102,7 +106,7 @@ export const useContentRefresh = ({
   }, [
     setCurrentTabId,
     setCurrentTabTitle,
-    currentTabTitleRef,
+    currentTabTitle,
     setTabTitleVersion,
     contentCacheRef,
     fetchFreshPageContent,

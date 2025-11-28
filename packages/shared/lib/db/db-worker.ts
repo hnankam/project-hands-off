@@ -14,8 +14,9 @@ import { surrealdbWasmEngines } from '@surrealdb/wasm';
 // Debug logging toggle (set to true for development)
 const DEBUG = true;
 
-// Timestamp helper for consistent logging
-const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+// Simple logging helper for worker context
+const log = (...args: any[]) => DEBUG && console.log(...args);
+const logError = (...args: any[]) => console.error(...args);
 
 // Worker state
 let db: Surreal | null = null;
@@ -41,7 +42,7 @@ interface WorkerResponse {
  */
 async function initializeDB(dbName: string, useMemory: boolean): Promise<void> {
   if (isConnected && db) {
-    DEBUG && console.log(`${ts()} [DB Worker] Already connected`);
+    log('[DB Worker] Already connected');
     return;
   }
 
@@ -54,9 +55,9 @@ async function initializeDB(dbName: string, useMemory: boolean): Promise<void> {
     // Connect to memory or IndexedDB
     const connectionString = useMemory ? 'mem://' : `indxdb://${dbName}`;
     
-    DEBUG && console.log(`${ts()} [DB Worker] 🔌 Connecting to SurrealDB...`);
-    DEBUG && console.log(`${ts()} [DB Worker]    Mode: ${useMemory ? 'IN-MEMORY (fast, no persistence)' : 'IndexedDB (persistent)'}`);
-    DEBUG && console.log(`${ts()} [DB Worker]    Connection: ${connectionString}`);
+    log('[DB Worker]  Connecting to SurrealDB...');
+    log(`[DB Worker]    Mode: ${useMemory ? 'IN-MEMORY (fast, no persistence)' : 'IndexedDB (persistent)'}`);
+    log(`[DB Worker]    Connection: ${connectionString}`);
     
     await db.connect(connectionString);
 
@@ -67,10 +68,10 @@ async function initializeDB(dbName: string, useMemory: boolean): Promise<void> {
     });
 
     isConnected = true;
-    DEBUG && console.log(`${ts()} [DB Worker] ✅ Connected successfully`);
-    DEBUG && console.log(`${ts()} [DB Worker] ℹ️  Storage: ${useMemory ? 'RAM (cleared on refresh)' : 'IndexedDB (persistent across sessions)'}`);
+    log('[DB Worker] Connected successfully');
+    log(`[DB Worker] Storage: ${useMemory ? 'RAM (cleared on refresh)' : 'IndexedDB (persistent across sessions)'}`);
   } catch (error) {
-    console.error(`${ts()} [DB Worker] ❌ Failed to connect:`, error);
+    logError('[DB Worker] Failed to connect:', error);
     throw error;
   }
 }
@@ -82,10 +83,6 @@ async function initializeEmbeddingsSchema(): Promise<void> {
   if (!db) throw new Error('Database not connected');
 
   await db.query(`
-    -- ========================================
-    -- Separate tables with HNSW vector indexes for native vector search
-    -- ========================================
-    
     -- HTML chunks table with HNSW vector index
     DEFINE TABLE IF NOT EXISTS html_chunks SCHEMAFULL;
     DEFINE FIELD IF NOT EXISTS pageURL ON html_chunks TYPE string;
@@ -96,17 +93,7 @@ async function initializeEmbeddingsSchema(): Promise<void> {
     DEFINE FIELD IF NOT EXISTS embedding ON html_chunks TYPE array<float>;
     DEFINE FIELD IF NOT EXISTS sessionId ON html_chunks TYPE option<string>;
     DEFINE FIELD IF NOT EXISTS timestamp ON html_chunks TYPE datetime;
-    
-    -- HNSW vector index for HTML chunks
-    DEFINE INDEX IF NOT EXISTS hnsw_html_idx ON html_chunks 
-      FIELDS embedding 
-      HNSW DIMENSION 384 
-      DIST COSINE 
-      TYPE F64 
-      EFC 150 
-      M 12;
-    
-    -- Regular indexes for filtering
+    DEFINE INDEX IF NOT EXISTS hnsw_html_idx ON html_chunks FIELDS embedding HNSW DIMENSION 384 DIST COSINE TYPE F64 EFC 150 M 12;
     DEFINE INDEX IF NOT EXISTS html_chunks_url ON html_chunks FIELDS pageURL;
     DEFINE INDEX IF NOT EXISTS html_chunks_session ON html_chunks FIELDS sessionId;
     DEFINE INDEX IF NOT EXISTS html_chunks_timestamp ON html_chunks FIELDS timestamp;
@@ -119,17 +106,7 @@ async function initializeEmbeddingsSchema(): Promise<void> {
     DEFINE FIELD IF NOT EXISTS embedding ON form_fields TYPE array<float>;
     DEFINE FIELD IF NOT EXISTS sessionId ON form_fields TYPE option<string>;
     DEFINE FIELD IF NOT EXISTS timestamp ON form_fields TYPE datetime;
-    
-    -- HNSW vector index for form field groups
-    DEFINE INDEX IF NOT EXISTS hnsw_form_idx ON form_fields 
-      FIELDS embedding 
-      HNSW DIMENSION 384 
-      DIST COSINE 
-      TYPE F64 
-      EFC 150 
-      M 12;
-    
-    -- Regular indexes for filtering
+    DEFINE INDEX IF NOT EXISTS hnsw_form_idx ON form_fields FIELDS embedding HNSW DIMENSION 384 DIST COSINE TYPE F64 EFC 150 M 12;
     DEFINE INDEX IF NOT EXISTS form_fields_url ON form_fields FIELDS pageURL;
     DEFINE INDEX IF NOT EXISTS form_fields_session ON form_fields FIELDS sessionId;
     DEFINE INDEX IF NOT EXISTS form_fields_timestamp ON form_fields FIELDS timestamp;
@@ -142,23 +119,13 @@ async function initializeEmbeddingsSchema(): Promise<void> {
     DEFINE FIELD IF NOT EXISTS embedding ON clickable_elements TYPE array<float>;
     DEFINE FIELD IF NOT EXISTS sessionId ON clickable_elements TYPE option<string>;
     DEFINE FIELD IF NOT EXISTS timestamp ON clickable_elements TYPE datetime;
-    
-    -- HNSW vector index for clickable element groups
-    DEFINE INDEX IF NOT EXISTS hnsw_clickable_idx ON clickable_elements 
-      FIELDS embedding 
-      HNSW DIMENSION 384 
-      DIST COSINE 
-      TYPE F64 
-      EFC 150 
-      M 12;
-    
-    -- Regular indexes for filtering
+    DEFINE INDEX IF NOT EXISTS hnsw_clickable_idx ON clickable_elements FIELDS embedding HNSW DIMENSION 384 DIST COSINE TYPE F64 EFC 150 M 12;
     DEFINE INDEX IF NOT EXISTS clickable_elements_url ON clickable_elements FIELDS pageURL;
     DEFINE INDEX IF NOT EXISTS clickable_elements_session ON clickable_elements FIELDS sessionId;
     DEFINE INDEX IF NOT EXISTS clickable_elements_timestamp ON clickable_elements FIELDS timestamp;
   `);
 
-  DEBUG && console.log(`${ts()} [DB Worker] ✅ Schema initialized with HNSW indexes`);
+  log('[DB Worker] Schema initialized with HNSW indexes');
 }
 
 /**
@@ -185,7 +152,7 @@ async function storeHTMLChunks(payload: {
     url: payload.pageURL 
   });
 
-  DEBUG && console.log(`${ts()} [DB Worker] Storing ${payload.chunks.length} HTML chunks in batches of ${BATCH_SIZE} (parallel)...`);
+  log(`[DB Worker] Storing ${payload.chunks.length} HTML chunks in batches of ${BATCH_SIZE}...`);
 
   // Create batches
   const batches: Array<typeof payload.chunks> = [];
@@ -193,10 +160,9 @@ async function storeHTMLChunks(payload: {
     batches.push(payload.chunks.slice(i, i + BATCH_SIZE));
   }
 
-  // Process ALL batches in parallel
+  // Process batches in parallel (WASM can handle concurrent operations)
   await Promise.all(batches.map(async (batchChunks, batchIndex) => {
     if (!db) throw new Error('Database not connected');
-    const batchNum = batchIndex + 1;
     const records = batchChunks.map(chunk => ({
       pageURL: payload.pageURL,
       pageTitle: payload.pageTitle,
@@ -209,10 +175,10 @@ async function storeHTMLChunks(payload: {
     }));
     
     await db.query(`INSERT INTO html_chunks $records`, { records });
-    DEBUG && console.log(`${ts()} [DB Worker] Batch ${batchNum}/${batches.length} complete`);
+    log(`[DB Worker] Batch ${batchIndex + 1}/${batches.length} complete`);
   }));
 
-  DEBUG && console.log(`${ts()} [DB Worker] ✅ Stored ${payload.chunks.length} HTML chunks`);
+  log(`[DB Worker] Stored ${payload.chunks.length} HTML chunks`);
 }
 
 /**
@@ -244,7 +210,7 @@ async function storeFormFields(payload: {
       batches.push(payload.groups.slice(i, i + BATCH_SIZE));
     }
 
-    // Process ALL batches in parallel
+    // Process batches in parallel
     await Promise.all(batches.map(async (batchGroups, batchIndex) => {
       if (!db) throw new Error('Database not connected');
       const records = batchGroups.map(group => ({
@@ -257,11 +223,11 @@ async function storeFormFields(payload: {
       }));
       
       await db.query(`INSERT INTO form_fields $records`, { records });
-      DEBUG && console.log(`${ts()} [DB Worker] Form fields batch ${batchIndex + 1}/${batches.length} complete`);
+      log(`[DB Worker] Form fields batch ${batchIndex + 1}/${batches.length} complete`);
     }));
   }
 
-  DEBUG && console.log(`${ts()} [DB Worker] ✅ Stored ${payload.groups.length} form field groups`);
+  log(`[DB Worker] Stored ${payload.groups.length} form field groups`);
 }
 
 /**
@@ -293,7 +259,7 @@ async function storeClickableElements(payload: {
       batches.push(payload.groups.slice(i, i + BATCH_SIZE));
     }
 
-    // Process ALL batches in parallel
+    // Process batches in parallel
     await Promise.all(batches.map(async (batchGroups, batchIndex) => {
       if (!db) throw new Error('Database not connected');
       const records = batchGroups.map(group => ({
@@ -306,11 +272,11 @@ async function storeClickableElements(payload: {
       }));
       
       await db.query(`INSERT INTO clickable_elements $records`, { records });
-      DEBUG && console.log(`${ts()} [DB Worker] Clickable elements batch ${batchIndex + 1}/${batches.length} complete`);
+      log(`[DB Worker] Clickable elements batch ${batchIndex + 1}/${batches.length} complete`);
     }));
   }
 
-  DEBUG && console.log(`${ts()} [DB Worker] ✅ Stored ${payload.groups.length} clickable element groups`);
+  log(`[DB Worker] Stored ${payload.groups.length} clickable element groups`);
 }
 
 /**
@@ -363,9 +329,9 @@ async function storeDOMUpdate(payload: {
       currentTimestamp: timestamp,
     });
 
-    DEBUG && console.log(`${ts()} [DB Worker] ✅ Stored DOM update and decayed older entries`);
+    log('[DB Worker] Stored DOM update and decayed older entries');
   } catch (error) {
-    console.error(`${ts()} [DB Worker] ❌ Failed to store DOM update:`, error);
+    logError('[DB Worker] Failed to store DOM update:', error);
     throw error;
   }
 }
@@ -421,12 +387,12 @@ async function searchFormFields(payload: {
 }): Promise<any[]> {
   if (!db) throw new Error('Database not connected');
 
-  DEBUG && console.log(`${ts()} [DB Worker] 🔍 searchFormFields called:`, { pageURL: payload.pageURL, topK: payload.topK });
+  log('[DB Worker] searchFormFields called:', { pageURL: payload.pageURL, topK: payload.topK });
 
   const groupTopK = Math.ceil(payload.topK / 10);
   const efSearch = Math.max(groupTopK * 3, 50);
   
-  DEBUG && console.log(`${ts()} [DB Worker] Executing form fields query...`);
+  log('[DB Worker] Executing form fields query...');
   const groupResults = await db.query<any[]>(`
     LET $q = $embedding;
     SELECT 
@@ -444,7 +410,7 @@ async function searchFormFields(payload: {
     embedding: payload.queryEmbedding,
   });
   
-  DEBUG && console.log(`${ts()} [DB Worker] Query complete, results:`, groupResults?.length);
+  log('[DB Worker] Query complete, results:', groupResults?.length);
 
   if (!groupResults || groupResults.length < 2 || !groupResults[1] || groupResults[1].length === 0) {
     return [];
@@ -464,7 +430,7 @@ async function searchFormFields(payload: {
         });
       });
     } catch (e) {
-      console.error(`${ts()} [DB Worker] Failed to parse fieldsJSON:`, e);
+      logError('[DB Worker] Failed to parse fieldsJSON:', e);
     }
   }
 
@@ -519,7 +485,7 @@ async function searchClickableElements(payload: {
         });
       });
     } catch (e) {
-      console.error(`${ts()} [DB Worker] Failed to parse elementsJSON:`, e);
+      logError('[DB Worker] Failed to parse elementsJSON:', e);
     }
   }
 
@@ -593,6 +559,18 @@ async function handleMessage(message: WorkerMessage): Promise<WorkerResponse> {
         data = await executeQuery(message.payload);
         break;
 
+      case 'terminate':
+        // Gracefully close database connection
+        if (db && isConnected) {
+          await db.close();
+          db = null;
+          isConnected = false;
+          initializationPromise = null;
+          log('[DB Worker] Database connection closed');
+        }
+        data = { terminated: true };
+        break;
+
       default:
         throw new Error(`Unknown message type: ${message.type}`);
     }
@@ -603,7 +581,7 @@ async function handleMessage(message: WorkerMessage): Promise<WorkerResponse> {
       data,
     };
   } catch (error) {
-    console.error(`${ts()} [DB Worker] Error handling message:`, error);
+    logError('[DB Worker] Error handling message:', error);
     return {
       id: message.id,
       success: false,
@@ -619,6 +597,6 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
 });
 
 // Signal that worker is ready
-DEBUG && console.log(`${ts()} [DB Worker] 🚀 Worker initialized and ready`);
+log('[DB Worker] Worker initialized and ready');
 self.postMessage({ type: 'ready' });
 

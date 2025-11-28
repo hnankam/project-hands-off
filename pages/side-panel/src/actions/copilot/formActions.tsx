@@ -1,6 +1,6 @@
 /**
  * Form Manipulation CopilotKit Actions
- * 
+ *
  * Actions for filling form fields (inputs, textareas, selects, checkboxes, contenteditable)
  */
 
@@ -9,13 +9,65 @@ import { debug } from '@extension/shared';
 import { ActionStatus } from '../../components/ActionStatus';
 import { handleInputData } from '../index';
 
-// Timestamp helper for consistent logging
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Maximum length for selector display */
+const MAX_SELECTOR_LENGTH = 52;
+
+/** Maximum length for value display */
+const MAX_VALUE_LENGTH = 24;
+
+/** Log prefix for agent actions */
+const LOG_PREFIX = {
+  request: '[Agent Request]',
+  response: '[Agent Response]',
+} as const;
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/** Timestamp helper for consistent logging */
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
 
+/** Status values for action render */
+type ActionPhase = 'pending' | 'inProgress' | 'complete' | 'error';
+
+/** Props passed to action render functions */
+interface ActionRenderProps {
+  status: ActionPhase;
+  args?: InputDataArgs;
+  result?: unknown;
+  error?: Error | string;
+}
+
+/** Arguments for inputData action */
+interface InputDataArgs {
+  cssSelector?: string;
+  value?: string;
+  clearFirst?: boolean;
+  moveCursor?: boolean;
+}
+
+/** Handler arguments for inputData */
+interface InputDataHandlerArgs {
+  cssSelector: string;
+  value: string;
+  clearFirst?: boolean;
+  moveCursor?: boolean;
+}
+
+/** Dependencies for form actions */
 interface FormActionDependencies {
   isLight: boolean;
-  clipText: (text: any, maxLength?: number) => string;
+  clipText: (text: string, maxLength?: number) => string;
 }
+
+// ============================================================================
+// ACTION CREATORS
+// ============================================================================
 
 /**
  * Creates the inputData action
@@ -23,7 +75,8 @@ interface FormActionDependencies {
  */
 export const createInputDataAction = ({ isLight, clipText }: FormActionDependencies) => ({
   name: 'inputData',
-  description: 'Fill a form field matched by selector (inputs, textareas, selects, checkboxes, contenteditable). Supports Shadow DOM with >> notation.',
+  description:
+    'Fill a form field matched by selector (inputs, textareas, selects, checkboxes, contenteditable). Supports Shadow DOM with >> notation.',
   parameters: [
     {
       name: 'cssSelector',
@@ -53,24 +106,26 @@ export const createInputDataAction = ({ isLight, clipText }: FormActionDependenc
       required: false,
     },
   ],
-  render: ({ status, args }: any) => (
-    <ActionStatus
-      toolName={`Input into ${clipText((args as any)?.cssSelector, 52)}: "${clipText((args as any)?.value, 24)}"`}
-      status={status as any}
-      isLight={isLight}
-      messages={{ pending: 'Filling field…', inProgress: 'Filling field…', complete: 'Field filled' }}
-    />
-  ),
-  handler: async ({ cssSelector, value, clearFirst = true, moveCursor = true }: { 
-    cssSelector: string; 
-    value: string; 
-    clearFirst?: boolean; 
-    moveCursor?: boolean;
-  }) => {
-    debug.log(ts(), '[Agent Request] inputData:', { cssSelector, value, clearFirst, moveCursor });
+  render: ({ status, args, result, error }: ActionRenderProps) => {
+    const selector = args?.cssSelector ?? '';
+    const value = args?.value ?? '';
+
+    return (
+      <ActionStatus
+        toolName={`Input into ${clipText(selector, MAX_SELECTOR_LENGTH)}: "${clipText(value, MAX_VALUE_LENGTH)}"`}
+        status={status}
+        isLight={isLight}
+        messages={{ pending: 'Filling field…', inProgress: 'Filling field…', complete: 'Field filled' }}
+        args={args}
+        result={result}
+        error={error}
+      />
+    );
+  },
+  handler: async ({ cssSelector, value, clearFirst = true, moveCursor = true }: InputDataHandlerArgs) => {
+    debug.log(ts(), LOG_PREFIX.request, 'inputData:', { cssSelector, value, clearFirst, moveCursor });
     const result = await handleInputData(cssSelector, value, clearFirst, moveCursor);
-    debug.log(ts(), '[Agent Response] inputData:', result);
+    debug.log(ts(), LOG_PREFIX.response, 'inputData:', result);
     return result;
   },
 });
-

@@ -58,6 +58,7 @@ interface ConnectionEntry {
   error: string | null;
   pingInterval: NodeJS.Timeout | null;
   initializedFromStorage: boolean;
+  isIntentionalClose: boolean; // Track when close is intentional to suppress errors
 }
 
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;
@@ -122,6 +123,7 @@ const cleanupEntryIfIdle = (entry: ConnectionEntry) => {
 
   if (entry.ws) {
     try {
+      entry.isIntentionalClose = true; // Mark as intentional to suppress error logs
       entry.ws.close();
     } catch {}
     entry.ws = null;
@@ -179,15 +181,34 @@ const ensureConnection = (entry: ConnectionEntry) => {
 
   if (entry.ws) {
     try {
+      entry.isIntentionalClose = true;
       entry.ws.close();
     } catch {}
     entry.ws = null;
   }
 
+  // Reset intentional close flag for new connection
+  entry.isIntentionalClose = false;
+
+  // Add minimal delay before creating new connection to allow cleanup to complete
+  // This prevents the "WebSocket is closed before connection is established" browser error
+  // Using requestAnimationFrame for minimal delay while still allowing event loop to process
+  setTimeout(() => {
+    // Re-check if still enabled after delay
+    if (entry.enabledCount <= 0) {
+      log(`[useUsageStream] Connection cancelled after delay for session ${entry.sessionId}`);
+      return;
+    }
+    
+    createWebSocketConnection(entry);
+  }, 20); // Reduced from 50ms to 20ms - just enough for cleanup
+};
+
+const createWebSocketConnection = (entry: ConnectionEntry) => {
   const baseUrl = entry.wsUrl || 'ws://localhost:8001';
   const url = `${baseUrl}/ws/usage/${entry.sessionId}`;
 
-  log(`🔌 [useUsageStream] Opening WebSocket for session ${entry.sessionId}: ${url}`);
+  log(`[useUsageStream] Opening WebSocket for session ${entry.sessionId}: ${url}`);
 
   try {
     const ws = new WebSocket(url);
@@ -196,7 +217,7 @@ const ensureConnection = (entry: ConnectionEntry) => {
     entry.hasReceivedMessage = false;
 
     ws.onopen = () => {
-      log(`✅ [useUsageStream] WebSocket connected for session ${entry.sessionId}`);
+      log(`[useUsageStream] WebSocket connected for session ${entry.sessionId}`);
       entry.isConnected = true;
       entry.error = null;
       entry.reconnectAttempts = 0;
@@ -238,25 +259,34 @@ const ensureConnection = (entry: ConnectionEntry) => {
         entry.hasReceivedMessage = true;
         notifyListeners(entry);
       } catch (e) {
-        err('❌ [useUsageStream] Failed to parse WebSocket message:', e);
+        err('[useUsageStream] Failed to parse WebSocket message:', e);
       }
     };
 
     ws.onerror = event => {
-      err('❌ [useUsageStream] WebSocket error:', event);
+      // Suppress error logs for intentional closes (cleanup during session switch)
+      if (entry.isIntentionalClose) {
+        log(`[useUsageStream] WebSocket error suppressed (intentional close) for session ${entry.sessionId}`);
+        return;
+      }
+      err('[useUsageStream] WebSocket error:', event);
       entry.error = 'WebSocket connection error';
       notifyListeners(entry);
     };
 
     ws.onclose = event => {
       const duration = entry.connectionOpenedAt ? Date.now() - entry.connectionOpenedAt : 0;
-      log('🔌 [useUsageStream] WebSocket closed', {
+      
+      // Suppress close logs for intentional closes
+      if (!entry.isIntentionalClose) {
+      log('[useUsageStream] WebSocket closed', {
         sessionId: entry.sessionId,
         code: event.code,
         reason: event.reason,
         wasClean: event.wasClean,
         duration,
       });
+      }
 
       entry.isConnected = false;
       notifyListeners(entry);
@@ -268,6 +298,12 @@ const ensureConnection = (entry: ConnectionEntry) => {
 
       entry.ws = null;
 
+      // Skip reconnection logic for intentional closes
+      if (entry.isIntentionalClose) {
+        cleanupEntryIfIdle(entry);
+        return;
+      }
+
       const neverOpened = entry.connectionOpenedAt === 0;
       const closedImmediately =
         entry.connectionOpenedAt > 0 && duration < 200 && !entry.hasReceivedMessage;
@@ -276,7 +312,7 @@ const ensureConnection = (entry: ConnectionEntry) => {
       if (immediateFailure) {
         entry.immediateFailureCount += 1;
         log(
-          `⚠️ [useUsageStream] Immediate failure for session ${entry.sessionId} ` +
+          `[useUsageStream] Immediate failure for session ${entry.sessionId} ` +
             `(${entry.immediateFailureCount}/3)`,
         );
 
@@ -296,11 +332,27 @@ const ensureConnection = (entry: ConnectionEntry) => {
       }
     };
   } catch (error) {
-    err('❌ [useUsageStream] Error creating WebSocket:', error);
+    err('[useUsageStream] Error creating WebSocket:', error);
     entry.error = error instanceof Error ? error.message : 'Connection failed';
     notifyListeners(entry);
     scheduleReconnect(entry);
   }
+};
+
+/**
+ * Check if usage data has actual values (not just default zeros)
+ */
+const hasActualUsageData = (usage?: CumulativeUsage): boolean => {
+  if (!usage) return false;
+  return usage.request > 0 || usage.response > 0 || usage.total > 0 || usage.requestCount > 0;
+};
+
+/**
+ * Get the total token count for comparison
+ */
+const getTotalTokens = (usage?: CumulativeUsage): number => {
+  if (!usage) return 0;
+  return usage.total || (usage.request + usage.response);
 };
 
 const getOrCreateEntry = (
@@ -313,9 +365,24 @@ const getOrCreateEntry = (
   const key = `${normalizedUrl}::${sessionId}`;
   const existing = connectionPool.get(key);
 
+  // Check if we have ACTUAL data (not just default zeros)
+  const hasRealData = hasActualUsageData(initialCumulative) || Boolean(initialLastUsage);
+  const incomingTotal = getTotalTokens(initialCumulative);
+
   if (existing) {
-    const hasInitialData = Boolean(initialCumulative) || Boolean(initialLastUsage);
-    if (hasInitialData && !existing.initializedFromStorage) {
+    const existingTotal = getTotalTokens(existing.cumulativeUsage);
+    
+    // ALWAYS update with DB data if:
+    // 1. We have real incoming data AND
+    // 2. Either: entry wasn't initialized from storage, OR incoming data is higher (DB has full history)
+    // This ensures DB data (which has historical totals) takes precedence over partial WebSocket data
+    const shouldUpdate = hasRealData && (
+      !existing.initializedFromStorage || 
+      incomingTotal > existingTotal
+    );
+    
+    if (shouldUpdate) {
+      log(`[useUsageStream] Updating entry for session ${sessionId}: incoming=${incomingTotal}, existing=${existingTotal}`);
       if (initialCumulative) {
         existing.cumulativeUsage = cloneCumulative(initialCumulative);
       }
@@ -345,9 +412,12 @@ const getOrCreateEntry = (
     isConnected: false,
     error: null,
     pingInterval: null,
-    initializedFromStorage: Boolean(initialCumulative || initialLastUsage),
+    // Only mark as initialized if we have REAL data, not just default zeros
+    initializedFromStorage: hasRealData,
+    isIntentionalClose: false,
   };
 
+  log(`[useUsageStream] Created new entry for session ${sessionId} with total=${incomingTotal}`);
   connectionPool.set(key, entry);
   return entry;
 };
@@ -370,6 +440,7 @@ const decrementEnabled = (entry: ConnectionEntry) => {
 
     if (entry.ws) {
       try {
+        entry.isIntentionalClose = true; // Mark as intentional to suppress error logs
         entry.ws.close();
       } catch {}
     } else {
@@ -437,11 +508,14 @@ export function useUsageStream(
       entry.listeners.delete(listener);
 
       if (enabledRef.current) {
+        // decrementEnabled handles cleanup via ws.onclose or cleanupEntryIfIdle
         decrementEnabled(entry);
         enabledRef.current = false;
+      } else {
+        // Only call cleanupEntryIfIdle if decrementEnabled wasn't called
+        // (decrementEnabled already handles cleanup internally)
+        cleanupEntryIfIdle(entry);
       }
-
-      cleanupEntryIfIdle(entry);
 
       if (entryRef.current === entry) {
         entryRef.current = null;

@@ -6,7 +6,7 @@
  */
 
 import { useEffect } from 'react';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 
 export function useThemeManager(isLight: boolean, theme: string): void {
   // Apply dark mode class to document element for proper CopilotKit theming
@@ -25,7 +25,7 @@ export function useThemeManager(isLight: boolean, theme: string): void {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {
       // Re-evaluate system theme
-      exampleThemeStorage.setTheme('system');
+      themeStorage.setTheme('system');
     };
     
     mediaQuery.addEventListener('change', handleChange);

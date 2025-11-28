@@ -7,12 +7,26 @@
  * 3. Automatically accept invitation after authentication
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import authClient from '../lib/auth-client';
 import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const REDIRECT_DELAYS = {
+  afterAccept: 2000,
+  afterDecline: 1500,
+} as const;
+const PASSWORD_MIN_LENGTH = 8;
+
+// ============================================================================
+// TYPES
+// ============================================================================
 
 interface Invitation {
   id: string;
@@ -38,9 +52,18 @@ interface AcceptInvitationPageProps {
   onSuccess?: () => void;
 }
 
+// ============================================================================
+// COMPONENT
+// ============================================================================
+
 export default function AcceptInvitationPage({ invitationId, onSuccess }: AcceptInvitationPageProps) {
   const { signIn, signUp, session } = useAuth();
-  const { isLight } = useStorage(exampleThemeStorage);
+  const { isLight } = useStorage(themeStorage);
+  
+  // Refs for cleanup
+  const isMounted = useRef(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // UI state
   const [isSignUp, setIsSignUp] = useState(false);
@@ -60,43 +83,115 @@ export default function AcceptInvitationPage({ invitationId, onSuccess }: Accept
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // Load invitation details
+  // Cleanup on unmount
   useEffect(() => {
-    loadInvitation();
-  }, [invitationId]);
+    isMounted.current = true;
+    
+    return () => {
+      isMounted.current = false;
+      // Cancel any pending fetch requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      // Clear any pending timeouts
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
-  // Auto-accept invitation if user is already logged in
-  useEffect(() => {
-    if (session && invitation) {
-      handleAutoAccept();
+  // Accept invitation helper
+  const acceptInvitation = useCallback(async () => {
+    if (!invitation) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/invitations/${invitationId}/accept`, {
+        method: 'POST',
+        credentials: 'include',
+        signal: abortControllerRef.current.signal,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to accept invitation');
+      }
+
+      if (isMounted.current) {
+        setSuccess(`Successfully joined ${invitation.organization.name}!`);
+      }
+      
+      // Wait a moment before calling onSuccess
+      timeoutRef.current = setTimeout(() => {
+        if (isMounted.current) {
+          onSuccess?.();
+        }
+      }, REDIRECT_DELAYS.afterAccept);
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
+      if (isMounted.current) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to accept invitation';
+        setError(errorMessage);
     }
-  }, [session, invitation]);
+    } finally {
+      if (isMounted.current) {
+        setIsLoading(false);
+      }
+    }
+  }, [invitation, invitationId, onSuccess]);
 
-  const loadInvitation = async () => {
+  // Load invitation details
+  const loadInvitation = useCallback(async () => {
     setInvitationLoading(true);
     setInvitationError(null);
 
+    // Create new abort controller for this request
+    abortControllerRef.current = new AbortController();
+
     try {
-      // Fetch invitation from backend
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${baseURL}/api/invitations/${invitationId}`);
+      const response = await fetch(`${API_BASE_URL}/api/invitations/${invitationId}`, {
+        signal: abortControllerRef.current.signal,
+      });
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.error || `Invitation with ID ${invitationId} not found`);
       }
 
+      if (isMounted.current) {
       setInvitation(data.invitation);
-      // Pre-fill email field
       setEmail(data.invitation.email);
-    } catch (err: any) {
-      setInvitationError(err.message || `Invitation with ID ${invitationId} not found`);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        // Request was aborted, ignore
+        return;
+      }
+      if (isMounted.current) {
+        const errorMessage = err instanceof Error ? err.message : `Invitation with ID ${invitationId} not found`;
+        setInvitationError(errorMessage);
+      }
     } finally {
+      if (isMounted.current) {
       setInvitationLoading(false);
     }
-  };
+    }
+  }, [invitationId]);
 
-  const handleAutoAccept = async () => {
+  // Load invitation on mount
+  useEffect(() => {
+    loadInvitation();
+  }, [loadInvitation]);
+
+  // Auto-accept invitation if user is already logged in
+  const handleAutoAccept = useCallback(async () => {
     if (!session || !invitation) return;
 
     // Check if logged-in email matches invitation email
@@ -109,7 +204,13 @@ export default function AcceptInvitationPage({ invitationId, onSuccess }: Accept
 
     // Auto-accept the invitation
     await acceptInvitation();
-  };
+  }, [session, invitation, acceptInvitation]);
+
+  useEffect(() => {
+    if (session && invitation) {
+      handleAutoAccept();
+    }
+  }, [session, invitation, handleAutoAccept]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,41 +243,9 @@ export default function AcceptInvitationPage({ invitationId, onSuccess }: Accept
       // After successful auth, accept invitation
       // Note: The useEffect will trigger auto-accept when session updates
       
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
-      setIsLoading(false);
-    }
-  };
-
-  const acceptInvitation = async () => {
-    if (!invitation) return;
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Accept invitation via backend
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${baseURL}/api/invitations/${invitationId}/accept`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to accept invitation');
-      }
-
-      setSuccess(`Successfully joined ${invitation.organization.name}!`);
-      
-      // Wait a moment before calling onSuccess
-      setTimeout(() => {
-        onSuccess?.();
-      }, 2000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to accept invitation');
-    } finally {
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(errorMessage);
       setIsLoading(false);
     }
   };
@@ -191,11 +260,12 @@ export default function AcceptInvitationPage({ invitationId, onSuccess }: Accept
     setDeclineModalOpen(false);
     setIsLoading(true);
 
+    abortControllerRef.current = new AbortController();
+
     try {
-      // Reject invitation via backend
-      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${baseURL}/api/invitations/${invitationId}/reject`, {
+      const response = await fetch(`${API_BASE_URL}/api/invitations/${invitationId}/reject`, {
         method: 'POST',
+        signal: abortControllerRef.current.signal,
       });
 
       const data = await response.json();
@@ -204,17 +274,28 @@ export default function AcceptInvitationPage({ invitationId, onSuccess }: Accept
         throw new Error(data.error || 'Failed to reject invitation');
       }
 
+      if (isMounted.current) {
       setSuccess('Invitation declined');
+      }
       
       // Redirect to login page after a brief delay
-      setTimeout(() => {
-        // Clear invitation state and return to login
+      timeoutRef.current = setTimeout(() => {
+        if (isMounted.current) {
         onSuccess?.();
-      }, 1500);
-    } catch (err: any) {
-      setError(err.message || 'Failed to reject invitation');
+        }
+      }, REDIRECT_DELAYS.afterDecline);
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
+      if (isMounted.current) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to reject invitation';
+        setError(errorMessage);
+      }
     } finally {
+      if (isMounted.current) {
       setIsLoading(false);
+      }
     }
   };
 
@@ -670,7 +751,7 @@ export default function AcceptInvitationPage({ invitationId, onSuccess }: Accept
                       isLight ? 'bg-white border-gray-300 text-gray-900 placeholder:text-gray-400' : 'bg-[#151C24] border-gray-600 text-white placeholder:text-gray-500',
                     )}
                     placeholder={isSignUp ? 'Create a secure password' : 'Enter your password'}
-                    minLength={8}
+                    minLength={PASSWORD_MIN_LENGTH}
                   />
                   <button
                     type="button"
@@ -713,7 +794,7 @@ export default function AcceptInvitationPage({ invitationId, onSuccess }: Accept
                 </div>
                 {isSignUp && (
                   <p className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    Use at least 8 characters, including a number and symbol.
+                    Use at least {PASSWORD_MIN_LENGTH} characters, including a number and symbol.
                   </p>
                 )}
               </div>
@@ -911,4 +992,3 @@ export default function AcceptInvitationPage({ invitationId, onSuccess }: Accept
     </div>
   );
 }
-

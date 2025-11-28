@@ -1,7 +1,7 @@
 import type { FC } from 'react';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useStorage } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 import { MarkdownRenderer } from './tiptap/MarkdownRenderer';
 
 /**
@@ -26,7 +26,7 @@ import { MarkdownRenderer } from './tiptap/MarkdownRenderer';
  * ```
  */
 export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolean }> = ({ children, isComplete = false }) => {
-  const { isLight } = useStorage(exampleThemeStorage);
+  const { isLight } = useStorage(themeStorage);
   const [isOpen, setIsOpen] = useState(() => !isComplete);
   const [isHovered, setIsHovered] = useState(false);
   const autoCloseTimerRef = useRef<NodeJS.Timeout | null>(null);

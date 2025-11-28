@@ -9,6 +9,7 @@ interface SelectorsBarProps {
   isLight: boolean;
   selectedAgent: string;
   selectedModel: string;
+  isLoadingSession?: boolean;
   showSuggestions: boolean;
   showThoughtBlocks: boolean;
   onAgentChange: (agent: string) => void;
@@ -22,6 +23,7 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
   isLight,
   selectedAgent,
   selectedModel,
+  isLoadingSession = false,
   showSuggestions,
   showThoughtBlocks,
   onAgentChange,
@@ -53,7 +55,7 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
   return (
     <div 
       className={cn(
-        'px-2 py-1.5 flex gap-1 items-center justify-between',
+        'px-2 py-1 flex gap-1 items-center justify-between h-[34px]',
         isLight 
           ? 'bg-gray-50 border-t border-gray-200' 
           : 'bg-[#151C24] border-t border-gray-700'
@@ -64,11 +66,13 @@ export const SelectorsBar: React.FC<SelectorsBarProps> = ({
         <AgentSelector
           isLight={isLight}
           selectedAgent={selectedAgent}
+          isLoadingSession={isLoadingSession}
           onAgentChange={onAgentChange}
         />
         <ModelSelector
           isLight={isLight}
           selectedModel={selectedModel}
+          isLoadingSession={isLoadingSession}
           onModelChange={onModelChange}
           selectedAgent={selectedAgent}
           agents={agents}

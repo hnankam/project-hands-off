@@ -1,7 +1,7 @@
 import type { FC } from 'react';
 import React, { useState, useEffect, useRef } from 'react';
 import { useStorage } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 
 /**
  * MermaidBlock Component
@@ -39,7 +39,7 @@ type Direction = 'TB' | 'BT' | 'LR' | 'RL';
 type DiagramType = 'flowchart' | 'sequence' | 'class' | 'state' | 'er' | 'journey' | 'gantt' | 'pie' | 'git' | 'other';
 
 export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) => {
-  const { isLight } = useStorage(exampleThemeStorage);
+  const { isLight } = useStorage(themeStorage);
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);

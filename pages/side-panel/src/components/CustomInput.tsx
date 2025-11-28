@@ -7,7 +7,7 @@ import { COPIOLITKIT_CONFIG } from '../constants';
 import { ensureFirebase, ensureFirebaseAuth } from '../utils/firebaseStorage';
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { debug, useStorage } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 import { TaskProgressCard, AgentStepState } from './TaskProgressCard';
 import { cn } from '@extension/ui';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator } from '@extension/ui';
@@ -407,7 +407,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
 }) => {
   const context = useChatContext();
   const copilotContext = useCopilotContext();
-  const { isLight } = useStorage(exampleThemeStorage);
+  const { isLight } = useStorage(themeStorage);
   const inputBackground = isLight ? '#ffffff' : '#151C24';
   const inputBackgroundVar = `var(--copilot-kit-input-background-color, ${inputBackground})`;
   const planHorizontalInset = 35;
@@ -580,16 +580,17 @@ export const CustomInput: React.FC<CustomInputProps> = ({
         blockquote: {},
         codeBlock: false, // We'll use CodeBlockLowlight instead
       }),
-      Link.configure({
-        openOnClick: true,
-        autolink: true,
-        defaultProtocol: 'https',
-        HTMLAttributes: {
-          class: 'editor-link',
-          rel: 'noopener noreferrer',
-          target: '_blank',
-        },
-      }),
+      // Link extension is already included or handled elsewhere causing duplication warning
+      // Link.configure({
+      //   openOnClick: true,
+      //   autolink: true,
+      //   defaultProtocol: 'https',
+      //   HTMLAttributes: {
+      //     class: 'editor-link',
+      //     rel: 'noopener noreferrer',
+      //     target: '_blank',
+      //   },
+      // }),
       CodeBlockLowlight.configure({
         lowlight,
         HTMLAttributes: {

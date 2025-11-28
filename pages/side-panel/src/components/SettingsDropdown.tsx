@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 
 interface SettingsDropdownProps {
   isLight: boolean;
@@ -20,7 +20,7 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
   onShowThoughtBlocksChange,
   onExpandClick,
 }) => {
-  const { theme } = useStorage(exampleThemeStorage);
+  const { theme } = useStorage(themeStorage);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -112,7 +112,7 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  exampleThemeStorage.setTheme('light');
+                  themeStorage.setTheme('light');
                 }}
                 className={cn(
                   'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
@@ -133,7 +133,7 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  exampleThemeStorage.setTheme('dark');
+                  themeStorage.setTheme('dark');
                 }}
                 className={cn(
                   'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
@@ -154,7 +154,7 @@ export const SettingsDropdown: React.FC<SettingsDropdownProps> = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  exampleThemeStorage.setTheme('system');
+                  themeStorage.setTheme('system');
                 }}
                 className={cn(
                   'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',

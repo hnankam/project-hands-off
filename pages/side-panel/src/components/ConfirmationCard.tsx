@@ -8,7 +8,7 @@
 
 import React, { useState } from 'react';
 import { useStorage } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 
 export interface ConfirmationCardProps {
   actionDescription: string;
@@ -24,7 +24,7 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
   result,
 }) => {
   // Read theme from storage for reactivity
-  const { isLight } = useStorage(exampleThemeStorage);
+  const { isLight } = useStorage(themeStorage);
   
   // Collapse state for completed confirmations
   const [isExpanded, setIsExpanded] = useState(false);

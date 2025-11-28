@@ -1,6 +1,6 @@
 /**
  * Screenshot CopilotKit Actions
- * 
+ *
  * Actions for capturing screenshots of the current tab
  */
 
@@ -9,12 +9,136 @@ import { debug } from '@extension/shared';
 import { ActionStatus } from '../../components/ActionStatus';
 import { handleTakeScreenshot } from '../index';
 
-// Timestamp helper for consistent logging
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Default JPEG quality */
+const DEFAULT_JPEG_QUALITY = 20;
+
+/** Icon size in pixels */
+const ICON_SIZE = 14;
+
+/** Icon margin right in pixels */
+const ICON_MARGIN_RIGHT = 6;
+
+/** Icon colors by theme */
+const ICON_COLORS = {
+  light: '#4b5563',
+  dark: '#6b7280',
+} as const;
+
+/** Log prefix for agent actions */
+const LOG_PREFIX = {
+  request: '[Agent Request]',
+  response: '[Agent Response]',
+} as const;
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/** Timestamp helper for consistent logging */
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
 
+/** Status values for action render */
+type ActionPhase = 'pending' | 'inProgress' | 'complete' | 'error';
+
+/** Image format options */
+type ImageFormat = 'png' | 'jpeg';
+
+/** Screenshot dimensions */
+interface ScreenshotDimensions {
+  width: number;
+  height: number;
+  devicePixelRatio?: number;
+}
+
+/** Screenshot info from result */
+interface ScreenshotInfo {
+  format: ImageFormat;
+  dimensions?: ScreenshotDimensions;
+  sizeKB?: number;
+  quality?: number;
+  isFullPage: boolean;
+  url?: string;
+}
+
+/** Screenshot result */
+interface ScreenshotResult {
+  status: 'success' | 'error';
+  message: string;
+  screenshotInfo?: ScreenshotInfo;
+}
+
+/** Arguments for takeScreenshot action */
+interface TakeScreenshotArgs {
+  captureFullPage?: boolean;
+  format?: ImageFormat;
+  quality?: number;
+}
+
+/** Props passed to action render functions */
+interface ActionRenderProps {
+  status: ActionPhase;
+  args?: TakeScreenshotArgs;
+  result?: ScreenshotResult;
+  error?: Error | string;
+}
+
+/** Dependencies for screenshot actions */
 interface ScreenshotActionDependencies {
   isLight: boolean;
 }
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+/**
+ * Get icon style based on theme
+ */
+function getIconStyle(isLight: boolean): React.CSSProperties {
+  return {
+    flexShrink: 0,
+    marginRight: ICON_MARGIN_RIGHT,
+    color: isLight ? ICON_COLORS.light : ICON_COLORS.dark,
+  };
+}
+
+/**
+ * Common SVG props for icons
+ */
+const svgProps = {
+  width: ICON_SIZE,
+  height: ICON_SIZE,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  strokeWidth: 2,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+};
+
+// ============================================================================
+// ICONS
+// ============================================================================
+
+/** Camera icon for screenshot action */
+function CameraIcon({ style }: { style: React.CSSProperties }): React.ReactElement {
+  return (
+    <svg {...svgProps} style={style}>
+      <path
+        stroke="currentColor"
+        d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"
+      />
+      <circle stroke="currentColor" cx="12" cy="13" r="3" />
+    </svg>
+  );
+}
+
+// ============================================================================
+// ACTION CREATORS
+// ============================================================================
 
 /**
  * Creates the takeScreenshot action
@@ -46,58 +170,34 @@ export const createTakeScreenshotAction = ({ isLight }: ScreenshotActionDependen
       required: false,
     },
   ],
-  render: ({ status, args, result, error }: any) => {
-    const isFullPage = (args as any)?.captureFullPage;
-    const format = (args as any)?.format || 'jpeg';
-    const quality = (args as any)?.quality || 20;
+  render: ({ status, args, result, error }: ActionRenderProps) => {
+    const isFullPage = args?.captureFullPage ?? false;
+    const format = args?.format ?? 'jpeg';
+    const quality = args?.quality ?? DEFAULT_JPEG_QUALITY;
     const captureType = isFullPage ? 'full page' : 'viewport';
     const details = format === 'jpeg' ? `${format.toUpperCase()}, Q${quality}` : format.toUpperCase();
-    
+
     // Extract screenshot info from result
-    const screenshotInfo = status === 'complete' && result ? (result as any)?.screenshotInfo : null;
+    const screenshotInfo = status === 'complete' ? result?.screenshotInfo : undefined;
     const dimensions = screenshotInfo?.dimensions;
     const sizeKB = screenshotInfo?.sizeKB;
-    
+
     // Build complete message with dimensions and size
     let completeMessage = `Screenshot captured: ${captureType}, ${details}`;
     if (dimensions && sizeKB) {
-      const width = dimensions.width;
-      const height = dimensions.height;
-      completeMessage += ` • ${width}×${height}px, ${sizeKB}KB`;
+      completeMessage += ` • ${dimensions.width}×${dimensions.height}px, ${sizeKB}KB`;
     }
-    
-    // Camera icon
-    const cameraIcon = (
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{ 
-          flexShrink: 0, 
-          marginRight: 6,
-          color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
-        }}
-      >
-        {/* Camera body and lens */}
-        <path stroke="currentColor" d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-        <circle stroke="currentColor" cx="12" cy="13" r="3" />
-      </svg>
-    );
-    
+
     return (
       <ActionStatus
         toolName={`Screenshot (${captureType}, ${details})`}
-        status={status as any}
+        status={status}
         isLight={isLight}
-        icon={cameraIcon}
+        icon={<CameraIcon style={getIconStyle(isLight)} />}
         messages={{
           pending: `Taking ${captureType} screenshot (${details})`,
           inProgress: `Capturing ${captureType} screenshot (${details})`,
-          complete: completeMessage
+          complete: completeMessage,
         }}
         args={args}
         result={result}
@@ -105,18 +205,18 @@ export const createTakeScreenshotAction = ({ isLight }: ScreenshotActionDependen
       />
     );
   },
-  handler: async ({ 
-    captureFullPage = false, 
-    format = 'jpeg', 
-    quality = 20 
-  }: { 
-    captureFullPage?: boolean; 
-    format?: 'png' | 'jpeg'; 
+  handler: async ({
+    captureFullPage = false,
+    format = 'jpeg',
+    quality = DEFAULT_JPEG_QUALITY,
+  }: {
+    captureFullPage?: boolean;
+    format?: ImageFormat;
     quality?: number;
   }) => {
-    const result = await handleTakeScreenshot(captureFullPage, format as 'png' | 'jpeg', quality);
-    debug.log(ts(), '[Agent Response] takeScreenshot:', result);
+    debug.log(ts(), LOG_PREFIX.request, 'takeScreenshot:', { captureFullPage, format, quality });
+    const result = await handleTakeScreenshot(captureFullPage, format, quality);
+    debug.log(ts(), LOG_PREFIX.response, 'takeScreenshot:', result);
     return result;
   },
 });
-

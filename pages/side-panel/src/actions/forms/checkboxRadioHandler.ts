@@ -1,15 +1,68 @@
-import { InputHandler, InputDataResult, InputHandlerOptions, CheckboxRadioOptions, InputType } from './types';
+/**
+ * Checkbox and Radio Input Handler
+ *
+ * Specialized handler for checkbox and radio inputs.
+ * Handles modern web app patterns and grouped radio buttons.
+ */
+
+import { debug as baseDebug } from '@extension/shared';
+import { InputHandler, InputDataResult, CheckboxRadioOptions, InputType } from './types';
 import {
-  findElement,
   isElementVisible,
   scrollIntoView,
   focusAndHighlight,
   showSuccessFeedback,
-  getElementValue,
   triggerInputEvents,
   detectModernInput,
   moveCursorToElement,
 } from './utils';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Log prefix for consistent logging */
+const LOG_PREFIX = '[CheckboxRadio]';
+
+/** Timeout for verifying checked state (ms) */
+const VERIFY_STATE_TIMEOUT_MS = 600;
+
+/** Retry interval for state verification (ms) */
+const VERIFY_RETRY_INTERVAL_MS = 50;
+
+/** Boolean-like true values */
+const TRUTHY_VALUES = ['true', '1', 'yes', 'on', 'checked', 'select', 'enable'] as const;
+
+// ============================================================================
+// DEBUG HELPERS
+// ============================================================================
+
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: unknown[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: unknown[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: unknown[]) => baseDebug.error(ts(), ...args),
+} as const;
+
+// ============================================================================
+// HANDLER-LEVEL DEDUPLICATION
+// ============================================================================
+
+/** Active operation tracking to prevent duplicate executions */
+const activeOperations = new Map<string, Promise<InputDataResult>>();
+
+/**
+ * Create operation key for deduplication
+ */
+function createOperationKey(element: HTMLElement, value: string): string {
+  const id = element.id || '';
+  const name = (element as HTMLInputElement).name || '';
+  return `checkbox:${id}:${name}:${value}`;
+}
+
+// ============================================================================
+// HANDLER CLASS
+// ============================================================================
 
 /**
  * Specialized handler for checkbox and radio inputs
@@ -23,16 +76,44 @@ export class CheckboxRadioHandler implements InputHandler {
   }
 
   async handle(element: HTMLElement, value: string, options: CheckboxRadioOptions = {}): Promise<InputDataResult> {
+    const operationKey = createOperationKey(element, value);
+
+    // Check for in-flight operation
+    const existingOperation = activeOperations.get(operationKey);
+    if (existingOperation) {
+      debug.log(LOG_PREFIX, 'Duplicate operation blocked, reusing existing');
+      return existingOperation;
+    }
+
+    // Create and track operation
+    const operation = this.executeHandle(element, value, options);
+    activeOperations.set(operationKey, operation);
+
+    // Cleanup after completion
+    operation.finally(() => {
+      activeOperations.delete(operationKey);
+    });
+
+    return operation;
+  }
+
+  private async executeHandle(
+    element: HTMLElement,
+    value: string,
+    options: CheckboxRadioOptions,
+  ): Promise<InputDataResult> {
     try {
       const inputElement = element as HTMLInputElement;
       const inputType = inputElement.type;
+
+      debug.log(LOG_PREFIX, 'Handling:', { type: inputType, id: inputElement.id, value });
 
       // Move cursor to element if requested
       if (options.moveCursor) {
         moveCursorToElement(element);
       }
 
-      // Ensure element is visible and scrolled into view for realistic interaction
+      // Ensure element is visible and scrolled into view
       if (!isElementVisible(inputElement)) {
         await scrollIntoView(inputElement);
       }
@@ -41,16 +122,18 @@ export class CheckboxRadioHandler implements InputHandler {
       // Parse the value to determine if it should be checked
       const shouldCheck = this.parseCheckValue(value, options);
 
-      // Handle radio button groups
+      // Handle radio button groups vs checkboxes
       if (inputType === 'radio') {
         return await this.handleRadioButton(inputElement, shouldCheck, options);
       } else {
         return await this.handleCheckbox(inputElement, shouldCheck, options);
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Error:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling ${(element as HTMLInputElement).type} input: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling ${(element as HTMLInputElement).type} input: ${errorMessage}`,
       };
     }
   }
@@ -64,6 +147,7 @@ export class CheckboxRadioHandler implements InputHandler {
 
     // Early exit when no change is needed
     if (inputElement.checked === shouldCheck && !inputElement.indeterminate) {
+      debug.log(LOG_PREFIX, 'Checkbox already in desired state');
       return {
         status: 'success',
         message: `Checkbox already ${shouldCheck ? 'checked' : 'unchecked'}`,
@@ -77,12 +161,12 @@ export class CheckboxRadioHandler implements InputHandler {
       };
     }
 
-    // Some checkboxes can be tri-state; clear indeterminate before setting
+    // Clear indeterminate state if present
     if (inputElement.indeterminate) {
       inputElement.indeterminate = false;
     }
 
-    // Primary approach: set property then dispatch a realistic event sequence
+    // Primary approach: set property then dispatch realistic event sequence
     inputElement.checked = shouldCheck;
     const baseEvents = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
     if (modernDetection.isReactComponent) {
@@ -91,13 +175,12 @@ export class CheckboxRadioHandler implements InputHandler {
     }
     triggerInputEvents(inputElement, baseEvents);
 
-    // Verify the state; if not applied (some frameworks intercept), try label click/click fallback
-    const verified = await this.verifyCheckedState(inputElement, shouldCheck, 600);
+    // Verify the state; if not applied, try label click/click fallback
+    const verified = await this.verifyCheckedState(inputElement, shouldCheck, VERIFY_STATE_TIMEOUT_MS);
     if (!verified) {
+      debug.log(LOG_PREFIX, 'State not verified, trying fallback');
       // Try clicking associated <label for="id">
-      const label = inputElement.id
-        ? (document.querySelector(`label[for="${CSS.escape(inputElement.id)}"]`) as HTMLLabelElement | null)
-        : null;
+      const label = inputElement.id ? this.findLabelForElement(inputElement.id) : null;
       if (label) {
         label.click();
       } else {
@@ -106,11 +189,13 @@ export class CheckboxRadioHandler implements InputHandler {
     }
 
     // Final verification
-    const finalStateOk = await this.verifyCheckedState(inputElement, shouldCheck, 600);
+    const finalStateOk = await this.verifyCheckedState(inputElement, shouldCheck, VERIFY_STATE_TIMEOUT_MS);
 
     if (options.showSuccessFeedback !== false && finalStateOk) {
       showSuccessFeedback(inputElement);
     }
+
+    debug.log(LOG_PREFIX, 'Checkbox result:', { success: finalStateOk, checked: inputElement.checked });
 
     return {
       status: finalStateOk ? 'success' : 'error',
@@ -136,6 +221,7 @@ export class CheckboxRadioHandler implements InputHandler {
 
     if (shouldCheck) {
       if (inputElement.checked) {
+        debug.log(LOG_PREFIX, 'Radio already selected');
         return {
           status: 'success',
           message: 'Radio button already selected',
@@ -148,26 +234,26 @@ export class CheckboxRadioHandler implements InputHandler {
           },
         };
       }
-      // For radio buttons, we need to uncheck other radio buttons in the same group
+
+      // Uncheck other radio buttons in the same group
       this.uncheckRadioGroup(inputElement);
 
-      // Then check this radio button
+      // Check this radio button
       inputElement.checked = true;
 
-      // Trigger events for the checked radio button
+      // Trigger events
       const events = ['pointerdown', 'mousedown', 'input', 'change', 'mouseup', 'click'];
-
-      // For React components, also trigger focus/blur events
       if (modernDetection.isReactComponent) {
         events.push('focus', 'blur');
       }
-
       triggerInputEvents(inputElement, events);
 
       // Show success feedback
       if (options.showSuccessFeedback !== false) {
         showSuccessFeedback(inputElement);
       }
+
+      debug.log(LOG_PREFIX, 'Radio button selected');
 
       return {
         status: 'success',
@@ -181,8 +267,8 @@ export class CheckboxRadioHandler implements InputHandler {
         },
       };
     } else {
-      // For radio buttons, we can't uncheck them directly (they're part of a group)
-      // Instead, we'll return an error explaining this
+      // Cannot uncheck radio buttons directly
+      debug.warn(LOG_PREFIX, 'Cannot uncheck radio button');
       return {
         status: 'error',
         message:
@@ -198,32 +284,36 @@ export class CheckboxRadioHandler implements InputHandler {
     }
 
     const interpretAs = options.interpretAs || 'boolean';
+    const lowerValue = value.toLowerCase().trim();
 
     switch (interpretAs) {
-      case 'boolean':
-        // Handle various boolean representations
-        const lowerValue = value.toLowerCase().trim();
-        return (
-          lowerValue === 'true' ||
-          lowerValue === '1' ||
-          lowerValue === 'yes' ||
-          lowerValue === 'on' ||
-          lowerValue === 'checked' ||
-          lowerValue === 'select' ||
-          lowerValue === 'enable'
-        );
+      case 'boolean': {
+        return TRUTHY_VALUES.includes(lowerValue as (typeof TRUTHY_VALUES)[number]);
+      }
 
-      case 'string':
-        // Treat as string comparison
-        return value.trim() !== '' && value.trim() !== 'false' && value.trim() !== '0';
+      case 'string': {
+        return lowerValue !== '' && lowerValue !== 'false' && lowerValue !== '0';
+      }
 
-      case 'number':
-        // Treat as number comparison
+      case 'number': {
         const numValue = parseFloat(value);
         return !isNaN(numValue) && numValue !== 0;
+      }
 
       default:
         return false;
+    }
+  }
+
+  /**
+   * Find label element for input by ID
+   */
+  private findLabelForElement(elementId: string): HTMLLabelElement | null {
+    try {
+      return document.querySelector(`label[for="${CSS.escape(elementId)}"]`) as HTMLLabelElement | null;
+    } catch {
+      // CSS.escape not available, try without escaping
+      return document.querySelector(`label[for="${elementId}"]`) as HTMLLabelElement | null;
     }
   }
 
@@ -231,19 +321,18 @@ export class CheckboxRadioHandler implements InputHandler {
     const groupName = selectedRadio.name;
 
     if (!groupName) {
-      // If no name attribute, we can't determine the group
       return;
     }
 
     // Find all radio buttons in the same group
     const radioGroup = document.querySelectorAll(`input[type="radio"][name="${groupName}"]`);
 
-    // Uncheck all radio buttons in the group
+    // Uncheck all except selected
     radioGroup.forEach(radio => {
       if (radio !== selectedRadio) {
         (radio as HTMLInputElement).checked = false;
 
-        // Trigger change event for unchecked radios (for modern frameworks)
+        // Trigger change event for modern frameworks
         const modernDetection = detectModernInput(radio as HTMLElement);
         if (modernDetection.isReactComponent || modernDetection.isVueComponent) {
           radio.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
@@ -253,13 +342,13 @@ export class CheckboxRadioHandler implements InputHandler {
   }
 
   /**
-   * Verify a checkbox/radio checked state with small retries to allow framework state updates
+   * Verify checkbox/radio checked state with retries
    */
   private async verifyCheckedState(element: HTMLInputElement, expected: boolean, timeoutMs: number): Promise<boolean> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       if (element.checked === expected) return true;
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise(r => setTimeout(r, VERIFY_RETRY_INTERVAL_MS));
     }
     return element.checked === expected;
   }
@@ -273,6 +362,8 @@ export class CheckboxRadioHandler implements InputHandler {
     options: CheckboxRadioOptions = {},
   ): Promise<InputDataResult> {
     try {
+      debug.log(LOG_PREFIX, 'Handling checkbox group:', { selector, values });
+
       const checkboxes = document.querySelectorAll(selector) as NodeListOf<HTMLInputElement>;
 
       if (checkboxes.length === 0) {
@@ -298,11 +389,9 @@ export class CheckboxRadioHandler implements InputHandler {
           // Trigger events
           const modernDetection = detectModernInput(checkbox);
           const events = ['input', 'change'];
-
           if (modernDetection.isReactComponent) {
             events.push('focus', 'blur');
           }
-
           triggerInputEvents(checkbox, events);
           successCount++;
         }
@@ -311,12 +400,13 @@ export class CheckboxRadioHandler implements InputHandler {
       });
 
       if (options.showSuccessFeedback !== false && successCount > 0) {
-        // Show feedback on the first changed checkbox
         const firstChanged = Array.from(checkboxes).find(cb => values.includes(cb.value) || values.includes(cb.id));
         if (firstChanged) {
           showSuccessFeedback(firstChanged);
         }
       }
+
+      debug.log(LOG_PREFIX, 'Checkbox group result:', { successCount, total: checkboxes.length });
 
       return {
         status: 'success',
@@ -330,9 +420,11 @@ export class CheckboxRadioHandler implements InputHandler {
         },
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Checkbox group error:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling checkbox group: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling checkbox group: ${errorMessage}`,
       };
     }
   }
@@ -346,6 +438,8 @@ export class CheckboxRadioHandler implements InputHandler {
     options: CheckboxRadioOptions = {},
   ): Promise<InputDataResult> {
     try {
+      debug.log(LOG_PREFIX, 'Handling radio group:', { groupName, value });
+
       const radioButtons = document.querySelectorAll(
         `input[type="radio"][name="${groupName}"]`,
       ) as NodeListOf<HTMLInputElement>;
@@ -369,25 +463,25 @@ export class CheckboxRadioHandler implements InputHandler {
         };
       }
 
-      // Uncheck all radio buttons in the group
+      // Uncheck all in group
       this.uncheckRadioGroup(targetRadio);
 
-      // Check the target radio button
+      // Check target
       targetRadio.checked = true;
 
       // Trigger events
       const modernDetection = detectModernInput(targetRadio);
       const events = ['input', 'change'];
-
       if (modernDetection.isReactComponent) {
         events.push('focus', 'blur');
       }
-
       triggerInputEvents(targetRadio, events);
 
       if (options.showSuccessFeedback !== false) {
         showSuccessFeedback(targetRadio);
       }
+
+      debug.log(LOG_PREFIX, 'Radio group selected:', { value, id: targetRadio.id });
 
       return {
         status: 'success',
@@ -401,9 +495,11 @@ export class CheckboxRadioHandler implements InputHandler {
         },
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Radio group error:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling radio group: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling radio group: ${errorMessage}`,
       };
     }
   }

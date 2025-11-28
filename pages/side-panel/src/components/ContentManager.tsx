@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { debug } from '@extension/shared';
 import { TIMING_CONSTANTS, ERROR_MESSAGES } from '../constants';
-import { ts } from '../utils/logging';
 
 // ================================================================================
 // TYPES & INTERFACES
@@ -53,33 +52,33 @@ const logContentDetails = (content: any, source: 'on-demand' | 'broadcast') => {
   const totalSizeKB = (contentString.length / 1024).toFixed(2);
   const totalSizeMB = (contentString.length / (1024 * 1024)).toFixed(2);
   
-  debug.log(ts(), `📊 [ContentManager] Received content size (${source}):`);
-  debug.log(ts(), `   Total size: ${totalSizeKB} KB (${totalSizeMB} MB)`);
-  debug.log(ts(), `   URL: ${content.url}`);
-  debug.log(ts(), `   Title: ${content.title}`);
+  debug.log( `[ContentManager] Received content size (${source}):`);
+  debug.log( `   Total size: ${totalSizeKB} KB (${totalSizeMB} MB)`);
+  debug.log( `   URL: ${content.url}`);
+  debug.log( `   Title: ${content.title}`);
   
   // Log sizes of individual content sections
   if (content.allDOMContent) {
     // Full HTML content
     if (content.allDOMContent.fullHTML) {
       const htmlSizeKB = (content.allDOMContent.fullHTML.length / 1024).toFixed(2);
-      debug.log(ts(), `   - fullHTML: ${htmlSizeKB} KB`);
-      debug.log(ts(), '     Sample:', content.allDOMContent.fullHTML.substring(0, 200));
+      debug.log( `   - fullHTML: ${htmlSizeKB} KB`);
+      debug.log( '     Sample:', content.allDOMContent.fullHTML.substring(0, 200));
     }
     
     // Text content
     if (content.textContent) {
       const textSizeKB = (content.textContent.length / 1024).toFixed(2);
-      debug.log(ts(), `   - textContent: ${textSizeKB} KB`);
-      debug.log(ts(), '     Sample:', content.textContent.substring(0, 200));
+      debug.log( `   - textContent: ${textSizeKB} KB`);
+      debug.log( '     Sample:', content.textContent.substring(0, 200));
     }
     
     // Form data
     if (content.allDOMContent.allFormData) {
       const formDataSize = (JSON.stringify(content.allDOMContent.allFormData).length / 1024).toFixed(2);
-      debug.log(ts(), `   - allFormData: ${formDataSize} KB (${content.allDOMContent.allFormData.length} elements)`);
+      debug.log( `   - allFormData: ${formDataSize} KB (${content.allDOMContent.allFormData.length} elements)`);
       if (content.allDOMContent.allFormData.length > 0) {
-        debug.log(ts(), '     First 10 elements:', content.allDOMContent.allFormData.slice(0, 10).map((f: any) => ({
+        debug.log( '     First 10 elements:', content.allDOMContent.allFormData.slice(0, 10).map((f: any) => ({
           isUnique: f.isUnique,  // Globally unique - FIRST for console visibility
           selector: f.bestSelector,  // Always globally unique
           type: f.type,
@@ -96,9 +95,9 @@ const logContentDetails = (content: any, source: 'on-demand' | 'broadcast') => {
     // Clickable elements
     if (content.allDOMContent.clickableElements) {
       const clickableSize = (JSON.stringify(content.allDOMContent.clickableElements).length / 1024).toFixed(2);
-      debug.log(ts(), `   - clickableElements: ${clickableSize} KB (${content.allDOMContent.clickableElements.length} elements)`);
+      debug.log( `   - clickableElements: ${clickableSize} KB (${content.allDOMContent.clickableElements.length} elements)`);
       if (content.allDOMContent.clickableElements.length > 0) {
-        debug.log(ts(), '     First 10 elements:', content.allDOMContent.clickableElements.slice(0, 10).map((c: any) => ({
+        debug.log( '     First 10 elements:', content.allDOMContent.clickableElements.slice(0, 10).map((c: any) => ({
           isUnique: c.isUnique,  // Globally unique - FIRST for console visibility
           selector: c.selector,  // Always globally unique
           tagName: c.tagName,
@@ -114,7 +113,7 @@ const logContentDetails = (content: any, source: 'on-demand' | 'broadcast') => {
     // Shadow DOM content
     if (content.allDOMContent.shadowContent && content.allDOMContent.shadowContent.length > 0) {
       const shadowSize = (JSON.stringify(content.allDOMContent.shadowContent).length / 1024).toFixed(2);
-      debug.log(ts(), `   - shadowContent: ${shadowSize} KB (${content.allDOMContent.shadowContent.length} shadow roots)`);
+      debug.log( `   - shadowContent: ${shadowSize} KB (${content.allDOMContent.shadowContent.length} shadow roots)`);
     }
   }
 };
@@ -222,7 +221,7 @@ export const useContentManager = ({
    */
   const clearCache = useCallback(() => {
     contentCacheRef.current.clear();
-    debug.log(ts(), '[ContentManager] Cache cleared');
+    debug.log( '[ContentManager] Cache cleared');
   }, []);
   
   // ================================================================================
@@ -257,7 +256,7 @@ export const useContentManager = ({
     const tabId = tabIdOverride || currentTabId;
     
     if (!tabId) {
-      debug.log(ts(), '[ContentManager] No tab ID available');
+      debug.log( '[ContentManager] No tab ID available');
       return;
     }
     
@@ -267,7 +266,7 @@ export const useContentManager = ({
       const cached = contentCacheRef.current.get(cacheKey);
       
       if (cached && isContentFresh(cached.timestamp)) {
-        debug.log(ts(), '[ContentManager] Using fresh cached content');
+        debug.log( '[ContentManager] Using fresh cached content');
         setContentState(prev => ({
           current: cached.content,
           previous: prev.current,
@@ -281,11 +280,11 @@ export const useContentManager = ({
       // Skip if already fetching (only when not forced) - use ref for stable check
       const currentStatus = contentStateRef.current.status;
       if (currentStatus === 'loading' || currentStatus === 'refreshing') {
-        debug.log(ts(), '[ContentManager] Already fetching content');
+        debug.log( '[ContentManager] Already fetching content');
         return;
       }
     } else {
-      debug.log(ts(), '[ContentManager] Force refresh requested - bypassing cache and fetching checks');
+      debug.log( '[ContentManager] Force refresh requested - bypassing cache and fetching checks');
     }
 
     // Determine if this is a refresh (has existing content) or initial load - use ref
@@ -300,7 +299,7 @@ export const useContentManager = ({
       error: undefined
     }));
     
-    debug.log(ts(), `[ContentManager] ${newStatus === 'refreshing' ? 'Refreshing' : 'Loading'} page content...`);
+    debug.log( `[ContentManager] ${newStatus === 'refreshing' ? 'Refreshing' : 'Loading'} page content...`);
 
     try {
       const response = await new Promise<any>((resolve, reject) => {
@@ -317,7 +316,7 @@ export const useContentManager = ({
       });
 
       if (response?.success && response?.content) {
-        debug.log(ts(), '[ContentManager] Content loaded:', response.content);
+        debug.log( '[ContentManager] Content loaded:', response.content);
         
         // Log detailed content information
         logContentDetails(response.content, 'on-demand');
@@ -341,7 +340,7 @@ export const useContentManager = ({
         // Clear stale indicator when fresh content is loaded
         setShowStaleIndicator(false);
       } else {
-        debug.log(ts(), '[ContentManager] Failed to load content:', response?.error);
+        debug.log( '[ContentManager] Failed to load content:', response?.error);
         setContentState(prev => ({
           ...prev,
           status: prev.current ? 'ready' : 'error', // Keep existing content if available
@@ -349,7 +348,7 @@ export const useContentManager = ({
         }));
       }
     } catch (error) {
-      debug.error(ts(), '[ContentManager] Error fetching fresh page content:', error);
+      debug.error( '[ContentManager] Error fetching fresh page content:', error);
       setContentState(prev => ({
         ...prev,
         status: prev.current ? 'ready' : 'error', // Keep existing content if available
@@ -370,12 +369,12 @@ export const useContentManager = ({
     if (message.tabId !== currentTabIdRef.current) return;
     
     // Show indicator immediately
-    debug.log(ts(), '[ContentManager] Content became stale');
+    debug.log( '[ContentManager] Content became stale');
     setShowStaleIndicator(true);
       
     // Capture the incremental DOM update if available
     if (message.domUpdate) {
-      debug.log(ts(), '[ContentManager] Received incremental DOM update:', message.domUpdate);
+      debug.log( '[ContentManager] Received incremental DOM update:', message.domUpdate);
       setLatestDOMUpdate(message.domUpdate);
     }
 
@@ -386,13 +385,13 @@ export const useContentManager = ({
     // Check if fetch already in-flight
     const status = contentStateRef.current.status;
     if (status === 'loading' || status === 'refreshing') {
-      debug.log(ts(), '[ContentManager] Skipping auto-refresh – fetch already in progress');
+      debug.log( '[ContentManager] Skipping auto-refresh – fetch already in progress');
       return;
     }
 
     // Only refresh immediately if assistant is streaming (not just panel active)
     if (isAgentLoading) {
-      debug.log(ts(), '[ContentManager] Immediate auto-refresh (assistant streaming)');
+      debug.log( '[ContentManager] Immediate auto-refresh (assistant streaming)');
       void fetchFreshPageContent(true, message.tabId);
       setShowStaleIndicator(false);
       // Clear any pending timer
@@ -418,11 +417,11 @@ export const useContentManager = ({
     // Use ref for stable comparison
     if (message.tabId !== currentTabIdRef.current || !message.data) return;
     
-    debug.log(ts(), '[ContentManager] Received page content update from background');
+    debug.log( '[ContentManager] Received page content update from background');
     
     // Skip if we just received this content via direct response
     if (lastDirectResponseTimestampRef.current === message.data.timestamp) {
-      debug.log(ts(), '[ContentManager] Skipping broadcast - already processed via direct response');
+      debug.log( '[ContentManager] Skipping broadcast - already processed via direct response');
       return;
     }
     
@@ -445,7 +444,7 @@ export const useContentManager = ({
         error: undefined
       }));
     } else {
-      debug.log(ts(), '[ContentManager] Skipping duplicate content update (same timestamp)');
+      debug.log( '[ContentManager] Skipping duplicate content update (same timestamp)');
     }
   }, []); // Stable - uses refs
 

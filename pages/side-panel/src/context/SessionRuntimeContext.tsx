@@ -11,7 +11,7 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { CopilotKit, useCopilotChatHeadless_c } from '@copilotkit/react-core';
-import { sessionStorageDBWrapper, persistenceLock } from '@extension/shared';
+import { sessionStorageDBWrapper, persistenceLock, debug } from '@extension/shared';
 
 type RuntimeConfig = {
   sessionId: string;
@@ -62,25 +62,18 @@ export const SessionRuntimeProvider: React.FC<PropsWithChildren> = ({ children }
   const renderCountRef = useRef(0);
 
   renderCountRef.current += 1;
-  // console.log(`[SessionRuntimeProvider] Render #${renderCountRef.current}`, {
-  //   runtimeCount: Object.keys(runtimes).length,
-  //   runtimeSessions: Object.keys(runtimes).map(id => id.slice(0, 8)),
-  // });
 
   useEffect(() => {
     runtimesRef.current = runtimes;
   }, [runtimes]);
 
   const ensureRuntime = useCallback((config: RuntimeConfig) => {
-    // console.log(`[SessionRuntimeProvider] ensureRuntime called for ${config.sessionId.slice(0, 8)}`);
     setRuntimes(prev => {
       const existing = prev[config.sessionId];
       if (existing && shallowEqualRuntimeConfig(existing.config, config)) {
-        // console.log(`[SessionRuntimeProvider] Runtime config unchanged for ${config.sessionId.slice(0, 8)}`);
         return prev;
       }
 
-      // console.log(`[SessionRuntimeProvider] Creating/updating runtime for ${config.sessionId.slice(0, 8)}`);
       return {
         ...prev,
         [config.sessionId]: {
@@ -192,14 +185,7 @@ type SessionRuntimeHostProps = {
 const SessionRuntimeHost: React.FC<SessionRuntimeHostProps> = ({ runtime, updateRuntimeState }) => {
   const { config, container, renderContent } = runtime;
   const renderCountRef = useRef(0);
-
   renderCountRef.current += 1;
-  // console.log(`[SessionRuntimeHost:${config.sessionId.slice(0, 8)}] Render #${renderCountRef.current}`, {
-  //   hasContainer: !!container,
-  //   hasRenderContent: !!renderContent,
-  //   agentType: config.agentType,
-  //   modelType: config.modelType,
-  // });
 
   if (!config.agentType || !config.modelType) {
     return null;
@@ -221,7 +207,7 @@ const SessionRuntimeHost: React.FC<SessionRuntimeHostProps> = ({ runtime, update
     transcribeAudioUrl: '/api/transcribe',
     textToSpeechUrl: '/api/tts',
     onError: (errorEvent: unknown) => {
-      console.log('CopilotKit Event:', errorEvent);
+      debug.log('[CopilotKit] Event:', errorEvent);
     },
   } as const;
 
@@ -248,6 +234,9 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
   const lastEmptyPersistAttemptRef = useRef<number>(0);
   const mountedAtRef = useRef<number>(Date.now());
   
+  // Track the sessionId this component is bound to (for validation)
+  const componentSessionIdRef = useRef<string>(sessionId);
+  
   // Optimistic locking: Track current version
   const currentVersionRef = useRef<number>(0);
   const persistInProgressRef = useRef<boolean>(false);
@@ -255,24 +244,40 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
   // Track last known storage state to detect external clears
   const lastKnownStorageCountRef = useRef<number | null>(null);
 
-  // Load initial version on mount
+  // Track when we last warned about data loss to prevent spam
+  const lastDataLossWarningRef = useRef<number>(0);
+  
+  // Update component session ID ref when prop changes
   useEffect(() => {
+    componentSessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  // Load initial version on mount and reset state on sessionId change
+  useEffect(() => {
+    // Clear any pending saves from previous session
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    
+    // Reset refs for new session
+    messagesSignatureRef.current = '';
+    lastPersistedSignatureRef.current = '';
+    previousMessagesCountRef.current = 0;
+    persistInProgressRef.current = false;
+    
     sessionStorageDBWrapper.getMessagesVersion(sessionId)
       .then(version => {
         currentVersionRef.current = version;
-        console.log(`[RuntimeStateBridge:${sessionId.slice(0, 8)}] Initial version:`, version);
+        debug.log(`[RuntimeStateBridge:${sessionId.slice(0, 8)}] Initial version:`, version);
       })
       .catch(err => {
-        console.warn('[RuntimeStateBridge] Failed to load version:', err);
+        debug.warn('[RuntimeStateBridge] Failed to load version:', err);
       });
   }, [sessionId]);
 
   // Track renders
   renderCountRef.current += 1;
-  // console.log(`[RuntimeStateBridge:${sessionId.slice(0, 8)}] Render #${renderCountRef.current}`, {
-  //   messagesCount: messages.length,
-  //   isLoading,
-  // });
 
   const signature = useMemo(() => {
     try {
@@ -283,7 +288,6 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
           hash: typeof (message as any)?.content === 'string' ? (message as any).content.length : JSON.stringify((message as any)?.content ?? '').length,
         })),
       );
-      // console.log(`[RuntimeStateBridge:${sessionId.slice(0, 8)}] Signature computed:`, sig.slice(0, 100));
       previousMessagesCountRef.current = messages.length;
       return sig;
     } catch {
@@ -293,11 +297,6 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
   }, [messages, sessionId]);
 
   useEffect(() => {
-    // console.log(`[RuntimeStateBridge:${sessionId.slice(0, 8)}] State update effect`, {
-    //   signatureChanged: messagesSignatureRef.current !== signature,
-    //   isLoading,
-    // });
-
     const signatureChanged = messagesSignatureRef.current !== signature;
     messagesSignatureRef.current = signature;
 
@@ -323,23 +322,27 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
 
     saveTimeoutRef.current = setTimeout(async () => {
       try {
+        // CRITICAL: Validate sessionId hasn't changed since timeout was scheduled
+        // This prevents cross-session contamination during rapid tab switches
+        if (componentSessionIdRef.current !== sessionId) {
+          debug.warn(
+            `[RuntimeStateBridge] Session mismatch detected! Component: ${componentSessionIdRef.current.slice(0, 8)}, Prop: ${sessionId.slice(0, 8)}. Aborting save to prevent contamination.`
+          );
+          return;
+        }
+
         if (lastPersistedSignatureRef.current === signature) {
           return;
         }
 
         // Check if loading is in progress (persistence lock)
         if (persistenceLock.isLoading(sessionId)) {
-          console.log(
-            `[RuntimeStateBridge:${sessionId.slice(0, 8)}] Loading in progress, skipping auto-persist`,
-          );
+          debug.log(`[RuntimeStateBridge:${sessionId.slice(0, 8)}] Loading in progress, skipping auto-persist`);
           return;
         }
 
         // Prevent concurrent writes
         if (persistInProgressRef.current) {
-          console.log(
-            `[RuntimeStateBridge:${sessionId.slice(0, 8)}] Persist already in progress, skipping`,
-          );
           return;
         }
 
@@ -354,9 +357,7 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
         // - Skip while streaming
         // - Skip immediate empty after previously non-empty unless it remains empty for a short grace window
         if (!hasMessages && !shouldPersistEmpty) {
-          console.log(
-            `[RuntimeStateBridge:${sessionId.slice(0, 8)}] Skipping persistence (streaming empty state)`,
-          );
+          debug.log(`[RuntimeStateBridge:${sessionId.slice(0, 8)}] Skipping persistence (streaming empty state)`);
           return;
         }
 
@@ -364,9 +365,7 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
           const now = Date.now();
           // 700ms grace period after detecting empty to avoid racing early mount/attach states
           if (now - lastEmptyPersistAttemptRef.current < 700) {
-            console.log(
-              `[RuntimeStateBridge:${sessionId.slice(0, 8)}] Deferring empty persistence during grace period`,
-            );
+            debug.log(`[RuntimeStateBridge:${sessionId.slice(0, 8)}] Deferring empty persistence during grace period`);
             return;
           }
           lastEmptyPersistAttemptRef.current = now;
@@ -380,9 +379,7 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
           const isIntentionalClear = persistenceLock.isManualReset(sessionId);
           
           if (isIntentionalClear) {
-            console.log(
-              `[RuntimeStateBridge:${sessionId.slice(0, 8)}] ✅ Intentional clear detected, allowing empty persist`,
-            );
+            debug.log(`[RuntimeStateBridge:${sessionId.slice(0, 8)}] Intentional clear detected, allowing empty persist`);
             // Allow the empty write - this is a user-initiated action
             lastKnownStorageCountRef.current = 0;
           } else {
@@ -392,12 +389,17 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
               const storedCount = Array.isArray(stored) ? stored.length : 0;
               
               if (storedCount > 0) {
-                console.warn(
-                  `[RuntimeStateBridge:${sessionId.slice(0, 8)}] ⚠️ PREVENTED DATA LOSS: Refusing to overwrite ${storedCount} stored messages with empty state!`,
+                // Deduplicate warning - only warn once per 5 seconds per session
+                const now = Date.now();
+                if (now - lastDataLossWarningRef.current > 5000) {
+                  lastDataLossWarningRef.current = now;
+                  debug.warn(
+                    `[RuntimeStateBridge:${sessionId.slice(0, 8)}] PREVENTED DATA LOSS: Refusing to overwrite ${storedCount} stored messages with empty state!`,
                 );
-                console.warn(
+                  debug.warn(
                   `[RuntimeStateBridge:${sessionId.slice(0, 8)}] This suggests a hydration or timing issue. Storage will be preserved.`,
                 );
+                }
                 // Track storage count for future comparisons
                 lastKnownStorageCountRef.current = storedCount;
                 // Don't update version - keep expecting the current version so we stay in sync
@@ -407,7 +409,7 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
               // Storage is empty - allow the write
               lastKnownStorageCountRef.current = 0;
             } catch (e) {
-              console.error('[RuntimeStateBridge] Failed to check storage before empty write - ABORTING for safety:', e);
+              debug.error('[RuntimeStateBridge] Failed to check storage before empty write - ABORTING for safety:', e);
               // On error, refuse to persist empty to avoid potential data loss
               return;
             }
@@ -431,23 +433,30 @@ const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, upda
           currentVersionRef.current = result.currentVersion!;
         lastPersistedSignatureRef.current = signature;
           previousMessagesCountRef.current = sanitizedMessages.length;
-          console.log(
-            `[RuntimeStateBridge:${sessionId.slice(0, 8)}] ✅ Persisted ${sanitizedMessages.length} messages (v${result.currentVersion})`,
+          debug.log(
+            `[RuntimeStateBridge:${sessionId.slice(0, 8)}] Persisted ${sanitizedMessages.length} messages (v${result.currentVersion})`,
           );
         } else {
-          console.warn('[RuntimeStateBridge] Version conflict detected:', result.error);
+          debug.warn('[RuntimeStateBridge] Version conflict detected, will retry after delay');
           
-          // On conflict, reload current version and skip this update
+          // On conflict, reload current version and retry after a short delay
+          // This allows other concurrent updates to complete first
           try {
             const currentVersion = await sessionStorageDBWrapper.getMessagesVersion(sessionId);
             currentVersionRef.current = currentVersion;
-            console.log('[RuntimeStateBridge] Version updated, will retry on next change');
+            
+            // Retry after 200ms to allow other updates to complete
+            setTimeout(() => {
+              // Clear the last persisted signature to force a retry
+              lastPersistedSignatureRef.current = '';
+              debug.log('[RuntimeStateBridge] Version conflict resolved, ready for retry');
+            }, 200);
           } catch (err) {
-            console.warn('[RuntimeStateBridge] Failed to reload version:', err);
+            debug.warn('[RuntimeStateBridge] Failed to reload version:', err);
           }
         }
       } catch (error) {
-        console.error('[SessionRuntime] Failed to persist messages for session', sessionId, error);
+        debug.error('[SessionRuntime] Failed to persist messages for session', sessionId, error);
       } finally {
         persistInProgressRef.current = false;
       }
@@ -514,21 +523,15 @@ export const useSessionRuntimeState = (sessionId: string): RuntimeState | null =
   const manager = useSessionRuntimeManager();
   const [state, setState] = useState<RuntimeState | null>(() => manager.getRuntimeState(sessionId));
   const renderCountRef = useRef(0);
-
   renderCountRef.current += 1;
-  // console.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Render #${renderCountRef.current}`, {
-  //   hasState: !!state,
-  //   isInProgress: state?.isInProgress,
-  //   signatureLength: state?.messagesSignature?.length,
-  // });
 
   useEffect(() => {
-    console.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Initial state sync`);
+    debug.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Initial state sync`);
     setState(manager.getRuntimeState(sessionId));
   }, [manager, sessionId]);
 
   useEffect(() => {
-    console.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Starting polling interval`);
+    debug.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Starting polling interval`);
     const interval = setInterval(() => {
       const newState = manager.getRuntimeState(sessionId);
       setState(prevState => {
@@ -539,7 +542,7 @@ export const useSessionRuntimeState = (sessionId: string): RuntimeState | null =
         ) {
           return prevState;
         }
-        console.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Polling update`, {
+        debug.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Polling update`, {
           isInProgress: newState?.isInProgress,
           signatureChanged: prevState?.messagesSignature !== newState?.messagesSignature,
         });
@@ -548,7 +551,7 @@ export const useSessionRuntimeState = (sessionId: string): RuntimeState | null =
     }, 1000);
 
     return () => {
-      console.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Clearing polling interval`);
+      debug.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Clearing polling interval`);
       clearInterval(interval);
     };
   }, [manager, sessionId]);

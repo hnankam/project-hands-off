@@ -1,23 +1,49 @@
 /**
- * Hook to initialize DB Worker Client for embeddings storage AND session storage
- * This must be called at the app root level to ensure the worker is available
+ * Hook to initialize DB Worker Client for embeddings storage AND session storage.
+ * This must be called at the app root level to ensure the worker is available.
  */
 import { useEffect, useState } from 'react';
-import { embeddingsStorage, sessionStorageDB, migrateSessionStorage } from '@extension/shared';
+import { embeddingsStorage, sessionStorageDB } from '@extension/shared';
 import { DBWorkerClient } from '@extension/shared/lib/db/db-worker-client';
+import { debug } from '@extension/shared/lib/utils/debug';
 
-let globalWorkerClient: DBWorkerClient | null = null;
-let embeddingsWorkerClient: DBWorkerClient | null = null;
-let sessionWorkerClient: DBWorkerClient | null = null;
+// Database names as constants to avoid duplication
+const EMBEDDINGS_DB_NAME = 'embeddings_db';
+const SESSIONS_DB_NAME = 'sessions_db';
+
+// Module-level singleton clients
+let embeddingsClient: DBWorkerClient | null = null;
+let sessionsClient: DBWorkerClient | null = null;
 let initializationPromise: Promise<void> | null = null;
 
+/**
+ * Initialize DB Worker Clients for embeddings and session storage.
+ * Must be called at app root level to ensure workers are available globally.
+ * 
+ * @returns Object containing:
+ *   - isReady: boolean - true when both workers are initialized
+ *   - error: Error | null - initialization error if any
+ * 
+ * @example
+ * ```tsx
+ * const { isReady, error } = useDBWorkerClient();
+ * 
+ * if (error) {
+ *   return <div>Failed to initialize database</div>;
+ * }
+ * 
+ * if (!isReady) {
+ *   return <div>Loading database...</div>;
+ * }
+ * ```
+ */
 export function useDBWorkerClient() {
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     // If already initialized globally, just mark as ready
-    if (sessionWorkerClient && embeddingsWorkerClient) {
+    if (sessionsClient && embeddingsClient) {
       setIsReady(true);
       return;
     }
@@ -33,47 +59,34 @@ export function useDBWorkerClient() {
     // Start new initialization
     initializationPromise = (async () => {
       try {
-        console.log('[useDBWorkerClient] Initializing DB workers...');
+        debug.log('[useDBWorkerClient] Initializing DB workers...');
         
-        // Create separate worker clients for embeddings (memory) and sessions (IndexedDB)
-        embeddingsWorkerClient = new DBWorkerClient({ defaultDbName: 'embeddings_db' });
-        sessionWorkerClient = new DBWorkerClient({ defaultDbName: 'sessions_db' });
-        globalWorkerClient = sessionWorkerClient; // Preserve legacy getter behaviour
+        // Create separate worker clients for embeddings and sessions (both use IndexedDB)
+        embeddingsClient = new DBWorkerClient({ defaultDbName: EMBEDDINGS_DB_NAME });
+        sessionsClient = new DBWorkerClient({ defaultDbName: SESSIONS_DB_NAME });
 
         // Set the worker clients on the respective singletons
-        embeddingsStorage.setWorkerClient(embeddingsWorkerClient);
-        sessionStorageDB.setWorker(sessionWorkerClient);
+        embeddingsStorage.setWorkerClient(embeddingsClient);
+        sessionStorageDB.setWorker(sessionsClient);
 
-        // Initialize workers (memory for embeddings, IndexedDB for sessions)
-        await embeddingsWorkerClient.initialize(true, 'embeddings_db');
-        await sessionWorkerClient.initialize(false, 'sessions_db');
+        // Initialize workers (IndexedDB for both embeddings and sessions for persistence)
+        await embeddingsClient.initialize(false, EMBEDDINGS_DB_NAME);
+        await sessionsClient.initialize(false, SESSIONS_DB_NAME);
 
-        // Run migration from chrome.storage.local to IndexedDB
-        console.log('[useDBWorkerClient] Running session storage migration...');
-        await migrateSessionStorage(sessionStorageDB);
-
-        console.log('[useDBWorkerClient] ✅ DB workers initialized successfully');
+        debug.log('[useDBWorkerClient] DB workers initialized successfully');
         setIsReady(true);
       } catch (err) {
-        console.error('[useDBWorkerClient] ❌ Failed to initialize DB workers:', err);
+        debug.error('[useDBWorkerClient] Failed to initialize DB workers:', err);
         setError(err as Error);
         initializationPromise = null; // Reset to allow retry
         throw err;
       }
     })();
 
-    initializationPromise.catch(err => {
-      // Error already set in try/catch above
+    initializationPromise.catch(() => {
+      // Error already handled and set in state - this prevents unhandled rejection warning
     });
   }, []); // Empty deps - only run once
 
-  return { isReady, error, workerClient: sessionWorkerClient };
+  return { isReady, error };
 }
-
-export function getGlobalWorkerClient(): DBWorkerClient {
-  if (!sessionWorkerClient) {
-    throw new Error('[useDBWorkerClient] Session worker client not initialized. Ensure useDBWorkerClient() is called at app root.');
-  }
-  return sessionWorkerClient;
-}
-

@@ -5,12 +5,14 @@
 
 .copilotKitUserMessage {
   border-radius: 10px !important;
-  margin-left: 0 !important; /* Remove auto margin that pushes to right */
-  max-width: 100% !important; /* Allow full width instead of 80% */
-  width: 100% !important; /* Force full width */
+  margin-left: auto !important; /* Center horizontally */
+  margin-right: auto !important; /* Center horizontally */
+  max-width: 56rem !important; /* Match home page max-w-4xl */
+  width: 100% !important; /* Take full width up to max-width */
   margin-bottom: 0 !important;
   overflow: visible !important; /* Ensure dropdowns can extend beyond message bounds */
-  margin-top: 40px !important;
+  margin-top: 20px !important;
+  
   border: 1px solid var(--copilot-kit-border-color) !important;
   
   /* Smooth transitions for all user messages */
@@ -19,12 +21,85 @@
   flex-direction: column !important;
 }
 
+.copilotKitAssistantMessage {
+  max-width: 56rem !important; /* Match home page max-w-4xl */
+  width: 100% !important; /* Take full width up to max-width */
+  margin-left: auto !important; /* Center horizontally */
+  margin-right: auto !important; /* Center horizontally */
+  padding-right: 12px !important;
+  padding-left: 12px !important;
+  position: relative !important; /* Ensure controls position relative to message */
+  overflow: visible !important; /* Allow controls to overflow outside message bounds */
+  margin-bottom: 1.5rem !important;
+  padding-bottom: 0 !important;
+}
+
+
 /* Ensure the very first user message in the list has a margin-top of 1rem */
 /* Account for Virtua's 2 wrapper divs */
 /* Exclude sticky messages from this rule */
 .copilotKitMessagesContainer > div > div > .copilotKitMessage[data-message-role="user"]:first-child:not(.is-sticky),
 .copilotKitMessagesContainer > div > div > [data-message-role="user"]:first-child:not(.is-sticky) {
-  margin-top: 1.2rem !important;
+  margin-top: 1rem !important;
+}
+
+/* STICKY HEADER STYLING */
+.sticky-message-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10001;
+  width: 100%;
+  pointer-events: none; /* Allow clicks to pass through gaps */
+  /* Center the sticky message content */
+  display: flex !important;
+  justify-content: center !important;
+  padding-left: 12px !important; /* Match container padding */
+  padding-right: 12px !important;
+  box-sizing: border-box !important;
+}
+
+/* Enable pointer events for the message itself inside the sticky header */
+.sticky-message-header .copilotKitUserMessage {
+  pointer-events: auto;
+  margin-top: 0 !important; /* Remove top margin for sticky header */
+  margin-left: auto !important; /* Center horizontally */
+  margin-right: auto !important; /* Center horizontally */
+  max-width: 56rem !important; /* Same max-width as regular messages */
+  width: 100% !important; /* Take full width up to max-width */
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  border-top: none !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Ensure sticky header message matches normal user message styling exactly */
+/* Must override the message-specific font size rules (line ~241) that use 9px */
+/* Using highest specificity selectors to override .copilot-chat-container rules */
+.copilot-chat-container .sticky-message-header .copilotKitUserMessage,
+.copilot-chat-container .sticky-message-header .copilotKitUserMessage *,
+.copilot-chat-container .sticky-message-header .copilotKitUserMessage p,
+.copilot-chat-container .sticky-message-header .copilotKitUserMessage div:not(.copilotKitMessageControls),
+.copilot-chat-container .sticky-message-header .copilotKitUserMessage span:not(button span),
+.copilot-chat-container .sticky-message-header [class*="message"] p,
+.copilot-chat-container .sticky-message-header [class*="message"] div:not([role="group"]),
+.copilot-chat-container .sticky-message-header [class*="message"] span:not(button span),
+.sticky-message-header .copilotKitUserMessage,
+.sticky-message-header .copilotKitUserMessage *,
+.sticky-message-header .copilotKitUserMessage p,
+.sticky-message-header .copilotKitUserMessage div:not(.copilotKitMessageControls),
+.sticky-message-header .copilotKitUserMessage span:not(button span) {
+  font-size: 12.5px !important; /* Match CustomUserMessage inline fontSize */
+  line-height: 1.4 !important; /* Match CustomUserMessage inline lineHeight */
+}
+
+/* Ensure sticky header controls use their own size (not 12.5px) */
+.copilot-chat-container .sticky-message-header .copilotKitUserMessage .copilotKitMessageControls,
+.copilot-chat-container .sticky-message-header .copilotKitUserMessage .copilotKitMessageControls *,
+.sticky-message-header .copilotKitUserMessage .copilotKitMessageControls,
+.sticky-message-header .copilotKitUserMessage .copilotKitMessageControls * {
+  font-size: inherit !important;
 }
 
 /* Light mode user message - match status bar background */
@@ -41,17 +116,6 @@
   background-color: var(--copilot-kit-secondary-color) !important;
   border-color: var(--copilot-kit-border-color) !important;
   color: #bcc1c7 !important; /* gray-350 - slightly greyer text */
-}
-
-.copilotKitAssistantMessage {
-  max-width: 100% !important; /* Allow full width instead of 80% */
-  width: 100% !important; /* Force full width */
-  padding-right: 12px !important;
-  padding-left: 12px !important;
-  position: relative !important; /* Ensure controls position relative to message */
-  overflow: visible !important; /* Allow controls to overflow outside message bounds */
-  margin-bottom: 1.5rem !important;
-  padding-bottom: 0 !important;
 }
 
 /* Override padding for empty assistant messages at the base level */
@@ -201,6 +265,14 @@
   line-height: 1.4 !important;
 }
 
+/* OVERRIDE: Sticky header must use larger font (12.5px) - placed after 9px rule for cascade priority */
+.copilot-chat-container .sticky-message-header [class*="message"] p,
+.copilot-chat-container .sticky-message-header [class*="message"] div:not([role="group"]),
+.copilot-chat-container .sticky-message-header [class*="message"] span:not(button span) {
+  font-size: 12.5px !important;
+  line-height: 1.4 !important;
+}
+
 /* Ensure suggestion buttons are visible and interactive */
 .copilot-chat-container button[class*="suggestion"],
 .copilot-chat-container button[class*="Suggestion"] {
@@ -238,6 +310,18 @@
 .copilot-chat-container .copilotKitUserMessage.is-sticky .copilotKitMessageControls {
   z-index: 10000 !important; /* Below dropdown (10002) but above assistant controls */
   overflow: visible !important;
+}
+
+/* Ensure sticky header user message controls are visible */
+.sticky-message-header .copilotKitUserMessage .copilotKitMessageControls {
+  opacity: 0 !important; /* Hidden by default until hover */
+  visibility: hidden !important;
+  z-index: 10000 !important;
+}
+
+.sticky-message-header .copilotKitUserMessage:hover .copilotKitMessageControls {
+  opacity: 1 !important;
+  visibility: visible !important;
 }
 
 /* Ensure delete dropdown container and menu are always visible regardless of parent controls visibility */
@@ -391,7 +475,8 @@ footer div[class*="suggestions"] button {
 }
 
 /* Reduce max height in sticky mode for more compact display */
-.copilot-chat-container .copilotKitUserMessage.is-sticky > div:not(.copilotKitMessageControls):not(.edit-mode) {
+.copilot-chat-container .copilotKitUserMessage.is-sticky > div:not(.copilotKitMessageControls):not(.edit-mode),
+.sticky-message-header .copilotKitUserMessage > div:not(.copilotKitMessageControls):not(.edit-mode) {
   max-height: 70px !important;
 }
 
@@ -450,4 +535,3 @@ footer div[class*="suggestions"] button {
 .dark .copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb:hover {
   background: rgba(75, 85, 99, 0.5);
 }
-

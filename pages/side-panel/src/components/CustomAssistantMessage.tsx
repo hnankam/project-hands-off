@@ -3,7 +3,7 @@ import type { AssistantMessageProps } from '@copilotkit/react-ui';
 import { useChatContext, Markdown } from '@copilotkit/react-ui';
 import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
 import { useStorage } from '@extension/shared';
-import { exampleThemeStorage } from '@extension/storage';
+import { themeStorage } from '@extension/storage';
 import { MermaidBlock } from './MermaidBlock';
 // @ts-ignore - Types package not installed, but functionality works fine
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -399,7 +399,7 @@ const CodeBlockWithToolbar: React.FC<{
  */
 export const CustomAssistantMessage = (props: AssistantMessageProps) => {
   const { icons, labels } = useChatContext();
-  const { isLight } = useStorage(exampleThemeStorage);
+  const { isLight } = useStorage(themeStorage);
   const {
     message,
     isLoading,

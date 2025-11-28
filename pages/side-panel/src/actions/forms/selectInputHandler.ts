@@ -1,30 +1,139 @@
-import { InputHandler, InputDataResult, InputHandlerOptions, SelectInputOptions, InputType } from './types';
+/**
+ * Select Input Handler
+ *
+ * Specialized handler for select dropdowns.
+ * Handles single and multiple selections, modern web app patterns, and custom dropdowns.
+ */
+
+import { debug as baseDebug } from '@extension/shared';
+import { InputHandler, InputDataResult, SelectInputOptions, InputType, ModernInputDetection } from './types';
 import {
   findElement,
   isElementVisible,
   scrollIntoView,
   focusAndHighlight,
   showSuccessFeedback,
-  getElementValue,
   triggerInputEvents,
   detectModernInput,
-  moveCursorToElement,
 } from './utils';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Log prefix for consistent logging */
+const LOG_PREFIX = '[SelectInput]';
+
+/** Supported input types */
+const SUPPORTED_TYPES: InputType[] = ['select'];
+
+/** Timing constants */
+const TIMING = {
+  DROPDOWN_OPEN_DELAY_MS: 100,
+  OPTION_CLICK_DELAY_MS: 50,
+  CURSOR_MOVE_DELAY_MS: 500,
+  FOCUS_DELAY_MS: 100,
+  KEYBOARD_NAV_MIN_DELAY_MS: 150,
+  KEYBOARD_NAV_RANGE_MS: 100,
+  ENTER_DELAY_MIN_MS: 200,
+  ENTER_DELAY_RANGE_MS: 100,
+} as const;
+
+/** Option text length limit for filtering */
+const MAX_OPTION_TEXT_LENGTH = 50;
+
+// ============================================================================
+// DEBUG HELPERS
+// ============================================================================
+
+const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
+const debug = {
+  log: (...args: unknown[]) => baseDebug.log(ts(), ...args),
+  warn: (...args: unknown[]) => baseDebug.warn(ts(), ...args),
+  error: (...args: unknown[]) => baseDebug.error(ts(), ...args),
+} as const;
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/** Option match result */
+interface OptionMatch {
+  option: HTMLOptionElement;
+  index: number;
+}
+
+/** Custom dropdown option */
+interface CustomOption {
+  element: HTMLElement;
+  text: string;
+  value: string;
+}
+
+/** Window with cursor function */
+interface WindowWithCursor {
+  moveCursorToElement?: (element: HTMLElement) => void;
+}
+
+// ============================================================================
+// HANDLER-LEVEL DEDUPLICATION
+// ============================================================================
+
+/** Active operations map for deduplication */
+const activeOperations = new Map<string, Promise<InputDataResult>>();
+
+/**
+ * Create a unique operation key
+ */
+function createOperationKey(element: HTMLElement, value: string): string {
+  const id = element.id || '';
+  const name = (element as HTMLSelectElement).name || '';
+  const tag = element.tagName;
+  return `${tag}:${id}:${name}:${value.substring(0, 50)}`;
+}
+
+// ============================================================================
+// SELECT INPUT HANDLER CLASS
+// ============================================================================
 
 /**
  * Specialized handler for select dropdowns
  * Handles single and multiple selections, modern web app patterns, and custom dropdowns
  */
 export class SelectInputHandler implements InputHandler {
-  private supportedTypes: InputType[] = ['select'];
-
   canHandle(inputType: InputType, element: HTMLElement): boolean {
-    return this.supportedTypes.includes(inputType) && element.tagName === 'SELECT';
+    return SUPPORTED_TYPES.includes(inputType) && element.tagName === 'SELECT';
   }
 
   async handle(element: HTMLElement, value: string, options: SelectInputOptions = {}): Promise<InputDataResult> {
+    // Handler-level deduplication
+    const opKey = createOperationKey(element, value);
+    const existingOp = activeOperations.get(opKey);
+    if (existingOp) {
+      debug.log(LOG_PREFIX, 'Duplicate operation detected, reusing existing promise');
+      return existingOp;
+    }
+
+    const operationPromise = this.executeHandle(element, value, options);
+    activeOperations.set(opKey, operationPromise);
+
+    try {
+      return await operationPromise;
+    } finally {
+      activeOperations.delete(opKey);
+    }
+  }
+
+  private async executeHandle(
+    element: HTMLElement,
+    value: string,
+    options: SelectInputOptions,
+  ): Promise<InputDataResult> {
     try {
       const selectElement = element as HTMLSelectElement;
+
+      debug.log(LOG_PREFIX, 'Handling select:', { id: selectElement.id, value });
+
       if (!isElementVisible(selectElement)) {
         scrollIntoView(selectElement);
       }
@@ -69,6 +178,8 @@ export class SelectInputHandler implements InputHandler {
         showSuccessFeedback(selectElement);
       }
 
+      debug.log(LOG_PREFIX, 'Selection successful:', optionInfo.option.text);
+
       return {
         status: 'success',
         message: `Select option "${optionInfo.option.text}" selected successfully`,
@@ -81,9 +192,11 @@ export class SelectInputHandler implements InputHandler {
         },
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Error:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling select input: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling select input: ${errorMessage}`,
       };
     }
   }
@@ -92,10 +205,10 @@ export class SelectInputHandler implements InputHandler {
     selectElement: HTMLSelectElement,
     value: string,
     options: SelectInputOptions,
-  ): { option: HTMLOptionElement; index: number } | null {
-    const matchBy = options.matchBy || 'both';
-    const caseSensitive = options.caseSensitive || false;
-    const partialMatch = options.partialMatch || false;
+  ): OptionMatch | null {
+    const matchBy = options.matchBy ?? 'both';
+    const caseSensitive = options.caseSensitive ?? false;
+    const partialMatch = options.partialMatch ?? false;
     const preferValueOverText = options.preferValueOverText ?? true;
 
     const searchValue = caseSensitive ? value : value.toLowerCase();
@@ -106,8 +219,8 @@ export class SelectInputHandler implements InputHandler {
       // Skip disabled options
       if (option.disabled) continue;
 
-      let optionValue = caseSensitive ? option.value : option.value.toLowerCase();
-      let optionText = caseSensitive ? option.text : option.text.toLowerCase();
+      const optionValue = caseSensitive ? option.value : option.value.toLowerCase();
+      const optionText = caseSensitive ? option.text : option.text.toLowerCase();
 
       // Check for exact match first (prefer value matching before text)
       if (preferValueOverText && (matchBy === 'value' || matchBy === 'both')) {
@@ -185,6 +298,8 @@ export class SelectInputHandler implements InputHandler {
         };
       }
 
+      debug.log(LOG_PREFIX, 'Handling multiple select:', { values });
+
       // Simulate click on dropdown trigger first
       await this.simulateDropdownClick(selectElement);
 
@@ -241,9 +356,11 @@ export class SelectInputHandler implements InputHandler {
         },
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Error handling multiple select:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling multiple select: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling multiple select: ${errorMessage}`,
       };
     }
   }
@@ -283,6 +400,8 @@ export class SelectInputHandler implements InputHandler {
       // If multiple matches, select the first one
       const selectedOption = matchingOptions[0];
 
+      debug.log(LOG_PREFIX, 'Search found option:', selectedOption.option.text);
+
       // Simulate click on dropdown trigger first
       await this.simulateDropdownClick(selectElement);
 
@@ -318,9 +437,11 @@ export class SelectInputHandler implements InputHandler {
         },
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Error handling select search:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling select search: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling select search: ${errorMessage}`,
       };
     }
   }
@@ -329,9 +450,9 @@ export class SelectInputHandler implements InputHandler {
     selectElement: HTMLSelectElement,
     searchTerm: string,
     options: SelectInputOptions,
-  ): { option: HTMLOptionElement; index: number }[] {
-    const matches: { option: HTMLOptionElement; index: number }[] = [];
-    const caseSensitive = options.caseSensitive || false;
+  ): OptionMatch[] {
+    const matches: OptionMatch[] = [];
+    const caseSensitive = options.caseSensitive ?? false;
     const searchValue = caseSensitive ? searchTerm : searchTerm.toLowerCase();
 
     for (let i = 0; i < selectElement.options.length; i++) {
@@ -369,11 +490,12 @@ export class SelectInputHandler implements InputHandler {
 
       const dropdownElement = elementInfo.element;
 
+      debug.log(LOG_PREFIX, 'Handling custom dropdown:', { value });
+
       // Move cursor to element if requested
       if (options.moveCursor) {
         this.moveCursorToElement(dropdownElement);
-        // Wait for cursor movement to complete
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, TIMING.CURSOR_MOVE_DELAY_MS));
       }
 
       // Try keyboard navigation approach first
@@ -394,8 +516,8 @@ export class SelectInputHandler implements InputHandler {
 
       // Find matching option
       const matchingOption = this.findMatchingCustomOption(dropdownOptions, value, {
-        caseSensitive: options.caseSensitive || false,
-        partialMatch: options.partialMatch || false,
+        caseSensitive: options.caseSensitive ?? false,
+        partialMatch: options.partialMatch ?? false,
       });
 
       if (!matchingOption) {
@@ -436,19 +558,17 @@ export class SelectInputHandler implements InputHandler {
         },
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      debug.error(LOG_PREFIX, 'Error handling custom dropdown:', errorMessage);
       return {
         status: 'error',
-        message: `Error handling custom dropdown: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error handling custom dropdown: ${errorMessage}`,
       };
     }
   }
 
-  private findCustomDropdownOptions(dropdownElement: HTMLElement): Array<{
-    element: HTMLElement;
-    text: string;
-    value: string;
-  }> {
-    const options: Array<{ element: HTMLElement; text: string; value: string }> = [];
+  private findCustomDropdownOptions(dropdownElement: HTMLElement): CustomOption[] {
+    const options: CustomOption[] = [];
 
     // Common dropdown option selectors
     const optionSelectors = [
@@ -481,10 +601,10 @@ export class SelectInputHandler implements InputHandler {
   }
 
   private findMatchingCustomOption(
-    options: Array<{ element: HTMLElement; text: string; value: string }>,
+    options: CustomOption[],
     searchValue: string,
     matchOptions: { caseSensitive: boolean; partialMatch: boolean },
-  ): { element: HTMLElement; text: string; value: string } | null {
+  ): CustomOption | null {
     const search = matchOptions.caseSensitive ? searchValue : searchValue.toLowerCase();
 
     for (const option of options) {
@@ -536,27 +656,17 @@ export class SelectInputHandler implements InputHandler {
    */
   private moveCursorToElement(element: HTMLElement): void {
     try {
-      // Debug: Log element details
-      const rect = element.getBoundingClientRect();
-      console.log('[SelectInputHandler] Moving cursor to element:', {
-        tagName: element.tagName,
-        id: element.id,
-        className: element.className,
-        position: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
-        center: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
-      });
-
-      // Use the moveCursorToElement function from the content script context if available
-      if (typeof (window as any).moveCursorToElement === 'function') {
-        (window as any).moveCursorToElement(element);
+      const win = window as unknown as WindowWithCursor;
+      if (typeof win.moveCursorToElement === 'function') {
+        win.moveCursorToElement(element);
         return;
       }
 
       // Fallback to simple cursor movement
+      const rect = element.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
 
-      // Create and dispatch a mouse move event
       const mouseMoveEvent = new MouseEvent('mousemove', {
         bubbles: true,
         cancelable: true,
@@ -566,12 +676,11 @@ export class SelectInputHandler implements InputHandler {
         screenY: centerY + window.screenY,
       });
 
-      // Dispatch the event on the element
       element.dispatchEvent(mouseMoveEvent);
 
-      console.log('[SelectInputHandler] Cursor moved to element:', element.tagName, element.id || element.className);
+      debug.log(LOG_PREFIX, 'Cursor moved to element:', element.tagName);
     } catch (error) {
-      console.error('[SelectInputHandler] Error moving cursor to element:', error);
+      debug.error(LOG_PREFIX, 'Error moving cursor:', error);
     }
   }
 
@@ -580,10 +689,8 @@ export class SelectInputHandler implements InputHandler {
    */
   private async simulateDropdownClick(selectElement: HTMLSelectElement): Promise<void> {
     return new Promise(resolve => {
-      // Focus the select element first
       selectElement.focus();
 
-      // Create and dispatch click event
       const clickEvent = new MouseEvent('click', {
         bubbles: true,
         cancelable: true,
@@ -592,7 +699,6 @@ export class SelectInputHandler implements InputHandler {
 
       selectElement.dispatchEvent(clickEvent);
 
-      // Also dispatch mousedown and mouseup events for more realistic interaction
       const mouseDownEvent = new MouseEvent('mousedown', {
         bubbles: true,
         cancelable: true,
@@ -608,10 +714,7 @@ export class SelectInputHandler implements InputHandler {
       selectElement.dispatchEvent(mouseDownEvent);
       selectElement.dispatchEvent(mouseUpEvent);
 
-      // Small delay to allow dropdown to open
-      setTimeout(() => {
-        resolve();
-      }, 100);
+      setTimeout(resolve, TIMING.DROPDOWN_OPEN_DELAY_MS);
     });
   }
 
@@ -620,7 +723,6 @@ export class SelectInputHandler implements InputHandler {
    */
   private async simulateOptionClick(optionElement: HTMLOptionElement): Promise<void> {
     return new Promise(resolve => {
-      // Create and dispatch click event on the option
       const clickEvent = new MouseEvent('click', {
         bubbles: true,
         cancelable: true,
@@ -629,7 +731,6 @@ export class SelectInputHandler implements InputHandler {
 
       optionElement.dispatchEvent(clickEvent);
 
-      // Also dispatch mousedown and mouseup events for more realistic interaction
       const mouseDownEvent = new MouseEvent('mousedown', {
         bubbles: true,
         cancelable: true,
@@ -645,10 +746,7 @@ export class SelectInputHandler implements InputHandler {
       optionElement.dispatchEvent(mouseDownEvent);
       optionElement.dispatchEvent(mouseUpEvent);
 
-      // Small delay to allow option selection to process
-      setTimeout(() => {
-        resolve();
-      }, 50);
+      setTimeout(resolve, TIMING.OPTION_CLICK_DELAY_MS);
     });
   }
 
@@ -658,28 +756,25 @@ export class SelectInputHandler implements InputHandler {
   private async tryKeyboardNavigation(
     dropdownElement: HTMLElement,
     value: string,
-    options: SelectInputOptions,
+    _options: SelectInputOptions,
   ): Promise<{ success: boolean; result?: InputDataResult }> {
     try {
-      console.log('[SelectInputHandler] Starting keyboard navigation to find option:', value);
+      debug.log(LOG_PREFIX, 'Starting keyboard navigation for:', value);
 
       // Helper function to determine if an option is selectable
       const isSelectableOption = (text: string): boolean => {
         if (!text || text.length === 0) return false;
-        // Filter out non-selectable options (labels, descriptions, etc.)
-        // Skip options that are too long (likely descriptions) or contain question marks
-        return text.length < 50 && !text.includes('?') && !text.includes('*');
+        return text.length < MAX_OPTION_TEXT_LENGTH && !text.includes('?') && !text.includes('*');
       };
 
       // First, ensure the dropdown is focused
       dropdownElement.focus();
-      console.log('[SelectInputHandler] Focused dropdown button');
+      debug.log(LOG_PREFIX, 'Focused dropdown');
 
-      // Wait for focus to take effect
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, TIMING.FOCUS_DELAY_MS));
 
-      // Get all available options to determine navigation path
-      const allOptions = [];
+      // Get all available options
+      const allOptions: Array<{ element: Element; text: string }> = [];
       const optionSelectors = [
         '[role="option"]',
         '.dropdown-option',
@@ -696,45 +791,39 @@ export class SelectInputHandler implements InputHandler {
         'option',
       ];
 
-      // Find the container (parent of dropdown)
+      // Find the container
       const container =
         dropdownElement.closest('[data-slot="form-item"], .dropdown, .select, [role="listbox"], [role="menu"]') ||
         dropdownElement.parentElement;
 
       for (const selector of optionSelectors) {
-        const options = container?.querySelectorAll(selector) || [];
-        for (let i = 0; i < options.length; i++) {
-          const option = options[i];
+        const optionElements = container?.querySelectorAll(selector) ?? [];
+        for (let i = 0; i < optionElements.length; i++) {
+          const option = optionElements[i];
           const text = option.textContent?.trim();
-          if (isSelectableOption(text)) {
-            allOptions.push({
-              element: option,
-              text: text,
-            });
+          if (text && isSelectableOption(text)) {
+            allOptions.push({ element: option, text });
           }
         }
       }
 
-      console.log(
-        '[SelectInputHandler] Available options for keyboard navigation:',
+      debug.log(
+        LOG_PREFIX,
+        'Available options:',
         allOptions.map(opt => opt.text),
       );
 
       // Find the target option index
       const targetIndex = allOptions.findIndex(opt => opt.text === value);
       if (targetIndex === -1) {
-        console.log(
-          '[SelectInputHandler] Target option not found in available options, cannot use keyboard navigation',
-        );
+        debug.log(LOG_PREFIX, 'Target option not found');
         return { success: false };
       }
 
-      console.log('[SelectInputHandler] Target option found at index:', targetIndex);
+      debug.log(LOG_PREFIX, 'Target found at index:', targetIndex);
 
-      // Navigate to the target option using arrow down keys with human-like delays
+      // Navigate using arrow keys
       for (let i = 0; i <= targetIndex; i++) {
-        console.log('[SelectInputHandler] Pressing ArrowDown key (step', i + 1, 'of', targetIndex + 1, ')');
-
         const keyDownEvent = new KeyboardEvent('keydown', {
           key: 'ArrowDown',
           code: 'ArrowDown',
@@ -747,7 +836,6 @@ export class SelectInputHandler implements InputHandler {
 
         dropdownElement.dispatchEvent(keyDownEvent);
 
-        // Also dispatch keyup
         const keyUpEvent = new KeyboardEvent('keyup', {
           key: 'ArrowDown',
           code: 'ArrowDown',
@@ -760,17 +848,17 @@ export class SelectInputHandler implements InputHandler {
 
         dropdownElement.dispatchEvent(keyUpEvent);
 
-        // Human-like delay between key presses (150-250ms)
-        const delay = 150 + Math.random() * 100;
+        const delay = TIMING.KEYBOARD_NAV_MIN_DELAY_MS + Math.random() * TIMING.KEYBOARD_NAV_RANGE_MS;
         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
-      console.log('[SelectInputHandler] Reached target option, pressing Enter to select');
+      debug.log(LOG_PREFIX, 'Pressing Enter to select');
 
-      // Human-like delay before pressing Enter
-      await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 100));
+      await new Promise(resolve =>
+        setTimeout(resolve, TIMING.ENTER_DELAY_MIN_MS + Math.random() * TIMING.ENTER_DELAY_RANGE_MS),
+      );
 
-      // Press Enter to select the option
+      // Press Enter to select
       const enterDownEvent = new KeyboardEvent('keydown', {
         key: 'Enter',
         code: 'Enter',
@@ -795,13 +883,13 @@ export class SelectInputHandler implements InputHandler {
 
       dropdownElement.dispatchEvent(enterUpEvent);
 
-      // Trigger change event on any hidden select element
-      const hiddenSelect = container?.querySelector('select[aria-hidden="true"]') as HTMLSelectElement;
+      // Trigger change event on any hidden select
+      const hiddenSelect = container?.querySelector('select[aria-hidden="true"]') as HTMLSelectElement | null;
       if (hiddenSelect) {
         hiddenSelect.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
       }
 
-      console.log('[SelectInputHandler] Keyboard navigation completed successfully');
+      debug.log(LOG_PREFIX, 'Keyboard navigation completed');
 
       return {
         success: true,
@@ -818,7 +906,7 @@ export class SelectInputHandler implements InputHandler {
         },
       };
     } catch (keyboardError) {
-      console.log('[SelectInputHandler] Keyboard navigation failed:', keyboardError);
+      debug.log(LOG_PREFIX, 'Keyboard navigation failed:', keyboardError);
       return { success: false };
     }
   }
