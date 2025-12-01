@@ -32,6 +32,7 @@ import { SessionsPage } from './pages/SessionsPage';
 import { AdminPage } from './pages/AdminPage';
 import LoginPage from './pages/LoginPage';
 import AcceptInvitationPage from './pages/AcceptInvitationPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import { useAuth } from './context/AuthContext';
 import { useDBWorkerClient } from './hooks/useDBWorkerClient';
 import { useNavigationManager } from './hooks/useNavigationManager';
@@ -68,11 +69,13 @@ const SidePanel = () => {
     activePage,
     adminInitialTab,
     invitationId,
+    resetPasswordToken,
     isPageRestored,
     navigateToHome,
     navigateToSessions,
     navigateToAdmin,
     setInvitationId,
+    setResetPasswordToken,
   } = useNavigationManager();
   
   // Session URL synchronization
@@ -132,6 +135,21 @@ const SidePanel = () => {
     }
   }, [isAuthenticated, setInvitationId]);
   
+  const handleResetPasswordSuccess = useCallback(() => {
+    // Clear the reset password token
+    setResetPasswordToken(null);
+    // Clear the URL (remove token from query string)
+    window.history.replaceState({}, document.title, window.location.pathname);
+    window.location.hash = '';
+  }, [setResetPasswordToken]);
+  
+  const handleResetPasswordCancel = useCallback(() => {
+    // Clear the reset password token and go back to login
+    setResetPasswordToken(null);
+    window.history.replaceState({}, document.title, window.location.pathname);
+    window.location.hash = '';
+  }, [setResetPasswordToken]);
+  
   // ============================================================================
   // Loading & Error States
   // ============================================================================
@@ -162,6 +180,20 @@ const SidePanel = () => {
       <div className={cn('h-screen', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
         <ChatSkeleton isLight={isLight} />
       </div>
+    );
+  }
+  
+  // ============================================================================
+  // Route: Password Reset
+  // ============================================================================
+  
+  if (resetPasswordToken) {
+    return (
+      <ResetPasswordPage
+        token={resetPasswordToken}
+        onSuccess={handleResetPasswordSuccess}
+        onCancel={handleResetPasswordCancel}
+      />
     );
   }
   

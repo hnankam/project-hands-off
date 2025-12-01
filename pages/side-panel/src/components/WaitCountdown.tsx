@@ -56,7 +56,19 @@ export const WaitCountdown: React.FC<WaitCountdownProps> = ({ seconds, status, i
   return (
     <div
       className={isLight ? 'text-gray-600' : 'text-gray-500'}
-      style={{ padding: 6, fontSize: 12, display: 'flex', alignItems: 'center' }}
+      style={{ 
+        paddingTop: 6,
+        paddingBottom: 6,
+        paddingLeft: 12,
+        paddingRight: 12,
+        fontSize: 12, 
+        display: 'flex', 
+        alignItems: 'center',
+        maxWidth: '56rem',
+        width: '100%',
+        marginLeft: 'auto',
+        marginRight: 'auto',
+      }}
       aria-live="polite">
       {waitIcon}
       {done ? (

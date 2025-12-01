@@ -14,10 +14,13 @@
  * - POST /api/auth/organization/invite-member
  * - POST /api/auth/team/create
  * - GET  /api/auth/team/list
+ * - POST /api/auth/forgot-password - Request password reset email
+ * - POST /api/auth/reset-password - Reset password with token
  * - And more...
  * 
  * Custom Endpoints:
  * - POST /api/auth/set-active-team - Set user's active team in session
+ * - POST /api/auth/admin-reset-password - Admin-initiated password reset
  */
 
 import { Router } from 'express';
@@ -27,6 +30,114 @@ import { auth } from '../auth/index.js';
 import { getPool } from '../config/database.js';
 
 const router = Router();
+
+/**
+ * GET /api/auth/reset-password
+ * Serves a page that redirects users to the Chrome extension to complete password reset
+ * 
+ * This is needed because Chrome extensions can't be directly linked from external URLs.
+ * The page displays the token and instructions for completing the reset.
+ */
+router.get('/reset-password', (req, res) => {
+  const { token } = req.query;
+  
+  if (!token) {
+    return res.status(400).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Invalid Reset Link</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f5f5f5; }
+          .container { text-align: center; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 400px; }
+          h1 { color: #ef4444; margin-bottom: 16px; }
+          p { color: #666; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>Invalid Reset Link</h1>
+          <p>This password reset link is invalid or has expired. Please request a new password reset.</p>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+  
+  // Serve a page that helps users complete the reset in the Chrome extension
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Reset Your Password</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .container { text-align: center; padding: 40px; background: white; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); max-width: 500px; margin: 20px; }
+        h1 { color: #1f2937; margin-bottom: 8px; font-size: 24px; }
+        .subtitle { color: #6b7280; margin-bottom: 24px; font-size: 14px; }
+        .step { text-align: left; padding: 16px; background: #f9fafb; border-radius: 8px; margin-bottom: 16px; }
+        .step-number { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: #3b82f6; color: white; border-radius: 50%; font-size: 12px; font-weight: 600; margin-right: 12px; }
+        .step-text { color: #374151; font-size: 14px; }
+        .token-box { background: #f3f4f6; border: 2px dashed #d1d5db; border-radius: 8px; padding: 16px; margin: 20px 0; word-break: break-all; font-family: monospace; font-size: 12px; color: #1f2937; }
+        .copy-btn { background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s; }
+        .copy-btn:hover { background: #2563eb; }
+        .copy-btn.copied { background: #10b981; }
+        .note { color: #9ca3af; font-size: 12px; margin-top: 20px; }
+        .extension-link { display: inline-block; margin-top: 16px; padding: 12px 24px; background: #1f2937; color: white; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 500; }
+        .extension-link:hover { background: #374151; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>🔐 Reset Your Password</h1>
+        <p class="subtitle">Complete your password reset in the Hands-Off extension</p>
+        
+        <div class="step">
+          <span class="step-number">1</span>
+          <span class="step-text">Open the Hands-Off Chrome extension</span>
+        </div>
+        
+        <div class="step">
+          <span class="step-number">2</span>
+          <span class="step-text">The extension will automatically detect your reset request</span>
+        </div>
+        
+        <div class="step">
+          <span class="step-number">3</span>
+          <span class="step-text">Enter your new password</span>
+        </div>
+        
+        <p style="color: #6b7280; font-size: 13px; margin-top: 24px;">Or copy this token and paste it in the extension:</p>
+        
+        <div class="token-box" id="token">${token}</div>
+        
+        <button class="copy-btn" onclick="copyToken()">Copy Token</button>
+        
+        <p class="note">This link expires in 1 hour</p>
+      </div>
+      
+      <script>
+        function copyToken() {
+          const token = document.getElementById('token').textContent;
+          navigator.clipboard.writeText(token).then(() => {
+            const btn = document.querySelector('.copy-btn');
+            btn.textContent = 'Copied!';
+            btn.classList.add('copied');
+            setTimeout(() => {
+              btn.textContent = 'Copy Token';
+              btn.classList.remove('copied');
+            }, 2000);
+          });
+        }
+        
+        // Try to open the extension automatically
+        // This will work if the extension has registered a protocol handler
+        window.location.hash = '#/reset-password?token=${token}';
+      </script>
+    </body>
+    </html>
+  `);
+});
 
 /**
  * POST /api/auth/set-active-team
@@ -78,6 +189,100 @@ router.post('/set-active-team', express.json(), async (req, res) => {
   } catch (error) {
     console.error('[Auth] Error setting active team:', error.message);
     res.status(500).json({ error: 'Failed to set active team' });
+  }
+});
+
+/**
+ * POST /api/auth/admin-reset-password
+ * Admin-initiated password reset for a user
+ * 
+ * Uses Better Auth's forgetPassword API internally to generate a proper reset token
+ * that works with Better Auth's resetPassword endpoint.
+ * 
+ * Body:
+ * - userId: User ID to reset password for (required)
+ * - organizationId: Organization ID (required for authorization)
+ * 
+ * Returns:
+ * - { success: true, message: string }
+ * 
+ * Errors:
+ * - 400: Missing required parameters
+ * - 401: User not authenticated
+ * - 403: User is not admin/owner of the organization
+ * - 404: Target user not found or not in organization
+ * - 500: Server error
+ */
+router.post('/admin-reset-password', express.json(), async (req, res) => {
+  try {
+    const { userId, organizationId } = req.body;
+    
+    if (!userId || !organizationId) {
+      return res.status(400).json({ 
+        error: 'userId and organizationId are required' 
+      });
+    }
+    
+    // Authenticate admin user
+    const session = await auth.api.getSession({ headers: req.headers });
+    
+    if (!session?.session || !session?.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const adminUserId = session.user.id;
+    const pool = getPool();
+    
+    // Check if requesting user is admin/owner of the organization
+    const memberResult = await pool.query(
+      'SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2',
+      [organizationId, adminUserId]
+    );
+    
+    if (memberResult.rows.length === 0) {
+      return res.status(403).json({ error: 'Not a member of this organization' });
+    }
+    
+    const roles = Array.isArray(memberResult.rows[0].role) 
+      ? memberResult.rows[0].role 
+      : [memberResult.rows[0].role];
+    
+    if (!roles.includes('owner') && !roles.includes('admin')) {
+      return res.status(403).json({ error: 'Only admins and owners can reset user passwords' });
+    }
+    
+    // Check if target user is in the organization
+    const targetMemberResult = await pool.query(
+      'SELECT m."userId", u.email, u.name FROM member m JOIN "user" u ON m."userId" = u.id WHERE m."organizationId" = $1 AND m."userId" = $2',
+      [organizationId, userId]
+    );
+    
+    if (targetMemberResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found in this organization' });
+    }
+    
+    const targetUser = targetMemberResult.rows[0];
+    
+    // Use Better Auth's server-side API to request password reset
+    // This generates the token and triggers the sendResetPassword callback
+    const baseUrl = process.env.BETTER_AUTH_URL || process.env.BASE_URL || 'http://localhost:3001';
+    
+    await auth.api.requestPasswordReset({
+      body: {
+        email: targetUser.email,
+        redirectTo: `${baseUrl}/api/auth/reset-password`,
+      },
+    });
+    
+    console.log(`[Auth] Admin ${session.user.email} initiated password reset for ${targetUser.email}`);
+    
+    res.json({ 
+      success: true, 
+      message: `Password reset email sent to ${targetUser.email}` 
+    });
+  } catch (error) {
+    console.error('[Auth] Error in admin password reset:', error.message);
+    res.status(500).json({ error: 'Failed to initiate password reset' });
   }
 });
 

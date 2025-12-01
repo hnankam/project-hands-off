@@ -118,14 +118,23 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
   };
 
   return (
-    <div className={isLight ? 'text-gray-600' : 'text-gray-500'} style={{ fontSize: 12 }}>
+    <div 
+      className={isLight ? 'text-gray-600' : 'text-gray-500'} 
+      style={{ 
+        fontSize: 12,
+        maxWidth: '56rem',
+        width: '100%',
+        marginLeft: 'auto',
+        marginRight: 'auto',
+        paddingLeft: 12,
+        paddingRight: 12,
+      }}
+    >
       {/* Header (always visible) */}
       <div
         style={{
           paddingTop: 6,
           paddingBottom: 0,
-          paddingLeft: 12,
-          paddingRight: 12,
           display: 'flex',
           alignItems: 'center',
           cursor: hasExpandableData ? 'pointer' : 'default',

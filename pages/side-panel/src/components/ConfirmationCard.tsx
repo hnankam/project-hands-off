@@ -44,9 +44,10 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
           backgroundColor: cardBackground,
           borderColor: borderColor,
           marginTop: '12px',
-          marginLeft: '12px',
-          marginRight: '12px',
-          width: 'calc(100% - 24px)', // Subtract both margins
+          marginLeft: 'auto',
+          marginRight: 'auto',
+          maxWidth: 'calc(56rem - 24px)', // Match assistant message max-width minus padding
+          width: 'calc(100% - 24px)', // Full width minus padding
         }}
       >
         {/* Content */}
@@ -177,9 +178,10 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
           backgroundColor: cardBackground,
           borderColor: borderColor,
           marginTop: '12px',
-          marginLeft: '12px',
-          marginRight: '12px',
-          width: 'calc(100% - 24px)', // Subtract both margins
+          marginLeft: 'auto',
+          marginRight: 'auto',
+          maxWidth: 'calc(56rem - 24px)', // Match assistant message max-width minus padding
+          width: 'calc(100% - 24px)', // Full width minus padding
         }}
       >
         {/* Header - show result with chevron toggle */}

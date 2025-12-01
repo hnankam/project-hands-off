@@ -587,8 +587,13 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           data-task-progress="true"
           data-session-id={sessionId}
           data-timestamp={Date.now()}
-          className="w-full pt-2 pl-3 pr-3"
+          className="w-full pt-2"
           style={{
+            maxWidth: '56rem',
+            marginLeft: 'auto',
+            marginRight: 'auto',
+            paddingLeft: 12,
+            paddingRight: 12,
             ['--copilot-kit-input-background-color' as string]: 'transparent',
             ['--copilot-kit-separator-color' as string]: isLight ? '#e5e7eb' : '#374151',
             ['--copilot-kit-border-color' as string]: isLight ? '#e5e7eb' : '#374151',

@@ -82,8 +82,30 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   const [agents, setAgents] = React.useState<Agent[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [missingContext, setMissingContext] = React.useState(false);
+  const [isTruncated, setIsTruncated] = React.useState(false);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+  const textRef = React.useRef<HTMLSpanElement>(null);
   const { organization, activeTeam, isLoading: authLoading } = useAuth();
+
+  // Check if text is truncated
+  React.useEffect(() => {
+    const checkTruncation = () => {
+      if (textRef.current) {
+        const isOverflowing = textRef.current.scrollWidth > textRef.current.clientWidth;
+        setIsTruncated(isOverflowing);
+      }
+    };
+
+    checkTruncation();
+    
+    // Re-check on resize
+    const resizeObserver = new ResizeObserver(checkTruncation);
+    if (textRef.current) {
+      resizeObserver.observe(textRef.current);
+    }
+
+    return () => resizeObserver.disconnect();
+  }, [selectedAgent, agents]);
 
   // Fetch agents from API
   React.useEffect(() => {
@@ -265,17 +287,19 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
           )}
         </span>
         <span className="font-medium truncate flex-1 min-w-0 relative overflow-hidden">
-          <span className="block truncate">
+          <span ref={textRef} className="block truncate">
             {selectedAgentData ? selectedAgentData.label : 'Select Agent'}
           </span>
-          <span 
-            className={cn(
-              'absolute right-0 top-0 bottom-0 w-8 pointer-events-none',
-              isLight
-                ? 'bg-gradient-to-l from-gray-50 via-gray-50/80 to-transparent'
-                : 'bg-gradient-to-l from-[#151C24] via-[#151C24]/80 to-transparent'
-            )}
-          />
+          {isTruncated && (
+            <span 
+              className={cn(
+                'absolute right-0 top-0 bottom-0 w-8 pointer-events-none',
+                isLight
+                  ? 'bg-gradient-to-l from-gray-50 via-gray-50/80 to-transparent'
+                  : 'bg-gradient-to-l from-[#151C24] via-[#151C24]/80 to-transparent'
+              )}
+            />
+          )}
         </span>
         <svg
           className={cn(

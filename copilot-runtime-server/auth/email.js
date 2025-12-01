@@ -21,6 +21,257 @@ if (!VALID_PROVIDERS.includes(EMAIL_PROVIDER)) {
 }
 
 /**
+ * Generate email content for password reset
+ */
+function generatePasswordResetEmail(email, name, resetLink) {
+  const userName = name || email.split('@')[0];
+  const subject = 'Reset your password';
+  
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+          line-height: 1.6;
+          color: #333;
+          max-width: 600px;
+          margin: 0 auto;
+          padding: 20px;
+        }
+        .container {
+          background-color: #f9f9f9;
+          border-radius: 8px;
+          padding: 30px;
+          margin: 20px 0;
+        }
+        .header {
+          text-align: center;
+          margin-bottom: 30px;
+        }
+        .button {
+          display: inline-block;
+          padding: 12px 30px;
+          background-color: #2563eb;
+          color: white !important;
+          text-decoration: none;
+          border-radius: 6px;
+          font-weight: 600;
+          margin: 20px 0;
+        }
+        .button:hover {
+          background-color: #1d4ed8;
+        }
+        .footer {
+          margin-top: 30px;
+          padding-top: 20px;
+          border-top: 1px solid #e5e7eb;
+          font-size: 12px;
+          color: #6b7280;
+          text-align: center;
+        }
+        .code {
+          background-color: #f3f4f6;
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-family: monospace;
+          word-break: break-all;
+        }
+        .warning {
+          background-color: #fef3c7;
+          border: 1px solid #f59e0b;
+          border-radius: 6px;
+          padding: 12px;
+          margin: 20px 0;
+          font-size: 14px;
+          color: #92400e;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Password Reset</h1>
+        </div>
+        
+        <p>Hi ${userName},</p>
+        
+        <p>
+          We received a request to reset your password. Click the button below to create a new password:
+        </p>
+        
+        <div style="text-align: center;">
+          <a href="${resetLink}" class="button">Reset Password</a>
+        </div>
+        
+        <p style="font-size: 14px; color: #6b7280;">
+          Or copy and paste this link in your browser:<br>
+          <span class="code">${resetLink}</span>
+        </p>
+        
+        <div class="warning">
+          This link will expire in 1 hour. If you didn't request a password reset, you can safely ignore this email.
+        </div>
+        
+        <div class="footer">
+          <p>
+            This email was sent to ${email}.<br>
+            If you didn't request this, please ignore this email or contact support if you have concerns.
+          </p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+  
+  const text = `
+Password Reset Request
+
+Hi ${userName},
+
+We received a request to reset your password.
+
+Reset your password by visiting:
+${resetLink}
+
+This link will expire in 1 hour.
+
+If you didn't request a password reset, you can safely ignore this email.
+  `.trim();
+  
+  return { subject, html, text };
+}
+
+/**
+ * Generate email content for admin-initiated password reset
+ */
+function generateAdminPasswordResetEmail(email, name, resetLink, adminName) {
+  const userName = name || email.split('@')[0];
+  const subject = 'Your password has been reset';
+  
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+          line-height: 1.6;
+          color: #333;
+          max-width: 600px;
+          margin: 0 auto;
+          padding: 20px;
+        }
+        .container {
+          background-color: #f9f9f9;
+          border-radius: 8px;
+          padding: 30px;
+          margin: 20px 0;
+        }
+        .header {
+          text-align: center;
+          margin-bottom: 30px;
+        }
+        .button {
+          display: inline-block;
+          padding: 12px 30px;
+          background-color: #2563eb;
+          color: white !important;
+          text-decoration: none;
+          border-radius: 6px;
+          font-weight: 600;
+          margin: 20px 0;
+        }
+        .button:hover {
+          background-color: #1d4ed8;
+        }
+        .footer {
+          margin-top: 30px;
+          padding-top: 20px;
+          border-top: 1px solid #e5e7eb;
+          font-size: 12px;
+          color: #6b7280;
+          text-align: center;
+        }
+        .code {
+          background-color: #f3f4f6;
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-family: monospace;
+          word-break: break-all;
+        }
+        .info {
+          background-color: #dbeafe;
+          border: 1px solid #3b82f6;
+          border-radius: 6px;
+          padding: 12px;
+          margin: 20px 0;
+          font-size: 14px;
+          color: #1e40af;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Password Reset by Administrator</h1>
+        </div>
+        
+        <p>Hi ${userName},</p>
+        
+        <p>
+          An administrator${adminName ? ` (${adminName})` : ''} has initiated a password reset for your account.
+          Click the button below to set a new password:
+        </p>
+        
+        <div style="text-align: center;">
+          <a href="${resetLink}" class="button">Set New Password</a>
+        </div>
+        
+        <p style="font-size: 14px; color: #6b7280;">
+          Or copy and paste this link in your browser:<br>
+          <span class="code">${resetLink}</span>
+        </p>
+        
+        <div class="info">
+          This link will expire in 1 hour. You will need to set a new password to access your account.
+        </div>
+        
+        <div class="footer">
+          <p>
+            This email was sent to ${email}.<br>
+            If you have questions, please contact your organization administrator.
+          </p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+  
+  const text = `
+Password Reset by Administrator
+
+Hi ${userName},
+
+An administrator${adminName ? ` (${adminName})` : ''} has initiated a password reset for your account.
+
+Set your new password by visiting:
+${resetLink}
+
+This link will expire in 1 hour.
+
+If you have questions, please contact your organization administrator.
+  `.trim();
+  
+  return { subject, html, text };
+}
+
+/**
  * Generate email content for organization invitation
  */
 function generateInvitationEmail(email, organization, inviter, invitationLink) {
@@ -84,7 +335,7 @@ function generateInvitationEmail(email, organization, inviter, invitationLink) {
     <body>
       <div class="container">
         <div class="header">
-          <h1>🎉 You're Invited!</h1>
+        <h1>You're Invited!</h1>
         </div>
         
         <p>Hi there,</p>
@@ -296,5 +547,139 @@ async function sendWithSES(to, subject, html, text) {
   });
   
   await client.send(command);
+}
+
+/**
+ * Send password reset email (user-initiated)
+ * @param {Object} data - Reset data
+ * @param {string} data.email - User email address
+ * @param {string} data.name - User name
+ * @param {string} data.resetLink - Password reset link
+ * @param {string} data.token - Reset token (for logging only)
+ */
+export async function sendPasswordResetEmail(data) {
+  const { email, name, resetLink } = data;
+  
+  if (!email || !resetLink) {
+    throw new Error('Missing required data: email or resetLink');
+  }
+  
+  const { subject, html, text } = generatePasswordResetEmail(email, name, resetLink);
+  
+  try {
+    switch (EMAIL_PROVIDER) {
+      case 'resend':
+        await sendWithResend(email, subject, html, text);
+        break;
+      
+      case 'sendgrid':
+        await sendWithSendGrid(email, subject, html, text);
+        break;
+      
+      case 'ses':
+        await sendWithSES(email, subject, html, text);
+        break;
+      
+      case 'console':
+      default:
+        logPasswordResetToConsole(email, name, resetLink);
+        break;
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to send password reset email:', error);
+    throw error;
+  }
+}
+
+/**
+ * Send admin-initiated password reset email
+ * @param {Object} data - Reset data
+ * @param {string} data.email - User email address
+ * @param {string} data.name - User name
+ * @param {string} data.resetLink - Password reset link
+ * @param {string} data.adminName - Admin who initiated the reset
+ */
+export async function sendAdminPasswordResetEmail(data) {
+  const { email, name, resetLink, adminName } = data;
+  
+  if (!email || !resetLink) {
+    throw new Error('Missing required data: email or resetLink');
+  }
+  
+  const { subject, html, text } = generateAdminPasswordResetEmail(email, name, resetLink, adminName);
+  
+  try {
+    switch (EMAIL_PROVIDER) {
+      case 'resend':
+        await sendWithResend(email, subject, html, text);
+        break;
+      
+      case 'sendgrid':
+        await sendWithSendGrid(email, subject, html, text);
+        break;
+      
+      case 'ses':
+        await sendWithSES(email, subject, html, text);
+        break;
+      
+      case 'console':
+      default:
+        logAdminPasswordResetToConsole(email, name, resetLink, adminName);
+        break;
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to send admin password reset email:', error);
+    throw error;
+  }
+}
+
+/**
+ * Log password reset email to console (development mode)
+ */
+function logPasswordResetToConsole(to, name, link) {
+  const userName = name || to.split('@')[0];
+  console.log(`
+╔════════════════════════════════════════════════════════════════════════════╗
+║                    PASSWORD RESET EMAIL (Dev Mode)                         ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║ To: ${to.padEnd(70)}║
+║ Name: ${userName.padEnd(67)}║
+╠════════════════════════════════════════════════════════════════════════════╣
+║                                                                            ║
+║ Click to reset password:                                                   ║
+║ ${link.substring(0, 74).padEnd(74)}║
+${link.length > 74 ? `║ ${link.substring(74).padEnd(74)}║\n` : ''}║                                                                            ║
+║ This link expires in 1 hour.                                               ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+  `);
+}
+
+/**
+ * Log admin password reset email to console (development mode)
+ */
+function logAdminPasswordResetToConsole(to, name, link, adminName) {
+  const userName = name || to.split('@')[0];
+  const admin = adminName || 'Administrator';
+  console.log(`
+╔════════════════════════════════════════════════════════════════════════════╗
+║               ADMIN PASSWORD RESET EMAIL (Dev Mode)                        ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║ To: ${to.padEnd(70)}║
+║ Name: ${userName.padEnd(67)}║
+║ Reset by: ${admin.padEnd(63)}║
+╠════════════════════════════════════════════════════════════════════════════╣
+║                                                                            ║
+║ Click to set new password:                                                 ║
+║ ${link.substring(0, 74).padEnd(74)}║
+${link.length > 74 ? `║ ${link.substring(74).padEnd(74)}║\n` : ''}║                                                                            ║
+║ This link expires in 1 hour.                                               ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+  `);
 }
 

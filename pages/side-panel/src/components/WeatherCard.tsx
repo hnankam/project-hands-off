@@ -26,8 +26,15 @@ function SunIcon() {
 export const WeatherCard: FC<WeatherCardProps> = ({ location, themeColor }) => {
   return (
     <div
-    style={{ backgroundColor: 'blue' } as React.CSSProperties}
-    className="rounded-xl shadow-xl mt-6 mb-4 max-w-md w-full"
+    style={{ 
+      backgroundColor: 'blue',
+      maxWidth: 'calc(56rem - 24px)',
+      marginLeft: 'auto',
+      marginRight: 'auto',
+      paddingLeft: 12,
+      paddingRight: 12,
+    } as React.CSSProperties}
+    className="rounded-xl shadow-xl mt-6 mb-4 w-full"
   >
     <div className="bg-white/20 p-4 w-full">
       <div className="flex items-center justify-between">

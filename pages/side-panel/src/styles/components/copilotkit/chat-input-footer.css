@@ -399,6 +399,13 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 }
 
 /* Input placeholder colors - matches main text colors */
+/* Ensure textarea has minimum height of 2 lines */
+.copilotKitInputTextarea,
+.copilotKitInput textarea {
+  min-height: 2.8em !important; /* Approximately 2 lines */
+  line-height: 1.4 !important;
+}
+
 .copilotKitInputTextarea::placeholder,
 .copilotKitInput textarea::placeholder {
   color: #4b5563 !important; /* gray-600 for light mode */

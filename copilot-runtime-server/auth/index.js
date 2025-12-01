@@ -3,13 +3,19 @@
  * 
  * This file configures Better Auth with the organization plugin for
  * multi-tenant organization and team management.
+ * 
+ * Features:
+ * - Email/password authentication
+ * - Organization and team management
+ * - Forgot password flow (email-based)
+ * - Admin password reset capability
  */
 
 import { betterAuth } from "better-auth";
-import { organization } from "better-auth/plugins";
+import { organization, admin } from "better-auth/plugins";
 import { defaultAc } from "better-auth/plugins/organization/access";
 import { getPool } from '../config/database.js';
-import { sendOrganizationInvitation } from './email.js';
+import { sendOrganizationInvitation, sendPasswordResetEmail } from './email.js';
 
 // Helper to check if user is admin/owner in an organization
 async function isAdminOrOwner(userId, organizationId) {
@@ -46,10 +52,28 @@ async function addUserToTeam(teamId, userId) {
 export const auth = betterAuth({
   database: getPool(),
   
-  // Email/password authentication
+  // Email/password authentication with forgot password support
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false, // Set to true in production
+    
+    // Forgot password configuration
+    sendResetPassword: async ({ user, url, token }) => {
+      // Generate our custom reset link that shows the instruction page
+      const baseUrl = process.env.BETTER_AUTH_URL || process.env.BASE_URL || 'http://localhost:3001';
+      const customResetLink = `${baseUrl}/api/auth/reset-password?token=${token}`;
+      
+      // Send password reset email with our custom link
+      await sendPasswordResetEmail({
+        email: user.email,
+        name: user.name,
+        resetLink: customResetLink,
+        token,
+      });
+    },
+    
+    // Password reset token expiration (1 hour)
+    resetPasswordTokenExpiresIn: 60 * 60, // 1 hour in seconds
   },
   
   // Session configuration
@@ -88,8 +112,15 @@ export const auth = betterAuth({
     disableCSRFCheck: true,
   },
   
-  // Organization plugin configuration
+  // Plugins configuration
   plugins: [
+    // Admin plugin for user management (password reset, etc.)
+    admin({
+      // Default role is 'user' - admins are managed via organization roles
+      defaultRole: 'user',
+    }),
+    
+    // Organization plugin for multi-tenant support
     organization({
       // Enable teams functionality
       teams: {

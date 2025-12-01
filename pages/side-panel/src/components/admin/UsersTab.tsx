@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { authClient } from '../../lib/auth-client';
+import { authClient, adminResetPassword } from '../../lib/auth-client';
 import { cn } from '@extension/ui';
 import { OrganizationSelector } from './OrganizationSelector';
 import { TeamSelector } from './TeamSelector';
@@ -116,6 +116,8 @@ export function UsersTab({ isLight, organizations, preselectedOrgId, onError, on
   const [roleLoaded, setRoleLoaded] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [teamsLoading, setTeamsLoading] = useState(false);
+  const [resetPasswordConfirmOpen, setResetPasswordConfirmOpen] = useState(false);
+  const [userToResetPassword, setUserToResetPassword] = useState<{ id: string; email: string; name: string } | null>(null);
 
   // Auto-select organization if there's only one
   useEffect(() => {
@@ -628,6 +630,32 @@ useEffect(() => {
     }
   };
 
+  const openResetPasswordConfirm = (userId: string, userEmail: string, userName: string) => {
+    setUserToResetPassword({ id: userId, email: userEmail, name: userName });
+    setResetPasswordConfirmOpen(true);
+  };
+
+  const confirmResetPassword = async () => {
+    if (!userToResetPassword) return;
+
+    setLoading(true);
+
+    try {
+      const result = await adminResetPassword(userToResetPassword.id, selectedOrgForUsers);
+
+      if (result.error) throw new Error(result.error);
+
+      onSuccess(result.message || `Password reset email sent to ${userToResetPassword.email}`);
+      setResetPasswordConfirmOpen(false);
+      setUserToResetPassword(null);
+    } catch (err: any) {
+      onError(err.message || 'Failed to send password reset email');
+      setResetPasswordConfirmOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div>
       {/* Organization and Team Selectors */}
@@ -1135,6 +1163,28 @@ useEffect(() => {
                           </svg>
                         </button>
                         )}
+                        {/* Show reset password button only for admins/owners managing other users */}
+                        {canManageUsers && member.userId !== currentUserId && (
+                        <button
+                          onClick={() => openResetPasswordConfirm(member.userId, member.user.email, member.user.name || '')}
+                          disabled={loading}
+                          className={cn(
+                              'p-1 rounded transition-colors',
+                            isLight
+                              ? 'text-orange-600 hover:bg-orange-50 hover:text-orange-700'
+                              : 'text-orange-400 hover:bg-orange-900/20 hover:text-orange-300',
+                            loading && 'opacity-50 cursor-not-allowed',
+                          )}
+                          title="Reset password">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"
+                            />
+                          </svg>
+                        </button>
+                        )}
                         {/* Show delete button only for admins/owners managing other users */}
                         {canManageUsers && member.userId !== currentUserId && (
                         <button
@@ -1370,6 +1420,118 @@ useEffect(() => {
                     loading && 'opacity-50 cursor-not-allowed',
                   )}>
                   {loading ? 'Cancelling...' : 'Cancel Invitation'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Reset Password Confirmation Modal */}
+      {resetPasswordConfirmOpen && userToResetPassword && (
+        <>
+          <div
+            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
+            onClick={() => setResetPasswordConfirmOpen(false)}
+          />
+
+          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
+            <div
+              className={cn(
+                'w-full max-w-sm rounded-lg shadow-xl',
+                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
+              )}
+              onClick={e => e.stopPropagation()}>
+              <div
+                className={cn(
+                  'flex items-center justify-between border-b px-3 py-2',
+                  isLight ? 'border-gray-200' : 'border-gray-700',
+                )}>
+                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
+                  Reset User Password
+                </h2>
+                <button
+                  onClick={() => setResetPasswordConfirmOpen(false)}
+                  className={cn(
+                    'rounded-md p-0.5 transition-colors',
+                    isLight
+                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
+                  )}>
+                  <svg
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round">
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-3 px-3 py-4">
+                <div className="flex items-start gap-3">
+                  <div
+                    className={cn(
+                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
+                      isLight ? 'bg-orange-100' : 'bg-orange-900/30',
+                    )}>
+                    <svg
+                      className={cn('h-3.5 w-3.5', isLight ? 'text-orange-600' : 'text-orange-400')}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      strokeWidth={2}>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"
+                      />
+                    </svg>
+                  </div>
+
+                  <div className="flex-1">
+                    <p className={cn('text-sm font-medium', mainTextColor)}>
+                      Reset password for "{userToResetPassword.name || userToResetPassword.email}"?
+                    </p>
+                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      A password reset email will be sent to <strong>{userToResetPassword.email}</strong>. 
+                      The user will need to click the link in the email to set a new password.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                className={cn(
+                  'flex items-center justify-end gap-2 border-t px-3 py-2',
+                  isLight ? 'border-gray-200' : 'border-gray-700',
+                )}>
+                <button
+                  onClick={() => {
+                    setResetPasswordConfirmOpen(false);
+                    setUserToResetPassword(null);
+                  }}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                    isLight
+                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
+                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
+                  )}>
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmResetPassword}
+                  disabled={loading}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                    'bg-orange-600 text-white hover:bg-orange-700',
+                    loading && 'opacity-50 cursor-not-allowed',
+                  )}>
+                  {loading ? 'Sending...' : 'Send Reset Email'}
                 </button>
               </div>
             </div>

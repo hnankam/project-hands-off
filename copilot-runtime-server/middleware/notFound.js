@@ -17,7 +17,7 @@
 export function notFoundMiddleware(req, res) {
   const reqId = res.locals?.reqId || 'unknown';
 
-  log(`[Not Found] ${req.method} ${req.originalUrl}: JSON=${JSON.stringify(req)}`);
+  console.log(`[Not Found] ${req.method} ${req.originalUrl}`);
   
   res.status(404).json({
     error: {

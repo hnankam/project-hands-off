@@ -64,8 +64,9 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
           backgroundColor: cardBackground,
           borderColor: borderColor,
           marginTop: '12px',
-          marginLeft: '12px',
-          marginRight: '12px',
+          marginLeft: 'auto',
+          marginRight: 'auto',
+          maxWidth: 'calc(56rem - 24px)',
           width: 'calc(100% - 24px)',
         }}
       >
@@ -225,8 +226,9 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
         backgroundColor: cardBackground,
         borderColor: borderColor,
         marginTop: '12px',
-        marginLeft: '12px',
-        marginRight: '12px',
+        marginLeft: 'auto',
+        marginRight: 'auto',
+        maxWidth: 'calc(56rem - 24px)',
         width: 'calc(100% - 24px)',
       }}
     >

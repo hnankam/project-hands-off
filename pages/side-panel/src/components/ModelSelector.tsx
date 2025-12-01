@@ -24,7 +24,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
   const [models, setModels] = React.useState<Model[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [missingContext, setMissingContext] = React.useState(false);
+  const [isTruncated, setIsTruncated] = React.useState(false);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+  const textRef = React.useRef<HTMLSpanElement>(null);
   const { organization, activeTeam, isLoading: authLoading } = useAuth();
   
   // Get allowed models for the selected agent
@@ -33,6 +35,26 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
     const agent = agents.find(a => a.id === selectedAgent);
     return agent?.allowedModels || null;
   }, [selectedAgent, agents]);
+
+  // Check if text is truncated
+  React.useEffect(() => {
+    const checkTruncation = () => {
+      if (textRef.current) {
+        const isOverflowing = textRef.current.scrollWidth > textRef.current.clientWidth;
+        setIsTruncated(isOverflowing);
+      }
+    };
+
+    checkTruncation();
+    
+    // Re-check on resize
+    const resizeObserver = new ResizeObserver(checkTruncation);
+    if (textRef.current) {
+      resizeObserver.observe(textRef.current);
+    }
+
+    return () => resizeObserver.disconnect();
+  }, [selectedModel, models]);
 
   // Fetch models from API
   React.useEffect(() => {
@@ -272,17 +294,19 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
           <path d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
         </svg>
         <span className="relative min-w-0 flex-1 overflow-hidden truncate font-medium">
-          <span className="block truncate">
+          <span ref={textRef} className="block truncate">
             {selectedModelData ? selectedModelData.label : 'Select Model'}
           </span>
-          <span
-            className={cn(
-              'pointer-events-none absolute bottom-0 right-0 top-0 w-8',
-              isLight
-                ? 'bg-gradient-to-l from-gray-50 via-gray-50/80 to-transparent'
-                : 'bg-gradient-to-l from-[#151C24] via-[#151C24]/80 to-transparent',
-            )}
-          />
+          {isTruncated && (
+            <span
+              className={cn(
+                'pointer-events-none absolute bottom-0 right-0 top-0 w-8',
+                isLight
+                  ? 'bg-gradient-to-l from-gray-50 via-gray-50/80 to-transparent'
+                  : 'bg-gradient-to-l from-[#151C24] via-[#151C24]/80 to-transparent',
+              )}
+            />
+          )}
         </span>
         <svg
           className={cn('flex-shrink-0 transition-transform', isOpen ? 'rotate-180' : '')}

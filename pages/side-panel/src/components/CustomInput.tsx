@@ -49,18 +49,24 @@ interface AutoResizingTextareaProps {
 const AutoResizingTextarea = React.forwardRef<HTMLTextAreaElement, AutoResizingTextareaProps>(
   ({ placeholder, autoFocus, maxRows = 6, value, onChange, onCompositionStart, onCompositionEnd, onKeyDown, onPaste, disabled = false }, ref) => {
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const minRows = 2; // Minimum rows to display
 
     const handleResize = () => {
       const textarea = textareaRef.current;
       if (!textarea) return;
 
-      // Reset height to auto to get the correct scrollHeight
-      textarea.style.height = 'auto';
-
-      // Calculate the new height based on content
-      const lineHeight = parseInt(window.getComputedStyle(textarea).lineHeight);
+      // Get computed styles
+      const computedStyle = window.getComputedStyle(textarea);
+      const lineHeight = parseFloat(computedStyle.lineHeight) || 20;
+      const minHeight = lineHeight * minRows;
       const maxHeight = lineHeight * maxRows;
-      const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+
+      // Reset height to measure content
+      textarea.style.height = 'auto';
+      
+      // Calculate new height with min/max constraints
+      const contentHeight = textarea.scrollHeight;
+      const newHeight = Math.max(minHeight, Math.min(contentHeight, maxHeight));
 
       textarea.style.height = `${newHeight}px`;
     };
@@ -92,7 +98,7 @@ const AutoResizingTextarea = React.forwardRef<HTMLTextAreaElement, AutoResizingT
         onKeyDown={onKeyDown}
         onPaste={disabled ? undefined : onPaste}
         disabled={disabled}
-        rows={1}
+        rows={minRows}
         style={{
           resize: 'none',
           overflow: 'auto',

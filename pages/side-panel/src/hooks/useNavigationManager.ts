@@ -22,6 +22,7 @@ export interface NavigationState {
   activePage: PageType;
   adminInitialTab: AdminTab;
   invitationId: string | null;
+  resetPasswordToken: string | null;
   isPageRestored: boolean;
 }
 
@@ -30,6 +31,7 @@ export interface NavigationActions {
   navigateToSessions: () => void;
   navigateToAdmin: (tab?: AdminTab) => void;
   setInvitationId: (id: string | null) => void;
+  setResetPasswordToken: (token: string | null) => void;
 }
 
 // ============================================================================
@@ -48,6 +50,7 @@ const HASH_ROUTES = {
   SESSIONS: '#/sessions',
   ADMIN: '#/admin',
   INVITATION: '#/accept-invitation/',
+  RESET_PASSWORD: '#/reset-password',
 } as const;
 
 // ============================================================================
@@ -78,6 +81,31 @@ function getPageFromHash(hash: string): PageType | null {
  */
 function hasInvitationRoute(hash: string): boolean {
   return hash.includes(HASH_ROUTES.INVITATION);
+}
+
+/**
+ * Checks if hash contains a reset password route.
+ */
+function hasResetPasswordRoute(hash: string): boolean {
+  return hash.includes(HASH_ROUTES.RESET_PASSWORD);
+}
+
+/**
+ * Extracts reset password token from URL.
+ * Handles both hash-based and query string-based tokens.
+ */
+function getResetPasswordToken(): string | null {
+  // Check query string first (for direct links from email)
+  const urlParams = new URLSearchParams(window.location.search);
+  const queryToken = urlParams.get('token');
+  if (queryToken) return queryToken;
+  
+  // Check hash-based route (for in-app navigation)
+  const hash = window.location.hash;
+  const tokenMatch = hash.match(/reset-password\?token=([a-zA-Z0-9_-]+)/);
+  if (tokenMatch) return tokenMatch[1];
+  
+  return null;
 }
 
 // ============================================================================
@@ -120,6 +148,7 @@ export function useNavigationManager(): NavigationState & NavigationActions {
   const [activePage, setActivePage] = useState<PageType>('sessions');
   const [adminInitialTab, setAdminInitialTab] = useState<AdminTab>('organizations');
   const [invitationId, setInvitationId] = useState<string | null>(null);
+  const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const [isPageRestored, setIsPageRestored] = useState(false);
   
   // ============================================================================
@@ -155,8 +184,17 @@ export function useNavigationManager(): NavigationState & NavigationActions {
       try {
         const hash = window.location.hash;
         
+        // Check for reset password token first (can come from query string or hash)
+        const token = getResetPasswordToken();
+        if (token) {
+          debug.log('[NavigationManager] Reset password token detected');
+          setResetPasswordToken(token);
+          setIsPageRestored(true);
+          return;
+        }
+        
         // If there's already a hash route, let the hash checker handle it
-        if (hash && (getPageFromHash(hash) || hasInvitationRoute(hash))) {
+        if (hash && (getPageFromHash(hash) || hasInvitationRoute(hash) || hasResetPasswordRoute(hash))) {
           debug.log('[NavigationManager] Hash route detected, skipping restoration:', hash);
           setIsPageRestored(true);
           return;
@@ -201,6 +239,14 @@ export function useNavigationManager(): NavigationState & NavigationActions {
       
       debug.log('[NavigationManager] Checking hash:', hash);
       
+      // Check for reset password token
+      const token = getResetPasswordToken();
+      if (token) {
+        debug.log('[NavigationManager] Reset password token detected');
+        setResetPasswordToken(token);
+        return;
+      }
+      
       // Check for #/accept-invitation/{invitationId}
       const invitationMatch = hash.match(/accept-invitation\/([a-zA-Z0-9_-]+)/);
       if (invitationMatch) {
@@ -233,11 +279,13 @@ export function useNavigationManager(): NavigationState & NavigationActions {
     activePage,
     adminInitialTab,
     invitationId,
+    resetPasswordToken,
     isPageRestored,
     navigateToHome,
     navigateToSessions,
     navigateToAdmin,
     setInvitationId,
+    setResetPasswordToken,
   };
 }
 
