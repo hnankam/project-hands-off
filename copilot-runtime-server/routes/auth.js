@@ -287,6 +287,284 @@ router.post('/admin-reset-password', express.json(), async (req, res) => {
 });
 
 /**
+ * POST /api/auth/admin-ban-user
+ * Deactivate a user within an organization
+ * 
+ * Organization owners/admins can ban users in their organization.
+ * This prevents the user from signing in while preserving their data.
+ * 
+ * Body:
+ * - userId: User ID to ban (required)
+ * - organizationId: Organization ID (required for authorization)
+ * - banReason: Optional reason for the ban
+ * 
+ * Returns:
+ * - { success: true, message: string }
+ * 
+ * Errors:
+ * - 400: Missing required parameters
+ * - 401: User not authenticated
+ * - 403: User is not admin/owner of the organization
+ * - 404: Target user not found or not in organization
+ * - 500: Server error
+ */
+router.post('/admin-ban-user', express.json(), async (req, res) => {
+  try {
+    const { userId, organizationId, banReason } = req.body;
+    
+    if (!userId || !organizationId) {
+      return res.status(400).json({ 
+        error: 'userId and organizationId are required' 
+      });
+    }
+    
+    // Authenticate admin user
+    const session = await auth.api.getSession({ headers: req.headers });
+    
+    if (!session?.session || !session?.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const adminUserId = session.user.id;
+    const pool = getPool();
+    
+    // Prevent self-banning
+    if (userId === adminUserId) {
+      return res.status(400).json({ error: 'You cannot ban yourself' });
+    }
+    
+    // Check if requesting user is admin/owner of the organization
+    const memberResult = await pool.query(
+      'SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2',
+      [organizationId, adminUserId]
+    );
+    
+    if (memberResult.rows.length === 0) {
+      return res.status(403).json({ error: 'Not a member of this organization' });
+    }
+    
+    const roles = Array.isArray(memberResult.rows[0].role) 
+      ? memberResult.rows[0].role 
+      : [memberResult.rows[0].role];
+    
+    if (!roles.includes('owner') && !roles.includes('admin')) {
+      return res.status(403).json({ error: 'Only admins and owners can ban users' });
+    }
+    
+    // Check if target user is in the organization
+    const targetMemberResult = await pool.query(
+      'SELECT m."userId", u.email, u.name FROM member m JOIN "user" u ON m."userId" = u.id WHERE m."organizationId" = $1 AND m."userId" = $2',
+      [organizationId, userId]
+    );
+    
+    if (targetMemberResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found in this organization' });
+    }
+    
+    const targetUser = targetMemberResult.rows[0];
+    
+    // Ban the user by updating the user table
+    await pool.query(
+      'UPDATE "user" SET banned = true, "banReason" = $1 WHERE id = $2',
+      [banReason || null, userId]
+    );
+    
+    console.log(`[Auth] Admin ${session.user.email} banned user ${targetUser.email} in org ${organizationId}`);
+    
+    res.json({ 
+      success: true, 
+      message: `User ${targetUser.email} has been deactivated` 
+    });
+  } catch (error) {
+    console.error('[Auth] Error banning user:', error.message);
+    res.status(500).json({ error: 'Failed to ban user' });
+  }
+});
+
+/**
+ * POST /api/auth/admin-unban-user
+ * Reactivate a banned user within an organization
+ * 
+ * Organization owners/admins can unban users in their organization.
+ * This restores the user's ability to sign in.
+ * 
+ * Body:
+ * - userId: User ID to unban (required)
+ * - organizationId: Organization ID (required for authorization)
+ * 
+ * Returns:
+ * - { success: true, message: string }
+ * 
+ * Errors:
+ * - 400: Missing required parameters
+ * - 401: User not authenticated
+ * - 403: User is not admin/owner of the organization
+ * - 404: Target user not found or not in organization
+ * - 500: Server error
+ */
+router.post('/admin-unban-user', express.json(), async (req, res) => {
+  try {
+    const { userId, organizationId } = req.body;
+    
+    if (!userId || !organizationId) {
+      return res.status(400).json({ 
+        error: 'userId and organizationId are required' 
+      });
+    }
+    
+    // Authenticate admin user
+    const session = await auth.api.getSession({ headers: req.headers });
+    
+    if (!session?.session || !session?.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const adminUserId = session.user.id;
+    const pool = getPool();
+    
+    // Check if requesting user is admin/owner of the organization
+    const memberResult = await pool.query(
+      'SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2',
+      [organizationId, adminUserId]
+    );
+    
+    if (memberResult.rows.length === 0) {
+      return res.status(403).json({ error: 'Not a member of this organization' });
+    }
+    
+    const roles = Array.isArray(memberResult.rows[0].role) 
+      ? memberResult.rows[0].role 
+      : [memberResult.rows[0].role];
+    
+    if (!roles.includes('owner') && !roles.includes('admin')) {
+      return res.status(403).json({ error: 'Only admins and owners can unban users' });
+    }
+    
+    // Check if target user is in the organization
+    const targetMemberResult = await pool.query(
+      'SELECT m."userId", u.email, u.name FROM member m JOIN "user" u ON m."userId" = u.id WHERE m."organizationId" = $1 AND m."userId" = $2',
+      [organizationId, userId]
+    );
+    
+    if (targetMemberResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found in this organization' });
+    }
+    
+    const targetUser = targetMemberResult.rows[0];
+    
+    // Unban the user by updating the user table
+    await pool.query(
+      'UPDATE "user" SET banned = false, "banReason" = NULL, "banExpires" = NULL WHERE id = $1',
+      [userId]
+    );
+    
+    console.log(`[Auth] Admin ${session.user.email} unbanned user ${targetUser.email} in org ${organizationId}`);
+    
+    res.json({ 
+      success: true, 
+      message: `User ${targetUser.email} has been reactivated` 
+    });
+  } catch (error) {
+    console.error('[Auth] Error unbanning user:', error.message);
+    res.status(500).json({ error: 'Failed to unban user' });
+  }
+});
+
+/**
+ * GET /api/auth/org-members-with-status
+ * Get organization members with their banned status
+ * 
+ * This custom endpoint extends Better Auth's listMembers to include
+ * the banned status from the user table.
+ * 
+ * Query:
+ * - organizationId: Organization ID (required)
+ * 
+ * Returns:
+ * - { members: Array<Member with banned status> }
+ * 
+ * Errors:
+ * - 400: Missing organizationId
+ * - 401: User not authenticated
+ * - 403: User is not a member of the organization
+ * - 500: Server error
+ */
+router.get('/org-members-with-status', async (req, res) => {
+  try {
+    const { organizationId } = req.query;
+    
+    if (!organizationId) {
+      return res.status(400).json({ 
+        error: 'organizationId is required' 
+      });
+    }
+    
+    // Authenticate user
+    const session = await auth.api.getSession({ headers: req.headers });
+    
+    if (!session?.session || !session?.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const pool = getPool();
+    
+    // Check if user is a member of the organization
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM member WHERE "organizationId" = $1 AND "userId" = $2',
+      [organizationId, session.user.id]
+    );
+    
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Not a member of this organization' });
+    }
+    
+    // Fetch members with user data including banned status
+    const result = await pool.query(`
+      SELECT 
+        m.id,
+        m."userId",
+        m."organizationId",
+        m.role,
+        m."createdAt",
+        u.id as "user_id",
+        u.name as "user_name",
+        u.email as "user_email",
+        u.image as "user_image",
+        u.banned as "user_banned",
+        u."banReason" as "user_banReason",
+        u."banExpires" as "user_banExpires"
+      FROM member m
+      JOIN "user" u ON m."userId" = u.id
+      WHERE m."organizationId" = $1
+      ORDER BY m."createdAt" ASC
+    `, [organizationId]);
+    
+    // Transform the flat result into nested structure
+    const members = result.rows.map(row => ({
+      id: row.id,
+      userId: row.userId,
+      organizationId: row.organizationId,
+      role: row.role,
+      createdAt: row.createdAt,
+      user: {
+        id: row.user_id,
+        name: row.user_name,
+        email: row.user_email,
+        image: row.user_image,
+        banned: row.user_banned,
+        banReason: row.user_banReason,
+        banExpires: row.user_banExpires,
+      },
+    }));
+    
+    res.json({ members });
+  } catch (error) {
+    console.error('[Auth] Error fetching members with status:', error.message);
+    res.status(500).json({ error: 'Failed to fetch members' });
+  }
+});
+
+/**
  * Mount Better Auth handler
  * 
  * Uses Better Auth's official Node.js adapter (toNodeHandler) to handle all

@@ -85,7 +85,6 @@ import {
 import { CHAT_SUGGESTIONS_INSTRUCTIONS, DEFAULT_MAX_SUGGESTIONS } from '../constants/chatSuggestions';
 
 // CopilotKit Action Creators
-import { createSetThemeColorAction } from '../actions/copilot/themeActions';
 import { 
   createSearchPageContentAction,
   createSearchFormDataAction,
@@ -114,7 +113,6 @@ import {
   createDragAndDropAction,
 } from '../actions/copilot/navigationActions';
 import { createTakeScreenshotAction } from '../actions/copilot/screenshotActions';
-import { createGetWeatherAction } from '../actions/copilot/weatherActions';
 import { createGenerateImagesAction } from '../actions/copilot/imageActions';
 import { createWaitAction, createConfirmActionHumanInTheLoop } from '../actions/copilot/utilityActions';
 import { 
@@ -508,9 +506,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     themeColor,
   }), [searchManager, isLight, clipText, yesNo, currentPageContent, themeColor]);
   
-  // Theme Actions
-  useFrontendTool(createSetThemeColorAction(setThemeColor) as Parameters<typeof useFrontendTool>[0], [setThemeColor]);
-
   // Search Actions
   useFrontendTool(createSearchPageContentAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
   useFrontendTool(createSearchFormDataAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
@@ -544,9 +539,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
 
   // Screenshot Actions
   useFrontendTool(createTakeScreenshotAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
-
-  // Weather Actions
-  useFrontendTool(createGetWeatherAction({ themeColor }) as Parameters<typeof useFrontendTool>[0], [themeColor]);
 
   // Image Generation Actions
   useRenderToolCall(createGenerateImagesAction({ themeColor }) as Parameters<typeof useRenderToolCall>[0], [themeColor]);

@@ -3,7 +3,8 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { authClient, adminResetPassword } from '../../lib/auth-client';
+import { createPortal } from 'react-dom';
+import { authClient, adminResetPassword, banUser, unbanUser } from '../../lib/auth-client';
 import { cn } from '@extension/ui';
 import { OrganizationSelector } from './OrganizationSelector';
 import { TeamSelector } from './TeamSelector';
@@ -23,6 +24,9 @@ interface User {
   name: string;
   email: string;
   image?: string | null;
+  banned?: boolean | null;
+  banReason?: string | null;
+  banExpires?: string | Date | null;
 }
 
 interface Member {
@@ -118,6 +122,12 @@ export function UsersTab({ isLight, organizations, preselectedOrgId, onError, on
   const [teamsLoading, setTeamsLoading] = useState(false);
   const [resetPasswordConfirmOpen, setResetPasswordConfirmOpen] = useState(false);
   const [userToResetPassword, setUserToResetPassword] = useState<{ id: string; email: string; name: string } | null>(null);
+  const [banUserConfirmOpen, setBanUserConfirmOpen] = useState(false);
+  const [userToBan, setUserToBan] = useState<{ id: string; email: string; name: string; isBanned: boolean } | null>(null);
+  const [banReason, setBanReason] = useState('');
+  const [openMenuMemberId, setOpenMenuMemberId] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
 
   // Auto-select organization if there's only one
   useEffect(() => {
@@ -182,14 +192,36 @@ useEffect(() => {
     setSelectedTeamIds([]);
   }, [selectedOrgForUsers]);
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuMemberId(null);
+        setMenuPosition(null);
+      }
+    };
+
+    if (openMenuMemberId) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+    return undefined;
+  }, [openMenuMemberId]);
+
   const loadMembers = async (orgId: string) => {
     try {
-      const { data, error } = await authClient.organization.listMembers({
-        query: { organizationId: orgId },
+      // Use custom endpoint that includes banned status
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseURL}/api/auth/org-members-with-status?organizationId=${orgId}`, {
+        credentials: 'include',
       });
-
-      if (error) throw new Error(error.message);
-
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to load members');
+      }
+      
+      const data = await response.json();
       setMembers(data?.members || []);
     } catch (err: any) {
       onError(err.message || 'Failed to load members');
@@ -578,6 +610,42 @@ useEffect(() => {
     }
   };
 
+  const openBanUserConfirm = (userId: string, email: string, name: string, isBanned: boolean) => {
+    setUserToBan({ id: userId, email, name, isBanned });
+    setBanReason('');
+    setBanUserConfirmOpen(true);
+  };
+
+  const confirmBanUser = async () => {
+    if (!userToBan || !selectedOrgForUsers) return;
+
+    setLoading(true);
+
+    try {
+      if (userToBan.isBanned) {
+        // Unban user
+        const { error } = await unbanUser(userToBan.id, selectedOrgForUsers);
+        if (error) throw new Error(error);
+        onSuccess(`User ${userToBan.email} has been reactivated!`);
+      } else {
+        // Ban user
+        const { error } = await banUser(userToBan.id, selectedOrgForUsers, banReason || undefined);
+        if (error) throw new Error(error);
+        onSuccess(`User ${userToBan.email} has been deactivated!`);
+      }
+
+      setBanUserConfirmOpen(false);
+      setUserToBan(null);
+      setBanReason('');
+      await loadMembers(selectedOrgForUsers);
+    } catch (err: any) {
+      onError(err.message || `Failed to ${userToBan.isBanned ? 'reactivate' : 'deactivate'} user`);
+      setBanUserConfirmOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const openCancelInviteConfirm = (invitationId: string, email: string) => {
     setInviteToCancel({ id: invitationId, email });
     setCancelInviteConfirmOpen(true);
@@ -930,18 +998,23 @@ useEffect(() => {
                 {/* Active Members */}
                 {filteredMembers.map(member => {
                   const isCurrentUser = member.userId === currentUserId;
+                  const isBanned = !!member.user.banned;
                   return (
                   <div
                     key={member.id}
                     className={cn(
                       'p-3 rounded-lg border transition-all relative',
-                      isLight
-                        ? isCurrentUser
-                          ? 'bg-blue-50/50 border-blue-300 hover:border-blue-400 hover:shadow-sm'
-                          : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm'
-                        : isCurrentUser
-                          ? 'bg-blue-900/10 border-blue-500/50 hover:border-blue-400/70'
-                          : 'bg-[#151C24] border-gray-700 hover:border-gray-600',
+                      isBanned
+                        ? isLight
+                          ? 'bg-red-50/50 border-red-200 opacity-75'
+                          : 'bg-red-900/10 border-red-900/50 opacity-75'
+                        : isLight
+                          ? isCurrentUser
+                            ? 'bg-blue-50/50 border-blue-300 hover:border-blue-400 hover:shadow-sm'
+                            : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                          : isCurrentUser
+                            ? 'bg-blue-900/10 border-blue-500/50 hover:border-blue-400/70'
+                            : 'bg-[#151C24] border-gray-700 hover:border-gray-600',
                     )}>
                     {/* "You" tag for current user */}
                     {isCurrentUser && (
@@ -1116,6 +1189,19 @@ useEffect(() => {
                             {member.user.email}
                           </div>
                           <div className="flex items-center flex-wrap gap-2 mt-1">
+                            {member.user.banned && (
+                              <span
+                                className={cn(
+                                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
+                                  isLight ? 'bg-red-100 text-red-700' : 'bg-red-900/30 text-red-400',
+                                )}
+                                title={member.user.banReason ? `Reason: ${member.user.banReason}` : undefined}>
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                </svg>
+                                Deactivated
+                              </span>
+                            )}
                             <span
                               className={cn(
                                 'inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium',
@@ -1163,47 +1249,128 @@ useEffect(() => {
                           </svg>
                         </button>
                         )}
-                        {/* Show reset password button only for admins/owners managing other users */}
+                        {/* More options menu for admins/owners managing other users */}
                         {canManageUsers && member.userId !== currentUserId && (
-                        <button
-                          onClick={() => openResetPasswordConfirm(member.userId, member.user.email, member.user.name || '')}
-                          disabled={loading}
-                          className={cn(
-                              'p-1 rounded transition-colors',
-                            isLight
-                              ? 'text-orange-600 hover:bg-orange-50 hover:text-orange-700'
-                              : 'text-orange-400 hover:bg-orange-900/20 hover:text-orange-300',
-                            loading && 'opacity-50 cursor-not-allowed',
-                          )}
-                          title="Reset password">
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"
-                            />
-                          </svg>
-                        </button>
-                        )}
-                        {/* Show delete button only for admins/owners managing other users */}
-                        {canManageUsers && member.userId !== currentUserId && (
-                        <button
-                          onClick={() => openDeleteUserConfirm(member.id, member.user.email)}
-                          className={cn(
-                              'p-1 rounded transition-colors',
-                            isLight
-                              ? 'text-red-600 hover:bg-red-50 hover:text-red-700'
-                              : 'text-red-400 hover:bg-red-900/20 hover:text-red-300',
-                          )}
-                          title="Remove user">
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
+                          <div className="relative">
+                            <button
+                              onClick={(e) => {
+                                if (openMenuMemberId === member.id) {
+                                  setOpenMenuMemberId(null);
+                                  setMenuPosition(null);
+                                } else {
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  setMenuPosition({
+                                    top: rect.bottom + 4,
+                                    right: window.innerWidth - rect.right,
+                                  });
+                                  setOpenMenuMemberId(member.id);
+                                }
+                              }}
+                              className={cn(
+                                'p-1 rounded transition-colors',
+                                isLight
+                                  ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                              )}
+                              title="More options">
+                              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                              </svg>
+                            </button>
+
+                            {/* Dropdown Menu - rendered via portal to escape stacking context */}
+                            {openMenuMemberId === member.id && menuPosition && createPortal(
+                              <div
+                                ref={menuRef}
+                                className={cn(
+                                  'fixed w-44 rounded-lg border shadow-xl py-1',
+                                  isLight ? 'bg-white border-gray-200' : 'bg-[#1a2332] border-gray-700',
+                                )}
+                                style={{
+                                  zIndex: 99999,
+                                  top: menuPosition.top,
+                                  right: menuPosition.right,
+                                }}>
+                                {/* Reset Password */}
+                                <button
+                                  onClick={() => {
+                                    openResetPasswordConfirm(member.userId, member.user.email, member.user.name || '');
+                                    setOpenMenuMemberId(null);
+                                    setMenuPosition(null);
+                                  }}
+                                  disabled={loading}
+                                  className={cn(
+                                    'w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors text-left',
+                                    isLight
+                                      ? 'text-gray-700 hover:bg-gray-100'
+                                      : 'text-gray-300 hover:bg-gray-800',
+                                    loading && 'opacity-50 cursor-not-allowed',
+                                  )}>
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                                  </svg>
+                                  Reset Password
+                                </button>
+
+                                {/* Deactivate/Reactivate */}
+                                <button
+                                  onClick={() => {
+                                    openBanUserConfirm(member.userId, member.user.email, member.user.name || '', !!member.user.banned);
+                                    setOpenMenuMemberId(null);
+                                    setMenuPosition(null);
+                                  }}
+                                  disabled={loading}
+                                  className={cn(
+                                    'w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors text-left',
+                                    isLight
+                                      ? 'text-gray-700 hover:bg-gray-100'
+                                      : 'text-gray-300 hover:bg-gray-800',
+                                    loading && 'opacity-50 cursor-not-allowed',
+                                  )}>
+                                  {member.user.banned ? (
+                                    <>
+                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      Reactivate User
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                      </svg>
+                                      Deactivate User
+                                    </>
+                                  )}
+                                </button>
+
+                                {/* Divider */}
+                                <div className={cn('my-1 border-t', isLight ? 'border-gray-200' : 'border-gray-700')} />
+
+                                {/* Remove User */}
+                                <button
+                                  onClick={() => {
+                                    openDeleteUserConfirm(member.id, member.user.email);
+                                    setOpenMenuMemberId(null);
+                                    setMenuPosition(null);
+                                  }}
+                                  disabled={loading}
+                                  className={cn(
+                                    'w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors text-left',
+                                    isLight
+                                      ? 'text-red-600 hover:bg-red-50'
+                                      : 'text-red-400 hover:bg-red-900/20',
+                                    loading && 'opacity-50 cursor-not-allowed',
+                                  )}>
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                  Remove from Org
+                                </button>
+                              </div>,
+                              document.body
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1532,6 +1699,156 @@ useEffect(() => {
                     loading && 'opacity-50 cursor-not-allowed',
                   )}>
                   {loading ? 'Sending...' : 'Send Reset Email'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Ban/Unban User Confirmation Modal */}
+      {banUserConfirmOpen && userToBan && (
+        <>
+          <div
+            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
+            onClick={() => setBanUserConfirmOpen(false)}
+          />
+
+          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
+            <div
+              className={cn(
+                'w-full max-w-sm rounded-lg shadow-xl',
+                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
+              )}
+              onClick={e => e.stopPropagation()}>
+              <div
+                className={cn(
+                  'flex items-center justify-between border-b px-3 py-2',
+                  isLight ? 'border-gray-200' : 'border-gray-700',
+                )}>
+                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
+                  {userToBan.isBanned ? 'Reactivate User' : 'Deactivate User'}
+                </h2>
+                <button
+                  onClick={() => setBanUserConfirmOpen(false)}
+                  className={cn(
+                    'rounded-md p-0.5 transition-colors',
+                    isLight
+                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
+                  )}>
+                  <svg
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round">
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-3 px-3 py-4">
+                <div className="flex items-start gap-3">
+                  <div
+                    className={cn(
+                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
+                      userToBan.isBanned
+                        ? isLight ? 'bg-green-100' : 'bg-green-900/30'
+                        : isLight ? 'bg-yellow-100' : 'bg-yellow-900/30',
+                    )}>
+                    {userToBan.isBanned ? (
+                      <svg
+                        className={cn('h-3.5 w-3.5', isLight ? 'text-green-600' : 'text-green-400')}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    ) : (
+                      <svg
+                        className={cn('h-3.5 w-3.5', isLight ? 'text-yellow-600' : 'text-yellow-400')}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                      </svg>
+                    )}
+                  </div>
+
+                  <div className="flex-1">
+                    <p className={cn('text-sm font-medium', mainTextColor)}>
+                      {userToBan.isBanned
+                        ? `Reactivate "${userToBan.name || userToBan.email}"?`
+                        : `Deactivate "${userToBan.name || userToBan.email}"?`}
+                    </p>
+                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      {userToBan.isBanned
+                        ? 'This will restore the user\'s access to the application. They will be able to sign in again.'
+                        : 'This will prevent the user from signing in. Their data will be preserved and they can be reactivated later.'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Ban reason input (only for banning) */}
+                {!userToBan.isBanned && (
+                  <div className="mt-3">
+                    <label className={cn('block text-xs font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                      Reason (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={banReason}
+                      onChange={e => setBanReason(e.target.value)}
+                      placeholder="Enter reason for deactivation..."
+                      className={cn(
+                        'w-full px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-yellow-500 outline-none',
+                        isLight
+                          ? 'bg-white border-gray-300 text-gray-900'
+                          : 'bg-[#151C24] border-gray-600 text-white',
+                      )}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div
+                className={cn(
+                  'flex items-center justify-end gap-2 border-t px-3 py-2',
+                  isLight ? 'border-gray-200' : 'border-gray-700',
+                )}>
+                <button
+                  onClick={() => {
+                    setBanUserConfirmOpen(false);
+                    setUserToBan(null);
+                    setBanReason('');
+                  }}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                    isLight
+                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
+                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
+                  )}>
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmBanUser}
+                  disabled={loading}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                    userToBan.isBanned
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-yellow-600 text-white hover:bg-yellow-700',
+                    loading && 'opacity-50 cursor-not-allowed',
+                  )}>
+                  {loading
+                    ? userToBan.isBanned ? 'Reactivating...' : 'Deactivating...'
+                    : userToBan.isBanned ? 'Reactivate User' : 'Deactivate User'}
                 </button>
               </div>
             </div>

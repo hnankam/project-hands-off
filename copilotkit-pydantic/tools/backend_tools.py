@@ -106,20 +106,6 @@ async def update_plan_step(
 
 
 
-# ========== Utility Tools ==========
-
-def get_weather(_: RunContext[StateDeps[AgentState]], location: str) -> str:
-    """Get the weather for a given location.
-    
-    Args:
-        location: City or location name
-        
-    Returns:
-        Weather description string
-    """
-    return f"The weather in {location} is sunny."
-
-
 # ========== Image Generation Tools ==========
 
 google_provider = GoogleProvider(api_key='AIzaSyCID3PMug--i65c02xdw_FB-wyVTXJ3wHs')
@@ -256,7 +242,6 @@ async def url_context(ctx: RunContext[StateDeps[AgentState]], urls: list[str]) -
 BACKEND_TOOLS = {
     'create_plan': create_plan,
     'update_plan_step': update_plan_step,
-    'get_weather': get_weather,
     'generate_images': generate_images,
     'web_search': web_search,
     'code_execution': code_execution,

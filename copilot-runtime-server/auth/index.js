@@ -6,6 +6,7 @@
  * 
  * Features:
  * - Email/password authentication
+ * - Social login (Google, GitHub)
  * - Organization and team management
  * - Forgot password flow (email-based)
  * - Admin password reset capability
@@ -74,6 +75,30 @@ export const auth = betterAuth({
     
     // Password reset token expiration (1 hour)
     resetPasswordTokenExpiresIn: 60 * 60, // 1 hour in seconds
+  },
+  
+  // Social login providers
+  socialProviders: {
+    // Google OAuth
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+      enabled: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+    },
+    // Microsoft OAuth (Azure AD / Microsoft Entra ID)
+    microsoft: {
+      clientId: process.env.MICROSOFT_CLIENT_ID || '',
+      clientSecret: process.env.MICROSOFT_CLIENT_SECRET || '',
+      enabled: !!(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET),
+      // Optional: restrict to specific tenant (default: 'common' for multi-tenant)
+      tenantId: process.env.MICROSOFT_TENANT_ID || 'common',
+    },
+    // GitHub OAuth
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID || '',
+      clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
+      enabled: !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
+    },
   },
   
   // Session configuration
