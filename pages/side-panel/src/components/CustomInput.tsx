@@ -22,6 +22,7 @@ import { EnterToSend } from './tiptap/EnterToSendExtension';
 import { createSlashCommandExtension, type SlashCommand } from './tiptap/SlashCommandExtension';
 import { createMentionSuggestion, type MentionSuggestion } from './tiptap/MentionExtension';
 import { editorToMarkdown } from './tiptap/markdownSerializer';
+import { PagesSelector } from './PagesSelector';
 
 const MAX_NEWLINES = 6;
 
@@ -377,6 +378,10 @@ interface CustomInputProps extends InputProps {
   showTaskProgress?: boolean;
   sessionId?: string;
   onToggleTaskProgress?: () => void;
+  // Multi-page context props
+  selectedPageURLs?: string[];
+  onSelectedPageURLsChange?: (urls: string[]) => void;
+  currentPageURL?: string | null;
 }
 
 /**
@@ -410,6 +415,9 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   showTaskProgress = false,
   sessionId,
   onToggleTaskProgress,
+  selectedPageURLs = [],
+  onSelectedPageURLsChange,
+  currentPageURL = null,
 }) => {
   const context = useChatContext();
   const copilotContext = useCopilotContext();
@@ -1280,6 +1288,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
             onChange={(e) => handleFilesPicked(e.target.files)}
             disabled={!isInputEnabled}
           />
+          
           <button
             ref={planButtonRef}
             type="button"
@@ -1382,6 +1391,18 @@ export const CustomInput: React.FC<CustomInputProps> = ({
               </div>
             </DropdownMenuItem>
           </DropdownMenu>
+
+          {/* Pages selector - leftmost control */}
+          {onSelectedPageURLsChange && (
+              <PagesSelector
+                selectedPageURLs={selectedPageURLs}
+                onPagesChange={onSelectedPageURLsChange}
+                currentPageURL={currentPageURL}
+                sessionId={sessionId}
+                isLight={isLight}
+                variant="compact"
+              />
+          )}
 
           <div style={{ flexGrow: 1 }} />
 

@@ -34,6 +34,8 @@ interface ChatSessionContainerProps {
   contextMenuMessage?: string | null;
   onMessagesCountChange?: (sessionId: string, count: number) => void;
   onRegisterResetFunction?: (sessionId: string, resetFn: () => void) => void;
+  onRegisterSaveFunction?: (sessionId: string, saveFn: () => void) => void;
+  onRegisterLoadFunction?: (sessionId: string, loadFn: () => void) => void;
   onReady?: (sessionId: string) => void;
   onMessagesLoadingChange?: (sessionId: string, isLoading: boolean) => void;
 }
@@ -54,6 +56,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     contextMenuMessage = null,
     onMessagesCountChange,
     onRegisterResetFunction,
+    onRegisterSaveFunction,
+    onRegisterLoadFunction,
     onReady,
     onMessagesLoadingChange,
   }) => {
@@ -208,6 +212,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   
   const [showStaleIndicator, setShowStaleIndicator] = useState(false);
   const [latestDOMUpdate, setLatestDOMUpdate] = useState<any>(null);
+  
+  // Multi-page context: Selected pages for agent context
+  const [selectedPageURLs, setSelectedPageURLs] = useState<string[]>([]);
   
   // Tab management
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
@@ -684,6 +691,20 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       sessionId,
     });
 
+    // Auto-add current page to selection when it changes (without removing existing selections)
+    useEffect(() => {
+      const currentURL = currentPageContent?.url;
+      if (currentURL && !selectedPageURLs.includes(currentURL)) {
+        setSelectedPageURLs(prev => {
+          // Simply add the new URL to existing selections
+          if (!prev.includes(currentURL)) {
+            return [...prev, currentURL];
+          }
+          return prev;
+        });
+      }
+    }, [currentPageContent?.url, selectedPageURLs]);
+
     // Agent switching hook - replaces agent switching state machine
     const {
       activeAgent,
@@ -835,8 +856,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       contentState={contentState}
       getCurrentTabTitle={getCurrentTabTitle}
       onRefreshClick={triggerManualRefresh}
-      onSaveClick={handleSaveMessages}
-      onLoadClick={handleLoadMessages}
       showStaleIndicator={showStaleIndicator}
       isContentFetching={isContentFetching}
       headlessMessagesCount={headlessMessagesCount}
@@ -860,8 +879,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     contentState,
     getCurrentTabTitle,
     triggerManualRefresh,
-    handleSaveMessages,
-    handleLoadMessages,
     showStaleIndicator,
     isContentFetching,
     headlessMessagesCount,
@@ -925,6 +942,20 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
     }, [onRegisterResetFunction, sessionId, resetChatRef.current]);
 
+    // Register save function with parent when available
+    useEffect(() => {
+      if (onRegisterSaveFunction && handleSaveMessages) {
+        onRegisterSaveFunction(sessionId, handleSaveMessages);
+      }
+    }, [onRegisterSaveFunction, sessionId, handleSaveMessages]);
+
+    // Register load function with parent when available
+    useEffect(() => {
+      if (onRegisterLoadFunction && handleLoadMessages) {
+        onRegisterLoadFunction(sessionId, handleLoadMessages);
+      }
+    }, [onRegisterLoadFunction, sessionId, handleLoadMessages]);
+
   const renderChatInner = useCallback(
     () => (
       <ChatInner
@@ -936,6 +967,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         pageContentEmbedding={pageContentEmbeddingRef.current}
         latestDOMUpdate={latestDOMUpdate}
         dbTotals={dbTotals}
+        selectedPageURLs={selectedPageURLs}
+        currentPageURL={currentPageContent?.url || null}
+        onPagesChange={setSelectedPageURLs}
         themeColor={themeColor}
         setThemeColor={setThemeColor}
         saveMessagesToStorage={saveMessagesToStorage}
@@ -971,6 +1005,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       saveMessagesToStorage,
       selectedAgent,
       selectedModel,
+      selectedPageURLs,
+      setSelectedPageURLs,
       sessionId,
       // Removed: sessionTitle (was unused)
       setHeadlessMessagesCount,

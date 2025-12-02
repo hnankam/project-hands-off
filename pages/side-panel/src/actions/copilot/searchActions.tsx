@@ -48,11 +48,16 @@ type ActionPhase = 'pending' | 'inProgress' | 'complete' | 'error';
 interface SearchArgs {
   query?: string;
   topK?: number;
+  pageURL?: string;
+  pageURLs?: string[];
+  searchSelectedPages?: boolean;
 }
 
 /** Search result with count */
 interface SearchResult {
   resultsCount?: number;
+  pagesSearched?: number;
+  searchScope?: 'current' | 'specific' | 'selected';
   [key: string]: unknown;
 }
 
@@ -69,6 +74,7 @@ interface SearchActionDependencies {
   searchManager: SemanticSearchManager;
   isLight: boolean;
   clipText: (text: string, maxLength?: number) => string;
+  selectedPageURLs?: string[];
 }
 
 // ============================================================================
@@ -156,11 +162,11 @@ function SearchClickableIcon({ style }: { style: React.CSSProperties }): React.R
 
 /**
  * Creates the searchPageContent action
- * Performs semantic search over current page HTML content
+ * Performs semantic search over page HTML content (current page, specific pages, or all selected pages)
  */
-export const createSearchPageContentAction = ({ searchManager, isLight, clipText }: SearchActionDependencies) => ({
+export const createSearchPageContentAction = ({ searchManager, isLight, clipText, selectedPageURLs }: SearchActionDependencies) => ({
   name: 'searchPageContent',
-  description: 'Semantic search over current page content. Returns top‑K relevant HTML chunks.',
+  description: 'Semantic search over page content. Can search current page (default), specific pages by URL, or all selected pages (from the pages selector). Returns top‑K relevant HTML chunks with page source.',
   parameters: [
     {
       name: 'query',
@@ -175,21 +181,52 @@ export const createSearchPageContentAction = ({ searchManager, isLight, clipText
       description: 'Number of results to return (default: 3, max: 10)',
       required: false,
     },
+    {
+      name: 'pageURL',
+      type: 'string',
+      description: 'Optional: Search a specific page by URL instead of the current page',
+      required: false,
+    },
+    {
+      name: 'pageURLs',
+      type: 'array',
+      description: 'Optional: Search multiple specific pages by their URLs. Overrides pageURL if provided.',
+      required: false,
+    },
+    {
+      name: 'searchSelectedPages',
+      type: 'boolean',
+      description: 'Optional: Set to true to search all pages selected by the user in the pages selector. This is useful when looking for content across multiple indexed pages.',
+      required: false,
+    },
   ],
   render: ({ status, result, args, error }: ActionRenderProps) => {
     const query = clipText(args?.query ?? '', MAX_QUERY_LENGTH);
     const numChunks = status === 'complete' ? (result?.resultsCount ?? 0) : 0;
+    
+    // Use actual pages searched from result when complete, otherwise show pending scope
+    const pageScope = status === 'complete' && result?.pagesSearched !== undefined
+      ? result.pagesSearched === 1 
+        ? '1 page' 
+        : `${result.pagesSearched} pages`
+      : args?.searchSelectedPages 
+        ? 'selected pages' 
+        : args?.pageURLs?.length 
+          ? `${args.pageURLs.length} pages` 
+          : args?.pageURL 
+            ? '1 page' 
+            : 'current page';
 
     return (
       <ActionStatus
-        toolName={`Search page for "${query}"`}
+        toolName={`Search ${pageScope} for "${query}"`}
         status={status}
         isLight={isLight}
         icon={<SearchContentIcon style={getIconStyle(isLight)} />}
         messages={{
-          pending: `Searching for "${query}"`,
-          inProgress: `Searching for "${query}"`,
-          complete: `Search complete for "${query}". Found ${numChunks} ${pluralize(numChunks, 'chunk')}`,
+          pending: `Searching ${pageScope} for "${query}"`,
+          inProgress: `Searching ${pageScope} for "${query}"`,
+          complete: `Search complete for "${query}". Found ${numChunks} ${pluralize(numChunks, 'chunk')} across ${pageScope}`,
         }}
         args={args}
         result={result}
@@ -197,11 +234,43 @@ export const createSearchPageContentAction = ({ searchManager, isLight, clipText
       />
     );
   },
-  handler: async ({ query, topK = 3 }: { query: string; topK?: number }) => {
-    debug.log(ts(), LOG_PREFIX.request, 'searchPageContent:', { query, topK });
-    const result = await searchManager.searchPageContent(query, topK);
+  handler: async ({ query, topK = 3, pageURL, pageURLs, searchSelectedPages }: { 
+    query: string; 
+    topK?: number;
+    pageURL?: string;
+    pageURLs?: string[];
+    searchSelectedPages?: boolean;
+  }) => {
+    // If searchSelectedPages is true, use the selected pages from the selector
+    const effectivePageURLs = searchSelectedPages && selectedPageURLs?.length 
+      ? selectedPageURLs 
+      : pageURLs;
+    
+    // Determine search scope for result metadata
+    const pagesSearched = effectivePageURLs?.length || (pageURL ? 1 : 1);
+    const searchScope = effectivePageURLs?.length 
+      ? 'selected' as const
+      : pageURL 
+        ? 'specific' as const 
+        : 'current' as const;
+    
+    debug.log(ts(), LOG_PREFIX.request, 'searchPageContent:', { 
+      query, topK, pageURL, pageURLs: effectivePageURLs, searchSelectedPages,
+      selectedPagesCount: selectedPageURLs?.length 
+    });
+    const result = await searchManager.searchPageContent(query, { 
+      topK, 
+      pageURL, 
+      pageURLs: effectivePageURLs,
+    });
     debug.log(ts(), LOG_PREFIX.response, 'searchPageContent:', result);
-    return result;
+    
+    // Add metadata about pages searched
+    return {
+      ...result,
+      pagesSearched,
+      searchScope,
+    };
   },
 });
 
@@ -209,9 +278,9 @@ export const createSearchPageContentAction = ({ searchManager, isLight, clipText
  * Creates the searchFormData action
  * Searches form fields (inputs, textareas, selects, checkboxes/radios)
  */
-export const createSearchFormDataAction = ({ searchManager, isLight, clipText }: SearchActionDependencies) => ({
+export const createSearchFormDataAction = ({ searchManager, isLight, clipText, selectedPageURLs }: SearchActionDependencies) => ({
   name: 'searchFormData',
-  description: 'Search form fields (inputs, textareas, selects, checkboxes/radios). Returns fields with selectors.',
+  description: 'Search form fields (inputs, textareas, selects, checkboxes/radios). Can search current page (default), specific pages, or all selected pages. Returns fields with selectors.',
   parameters: [
     {
       name: 'query',
@@ -226,10 +295,41 @@ export const createSearchFormDataAction = ({ searchManager, isLight, clipText }:
       description: 'Number of results to return (default: 5, max: 20)',
       required: false,
     },
+    {
+      name: 'pageURL',
+      type: 'string',
+      description: 'Optional: Search a specific page by URL instead of the current page',
+      required: false,
+    },
+    {
+      name: 'pageURLs',
+      type: 'array',
+      description: 'Optional: Search multiple specific pages by their URLs',
+      required: false,
+    },
+    {
+      name: 'searchSelectedPages',
+      type: 'boolean',
+      description: 'Optional: Set to true to search all pages selected by the user in the pages selector',
+      required: false,
+    },
   ],
   render: ({ status, result, args, error }: ActionRenderProps) => {
     const query = clipText(args?.query ?? '', MAX_QUERY_LENGTH);
     const numFields = status === 'complete' ? (result?.resultsCount ?? 0) : 0;
+    
+    // Use actual pages searched from result when complete
+    const pageScope = status === 'complete' && result?.pagesSearched !== undefined
+      ? result.pagesSearched === 1 
+        ? '1 page' 
+        : `${result.pagesSearched} pages`
+      : args?.searchSelectedPages 
+        ? 'selected pages' 
+        : args?.pageURLs?.length 
+          ? `${args.pageURLs.length} pages` 
+          : args?.pageURL 
+            ? '1 page' 
+            : 'current page';
 
     return (
       <ActionStatus
@@ -238,9 +338,9 @@ export const createSearchFormDataAction = ({ searchManager, isLight, clipText }:
         isLight={isLight}
         icon={<SearchFormIcon style={getIconStyle(isLight)} />}
         messages={{
-          pending: `Searching form fields for "${query}"`,
-          inProgress: `Searching form fields for "${query}"`,
-          complete: `Found ${numFields} form ${pluralize(numFields, 'field')} for "${query}"`,
+          pending: `Searching form fields in ${pageScope} for "${query}"`,
+          inProgress: `Searching form fields in ${pageScope} for "${query}"`,
+          complete: `Found ${numFields} form ${pluralize(numFields, 'field')} for "${query}" across ${pageScope}`,
         }}
         args={args}
         result={result}
@@ -248,11 +348,40 @@ export const createSearchFormDataAction = ({ searchManager, isLight, clipText }:
       />
     );
   },
-  handler: async ({ query, topK = 5 }: { query: string; topK?: number }) => {
-    debug.log(ts(), LOG_PREFIX.request, 'searchFormData:', { query, topK });
-    const result = await searchManager.searchFormData(query, topK);
+  handler: async ({ query, topK = 5, pageURL, pageURLs, searchSelectedPages }: { 
+    query: string; 
+    topK?: number;
+    pageURL?: string;
+    pageURLs?: string[];
+    searchSelectedPages?: boolean;
+  }) => {
+    const effectivePageURLs = searchSelectedPages && selectedPageURLs?.length 
+      ? selectedPageURLs 
+      : pageURLs;
+    
+    const pagesSearched = effectivePageURLs?.length || (pageURL ? 1 : 1);
+    const searchScope = effectivePageURLs?.length 
+      ? 'selected' as const
+      : pageURL 
+        ? 'specific' as const 
+        : 'current' as const;
+    
+    debug.log(ts(), LOG_PREFIX.request, 'searchFormData:', { 
+      query, topK, pageURL, pageURLs: effectivePageURLs, searchSelectedPages,
+      selectedPagesCount: selectedPageURLs?.length 
+    });
+    const result = await searchManager.searchFormData(query, { 
+      topK, 
+      pageURL, 
+      pageURLs: effectivePageURLs,
+    });
     debug.log(ts(), LOG_PREFIX.response, 'searchFormData:', result);
-    return result;
+    
+    return {
+      ...result,
+      pagesSearched,
+      searchScope,
+    };
   },
 });
 
@@ -310,9 +439,9 @@ export const createSearchDOMUpdatesAction = ({ searchManager, isLight, clipText 
  * Creates the searchClickableElements action
  * Searches clickable elements (buttons, links, etc.)
  */
-export const createSearchClickableElementsAction = ({ searchManager, isLight, clipText }: SearchActionDependencies) => ({
+export const createSearchClickableElementsAction = ({ searchManager, isLight, clipText, selectedPageURLs }: SearchActionDependencies) => ({
   name: 'searchClickableElements',
-  description: 'Search clickable elements (buttons/links/etc.). Returns items with reliable selectors.',
+  description: 'Search clickable elements (buttons/links/etc.). Can search current page (default), specific pages, or all selected pages. Returns items with reliable selectors.',
   parameters: [
     {
       name: 'query',
@@ -327,10 +456,41 @@ export const createSearchClickableElementsAction = ({ searchManager, isLight, cl
       description: 'Number of results to return (default: 5, max: 20)',
       required: false,
     },
+    {
+      name: 'pageURL',
+      type: 'string',
+      description: 'Optional: Search a specific page by URL instead of the current page',
+      required: false,
+    },
+    {
+      name: 'pageURLs',
+      type: 'array',
+      description: 'Optional: Search multiple specific pages by their URLs',
+      required: false,
+    },
+    {
+      name: 'searchSelectedPages',
+      type: 'boolean',
+      description: 'Optional: Set to true to search all pages selected by the user in the pages selector',
+      required: false,
+    },
   ],
   render: ({ status, result, args, error }: ActionRenderProps) => {
     const query = clipText(args?.query ?? '', MAX_QUERY_LENGTH);
     const numElements = status === 'complete' ? (result?.resultsCount ?? 0) : 0;
+    
+    // Use actual pages searched from result when complete
+    const pageScope = status === 'complete' && result?.pagesSearched !== undefined
+      ? result.pagesSearched === 1 
+        ? '1 page' 
+        : `${result.pagesSearched} pages`
+      : args?.searchSelectedPages 
+        ? 'selected pages' 
+        : args?.pageURLs?.length 
+          ? `${args.pageURLs.length} pages` 
+          : args?.pageURL 
+            ? '1 page' 
+            : 'current page';
 
     return (
       <ActionStatus
@@ -339,9 +499,9 @@ export const createSearchClickableElementsAction = ({ searchManager, isLight, cl
         isLight={isLight}
         icon={<SearchClickableIcon style={getIconStyle(isLight)} />}
         messages={{
-          pending: `Searching clickable elements for "${query}"`,
-          inProgress: `Searching clickable elements for "${query}"`,
-          complete: `Found ${numElements} clickable ${pluralize(numElements, 'element')} for "${query}"`,
+          pending: `Searching clickable elements in ${pageScope} for "${query}"`,
+          inProgress: `Searching clickable elements in ${pageScope} for "${query}"`,
+          complete: `Found ${numElements} clickable ${pluralize(numElements, 'element')} for "${query}" across ${pageScope}`,
         }}
         args={args}
         result={result}
@@ -349,10 +509,39 @@ export const createSearchClickableElementsAction = ({ searchManager, isLight, cl
       />
     );
   },
-  handler: async ({ query, topK = 5 }: { query: string; topK?: number }) => {
-    debug.log(ts(), LOG_PREFIX.request, 'searchClickableElements:', { query, topK });
-    const result = await searchManager.searchClickableElements(query, topK);
+  handler: async ({ query, topK = 5, pageURL, pageURLs, searchSelectedPages }: { 
+    query: string; 
+    topK?: number;
+    pageURL?: string;
+    pageURLs?: string[];
+    searchSelectedPages?: boolean;
+  }) => {
+    const effectivePageURLs = searchSelectedPages && selectedPageURLs?.length 
+      ? selectedPageURLs 
+      : pageURLs;
+    
+    const pagesSearched = effectivePageURLs?.length || (pageURL ? 1 : 1);
+    const searchScope = effectivePageURLs?.length 
+      ? 'selected' as const
+      : pageURL 
+        ? 'specific' as const 
+        : 'current' as const;
+    
+    debug.log(ts(), LOG_PREFIX.request, 'searchClickableElements:', { 
+      query, topK, pageURL, pageURLs: effectivePageURLs, searchSelectedPages,
+      selectedPagesCount: selectedPageURLs?.length 
+    });
+    const result = await searchManager.searchClickableElements(query, { 
+      topK, 
+      pageURL, 
+      pageURLs: effectivePageURLs,
+    });
     debug.log(ts(), LOG_PREFIX.response, 'searchClickableElements:', result);
-    return result;
+    
+    return {
+      ...result,
+      pagesSearched,
+      searchScope,
+    };
   },
 });

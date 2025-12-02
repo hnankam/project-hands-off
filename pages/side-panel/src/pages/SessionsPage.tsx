@@ -90,8 +90,10 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   // Track when skeleton started showing to enforce minimum display time
   const skeletonStartTimeRef = useRef<number | null>(null);
   
-  // Ref to store reset functions per session
+  // Ref to store reset, save, and load functions per session
   const resetFunctionsRef = useRef<Record<string, () => void>>({});
+  const saveFunctionsRef = useRef<Record<string, () => void>>({});
+  const loadFunctionsRef = useRef<Record<string, () => void>>({});
   const hasAttemptedInitialSessionRef = useRef(false);
   const lastStorageUserIdRef = useRef<string | null>(null);
   const hasSeenSessionsForCurrentUserRef = useRef<boolean>(false);
@@ -221,6 +223,16 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     resetFunctionsRef.current[sessionId] = resetFn;
   }, []);
 
+  // Callback to register save function from ChatSessionContainer
+  const handleRegisterSaveFunction = useCallback((sessionId: string, saveFn: () => void) => {
+    saveFunctionsRef.current[sessionId] = saveFn;
+  }, []);
+
+  // Callback to register load function from ChatSessionContainer
+  const handleRegisterLoadFunction = useCallback((sessionId: string, loadFn: () => void) => {
+    loadFunctionsRef.current[sessionId] = loadFn;
+  }, []);
+
   // Callback to track when messages are loading
   const handleMessagesLoadingChange = useCallback(
     (sessionId: string, isLoading: boolean) => {
@@ -347,6 +359,18 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const handleCloseSession = () => {
     if (currentSessionId) {
       sessionStorageDBWrapper.closeSession(currentSessionId);
+    }
+  };
+
+  const handleSaveMessages = () => {
+    if (currentSessionId && saveFunctionsRef.current[currentSessionId]) {
+      saveFunctionsRef.current[currentSessionId]();
+    }
+  };
+
+  const handleLoadMessages = () => {
+    if (currentSessionId && loadFunctionsRef.current[currentSessionId]) {
+      loadFunctionsRef.current[currentSessionId]();
     }
   };
 
@@ -1032,6 +1056,9 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
               Reset Session
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleSaveMessages} isLight={isLight}>Save Messages</DropdownMenuItem>
+            <DropdownMenuItem onClick={handleLoadMessages} isLight={isLight}>Load Messages</DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleCloseSession} shortcut="⌘ C" isLight={isLight}>
               Close Session
             </DropdownMenuItem>
@@ -1166,6 +1193,8 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   contextMenuMessage={contextMenuMessage}
                   onMessagesCountChange={handleMessagesCountChange}
                   onRegisterResetFunction={handleRegisterResetFunction}
+                  onRegisterSaveFunction={handleRegisterSaveFunction}
+                  onRegisterLoadFunction={handleRegisterLoadFunction}
                   onReady={handleSessionReady}
                   onMessagesLoadingChange={handleMessagesLoadingChange}
                 />

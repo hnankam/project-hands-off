@@ -66,6 +66,7 @@ import { useMessageSanitization, MessageData } from '../hooks/useMessageSanitiza
 import { useContextMenuPrefill } from '../hooks/useContextMenuPrefill';
 import { useProgressBarState } from '../hooks/useProgressBarState';
 import { usePageMetadata, type PageContent } from '../hooks/usePageMetadata';
+import { useMultiPageMetadata } from '../hooks/useMultiPageMetadata';
 import { useProgressCardCollapse } from '../hooks/useProgressCardCollapse';
 import { useAgentStateManagement } from '../hooks/useAgentStateManagement';
 
@@ -172,6 +173,9 @@ export interface ChatInnerProps {
     timestamp: number;
   } | null;
   latestDOMUpdate: unknown;
+  selectedPageURLs: string[];
+  currentPageURL: string | null;
+  onPagesChange: (urls: string[]) => void;
   themeColor: string;
   setThemeColor: (color: string) => void;
   saveMessagesToStorage: (messages: unknown[]) => Promise<void>;
@@ -205,6 +209,9 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   currentPageContent,
   pageContentEmbedding,
   latestDOMUpdate,
+  selectedPageURLs,
+  currentPageURL,
+  onPagesChange,
   themeColor,
   setThemeColor,
   saveMessagesToStorage,
@@ -228,6 +235,20 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // THEME & STORAGE
   // ================================================================================
   const { isLight } = useStorage(themeStorage);
+
+  // ================================================================================
+  // REFS FOR STABLE COMPONENT IDENTITY
+  // ================================================================================
+  // These refs prevent ScopedInput from being recreated when page selection changes,
+  // which would cause PagesSelector to remount and lose its isOpen state
+  const selectedPageURLsRef = useRef(selectedPageURLs);
+  const currentPageURLRef = useRef(currentPageURL);
+  const onPagesChangeRef = useRef(onPagesChange);
+  
+  // Keep refs updated with latest values
+  selectedPageURLsRef.current = selectedPageURLs;
+  currentPageURLRef.current = currentPageURL;
+  onPagesChangeRef.current = onPagesChange;
 
   // ================================================================================
   // STATE MANAGEMENT
@@ -418,10 +439,21 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     enableLogging: false,
   });
 
+  // Multi-page metadata for enhanced agent context
+  const multiPageMetadata = useMultiPageMetadata({
+    selectedPageURLs,
+    currentPageURL,
+    currentPageContent,
+    pageContentEmbedding,
+    currentPageTotals: totals,
+    enableLogging: false,
+  });
+
+  // Share multi-page metadata with agent (includes current page + selected pages)
   useCopilotReadable({
     description:
-      'Current web page metadata including: pageTitle, pageURL, hasContent, hasEmbeddings, totalHtmlChunks, totalFormChunks, totalClickableChunks, documentInfo, windowInfo, and timestamp. Use searchPageContent to semantically search page content when needed.',
-    value: pageMetadataForAgent,
+      'Multi-page context including current page (full metadata) and selected indexed pages (lightweight summaries). Current page: pageTitle, pageURL, hasContent, hasEmbeddings, totalHtmlChunks, totalFormChunks, totalClickableChunks, documentInfo, windowInfo. Selected pages: array of page summaries with URL, title, chunk counts, lastIndexed. Use searchPageContent to query current page content. Additional pages provide context awareness.',
+    value: multiPageMetadata,
   });
 
   // ================================================================================
@@ -504,7 +536,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     currentPageContent,
     pageDataRef,
     themeColor,
-  }), [searchManager, isLight, clipText, yesNo, currentPageContent, themeColor]);
+    selectedPageURLs,
+  }), [searchManager, isLight, clipText, yesNo, currentPageContent, themeColor, selectedPageURLs]);
   
   // Search Actions
   useFrontendTool(createSearchPageContentAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
@@ -638,6 +671,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   }), [showThoughtBlocks]);
 
   // Scoped Input component - receives InputProps from CopilotChat
+  // NOTE: selectedPageURLs, onPagesChange, currentPageURL are accessed via refs to prevent
+  // component remounting when page selection changes (which would reset PagesSelector's isOpen state)
   const ScopedInput = useMemo(() => {
     const Comp = (props: InputProps) => (
       <CustomInput
@@ -649,6 +684,9 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         showTaskProgress={showProgressBar}
         sessionId={sessionId}
         onToggleTaskProgress={toggleProgressBarFn}
+        selectedPageURLs={selectedPageURLsRef.current}
+        onSelectedPageURLsChange={(urls) => onPagesChangeRef.current?.(urls)}
+        currentPageURL={currentPageURLRef.current}
       />
     );
     return Comp;

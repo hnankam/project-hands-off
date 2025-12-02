@@ -193,8 +193,6 @@ export const StatusBarSkeleton: FC<{ isLight?: boolean }> = ({ isLight = true })
       </div>
       <div className="flex items-center gap-1">
         <Skeleton width={26} height={26} className="rounded-md" isLight={isLight} />
-        <Skeleton width={26} height={26} className="rounded-md" isLight={isLight} />
-        <Skeleton width={26} height={26} className="rounded-md" isLight={isLight} />
       </div>
     </div>
   );

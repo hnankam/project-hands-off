@@ -46,7 +46,7 @@ export class SessionStorageDB {
   constructor() {
     // Generate a unique window ID for this instance to filter self-notifications
     this.windowId = `window_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    log('[SessionStorageDB] 🪟 Window ID initialized:', this.windowId);
+    // log('[SessionStorageDB] Window ID initialized:', this.windowId);
   }
   
   /**
@@ -67,14 +67,14 @@ export class SessionStorageDB {
     try {
       return JSON.stringify(messages ?? []);
     } catch (error) {
-      log('[SessionStorageDB] Failed to compute message signature, falling back to length:', error);
+      // log('[SessionStorageDB] Failed to compute message signature, falling back to length:', error);
       return `len:${Array.isArray(messages) ? messages.length : 0}`;
     }
   }
 
   private normalizeSession(row: any): SessionMetadata {
     if (!row) {
-      log('[SessionStorageDB:normalizeSession] Received null/undefined row');
+      // log('[SessionStorageDB:normalizeSession] Received null/undefined row');
       const now = Date.now();
       return {
         id: '',
@@ -100,7 +100,7 @@ export class SessionStorageDB {
     const userId = row.userId || this.currentUserId || 'unknown';
 
     if (!row.userId) {
-      log('[SessionStorageDB:normalizeSession] Session missing userId, using fallback:', { sessionId: sessionId?.slice(0, 12), fallbackUserId: userId });
+      // log('[SessionStorageDB:normalizeSession] Session missing userId, using fallback:', { sessionId: sessionId?.slice(0, 12), fallbackUserId: userId });
     }
 
     return {
@@ -138,10 +138,10 @@ export class SessionStorageDB {
     this.currentUserId = userId;
     
     if (previousUserId !== userId) {
-      log('[SessionStorageDB:setCurrentUserId] User ID changed:', { 
-        from: previousUserId || 'null', 
-        to: userId || 'null' 
-      });
+      // log('[SessionStorageDB:setCurrentUserId] User ID changed:', { 
+      //   from: previousUserId || 'null', 
+      //   to: userId || 'null' 
+      // });
       // Notify listeners so UI can refetch sessions for the new user immediately
       // This avoids transient empty states before ensureCurrentSessionForActiveUser completes
       try {
@@ -150,7 +150,7 @@ export class SessionStorageDB {
         // Best-effort; do not throw
       }
     } else {
-      log('[SessionStorageDB:setCurrentUserId] User ID set (no change):', userId || 'null');
+      // log('[SessionStorageDB:setCurrentUserId] User ID set (no change):', userId || 'null');
     }
 
     // When switching users, ensure the persisted current session belongs to the new user
@@ -181,12 +181,12 @@ export class SessionStorageDB {
    */
   async initialize(useMemory = false): Promise<void> {
     if (this.isInitialized) {
-      log('[SessionStorageDB] Already initialized');
+      // log('[SessionStorageDB] Already initialized');
       return;
     }
 
     if (this.initializePromise) {
-      log('[SessionStorageDB] Initialization already in progress, waiting...');
+      // log('[SessionStorageDB] Initialization already in progress, waiting...');
       await this.initializePromise;
       return;
     }
@@ -202,9 +202,9 @@ export class SessionStorageDB {
         await initializeSessionSchema(worker);
 
         this.isInitialized = true;
-        log('[SessionStorageDB] Initialized successfully');
+        // log('[SessionStorageDB] Initialized successfully');
       } catch (error) {
-        log('[SessionStorageDB] Failed to initialize:', error);
+        // log('[SessionStorageDB] Failed to initialize:', error);
         throw error;
       } finally {
         this.initializePromise = null;
@@ -291,12 +291,12 @@ export class SessionStorageDB {
               sessionId: sessionId ? sessionId.slice(0, 8) : 'all',
               batched: eventsToSend.length > 1 ? eventsToSend.length : undefined,
             };
-            log('[SessionStorageDB] Cross-window sync sent:', logData);
+            // log('[SessionStorageDB] Cross-window sync sent:', logData);
           }
         }
       } catch (error) {
         // Silently fail - cross-window sync is best-effort
-        log('[SessionStorageDB] Failed to send cross-window sync:', error);
+        // log('[SessionStorageDB] Failed to send cross-window sync:', error);
       }
     }, this.NOTIFICATION_BATCH_DELAY);
   }
@@ -318,18 +318,18 @@ export class SessionStorageDB {
    */
   async getAllSessions(): Promise<SessionMetadata[]> {
     if (!this.isInitialized) {
-      log('[SessionStorageDB:getAllSessions] Not initialized yet, initializing now...');
+      // log('[SessionStorageDB:getAllSessions] Not initialized yet, initializing now...');
       await this.initialize(false);
     }
     const worker = this.getWorker();
     
     // Require userId to be set
     if (!this.currentUserId) {
-      log('[SessionStorageDB:getAllSessions] No userId set - returning empty array. Call setCurrentUserId() first.');
+      // log('[SessionStorageDB:getAllSessions] No userId set - returning empty array. Call setCurrentUserId() first.');
       return [];
     }
     
-    log('[SessionStorageDB:getAllSessions] Querying sessions for userId:', this.currentUserId);
+    // log('[SessionStorageDB:getAllSessions] Querying sessions for userId:', this.currentUserId);
     
     // Only return sessions matching the current user
     const query = 'SELECT * FROM session_metadata WHERE userId = $userId ORDER BY createdAt ASC;';
@@ -354,7 +354,7 @@ export class SessionStorageDB {
     };
 
     // Reduced logging - only log count, not full session list (reduces noise)
-    log(`[SessionStorageDB:getAllSessions] Found ${rows.length} sessions for user ${this.currentUserId}`);
+    // log(`[SessionStorageDB:getAllSessions] Found ${rows.length} sessions for user ${this.currentUserId}`);
     
     return rows.map((row: any) => this.normalizeSession(row));
   }
@@ -375,22 +375,22 @@ export class SessionStorageDB {
     }
     
      const worker = this.getWorker();
-     log(`[AGENT_MODEL_SYNC] DB QUERY - Getting session metadata for ${sessionId.slice(0, 8)}...`);
+     // log(`[AGENT_MODEL_SYNC] DB QUERY - Getting session metadata for ${sessionId.slice(0, 8)}...`);
      const result = await worker.query<any[]>(
       'SELECT * FROM session_metadata WHERE sessionId = $sessionId OR id = $sessionId LIMIT 1;',
       { sessionId }
     );
     if (!result[0]?.length) {
-      log(`[AGENT_MODEL_SYNC] DB QUERY - No metadata found for session ${sessionId.slice(0, 8)}`);
+      // log(`[AGENT_MODEL_SYNC] DB QUERY - No metadata found for session ${sessionId.slice(0, 8)}`);
       // Cache the null result too
       this.sessionCache.set(sessionId, { data: null, timestamp: now });
       return null;
     }
     const normalized = this.normalizeSession(result[0][0]);
-    log(`[AGENT_MODEL_SYNC] DB QUERY RESULT for session ${sessionId.slice(0, 8)}:`, {
-      agent: normalized.selectedAgent,
-      model: normalized.selectedModel,
-    });
+    // log(`[AGENT_MODEL_SYNC] DB QUERY RESULT for session ${sessionId.slice(0, 8)}:`, {
+    //   agent: normalized.selectedAgent,
+    //   model: normalized.selectedModel,
+    // });
     
     // Cache the result
     this.sessionCache.set(sessionId, { data: normalized, timestamp: now });
@@ -418,7 +418,7 @@ export class SessionStorageDB {
    */
   async getCurrentSessionId(): Promise<string | null> {
     if (!this.isInitialized) {
-      log('[SessionStorageDB] Not initialized yet, initializing now...');
+      // log('[SessionStorageDB] Not initialized yet, initializing now...');
       await this.initialize(false);
     }
     const worker = this.getWorker();
@@ -437,7 +437,7 @@ export class SessionStorageDB {
           await worker.query('DELETE current_session WHERE sessionId IS NONE OR sessionId IS NULL;');
         } catch (cleanupError) {
           // Ignore cleanup errors - record might not exist
-          log('[SessionStorageDB:getCurrentSessionId] Cleanup query failed (non-critical):', cleanupError);
+          // log('[SessionStorageDB:getCurrentSessionId] Cleanup query failed (non-critical):', cleanupError);
         }
         return null;
       }
@@ -448,17 +448,17 @@ export class SessionStorageDB {
 
     const session = await this.getSession(currentId);
     if (!session) {
-      log('[SessionStorageDB:getCurrentSessionId] Stored current session not found, clearing pointer');
+      // log('[SessionStorageDB:getCurrentSessionId] Stored current session not found, clearing pointer');
       await this.setCurrentSessionId(null);
       return null;
     }
 
     if (session.userId !== this.currentUserId) {
-      log('[SessionStorageDB:getCurrentSessionId] Current session belongs to different user. Clearing and selecting fallback.', {
-        storedSessionId: currentId.slice(0, 12) + '...',
-        sessionUserId: session.userId,
-        currentUserId: this.currentUserId,
-      });
+      // log('[SessionStorageDB:getCurrentSessionId] Current session belongs to different user. Clearing and selecting fallback.', {
+      //   storedSessionId: currentId.slice(0, 12) + '...',
+      //   sessionUserId: session.userId,
+      //   currentUserId: this.currentUserId,
+      // });
       await this.setCurrentSessionId(null);
       const sessions = await this.getAllSessions();
       if (sessions.length > 0) {
@@ -471,7 +471,7 @@ export class SessionStorageDB {
     return session.id;
     } catch (error: any) {
       // Handle database errors gracefully (e.g., NULL sessionId in record)
-      log('[SessionStorageDB:getCurrentSessionId] Error getting current session ID:', error?.message || error);
+      // log('[SessionStorageDB:getCurrentSessionId] Error getting current session ID:', error?.message || error);
       
       // If error is about NULL sessionId, try to clean up the invalid record
       if (error?.message?.includes('NULL') || error?.message?.includes('null')) {
@@ -479,7 +479,7 @@ export class SessionStorageDB {
           await worker.query('DELETE current_session WHERE sessionId IS NONE OR sessionId IS NULL;');
         } catch (cleanupError) {
           // Ignore cleanup errors
-          log('[SessionStorageDB:getCurrentSessionId] Cleanup after error failed (non-critical):', cleanupError);
+          // log('[SessionStorageDB:getCurrentSessionId] Cleanup after error failed (non-critical):', cleanupError);
         }
       }
       
@@ -500,16 +500,16 @@ export class SessionStorageDB {
     // Require userId
     if (!userId) {
       const error = new Error('[SessionStorageDB:addSession] Cannot create session: userId is required. Call setCurrentUserId() first or pass userId in metadata.');
-      log(error.message);
+      // log(error.message);
       throw error;
     }
 
-    log('[SessionStorageDB:addSession] Creating new session:', {
-      title: metadata.title,
-      userId,
-      selectedAgent: metadata.selectedAgent,
-      selectedModel: metadata.selectedModel,
-    });
+    // log('[SessionStorageDB:addSession] Creating new session:', {
+    //   title: metadata.title,
+    //   userId,
+    //   selectedAgent: metadata.selectedAgent,
+    //   selectedModel: metadata.selectedModel,
+    // });
  
     const sessionId = `session-${Date.now()}`;
     const now = Date.now();
@@ -527,7 +527,7 @@ export class SessionStorageDB {
     };
  
      // Deactivate all other sessions for this user only
-     log('[SessionStorageDB:addSession] Deactivating other sessions for user:', userId);
+    //  log('[SessionStorageDB:addSession] Deactivating other sessions for user:', userId);
      await worker.query(
        'UPDATE session_metadata SET isActive = false WHERE isActive = true AND userId = $userId;', 
        { userId }
@@ -551,11 +551,11 @@ export class SessionStorageDB {
     this.notify({ type: 'sessionsUpdated' });
     this.notify({ type: 'sessionChanged', sessionId });
  
-    log('[SessionStorageDB:addSession] Successfully created new session:', {
-      sessionId: sessionId.slice(0, 12) + '...',
-      title: metadata.title,
-      userId,
-    });
+    // log('[SessionStorageDB:addSession] Successfully created new session:', {
+    //   sessionId: sessionId.slice(0, 12) + '...',
+    //   title: metadata.title,
+    //   userId,
+    // });
     
     return this.normalizeSession(newSessionRecord);
   }
@@ -567,7 +567,7 @@ export class SessionStorageDB {
   async setActiveSession(sessionId: string): Promise<void> {
     const worker = this.getWorker();
 
-    log('[SessionStorageDB:setActiveSession] Setting active session:', sessionId.slice(0, 12) + '...');
+    // log('[SessionStorageDB:setActiveSession] Setting active session:', sessionId.slice(0, 12) + '...');
 
     // Verify session exists
     const session = await this.getSession(sessionId);
@@ -584,11 +584,11 @@ export class SessionStorageDB {
       throw error;
     }
 
-    log('[SessionStorageDB:setActiveSession] Verified session:', {
-      sessionId: sessionId.slice(0, 12) + '...',
-      title: session.title,
-      userId: session.userId,
-    });
+    // log('[SessionStorageDB:setActiveSession] Verified session:', {
+    //   sessionId: sessionId.slice(0, 12) + '...',
+    //   title: session.title,
+    //   userId: session.userId,
+    // });
 
     // Update in a single transaction - only deactivate sessions for the same user
     if (this.currentUserId) {
@@ -607,7 +607,7 @@ export class SessionStorageDB {
     await this.setCurrentSessionId(sessionId);
 
     this.notify({ type: 'sessionChanged', sessionId });
-    log('[SessionStorageDB:setActiveSession] Successfully set active session:', sessionId.slice(0, 12) + '...');
+    // log('[SessionStorageDB:setActiveSession] Successfully set active session:', sessionId.slice(0, 12) + '...');
   }
 
   /**
@@ -649,7 +649,7 @@ export class SessionStorageDB {
     }
 
     this.notify({ type: 'sessionsUpdated' });
-    log('[SessionStorageDB] Closed session:', sessionId);
+    // log('[SessionStorageDB] Closed session:', sessionId);
   }
 
   /**
@@ -659,7 +659,7 @@ export class SessionStorageDB {
     const worker = this.getWorker();
     await worker.query('UPDATE session_metadata SET isOpen = true;');
     this.notify({ type: 'sessionsUpdated' });
-    log('[SessionStorageDB] Opened all sessions');
+    // log('[SessionStorageDB] Opened all sessions');
   }
 
   /**
@@ -693,7 +693,7 @@ export class SessionStorageDB {
 
     // Notify listeners to update UI
     this.notify({ type: 'sessionsUpdated' });
-    log('[SessionStorageDB] Deleted session:', sessionId);
+    // log('[SessionStorageDB] Deleted session:', sessionId);
   }
 
   /**
@@ -714,12 +714,12 @@ export class SessionStorageDB {
    */
   async updateSessionAgentAndModel(sessionId: string, agent: string, model: string): Promise<void> {
     const worker = this.getWorker();
-    log(`[AGENT_MODEL_SYNC] DB UPDATE - Updating agent/model for session ${sessionId}:`, { agent, model });
+    // log(`[AGENT_MODEL_SYNC] DB UPDATE - Updating agent/model for session ${sessionId}:`, { agent, model });
     const result = await worker.query(
       'UPDATE session_metadata SET selectedAgent = $agent, selectedModel = $model, timestamp = $timestamp WHERE sessionId = $id OR id = $id;',
       { id: sessionId, agent, model, timestamp: Date.now() }
     );
-    log(`[AGENT_MODEL_SYNC] DB UPDATE RESULT for session ${sessionId}:`, result);
+    // log(`[AGENT_MODEL_SYNC] DB UPDATE RESULT for session ${sessionId}:`, result);
     this.invalidateSessionCache(sessionId);
     // REMOVED: this.notify({ type: 'sessionsUpdated' }); 
     // This notification was causing a feedback loop - the component saves, which triggers notification,
@@ -749,7 +749,7 @@ export class SessionStorageDB {
     const worker = this.getWorker();
     try {
       const now = Date.now();
-      log('[SessionStorageDB] Running manual lastModified backfill...');
+      // log('[SessionStorageDB] Running manual lastModified backfill...');
       
       // Split into two queries to avoid syntax issues
       // First, backfill version
@@ -770,12 +770,12 @@ export class SessionStorageDB {
       const modifiedCount = (modifiedResult && modifiedResult[0] && Array.isArray(modifiedResult[0])) ? modifiedResult[0].length : 0;
       
       if (versionCount > 0 || modifiedCount > 0) {
-        log(`[SessionStorageDB] Backfilled ${versionCount} version records, ${modifiedCount} lastModified records`);
+        // log(`[SessionStorageDB] Backfilled ${versionCount} version records, ${modifiedCount} lastModified records`);
       } else {
-        log('[SessionStorageDB] No records needed backfill');
+        // log('[SessionStorageDB] No records needed backfill');
       }
     } catch (error) {
-      log('[SessionStorageDB] Backfill failed:', error);
+      // log('[SessionStorageDB] Backfill failed:', error);
     }
   }
 
@@ -793,7 +793,7 @@ export class SessionStorageDB {
     } catch (error: any) {
       // Handle schema mismatch gracefully (e.g., during migration)
       if (error.message?.includes('lastModified') && error.message?.includes('NONE')) {
-        log('[SessionStorageDB] Schema migration needed - triggering backfill');
+        // log('[SessionStorageDB] Schema migration needed - triggering backfill');
         await this.backfillLastModified();
         // Retry after backfill
     const result = await worker.query<any[]>(
@@ -820,7 +820,7 @@ export class SessionStorageDB {
     } catch (error: any) {
       // Handle schema mismatch gracefully
       if (error.message?.includes('lastModified') && error.message?.includes('NONE')) {
-        log('[SessionStorageDB] Schema migration needed in getMessagesVersion - triggering backfill');
+        // log('[SessionStorageDB] Schema migration needed in getMessagesVersion - triggering backfill');
         await this.backfillLastModified();
         // Retry after backfill
         const result = await worker.query<any[]>(
@@ -855,7 +855,7 @@ export class SessionStorageDB {
     } catch (error: any) {
       // Handle schema mismatch gracefully
       if (error.message?.includes('lastModified') && error.message?.includes('NONE')) {
-        log('[SessionStorageDB] ⚠️  Schema migration needed in updateMessagesWithVersion - triggering backfill');
+        // log('[SessionStorageDB] Schema migration needed in updateMessagesWithVersion - triggering backfill');
         await this.backfillLastModified();
         // Retry after backfill
         existing = await worker.query<any[]>(
@@ -872,11 +872,11 @@ export class SessionStorageDB {
 
     // 2. If expectedVersion provided, check for conflict
     if (expectedVersion !== undefined && currentVersion !== expectedVersion) {
-      log('[SessionStorageDB] ⚠️  Version conflict detected:', {
-        sessionId: sessionId.slice(0, 12) + '...',
-        expected: expectedVersion,
-        current: currentVersion,
-      });
+      // log('[SessionStorageDB] Version conflict detected:', {
+      //   sessionId: sessionId.slice(0, 12) + '...',
+      //   expected: expectedVersion,
+      //   current: currentVersion,
+      // });
       
       return {
         success: false,
@@ -953,15 +953,15 @@ export class SessionStorageDB {
       }
 
       if (removedEmptyAssistants > 0 || removedInvalidRoles > 0 || deduplicated > 0) {
-        log('[SessionStorageDB] Sanitized messages before storing:', {
-          sessionId: sessionId.slice(0, 12) + '...',
-          before: msgs.length,
-          after: normalized.length,
-          removedEmptyAssistants,
-          removedInvalidRoles,
-          deduplicated,
-          preservedStatefulAssistants,
-        });
+        // log('[SessionStorageDB] Sanitized messages before storing:', {
+        //   sessionId: sessionId.slice(0, 12) + '...',
+        //   before: msgs.length,
+        //   after: normalized.length,
+        //   removedEmptyAssistants,
+        //   removedInvalidRoles,
+        //   deduplicated,
+        //   preservedStatefulAssistants,
+        // });
       }
 
       return normalized;
@@ -975,7 +975,7 @@ export class SessionStorageDB {
 
     // 4. Skip if content unchanged
     if (existingSignature === newSignature) {
-      log('[SessionStorageDB] ℹ️  Skipping update - content unchanged');
+      // log('[SessionStorageDB] Skipping update - content unchanged');
       return { success: true, currentVersion };
     }
 
@@ -1004,7 +1004,7 @@ export class SessionStorageDB {
 
         // Check if update actually happened (would return empty if version mismatched)
         if (!result[0] || result[0].length === 0) {
-          log('[SessionStorageDB] ⚠️  Update failed - version changed during operation');
+          // log('[SessionStorageDB] Update failed - version changed during operation');
           return {
             success: false,
             error: 'Version conflict: data changed during update',
@@ -1036,15 +1036,15 @@ export class SessionStorageDB {
       // Notify about both message update and session update (for timestamp change)
     this.notify({ type: 'messagesUpdated', sessionId });
       this.notify({ type: 'sessionsUpdated' }); // Also notify to sync session timestamp across windows
-      log(`[SessionStorageDB] ✅ Updated ${normalizedMessages.length} messages (v${newVersion}) - notifications sent`);
+      // log(`[SessionStorageDB] Updated ${normalizedMessages.length} messages (v${newVersion}) - notifications sent`);
     } else {
-      log(`[SessionStorageDB] ✅ Updated ${normalizedMessages.length} messages (v${newVersion}) - streaming in progress, skipping notifications`);
+      // log(`[SessionStorageDB] Updated ${normalizedMessages.length} messages (v${newVersion}) - streaming in progress, skipping notifications`);
     }
       
       return { success: true, currentVersion: newVersion };
       
     } catch (error) {
-      log('[SessionStorageDB] ❌ Update failed:', error);
+      // log('[SessionStorageDB] Update failed:', error);
       return { 
         success: false, 
         error: error instanceof Error ? error.message : String(error) 
@@ -1062,7 +1062,7 @@ export class SessionStorageDB {
     
     if (!result.success) {
       // Retry once on conflict
-      log('[SessionStorageDB] Retrying after version conflict...');
+      // log('[SessionStorageDB] Retrying after version conflict...');
       const retryResult = await this.updateMessagesWithVersion(sessionId, messages);
       if (!retryResult.success) {
         throw new Error(retryResult.error || 'Failed to update messages after retry');
@@ -1112,13 +1112,13 @@ export class SessionStorageDB {
     
     // GUARD: Never overwrite existing non-zero stats with zeros
     if (existingHasData && !incomingHasData) {
-      console.warn(`[SessionStorageDB] Blocked attempt to overwrite usage stats with zeros for session ${sessionId}`);
+      // console.warn(`[SessionStorageDB] Blocked attempt to overwrite usage stats with zeros for session ${sessionId}`);
       return;
     }
     
     // GUARD: Never overwrite with lower values (cumulative stats should only grow)
     if (existingTotal > incomingTotal) {
-      console.warn(`[SessionStorageDB] Blocked attempt to overwrite usage stats with lower values for session ${sessionId}: existing=${existingTotal}, incoming=${incomingTotal}`);
+      // console.warn(`[SessionStorageDB] Blocked attempt to overwrite usage stats with lower values for session ${sessionId}: existing=${existingTotal}, incoming=${incomingTotal}`);
       return;
     }
 
@@ -1228,14 +1228,14 @@ export class SessionStorageDB {
       // When setting to null, delete the record entirely instead of creating one with NULL
       // This prevents database errors when querying for sessionId
       await worker.query('DELETE current_session;');
-      log('[SessionStorageDB:setCurrentSessionId] Cleared current session (set to null)');
+      // log('[SessionStorageDB:setCurrentSessionId] Cleared current session (set to null)');
     } else {
     // Delete all existing records and create a new one (single record table)
     await worker.query(`
       DELETE current_session;
       CREATE current_session CONTENT { sessionId: $sid };
     `, { sid: sessionId });
-      log('[SessionStorageDB:setCurrentSessionId] Set current session:', sessionId.slice(0, 12) + '...');
+      // log('[SessionStorageDB:setCurrentSessionId] Set current session:', sessionId.slice(0, 12) + '...');
     }
   }
 
@@ -1256,7 +1256,7 @@ export class SessionStorageDB {
 
       const session = await this.getSession(currentId);
       if (!session || (this.currentUserId && session.userId !== this.currentUserId)) {
-        log('[SessionStorageDB] ensureCurrentSessionForActiveUser detected mismatch, clearing current session');
+        // log('[SessionStorageDB] ensureCurrentSessionForActiveUser detected mismatch, clearing current session');
         await this.setCurrentSessionId(null);
         if (this.currentUserId) {
           const sessions = await this.getAllSessions();
@@ -1266,7 +1266,7 @@ export class SessionStorageDB {
         }
       }
     } catch (error) {
-      log('[SessionStorageDB] Failed to ensure current session for active user:', error);
+      // log('[SessionStorageDB] Failed to ensure current session for active user:', error);
     }
   }
 }

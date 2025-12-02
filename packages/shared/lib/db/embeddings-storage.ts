@@ -378,11 +378,13 @@ class EmbeddingsStorageManager {
 
   /**
    * Native vector search for HTML chunks using HNSW index
+   * Supports single pageURL, array of pageURLs, or all pages (when both are undefined)
    */
   async searchHTMLChunks(
-    pageURL: string,
+    pageURL: string | undefined,
     queryEmbedding: number[],
-    topK: number = 3
+    topK: number = 3,
+    pageURLs?: string[]
   ): Promise<Array<{
     id: string;
     pageURL: string;
@@ -397,10 +399,10 @@ class EmbeddingsStorageManager {
     }
 
     try {
-      debug.log('[EmbeddingsStorage] HNSW search - HTML chunks:', { pageURL, topK });
+      debug.log('[EmbeddingsStorage] HNSW search - HTML chunks:', { pageURL, pageURLs, topK });
       
       // Use dedicated search method in worker client (optimized path)
-      const results = await this.getWorkerClient().searchHTMLChunks(pageURL, queryEmbedding, topK);
+      const results = await this.getWorkerClient().searchHTMLChunks(pageURL, queryEmbedding, topK, pageURLs);
 
       debug.log(`[EmbeddingsStorage] HNSW: Found ${results.length} HTML chunks`);
       return results;
@@ -412,11 +414,13 @@ class EmbeddingsStorageManager {
 
   /**
    * Native vector search for form fields using HNSW index
+   * Supports single pageURL, array of pageURLs, or all pages (when both are undefined)
    */
   async searchFormFields(
-    pageURL: string,
+    pageURL: string | undefined,
     queryEmbedding: number[],
-    topK: number = 5
+    topK: number = 5,
+    pageURLs?: string[]
   ): Promise<Array<{
     id: string;
     pageURL: string;
@@ -434,10 +438,10 @@ class EmbeddingsStorageManager {
     }
 
     try {
-      debug.log('[EmbeddingsStorage] HNSW search - Form fields:', { pageURL, topK });
+      debug.log('[EmbeddingsStorage] HNSW search - Form fields:', { pageURL, pageURLs, topK });
       
       // Use dedicated search method in worker client (optimized path)
-      const results = await this.getWorkerClient().searchFormFields(pageURL, queryEmbedding, topK);
+      const results = await this.getWorkerClient().searchFormFields(pageURL, queryEmbedding, topK, pageURLs);
 
       debug.log(`[EmbeddingsStorage] HNSW: Found ${results.length} form fields`);
       return results;
@@ -449,11 +453,13 @@ class EmbeddingsStorageManager {
 
   /**
    * Native vector search for clickable elements using HNSW index
+   * Supports single pageURL, array of pageURLs, or all pages (when both are undefined)
    */
   async searchClickableElements(
-    pageURL: string,
+    pageURL: string | undefined,
     queryEmbedding: number[],
-    topK: number = 5
+    topK: number = 5,
+    pageURLs?: string[]
   ): Promise<Array<{
     id: string;
     pageURL: string;
@@ -469,10 +475,10 @@ class EmbeddingsStorageManager {
     }
 
     try {
-      debug.log('[EmbeddingsStorage] HNSW search - Clickable elements:', { pageURL, topK });
+      debug.log('[EmbeddingsStorage] HNSW search - Clickable elements:', { pageURL, pageURLs, topK });
       
       // Use dedicated search method in worker client (optimized path)
-      const results = await this.getWorkerClient().searchClickableElements(pageURL, queryEmbedding, topK);
+      const results = await this.getWorkerClient().searchClickableElements(pageURL, queryEmbedding, topK, pageURLs);
 
       debug.log(`[EmbeddingsStorage] HNSW: Found ${results.length} clickable elements`);
       return results;
@@ -577,6 +583,495 @@ class EmbeddingsStorageManager {
     } catch (error) {
       debug.error('[EmbeddingsStorage] Failed to search DOM updates:', error);
       return [];
+    }
+  }
+
+  /**
+   * Full-text search for HTML chunks using BM25
+   * Supports single pageURL, array of pageURLs, or all pages (when both are undefined)
+   */
+  async fullTextSearchHTMLChunks(
+    pageURL: string | undefined,
+    query: string,
+    topK: number = 3,
+    pageURLs?: string[]
+  ): Promise<Array<{
+    id: string;
+    pageURL: string;
+    pageTitle: string;
+    chunkIndex: number;
+    text: string;
+    html: string;
+    similarity: number;
+  }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    try {
+      debug.log('[EmbeddingsStorage] Full-text search - HTML chunks:', { pageURL, pageURLs, query, topK });
+      const results = await this.getWorkerClient().fullTextSearchHTMLChunks(pageURL, query, topK, pageURLs);
+      debug.log(`[EmbeddingsStorage] FTS: Found ${results?.length || 0} HTML chunks`);
+      return results || [];
+    } catch (error) {
+      debug.error('[EmbeddingsStorage] Failed to full-text search HTML chunks:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Hybrid search for HTML chunks combining vector and full-text search
+   * Default weights: 70% semantic, 30% keyword
+   * Supports single pageURL, array of pageURLs, or all pages (when both are undefined)
+   */
+  async hybridSearchHTMLChunks(
+    pageURL: string | undefined,
+    query: string,
+    queryEmbedding: number[],
+    topK: number = 3,
+    semanticWeight: number = 0.7,
+    keywordWeight: number = 0.3,
+    pageURLs?: string[]
+  ): Promise<Array<{
+    id: string;
+    pageURL: string;
+    pageTitle: string;
+    chunkIndex: number;
+    text: string;
+    html: string;
+    similarity: number;
+    semanticScore: number;
+    keywordScore: number;
+  }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    try {
+      debug.log('[EmbeddingsStorage] Hybrid search - HTML chunks:', { 
+        pageURL, 
+        pageURLs,
+        query, 
+        topK, 
+        semanticWeight, 
+        keywordWeight 
+      });
+      const results = await this.getWorkerClient().hybridSearchHTMLChunks(
+        pageURL, 
+        query, 
+        queryEmbedding, 
+        topK, 
+        semanticWeight, 
+        keywordWeight,
+        pageURLs
+      );
+      debug.log(`[EmbeddingsStorage] Hybrid: Found ${results?.length || 0} HTML chunks`);
+      return results || [];
+    } catch (error) {
+      debug.error('[EmbeddingsStorage] Failed to hybrid search HTML chunks:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Full-text search for form fields
+   */
+  async fullTextSearchFormFields(
+    pageURL: string,
+    query: string,
+    topK: number = 5
+  ): Promise<Array<{
+    id: string;
+    pageURL: string;
+    selector: string;
+    tagName: string;
+    type?: string;
+    name?: string;
+    label?: string;
+    placeholder?: string;
+    value?: string;
+    similarity: number;
+  }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    try {
+      debug.log('[EmbeddingsStorage] Full-text search - form fields:', { pageURL, query, topK });
+      const results = await this.getWorkerClient().fullTextSearchFormFields(pageURL, query, topK);
+      debug.log(`[EmbeddingsStorage] FTS: Found ${results?.length || 0} form fields`);
+      return results || [];
+    } catch (error) {
+      debug.error('[EmbeddingsStorage] Failed to full-text search form fields:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Full-text search for clickable elements
+   */
+  async fullTextSearchClickableElements(
+    pageURL: string,
+    query: string,
+    topK: number = 5
+  ): Promise<Array<{
+    id: string;
+    pageURL: string;
+    selector: string;
+    tagName: string;
+    text: string;
+    ariaLabel?: string;
+    href?: string;
+    similarity: number;
+  }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    try {
+      debug.log('[EmbeddingsStorage] Full-text search - clickable elements:', { pageURL, query, topK });
+      const results = await this.getWorkerClient().fullTextSearchClickableElements(pageURL, query, topK);
+      debug.log(`[EmbeddingsStorage] FTS: Found ${results?.length || 0} clickable elements`);
+      return results || [];
+    } catch (error) {
+      debug.error('[EmbeddingsStorage] Failed to full-text search clickable elements:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get all indexed pages with summary information
+   * Returns lightweight summaries suitable for agent context
+   */
+  async getAllIndexedPages(options?: {
+    sessionId?: string;
+    limit?: number;
+    includeEmpty?: boolean;
+  }): Promise<Array<{
+    pageURL: string;
+    pageTitle: string;
+    htmlChunkCount: number;
+    formChunkCount: number;
+    clickableChunkCount: number;
+    lastIndexed: Date;
+    sessionId?: string;
+  }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    const { sessionId, limit = 100, includeEmpty = false } = options || {};
+
+    try {
+      debug.log('[EmbeddingsStorage] Getting all indexed pages:', { sessionId, limit });
+
+      // Get HTML chunks grouped by page
+      // First get all pages with their latest timestamps
+      const htmlQuery = `
+        SELECT 
+          pageURL,
+          pageTitle,
+          timestamp,
+          sessionId
+        FROM html_chunks
+        ${sessionId ? 'WHERE sessionId = $sessionId' : ''}
+        ORDER BY pageURL, timestamp DESC;
+      `;
+
+      const htmlResult = await this.getWorkerClient().query<any[]>(
+        htmlQuery,
+        sessionId ? { sessionId } : undefined
+      );
+      const htmlChunks = htmlResult?.[0] || [];
+      
+      // Group chunks by page and get counts + latest timestamp
+      const pageMap = new Map<string, { 
+        pageURL: string; 
+        pageTitle: string; 
+        chunkCount: number; 
+        lastIndexed: any;
+        sessionId: string;
+      }>();
+      
+      for (const chunk of htmlChunks) {
+        const existing = pageMap.get(chunk.pageURL);
+        if (existing) {
+          existing.chunkCount++;
+          // Keep the latest timestamp (chunks are ordered by timestamp DESC per page)
+          if (!existing.lastIndexed && chunk.timestamp) {
+            existing.lastIndexed = chunk.timestamp;
+          }
+        } else {
+          pageMap.set(chunk.pageURL, {
+            pageURL: chunk.pageURL,
+            pageTitle: chunk.pageTitle || 'Untitled Page',
+            chunkCount: 1,
+            lastIndexed: chunk.timestamp,
+            sessionId: chunk.sessionId,
+          });
+        }
+      }
+      
+      // Convert map to array and sort by lastIndexed
+      let htmlPages = Array.from(pageMap.values()).sort((a, b) => {
+        const aTime = a.lastIndexed ? new Date(a.lastIndexed).getTime() : 0;
+        const bTime = b.lastIndexed ? new Date(b.lastIndexed).getTime() : 0;
+        return bTime - aTime; // Most recent first
+      });
+      
+      // Apply limit
+      if (limit) {
+        htmlPages = htmlPages.slice(0, limit);
+      }
+
+      // Get form fields count per page
+      const formQuery = `
+        SELECT 
+          pageURL,
+          count() as groupCount
+        FROM form_fields
+        ${sessionId ? 'WHERE sessionId = $sessionId' : ''}
+        GROUP BY pageURL;
+      `;
+
+      const formResult = await this.getWorkerClient().query<any[]>(
+        formQuery,
+        sessionId ? { sessionId } : undefined
+      );
+      const formCounts = new Map((formResult?.[0] || []).map((r: any) => [r.pageURL, r.groupCount]));
+
+      // Get clickable elements count per page
+      const clickableQuery = `
+        SELECT 
+          pageURL,
+          count() as groupCount
+        FROM clickable_elements
+        ${sessionId ? 'WHERE sessionId = $sessionId' : ''}
+        GROUP BY pageURL;
+      `;
+
+      const clickableResult = await this.getWorkerClient().query<any[]>(
+        clickableQuery,
+        sessionId ? { sessionId } : undefined
+      );
+      const clickableCounts = new Map((clickableResult?.[0] || []).map((r: any) => [r.pageURL, r.groupCount]));
+
+      // Combine results
+      const pages = htmlPages.map((page: any, index: number) => {
+        const formGroups = formCounts.get(page.pageURL);
+        const clickableGroups = clickableCounts.get(page.pageURL);
+        
+        // Debug first page timestamp
+        if (index === 0) {
+          debug.log('[EmbeddingsStorage] Sample timestamp from DB:', {
+            raw: page.lastIndexed,
+            type: typeof page.lastIndexed,
+            isDate: page.lastIndexed instanceof Date,
+          });
+        }
+        
+        // Parse lastIndexed - handle various formats from SurrealDB
+        let lastIndexedDate: Date;
+        try {
+          if (page.lastIndexed instanceof Date) {
+            lastIndexedDate = page.lastIndexed;
+          } else if (typeof page.lastIndexed === 'number') {
+            lastIndexedDate = new Date(page.lastIndexed);
+          } else if (typeof page.lastIndexed === 'string') {
+            // Try parsing as ISO string or timestamp
+            const parsed = new Date(page.lastIndexed);
+            if (!isNaN(parsed.getTime())) {
+              lastIndexedDate = parsed;
+            } else {
+              // Fallback to current time if parsing fails
+              debug.warn('[EmbeddingsStorage] Invalid lastIndexed format:', page.lastIndexed);
+              lastIndexedDate = new Date();
+            }
+          } else if (page.lastIndexed && typeof page.lastIndexed === 'object') {
+            // SurrealDB might return datetime as object - try to extract timestamp
+            const timestamp = (page.lastIndexed as any).timestamp || (page.lastIndexed as any).value || page.lastIndexed;
+            lastIndexedDate = new Date(timestamp);
+            if (isNaN(lastIndexedDate.getTime())) {
+              debug.warn('[EmbeddingsStorage] Could not parse datetime object:', page.lastIndexed);
+              lastIndexedDate = new Date();
+            }
+          } else {
+            debug.warn('[EmbeddingsStorage] Unknown lastIndexed type:', typeof page.lastIndexed, page.lastIndexed);
+            lastIndexedDate = new Date();
+          }
+        } catch (error) {
+          debug.error('[EmbeddingsStorage] Error parsing lastIndexed:', error);
+          lastIndexedDate = new Date();
+        }
+        
+        return {
+          pageURL: page.pageURL,
+          pageTitle: page.pageTitle || 'Untitled Page',
+          htmlChunkCount: page.chunkCount || 0,
+          formChunkCount: (typeof formGroups === 'number' ? formGroups : 0) * 10, // Estimate: ~10 fields per group
+          clickableChunkCount: (typeof clickableGroups === 'number' ? clickableGroups : 0) * 10, // Estimate: ~10 elements per group
+          lastIndexed: lastIndexedDate,
+          sessionId: page.sessionId,
+        };
+      });
+
+      // Filter out empty pages if requested
+      const filteredPages = includeEmpty 
+        ? pages 
+        : pages.filter((p: any) => p.htmlChunkCount > 0 || p.formChunkCount > 0 || p.clickableChunkCount > 0);
+
+      debug.log(`[EmbeddingsStorage] Found ${filteredPages.length} indexed pages`);
+      return filteredPages;
+    } catch (error) {
+      debug.error('[EmbeddingsStorage] Failed to get indexed pages:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get summary statistics for specific pages
+   */
+  async getPagesSummary(pageURLs: string[]): Promise<{
+    pages: Array<{
+      pageURL: string;
+      pageTitle: string;
+      htmlChunkCount: number;
+      formChunkCount: number;
+      clickableChunkCount: number;
+      lastIndexed: Date;
+    }>;
+    totalChunks: number;
+    totalForms: number;
+    totalClickables: number;
+  }> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    if (pageURLs.length === 0) {
+      return {
+        pages: [],
+        totalChunks: 0,
+        totalForms: 0,
+        totalClickables: 0,
+      };
+    }
+
+    try {
+      debug.log('[EmbeddingsStorage] Getting summary for pages:', pageURLs.length);
+
+      // Fetch chunks for each page individually (SurrealDB doesn't support IN clause well)
+      const allChunks: any[] = [];
+      for (const url of pageURLs) {
+        const query = `
+          SELECT 
+            pageURL,
+            pageTitle,
+            timestamp
+          FROM html_chunks
+          WHERE pageURL = $pageURL
+          ORDER BY timestamp DESC;
+        `;
+        
+        const result = await this.getWorkerClient().query<any[]>(query, { pageURL: url });
+        const chunks = result?.[0] || [];
+        allChunks.push(...chunks);
+      }
+      
+      const htmlChunks = allChunks;
+      
+      // Group chunks by page
+      const pageMap = new Map<string, { 
+        pageURL: string; 
+        pageTitle: string; 
+        chunkCount: number; 
+        lastIndexed: any;
+      }>();
+      
+      for (const chunk of htmlChunks) {
+        const existing = pageMap.get(chunk.pageURL);
+        if (existing) {
+          existing.chunkCount++;
+          if (!existing.lastIndexed && chunk.timestamp) {
+            existing.lastIndexed = chunk.timestamp;
+          }
+        } else {
+          pageMap.set(chunk.pageURL, {
+            pageURL: chunk.pageURL,
+            pageTitle: chunk.pageTitle || 'Untitled Page',
+            chunkCount: 1,
+            lastIndexed: chunk.timestamp,
+          });
+        }
+      }
+      
+      const htmlPages = Array.from(pageMap.values());
+
+      // Get form and clickable counts (simplified for now)
+      const pages = await Promise.all(
+        htmlPages.map(async (page: any) => ({
+          pageURL: page.pageURL,
+          pageTitle: page.pageTitle || 'Untitled Page',
+          htmlChunkCount: page.chunkCount || 0,
+          formChunkCount: await this.countFormFields(page.pageURL),
+          clickableChunkCount: await this.countClickableElements(page.pageURL),
+          lastIndexed: page.lastIndexed ? new Date(page.lastIndexed) : new Date(),
+        }))
+      );
+
+      const summary = {
+        pages,
+        totalChunks: pages.reduce((sum, p) => sum + p.htmlChunkCount, 0),
+        totalForms: pages.reduce((sum, p) => sum + p.formChunkCount, 0),
+        totalClickables: pages.reduce((sum, p) => sum + p.clickableChunkCount, 0),
+      };
+
+      debug.log('[EmbeddingsStorage] Pages summary:', summary);
+      return summary;
+    } catch (error) {
+      debug.error('[EmbeddingsStorage] Failed to get pages summary:', error);
+      return {
+        pages: [],
+        totalChunks: 0,
+        totalForms: 0,
+        totalClickables: 0,
+      };
+    }
+  }
+
+  /**
+   * Delete all embeddings for a specific page URL
+   * Removes HTML chunks, form fields, clickable elements, and DOM updates
+   */
+  async deletePageEmbeddings(pageURL: string): Promise<{
+    deleted: boolean;
+    counts: {
+      htmlChunks: number;
+      formFields: number;
+      clickableElements: number;
+      domUpdates: number;
+    };
+  }> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    try {
+      debug.log('[EmbeddingsStorage] Deleting embeddings for page:', pageURL);
+      const result = await this.getWorkerClient().deletePageEmbeddings(pageURL);
+      debug.log('[EmbeddingsStorage] Deleted embeddings:', result.counts);
+      return result;
+    } catch (error) {
+      debug.error('[EmbeddingsStorage] Failed to delete page embeddings:', error);
+      return {
+        deleted: false,
+        counts: {
+          htmlChunks: 0,
+          formFields: 0,
+          clickableElements: 0,
+          domUpdates: 0,
+        },
+      };
     }
   }
 }

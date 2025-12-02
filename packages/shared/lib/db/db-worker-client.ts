@@ -16,6 +16,11 @@ type DBOp =
   | 'searchHTMLChunks'
   | 'searchFormFields'
   | 'searchClickableElements'
+  | 'fullTextSearchHTMLChunks'
+  | 'hybridSearchHTMLChunks'
+  | 'fullTextSearchFormFields'
+  | 'fullTextSearchClickableElements'
+  | 'deletePageEmbeddings'
   | 'query'
   | 'terminate';
 
@@ -349,11 +354,13 @@ class DBWorkerClient {
 
   /**
    * Search HTML chunks using HNSW index
+   * Supports single pageURL, array of pageURLs, or all pages (when both are undefined)
    */
   async searchHTMLChunks(
-    pageURL: string,
+    pageURL: string | undefined,
     queryEmbedding: number[],
-    topK: number = 3
+    topK: number = 3,
+    pageURLs?: string[]
   ): Promise<Array<{
     id: string;
     pageURL: string;
@@ -367,7 +374,7 @@ class DBWorkerClient {
       await this.initialize();
     }
 
-    if (this.enableDebug) debug.log(`[DB Worker Client] Searching HTML chunks (topK=${topK})...`);
+    if (this.enableDebug) debug.log(`[DB Worker Client] Searching HTML chunks (topK=${topK}, pages=${pageURLs?.length || (pageURL ? 1 : 'all')})...`);
     const results = await this.sendMessage<Array<{
       id: string;
       pageURL: string;
@@ -378,6 +385,7 @@ class DBWorkerClient {
       similarity: number;
     }>>('searchHTMLChunks', {
       pageURL,
+      pageURLs,
       queryEmbedding,
       topK,
     });
@@ -387,11 +395,13 @@ class DBWorkerClient {
 
   /**
    * Search form fields using HNSW index
+   * Supports single pageURL, array of pageURLs, or all pages (when both are undefined)
    */
   async searchFormFields(
-    pageURL: string,
+    pageURL: string | undefined,
     queryEmbedding: number[],
-    topK: number = 5
+    topK: number = 5,
+    pageURLs?: string[]
   ): Promise<Array<{
     id: string;
     pageURL: string;
@@ -408,7 +418,7 @@ class DBWorkerClient {
       await this.initialize();
     }
 
-    if (this.enableDebug) debug.log(`[DB Worker Client] Searching form fields (topK=${topK})...`);
+    if (this.enableDebug) debug.log(`[DB Worker Client] Searching form fields (topK=${topK}, pages=${pageURLs?.length || (pageURL ? 1 : 'all')})...`);
     const results = await this.sendMessage<Array<{
       id: string;
       pageURL: string;
@@ -422,6 +432,7 @@ class DBWorkerClient {
       similarity: number;
     }>>('searchFormFields', {
       pageURL,
+      pageURLs,
       queryEmbedding,
       topK,
     }, { timeoutMs: 10000 });
@@ -431,10 +442,189 @@ class DBWorkerClient {
 
   /**
    * Search clickable elements using HNSW index
+   * Supports single pageURL, array of pageURLs, or all pages (when both are undefined)
    */
   async searchClickableElements(
-    pageURL: string,
+    pageURL: string | undefined,
     queryEmbedding: number[],
+    topK: number = 5,
+    pageURLs?: string[]
+  ): Promise<Array<{
+    id: string;
+    pageURL: string;
+    selector: string;
+    tagName: string;
+    text: string;
+    ariaLabel?: string;
+    href?: string;
+    similarity: number;
+  }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    if (this.enableDebug) debug.log(`[DB Worker Client] Searching clickable elements (topK=${topK}, pages=${pageURLs?.length || (pageURL ? 1 : 'all')})...`);
+    const results = await this.sendMessage<Array<{
+      id: string;
+      pageURL: string;
+      selector: string;
+      tagName: string;
+      text: string;
+      ariaLabel?: string;
+      href?: string;
+      similarity: number;
+    }>>('searchClickableElements', {
+      pageURL,
+      pageURLs,
+      queryEmbedding,
+      topK,
+    });
+    if (this.enableDebug) debug.log(`[DB Worker Client] Found ${results.length} results`);
+    return results;
+  }
+
+  /**
+   * Full-text search for HTML chunks using BM25
+   * Supports single pageURL, array of pageURLs, or all pages (when both are undefined)
+   */
+  async fullTextSearchHTMLChunks(
+    pageURL: string | undefined,
+    query: string,
+    topK: number = 3,
+    pageURLs?: string[]
+  ): Promise<Array<{
+    id: string;
+    pageURL: string;
+    pageTitle: string;
+    chunkIndex: number;
+    text: string;
+    html: string;
+    similarity: number;
+  }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    if (this.enableDebug) debug.log(`[DB Worker Client] Full-text searching HTML chunks (topK=${topK}, pages=${pageURLs?.length || (pageURL ? 1 : 'all')})...`);
+    const results = await this.sendMessage<Array<{
+      id: string;
+      pageURL: string;
+      pageTitle: string;
+      chunkIndex: number;
+      text: string;
+      html: string;
+      similarity: number;
+    }>>('fullTextSearchHTMLChunks', {
+      pageURL,
+      pageURLs,
+      query,
+      topK,
+    });
+    if (this.enableDebug) debug.log(`[DB Worker Client] Found ${results.length} results`);
+    return results;
+  }
+
+  /**
+   * Hybrid search for HTML chunks combining vector and full-text search
+   * Supports single pageURL, array of pageURLs, or all pages (when both are undefined)
+   */
+  async hybridSearchHTMLChunks(
+    pageURL: string | undefined,
+    query: string,
+    queryEmbedding: number[],
+    topK: number = 3,
+    semanticWeight: number = 0.7,
+    keywordWeight: number = 0.3,
+    pageURLs?: string[]
+  ): Promise<Array<{
+    id: string;
+    pageURL: string;
+    pageTitle: string;
+    chunkIndex: number;
+    text: string;
+    html: string;
+    similarity: number;
+    semanticScore: number;
+    keywordScore: number;
+  }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    if (this.enableDebug) debug.log(`[DB Worker Client] Hybrid searching HTML chunks (topK=${topK}, pages=${pageURLs?.length || (pageURL ? 1 : 'all')})...`);
+    const results = await this.sendMessage<Array<{
+      id: string;
+      pageURL: string;
+      pageTitle: string;
+      chunkIndex: number;
+      text: string;
+      html: string;
+      similarity: number;
+      semanticScore: number;
+      keywordScore: number;
+    }>>('hybridSearchHTMLChunks', {
+      pageURL,
+      pageURLs,
+      query,
+      queryEmbedding,
+      topK,
+      semanticWeight,
+      keywordWeight,
+    });
+    if (this.enableDebug) debug.log(`[DB Worker Client] Found ${results.length} results`);
+    return results;
+  }
+
+  /**
+   * Full-text search for form fields
+   */
+  async fullTextSearchFormFields(
+    pageURL: string,
+    query: string,
+    topK: number = 5
+  ): Promise<Array<{
+    id: string;
+    pageURL: string;
+    selector: string;
+    tagName: string;
+    type?: string;
+    name?: string;
+    label?: string;
+    placeholder?: string;
+    value?: string;
+    similarity: number;
+  }>> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    if (this.enableDebug) debug.log(`[DB Worker Client] Full-text searching form fields (topK=${topK})...`);
+    const results = await this.sendMessage<Array<{
+      id: string;
+      pageURL: string;
+      selector: string;
+      tagName: string;
+      type?: string;
+      name?: string;
+      label?: string;
+      placeholder?: string;
+      value?: string;
+      similarity: number;
+    }>>('fullTextSearchFormFields', {
+      pageURL,
+      query,
+      topK,
+    });
+    if (this.enableDebug) debug.log(`[DB Worker Client] Found ${results.length} results`);
+    return results;
+  }
+
+  /**
+   * Full-text search for clickable elements
+   */
+  async fullTextSearchClickableElements(
+    pageURL: string,
+    query: string,
     topK: number = 5
   ): Promise<Array<{
     id: string;
@@ -450,7 +640,7 @@ class DBWorkerClient {
       await this.initialize();
     }
 
-    if (this.enableDebug) debug.log(`[DB Worker Client] Searching clickable elements (topK=${topK})...`);
+    if (this.enableDebug) debug.log(`[DB Worker Client] Full-text searching clickable elements (topK=${topK})...`);
     const results = await this.sendMessage<Array<{
       id: string;
       pageURL: string;
@@ -460,13 +650,31 @@ class DBWorkerClient {
       ariaLabel?: string;
       href?: string;
       similarity: number;
-    }>>('searchClickableElements', {
+    }>>('fullTextSearchClickableElements', {
       pageURL,
-      queryEmbedding,
+      query,
       topK,
     });
     if (this.enableDebug) debug.log(`[DB Worker Client] Found ${results.length} results`);
     return results;
+  }
+
+  /**
+   * Delete all embeddings for a specific page URL
+   */
+  async deletePageEmbeddings(
+    pageURL: string
+  ): Promise<{ deleted: boolean; counts: { htmlChunks: number; formFields: number; clickableElements: number; domUpdates: number } }> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    if (this.enableDebug) debug.log(`[DB Worker Client] Deleting embeddings for page: ${pageURL}`);
+    const result = await this.sendMessage<{ deleted: boolean; counts: { htmlChunks: number; formFields: number; clickableElements: number; domUpdates: number } }>('deletePageEmbeddings', {
+      pageURL,
+    });
+    if (this.enableDebug) debug.log(`[DB Worker Client] Deleted embeddings:`, result.counts);
+    return result;
   }
 
   /**

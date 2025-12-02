@@ -206,70 +206,70 @@ const DEFAULT_FILTERS: UsageFilters = {
 
 const UsageSkeleton: React.FC<{ isLight: boolean }> = ({ isLight }) => (
   <div className="space-y-4 animate-pulse">
-    {/* Summary Cards Skeleton */}
+    {/* Organization and Team Selectors */}
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <div className={cn('h-3 w-32 rounded mb-2', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+        <div className={cn('h-9 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+        </div>
+      <div>
+        <div className={cn('h-3 w-24 rounded mb-2', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+        <div className={cn('h-9 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+      </div>
+    </div>
+
+    {/* Agent and Model Selectors */}
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <div className={cn('h-3 w-28 rounded mb-2', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+        <div className={cn('h-9 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+      </div>
+      <div>
+        <div className={cn('h-3 w-28 rounded mb-2', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+        <div className={cn('h-9 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+      </div>
+    </div>
+
+    {/* User and Metric Selectors */}
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <div className={cn('h-3 w-24 rounded mb-2', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+        <div className={cn('h-9 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+      </div>
+      <div>
+        <div className={cn('h-3 w-28 rounded mb-2', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+        <div className={cn('h-9 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+      </div>
+    </div>
+
+    {/* Range Selector */}
+    <div className={cn('h-10 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+
+    {/* Summary Cards */}
     <div className="grid grid-cols-2 gap-3">
       {Array.from({ length: 4 }).map((_, idx) => (
         <div
           key={`summary-skeleton-${idx}`}
           className={cn(
-            'rounded-lg border p-4',
+            'rounded-lg border p-3',
             isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
           )}
         >
-          <div className={cn('h-3 w-24 rounded mb-3', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
-          <div className={cn('h-8 w-32 rounded mb-2', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
-          <div className={cn('h-2.5 w-20 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
+          <div className={cn('h-2.5 w-20 rounded mb-2', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+          <div className={cn('h-6 w-24 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
         </div>
       ))}
     </div>
 
-    {/* Main Chart Skeleton */}
+    {/* Main Chart */}
     <div
       className={cn(
         'rounded-lg border p-4',
         isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
       )}
     >
-      <div className={cn('h-4 w-40 rounded mb-4', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
-      <div className={cn('h-64 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
-    </div>
-
-    {/* Breakdown Cards Skeleton */}
-    <div className="grid gap-3 lg:grid-cols-2">
-      {Array.from({ length: 4 }).map((_, idx) => (
-        <div
-          key={`breakdown-skeleton-${idx}`}
-          className={cn(
-            'rounded-lg border p-4',
-            isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
-          )}
-        >
-          <div className={cn('h-4 w-32 rounded mb-4', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
-          <div className={cn('h-48 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
-        </div>
-      ))}
-    </div>
-
-    {/* Table Skeleton */}
-    <div
-      className={cn(
-        'rounded-lg border',
-        isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
-      )}
-    >
-      <div className="p-4 border-b">
-        <div className={cn('h-4 w-40 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
-      </div>
-      <div className="p-4 space-y-3">
-        {Array.from({ length: 5 }).map((_, idx) => (
-          <div key={`table-row-skeleton-${idx}`} className="flex items-center gap-4">
-            <div className={cn('h-3 w-24 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
-            <div className={cn('h-3 flex-1 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
-            <div className={cn('h-3 w-20 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
-            <div className={cn('h-3 w-20 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
-          </div>
-        ))}
-      </div>
+      <div className={cn('h-3 w-32 rounded mb-4', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
+      <div className={cn('h-48 w-full rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
     </div>
   </div>
 );

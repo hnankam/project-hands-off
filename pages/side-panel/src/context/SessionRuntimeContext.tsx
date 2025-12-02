@@ -526,12 +526,12 @@ export const useSessionRuntimeState = (sessionId: string): RuntimeState | null =
   renderCountRef.current += 1;
 
   useEffect(() => {
-    debug.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Initial state sync`);
+    // debug.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Initial state sync`);
     setState(manager.getRuntimeState(sessionId));
   }, [manager, sessionId]);
 
   useEffect(() => {
-    debug.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Starting polling interval`);
+    // debug.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Starting polling interval`);
     const interval = setInterval(() => {
       const newState = manager.getRuntimeState(sessionId);
       setState(prevState => {
@@ -542,16 +542,16 @@ export const useSessionRuntimeState = (sessionId: string): RuntimeState | null =
         ) {
           return prevState;
         }
-        debug.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Polling update`, {
-          isInProgress: newState?.isInProgress,
-          signatureChanged: prevState?.messagesSignature !== newState?.messagesSignature,
-        });
+        // debug.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Polling update`, {
+        //   isInProgress: newState?.isInProgress,
+        //   signatureChanged: prevState?.messagesSignature !== newState?.messagesSignature,
+        // });
         return newState;
       });
     }, 1000);
 
     return () => {
-      debug.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Clearing polling interval`);
+      // debug.log(`[useSessionRuntimeState:${sessionId.slice(0, 8)}] Clearing polling interval`);
       clearInterval(interval);
     };
   }, [manager, sessionId]);

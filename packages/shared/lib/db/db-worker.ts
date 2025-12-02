@@ -77,13 +77,17 @@ async function initializeDB(dbName: string, useMemory: boolean): Promise<void> {
 }
 
 /**
- * Initialize embeddings schema with HNSW indexes
+ * Initialize embeddings schema with HNSW indexes and full-text search
  */
 async function initializeEmbeddingsSchema(): Promise<void> {
   if (!db) throw new Error('Database not connected');
 
   await db.query(`
-    -- HTML chunks table with HNSW vector index
+    -- Define analyzers for full-text search
+    DEFINE ANALYZER IF NOT EXISTS english_analyzer TOKENIZERS class FILTERS lowercase, snowball(english);
+    DEFINE ANALYZER IF NOT EXISTS simple_analyzer TOKENIZERS class FILTERS lowercase;
+    
+    -- HTML chunks table with HNSW vector index AND full-text search
     DEFINE TABLE IF NOT EXISTS html_chunks SCHEMAFULL;
     DEFINE FIELD IF NOT EXISTS pageURL ON html_chunks TYPE string;
     DEFINE FIELD IF NOT EXISTS pageTitle ON html_chunks TYPE string;
@@ -94,6 +98,8 @@ async function initializeEmbeddingsSchema(): Promise<void> {
     DEFINE FIELD IF NOT EXISTS sessionId ON html_chunks TYPE option<string>;
     DEFINE FIELD IF NOT EXISTS timestamp ON html_chunks TYPE datetime;
     DEFINE INDEX IF NOT EXISTS hnsw_html_idx ON html_chunks FIELDS embedding HNSW DIMENSION 384 DIST COSINE TYPE F64 EFC 150 M 12;
+    DEFINE INDEX IF NOT EXISTS fts_html_text_idx ON html_chunks FIELDS text SEARCH ANALYZER english_analyzer BM25;
+    DEFINE INDEX IF NOT EXISTS fts_html_title_idx ON html_chunks FIELDS pageTitle SEARCH ANALYZER english_analyzer BM25;
     DEFINE INDEX IF NOT EXISTS html_chunks_url ON html_chunks FIELDS pageURL;
     DEFINE INDEX IF NOT EXISTS html_chunks_session ON html_chunks FIELDS sessionId;
     DEFINE INDEX IF NOT EXISTS html_chunks_timestamp ON html_chunks FIELDS timestamp;
@@ -107,6 +113,7 @@ async function initializeEmbeddingsSchema(): Promise<void> {
     DEFINE FIELD IF NOT EXISTS sessionId ON form_fields TYPE option<string>;
     DEFINE FIELD IF NOT EXISTS timestamp ON form_fields TYPE datetime;
     DEFINE INDEX IF NOT EXISTS hnsw_form_idx ON form_fields FIELDS embedding HNSW DIMENSION 384 DIST COSINE TYPE F64 EFC 150 M 12;
+    DEFINE INDEX IF NOT EXISTS fts_form_json_idx ON form_fields FIELDS fieldsJSON SEARCH ANALYZER simple_analyzer BM25;
     DEFINE INDEX IF NOT EXISTS form_fields_url ON form_fields FIELDS pageURL;
     DEFINE INDEX IF NOT EXISTS form_fields_session ON form_fields FIELDS sessionId;
     DEFINE INDEX IF NOT EXISTS form_fields_timestamp ON form_fields FIELDS timestamp;
@@ -120,12 +127,13 @@ async function initializeEmbeddingsSchema(): Promise<void> {
     DEFINE FIELD IF NOT EXISTS sessionId ON clickable_elements TYPE option<string>;
     DEFINE FIELD IF NOT EXISTS timestamp ON clickable_elements TYPE datetime;
     DEFINE INDEX IF NOT EXISTS hnsw_clickable_idx ON clickable_elements FIELDS embedding HNSW DIMENSION 384 DIST COSINE TYPE F64 EFC 150 M 12;
+    DEFINE INDEX IF NOT EXISTS fts_clickable_json_idx ON clickable_elements FIELDS elementsJSON SEARCH ANALYZER simple_analyzer BM25;
     DEFINE INDEX IF NOT EXISTS clickable_elements_url ON clickable_elements FIELDS pageURL;
     DEFINE INDEX IF NOT EXISTS clickable_elements_session ON clickable_elements FIELDS sessionId;
     DEFINE INDEX IF NOT EXISTS clickable_elements_timestamp ON clickable_elements FIELDS timestamp;
   `);
 
-  log('[DB Worker] Schema initialized with HNSW indexes');
+  log('[DB Worker] Schema initialized with HNSW indexes and full-text search');
 }
 
 /**
@@ -280,6 +288,40 @@ async function storeClickableElements(payload: {
 }
 
 /**
+ * Delete all embeddings for a specific page URL
+ */
+async function deletePageEmbeddings(payload: {
+  pageURL: string;
+}): Promise<{ deleted: boolean; counts: { htmlChunks: number; formFields: number; clickableElements: number; domUpdates: number } }> {
+  if (!db) throw new Error('Database not connected');
+
+  log(`[DB Worker] Deleting embeddings for page: ${payload.pageURL}`);
+
+  // Get counts before deletion for reporting
+  const htmlResult = await db.query<[{ count: number }[]]>(`SELECT count() as count FROM html_chunks WHERE pageURL = $url GROUP ALL`, { url: payload.pageURL });
+  const formResult = await db.query<[{ count: number }[]]>(`SELECT count() as count FROM form_fields WHERE pageURL = $url GROUP ALL`, { url: payload.pageURL });
+  const clickResult = await db.query<[{ count: number }[]]>(`SELECT count() as count FROM clickable_elements WHERE pageURL = $url GROUP ALL`, { url: payload.pageURL });
+  const domResult = await db.query<[{ count: number }[]]>(`SELECT count() as count FROM dom_updates WHERE pageURL = $url GROUP ALL`, { url: payload.pageURL });
+
+  const counts = {
+    htmlChunks: htmlResult[0]?.[0]?.count || 0,
+    formFields: formResult[0]?.[0]?.count || 0,
+    clickableElements: clickResult[0]?.[0]?.count || 0,
+    domUpdates: domResult[0]?.[0]?.count || 0,
+  };
+
+  // Delete from all tables
+  await db.query(`DELETE FROM html_chunks WHERE pageURL = $url`, { url: payload.pageURL });
+  await db.query(`DELETE FROM form_fields WHERE pageURL = $url`, { url: payload.pageURL });
+  await db.query(`DELETE FROM clickable_elements WHERE pageURL = $url`, { url: payload.pageURL });
+  await db.query(`DELETE FROM dom_updates WHERE pageURL = $url`, { url: payload.pageURL });
+
+  log(`[DB Worker] Deleted embeddings for page: ${payload.pageURL} - HTML: ${counts.htmlChunks}, Forms: ${counts.formFields}, Clickable: ${counts.clickableElements}, DOM: ${counts.domUpdates}`);
+
+  return { deleted: true, counts };
+}
+
+/**
  * Store DOM update with embedding, recency score, and parallel batching
  */
 async function storeDOMUpdate(payload: {
@@ -338,9 +380,11 @@ async function storeDOMUpdate(payload: {
 
 /**
  * Search HTML chunks using HNSW index
+ * Supports single pageURL, array of pageURLs, or all pages (when pageURLs is empty/undefined)
  */
 async function searchHTMLChunks(payload: {
-  pageURL: string;
+  pageURL?: string;
+  pageURLs?: string[];
   queryEmbedding: number[];
   topK: number;
 }): Promise<any[]> {
@@ -348,24 +392,87 @@ async function searchHTMLChunks(payload: {
 
   const efSearch = Math.max(payload.topK * 3, 100);
   
-  const results = await db.query<any[]>(`
-    LET $q = $embedding;
-    SELECT 
-      id,
-      pageURL,
-      pageTitle,
-      chunkIndex,
-      text,
-      html,
-      vector::distance::knn() AS distance
-    FROM html_chunks
-    WHERE 
-      pageURL = $url
-      AND embedding <|${payload.topK},${efSearch}|> $q;
-  `, {
-    url: payload.pageURL,
-    embedding: payload.queryEmbedding,
-  });
+  // Determine which pages to search
+  const urls = payload.pageURLs?.length 
+    ? payload.pageURLs 
+    : payload.pageURL 
+      ? [payload.pageURL] 
+      : null; // null means search all pages
+  
+  let results: any[];
+  
+  if (urls === null) {
+    // Search all pages
+    results = await db.query<any[]>(`
+      LET $q = $embedding;
+      SELECT 
+        id,
+        pageURL,
+        pageTitle,
+        chunkIndex,
+        text,
+        html,
+        vector::distance::knn() AS distance
+      FROM html_chunks
+      WHERE embedding <|${payload.topK},${efSearch}|> $q;
+    `, {
+      embedding: payload.queryEmbedding,
+    });
+  } else if (urls.length === 1) {
+    // Single page search (original behavior)
+    results = await db.query<any[]>(`
+      LET $q = $embedding;
+      SELECT 
+        id,
+        pageURL,
+        pageTitle,
+        chunkIndex,
+        text,
+        html,
+        vector::distance::knn() AS distance
+      FROM html_chunks
+      WHERE 
+        pageURL = $url
+        AND embedding <|${payload.topK},${efSearch}|> $q;
+    `, {
+      url: urls[0],
+      embedding: payload.queryEmbedding,
+    });
+  } else {
+    // Multiple pages - search each and merge results
+    const allResults: any[] = [];
+    for (const url of urls) {
+      const pageResults = await db.query<any[]>(`
+        LET $q = $embedding;
+        SELECT 
+          id,
+          pageURL,
+          pageTitle,
+          chunkIndex,
+          text,
+          html,
+          vector::distance::knn() AS distance
+        FROM html_chunks
+        WHERE 
+          pageURL = $url
+          AND embedding <|${payload.topK},${efSearch}|> $q;
+      `, {
+        url,
+        embedding: payload.queryEmbedding,
+      });
+      
+      if (pageResults && pageResults.length > 1 && pageResults[1]) {
+        allResults.push(...pageResults[1]);
+      }
+    }
+    
+    // Sort by distance and take top K
+    allResults.sort((a, b) => a.distance - b.distance);
+    return allResults.slice(0, payload.topK).map((r: any) => ({
+      ...r,
+      similarity: 1 - r.distance,
+    }));
+  }
 
   if (results && results.length > 1 && results[1] && results[1].length > 0) {
     return results[1].map((r: any) => ({
@@ -379,46 +486,598 @@ async function searchHTMLChunks(payload: {
 
 /**
  * Search form fields using HNSW index
+ * Supports single pageURL, array of pageURLs, or all pages (when pageURLs is empty/undefined)
  */
 async function searchFormFields(payload: {
-  pageURL: string;
+  pageURL?: string;
+  pageURLs?: string[];
   queryEmbedding: number[];
   topK: number;
 }): Promise<any[]> {
   if (!db) throw new Error('Database not connected');
 
-  log('[DB Worker] searchFormFields called:', { pageURL: payload.pageURL, topK: payload.topK });
+  // Determine which pages to search
+  const urls = payload.pageURLs?.length 
+    ? payload.pageURLs 
+    : payload.pageURL 
+      ? [payload.pageURL] 
+      : null; // null means search all pages
+
+  log('[DB Worker] searchFormFields called:', { urls, topK: payload.topK });
 
   const groupTopK = Math.ceil(payload.topK / 10);
   const efSearch = Math.max(groupTopK * 3, 50);
   
+  const processResults = (groupResults: any[]): any[] => {
+    if (!groupResults || groupResults.length < 2 || !groupResults[1] || groupResults[1].length === 0) {
+      return [];
+    }
+
+    const allFields: any[] = [];
+    for (const group of groupResults[1]) {
+      try {
+        const fields = JSON.parse(group.fieldsJSON);
+        fields.forEach((field: any) => {
+          allFields.push({
+            ...field,
+            id: group.id,
+            pageURL: group.pageURL,
+            similarity: 1 - group.distance,
+          });
+        });
+      } catch (e) {
+        logError('[DB Worker] Failed to parse fieldsJSON:', e);
+      }
+    }
+    return allFields;
+  };
+  
   log('[DB Worker] Executing form fields query...');
+  
+  if (urls === null) {
+    // Search all pages
+    const groupResults = await db.query<any[]>(`
+      LET $q = $embedding;
+      SELECT 
+        id,
+        pageURL,
+        groupIndex,
+        fieldsJSON,
+        vector::distance::knn() AS distance
+      FROM form_fields
+      WHERE embedding <|${groupTopK},${efSearch}|> $q;
+    `, {
+      embedding: payload.queryEmbedding,
+    });
+    
+    return processResults(groupResults).slice(0, payload.topK);
+  } else if (urls.length === 1) {
+    // Single page search
+    const groupResults = await db.query<any[]>(`
+      LET $q = $embedding;
+      SELECT 
+        id,
+        pageURL,
+        groupIndex,
+        fieldsJSON,
+        vector::distance::knn() AS distance
+      FROM form_fields
+      WHERE 
+        pageURL = $url
+        AND embedding <|${groupTopK},${efSearch}|> $q;
+    `, {
+      url: urls[0],
+      embedding: payload.queryEmbedding,
+    });
+    
+    log('[DB Worker] Query complete, results:', groupResults?.length);
+    return processResults(groupResults).slice(0, payload.topK);
+  } else {
+    // Multiple pages - search each and merge
+    const allFields: any[] = [];
+    for (const url of urls) {
+      const groupResults = await db.query<any[]>(`
+        LET $q = $embedding;
+        SELECT 
+          id,
+          pageURL,
+          groupIndex,
+          fieldsJSON,
+          vector::distance::knn() AS distance
+        FROM form_fields
+        WHERE 
+          pageURL = $url
+          AND embedding <|${groupTopK},${efSearch}|> $q;
+      `, {
+        url,
+        embedding: payload.queryEmbedding,
+      });
+      
+      allFields.push(...processResults(groupResults));
+    }
+    
+    // Sort by similarity and take top K
+    allFields.sort((a, b) => b.similarity - a.similarity);
+    return allFields.slice(0, payload.topK);
+  }
+}
+
+/**
+ * Search clickable elements using HNSW index
+ * Supports single pageURL, array of pageURLs, or all pages (when pageURLs is empty/undefined)
+ */
+async function searchClickableElements(payload: {
+  pageURL?: string;
+  pageURLs?: string[];
+  queryEmbedding: number[];
+  topK: number;
+}): Promise<any[]> {
+  if (!db) throw new Error('Database not connected');
+
+  // Determine which pages to search
+  const urls = payload.pageURLs?.length 
+    ? payload.pageURLs 
+    : payload.pageURL 
+      ? [payload.pageURL] 
+      : null; // null means search all pages
+
+  const groupTopK = Math.ceil(payload.topK / 10);
+  const efSearch = Math.max(groupTopK * 3, 50);
+  
+  const processResults = (groupResults: any[]): any[] => {
+    if (!groupResults || groupResults.length < 2 || !groupResults[1] || groupResults[1].length === 0) {
+      return [];
+    }
+
+    const allElements: any[] = [];
+    for (const group of groupResults[1]) {
+      try {
+        const elements = JSON.parse(group.elementsJSON);
+        elements.forEach((element: any) => {
+          allElements.push({
+            ...element,
+            id: group.id,
+            pageURL: group.pageURL,
+            similarity: 1 - group.distance,
+          });
+        });
+      } catch (e) {
+        logError('[DB Worker] Failed to parse elementsJSON:', e);
+      }
+    }
+    return allElements;
+  };
+  
+  if (urls === null) {
+    // Search all pages
+    const groupResults = await db.query<any[]>(`
+      LET $q = $embedding;
+      SELECT 
+        id,
+        pageURL,
+        groupIndex,
+        elementsJSON,
+        vector::distance::knn() AS distance
+      FROM clickable_elements
+      WHERE embedding <|${groupTopK},${efSearch}|> $q;
+    `, {
+      embedding: payload.queryEmbedding,
+    });
+    
+    return processResults(groupResults).slice(0, payload.topK);
+  } else if (urls.length === 1) {
+    // Single page search
+    const groupResults = await db.query<any[]>(`
+      LET $q = $embedding;
+      SELECT 
+        id,
+        pageURL,
+        groupIndex,
+        elementsJSON,
+        vector::distance::knn() AS distance
+      FROM clickable_elements
+      WHERE 
+        pageURL = $url
+        AND embedding <|${groupTopK},${efSearch}|> $q;
+    `, {
+      url: urls[0],
+      embedding: payload.queryEmbedding,
+    });
+    
+    return processResults(groupResults).slice(0, payload.topK);
+  } else {
+    // Multiple pages - search each and merge
+    const allElements: any[] = [];
+    for (const url of urls) {
+      const groupResults = await db.query<any[]>(`
+        LET $q = $embedding;
+        SELECT 
+          id,
+          pageURL,
+          groupIndex,
+          elementsJSON,
+          vector::distance::knn() AS distance
+        FROM clickable_elements
+        WHERE 
+          pageURL = $url
+          AND embedding <|${groupTopK},${efSearch}|> $q;
+      `, {
+        url,
+        embedding: payload.queryEmbedding,
+      });
+      
+      allElements.push(...processResults(groupResults));
+    }
+    
+    // Sort by similarity and take top K
+    allElements.sort((a, b) => b.similarity - a.similarity);
+    return allElements.slice(0, payload.topK);
+  }
+}
+
+/**
+ * Full-text search for HTML chunks using BM25
+ * Supports single pageURL, array of pageURLs, or all pages (when pageURLs is empty/undefined)
+ */
+async function fullTextSearchHTMLChunks(payload: {
+  pageURL?: string;
+  pageURLs?: string[];
+  query: string;
+  topK: number;
+}): Promise<any[]> {
+  if (!db) throw new Error('Database not connected');
+
+  // Determine which pages to search
+  const urls = payload.pageURLs?.length 
+    ? payload.pageURLs 
+    : payload.pageURL 
+      ? [payload.pageURL] 
+      : null; // null means search all pages
+
+  const processResults = (results: any[]): any[] => {
+    if (results && results.length > 0 && results[0] && results[0].length > 0) {
+      return results[0].map((r: any) => ({
+        ...r,
+        similarity: r.score || 0,
+      }));
+    }
+    return [];
+  };
+
+  if (urls === null) {
+    // Search all pages
+    const results = await db.query<any[]>(`
+      SELECT 
+        id,
+        pageURL,
+        pageTitle,
+        chunkIndex,
+        text,
+        html,
+        search::score(1) AS score
+      FROM html_chunks
+      WHERE text @1@ $query
+      ORDER BY score DESC
+      LIMIT $limit;
+    `, {
+      query: payload.query,
+      limit: payload.topK,
+    });
+    
+    return processResults(results);
+  } else if (urls.length === 1) {
+    // Single page search
+    const results = await db.query<any[]>(`
+      SELECT 
+        id,
+        pageURL,
+        pageTitle,
+        chunkIndex,
+        text,
+        html,
+        search::score(1) AS score
+      FROM html_chunks
+      WHERE 
+        pageURL = $url
+        AND text @1@ $query
+      ORDER BY score DESC
+      LIMIT $limit;
+    `, {
+      url: urls[0],
+      query: payload.query,
+      limit: payload.topK,
+    });
+    
+    return processResults(results);
+  } else {
+    // Multiple pages - search each and merge
+    const allResults: any[] = [];
+    for (const url of urls) {
+      const results = await db.query<any[]>(`
+        SELECT 
+          id,
+          pageURL,
+          pageTitle,
+          chunkIndex,
+          text,
+          html,
+          search::score(1) AS score
+        FROM html_chunks
+        WHERE 
+          pageURL = $url
+          AND text @1@ $query
+        ORDER BY score DESC
+        LIMIT $limit;
+      `, {
+        url,
+        query: payload.query,
+        limit: payload.topK,
+      });
+      
+      allResults.push(...processResults(results));
+    }
+    
+    // Sort by score and take top K
+    allResults.sort((a, b) => b.similarity - a.similarity);
+    return allResults.slice(0, payload.topK);
+  }
+}
+
+/**
+ * Hybrid search for HTML chunks combining vector and full-text search
+ * Supports single pageURL, array of pageURLs, or all pages (when pageURLs is empty/undefined)
+ */
+async function hybridSearchHTMLChunks(payload: {
+  pageURL?: string;
+  pageURLs?: string[];
+  query: string;
+  queryEmbedding: number[];
+  topK: number;
+  semanticWeight?: number;
+  keywordWeight?: number;
+}): Promise<any[]> {
+  if (!db) throw new Error('Database not connected');
+
+  const semanticWeight = payload.semanticWeight ?? 0.7;
+  const keywordWeight = payload.keywordWeight ?? 0.3;
+  const efSearch = Math.max(payload.topK * 3, 100);
+
+  // Determine which pages to search
+  const urls = payload.pageURLs?.length 
+    ? payload.pageURLs 
+    : payload.pageURL 
+      ? [payload.pageURL] 
+      : null; // null means search all pages
+
+  // Get more results than needed for better merging
+  const searchK = Math.min(payload.topK * 2, 20);
+
+  // Helper to merge vector and FTS results
+  const mergeResults = (vectorResults: any[], ftsResults: any[]): any[] => {
+    const vectorMap = new Map<string, any>();
+    
+    // Process vector results
+    if (vectorResults && vectorResults.length > 1 && vectorResults[1] && vectorResults[1].length > 0) {
+      for (const r of vectorResults[1]) {
+        const semanticScore = 1 - r.distance;
+        vectorMap.set(r.id, {
+          ...r,
+          semanticScore,
+          keywordScore: 0,
+        });
+      }
+    }
+
+    // Process FTS results and merge
+    if (ftsResults && ftsResults.length > 0 && ftsResults[0] && ftsResults[0].length > 0) {
+      for (const r of ftsResults[0]) {
+        const keywordScore = r.score || 0;
+        if (vectorMap.has(r.id)) {
+          const existing = vectorMap.get(r.id);
+          existing.keywordScore = keywordScore;
+        } else {
+          vectorMap.set(r.id, {
+            ...r,
+            semanticScore: 0,
+            keywordScore,
+            distance: 1,
+          });
+        }
+      }
+    }
+
+    // Calculate combined scores
+    return Array.from(vectorMap.values()).map(r => {
+      const normalizedSemantic = Math.max(0, Math.min(1, r.semanticScore));
+      const normalizedKeyword = Math.max(0, Math.min(1, r.keywordScore / 10));
+      const combinedScore = (normalizedSemantic * semanticWeight) + (normalizedKeyword * keywordWeight);
+      
+      return {
+        ...r,
+        similarity: combinedScore,
+        semanticScore: normalizedSemantic,
+        keywordScore: normalizedKeyword,
+      };
+    });
+  };
+
+  if (urls === null) {
+    // Search all pages
+    const [vectorResults, ftsResults] = await Promise.all([
+      db.query<any[]>(`
+        LET $q = $embedding;
+        SELECT 
+          id,
+          pageURL,
+          pageTitle,
+          chunkIndex,
+          text,
+          html,
+          vector::distance::knn() AS distance
+        FROM html_chunks
+        WHERE embedding <|${searchK},${efSearch}|> $q;
+      `, {
+        embedding: payload.queryEmbedding,
+      }),
+      db.query<any[]>(`
+        SELECT 
+          id,
+          pageURL,
+          pageTitle,
+          chunkIndex,
+          text,
+          html,
+          search::score(1) AS score
+        FROM html_chunks
+        WHERE text @1@ $query
+        ORDER BY score DESC
+        LIMIT $limit;
+      `, {
+        query: payload.query,
+        limit: searchK,
+      })
+    ]);
+    
+    const combinedResults = mergeResults(vectorResults, ftsResults);
+    combinedResults.sort((a, b) => b.similarity - a.similarity);
+    return combinedResults.slice(0, payload.topK);
+  } else if (urls.length === 1) {
+    // Single page search (original behavior)
+    const [vectorResults, ftsResults] = await Promise.all([
+      db.query<any[]>(`
+        LET $q = $embedding;
+        SELECT 
+          id,
+          pageURL,
+          pageTitle,
+          chunkIndex,
+          text,
+          html,
+          vector::distance::knn() AS distance
+        FROM html_chunks
+        WHERE 
+          pageURL = $url
+          AND embedding <|${searchK},${efSearch}|> $q;
+      `, {
+        url: urls[0],
+        embedding: payload.queryEmbedding,
+      }),
+      db.query<any[]>(`
+        SELECT 
+          id,
+          pageURL,
+          pageTitle,
+          chunkIndex,
+          text,
+          html,
+          search::score(1) AS score
+        FROM html_chunks
+        WHERE 
+          pageURL = $url
+          AND text @1@ $query
+        ORDER BY score DESC
+        LIMIT $limit;
+      `, {
+        url: urls[0],
+        query: payload.query,
+        limit: searchK,
+      })
+    ]);
+    
+    const combinedResults = mergeResults(vectorResults, ftsResults);
+    combinedResults.sort((a, b) => b.similarity - a.similarity);
+    return combinedResults.slice(0, payload.topK);
+  } else {
+    // Multiple pages - search each and merge all results
+    const allResults: any[] = [];
+    
+    for (const url of urls) {
+      const [vectorResults, ftsResults] = await Promise.all([
+        db.query<any[]>(`
+          LET $q = $embedding;
+          SELECT 
+            id,
+            pageURL,
+            pageTitle,
+            chunkIndex,
+            text,
+            html,
+            vector::distance::knn() AS distance
+          FROM html_chunks
+          WHERE 
+            pageURL = $url
+            AND embedding <|${searchK},${efSearch}|> $q;
+        `, {
+          url,
+          embedding: payload.queryEmbedding,
+        }),
+        db.query<any[]>(`
+          SELECT 
+            id,
+            pageURL,
+            pageTitle,
+            chunkIndex,
+            text,
+            html,
+            search::score(1) AS score
+          FROM html_chunks
+          WHERE 
+            pageURL = $url
+            AND text @1@ $query
+          ORDER BY score DESC
+          LIMIT $limit;
+        `, {
+          url,
+          query: payload.query,
+          limit: searchK,
+        })
+      ]);
+      
+      allResults.push(...mergeResults(vectorResults, ftsResults));
+    }
+    
+    // Sort all results by combined score and return top K
+    allResults.sort((a, b) => b.similarity - a.similarity);
+    return allResults.slice(0, payload.topK);
+  }
+}
+
+/**
+ * Full-text search for form fields
+ */
+async function fullTextSearchFormFields(payload: {
+  pageURL: string;
+  query: string;
+  topK: number;
+}): Promise<any[]> {
+  if (!db) throw new Error('Database not connected');
+
   const groupResults = await db.query<any[]>(`
-    LET $q = $embedding;
     SELECT 
       id,
       pageURL,
       groupIndex,
       fieldsJSON,
-      vector::distance::knn() AS distance
+      search::score(1) AS score
     FROM form_fields
     WHERE 
       pageURL = $url
-      AND embedding <|${groupTopK},${efSearch}|> $q;
+      AND fieldsJSON @1@ $query
+    ORDER BY score DESC
+    LIMIT $limit;
   `, {
     url: payload.pageURL,
-    embedding: payload.queryEmbedding,
+    query: payload.query,
+    limit: Math.ceil(payload.topK / 10),
   });
-  
-  log('[DB Worker] Query complete, results:', groupResults?.length);
 
-  if (!groupResults || groupResults.length < 2 || !groupResults[1] || groupResults[1].length === 0) {
+  if (!groupResults || groupResults.length === 0 || !groupResults[0] || groupResults[0].length === 0) {
     return [];
   }
 
   // Parse JSON groups and flatten
   const allFields: any[] = [];
-  for (const group of groupResults[1]) {
+  for (const group of groupResults[0]) {
     try {
       const fields = JSON.parse(group.fieldsJSON);
       fields.forEach((field: any) => {
@@ -426,7 +1085,7 @@ async function searchFormFields(payload: {
           ...field,
           id: group.id,
           pageURL: group.pageURL,
-          similarity: 1 - group.distance,
+          similarity: group.score || 0,
         });
       });
     } catch (e) {
@@ -438,42 +1097,41 @@ async function searchFormFields(payload: {
 }
 
 /**
- * Search clickable elements using HNSW index
+ * Full-text search for clickable elements
  */
-async function searchClickableElements(payload: {
+async function fullTextSearchClickableElements(payload: {
   pageURL: string;
-  queryEmbedding: number[];
+  query: string;
   topK: number;
 }): Promise<any[]> {
   if (!db) throw new Error('Database not connected');
 
-  const groupTopK = Math.ceil(payload.topK / 10);
-  const efSearch = Math.max(groupTopK * 3, 50);
-  
   const groupResults = await db.query<any[]>(`
-    LET $q = $embedding;
     SELECT 
       id,
       pageURL,
       groupIndex,
       elementsJSON,
-      vector::distance::knn() AS distance
+      search::score(1) AS score
     FROM clickable_elements
     WHERE 
       pageURL = $url
-      AND embedding <|${groupTopK},${efSearch}|> $q;
+      AND elementsJSON @1@ $query
+    ORDER BY score DESC
+    LIMIT $limit;
   `, {
     url: payload.pageURL,
-    embedding: payload.queryEmbedding,
+    query: payload.query,
+    limit: Math.ceil(payload.topK / 10),
   });
 
-  if (!groupResults || groupResults.length < 2 || !groupResults[1] || groupResults[1].length === 0) {
+  if (!groupResults || groupResults.length === 0 || !groupResults[0] || groupResults[0].length === 0) {
     return [];
   }
 
   // Parse JSON groups and flatten
   const allElements: any[] = [];
-  for (const group of groupResults[1]) {
+  for (const group of groupResults[0]) {
     try {
       const elements = JSON.parse(group.elementsJSON);
       elements.forEach((element: any) => {
@@ -481,7 +1139,7 @@ async function searchClickableElements(payload: {
           ...element,
           id: group.id,
           pageURL: group.pageURL,
-          similarity: 1 - group.distance,
+          similarity: group.score || 0,
         });
       });
     } catch (e) {
@@ -553,6 +1211,26 @@ async function handleMessage(message: WorkerMessage): Promise<WorkerResponse> {
 
       case 'searchClickableElements':
         data = await searchClickableElements(message.payload);
+        break;
+
+      case 'fullTextSearchHTMLChunks':
+        data = await fullTextSearchHTMLChunks(message.payload);
+        break;
+
+      case 'hybridSearchHTMLChunks':
+        data = await hybridSearchHTMLChunks(message.payload);
+        break;
+
+      case 'fullTextSearchFormFields':
+        data = await fullTextSearchFormFields(message.payload);
+        break;
+
+      case 'fullTextSearchClickableElements':
+        data = await fullTextSearchClickableElements(message.payload);
+        break;
+
+      case 'deletePageEmbeddings':
+        data = await deletePageEmbeddings(message.payload);
         break;
 
       case 'query':

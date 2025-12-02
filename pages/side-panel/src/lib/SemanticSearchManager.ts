@@ -1,11 +1,16 @@
 /**
  * Semantic Search Manager
  * Handles all semantic search operations for page content, forms, and clickable elements
- * Uses SURREALDB NATIVE VECTOR SEARCH WITH HNSW INDEXES for 8-150x performance
+ * Uses SURREALDB NATIVE VECTOR SEARCH WITH HNSW INDEXES + FULL-TEXT SEARCH
  *
- * NO JavaScript-based similarity calculations - Pure native vector search
- * HNSW indexes for O(log n) performance
- * 8-150x faster than JavaScript cosine similarity
+ * Supports three search modes:
+ * - SEMANTIC: Pure vector similarity (HNSW index)
+ * - FULLTEXT: Keyword-based BM25 search
+ * - HYBRID (DEFAULT): Combines both for best results (70% semantic + 30% keyword)
+ *
+ * HNSW indexes for O(log n) vector search performance
+ * BM25 indexes for fast full-text keyword matching
+ * Hybrid mode leverages both for comprehensive search coverage
  */
 
 import { embeddingService, embeddingsStorage } from '@extension/shared';
@@ -24,6 +29,10 @@ const TOP_K_LIMITS = {
   clickableElements: { min: 1, max: 20, default: 5 },
   domUpdates: { min: 1, max: 10, default: 5 },
 } as const;
+
+// Hybrid search weights (default: 70% semantic, 30% keyword)
+const DEFAULT_SEMANTIC_WEIGHT = 0.7;
+const DEFAULT_KEYWORD_WEIGHT = 0.3;
 
 // ============================================================================
 // LOGGING UTILITIES
@@ -61,12 +70,33 @@ const logger = new Logger(DEBUG);
 // TYPES
 // ============================================================================
 
+export type SearchMode = 'semantic' | 'fulltext' | 'hybrid';
+
+export interface SearchOptions {
+  mode?: SearchMode;
+  semanticWeight?: number;
+  keywordWeight?: number;
+  topK?: number;
+  /** Specific page URL to search (overrides current page) */
+  pageURL?: string;
+  /** Array of page URLs to search across (overrides pageURL and current page) */
+  pageURLs?: string[];
+  /** Search all indexed pages (ignores pageURL and pageURLs) */
+  searchAllPages?: boolean;
+}
+
 export interface SearchResult {
   success: boolean;
   query?: string;
   resultsCount?: number;
   results?: unknown[];
   error?: string;
+  searchMode?: SearchMode;
+  searchMetadata?: {
+    semanticWeight?: number;
+    keywordWeight?: number;
+    duration?: number;
+  };
 }
 
 export interface PageContentResult {
@@ -237,9 +267,29 @@ export class SemanticSearchManager {
   // ==========================================================================
 
   /**
-   * Search page content semantically using NATIVE VECTOR SEARCH with HNSW index
+   * Search page content using HYBRID search by default (semantic + full-text)
+   * Modes: 'semantic' (vector only), 'fulltext' (keyword only), 'hybrid' (both - default)
+   * 
+   * Page targeting:
+   * - searchAllPages: true - Search all indexed pages
+   * - pageURLs: [...] - Search specific pages
+   * - pageURL: '...' - Search single page
+   * - (none) - Search current page only
    */
-  async searchPageContent(query: string, topK: number = TOP_K_LIMITS.pageContent.default): Promise<SearchResult> {
+  async searchPageContent(
+    query: string, 
+    options?: SearchOptions | number // Support legacy number parameter for topK
+  ): Promise<SearchResult> {
+    // Handle legacy parameter format
+    const opts: SearchOptions = typeof options === 'number' 
+      ? { topK: options, mode: 'hybrid' }
+      : { mode: 'hybrid', ...options };
+
+    const mode = opts.mode || 'hybrid';
+    const topK = opts.topK || TOP_K_LIMITS.pageContent.default;
+    const semanticWeight = opts.semanticWeight ?? DEFAULT_SEMANTIC_WEIGHT;
+    const keywordWeight = opts.keywordWeight ?? DEFAULT_KEYWORD_WEIGHT;
+
     const startTime = performance.now();
 
     try {
@@ -247,24 +297,71 @@ export class SemanticSearchManager {
         return this.createEmptyResult(query);
       }
 
-      logger.separator();
-      logger.log('[SemanticSearchManager] NATIVE VECTOR SEARCH - PAGE CONTENT (HNSW INDEX)');
-      logger.log('[SemanticSearchManager]    Query:', query);
-      logger.log('[SemanticSearchManager]    Top K:', topK);
-
-      const limitedTopK = this.limitTopK(topK, 'pageContent');
-      const pageURL = this.getPageURL();
-
-      // Embed query
-      const embeddingResult = await this.embedQuery(query);
-      if (!embeddingResult.success) {
-        logger.separator();
-        return this.createErrorResult(embeddingResult.error);
+      // Determine page targeting
+      let pageURL: string | undefined;
+      let pageURLs: string[] | undefined;
+      
+      if (opts.searchAllPages) {
+        // Search all pages - leave both undefined
+        pageURL = undefined;
+        pageURLs = undefined;
+      } else if (opts.pageURLs && opts.pageURLs.length > 0) {
+        // Search specific pages
+        pageURLs = opts.pageURLs;
+        pageURL = undefined;
+      } else if (opts.pageURL) {
+        // Search single specific page
+        pageURL = opts.pageURL;
+      } else {
+        // Default: search current page
+        pageURL = this.getPageURL();
       }
 
-      // Native vector search
-      logger.log('[SemanticSearchManager]    Using SurrealDB native vector search with HNSW index...');  
-      const topResults = await embeddingsStorage.searchHTMLChunks(pageURL, embeddingResult.embedding, limitedTopK);
+      logger.separator();
+      logger.log(`[SemanticSearchManager] ${mode.toUpperCase()} SEARCH - PAGE CONTENT`);
+      logger.log('[SemanticSearchManager]    Query:', query);
+      logger.log('[SemanticSearchManager]    Mode:', mode);
+      logger.log('[SemanticSearchManager]    Top K:', topK);
+      logger.log('[SemanticSearchManager]    Pages:', opts.searchAllPages ? 'ALL' : (pageURLs?.length || (pageURL ? 1 : 'current')));
+      if (mode === 'hybrid') {
+        logger.log('[SemanticSearchManager]    Weights:', `${(semanticWeight * 100).toFixed(0)}% semantic, ${(keywordWeight * 100).toFixed(0)}% keyword`);
+      }
+
+      const limitedTopK = this.limitTopK(topK, 'pageContent');
+
+      let topResults: any[];
+
+      // Execute search based on mode
+      if (mode === 'fulltext') {
+        // Pure full-text search
+        logger.log('[SemanticSearchManager]    Using BM25 full-text search...');
+        topResults = await embeddingsStorage.fullTextSearchHTMLChunks(pageURL, query, limitedTopK, pageURLs);
+      } else {
+        // Semantic or hybrid - need embeddings
+        const embeddingResult = await this.embedQuery(query);
+        if (!embeddingResult.success) {
+          logger.separator();
+          return this.createErrorResult(embeddingResult.error);
+        }
+
+        if (mode === 'semantic') {
+          // Pure semantic search
+          logger.log('[SemanticSearchManager]    Using HNSW vector search...');
+          topResults = await embeddingsStorage.searchHTMLChunks(pageURL, embeddingResult.embedding, limitedTopK, pageURLs);
+        } else {
+          // Hybrid search (default)
+          logger.log('[SemanticSearchManager]    Using HYBRID search (HNSW + BM25)...');
+          topResults = await embeddingsStorage.hybridSearchHTMLChunks(
+            pageURL, 
+            query,
+            embeddingResult.embedding, 
+            limitedTopK,
+            semanticWeight,
+            keywordWeight,
+            pageURLs
+          );
+        }
+      }
 
       if (!topResults || topResults.length === 0) {
         logger.log('[SemanticSearchManager] No results found');
@@ -273,15 +370,17 @@ export class SemanticSearchManager {
       }
 
       const duration = performance.now() - startTime;
-      logger.log('[SemanticSearchManager] NATIVE VECTOR SEARCH COMPLETE in', duration.toFixed(2), 'ms');
-      logger.log('[SemanticSearchManager]    Method: SurrealDB HNSW (8-150x faster!)');
+      logger.log(`[SemanticSearchManager] ${mode.toUpperCase()} SEARCH COMPLETE in`, duration.toFixed(2), 'ms');
       logger.log('[SemanticSearchManager]    Results found:', topResults.length);
-      logger.log('[SemanticSearchManager]    Top similarities:', topResults.map(r => r.similarity.toFixed(3)).join(', '));
+      logger.log('[SemanticSearchManager]    Top scores:', topResults.map(r => r.similarity.toFixed(3)).join(', '));
       
       if (topResults.length > 0) {
         logger.log('[SemanticSearchManager]    Best match preview:', 
           topResults[0].text.substring(0, 100).replace(/\n/g, ' ') + '...');
-        logger.log('[SemanticSearchManager]    Best match HTML length:', topResults[0].html?.length || 0, 'chars');
+        if (mode === 'hybrid' && topResults[0].semanticScore !== undefined) {
+          logger.log('[SemanticSearchManager]    Best match breakdown:', 
+            `semantic=${topResults[0].semanticScore.toFixed(3)}, keyword=${topResults[0].keywordScore.toFixed(3)}`);
+        }
       }
       logger.separator();
 
@@ -289,6 +388,12 @@ export class SemanticSearchManager {
         success: true,
         query,
         resultsCount: topResults.length,
+        searchMode: mode,
+        searchMetadata: {
+          semanticWeight,
+          keywordWeight,
+          duration,
+        },
         results: topResults.map((result, i): PageContentResult => ({
           rank: i + 1,
           similarity: Math.round(result.similarity * 100) / 100,
@@ -306,21 +411,45 @@ export class SemanticSearchManager {
 
   /**
    * Search form data using NATIVE VECTOR SEARCH with HNSW index
+   * Supports searching across multiple pages via options
    */
-  async searchFormData(query: string, topK: number = TOP_K_LIMITS.formFields.default): Promise<SearchResult> {
+  async searchFormData(query: string, topKOrOptions?: number | SearchOptions): Promise<SearchResult> {
     const startTime = performance.now();
+
+    // Handle both legacy number parameter and new options object
+    const opts: SearchOptions = typeof topKOrOptions === 'number'
+      ? { topK: topKOrOptions }
+      : topKOrOptions || {};
+    
+    const topK = opts.topK || TOP_K_LIMITS.formFields.default;
 
     try {
       if (!this.validateQuery(query)) {
         return this.createEmptyResult(query);
       }
 
+      // Determine page targeting
+      let pageURL: string | undefined;
+      let pageURLs: string[] | undefined;
+      
+      if (opts.searchAllPages) {
+        pageURL = undefined;
+        pageURLs = undefined;
+      } else if (opts.pageURLs && opts.pageURLs.length > 0) {
+        pageURLs = opts.pageURLs;
+        pageURL = undefined;
+      } else if (opts.pageURL) {
+        pageURL = opts.pageURL;
+      } else {
+        pageURL = this.getPageURL();
+      }
+
       logger.separator();
       logger.log('[SemanticSearchManager] NATIVE VECTOR SEARCH - FORM FIELDS (HNSW INDEX)');
       logger.log('[SemanticSearchManager]    Query:', query);
+      logger.log('[SemanticSearchManager]    Pages:', opts.searchAllPages ? 'ALL' : (pageURLs?.length || (pageURL ? 1 : 'current')));
 
       const limitedTopK = this.limitTopK(topK, 'formFields');
-      const pageURL = this.getPageURL();
 
       // Embed query
       const embeddingResult = await this.embedQuery(query);
@@ -331,7 +460,7 @@ export class SemanticSearchManager {
 
       // Native vector search
       logger.log('[SemanticSearchManager]    Using SurrealDB native vector search with HNSW index...');
-      const topResults = await embeddingsStorage.searchFormFields(pageURL, embeddingResult.embedding, limitedTopK);
+      const topResults = await embeddingsStorage.searchFormFields(pageURL, embeddingResult.embedding, limitedTopK, pageURLs);
 
       if (!topResults || topResults.length === 0) {
         logger.log('[SemanticSearchManager] No form fields found');
@@ -378,21 +507,45 @@ export class SemanticSearchManager {
 
   /**
    * Search clickable elements using NATIVE VECTOR SEARCH with HNSW index
+   * Supports searching across multiple pages via options
    */
-  async searchClickableElements(query: string, topK: number = TOP_K_LIMITS.clickableElements.default): Promise<SearchResult> {
+  async searchClickableElements(query: string, topKOrOptions?: number | SearchOptions): Promise<SearchResult> {
     const startTime = performance.now();
+
+    // Handle both legacy number parameter and new options object
+    const opts: SearchOptions = typeof topKOrOptions === 'number'
+      ? { topK: topKOrOptions }
+      : topKOrOptions || {};
+    
+    const topK = opts.topK || TOP_K_LIMITS.clickableElements.default;
 
     try {
       if (!this.validateQuery(query)) {
         return this.createEmptyResult(query);
       }
 
+      // Determine page targeting
+      let pageURL: string | undefined;
+      let pageURLs: string[] | undefined;
+      
+      if (opts.searchAllPages) {
+        pageURL = undefined;
+        pageURLs = undefined;
+      } else if (opts.pageURLs && opts.pageURLs.length > 0) {
+        pageURLs = opts.pageURLs;
+        pageURL = undefined;
+      } else if (opts.pageURL) {
+        pageURL = opts.pageURL;
+      } else {
+        pageURL = this.getPageURL();
+      }
+
       logger.separator();
       logger.log('[SemanticSearchManager] NATIVE VECTOR SEARCH - CLICKABLE ELEMENTS (HNSW INDEX)');
       logger.log('[SemanticSearchManager]    Query:', query);
+      logger.log('[SemanticSearchManager]    Pages:', opts.searchAllPages ? 'ALL' : (pageURLs?.length || (pageURL ? 1 : 'current')));
 
       const limitedTopK = this.limitTopK(topK, 'clickableElements');
-      const pageURL = this.getPageURL();
 
       // Embed query
       const embeddingResult = await this.embedQuery(query);
@@ -403,7 +556,7 @@ export class SemanticSearchManager {
 
       // Native vector search
       logger.log('[SemanticSearchManager]    Using SurrealDB native vector search with HNSW index...');
-      const topResults = await embeddingsStorage.searchClickableElements(pageURL, embeddingResult.embedding, limitedTopK);
+      const topResults = await embeddingsStorage.searchClickableElements(pageURL, embeddingResult.embedding, limitedTopK, pageURLs);
 
       if (!topResults || topResults.length === 0) {
         logger.log('[SemanticSearchManager] No clickable elements found');

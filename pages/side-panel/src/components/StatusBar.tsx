@@ -17,8 +17,6 @@ export interface StatusBarProps {
   };
   getCurrentTabTitle: () => string;
   onRefreshClick: () => void;
-  onSaveClick: () => void;
-  onLoadClick: () => void;
   showStaleIndicator: boolean;
   isContentFetching: boolean;
   headlessMessagesCount: number;
@@ -45,8 +43,6 @@ export const StatusBar: FC<StatusBarProps> = memo(({
   contentState,
   getCurrentTabTitle,
   onRefreshClick,
-  onSaveClick,
-  onLoadClick,
   showStaleIndicator,
   isContentFetching,
   headlessMessagesCount,
@@ -258,70 +254,6 @@ export const StatusBar: FC<StatusBarProps> = memo(({
               <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
             </span>
           )}
-        </button>
-        
-        
-        <button
-          onClick={onSaveClick}
-          className={`h-[26px] w-[26px] flex items-center justify-center rounded-md transition-colors ${
-            isLight 
-              ? 'text-gray-600 hover:bg-gray-200' 
-              : 'text-gray-400 hover:bg-gray-700'
-          }`}
-          title="Save Messages"
-        >
-          <svg 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2" 
-            strokeLinecap="round" 
-            strokeLinejoin="round"
-            style={{
-              width: '13px',
-              height: '13px',
-              minWidth: '13px',
-              minHeight: '13px',
-              maxWidth: '13px',
-              maxHeight: '13px',
-              display: 'block',
-              shapeRendering: 'geometricPrecision',
-              WebkitFontSmoothing: 'antialiased',
-            }}
-          >
-            <path d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-          </svg>
-        </button>
-        <button
-          onClick={onLoadClick}
-          className={`h-[26px] w-[26px] flex items-center justify-center rounded-md transition-colors ${
-            isLight 
-              ? 'text-gray-600 hover:bg-gray-200' 
-              : 'text-gray-400 hover:bg-gray-700'
-          }`}
-          title="Load Messages"
-        >
-          <svg 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2" 
-            strokeLinecap="round" 
-            strokeLinejoin="round"
-            style={{
-              width: '13px',
-              height: '13px',
-              minWidth: '13px',
-              minHeight: '13px',
-              maxWidth: '13px',
-              maxHeight: '13px',
-              display: 'block',
-              shapeRendering: 'geometricPrecision',
-              WebkitFontSmoothing: 'antialiased',
-            }}
-          >
-            <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-          </svg>
         </button>
       </div>
     </div>
