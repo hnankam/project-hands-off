@@ -187,8 +187,50 @@ export async function unbanUser(
 export type SocialProvider = 'google' | 'microsoft' | 'github';
 
 /**
+ * Check if running in a Chrome extension context
+ */
+function isExtensionContext(): boolean {
+  return typeof chrome !== 'undefined' && 
+         typeof chrome.runtime !== 'undefined' && 
+         !!chrome.runtime.id;
+}
+
+/**
+ * Direct social sign-in using Better Auth client.
+ * This initiates the OAuth redirect flow directly.
+ * Used by OAuthPage component when opened in a popup.
+ * @param provider - The social provider to use
+ * @returns Promise with success status or error
+ */
+export async function signInWithSocialDirect(provider: SocialProvider): Promise<{ success?: boolean; error?: string }> {
+  try {
+    const signIn = (authClient as any).signIn;
+    if (!signIn || !signIn.social) {
+      return { error: 'Social login not available' };
+    }
+    
+    // Use the server's OAuth success callback
+    const callbackURL = `${baseURL}/api/auth/oauth-success`;
+    
+    const { error } = await signIn.social({
+      provider,
+      callbackURL,
+    });
+    
+    if (error) {
+      return { error: error.message || `Failed to sign in with ${provider}` };
+    }
+    
+    return { success: true };
+  } catch (error: any) {
+    console.error(`Social login error (${provider}):`, error);
+    return { error: error.message || 'An error occurred during social login' };
+  }
+}
+
+/**
  * Sign in with a social provider (Google, Microsoft, or GitHub)
- * Opens the OAuth flow in a new window/tab
+ * For Chrome extensions, opens OAuth in a popup window with proper callback handling
  * @param provider - The social provider to use
  * @returns Promise with success status or error
  */
@@ -199,6 +241,61 @@ export async function signInWithSocial(provider: SocialProvider): Promise<{ succ
       return { error: 'Social login not available' };
     }
     
+    // For Chrome extensions, we need special handling
+    if (isExtensionContext()) {
+      // Open the extension's OAuth page in a popup
+      // This page will initiate the OAuth flow with proper cookie context
+      const extensionId = chrome.runtime.id;
+      const oauthUrl = `chrome-extension://${extensionId}/side-panel/index.html#/oauth/${provider}`;
+      
+      // Open OAuth in a popup window
+      const popup = window.open(
+        oauthUrl,
+        'oauth-popup',
+        'width=420,height=600,scrollbars=yes,resizable=yes'
+      );
+      
+      if (!popup) {
+        return { error: 'Popup blocked. Please allow popups for this extension.' };
+      }
+      
+      // Poll for popup close and session
+      return new Promise((resolve) => {
+        const checkInterval = setInterval(async () => {
+          try {
+            // Check if popup is closed
+            if (popup.closed) {
+              clearInterval(checkInterval);
+              
+              // Give a moment for cookies to be set, then check session
+              await new Promise(r => setTimeout(r, 500));
+              
+              // Check if we're now authenticated
+              const session = await authClient.getSession();
+              if (session?.data?.user) {
+                resolve({ success: true });
+              } else {
+                // User closed popup without completing OAuth
+                resolve({ error: 'Authentication cancelled' });
+              }
+            }
+          } catch (e) {
+            // Popup is still open or cross-origin, continue polling
+          }
+        }, 500);
+        
+        // Timeout after 5 minutes
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          if (!popup.closed) {
+            popup.close();
+          }
+          resolve({ error: 'Authentication timed out' });
+        }, 5 * 60 * 1000);
+      });
+    }
+    
+    // For regular web context, use standard OAuth flow
     const { error } = await signIn.social({
       provider,
       callbackURL: window.location.origin,

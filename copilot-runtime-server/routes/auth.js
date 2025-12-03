@@ -565,6 +565,213 @@ router.get('/org-members-with-status', async (req, res) => {
 });
 
 /**
+ * GET /api/auth/oauth-success
+ * Success page shown after OAuth authentication completes
+ * 
+ * This page is used as the callback URL for OAuth flows from Chrome extensions.
+ * After OAuth completes, Better Auth redirects here with the session established.
+ * The page shows a success message and auto-closes the popup window.
+ */
+router.get('/oauth-success', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Sign In Successful</title>
+      <meta name="color-scheme" content="light dark">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        /* Light theme (default) */
+        :root {
+          --bg-color: #f3f4f6;
+          --card-bg: white;
+          --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+          --badge-bg: rgba(59, 130, 246, 0.1);
+          --badge-color: #2563eb;
+          --title-color: #1f2937;
+          --text-color: #6b7280;
+          --closing-color: #9ca3af;
+          --spinner-border: rgba(156, 163, 175, 0.3);
+          --spinner-color: #9ca3af;
+          --btn-bg: #f3f4f6;
+          --btn-color: #374151;
+          --btn-border: #e5e7eb;
+          --btn-hover-bg: #e5e7eb;
+        }
+        
+        /* Dark theme */
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --bg-color: #151C24;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --card-shadow: none;
+            --badge-bg: rgba(255, 255, 255, 0.1);
+            --badge-color: #93c5fd;
+            --title-color: #ffffff;
+            --text-color: #94a3b8;
+            --closing-color: #64748b;
+            --spinner-border: rgba(100, 116, 139, 0.3);
+            --spinner-color: #64748b;
+            --btn-bg: rgba(255, 255, 255, 0.1);
+            --btn-color: #e2e8f0;
+            --btn-border: rgba(255, 255, 255, 0.1);
+            --btn-hover-bg: rgba(255, 255, 255, 0.15);
+          }
+        }
+        
+        body { 
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+          display: flex; 
+          justify-content: center; 
+          align-items: center; 
+          min-height: 100vh; 
+          background: var(--bg-color);
+          transition: background 0.2s;
+        }
+        .card { 
+          text-align: center; 
+          padding: 40px 32px; 
+          background: var(--card-bg);
+          border-radius: 16px; 
+          backdrop-filter: blur(12px);
+          box-shadow: var(--card-shadow);
+          max-width: 380px;
+          width: 90%;
+        }
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 4px 10px;
+          background: var(--badge-bg);
+          border-radius: 8px;
+          font-size: 11px;
+          font-weight: 500;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          color: var(--badge-color);
+          margin-bottom: 24px;
+        }
+        .badge-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: currentColor;
+        }
+        .checkmark {
+          width: 64px;
+          height: 64px;
+          margin: 0 auto 20px;
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          animation: scaleIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+          box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3);
+        }
+        .checkmark svg {
+          width: 32px;
+          height: 32px;
+          stroke: white;
+          stroke-width: 3;
+          fill: none;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+          animation: drawCheck 0.4s ease-out 0.2s forwards;
+          stroke-dasharray: 24;
+          stroke-dashoffset: 24;
+        }
+        @keyframes scaleIn {
+          from { transform: scale(0); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+        @keyframes drawCheck {
+          to { stroke-dashoffset: 0; }
+        }
+        h1 { 
+          color: var(--title-color); 
+          margin-bottom: 8px; 
+          font-size: 18px; 
+          font-weight: 600;
+          letter-spacing: -0.025em;
+        }
+        p { 
+          color: var(--text-color); 
+          font-size: 14px; 
+          line-height: 1.5;
+        }
+        .closing { 
+          color: var(--closing-color); 
+          font-size: 13px; 
+          margin-top: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+        }
+        .closing-spinner {
+          width: 14px;
+          height: 14px;
+          border: 2px solid var(--spinner-border);
+          border-top-color: var(--spinner-color);
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        .manual-close {
+          display: inline-block;
+          margin-top: 20px;
+          padding: 10px 24px;
+          background: var(--btn-bg);
+          color: var(--btn-color);
+          text-decoration: none;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          border: 1px solid var(--btn-border);
+          transition: all 0.2s;
+        }
+        .manual-close:hover {
+          background: var(--btn-hover-bg);
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="badge">
+          <span class="badge-dot"></span>
+          Project Hands-Off
+        </div>
+        <div class="checkmark">
+          <svg viewBox="0 0 24 24">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        </div>
+        <h1>Sign In Successful!</h1>
+        <p>You're now authenticated. Return to the extension to continue.</p>
+        <p class="closing">
+          <span class="closing-spinner"></span>
+          Closing automatically...
+        </p>
+        <button class="manual-close" onclick="window.close()">Close Window</button>
+      </div>
+      <script>
+        // Auto-close the popup after a short delay
+        setTimeout(() => {
+          window.close();
+        }, 2500);
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+/**
  * Mount Better Auth handler
  * 
  * Uses Better Auth's official Node.js adapter (toNodeHandler) to handle all

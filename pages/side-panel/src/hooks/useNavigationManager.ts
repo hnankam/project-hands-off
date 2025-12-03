@@ -18,11 +18,14 @@ import { debug } from '@extension/shared';
 export type PageType = 'home' | 'sessions' | 'admin';
 export type AdminTab = 'organizations' | 'teams' | 'users' | 'providers' | 'models' | 'agents' | 'usage';
 
+export type OAuthProvider = 'google' | 'microsoft' | 'github';
+
 export interface NavigationState {
   activePage: PageType;
   adminInitialTab: AdminTab;
   invitationId: string | null;
   resetPasswordToken: string | null;
+  oauthProvider: OAuthProvider | null;
   isPageRestored: boolean;
 }
 
@@ -32,6 +35,7 @@ export interface NavigationActions {
   navigateToAdmin: (tab?: AdminTab) => void;
   setInvitationId: (id: string | null) => void;
   setResetPasswordToken: (token: string | null) => void;
+  setOAuthProvider: (provider: OAuthProvider | null) => void;
 }
 
 // ============================================================================
@@ -51,7 +55,11 @@ const HASH_ROUTES = {
   ADMIN: '#/admin',
   INVITATION: '#/accept-invitation/',
   RESET_PASSWORD: '#/reset-password',
+  OAUTH: '#/oauth/',
 } as const;
+
+/** Valid OAuth providers */
+const VALID_OAUTH_PROVIDERS: readonly OAuthProvider[] = ['google', 'microsoft', 'github'] as const;
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -149,6 +157,7 @@ export function useNavigationManager(): NavigationState & NavigationActions {
   const [adminInitialTab, setAdminInitialTab] = useState<AdminTab>('organizations');
   const [invitationId, setInvitationId] = useState<string | null>(null);
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
+  const [oauthProvider, setOAuthProvider] = useState<OAuthProvider | null>(null);
   const [isPageRestored, setIsPageRestored] = useState(false);
   
   // ============================================================================
@@ -239,6 +248,17 @@ export function useNavigationManager(): NavigationState & NavigationActions {
       
       debug.log('[NavigationManager] Checking hash:', hash);
       
+      // Check for OAuth route first (#/oauth/{provider})
+      const oauthMatch = hash.match(/oauth\/(google|microsoft|github)/);
+      if (oauthMatch) {
+        const provider = oauthMatch[1] as OAuthProvider;
+        if (VALID_OAUTH_PROVIDERS.includes(provider)) {
+          debug.log('[NavigationManager] OAuth route detected:', provider);
+          setOAuthProvider(provider);
+          return;
+        }
+      }
+      
       // Check for reset password token
       const token = getResetPasswordToken();
       if (token) {
@@ -280,12 +300,14 @@ export function useNavigationManager(): NavigationState & NavigationActions {
     adminInitialTab,
     invitationId,
     resetPasswordToken,
+    oauthProvider,
     isPageRestored,
     navigateToHome,
     navigateToSessions,
     navigateToAdmin,
     setInvitationId,
     setResetPasswordToken,
+    setOAuthProvider,
   };
 }
 

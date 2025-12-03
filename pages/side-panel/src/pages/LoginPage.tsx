@@ -12,6 +12,7 @@ import { themeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';
 import { AUTO_DISMISS_DELAYS } from '../constants/ui';
 import { requestPasswordReset, resetPasswordWithToken, signInWithSocial, SocialProvider } from '../lib/auth-client';
+import { LoginSettingsDropdown } from '../components/LoginSettingsDropdown';
 
 // ============================================================================
 // CONSTANTS
@@ -24,7 +25,7 @@ interface LoginPageProps {
 }
 
 export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, refreshAuth } = useAuth();
   const { isLight } = useStorage(themeStorage);
   const [isSignUp, setIsSignUp] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
@@ -131,6 +132,9 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
       const result = await signInWithSocial(provider);
       if (result.error) {
         setError(result.error);
+      } else if (result.success) {
+        // Refresh auth state after successful OAuth
+        await refreshAuth();
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
@@ -197,6 +201,10 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
               'relative w-full max-w-md overflow-hidden rounded-2xl backdrop-blur-md transition-all duration-300',
               isLight ? 'bg-white' : 'bg-white/5',
             )}>
+            {/* Settings button in top-right corner */}
+            <div className="absolute top-3 right-3 z-10">
+              <LoginSettingsDropdown isLight={isLight} />
+            </div>
 
             <div className="relative px-7 pb-7 pt-9 sm:px-8 sm:pb-8 sm:pt-10">
               <div className="flex justify-center">

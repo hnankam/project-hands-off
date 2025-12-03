@@ -33,6 +33,7 @@ import { AdminPage } from './pages/AdminPage';
 import LoginPage from './pages/LoginPage';
 import AcceptInvitationPage from './pages/AcceptInvitationPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import OAuthPage from './pages/OAuthPage';
 import { useAuth } from './context/AuthContext';
 import { useDBWorkerClient } from './hooks/useDBWorkerClient';
 import { useNavigationManager } from './hooks/useNavigationManager';
@@ -70,12 +71,14 @@ const SidePanel = () => {
     adminInitialTab,
     invitationId,
     resetPasswordToken,
+    oauthProvider,
     isPageRestored,
     navigateToHome,
     navigateToSessions,
     navigateToAdmin,
     setInvitationId,
     setResetPasswordToken,
+    setOAuthProvider,
   } = useNavigationManager();
   
   // Session URL synchronization
@@ -180,6 +183,24 @@ const SidePanel = () => {
       <div className={cn('h-screen', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
         <ChatSkeleton isLight={isLight} />
       </div>
+    );
+  }
+  
+  // ============================================================================
+  // Route: OAuth (opened in popup for social login)
+  // ============================================================================
+  
+  if (oauthProvider) {
+    return (
+      <OAuthPage
+        provider={oauthProvider}
+        onSuccess={() => {
+          // OAuth redirect will handle success
+        }}
+        onError={(error) => {
+          console.error('[OAuth] Error:', error);
+        }}
+      />
     );
   }
   
