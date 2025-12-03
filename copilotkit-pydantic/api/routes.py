@@ -38,10 +38,15 @@ from dataclasses import dataclass
 
 @dataclass
 class ExtendedDeps:
-    """Extended dependencies including state, send_stream, and adapter."""
+    """Extended dependencies including state, send_stream, adapter, and agent context."""
     state: AgentState
     send_stream: MemoryObjectSendStream[str] | None = None
     adapter: AGUIAdapter | None = None
+    # Agent context for auxiliary agents
+    organization_id: str | None = None
+    team_id: str | None = None
+    agent_type: str | None = None
+    agent_info: dict | None = None
 
 class DeploymentRequest(BaseModel):
     organization_id: str
@@ -282,11 +287,19 @@ def register_agent_routes(app: FastAPI) -> None:
 
             async def run_agent_task(send_stream: MemoryObjectSendStream[str]) -> None:
                 async with send_stream:
-                    # Create extended deps with state, send_stream, and adapter
+                    # Get agent info for auxiliary agents
+                    from config.prompts import get_agent_info_for_context
+                    agent_info = get_agent_info_for_context(agent_type, organization_id, team_id) or {}
+                    
+                    # Create extended deps with state, send_stream, adapter, and agent context
                     extended_deps = ExtendedDeps(
                         state=AgentState(steps=[]),
                         send_stream=send_stream,
-                        adapter=adapter
+                        adapter=adapter,
+                        organization_id=organization_id,
+                        team_id=team_id,
+                        agent_type=agent_type,
+                        agent_info=agent_info,
                     )
                     event_stream = run_ag_ui(
                         agent=agent_instance,

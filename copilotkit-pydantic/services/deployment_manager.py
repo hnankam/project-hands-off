@@ -14,6 +14,7 @@ from config.models import store_models_for_context
 from config.prompts import store_prompts_for_context
 from config.tools import store_tools_for_context
 from core.agent_factory import clear_agent_cache, get_agent
+from tools.auxiliary_agents import clear_auxiliary_agent_cache
 from utils.context import ContextKey, context_tuple, make_context_key
 
 
@@ -133,8 +134,9 @@ async def _refresh_context(
                 },
             )
 
-            # Reset agent cache for this context to ensure new settings take effect
+            # Reset agent caches for this context to ensure new settings take effect
             clear_agent_cache(organization_id, team_id)
+            clear_auxiliary_agent_cache(organization_id, team_id)
 
             # Update metadata for status reporting
             providers_meta = {

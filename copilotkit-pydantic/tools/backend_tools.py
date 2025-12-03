@@ -15,25 +15,43 @@ Python functions that run on the server and have access to the agent's state.
 
 3. Add the tool to your database with tool_type='backend'
 
+## Auxiliary Agents
+
+Tools like generate_images, web_search, code_execution, and url_context use
+auxiliary agents that are configured in the main agent's metadata:
+
+{
+    "auxiliary_agents": {
+        "image_generation": { "agent_type": "my-image-agent" },
+        "web_search": { "agent_type": "my-search-agent" },
+        "code_execution": { "agent_type": "my-code-agent" },
+        "url_context": { "agent_type": "my-url-agent" }
+    }
+}
+
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext, BinaryImage, ImageGenerationTool, WebSearchTool, CodeExecutionTool, UrlContextTool, ToolReturn
+from pydantic_ai import Agent, RunContext, BinaryImage, ToolReturn
 from pydantic_ai.ag_ui import StateDeps
 from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, CustomEvent
 
 from core.models import AgentState, Step, StepStatus
 
 from pydantic_ai import ModelSettings
-from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
-from pydantic_ai.providers.google import GoogleProvider
 from core.models import JSONPatchOp
 from config import logger
 
 # Import Firebase Storage utility
 from utils.firebase_storage import upload_binary_image_to_storage
+
+# Import auxiliary agent factory
+from tools.auxiliary_agents import get_auxiliary_agent
+
 import os
 
 # ========== State Management Tools ==========
@@ -105,94 +123,124 @@ async def update_plan_step(
     )
 
 
+# ========== Helper Functions ==========
+
+def _get_agent_context(ctx: RunContext[Any]) -> tuple[str | None, str | None, str | None, dict]:
+    """Extract agent context from RunContext deps.
+    
+    Args:
+        ctx: The run context
+        
+    Returns:
+        Tuple of (organization_id, team_id, agent_type, agent_info)
+    """
+    deps = ctx.deps
+    return (
+        getattr(deps, 'organization_id', None),
+        getattr(deps, 'team_id', None),
+        getattr(deps, 'agent_type', None),
+        getattr(deps, 'agent_info', {}) or {},
+    )
+
 
 # ========== Image Generation Tools ==========
 
-google_provider = GoogleProvider(api_key='AIzaSyAQjPdaMaJzMyS7Eco1DtKT0ueutPQjXGs')
-google_model = GoogleModel(model_name='gemini-2.5-flash-image', provider=google_provider)
-web_search_model = GoogleModel(model_name='gemini-2.5-flash', provider=google_provider)
-code_execution_model = GoogleModel(model_name='gemini-2.5-flash', provider=google_provider)
-memory_model = GoogleModel(model_name='gemini-2.5-flash', provider=google_provider)
-url_context_model = GoogleModel(model_name='gemini-2.5-flash', provider=google_provider)
-
-web_search_agent = Agent(
-    model=web_search_model,
-    builtin_tools=[WebSearchTool()],
-    system_prompt=(
-        "You are a web search assistant. Based on the user's prompt, "
-        "search the web for relevant information. "
-        "Return the search results."
-    ),
-)
-
-code_execution_agent = Agent(
-    model=code_execution_model,
-    builtin_tools=[CodeExecutionTool()],
-    system_prompt=(
-        "You are a code execution assistant. Based on the user's prompt, "
-        "execute the code and return the results. "
-        "ALWAYS return both the code execution results and the code itself."
-    ),
-)
-
-url_context_agent = Agent(
-    model=url_context_model,
-    builtin_tools=[UrlContextTool()],
-    system_prompt=(
-        "You are a URL context assistant. Based on the user's prompt, "
-        "load the content from the provided URLs. "
-        "Return the content from the URLs."
-    ),
-)
-
-# Create a Pydantic AI agent for image generation with structured output
-image_generation_agent = Agent(
-    model=google_model,
-    # output_type=ImageGenerationResult,
-    builtin_tools=[ImageGenerationTool()],
-    system_prompt=(
-        "You are an image generation assistant. Based on the user's prompt, "
-        "generate a list of image URLs (use placeholder URLs from https://picsum.photos/), "
-        "refine the prompt for better image generation, and identify the artistic style. "
-        "Return exactly the number of images requested."
-    ),
-)
-
-
 async def generate_images(
-    _: RunContext[StateDeps[AgentState]], 
+    ctx: RunContext[StateDeps[AgentState]], 
     prompt: str, 
     num_images: int = 1
 ) -> list[str]:
     """Generate images based on a text prompt using AI and upload to Firebase Storage.
     
-    This function uses Gemini's image generation capability to create images,
-    then uploads them to Firebase Storage in the 'generations' folder, matching
-    the same Firebase configuration as the frontend takeScreenshot function.
+    This function uses a configured auxiliary agent for image generation.
+    The auxiliary agent must be configured in the main agent's metadata:
+    
+    {
+        "auxiliary_agents": {
+            "image_generation": { "agent_type": "your-image-agent" }
+        }
+    }
     
     Args:
+        ctx: The run context with agent state and context
         prompt: Text description of the images to generate
         num_images: Number of images to generate (default: 1)
         
     Returns:
         List of public URLs pointing to the uploaded images in Firebase Storage
+        
+    Raises:
+        ValueError: If no auxiliary agent is configured for image_generation
     """
+    # Get agent context
+    organization_id, team_id, agent_type, agent_info = _get_agent_context(ctx)
+    
+    # Get the auxiliary agent for image generation
+    aux_agent = await get_auxiliary_agent(
+        aux_type='image_generation',
+        main_agent_type=agent_type or 'unknown',
+        main_agent_metadata=agent_info.get('metadata', {}),
+        organization_id=organization_id,
+        team_id=team_id,
+    )
+    
+    if aux_agent is None:
+        error_msg = (
+            f"No auxiliary agent configured for 'image_generation' in agent '{agent_type}'. "
+            "Configure it in the agent's metadata: "
+            '{"auxiliary_agents": {"image_generation": {"agent_type": "your-image-agent"}}}'
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
     try:
-        # Use the AI agent to generate images
-        result = await image_generation_agent.run(
-            f"Generate {num_images} image(s) based on this prompt: {prompt}"
-        )
+        # Use the auxiliary agent to generate images
+        user_message = f"Generate {num_images} image(s) based on this prompt: {prompt}"
+        
+        logger.info("Running auxiliary agent for image generation with prompt: %s", prompt[:100])
+        
+        result = await aux_agent.run(user_message)
                 
         # Upload each BinaryImage to Firebase Storage
         uploaded_urls = []
         
-        for idx, image in enumerate(result.response.images):
+        # Check if response has images - images might be a method or property
+        images = None
+        if hasattr(result.response, 'images'):
+            images_attr = getattr(result.response, 'images')
+            if callable(images_attr):
+                images = images_attr()
+            else:
+                images = images_attr
+        
+        if not images:
+            logger.warning(
+                "Auxiliary agent response has no images. "
+                "Make sure the auxiliary agent has 'builtin_image_generation' tool configured and uses it. "
+                "Response type: %s, Response text: %s",
+                type(result.response),
+                getattr(result.response, 'text', str(result.response))[:500] if result.response else 'None'
+            )
+            return []
+        
+        # Ensure images is iterable
+        if not hasattr(images, '__iter__'):
+            logger.warning("Images attribute is not iterable: %s", type(images))
+            return []
+        
+        images_list = list(images) if images else []
+        
+        if not images_list:
+            logger.warning("Auxiliary agent returned empty images list")
+            return []
+        
+        logger.info("Received %d images from auxiliary agent", len(images_list))
+        
+        for idx, image in enumerate(images_list):
             if isinstance(image, BinaryImage):
-                logger.info("Uploading image %d/%d to Firebase Storage...", idx + 1, len(result.response.images))
+                logger.info("Uploading image %d/%d to Firebase Storage...", idx + 1, len(images_list))
                 
                 # Get the binary data from BinaryImage
-                # BinaryImage has a 'data' attribute with the bytes
                 image_data = image.data
                 
                 # Determine content type from media type
@@ -219,22 +267,161 @@ async def generate_images(
         return uploaded_urls
         
     except Exception as e:
-        logger.error("Error generating/uploading images: %s", e)
-        return []
+        logger.exception("Image generation failed: %s", e)
+        raise
 
 
 async def web_search(ctx: RunContext[StateDeps[AgentState]], prompt: str) -> str:
+    """Search the web for information using a configured auxiliary agent.
+    
+    The auxiliary agent must be configured in the main agent's metadata:
+    
+    {
+        "auxiliary_agents": {
+            "web_search": { "agent_type": "your-search-agent" }
+        }
+    }
+    
+    Args:
+        ctx: The run context with agent state and context
+        prompt: Search query
+        
+    Returns:
+        Search results as text
+        
+    Raises:
+        ValueError: If no auxiliary agent is configured for web_search
+    """
+    # Get agent context
+    organization_id, team_id, agent_type, agent_info = _get_agent_context(ctx)
+    
+    # Get the auxiliary agent for web search
+    aux_agent = await get_auxiliary_agent(
+        aux_type='web_search',
+        main_agent_type=agent_type or 'unknown',
+        main_agent_metadata=agent_info.get('metadata', {}),
+        organization_id=organization_id,
+        team_id=team_id,
+    )
+    
+    if aux_agent is None:
+        error_msg = (
+            f"No auxiliary agent configured for 'web_search' in agent '{agent_type}'. "
+            "Configure it in the agent's metadata: "
+            '{"auxiliary_agents": {"web_search": {"agent_type": "your-search-agent"}}}'
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    try:
+        result = await aux_agent.run(prompt)
+        return result.response.text
+    except Exception as e:
+        logger.exception("Web search failed: %s", e)
+        raise
 
-    result = await web_search_agent.run(prompt)
-    return result.response.text
 
 async def code_execution(ctx: RunContext[StateDeps[AgentState]], prompt: str) -> str:
-    result = await code_execution_agent.run(prompt)
-    return result.response.text
+    """Execute code using a configured auxiliary agent.
+    
+    The auxiliary agent must be configured in the main agent's metadata:
+    
+    {
+        "auxiliary_agents": {
+            "code_execution": { "agent_type": "your-code-agent" }
+        }
+    }
+    
+    Args:
+        ctx: The run context with agent state and context
+        prompt: Code execution prompt
+        
+    Returns:
+        Execution results as text
+        
+    Raises:
+        ValueError: If no auxiliary agent is configured for code_execution
+    """
+    # Get agent context
+    organization_id, team_id, agent_type, agent_info = _get_agent_context(ctx)
+    
+    # Get the auxiliary agent for code execution
+    aux_agent = await get_auxiliary_agent(
+        aux_type='code_execution',
+        main_agent_type=agent_type or 'unknown',
+        main_agent_metadata=agent_info.get('metadata', {}),
+        organization_id=organization_id,
+        team_id=team_id,
+    )
+    
+    if aux_agent is None:
+        error_msg = (
+            f"No auxiliary agent configured for 'code_execution' in agent '{agent_type}'. "
+            "Configure it in the agent's metadata: "
+            '{"auxiliary_agents": {"code_execution": {"agent_type": "your-code-agent"}}}'
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    try:
+        result = await aux_agent.run(f"Execute this code and return the result: {prompt}")
+        return result.response.text
+    except Exception as e:
+        logger.exception("Code execution failed: %s", e)
+        raise
+
 
 async def url_context(ctx: RunContext[StateDeps[AgentState]], urls: list[str]) -> str:
-    result = await url_context_agent.run(urls)
-    return result.response.text
+    """Load content from URLs using a configured auxiliary agent.
+    
+    The auxiliary agent must be configured in the main agent's metadata:
+    
+    {
+        "auxiliary_agents": {
+            "url_context": { "agent_type": "your-url-agent" }
+        }
+    }
+    
+    Args:
+        ctx: The run context with agent state and context
+        urls: List of URLs to load content from
+        
+    Returns:
+        URL content as text
+        
+    Raises:
+        ValueError: If no auxiliary agent is configured for url_context
+    """
+    # Get agent context
+    organization_id, team_id, agent_type, agent_info = _get_agent_context(ctx)
+    
+    # Get the auxiliary agent for URL context
+    aux_agent = await get_auxiliary_agent(
+        aux_type='url_context',
+        main_agent_type=agent_type or 'unknown',
+        main_agent_metadata=agent_info.get('metadata', {}),
+        organization_id=organization_id,
+        team_id=team_id,
+    )
+    
+    if aux_agent is None:
+        error_msg = (
+            f"No auxiliary agent configured for 'url_context' in agent '{agent_type}'. "
+            "Configure it in the agent's metadata: "
+            '{"auxiliary_agents": {"url_context": {"agent_type": "your-url-agent"}}}'
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    try:
+        # Format URLs as a prompt
+        urls_text = "\n".join(urls)
+        result = await aux_agent.run(f"Load content from these URLs:\n{urls_text}")
+        return result.response.text
+    except Exception as e:
+        logger.exception("URL context failed: %s", e)
+        raise
+
 
 # ========== Tool Registry ==========
 # Maps tool keys to their function implementations
@@ -268,4 +455,3 @@ def list_backend_tools() -> list[str]:
         List of tool key strings
     """
     return list(BACKEND_TOOLS.keys())
-

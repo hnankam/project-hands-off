@@ -47,26 +47,31 @@ def _build_agent_prompts(config: Dict[str, Any]) -> tuple[Dict[str, str], List[s
     agent_info: Dict[str, Dict[str, Any]] = {}
 
     for agent_cfg in config.get('agents', []):
-        if not agent_cfg.get('enabled', True):
-            continue
-
         agent_type = agent_cfg['type']
+        is_enabled = agent_cfg.get('enabled', True)
+        
+        # Build prompt for all agents (needed for auxiliary agent creation, even if disabled)
         prompt_template = agent_cfg['prompt']
         prompt = prompt_template.format(
             general_instruction=general_instruction,
             planning_instruction=planning_instruction,
         )
-
         prompts[agent_type] = prompt.strip()
-        agent_types.append(agent_type)
+        
+        # Always add to agent_info (needed for auxiliary agent lookups, even if disabled)
         agent_info[agent_type] = {
             'type': agent_cfg['type'],
             'name': agent_cfg.get('name', agent_type),
             'description': agent_cfg.get('description', ''),
-            'enabled': agent_cfg.get('enabled', True),
+            'enabled': is_enabled,
+            'metadata': agent_cfg.get('metadata') or {},
             'allowed_models': agent_cfg.get('allowed_models') or None,
             'allowed_tools': agent_cfg.get('allowed_tools') or None,
         }
+        
+        # Only add enabled agents to agent_types (selectable as main conversation agents)
+        if is_enabled:
+            agent_types.append(agent_type)
 
     return prompts, agent_types, agent_info
 

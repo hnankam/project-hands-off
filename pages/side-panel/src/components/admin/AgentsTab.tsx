@@ -10,6 +10,7 @@ import ToolMultiSelector from './ToolMultiSelector';
 import { RichTextEditor } from './RichTextEditor';
 import { CodeMirrorJsonEditor } from './CodeMirrorJsonEditor';
 import { MarkdownRenderer } from '../tiptap/MarkdownRenderer';
+import { AuxiliaryAgentSelector, type AuxiliaryAgentType } from './AuxiliaryAgentSelector';
 
 interface Organization {
   id: string;
@@ -80,6 +81,14 @@ interface AgentRecord {
 
 type AgentScope = 'organization' | 'team';
 
+interface AuxiliaryAgentsConfig {
+  image_generation?: { agent_type: string };
+  web_search?: { agent_type: string };
+  code_execution?: { agent_type: string };
+  url_context?: { agent_type: string };
+  memory?: { agent_type: string };
+}
+
 interface AgentFormState {
   agentType: string;
   agentName: string;
@@ -88,6 +97,7 @@ interface AgentFormState {
   scope: AgentScope;
   teamIds: string[]; // Multi-team support
   metadata: string;
+  auxiliaryAgents: AuxiliaryAgentsConfig;
   enabled: boolean;
   modelMode: 'all' | 'custom';
   modelIds: string[];
@@ -111,6 +121,7 @@ const INITIAL_FORM: AgentFormState = {
   scope: 'organization',
   teamIds: [], // Multi-team support
   metadata: '{}',
+  auxiliaryAgents: {},
   enabled: true,
   modelMode: 'all',
   modelIds: [],
@@ -899,6 +910,15 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     }
 
     try {
+      // Merge auxiliary agents into metadata
+      const baseMetadata = sanitizeJsonText(createForm.metadata, 'Metadata');
+      const hasAuxiliaryAgents = Object.keys(createForm.auxiliaryAgents).some(
+        key => createForm.auxiliaryAgents[key as keyof AuxiliaryAgentsConfig]?.agent_type
+      );
+      const mergedMetadata = hasAuxiliaryAgents
+        ? { ...baseMetadata, auxiliary_agents: createForm.auxiliaryAgents }
+        : baseMetadata;
+      
       const payload = {
         organizationId: selectedOrgId,
         teamIds: createForm.scope === 'team' ? createForm.teamIds : [],
@@ -907,7 +927,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         description: createForm.description.trim() || null,
         promptTemplate: createForm.promptTemplate.trim(),
         enabled: createForm.enabled,
-        metadata: sanitizeJsonText(createForm.metadata, 'Metadata'),
+        metadata: mergedMetadata,
         modelIds: createForm.modelMode === 'custom' ? createForm.modelIds : [],
       };
       if (createForm.toolMode === 'custom') {
@@ -940,6 +960,12 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
 
   const startEditAgent = (agent: AgentRecord) => {
     setEditingAgentId(agent.id);
+    // Extract auxiliary_agents from metadata
+    const agentMetadata = agent.metadata || {};
+    const auxiliaryAgents: AuxiliaryAgentsConfig = agentMetadata.auxiliary_agents || {};
+    // Create a copy of metadata without auxiliary_agents for the JSON editor
+    const { auxiliary_agents: _, ...otherMetadata } = agentMetadata;
+    
     setEditForm({
       agentType: agent.agentType,
       agentName: agent.agentName,
@@ -947,7 +973,8 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       promptTemplate: agent.promptTemplate,
       scope: agent.teams.length > 0 ? 'team' : 'organization',
       teamIds: agent.teams.map(t => t.id),
-      metadata: stringifyJson(agent.metadata),
+      metadata: stringifyJson(otherMetadata),
+      auxiliaryAgents,
       enabled: agent.enabled,
       modelMode: agent.modelIds && agent.modelIds.length > 0 ? 'custom' : 'all',
       modelIds: Array.isArray(agent.modelIds) ? agent.modelIds : [],
@@ -995,6 +1022,15 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     }
 
     try {
+      // Merge auxiliary agents into metadata
+      const baseMetadata = sanitizeJsonText(editForm.metadata, 'Metadata');
+      const hasAuxiliaryAgents = Object.keys(editForm.auxiliaryAgents).some(
+        key => editForm.auxiliaryAgents[key as keyof AuxiliaryAgentsConfig]?.agent_type
+      );
+      const mergedMetadata = hasAuxiliaryAgents
+        ? { ...baseMetadata, auxiliary_agents: editForm.auxiliaryAgents }
+        : baseMetadata;
+      
       const payload = {
         organizationId: selectedOrgId,
         teamIds: editForm.scope === 'team' ? editForm.teamIds : [],
@@ -1003,7 +1039,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         description: editForm.description.trim() || null,
         promptTemplate: editForm.promptTemplate.trim(),
         enabled: editForm.enabled,
-        metadata: sanitizeJsonText(editForm.metadata, 'Metadata'),
+        metadata: mergedMetadata,
         modelIds: editForm.modelMode === 'custom' ? editForm.modelIds : [],
       };
       if (editForm.toolMode === 'custom') {
@@ -1493,6 +1529,90 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                 />
               </div>
 
+              {/* Auxiliary Agents Configuration */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                    Auxiliary Agents
+                  </label>
+                  <span className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    Configure specialized agents for backend tools
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <AuxiliaryAgentSelector
+                    isLight={isLight}
+                    agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                    auxType="image_generation"
+                    selectedAgentType={createForm.auxiliaryAgents.image_generation?.agent_type || null}
+                    onChange={(agentType) => setCreateForm(prev => ({
+                      ...prev,
+                      auxiliaryAgents: {
+                        ...prev.auxiliaryAgents,
+                        image_generation: agentType ? { agent_type: agentType } : undefined,
+                      }
+                    }))}
+                    excludeAgentType={createForm.agentType}
+                  />
+                  <AuxiliaryAgentSelector
+                    isLight={isLight}
+                    agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                    auxType="web_search"
+                    selectedAgentType={createForm.auxiliaryAgents.web_search?.agent_type || null}
+                    onChange={(agentType) => setCreateForm(prev => ({
+                      ...prev,
+                      auxiliaryAgents: {
+                        ...prev.auxiliaryAgents,
+                        web_search: agentType ? { agent_type: agentType } : undefined,
+                      }
+                    }))}
+                    excludeAgentType={createForm.agentType}
+                  />
+                  <AuxiliaryAgentSelector
+                    isLight={isLight}
+                    agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                    auxType="code_execution"
+                    selectedAgentType={createForm.auxiliaryAgents.code_execution?.agent_type || null}
+                    onChange={(agentType) => setCreateForm(prev => ({
+                      ...prev,
+                      auxiliaryAgents: {
+                        ...prev.auxiliaryAgents,
+                        code_execution: agentType ? { agent_type: agentType } : undefined,
+                      }
+                    }))}
+                    excludeAgentType={createForm.agentType}
+                  />
+                  <AuxiliaryAgentSelector
+                    isLight={isLight}
+                    agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                    auxType="url_context"
+                    selectedAgentType={createForm.auxiliaryAgents.url_context?.agent_type || null}
+                    onChange={(agentType) => setCreateForm(prev => ({
+                      ...prev,
+                      auxiliaryAgents: {
+                        ...prev.auxiliaryAgents,
+                        url_context: agentType ? { agent_type: agentType } : undefined,
+                      }
+                    }))}
+                    excludeAgentType={createForm.agentType}
+                  />
+                  <AuxiliaryAgentSelector
+                    isLight={isLight}
+                    agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                    auxType="memory"
+                    selectedAgentType={createForm.auxiliaryAgents.memory?.agent_type || null}
+                    onChange={(agentType) => setCreateForm(prev => ({
+                      ...prev,
+                      auxiliaryAgents: {
+                        ...prev.auxiliaryAgents,
+                        memory: agentType ? { agent_type: agentType } : undefined,
+                      }
+                    }))}
+                    excludeAgentType={createForm.agentType}
+                  />
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -1790,6 +1910,90 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                             minHeight="20px"
                             maxHeight="150px"
                           />
+                        </div>
+
+                        {/* Auxiliary Agents Configuration */}
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                              Auxiliary Agents
+                            </label>
+                            <span className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              Configure specialized agents for backend tools
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <AuxiliaryAgentSelector
+                              isLight={isLight}
+                              agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                              auxType="image_generation"
+                              selectedAgentType={editForm.auxiliaryAgents.image_generation?.agent_type || null}
+                              onChange={(agentType) => setEditForm(prev => prev ? {
+                                ...prev,
+                                auxiliaryAgents: {
+                                  ...prev.auxiliaryAgents,
+                                  image_generation: agentType ? { agent_type: agentType } : undefined,
+                                }
+                              } : prev)}
+                              excludeAgentType={editForm.agentType}
+                            />
+                            <AuxiliaryAgentSelector
+                              isLight={isLight}
+                              agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                              auxType="web_search"
+                              selectedAgentType={editForm.auxiliaryAgents.web_search?.agent_type || null}
+                              onChange={(agentType) => setEditForm(prev => prev ? {
+                                ...prev,
+                                auxiliaryAgents: {
+                                  ...prev.auxiliaryAgents,
+                                  web_search: agentType ? { agent_type: agentType } : undefined,
+                                }
+                              } : prev)}
+                              excludeAgentType={editForm.agentType}
+                            />
+                            <AuxiliaryAgentSelector
+                              isLight={isLight}
+                              agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                              auxType="code_execution"
+                              selectedAgentType={editForm.auxiliaryAgents.code_execution?.agent_type || null}
+                              onChange={(agentType) => setEditForm(prev => prev ? {
+                                ...prev,
+                                auxiliaryAgents: {
+                                  ...prev.auxiliaryAgents,
+                                  code_execution: agentType ? { agent_type: agentType } : undefined,
+                                }
+                              } : prev)}
+                              excludeAgentType={editForm.agentType}
+                            />
+                            <AuxiliaryAgentSelector
+                              isLight={isLight}
+                              agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                              auxType="url_context"
+                              selectedAgentType={editForm.auxiliaryAgents.url_context?.agent_type || null}
+                              onChange={(agentType) => setEditForm(prev => prev ? {
+                                ...prev,
+                                auxiliaryAgents: {
+                                  ...prev.auxiliaryAgents,
+                                  url_context: agentType ? { agent_type: agentType } : undefined,
+                                }
+                              } : prev)}
+                              excludeAgentType={editForm.agentType}
+                            />
+                            <AuxiliaryAgentSelector
+                              isLight={isLight}
+                              agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                              auxType="memory"
+                              selectedAgentType={editForm.auxiliaryAgents.memory?.agent_type || null}
+                              onChange={(agentType) => setEditForm(prev => prev ? {
+                                ...prev,
+                                auxiliaryAgents: {
+                                  ...prev.auxiliaryAgents,
+                                  memory: agentType ? { agent_type: agentType } : undefined,
+                                }
+                              } : prev)}
+                              excludeAgentType={editForm.agentType}
+                            />
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">

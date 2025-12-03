@@ -68,11 +68,12 @@ def _resolve_allowed_tool_keys(
             if data.get('enabled', True) and data.get('tool_type') in {'backend', 'builtin', 'mcp', 'frontend'}
         ]
     else:
-        # Filter to only include tools that exist and are enabled
+        # When agent has explicit allowed_tools, include them if they exist in definitions
+        # Don't filter by enabled - if agent explicitly allows a tool, use it regardless of global status
         allowed_tool_keys = [
             key
             for key in allowed_tool_keys
-            if key in tool_definitions and tool_definitions[key].get('enabled', True)
+            if key in tool_definitions
         ]
 
     # Preserve order while removing duplicates
@@ -164,10 +165,6 @@ async def create_agent(
     builtin_tool_instances, allowed_backend_keys, allowed_mcp_keys, frontend_tool_keys = _categorize_tools(
         allowed_tool_keys, tool_definitions, agent_type, organization_id, team_id
     )
-    
-    if builtin_tool_instances:
-        builtin_names = [type(tool).__name__ for tool in builtin_tool_instances]
-        # logger.debug("Builtin tools: %s", ", ".join(builtin_names))
     
     # Import here to avoid circular import
     from tools.agent_tools import get_agent_tools

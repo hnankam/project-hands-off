@@ -243,6 +243,7 @@ async def _fetch_agents(
                            ARRAY[]::text[]
                        ) as team_ids,
                        a.enabled,
+                       a.metadata,
                        a.updated_at,
                        a.created_at,
                        array_remove(array_agg(DISTINCT m.model_key), NULL) AS model_keys,
@@ -261,6 +262,7 @@ async def _fetch_agents(
                           a.prompt_template,
                           a.organization_id,
                           a.enabled,
+                          a.metadata,
                           a.updated_at,
                           a.created_at
                  ORDER BY a.enabled DESC, a.agent_type
@@ -281,6 +283,7 @@ async def _fetch_agents(
                         'description': row['description'] or '',
                         'prompt': row['prompt_template'],
                         'enabled': row['enabled'],
+                        'metadata': row.get('metadata') or {},
                         'allowed_models': allowed_models if allowed_models else None,
                         'allowed_tools': (
                             [key for key in (row.get('tool_keys') or []) if key] if row.get('tool_keys') else None
