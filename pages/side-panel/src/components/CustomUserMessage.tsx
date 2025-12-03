@@ -136,15 +136,15 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
-      
+
       // Check if click is outside both the button and the dropdown menu
       const isClickInsideButton = deleteButtonRef.current?.contains(target);
       const isClickInsideMenu = deleteMenuRef.current?.contains(target);
-      
+
       // For portal, also check if the dropdown element itself was clicked
       const dropdownElement = document.querySelector('.copilotKitDeleteDropdownMenu');
       const isClickInsideDropdown = dropdownElement?.contains(target);
-      
+
       if (!isClickInsideButton && !isClickInsideMenu && !isClickInsideDropdown) {
         setShowDeleteMenu(false);
       }
@@ -174,9 +174,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
     setEditHistory(prev => [...prev, content]);
 
     // Re-attach the attachments manifest if it exists
-    const manifestBlock = attachments.length > 0
-      ? `\n\n<!--ATTACHMENTS:\n${JSON.stringify(attachments)}\n-->`
-      : '';
+    const manifestBlock = attachments.length > 0 ? `\n\n<!--ATTACHMENTS:\n${JSON.stringify(attachments)}\n-->` : '';
     const finalContent = `${editedContent}${manifestBlock}`;
 
     const updatedMessages = [...messages];
@@ -228,14 +226,14 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
         console.warn('[CustomUserMessage] Cannot rerun: messages or message is null');
         return;
       }
-      
+
       // Validate that the current message has a valid role
       const currentRole = (message as any)?.role;
       if (!currentRole || typeof currentRole !== 'string') {
         console.error('[CustomUserMessage] Cannot rerun: current message has invalid role:', currentRole);
         return;
       }
-      
+
       // CRITICAL: Validate message exists in the messages array with a role
       // This prevents CopilotKit's "Regenerate cannot be performed on undefined role" error
       const messageInArray = messages.find(m => m.id === message.id);
@@ -243,20 +241,20 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
         console.error('[CustomUserMessage] Cannot rerun: message not found in messages array');
         return;
       }
-      
+
       const messageRole = (messageInArray as any)?.role;
       if (!messageRole || typeof messageRole !== 'string') {
         console.error('[CustomUserMessage] Cannot rerun: message in array has no role field');
         console.error('[CustomUserMessage] This usually means messages are still loading - please wait');
         return;
       }
-      
+
       // Find the next assistant message after this user message
       const following = messages.slice(index + 1).find(m => {
         const role = (m as any)?.role;
         return role === 'assistant' && typeof role === 'string';
       });
-      
+
       if (following?.id) {
         // Double-check the following message is in the array with a valid role
         const followingInArray = messages.find(m => m.id === following.id);
@@ -264,14 +262,14 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
           console.error('[CustomUserMessage] Following message not properly loaded, cannot reload');
           return;
         }
-        
+
         // CRITICAL FIX: Refresh CopilotKit's state before reloading
         // This ensures all message fields (especially 'role') are properly set
         // This is why editing works - it calls setMessages() which refreshes the state
         console.log('[CustomUserMessage] Refreshing message state before reload');
         const refreshedMessages = messages.map(m => ({ ...m }));
         setMessages(refreshedMessages);
-        
+
         // Use setTimeout to ensure state update completes before reloadMessages
         setTimeout(() => {
           console.log('[CustomUserMessage] Reloading from assistant message:', following.id);
@@ -279,16 +277,16 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
         }, 50);
         return;
       }
-      
+
       // Fallback: rerun starting from this user message
       if ((message as any)?.id && messageInArray) {
         console.log('[CustomUserMessage] No assistant message found, reloading from user message:', message.id);
-        
+
         // CRITICAL FIX: Refresh CopilotKit's state before reloading
         console.log('[CustomUserMessage] Refreshing message state before reload');
         const refreshedMessages = messages.map(m => ({ ...m }));
         setMessages(refreshedMessages);
-        
+
         // Use setTimeout to ensure state update completes before reloadMessages
         setTimeout(() => {
           reloadMessages((message as any).id);
@@ -480,8 +478,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                 marginBottom: '6px',
                 position: 'relative',
                 zIndex: 10001,
-              }}
-            >
+              }}>
               {attachments.map((att, idx) => (
                 <div
                   key={`${att.url}-${idx}`}
@@ -498,13 +495,24 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                     fontWeight: isLight ? 500 : 400,
                     maxWidth: '100%',
                     whiteSpace: 'nowrap',
-                  }}
-                >
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  }}>
+                  <svg
+                    width="9"
+                    height="9"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <path d="M14 2v6h6" />
                   </svg>
-                  <a href={att.url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <a
+                    href={att.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ textDecoration: 'none', color: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {att.name}
                   </a>
                   <span style={{ opacity: 0.7, fontSize: 8 }}>({formatSize(att.size)})</span>
@@ -578,13 +586,18 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
             }}
             onMouseLeave={e => {
               e.currentTarget.style.transform = 'scale(1)';
-            }}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            }}>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round">
               <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
-          
+
           {/* Copy Button */}
           <button
             onClick={handleCopy}
@@ -596,7 +609,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
               padding: '0.5rem',
               borderRadius: '6px',
               border: 'none',
-            backgroundColor: 'transparent',
+              backgroundColor: 'transparent',
               color: showCopyFeedback ? '#22c55e' : isLight ? '#0C1117' : '#ffffff',
               cursor: 'pointer',
               display: 'flex',
@@ -711,13 +724,13 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
           </button>
 
           {/* Delete Button with Dropdown */}
-          <div 
+          <div
             className="copilotKitDeleteDropdownContainer"
-            style={{ 
-              position: 'relative', 
+            style={{
+              position: 'relative',
               zIndex: 10002,
               isolation: 'isolate', // Create new stacking context
-            }} 
+            }}
             ref={deleteMenuRef}>
             <button
               ref={deleteButtonRef}
@@ -762,117 +775,118 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
             </button>
 
             {/* Delete Dropdown Menu - Rendered as Portal to body */}
-            {showDeleteMenu && createPortal(
-              <div
-                ref={deleteDropdownRef}
-                className="copilotKitDeleteDropdownMenu"
-                style={{
-                  position: 'fixed', // Use fixed to avoid clipping by parent containers
-                  top: '0px', // Will be updated by useEffect
-                  right: '0px', // Will be updated by useEffect
-                  marginTop: '0',
-                  backgroundColor: isLight ? '#f9fafb' : '#151C24',
-                  border: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
-                  borderRadius: '6px',
-                  boxShadow: '0 10px 20px rgba(0, 0, 0, 0.15)',
-                  zIndex: 10002, /* Higher than sticky message (10001) */
-                  minWidth: '160px',
-                  maxWidth: '200px',
-                  width: 'auto',
-                  overflow: 'visible',
-                  visibility: 'visible', /* Force visibility */
-                  opacity: 1, /* Force opacity */
-                  pointerEvents: 'auto', /* Ensure it's clickable */
-                }}>
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleDeleteMessage();
-                  }}
+            {showDeleteMenu &&
+              createPortal(
+                <div
+                  ref={deleteDropdownRef}
+                  className="copilotKitDeleteDropdownMenu"
                   style={{
-                    width: '100%',
-                    padding: '0.5rem 0.75rem',
-                    border: 'none',
-                    backgroundColor: 'transparent',
-                    color: isLight ? '#374151' : '#d1d5db',
-                    fontSize: '12px',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    borderBottom: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
-                    whiteSpace: 'nowrap',
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.backgroundColor = isLight ? '#f3f4f6' : '#1f2937';
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
+                    position: 'fixed', // Use fixed to avoid clipping by parent containers
+                    top: '0px', // Will be updated by useEffect
+                    right: '0px', // Will be updated by useEffect
+                    marginTop: '0',
+                    backgroundColor: isLight ? '#f9fafb' : '#151C24',
+                    border: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+                    borderRadius: '6px',
+                    boxShadow: '0 10px 20px rgba(0, 0, 0, 0.15)',
+                    zIndex: 10002 /* Higher than sticky message (10001) */,
+                    minWidth: '160px',
+                    maxWidth: '200px',
+                    width: 'auto',
+                    overflow: 'visible',
+                    visibility: 'visible' /* Force visibility */,
+                    opacity: 1 /* Force opacity */,
+                    pointerEvents: 'auto' /* Ensure it's clickable */,
                   }}>
-                  Delete this message
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleDeleteAbove();
-                  }}
-                  disabled={index === 0}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem 0.75rem',
-                    border: 'none',
-                    backgroundColor: 'transparent',
-                    color: index === 0 ? (isLight ? '#9ca3af' : '#6b7280') : isLight ? '#374151' : '#d1d5db',
-                    fontSize: '12px',
-                    textAlign: 'left',
-                    cursor: index === 0 ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.2s ease',
-                    borderBottom: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
-                    whiteSpace: 'nowrap',
-                  }}
-                  onMouseEnter={e => {
-                    if (index !== 0) {
+                  <button
+                    onClick={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDeleteMessage();
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: isLight ? '#374151' : '#d1d5db',
+                      fontSize: '12px',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      borderBottom: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+                      whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={e => {
                       e.currentTarget.style.backgroundColor = isLight ? '#f3f4f6' : '#1f2937';
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }}>
-                  Delete all above
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleDeleteBelow();
-                  }}
-                  disabled={isLast}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem 0.75rem',
-                    border: 'none',
-                    backgroundColor: 'transparent',
-                    color: isLast ? (isLight ? '#9ca3af' : '#6b7280') : isLight ? '#374151' : '#d1d5db',
-                    fontSize: '12px',
-                    textAlign: 'left',
-                    cursor: isLast ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.2s ease',
-                    whiteSpace: 'nowrap',
-                  }}
-                  onMouseEnter={e => {
-                    if (!isLast) {
-                      e.currentTarget.style.backgroundColor = isLight ? '#f3f4f6' : '#1f2937';
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }}>
-                  Delete all below
-                </button>
-              </div>,
-              document.body
-            )}
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}>
+                    Delete this message
+                  </button>
+                  <button
+                    onClick={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDeleteAbove();
+                    }}
+                    disabled={index === 0}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: index === 0 ? (isLight ? '#9ca3af' : '#6b7280') : isLight ? '#374151' : '#d1d5db',
+                      fontSize: '12px',
+                      textAlign: 'left',
+                      cursor: index === 0 ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s ease',
+                      borderBottom: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+                      whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={e => {
+                      if (index !== 0) {
+                        e.currentTarget.style.backgroundColor = isLight ? '#f3f4f6' : '#1f2937';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}>
+                    Delete all above
+                  </button>
+                  <button
+                    onClick={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDeleteBelow();
+                    }}
+                    disabled={isLast}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: isLast ? (isLight ? '#9ca3af' : '#6b7280') : isLight ? '#374151' : '#d1d5db',
+                      fontSize: '12px',
+                      textAlign: 'left',
+                      cursor: isLast ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s ease',
+                      whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={e => {
+                      if (!isLast) {
+                        e.currentTarget.style.backgroundColor = isLight ? '#f3f4f6' : '#1f2937';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}>
+                    Delete all below
+                  </button>
+                </div>,
+                document.body,
+              )}
           </div>
         </div>
       )}

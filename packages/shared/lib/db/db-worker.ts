@@ -1,7 +1,7 @@
 /**
  * Database Worker - Runs SurrealDB operations in a Web Worker
  * This prevents WASM processing from blocking the main UI thread
- * 
+ *
  * Architecture:
  * - All SurrealDB operations run in this worker
  * - Main thread communicates via postMessage
@@ -54,11 +54,11 @@ async function initializeDB(dbName: string, useMemory: boolean): Promise<void> {
 
     // Connect to memory or IndexedDB
     const connectionString = useMemory ? 'mem://' : `indxdb://${dbName}`;
-    
+
     log('[DB Worker]  Connecting to SurrealDB...');
     log(`[DB Worker]    Mode: ${useMemory ? 'IN-MEMORY (fast, no persistence)' : 'IndexedDB (persistent)'}`);
     log(`[DB Worker]    Connection: ${connectionString}`);
-    
+
     await db.connect(connectionString);
 
     // Set namespace and database
@@ -156,8 +156,8 @@ async function storeHTMLChunks(payload: {
   const BATCH_SIZE = 100; // Increased to 100 for maximum throughput
 
   // Delete old chunks first
-  await db.query(`DELETE FROM html_chunks WHERE pageURL = $url`, { 
-    url: payload.pageURL 
+  await db.query(`DELETE FROM html_chunks WHERE pageURL = $url`, {
+    url: payload.pageURL,
   });
 
   log(`[DB Worker] Storing ${payload.chunks.length} HTML chunks in batches of ${BATCH_SIZE}...`);
@@ -169,22 +169,24 @@ async function storeHTMLChunks(payload: {
   }
 
   // Process batches in parallel (WASM can handle concurrent operations)
-  await Promise.all(batches.map(async (batchChunks, batchIndex) => {
-    if (!db) throw new Error('Database not connected');
-    const records = batchChunks.map(chunk => ({
-      pageURL: payload.pageURL,
-      pageTitle: payload.pageTitle,
-      chunkIndex: chunk.index,
-      text: chunk.text,
-      html: chunk.html,
-      embedding: chunk.embedding,
-      sessionId: payload.sessionId || undefined,
-      timestamp,
-    }));
-    
-    await db.query(`INSERT INTO html_chunks $records`, { records });
-    log(`[DB Worker] Batch ${batchIndex + 1}/${batches.length} complete`);
-  }));
+  await Promise.all(
+    batches.map(async (batchChunks, batchIndex) => {
+      if (!db) throw new Error('Database not connected');
+      const records = batchChunks.map(chunk => ({
+        pageURL: payload.pageURL,
+        pageTitle: payload.pageTitle,
+        chunkIndex: chunk.index,
+        text: chunk.text,
+        html: chunk.html,
+        embedding: chunk.embedding,
+        sessionId: payload.sessionId || undefined,
+        timestamp,
+      }));
+
+      await db.query(`INSERT INTO html_chunks $records`, { records });
+      log(`[DB Worker] Batch ${batchIndex + 1}/${batches.length} complete`);
+    }),
+  );
 
   log(`[DB Worker] Stored ${payload.chunks.length} HTML chunks`);
 }
@@ -207,8 +209,8 @@ async function storeFormFields(payload: {
   const BATCH_SIZE = 100; // Increased to 100 for maximum throughput
 
   // Delete old form fields first
-  await db.query(`DELETE FROM form_fields WHERE pageURL = $url`, { 
-    url: payload.pageURL 
+  await db.query(`DELETE FROM form_fields WHERE pageURL = $url`, {
+    url: payload.pageURL,
   });
 
   if (payload.groups.length > 0) {
@@ -219,20 +221,22 @@ async function storeFormFields(payload: {
     }
 
     // Process batches in parallel
-    await Promise.all(batches.map(async (batchGroups, batchIndex) => {
-      if (!db) throw new Error('Database not connected');
-      const records = batchGroups.map(group => ({
-        pageURL: payload.pageURL,
-        groupIndex: group.groupIndex,
-        fieldsJSON: group.fieldsJSON,
-        embedding: group.embedding,
-        sessionId: payload.sessionId || undefined,
-        timestamp,
-      }));
-      
-      await db.query(`INSERT INTO form_fields $records`, { records });
-      log(`[DB Worker] Form fields batch ${batchIndex + 1}/${batches.length} complete`);
-    }));
+    await Promise.all(
+      batches.map(async (batchGroups, batchIndex) => {
+        if (!db) throw new Error('Database not connected');
+        const records = batchGroups.map(group => ({
+          pageURL: payload.pageURL,
+          groupIndex: group.groupIndex,
+          fieldsJSON: group.fieldsJSON,
+          embedding: group.embedding,
+          sessionId: payload.sessionId || undefined,
+          timestamp,
+        }));
+
+        await db.query(`INSERT INTO form_fields $records`, { records });
+        log(`[DB Worker] Form fields batch ${batchIndex + 1}/${batches.length} complete`);
+      }),
+    );
   }
 
   log(`[DB Worker] Stored ${payload.groups.length} form field groups`);
@@ -256,8 +260,8 @@ async function storeClickableElements(payload: {
   const BATCH_SIZE = 100; // Increased to 100 for maximum throughput
 
   // Delete old clickable elements first
-  await db.query(`DELETE FROM clickable_elements WHERE pageURL = $url`, { 
-    url: payload.pageURL 
+  await db.query(`DELETE FROM clickable_elements WHERE pageURL = $url`, {
+    url: payload.pageURL,
   });
 
   if (payload.groups.length > 0) {
@@ -268,20 +272,22 @@ async function storeClickableElements(payload: {
     }
 
     // Process batches in parallel
-    await Promise.all(batches.map(async (batchGroups, batchIndex) => {
-      if (!db) throw new Error('Database not connected');
-      const records = batchGroups.map(group => ({
-        pageURL: payload.pageURL,
-        groupIndex: group.groupIndex,
-        elementsJSON: group.elementsJSON,
-        embedding: group.embedding,
-        sessionId: payload.sessionId || undefined,
-        timestamp,
-      }));
-      
-      await db.query(`INSERT INTO clickable_elements $records`, { records });
-      log(`[DB Worker] Clickable elements batch ${batchIndex + 1}/${batches.length} complete`);
-    }));
+    await Promise.all(
+      batches.map(async (batchGroups, batchIndex) => {
+        if (!db) throw new Error('Database not connected');
+        const records = batchGroups.map(group => ({
+          pageURL: payload.pageURL,
+          groupIndex: group.groupIndex,
+          elementsJSON: group.elementsJSON,
+          embedding: group.embedding,
+          sessionId: payload.sessionId || undefined,
+          timestamp,
+        }));
+
+        await db.query(`INSERT INTO clickable_elements $records`, { records });
+        log(`[DB Worker] Clickable elements batch ${batchIndex + 1}/${batches.length} complete`);
+      }),
+    );
   }
 
   log(`[DB Worker] Stored ${payload.groups.length} clickable element groups`);
@@ -292,16 +298,31 @@ async function storeClickableElements(payload: {
  */
 async function deletePageEmbeddings(payload: {
   pageURL: string;
-}): Promise<{ deleted: boolean; counts: { htmlChunks: number; formFields: number; clickableElements: number; domUpdates: number } }> {
+}): Promise<{
+  deleted: boolean;
+  counts: { htmlChunks: number; formFields: number; clickableElements: number; domUpdates: number };
+}> {
   if (!db) throw new Error('Database not connected');
 
   log(`[DB Worker] Deleting embeddings for page: ${payload.pageURL}`);
 
   // Get counts before deletion for reporting
-  const htmlResult = await db.query<[{ count: number }[]]>(`SELECT count() as count FROM html_chunks WHERE pageURL = $url GROUP ALL`, { url: payload.pageURL });
-  const formResult = await db.query<[{ count: number }[]]>(`SELECT count() as count FROM form_fields WHERE pageURL = $url GROUP ALL`, { url: payload.pageURL });
-  const clickResult = await db.query<[{ count: number }[]]>(`SELECT count() as count FROM clickable_elements WHERE pageURL = $url GROUP ALL`, { url: payload.pageURL });
-  const domResult = await db.query<[{ count: number }[]]>(`SELECT count() as count FROM dom_updates WHERE pageURL = $url GROUP ALL`, { url: payload.pageURL });
+  const htmlResult = await db.query<[{ count: number }[]]>(
+    `SELECT count() as count FROM html_chunks WHERE pageURL = $url GROUP ALL`,
+    { url: payload.pageURL },
+  );
+  const formResult = await db.query<[{ count: number }[]]>(
+    `SELECT count() as count FROM form_fields WHERE pageURL = $url GROUP ALL`,
+    { url: payload.pageURL },
+  );
+  const clickResult = await db.query<[{ count: number }[]]>(
+    `SELECT count() as count FROM clickable_elements WHERE pageURL = $url GROUP ALL`,
+    { url: payload.pageURL },
+  );
+  const domResult = await db.query<[{ count: number }[]]>(
+    `SELECT count() as count FROM dom_updates WHERE pageURL = $url GROUP ALL`,
+    { url: payload.pageURL },
+  );
 
   const counts = {
     htmlChunks: htmlResult[0]?.[0]?.count || 0,
@@ -316,7 +337,9 @@ async function deletePageEmbeddings(payload: {
   await db.query(`DELETE FROM clickable_elements WHERE pageURL = $url`, { url: payload.pageURL });
   await db.query(`DELETE FROM dom_updates WHERE pageURL = $url`, { url: payload.pageURL });
 
-  log(`[DB Worker] Deleted embeddings for page: ${payload.pageURL} - HTML: ${counts.htmlChunks}, Forms: ${counts.formFields}, Clickable: ${counts.clickableElements}, DOM: ${counts.domUpdates}`);
+  log(
+    `[DB Worker] Deleted embeddings for page: ${payload.pageURL} - HTML: ${counts.htmlChunks}, Forms: ${counts.formFields}, Clickable: ${counts.clickableElements}, DOM: ${counts.domUpdates}`,
+  );
 
   return { deleted: true, counts };
 }
@@ -339,7 +362,8 @@ async function storeDOMUpdate(payload: {
 
   try {
     // Insert the DOM update
-    await db.query(`
+    await db.query(
+      `
       CREATE dom_updates SET
         pageURL = $pageURL,
         pageTitle = $pageTitle,
@@ -349,27 +373,32 @@ async function storeDOMUpdate(payload: {
         sessionId = $sessionId,
         timestamp = $timestamp,
         recencyScore = $recencyScore;
-    `, {
-      pageURL: payload.pageURL,
-      pageTitle: payload.pageTitle,
-      updateJSON: payload.updateJSON,
-      summary: payload.summary,
-      embedding: payload.embedding,
-      sessionId: payload.sessionId || undefined,
-      timestamp,
-      recencyScore,
-    });
+    `,
+      {
+        pageURL: payload.pageURL,
+        pageTitle: payload.pageTitle,
+        updateJSON: payload.updateJSON,
+        summary: payload.summary,
+        embedding: payload.embedding,
+        sessionId: payload.sessionId || undefined,
+        timestamp,
+        recencyScore,
+      },
+    );
 
     // Decay older DOM updates (reduce their recency scores)
-    await db.query(`
+    await db.query(
+      `
       UPDATE dom_updates 
       SET recencyScore = recencyScore * 0.95 
       WHERE pageURL = $pageURL 
         AND timestamp < $currentTimestamp;
-    `, {
-      pageURL: payload.pageURL,
-      currentTimestamp: timestamp,
-    });
+    `,
+      {
+        pageURL: payload.pageURL,
+        currentTimestamp: timestamp,
+      },
+    );
 
     log('[DB Worker] Stored DOM update and decayed older entries');
   } catch (error) {
@@ -391,19 +420,16 @@ async function searchHTMLChunks(payload: {
   if (!db) throw new Error('Database not connected');
 
   const efSearch = Math.max(payload.topK * 3, 100);
-  
+
   // Determine which pages to search
-  const urls = payload.pageURLs?.length 
-    ? payload.pageURLs 
-    : payload.pageURL 
-      ? [payload.pageURL] 
-      : null; // null means search all pages
-  
+  const urls = payload.pageURLs?.length ? payload.pageURLs : payload.pageURL ? [payload.pageURL] : null; // null means search all pages
+
   let results: any[];
-  
+
   if (urls === null) {
     // Search all pages
-    results = await db.query<any[]>(`
+    results = await db.query<any[]>(
+      `
       LET $q = $embedding;
       SELECT 
         id,
@@ -415,12 +441,15 @@ async function searchHTMLChunks(payload: {
         vector::distance::knn() AS distance
       FROM html_chunks
       WHERE embedding <|${payload.topK},${efSearch}|> $q;
-    `, {
-      embedding: payload.queryEmbedding,
-    });
+    `,
+      {
+        embedding: payload.queryEmbedding,
+      },
+    );
   } else if (urls.length === 1) {
     // Single page search (original behavior)
-    results = await db.query<any[]>(`
+    results = await db.query<any[]>(
+      `
     LET $q = $embedding;
     SELECT 
       id,
@@ -434,15 +463,18 @@ async function searchHTMLChunks(payload: {
     WHERE 
       pageURL = $url
       AND embedding <|${payload.topK},${efSearch}|> $q;
-  `, {
-      url: urls[0],
-      embedding: payload.queryEmbedding,
-    });
+  `,
+      {
+        url: urls[0],
+        embedding: payload.queryEmbedding,
+      },
+    );
   } else {
     // Multiple pages - search each and merge results
     const allResults: any[] = [];
     for (const url of urls) {
-      const pageResults = await db.query<any[]>(`
+      const pageResults = await db.query<any[]>(
+        `
         LET $q = $embedding;
         SELECT 
           id,
@@ -456,16 +488,18 @@ async function searchHTMLChunks(payload: {
         WHERE 
           pageURL = $url
           AND embedding <|${payload.topK},${efSearch}|> $q;
-      `, {
-        url,
-    embedding: payload.queryEmbedding,
-  });
-      
+      `,
+        {
+          url,
+          embedding: payload.queryEmbedding,
+        },
+      );
+
       if (pageResults && pageResults.length > 1 && pageResults[1]) {
         allResults.push(...pageResults[1]);
       }
     }
-    
+
     // Sort by distance and take top K
     allResults.sort((a, b) => a.distance - b.distance);
     return allResults.slice(0, payload.topK).map((r: any) => ({
@@ -497,17 +531,13 @@ async function searchFormFields(payload: {
   if (!db) throw new Error('Database not connected');
 
   // Determine which pages to search
-  const urls = payload.pageURLs?.length 
-    ? payload.pageURLs 
-    : payload.pageURL 
-      ? [payload.pageURL] 
-      : null; // null means search all pages
+  const urls = payload.pageURLs?.length ? payload.pageURLs : payload.pageURL ? [payload.pageURL] : null; // null means search all pages
 
   log('[DB Worker] searchFormFields called:', { urls, topK: payload.topK });
 
   const groupTopK = Math.ceil(payload.topK / 10);
   const efSearch = Math.max(groupTopK * 3, 50);
-  
+
   const processResults = (groupResults: any[]): any[] => {
     if (!groupResults || groupResults.length < 2 || !groupResults[1] || groupResults[1].length === 0) {
       return [];
@@ -531,12 +561,13 @@ async function searchFormFields(payload: {
     }
     return allFields;
   };
-  
+
   log('[DB Worker] Executing form fields query...');
-  
+
   if (urls === null) {
     // Search all pages
-    const groupResults = await db.query<any[]>(`
+    const groupResults = await db.query<any[]>(
+      `
       LET $q = $embedding;
       SELECT 
         id,
@@ -546,14 +577,17 @@ async function searchFormFields(payload: {
         vector::distance::knn() AS distance
       FROM form_fields
       WHERE embedding <|${groupTopK},${efSearch}|> $q;
-    `, {
-      embedding: payload.queryEmbedding,
-    });
-    
+    `,
+      {
+        embedding: payload.queryEmbedding,
+      },
+    );
+
     return processResults(groupResults).slice(0, payload.topK);
   } else if (urls.length === 1) {
     // Single page search
-  const groupResults = await db.query<any[]>(`
+    const groupResults = await db.query<any[]>(
+      `
     LET $q = $embedding;
     SELECT 
       id,
@@ -565,18 +599,21 @@ async function searchFormFields(payload: {
     WHERE 
       pageURL = $url
       AND embedding <|${groupTopK},${efSearch}|> $q;
-  `, {
-      url: urls[0],
-    embedding: payload.queryEmbedding,
-  });
-  
-  log('[DB Worker] Query complete, results:', groupResults?.length);
+  `,
+      {
+        url: urls[0],
+        embedding: payload.queryEmbedding,
+      },
+    );
+
+    log('[DB Worker] Query complete, results:', groupResults?.length);
     return processResults(groupResults).slice(0, payload.topK);
   } else {
     // Multiple pages - search each and merge
     const allFields: any[] = [];
     for (const url of urls) {
-      const groupResults = await db.query<any[]>(`
+      const groupResults = await db.query<any[]>(
+        `
         LET $q = $embedding;
         SELECT 
           id,
@@ -588,14 +625,16 @@ async function searchFormFields(payload: {
         WHERE 
           pageURL = $url
           AND embedding <|${groupTopK},${efSearch}|> $q;
-      `, {
-        url,
-        embedding: payload.queryEmbedding,
-      });
-      
+      `,
+        {
+          url,
+          embedding: payload.queryEmbedding,
+        },
+      );
+
       allFields.push(...processResults(groupResults));
     }
-    
+
     // Sort by similarity and take top K
     allFields.sort((a, b) => b.similarity - a.similarity);
     return allFields.slice(0, payload.topK);
@@ -615,17 +654,13 @@ async function searchClickableElements(payload: {
   if (!db) throw new Error('Database not connected');
 
   // Determine which pages to search
-  const urls = payload.pageURLs?.length 
-    ? payload.pageURLs 
-    : payload.pageURL 
-      ? [payload.pageURL] 
-      : null; // null means search all pages
+  const urls = payload.pageURLs?.length ? payload.pageURLs : payload.pageURL ? [payload.pageURL] : null; // null means search all pages
 
   const groupTopK = Math.ceil(payload.topK / 10);
   const efSearch = Math.max(groupTopK * 3, 50);
-  
+
   const processResults = (groupResults: any[]): any[] => {
-  if (!groupResults || groupResults.length < 2 || !groupResults[1] || groupResults[1].length === 0) {
+    if (!groupResults || groupResults.length < 2 || !groupResults[1] || groupResults[1].length === 0) {
       return [];
     }
 
@@ -647,10 +682,11 @@ async function searchClickableElements(payload: {
     }
     return allElements;
   };
-  
+
   if (urls === null) {
     // Search all pages
-    const groupResults = await db.query<any[]>(`
+    const groupResults = await db.query<any[]>(
+      `
       LET $q = $embedding;
       SELECT 
         id,
@@ -660,14 +696,17 @@ async function searchClickableElements(payload: {
         vector::distance::knn() AS distance
       FROM clickable_elements
       WHERE embedding <|${groupTopK},${efSearch}|> $q;
-    `, {
-      embedding: payload.queryEmbedding,
-    });
-    
+    `,
+      {
+        embedding: payload.queryEmbedding,
+      },
+    );
+
     return processResults(groupResults).slice(0, payload.topK);
   } else if (urls.length === 1) {
     // Single page search
-    const groupResults = await db.query<any[]>(`
+    const groupResults = await db.query<any[]>(
+      `
       LET $q = $embedding;
       SELECT 
         id,
@@ -679,17 +718,20 @@ async function searchClickableElements(payload: {
       WHERE 
         pageURL = $url
         AND embedding <|${groupTopK},${efSearch}|> $q;
-    `, {
-      url: urls[0],
-      embedding: payload.queryEmbedding,
-    });
-    
+    `,
+      {
+        url: urls[0],
+        embedding: payload.queryEmbedding,
+      },
+    );
+
     return processResults(groupResults).slice(0, payload.topK);
   } else {
     // Multiple pages - search each and merge
     const allElements: any[] = [];
     for (const url of urls) {
-      const groupResults = await db.query<any[]>(`
+      const groupResults = await db.query<any[]>(
+        `
         LET $q = $embedding;
         SELECT 
           id,
@@ -701,14 +743,16 @@ async function searchClickableElements(payload: {
         WHERE 
           pageURL = $url
           AND embedding <|${groupTopK},${efSearch}|> $q;
-      `, {
-        url,
-        embedding: payload.queryEmbedding,
-      });
-      
+      `,
+        {
+          url,
+          embedding: payload.queryEmbedding,
+        },
+      );
+
       allElements.push(...processResults(groupResults));
     }
-    
+
     // Sort by similarity and take top K
     allElements.sort((a, b) => b.similarity - a.similarity);
     return allElements.slice(0, payload.topK);
@@ -728,11 +772,7 @@ async function fullTextSearchHTMLChunks(payload: {
   if (!db) throw new Error('Database not connected');
 
   // Determine which pages to search
-  const urls = payload.pageURLs?.length 
-    ? payload.pageURLs 
-    : payload.pageURL 
-      ? [payload.pageURL] 
-      : null; // null means search all pages
+  const urls = payload.pageURLs?.length ? payload.pageURLs : payload.pageURL ? [payload.pageURL] : null; // null means search all pages
 
   const processResults = (results: any[]): any[] => {
     if (results && results.length > 0 && results[0] && results[0].length > 0) {
@@ -746,7 +786,8 @@ async function fullTextSearchHTMLChunks(payload: {
 
   if (urls === null) {
     // Search all pages
-    const results = await db.query<any[]>(`
+    const results = await db.query<any[]>(
+      `
       SELECT 
         id,
         pageURL,
@@ -759,15 +800,18 @@ async function fullTextSearchHTMLChunks(payload: {
       WHERE text @1@ $query
       ORDER BY score DESC
       LIMIT $limit;
-    `, {
-      query: payload.query,
-      limit: payload.topK,
-    });
-    
+    `,
+      {
+        query: payload.query,
+        limit: payload.topK,
+      },
+    );
+
     return processResults(results);
   } else if (urls.length === 1) {
     // Single page search
-    const results = await db.query<any[]>(`
+    const results = await db.query<any[]>(
+      `
       SELECT 
         id,
         pageURL,
@@ -782,18 +826,21 @@ async function fullTextSearchHTMLChunks(payload: {
         AND text @1@ $query
       ORDER BY score DESC
       LIMIT $limit;
-    `, {
-      url: urls[0],
-      query: payload.query,
-      limit: payload.topK,
-    });
-    
+    `,
+      {
+        url: urls[0],
+        query: payload.query,
+        limit: payload.topK,
+      },
+    );
+
     return processResults(results);
   } else {
     // Multiple pages - search each and merge
     const allResults: any[] = [];
     for (const url of urls) {
-      const results = await db.query<any[]>(`
+      const results = await db.query<any[]>(
+        `
         SELECT 
           id,
           pageURL,
@@ -808,15 +855,17 @@ async function fullTextSearchHTMLChunks(payload: {
           AND text @1@ $query
         ORDER BY score DESC
         LIMIT $limit;
-      `, {
-        url,
-        query: payload.query,
-        limit: payload.topK,
-      });
-      
+      `,
+        {
+          url,
+          query: payload.query,
+          limit: payload.topK,
+        },
+      );
+
       allResults.push(...processResults(results));
     }
-    
+
     // Sort by score and take top K
     allResults.sort((a, b) => b.similarity - a.similarity);
     return allResults.slice(0, payload.topK);
@@ -843,11 +892,7 @@ async function hybridSearchHTMLChunks(payload: {
   const efSearch = Math.max(payload.topK * 3, 100);
 
   // Determine which pages to search
-  const urls = payload.pageURLs?.length 
-    ? payload.pageURLs 
-    : payload.pageURL 
-      ? [payload.pageURL] 
-      : null; // null means search all pages
+  const urls = payload.pageURLs?.length ? payload.pageURLs : payload.pageURL ? [payload.pageURL] : null; // null means search all pages
 
   // Get more results than needed for better merging
   const searchK = Math.min(payload.topK * 2, 20);
@@ -855,7 +900,7 @@ async function hybridSearchHTMLChunks(payload: {
   // Helper to merge vector and FTS results
   const mergeResults = (vectorResults: any[], ftsResults: any[]): any[] => {
     const vectorMap = new Map<string, any>();
-    
+
     // Process vector results
     if (vectorResults && vectorResults.length > 1 && vectorResults[1] && vectorResults[1].length > 0) {
       for (const r of vectorResults[1]) {
@@ -890,8 +935,8 @@ async function hybridSearchHTMLChunks(payload: {
     return Array.from(vectorMap.values()).map(r => {
       const normalizedSemantic = Math.max(0, Math.min(1, r.semanticScore));
       const normalizedKeyword = Math.max(0, Math.min(1, r.keywordScore / 10));
-      const combinedScore = (normalizedSemantic * semanticWeight) + (normalizedKeyword * keywordWeight);
-      
+      const combinedScore = normalizedSemantic * semanticWeight + normalizedKeyword * keywordWeight;
+
       return {
         ...r,
         similarity: combinedScore,
@@ -904,7 +949,8 @@ async function hybridSearchHTMLChunks(payload: {
   if (urls === null) {
     // Search all pages
     const [vectorResults, ftsResults] = await Promise.all([
-      db.query<any[]>(`
+      db.query<any[]>(
+        `
         LET $q = $embedding;
         SELECT 
           id,
@@ -916,10 +962,13 @@ async function hybridSearchHTMLChunks(payload: {
           vector::distance::knn() AS distance
         FROM html_chunks
         WHERE embedding <|${searchK},${efSearch}|> $q;
-      `, {
-        embedding: payload.queryEmbedding,
-      }),
-      db.query<any[]>(`
+      `,
+        {
+          embedding: payload.queryEmbedding,
+        },
+      ),
+      db.query<any[]>(
+        `
         SELECT 
           id,
           pageURL,
@@ -932,19 +981,22 @@ async function hybridSearchHTMLChunks(payload: {
         WHERE text @1@ $query
         ORDER BY score DESC
         LIMIT $limit;
-      `, {
-        query: payload.query,
-        limit: searchK,
-      })
+      `,
+        {
+          query: payload.query,
+          limit: searchK,
+        },
+      ),
     ]);
-    
+
     const combinedResults = mergeResults(vectorResults, ftsResults);
     combinedResults.sort((a, b) => b.similarity - a.similarity);
     return combinedResults.slice(0, payload.topK);
   } else if (urls.length === 1) {
     // Single page search (original behavior)
     const [vectorResults, ftsResults] = await Promise.all([
-      db.query<any[]>(`
+      db.query<any[]>(
+        `
         LET $q = $embedding;
         SELECT 
           id,
@@ -958,11 +1010,14 @@ async function hybridSearchHTMLChunks(payload: {
         WHERE 
           pageURL = $url
           AND embedding <|${searchK},${efSearch}|> $q;
-      `, {
-        url: urls[0],
-        embedding: payload.queryEmbedding,
-      }),
-      db.query<any[]>(`
+      `,
+        {
+          url: urls[0],
+          embedding: payload.queryEmbedding,
+        },
+      ),
+      db.query<any[]>(
+        `
         SELECT 
           id,
           pageURL,
@@ -977,23 +1032,26 @@ async function hybridSearchHTMLChunks(payload: {
           AND text @1@ $query
         ORDER BY score DESC
         LIMIT $limit;
-      `, {
-        url: urls[0],
-        query: payload.query,
-        limit: searchK,
-      })
+      `,
+        {
+          url: urls[0],
+          query: payload.query,
+          limit: searchK,
+        },
+      ),
     ]);
-    
+
     const combinedResults = mergeResults(vectorResults, ftsResults);
     combinedResults.sort((a, b) => b.similarity - a.similarity);
     return combinedResults.slice(0, payload.topK);
   } else {
     // Multiple pages - search each and merge all results
     const allResults: any[] = [];
-    
+
     for (const url of urls) {
       const [vectorResults, ftsResults] = await Promise.all([
-        db.query<any[]>(`
+        db.query<any[]>(
+          `
           LET $q = $embedding;
           SELECT 
             id,
@@ -1007,11 +1065,14 @@ async function hybridSearchHTMLChunks(payload: {
           WHERE 
             pageURL = $url
             AND embedding <|${searchK},${efSearch}|> $q;
-        `, {
-          url,
-          embedding: payload.queryEmbedding,
-        }),
-        db.query<any[]>(`
+        `,
+          {
+            url,
+            embedding: payload.queryEmbedding,
+          },
+        ),
+        db.query<any[]>(
+          `
           SELECT 
             id,
             pageURL,
@@ -1026,16 +1087,18 @@ async function hybridSearchHTMLChunks(payload: {
             AND text @1@ $query
           ORDER BY score DESC
           LIMIT $limit;
-        `, {
-          url,
-          query: payload.query,
-          limit: searchK,
-        })
+        `,
+          {
+            url,
+            query: payload.query,
+            limit: searchK,
+          },
+        ),
       ]);
-      
+
       allResults.push(...mergeResults(vectorResults, ftsResults));
     }
-    
+
     // Sort all results by combined score and return top K
     allResults.sort((a, b) => b.similarity - a.similarity);
     return allResults.slice(0, payload.topK);
@@ -1045,14 +1108,11 @@ async function hybridSearchHTMLChunks(payload: {
 /**
  * Full-text search for form fields
  */
-async function fullTextSearchFormFields(payload: {
-  pageURL: string;
-  query: string;
-  topK: number;
-}): Promise<any[]> {
+async function fullTextSearchFormFields(payload: { pageURL: string; query: string; topK: number }): Promise<any[]> {
   if (!db) throw new Error('Database not connected');
 
-  const groupResults = await db.query<any[]>(`
+  const groupResults = await db.query<any[]>(
+    `
     SELECT 
       id,
       pageURL,
@@ -1065,11 +1125,13 @@ async function fullTextSearchFormFields(payload: {
       AND fieldsJSON @1@ $query
     ORDER BY score DESC
     LIMIT $limit;
-  `, {
-    url: payload.pageURL,
-    query: payload.query,
-    limit: Math.ceil(payload.topK / 10),
-  });
+  `,
+    {
+      url: payload.pageURL,
+      query: payload.query,
+      limit: Math.ceil(payload.topK / 10),
+    },
+  );
 
   if (!groupResults || groupResults.length === 0 || !groupResults[0] || groupResults[0].length === 0) {
     return [];
@@ -1105,8 +1167,9 @@ async function fullTextSearchClickableElements(payload: {
   topK: number;
 }): Promise<any[]> {
   if (!db) throw new Error('Database not connected');
-  
-  const groupResults = await db.query<any[]>(`
+
+  const groupResults = await db.query<any[]>(
+    `
     SELECT 
       id,
       pageURL,
@@ -1119,11 +1182,13 @@ async function fullTextSearchClickableElements(payload: {
       AND elementsJSON @1@ $query
     ORDER BY score DESC
     LIMIT $limit;
-  `, {
-    url: payload.pageURL,
-    query: payload.query,
-    limit: Math.ceil(payload.topK / 10),
-  });
+  `,
+    {
+      url: payload.pageURL,
+      query: payload.query,
+      limit: Math.ceil(payload.topK / 10),
+    },
+  );
 
   if (!groupResults || groupResults.length === 0 || !groupResults[0] || groupResults[0].length === 0) {
     return [];
@@ -1153,10 +1218,7 @@ async function fullTextSearchClickableElements(payload: {
 /**
  * Execute custom query
  */
-async function executeQuery(payload: {
-  sql: string;
-  vars?: Record<string, unknown>;
-}): Promise<any> {
+async function executeQuery(payload: { sql: string; vars?: Record<string, unknown> }): Promise<any> {
   if (!db) throw new Error('Database not connected');
   return await db.query(payload.sql, payload.vars);
 }
@@ -1174,7 +1236,7 @@ async function handleMessage(message: WorkerMessage): Promise<WorkerResponse> {
         if (!initializationPromise) {
           initializationPromise = initializeDB(
             message.payload.dbName || 'embeddings_db',
-            message.payload.useMemory ?? true // Use nullish coalescing to ensure true is default
+            message.payload.useMemory ?? true, // Use nullish coalescing to ensure true is default
           ).then(() => initializeEmbeddingsSchema());
         }
         await initializationPromise;
@@ -1277,4 +1339,3 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
 // Signal that worker is ready
 log('[DB Worker] Worker initialized and ready');
 self.postMessage({ type: 'ready' });
-

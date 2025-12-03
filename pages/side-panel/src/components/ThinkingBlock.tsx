@@ -11,11 +11,11 @@ const manualOnlyCache: Map<string, boolean> = new Map();
 
 /**
  * ThinkingBlock Component
- * 
+ *
  * An accordion-style component that displays the AI agent's thinking process.
  * Used in markdown rendering to show agent's thought process.
  * Supports both <think> and <thinking> tags.
- * 
+ *
  * Features:
  * - Accordion (collapsible) interface
  * - Auto-opens when opening tag is encountered (streaming)
@@ -23,25 +23,29 @@ const manualOnlyCache: Map<string, boolean> = new Map();
  * - Theme-aware styling (light/dark modes)
  * - Lightbulb icon to indicate thinking state
  * - Smooth expand/collapse animations
- * 
+ *
  * @param children - Content to display within the thinking block
  * @param isComplete - Whether the thinking tag has its closing tag
  * @param instanceId - Unique ID to persist open state across remounts
- * 
+ *
  * @example
  * ```tsx
  * <think>Analyzing the page structure...</think>
  * <thinking>Processing user request...</thinking>
  * ```
  */
-export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolean; instanceId?: string }> = ({ children, isComplete = false, instanceId }) => {
+export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolean; instanceId?: string }> = ({
+  children,
+  isComplete = false,
+  instanceId,
+}) => {
   const { isLight } = useStorage(themeStorage);
-  
+
   // Generate a stable cache key from instanceId or fallback to content hash
   // Use first 100 chars of content as a stable prefix (content grows during streaming)
   const contentPrefix = typeof children === 'string' ? children.slice(0, 100) : '';
   const cacheKey = instanceId ?? `thinking-${contentPrefix}`;
-  
+
   // Initialize from cache if available, otherwise use default behavior
   const [isOpen, setIsOpen] = useState(() => {
     if (openStateCache.has(cacheKey)) {
@@ -51,14 +55,14 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
   });
   const [isHovered, setIsHovered] = useState(false);
   const autoCloseTimerRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   // Initialize manualOnly from cache
   const manualOnlyRef = useRef(manualOnlyCache.get(cacheKey) ?? false);
   const prevCompleteRef = useRef<boolean>(false);
   const myIdRef = useRef<number>(0);
   const [isLatest, setIsLatest] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
-  
+
   // Sync open state to cache whenever it changes
   useEffect(() => {
     openStateCache.set(cacheKey, isOpen);
@@ -137,11 +141,11 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
     const element = contentRef.current;
     let lastScrollTime = 0;
     const SCROLL_THROTTLE_MS = 50; // Throttle to max once per 50ms for smooth scrolling
-    
+
     // Throttled scroll function - immediate first scroll, then max once per 50ms
     const scrollToBottom = () => {
       const now = Date.now();
-      
+
       // Allow scroll if enough time has passed since last scroll
       if (now - lastScrollTime >= SCROLL_THROTTLE_MS) {
         lastScrollTime = now;
@@ -152,7 +156,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
         });
       }
     };
-    
+
     // Scroll immediately on mount
     scrollToBottom();
 
@@ -172,7 +176,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
       observer.disconnect();
     };
   }, [isComplete, isOpen]);
-  
+
   const toggleAccordion = () => {
     setIsOpen(!isOpen);
     // Enter manual-only mode after any user interaction
@@ -183,29 +187,29 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
       autoCloseTimerRef.current = null;
     }
   };
-  
+
   // Light sanitization: remove consecutive newlines and trim content when tag is complete
   const sanitizeContent = useMemo(() => {
     if (typeof children !== 'string') {
       return children;
-      }
-    
+    }
+
     let sanitized = children;
-    
+
     // Apply sanitization only when closing tag is received
     if (isComplete) {
       // Normalize different line break types (Windows \r\n, Mac \r, Unix \n) to \n
       sanitized = sanitized.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      
+
       // Light sanitization: Only remove excessive newlines (3+), keep double newlines
       // This preserves markdown list formatting (which needs double newlines) while
       // removing excessive blank lines
       sanitized = sanitized.replace(/\n{3,}/g, '\n\n');
-      
+
       // Trim leading and trailing whitespace (including newlines)
       sanitized = sanitized.trim();
     }
-    
+
     return sanitized;
   }, [children, isComplete]);
 
@@ -237,7 +241,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
         }}
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => {
+        onKeyDown={e => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             toggleAccordion();
@@ -246,28 +250,26 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
         aria-expanded={isOpen}
         aria-controls="thinking-content">
         {/* Lightbulb icon indicating thinking/processing */}
-        <svg 
+        <svg
           width="14"
           height="14"
           viewBox="0 0 24 24"
-          fill="none" 
+          fill="none"
           stroke="currentColor"
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
-          style={{ 
-            flexShrink: 0, 
+          style={{
+            flexShrink: 0,
             marginRight: 6,
-            color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+            color: isLight ? '#4b5563' : '#6b7280', // gray-600 for light, gray-500 for dark
           }}>
           <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
         </svg>
-        
+
         {/* Title */}
-        <span style={{ flex: 1 }}>
-          {isComplete ? 'Thought' : 'Thinking...'}
-        </span>
-        
+        <span style={{ flex: 1 }}>{isComplete ? 'Thought' : 'Thinking...'}</span>
+
         {/* Chevron icon for accordion state - only visible on hover */}
         <svg
           width="12"
@@ -287,7 +289,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
           <polyline points="9 18 15 12 9 6" />
         </svg>
       </div>
-      
+
       {/* Accordion Content - Collapsible with auto-scroll during streaming */}
       <div
         id="thinking-content"
@@ -308,12 +310,11 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
           }}>
           <div
             ref={contentRef}
-            className={`text-xs mb-4 opacity-80 ${
+            className={`mb-4 text-xs opacity-80 ${
               isComplete
-                ? 'overflow-y-auto max-h-40 overscroll-contain session-tabs-scroll'
-                : 'overflow-y-auto max-h-[75vh] overscroll-contain session-tabs-scroll'
-            }`}
-          >
+                ? 'session-tabs-scroll max-h-40 overflow-y-auto overscroll-contain'
+                : 'session-tabs-scroll max-h-[75vh] overflow-y-auto overscroll-contain'
+            }`}>
             <div className="thinking-block-content">{renderedContent}</div>
           </div>
         </div>
@@ -321,4 +322,3 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
     </div>
   );
 };
-

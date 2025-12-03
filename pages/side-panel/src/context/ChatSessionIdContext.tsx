@@ -15,11 +15,7 @@ export const ChatSessionIdProvider: React.FC<{
   sessionId: string;
   children: React.ReactNode;
 }> = ({ sessionId, children }) => {
-  return (
-    <ChatSessionIdContext.Provider value={{ sessionId }}>
-      {children}
-    </ChatSessionIdContext.Provider>
-  );
+  return <ChatSessionIdContext.Provider value={{ sessionId }}>{children}</ChatSessionIdContext.Provider>;
 };
 
 export const useChatSessionId = (): string => {
@@ -38,4 +34,3 @@ export const useChatSessionIdSafe = (): string | null => {
   const context = useContext(ChatSessionIdContext);
   return context?.sessionId ?? null;
 };
-

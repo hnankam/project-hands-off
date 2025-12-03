@@ -2,10 +2,10 @@
  * ================================================================================
  * ChatInner Component
  * ================================================================================
- * 
+ *
  * Core chat interface component that integrates CopilotKit for AI agent interactions.
  * Handles all agent actions, semantic search, message management, and UI state.
- * 
+ *
  * Key Responsibilities:
  * - AI agent communication via CopilotKit hooks
  * - Semantic search over page content (HTML, forms, clickable elements)
@@ -13,13 +13,13 @@
  * - Message sanitization and persistence
  * - Progress bar and agent state management
  * - Context menu integration
- * 
+ *
  * Architecture:
  * - Custom hooks for state management (useMessageSanitization, useContextMenuPrefill, etc.)
  * - CopilotKit actions for agent capabilities
  * - SemanticSearchManager for embeddings-based search
  * - Message persistence via storage layer
- * 
+ *
  * @module ChatInner
  * ================================================================================
  */
@@ -82,14 +82,14 @@ import {
   applySanitizationIfChanged,
   filterValidMessages,
   findLastMessageByRole,
-  computeMessagesSignature
+  computeMessagesSignature,
 } from '../utils/sanitizationHelper';
 
 // Constants
 import { CHAT_SUGGESTIONS_INSTRUCTIONS, DEFAULT_MAX_SUGGESTIONS } from '../constants/chatSuggestions';
 
 // CopilotKit Action Creators
-import { 
+import {
   createSearchPageContentAction,
   createSearchFormDataAction,
   createSearchDOMUpdatesAction,
@@ -119,10 +119,10 @@ import {
 import { createTakeScreenshotAction } from '../actions/copilot/screenshotActions';
 import { createGenerateImagesAction } from '../actions/copilot/imageActions';
 import { createWaitAction, createConfirmActionHumanInTheLoop } from '../actions/copilot/utilityActions';
-import { 
-  createWebSearchRender, 
-  createCodeExecutionRender, 
-  createUrlContextRender 
+import {
+  createWebSearchRender,
+  createCodeExecutionRender,
+  createUrlContextRender,
 } from '../actions/copilot/builtinToolActions';
 
 // Types & Libraries
@@ -146,12 +146,11 @@ const DefaultToolIcon: React.FC<{ isLight: boolean }> = ({ isLight }) => (
     strokeWidth="2"
     strokeLinecap="round"
     strokeLinejoin="round"
-    style={{ 
-      flexShrink: 0, 
+    style={{
+      flexShrink: 0,
       marginRight: 6,
-      color: isLight ? '#4b5563' : '#6b7280'
-    }}
-  >
+      color: isLight ? '#4b5563' : '#6b7280',
+    }}>
     <path
       stroke="currentColor"
       fill="none"
@@ -247,7 +246,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   const selectedPageURLsRef = useRef(selectedPageURLs);
   const currentPageURLRef = useRef(currentPageURL);
   const onPagesChangeRef = useRef(onPagesChange);
-  
+
   // Keep refs updated with latest values
   selectedPageURLsRef.current = selectedPageURLs;
   currentPageURLRef.current = currentPageURL;
@@ -276,40 +275,29 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ================================================================================
   // COPILOTKIT HOOKS
   // ================================================================================
-  
-  const {
-    messages,
-    setMessages,
-    isLoading,
-    generateSuggestions,
-    reloadMessages,
-    reset,
-    stopGeneration,
-  } = useCopilotChatHeadless_c();
-  
+
+  const { messages, setMessages, isLoading, generateSuggestions, reloadMessages, reset, stopGeneration } =
+    useCopilotChatHeadless_c();
+
   // Track streaming state to avoid restoring messages after edits/deletes
   const wasStreamingRef = useRef(false);
-  
+
   // Loading state ref for callbacks
   const isLoadingRef = useRef(false);
 
   // ================================================================================
   // CUSTOM HOOKS
   // ================================================================================
-  
+
   // Note: Scroll management is handled by CustomMessages via Virtua's VList API
   // No duplicate scroll logic needed here
-  
+
   // Agent state management (extracted to hook)
-  const {
-    dynamicAgentState,
-    setDynamicAgentState,
-    latestAssistantMessageIdRef
-  } = useAgentStateManagement({
+  const { dynamicAgentState, setDynamicAgentState, latestAssistantMessageIdRef } = useAgentStateManagement({
     sessionId,
     messages,
     initialAgentStepState,
-    onAgentStepStateChange
+    onAgentStepStateChange,
   });
 
   // Shared agent state for maintaining agent context across interactions
@@ -332,14 +320,14 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     setIsAgentLoading(isLoading);
     isLoadingRef.current = isLoading;
   }, [isLoading, setIsAgentLoading]);
-  
+
   // Expose reset function via ref
   useEffect(() => {
     if (resetChatRef) {
       resetChatRef.current = reset;
     }
   }, [reset, resetChatRef]);
-  
+
   // Clear streaming flag when messages are cleared
   useEffect(() => {
     if (messages.length === 0) {
@@ -361,9 +349,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     try {
       const data = saveMessagesRef?.current ? saveMessagesRef.current() : null;
       const sanitizedMessages =
-        (data && Array.isArray(data.allMessages) && data.allMessages.length >= 0
-          ? data.allMessages
-          : messages) ?? [];
+        (data && Array.isArray(data.allMessages) && data.allMessages.length >= 0 ? data.allMessages : messages) ?? [];
 
       if (sanitizedMessages.length > 0) {
         void saveMessagesToStorage(sanitizedMessages as unknown[]);
@@ -374,16 +360,16 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
       debug.warn?.('[ChatInner] Failed to persist messages after deletion:', error);
     }
   }, [messages, isLoading, saveMessagesRef, saveMessagesToStorage, sessionId]);
-  
+
   // Comprehensive ref cleanup on session change
   useEffect(() => {
     debug.log('[ChatInner] Session changed, cleaning up refs');
-    
+
     cachedSanitizedRef.current = null;
     wasStreamingRef.current = false;
     pageDataRef.current = { embeddings: null, pageContent: null };
     previousMessageCountRef.current = 0;
-    
+
     debug.log('[ChatInner] Ref cleanup complete');
   }, [sessionId]);
 
@@ -405,7 +391,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     } else {
       document.body.classList.remove('hide-copilot-suggestions');
     }
-    
+
     return () => {
       document.body.classList.remove('hide-copilot-suggestions');
     };
@@ -414,16 +400,12 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ========================================
   // MESSAGE SANITIZATION & FILTERING
   // ========================================
-  const { 
-    filteredMessages, 
-    sanitizeMessages, 
-    cachedSanitizedRef 
-  } = useMessageSanitization(
+  const { filteredMessages, sanitizeMessages, cachedSanitizedRef } = useMessageSanitization(
     messages,
     setMessages,
     saveMessagesRef,
     restoreMessagesRef,
-    setHeadlessMessagesCount
+    setHeadlessMessagesCount,
   );
 
   // Update pageDataRef when embeddings or content changes
@@ -477,14 +459,15 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   const defaultToolRender = useCallback(
     (props: { name?: string; status?: string; args?: Record<string, unknown>; result?: unknown; error?: unknown }) => {
       const { name, status, args, result } = props;
-      const error = props?.error ?? (typeof result === 'object' && result ? (result as Record<string, unknown>)?.error : undefined);
-      
+      const error =
+        props?.error ?? (typeof result === 'object' && result ? (result as Record<string, unknown>)?.error : undefined);
+
       const formatName = (value: string) => {
         const cleaned = value
           .replace(/^(mcp_|builtin_)/, '')
           .split(/[_-]/)
           .filter(Boolean)
-          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
           .join(' ');
         return cleaned || value || 'Tool';
       };
@@ -504,9 +487,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
       const messages = {
         pending: `Starting ${baseMessage}...`,
         inProgress: `${baseMessage} in progress...`,
-        complete: error
-          ? `${displayName} failed: ${clipText(String(error), 60)}`
-          : `${displayName} complete`,
+        complete: error ? `${displayName} failed: ${clipText(String(error), 60)}` : `${displayName} complete`,
       };
 
       return (
@@ -522,7 +503,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         />
       );
     },
-    [clipText, isLight]
+    [clipText, isLight],
   );
 
   useDefaultTool({ render: defaultToolRender }, [defaultToolRender]);
@@ -530,86 +511,133 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ================================================================================
   // COPILOTKIT ACTIONS
   // ================================================================================
-  
-  const actionDeps = useMemo(() => ({
-    searchManager,
-    isLight,
-    clipText,
-    yesNo,
-    currentPageContent,
-    pageDataRef,
-    themeColor,
-    selectedPageURLs,
-  }), [searchManager, isLight, clipText, yesNo, currentPageContent, themeColor, selectedPageURLs]);
-  
+
+  const actionDeps = useMemo(
+    () => ({
+      searchManager,
+      isLight,
+      clipText,
+      yesNo,
+      currentPageContent,
+      pageDataRef,
+      themeColor,
+      selectedPageURLs,
+    }),
+    [searchManager, isLight, clipText, yesNo, currentPageContent, themeColor, selectedPageURLs],
+  );
+
   // Search Actions
   useFrontendTool(createSearchPageContentAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
   useFrontendTool(createSearchFormDataAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
   useFrontendTool(createSearchDOMUpdatesAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
-  useFrontendTool(createSearchClickableElementsAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
+  useFrontendTool(createSearchClickableElementsAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [
+    actionDeps,
+  ]);
 
   // Data Retrieval Actions
   const retrievalDeps = useMemo(() => ({ currentPageContent, isLight }), [currentPageContent, isLight]);
-  useFrontendTool(createGetHtmlChunksByRangeAction(retrievalDeps) as Parameters<typeof useFrontendTool>[0], [retrievalDeps]);
-  useFrontendTool(createGetFormChunksByRangeAction(retrievalDeps) as Parameters<typeof useFrontendTool>[0], [retrievalDeps]);
-  useFrontendTool(createGetClickableChunksByRangeAction(retrievalDeps) as Parameters<typeof useFrontendTool>[0], [retrievalDeps]);
+  useFrontendTool(createGetHtmlChunksByRangeAction(retrievalDeps) as Parameters<typeof useFrontendTool>[0], [
+    retrievalDeps,
+  ]);
+  useFrontendTool(createGetFormChunksByRangeAction(retrievalDeps) as Parameters<typeof useFrontendTool>[0], [
+    retrievalDeps,
+  ]);
+  useFrontendTool(createGetClickableChunksByRangeAction(retrievalDeps) as Parameters<typeof useFrontendTool>[0], [
+    retrievalDeps,
+  ]);
 
   // DOM Manipulation Actions
-  const domDeps = useMemo(() => ({ isLight, clipText, pageDataRef, triggerManualRefresh }), [isLight, clipText, triggerManualRefresh]);
-  useFrontendTool(createMoveCursorToElementAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [domDeps]);
-  useFrontendTool(createRefreshPageContentAction({ isLight, pageDataRef, triggerManualRefresh }) as Parameters<typeof useFrontendTool>[0], [domDeps]);
+  const domDeps = useMemo(
+    () => ({ isLight, clipText, pageDataRef, triggerManualRefresh }),
+    [isLight, clipText, triggerManualRefresh],
+  );
+  useFrontendTool(createMoveCursorToElementAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [
+    domDeps,
+  ]);
+  useFrontendTool(
+    createRefreshPageContentAction({ isLight, pageDataRef, triggerManualRefresh }) as Parameters<
+      typeof useFrontendTool
+    >[0],
+    [domDeps],
+  );
   useFrontendTool(createCleanupExtensionUIAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
   useFrontendTool(createClickElementAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [domDeps]);
-  useFrontendTool(createVerifySelectorAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [domDeps]);
+  useFrontendTool(createVerifySelectorAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [
+    domDeps,
+  ]);
   useFrontendTool(createGetSelectorAtPointAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
   useFrontendTool(createGetSelectorsAtPointsAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
-  useFrontendTool(createSendKeystrokesAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [domDeps]);
+  useFrontendTool(createSendKeystrokesAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [
+    domDeps,
+  ]);
 
   // Form Actions
-  useFrontendTool(createInputDataAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [isLight, clipText]);
+  useFrontendTool(createInputDataAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [
+    isLight,
+    clipText,
+  ]);
 
   // Navigation Actions
-  useFrontendTool(createOpenNewTabAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [isLight, clipText]);
-  useFrontendTool(createScrollAction({ isLight, clipText, yesNo }) as Parameters<typeof useFrontendTool>[0], [isLight, clipText, yesNo]);
-  useFrontendTool(createDragAndDropAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [isLight, clipText]);
+  useFrontendTool(createOpenNewTabAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [
+    isLight,
+    clipText,
+  ]);
+  useFrontendTool(createScrollAction({ isLight, clipText, yesNo }) as Parameters<typeof useFrontendTool>[0], [
+    isLight,
+    clipText,
+    yesNo,
+  ]);
+  useFrontendTool(createDragAndDropAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [
+    isLight,
+    clipText,
+  ]);
 
   // Screenshot Actions
   useFrontendTool(createTakeScreenshotAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
 
   // Image Generation Actions
-  useRenderToolCall(createGenerateImagesAction({ themeColor }) as Parameters<typeof useRenderToolCall>[0], [themeColor]);
+  useRenderToolCall(createGenerateImagesAction({ themeColor }) as Parameters<typeof useRenderToolCall>[0], [
+    themeColor,
+  ]);
 
   // Builtin Tool Renders
-  useRenderToolCall(createWebSearchRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [isLight, clipText]);
-  useRenderToolCall(createCodeExecutionRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [isLight, clipText]);
-  useRenderToolCall(createUrlContextRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [isLight, clipText]);
+  useRenderToolCall(createWebSearchRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [
+    isLight,
+    clipText,
+  ]);
+  useRenderToolCall(createCodeExecutionRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [
+    isLight,
+    clipText,
+  ]);
+  useRenderToolCall(createUrlContextRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [
+    isLight,
+    clipText,
+  ]);
 
   // Utility Actions
   useFrontendTool(createWaitAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
-  
+
   // Human in the Loop
   useHumanInTheLoop(createConfirmActionHumanInTheLoop({ isLight }) as Parameters<typeof useHumanInTheLoop>[0]);
 
   // ================================================================================
   // AGENT STATE RENDERING
   // ================================================================================
-  
+
   useCoAgentStateRender<AgentStepState>({
     name: 'dynamic_agent',
     render: ({ state: scopedState }) => {
       if (!scopedState?.steps || scopedState.steps.length === 0) {
         return null;
       }
-      
+
       if (scopedState.sessionId && scopedState.sessionId !== sessionId) {
         return null;
       }
 
       // Add sessionId if missing
-      const stateWithSession = scopedState.sessionId 
-        ? scopedState 
-        : { ...scopedState, sessionId };
-      
+      const stateWithSession = scopedState.sessionId ? scopedState : { ...scopedState, sessionId };
+
       return (
         <div
           data-task-progress="true"
@@ -626,9 +654,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
             ['--copilot-kit-separator-color' as string]: isLight ? '#e5e7eb' : '#374151',
             ['--copilot-kit-border-color' as string]: isLight ? '#e5e7eb' : '#374151',
             ['--task-progress-rendered-border-color' as string]: isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151',
-          }}
-        >
-          <TaskProgressCard 
+          }}>
+          <TaskProgressCard
             state={stateWithSession}
             setState={setDynamicAgentState}
             isCollapsed={true}
@@ -648,31 +675,34 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ================================================================================
   // Note: useCopilotChatSuggestions must be called unconditionally per React rules.
   // We control behavior via the disabled parameter.
-    useCopilotChatSuggestions({
+  useCopilotChatSuggestions({
     instructions: showSuggestions ? CHAT_SUGGESTIONS_INSTRUCTIONS : '',
     minSuggestions: showSuggestions ? 2 : 0,
     maxSuggestions: showSuggestions ? DEFAULT_MAX_SUGGESTIONS : 0,
-    });
+  });
 
   // ================================================================================
   // PROGRESS BAR STATE
   // ================================================================================
-  
+
   const hasProgressBar = dynamicAgentState.steps && dynamicAgentState.steps.length > 0;
   const { showProgressBar, toggleProgressBar: toggleProgressBarFn } = useProgressBarState(
     hasProgressBar,
-    onProgressBarStateChange
+    onProgressBarStateChange,
   );
 
   // ================================================================================
   // COMPONENT CONFIGURATION
   // ================================================================================
-  
-  const customMarkdownTagRenderers = useMemo(() => ({
-    think: showThoughtBlocks ? ThinkingBlock : EmptyThinkingBlock,
-    thinking: showThoughtBlocks ? ThinkingBlock : EmptyThinkingBlock,
-    mermaid: MermaidBlock,
-  }), [showThoughtBlocks]);
+
+  const customMarkdownTagRenderers = useMemo(
+    () => ({
+      think: showThoughtBlocks ? ThinkingBlock : EmptyThinkingBlock,
+      thinking: showThoughtBlocks ? ThinkingBlock : EmptyThinkingBlock,
+      mermaid: MermaidBlock,
+    }),
+    [showThoughtBlocks],
+  );
 
   // Scoped Input component - receives InputProps from CopilotChat
   // NOTE: selectedPageURLs, onPagesChange, currentPageURL are accessed via refs to prevent
@@ -689,216 +719,244 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         sessionId={sessionId}
         onToggleTaskProgress={toggleProgressBarFn}
         selectedPageURLs={selectedPageURLsRef.current}
-        onSelectedPageURLsChange={(urls) => onPagesChangeRef.current?.(urls)}
+        onSelectedPageURLsChange={urls => onPagesChangeRef.current?.(urls)}
         currentPageURL={currentPageURLRef.current}
       />
     );
     return Comp;
-  }, [sessionId, isAgentAndModelSelected, dynamicAgentState, setDynamicAgentState, showProgressBar, toggleProgressBarFn]);
+  }, [
+    sessionId,
+    isAgentAndModelSelected,
+    dynamicAgentState,
+    setDynamicAgentState,
+    showProgressBar,
+    toggleProgressBarFn,
+  ]);
 
   // ================================================================================
   // EVENT HANDLERS
   // ================================================================================
-    
+
   /**
    * Handle message submission
-   * 
+   *
    * NOTE: Sanitization disabled on submit - only runs when streaming ends
    * Auto-save is still active to persist user messages immediately
    */
-  const handleSubmitMessage = useCallback((message: string) => {
-    debug.log('[ChatInner] User submitted message');
-    
-    // COMMENTED OUT: Sanitization on submit - only sanitize when streaming ends
-    // try {
-    //   const current = messages || [];
-    //   const result = runCachedSanitization(current, cachedSanitizedRef, sanitizeMessages as (msgs: unknown[]) => { messages: unknown[]; hasChanges: boolean });
-    //   
-    //   if (result.hasChanges) {
-    //     const currentSignature = computeMessagesSignature(current);
-    //     applySanitizationIfChanged(result, currentSignature, setMessages);
-    //   }
-    // } catch (e) {
-    //   debug.warn?.('[ChatInner] onSubmit sanitization skipped:', e);
-    // }
-    
-    // ACTIVE: Auto-save shortly after submit (without sanitization)
-    setTimeout(() => {
-      try {
-        const fn = saveMessagesRef?.current;
-        if (!fn) return;
-        const data = fn();
-        const all = (data && data.allMessages) || [];
-        if (all.length > 0) {
-          void saveMessagesToStorage(all as unknown[]);
+  const handleSubmitMessage = useCallback(
+    (message: string) => {
+      debug.log('[ChatInner] User submitted message');
+
+      // COMMENTED OUT: Sanitization on submit - only sanitize when streaming ends
+      // try {
+      //   const current = messages || [];
+      //   const result = runCachedSanitization(current, cachedSanitizedRef, sanitizeMessages as (msgs: unknown[]) => { messages: unknown[]; hasChanges: boolean });
+      //
+      //   if (result.hasChanges) {
+      //     const currentSignature = computeMessagesSignature(current);
+      //     applySanitizationIfChanged(result, currentSignature, setMessages);
+      //   }
+      // } catch (e) {
+      //   debug.warn?.('[ChatInner] onSubmit sanitization skipped:', e);
+      // }
+
+      // ACTIVE: Auto-save shortly after submit (without sanitization)
+      setTimeout(() => {
+        try {
+          const fn = saveMessagesRef?.current;
+          if (!fn) return;
+          const data = fn();
+          const all = (data && data.allMessages) || [];
+          if (all.length > 0) {
+            void saveMessagesToStorage(all as unknown[]);
+          }
+        } catch (e) {
+          debug.warn?.('[ChatInner] Auto-save after submit failed:', e);
         }
-      } catch (e) {
-        debug.warn?.('[ChatInner] Auto-save after submit failed:', e);
-      }
-    }, 100);
-  }, [saveMessagesRef, saveMessagesToStorage]);
+      }, 100);
+    },
+    [saveMessagesRef, saveMessagesToStorage],
+  );
 
   /**
    * Handle progress state changes
    */
-  const handleInProgress = useCallback(async (inProgress: boolean) => {
-            if (inProgress) {
-              wasStreamingRef.current = true;
-              return;
-            }
-            
-            if (!wasStreamingRef.current) {
-              return;
-            }
-            
-            wasStreamingRef.current = false;
-            
-            try {
-              const fn = saveMessagesRef?.current;
-              if (!fn) return;
-              
-              const data = fn();
-      const all = (data && data.allMessages) || [];
-      
-      const result = runCachedSanitization(all, cachedSanitizedRef, sanitizeMessages as (msgs: unknown[]) => { messages: unknown[]; hasChanges: boolean });
-      
-              if (result.hasChanges) {
-        const currentSignature = computeMessagesSignature(all);
-        applySanitizationIfChanged(result, currentSignature, setMessages);
-                }
-      
-      if (all.length > 0) {
-        void saveMessagesToStorage(all as unknown[]);
-              }
-              
-      // Generate suggestions after streaming stops
-              if (showSuggestions && generateSuggestions) {
-        debug.log('[ChatInner] Generating suggestions...');
-                try {
-                  await Promise.resolve(generateSuggestions());
-                } catch (err) {
-          debug.warn?.('[ChatInner] Failed to generate suggestions:', err);
-                }
-              }
-            } catch (e) {
-      debug.warn?.('[ChatInner] Auto-save on stop failed:', e);
-            }
-  }, [saveMessagesRef, saveMessagesToStorage, showSuggestions, generateSuggestions, cachedSanitizedRef, sanitizeMessages, setMessages]);
+  const handleInProgress = useCallback(
+    async (inProgress: boolean) => {
+      if (inProgress) {
+        wasStreamingRef.current = true;
+        return;
+      }
+
+      if (!wasStreamingRef.current) {
+        return;
+      }
+
+      wasStreamingRef.current = false;
+
+      try {
+        const fn = saveMessagesRef?.current;
+        if (!fn) return;
+
+        const data = fn();
+        const all = (data && data.allMessages) || [];
+
+        const result = runCachedSanitization(
+          all,
+          cachedSanitizedRef,
+          sanitizeMessages as (msgs: unknown[]) => { messages: unknown[]; hasChanges: boolean },
+        );
+
+        if (result.hasChanges) {
+          const currentSignature = computeMessagesSignature(all);
+          applySanitizationIfChanged(result, currentSignature, setMessages);
+        }
+
+        if (all.length > 0) {
+          void saveMessagesToStorage(all as unknown[]);
+        }
+
+        // Generate suggestions after streaming stops
+        if (showSuggestions && generateSuggestions) {
+          debug.log('[ChatInner] Generating suggestions...');
+          try {
+            await Promise.resolve(generateSuggestions());
+          } catch (err) {
+            debug.warn?.('[ChatInner] Failed to generate suggestions:', err);
+          }
+        }
+      } catch (e) {
+        debug.warn?.('[ChatInner] Auto-save on stop failed:', e);
+      }
+    },
+    [
+      saveMessagesRef,
+      saveMessagesToStorage,
+      showSuggestions,
+      generateSuggestions,
+      cachedSanitizedRef,
+      sanitizeMessages,
+      setMessages,
+    ],
+  );
 
   /**
    * Handle error display with retry functionality
    */
-  const renderError = useCallback((err: { message: string; operation?: string }) => {
-    const { message, operation } = err;
-            const error = new Error(operation ? `${operation}: ${message}` : message);
-            error.name = operation || 'Error';
-            
-            const handleRetry = () => {
-      debug.log('[ChatInner] Retrying...');
+  const renderError = useCallback(
+    (err: { message: string; operation?: string }) => {
+      const { message, operation } = err;
+      const error = new Error(operation ? `${operation}: ${message}` : message);
+      error.name = operation || 'Error';
 
-              const currentMessages = messages || [];
-      let sanitizedMessagesArr: unknown[] = currentMessages;
+      const handleRetry = () => {
+        debug.log('[ChatInner] Retrying...');
 
-              try {
-        const result = runCachedSanitization(currentMessages, cachedSanitizedRef, sanitizeMessages as (msgs: unknown[]) => { messages: unknown[]; hasChanges: boolean });
-                  sanitizedMessagesArr = result.messages;
+        const currentMessages = messages || [];
+        let sanitizedMessagesArr: unknown[] = currentMessages;
 
-                  if (result.hasChanges) {
-          const currentSignature = computeMessagesSignature(currentMessages);
-                    const newSignature = computeMessagesSignature(result.messages);
-          if (newSignature !== currentSignature) {
-            setMessages(result.messages as typeof messages);
-                  }
-                }
-              } catch (err) {
-        debug.warn?.('[ChatInner] Failed to sanitize before retry:', err);
-              }
+        try {
+          const result = runCachedSanitization(
+            currentMessages,
+            cachedSanitizedRef,
+            sanitizeMessages as (msgs: unknown[]) => { messages: unknown[]; hasChanges: boolean },
+          );
+          sanitizedMessagesArr = result.messages;
 
-      const validMessages = filterValidMessages(sanitizedMessagesArr);
-              
-              if (validMessages.length === 0) {
-        debug.error('[ChatInner] No valid messages to reload');
-                return;
-              }
-              
-      const lastAssistant = findLastMessageByRole(validMessages, 'assistant');
-      if (lastAssistant?.id) {
-        debug.log('[ChatInner] Reloading from assistant message:', lastAssistant.id);
-        reloadMessages(lastAssistant.id);
-              } else {
-        const lastUser = findLastMessageByRole(validMessages, 'user');
-        if (lastUser?.id) {
-          debug.log('[ChatInner] Reloading from user message:', lastUser.id);
-          reloadMessages(lastUser.id);
-                } else {
-          debug.warn?.('[ChatInner] No valid message found to reload');
-                }
-              }
-            };
-            
-            return (
-              <ChatErrorDisplay
-                error={error}
-        retry={handleRetry}
-                isLight={isLight}
-                autoDismissMs={15000}
-              />
-            );
-  }, [isLight, reloadMessages, messages, sanitizeMessages, cachedSanitizedRef, setMessages]);
+          if (result.hasChanges) {
+            const currentSignature = computeMessagesSignature(currentMessages);
+            const newSignature = computeMessagesSignature(result.messages);
+            if (newSignature !== currentSignature) {
+              setMessages(result.messages as typeof messages);
+            }
+          }
+        } catch (err) {
+          debug.warn?.('[ChatInner] Failed to sanitize before retry:', err);
+        }
+
+        const validMessages = filterValidMessages(sanitizedMessagesArr);
+
+        if (validMessages.length === 0) {
+          debug.error('[ChatInner] No valid messages to reload');
+          return;
+        }
+
+        const lastAssistant = findLastMessageByRole(validMessages, 'assistant');
+        if (lastAssistant?.id) {
+          debug.log('[ChatInner] Reloading from assistant message:', lastAssistant.id);
+          reloadMessages(lastAssistant.id);
+        } else {
+          const lastUser = findLastMessageByRole(validMessages, 'user');
+          if (lastUser?.id) {
+            debug.log('[ChatInner] Reloading from user message:', lastUser.id);
+            reloadMessages(lastUser.id);
+          } else {
+            debug.warn?.('[ChatInner] No valid message found to reload');
+          }
+        }
+      };
+
+      return <ChatErrorDisplay error={error} retry={handleRetry} isLight={isLight} autoDismissMs={15000} />;
+    },
+    [isLight, reloadMessages, messages, sanitizeMessages, cachedSanitizedRef, setMessages],
+  );
 
   /**
    * Custom Messages wrapper - receives MessagesProps from CopilotChat
    */
-  const MessagesComponent = useCallback((props: MessagesProps) => (
-    <CustomMessages {...props} agentMode={agentModeChat} />
-  ), [agentModeChat]);
+  const MessagesComponent = useCallback(
+    (props: MessagesProps) => <CustomMessages {...props} agentMode={agentModeChat} />,
+    [agentModeChat],
+  );
 
   // ================================================================================
   // RENDER
   // ================================================================================
-    
+
   return (
     <ChatSessionIdProvider sessionId={sessionId}>
-    <div className="flex h-full flex-col overflow-hidden">
-      <div 
-        className={cn("copilot-chat-wrapper relative min-h-0 flex-1 overflow-y-auto", !isAgentAndModelSelected && "chat-input-disabled")}
-      >
-        <CopilotChat
-          imageUploadsEnabled={false}
-          onSubmitMessage={handleSubmitMessage}
-          onError={errorEvent => {
-            debug.log('[ChatInner] Error:', errorEvent);
-          }}
-          onInProgress={handleInProgress}
-          renderError={renderError}
-          onRegenerate={() => {
-            debug.log('[ChatInner] Regenerate');
-          }}
-          onCopy={(text: string) => {
-            debug.log('[ChatInner] Copy:', text.substring(0, 50));
-          }}
-          onStopGeneration={() => {
-            debug.log('[ChatInner] Stop generation');
-            try {
-              stopGeneration?.();
-            } catch (error) {
-              debug.warn?.('[ChatInner] Failed to stop generation', error);
-            }
-          }}
-          onThumbsDown={() => {
-            debug.log('[ChatInner] Thumbs down');
-          }}
-          onThumbsUp={() => {
-            debug.log('[ChatInner] Thumbs up');
-          }}
-          markdownTagRenderers={customMarkdownTagRenderers}
-          AssistantMessage={CustomAssistantMessage}
-          UserMessage={CustomUserMessage}
-          Messages={MessagesComponent}
-          Input={ScopedInput}
-        />
+      <div className="flex h-full flex-col overflow-hidden">
+        <div
+          className={cn(
+            'copilot-chat-wrapper relative min-h-0 flex-1 overflow-y-auto',
+            !isAgentAndModelSelected && 'chat-input-disabled',
+          )}>
+          <CopilotChat
+            imageUploadsEnabled={false}
+            onSubmitMessage={handleSubmitMessage}
+            onError={errorEvent => {
+              debug.log('[ChatInner] Error:', errorEvent);
+            }}
+            onInProgress={handleInProgress}
+            renderError={renderError}
+            onRegenerate={() => {
+              debug.log('[ChatInner] Regenerate');
+            }}
+            onCopy={(text: string) => {
+              debug.log('[ChatInner] Copy:', text.substring(0, 50));
+            }}
+            onStopGeneration={() => {
+              debug.log('[ChatInner] Stop generation');
+              try {
+                stopGeneration?.();
+              } catch (error) {
+                debug.warn?.('[ChatInner] Failed to stop generation', error);
+              }
+            }}
+            onThumbsDown={() => {
+              debug.log('[ChatInner] Thumbs down');
+            }}
+            onThumbsUp={() => {
+              debug.log('[ChatInner] Thumbs up');
+            }}
+            markdownTagRenderers={customMarkdownTagRenderers}
+            AssistantMessage={CustomAssistantMessage}
+            UserMessage={CustomUserMessage}
+            Messages={MessagesComponent}
+            Input={ScopedInput}
+          />
+        </div>
       </div>
-    </div>
     </ChatSessionIdProvider>
   );
 };
