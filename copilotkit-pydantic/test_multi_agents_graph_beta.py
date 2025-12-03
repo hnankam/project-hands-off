@@ -21,7 +21,7 @@ from pydantic_ai._run_context import RunContext
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, run_ag_ui, AGUIAdapter
 
 # Google provider and models
-google_provider = GoogleProvider(api_key='AIzaSyCID3PMug--i65c02xdw_FB-wyVTXJ3wHs')
+google_provider = GoogleProvider(api_key='AIzaSyAQjPdaMaJzMyS7Eco1DtKT0ueutPQjXGs')
 image_generation_model = GoogleModel(model_name='gemini-2.5-flash-image', provider=google_provider)
 general_model = GoogleModel(model_name='gemini-2.5-flash', provider=google_provider)
 

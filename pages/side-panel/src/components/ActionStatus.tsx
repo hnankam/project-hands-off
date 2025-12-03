@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export type ActionPhase = 'inProgress' | 'executing' | 'complete' | string | undefined;
 
@@ -8,6 +8,9 @@ export interface ActionStatusMessages {
   executing?: string; // falls back to inProgress if absent
   complete?: string;
 }
+
+// Persist expanded state across remounts (for Virtua virtualization)
+const expandedStateCache: Map<string, boolean> = new Map();
 
 export interface ActionStatusProps {
   toolName: string;
@@ -20,6 +23,7 @@ export interface ActionStatusProps {
   args?: any; // input arguments to the tool
   result?: any; // output result from the tool
   error?: any; // error if tool failed
+  instanceId?: string; // unique ID to persist expanded state across remounts
 }
 
 export const ActionStatus: React.FC<ActionStatusProps> = ({
@@ -33,8 +37,20 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
   args,
   result,
   error,
+  instanceId,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  // Generate a stable cache key from instanceId or fallback to toolName + args hash
+  const cacheKey = instanceId ?? `${toolName}-${JSON.stringify(args ?? {})}`;
+  
+  // Initialize from cache if available, otherwise default to false
+  const [isExpanded, setIsExpanded] = useState(() => {
+    return expandedStateCache.get(cacheKey) ?? false;
+  });
+  
+  // Sync expanded state to cache whenever it changes
+  useEffect(() => {
+    expandedStateCache.set(cacheKey, isExpanded);
+  }, [cacheKey, isExpanded]);
   const [isHovered, setIsHovered] = useState(false);
   const isWorking = status === 'inProgress' || status === 'executing';
 

@@ -108,7 +108,7 @@ async def update_plan_step(
 
 # ========== Image Generation Tools ==========
 
-google_provider = GoogleProvider(api_key='AIzaSyCID3PMug--i65c02xdw_FB-wyVTXJ3wHs')
+google_provider = GoogleProvider(api_key='AIzaSyAQjPdaMaJzMyS7Eco1DtKT0ueutPQjXGs')
 google_model = GoogleModel(model_name='gemini-2.5-flash-image', provider=google_provider)
 web_search_model = GoogleModel(model_name='gemini-2.5-flash', provider=google_provider)
 code_execution_model = GoogleModel(model_name='gemini-2.5-flash', provider=google_provider)

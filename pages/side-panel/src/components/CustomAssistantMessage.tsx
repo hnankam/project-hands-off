@@ -652,11 +652,14 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
   const renderCustomTag = useCallback((tagName: string, tagContent: string, isComplete: boolean = false) => {
     // Get renderer from markdownTagRenderers (generic - works for any registered tag)
     const Renderer = markdownTagRenderers?.[tagName as keyof typeof markdownTagRenderers] as 
-      React.ComponentType<{ children?: React.ReactNode; isComplete?: boolean }> | undefined;
+      React.ComponentType<{ children?: React.ReactNode; isComplete?: boolean; instanceId?: string }> | undefined;
     
     if (Renderer) {
+      // Create unique instance ID from message ID + tag name for state persistence across remounts
+      const messageId = (message as any)?.id ?? '';
+      const instanceId = `${messageId}-${tagName}`;
       // Pass content and completion status directly to the renderer component
-      return <Renderer isComplete={isComplete}>{tagContent}</Renderer>;
+      return <Renderer isComplete={isComplete} instanceId={instanceId}>{tagContent}</Renderer>;
     }
     
     // Fallback: Unknown tag - render as plain text
@@ -666,7 +669,7 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
         <pre style={{ margin: '4px 0 0 0', whiteSpace: 'pre-wrap', fontSize: '12px', color: isLight ? '#1f2937' : '#e6edf3', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{tagContent}</pre>
       </div>
     );
-  }, [markdownTagRenderers, isLight]);
+  }, [markdownTagRenderers, isLight, message]);
 
   // Extend markdownTagRenderers with code block renderer
   // Handle mermaid with MermaidBlock, other code blocks with CodeBlockWithToolbar

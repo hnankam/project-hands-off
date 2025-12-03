@@ -67,7 +67,9 @@ export const createGenerateImagesAction = ({ themeColor }: ImageActionDependenci
     // Extract image URLs from backend result (expects string array)
     const imageUrls = Array.isArray(result) ? (result as string[]) : [];
     const prompt = args?.prompt ?? '';
+    // Create unique instance ID from prompt for state persistence across remounts
+    const instanceId = `generate-images-${prompt}`;
 
-    return <ImageGalleryCard status={status} imageUrls={imageUrls} prompt={prompt} themeColor={themeColor} />;
+    return <ImageGalleryCard status={status} imageUrls={imageUrls} prompt={prompt} themeColor={themeColor} instanceId={instanceId} />;
   },
 });

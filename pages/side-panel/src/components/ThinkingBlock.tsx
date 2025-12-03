@@ -4,6 +4,11 @@ import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { MarkdownRenderer } from './tiptap/MarkdownRenderer';
 
+// Persist open state across remounts (for Virtua virtualization)
+const openStateCache: Map<string, boolean> = new Map();
+// Track if user has manually interacted (persists across remounts)
+const manualOnlyCache: Map<string, boolean> = new Map();
+
 /**
  * ThinkingBlock Component
  * 
@@ -19,22 +24,43 @@ import { MarkdownRenderer } from './tiptap/MarkdownRenderer';
  * - Smooth expand/collapse animations
  * 
  * @param children - Content to display within the thinking block
+ * @param isComplete - Whether the thinking tag has its closing tag
+ * @param instanceId - Unique ID to persist open state across remounts
  * 
  * @example
  * ```tsx
  * <think>Analyzing the page structure...</think>
  * ```
  */
-export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolean }> = ({ children, isComplete = false }) => {
+export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolean; instanceId?: string }> = ({ children, isComplete = false, instanceId }) => {
   const { isLight } = useStorage(themeStorage);
-  const [isOpen, setIsOpen] = useState(() => !isComplete);
+  
+  // Generate a stable cache key from instanceId or fallback to content hash
+  // Use first 100 chars of content as a stable prefix (content grows during streaming)
+  const contentPrefix = typeof children === 'string' ? children.slice(0, 100) : '';
+  const cacheKey = instanceId ?? `thinking-${contentPrefix}`;
+  
+  // Initialize from cache if available, otherwise use default behavior
+  const [isOpen, setIsOpen] = useState(() => {
+    if (openStateCache.has(cacheKey)) {
+      return openStateCache.get(cacheKey)!;
+    }
+    return !isComplete;
+  });
   const [isHovered, setIsHovered] = useState(false);
   const autoCloseTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const manualOnlyRef = useRef(false); // After auto-close, only manual toggling allowed
+  
+  // Initialize manualOnly from cache
+  const manualOnlyRef = useRef(manualOnlyCache.get(cacheKey) ?? false);
   const prevCompleteRef = useRef<boolean>(false);
   const myIdRef = useRef<number>(0);
   const [isLatest, setIsLatest] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  
+  // Sync open state to cache whenever it changes
+  useEffect(() => {
+    openStateCache.set(cacheKey, isOpen);
+  }, [cacheKey, isOpen]);
 
   // Global coordination: ensure only the newest mounted block is considered "latest"
   // so only that block reflects the global streaming state in its title.
@@ -149,6 +175,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
     setIsOpen(!isOpen);
     // Enter manual-only mode after any user interaction
     manualOnlyRef.current = true;
+    manualOnlyCache.set(cacheKey, true);
     if (autoCloseTimerRef.current) {
       clearTimeout(autoCloseTimerRef.current);
       autoCloseTimerRef.current = null;

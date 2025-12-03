@@ -3,11 +3,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 
+// Persist expanded state across remounts (for Virtua virtualization)
+const expandedStateCache: Map<string, boolean> = new Map();
+// Track if user has manually closed a card (persists across remounts)
+const userClosedCache: Map<string, boolean> = new Map();
+
 export interface ImageGalleryCardProps {
   status?: string;
   imageUrls?: string[];
   prompt?: string;
   themeColor: string;
+  instanceId?: string; // unique ID to persist expanded state across remounts
 }
 
 /**
@@ -16,13 +22,25 @@ export interface ImageGalleryCardProps {
  * Carousel-style image gallery matching the app's design system
  * Similar to productivity tips carousel on HomePage
  */
-const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrls = [], prompt }) => {
+const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrls = [], prompt, instanceId }) => {
   const { isLight } = useStorage(themeStorage);
   const [currentIndex, setCurrentIndex] = useState(0);
   
-  // Cards default to closed, but newly created ones (being generated) are kept open
-  const [isExpanded, setIsExpanded] = useState(false);
-  const userClosedRef = useRef(false);
+  // Generate a stable cache key from instanceId or fallback to prompt
+  const cacheKey = instanceId ?? `gallery-${prompt ?? 'default'}`;
+  
+  // Initialize from cache if available
+  const [isExpanded, setIsExpanded] = useState(() => {
+    return expandedStateCache.get(cacheKey) ?? false;
+  });
+  
+  // Initialize userClosed from cache
+  const userClosedRef = useRef(userClosedCache.get(cacheKey) ?? false);
+  
+  // Sync expanded state to cache whenever it changes
+  useEffect(() => {
+    expandedStateCache.set(cacheKey, isExpanded);
+  }, [cacheKey, isExpanded]);
   
   // Keep newly created cards open unless user manually closes them
   useEffect(() => {
@@ -38,6 +56,7 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
     // Track if user is closing a card that's being created
     if (!newState && (status === 'inProgress' || status === 'executing')) {
       userClosedRef.current = true;
+      userClosedCache.set(cacheKey, true);
     }
   };
   

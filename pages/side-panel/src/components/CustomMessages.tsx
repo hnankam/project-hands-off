@@ -154,12 +154,15 @@ export const CustomMessages = ({
   const MessageRenderer = RenderMessage;
 
   // Internal sticky state - managed via floating header
+  // Also handles user scroll detection for manual scroll override during streaming
   const { stickyMessageId, handleScroll } = useStickyUserMessage(
     messagesRef,
     agentMode,
     vListRef,
     isAutoScrollingRef,
-    inProgress
+    inProgress,
+    shouldStickToBottomRef,
+    getContainer
   );
 
   // Find the actual message object for the sticky header
@@ -182,6 +185,7 @@ export const CustomMessages = ({
   const previousInProgressRef = useRef<boolean>(false);
   const previousMessagesLengthRef = useRef<number>(0);
   const lastValidBlankSizeRef = useRef<number>(0); // Store last valid blankSize to avoid flicker
+  const lastBlankForMessageIdRef = useRef<string | number | null>(null); // Track which message the blankSize was applied to
   
   // Calculate blankSize synchronously using useMemo (prevents flash)
   const blankSize = useMemo(() => {
@@ -201,18 +205,33 @@ export const CustomMessages = ({
     
     if (lastIndex <= trackedUserIndex) {
       lastValidBlankSizeRef.current = 0;
+      lastBlankForMessageIdRef.current = null;
       return 0;
     }
-    
-    // Sum heights of all messages from user to second-to-last (excluding last which gets blankSize)
+
+    const lastMessage = currentMessages[lastIndex] as any;
+    const lastMessageId = lastMessage?.id ?? lastIndex;
+    const sameLastMessage = lastBlankForMessageIdRef.current === lastMessageId;
+
+    // Sum heights of ALL messages from user to last (INCLUDING last message)
+    // For the last message, we only subtract the previous blankSize when it's
+    // the *same* message that previously had the blank applied. When a new
+    // assistant message becomes the last item, its measured height does NOT
+    // yet include the previous blank, so we must not subtract it — otherwise
+    // the computed blankSize would grow and push the user message further up.
     let totalHeight = 0;
     let allMeasured = true;
     
-    for (let i = trackedUserIndex; i < lastIndex; i++) {
-      const size = handle.getItemSize(i);
+    for (let i = trackedUserIndex; i <= lastIndex; i++) {
+      let size = handle.getItemSize(i);
       if (size <= 0) {
         allMeasured = false;
         break; // Stop if any item is unmeasured
+      }
+      if (i === lastIndex && sameLastMessage && lastValidBlankSizeRef.current > 0) {
+        // Same last message as before: measured size = content + previous blank
+        // → subtract old blank to recover true content height.
+        size = Math.max(0, size - lastValidBlankSizeRef.current);
       }
       totalHeight += size;
     }
@@ -222,13 +241,14 @@ export const CustomMessages = ({
       return lastValidBlankSizeRef.current;
     }
     
-    // blankSize = viewport - totalHeight (user + all messages between user and last)
+    // blankSize = viewport - totalHeight (all messages including last's content)
     const newBlankSize = Math.max(handle.viewportSize - totalHeight, 0);
     lastValidBlankSizeRef.current = newBlankSize;
+    lastBlankForMessageIdRef.current = lastMessageId;
     return newBlankSize;
   }, [agentMode, trackedUserIndex, messages.length, measureTrigger]);
   
-  // Effect: Trigger re-calculation after VList has time to measure new items
+  // Effect: Trigger an initial re-calculation after VList has time to measure items
   useEffect(() => {
     if (!agentMode || trackedUserIndex === null) return;
     
@@ -238,6 +258,28 @@ export const CustomMessages = ({
     
     return () => clearTimeout(timeoutId);
   }, [agentMode, trackedUserIndex, messages.length]);
+
+  // Effect: Recalculate blankSize whenever the LAST message's height changes.
+  // Uses ResizeObserver on the last message wrapper so that as the assistant
+  // response grows (or new assistant messages are appended), blankSize shrinks
+  // accordingly until content exceeds the viewport.
+  useEffect(() => {
+    if (!agentMode || trackedUserIndex === null) return;
+
+    const container = getContainer();
+    if (!container) return;
+
+    const lastWrapper = container.querySelector('[data-message-wrapper="true"]:last-of-type') as HTMLElement | null;
+    if (!lastWrapper) return;
+
+    const observer = new ResizeObserver(() => {
+      setMeasureTrigger(prev => prev + 1);
+    });
+
+    observer.observe(lastWrapper);
+
+    return () => observer.disconnect();
+  }, [agentMode, trackedUserIndex, messages.length, getContainer]);
   
   // Effect: Handle streaming start and message deletion
   useEffect(() => {
@@ -268,18 +310,28 @@ export const CustomMessages = ({
       
       setTrackedUserIndex(userIndex);
       
-      // Wait for items to mount, then scroll
+      // Wait for items to mount, then scroll user message to top
       setTimeout(() => {
         if (!vListRef.current) return;
         vListRef.current.scrollToIndex(userIndex, { align: "start", smooth: true });
       }, 50);
       
-      // Enable stick-to-bottom after delay
-      setTimeout(() => {
-        shouldStickToBottomRef.current = true;
-      }, 200);
+      // Note: shouldStickToBottomRef will be enabled by the blankSize effect
+      // when content grows beyond viewport (blankSize becomes 0)
     }
   }, [agentMode, inProgress, messages.length, shouldStickToBottomRef]);
+  
+  // Effect: Enable scroll-to-bottom when content exceeds viewport (blankSize becomes 0)
+  // This allows the user message to scroll out of view as the assistant message grows
+  useEffect(() => {
+    if (!agentMode || !inProgress || trackedUserIndex === null) return;
+    
+    // When blankSize is 0, content has exceeded viewport - enable scroll-to-bottom
+    if (blankSize === 0 && !shouldStickToBottomRef.current) {
+      shouldStickToBottomRef.current = true;
+      scrollLog('📐 Content exceeded viewport - auto-scroll enabled');
+    }
+  }, [agentMode, inProgress, trackedUserIndex, blankSize, shouldStickToBottomRef]);
 
   // Early return if no valid messages
   if (!MessageRenderer) {
@@ -408,10 +460,24 @@ const useAutoScroll = (
   const inProgressRef = useRef(inProgress);
   const agentModeRef = useRef(agentMode);
 
-  // Keep refs in sync
+  // Track previous inProgress state to detect streaming end
+  const prevInProgressRef = useRef(inProgress);
+
+  // Keep refs in sync and reset shouldStickToBottom when streaming ends
   useEffect(() => {
+    const wasStreaming = prevInProgressRef.current;
+    const isNowStreaming = inProgress;
+    
+    // Update refs
+    prevInProgressRef.current = inProgress;
     inProgressRef.current = inProgress;
     agentModeRef.current = agentMode;
+    
+    // Reset shouldStickToBottom when streaming ends (so next message starts with auto-scroll enabled)
+    if (wasStreaming && !isNowStreaming) {
+      shouldStickToBottomRef.current = true;
+      scrollLog('🔄 Streaming ended - auto-scroll re-enabled for next message');
+    }
   }, [inProgress, agentMode]);
 
   // Unified scroll logic for streaming and content changes
@@ -485,6 +551,7 @@ const useAutoScroll = (
   // Uses a composite signature to detect message set changes more reliably
   const lastScrollSignatureRef = useRef<string>('');
   const scrollAbortRef = useRef<boolean>(false);
+  const hasAgentModeInitialScrollRef = useRef<boolean>(false);
   
   useEffect(() => {
     const len = messages.length;
@@ -493,6 +560,52 @@ const useAutoScroll = (
       // This prevents duplicate scroll sequences when messages are restored
       scrollLog('No messages, skipping scroll (preserving signature for hydration)');
       return;
+    }
+
+    // ========= AGENT MODE: ONE-TIME SCROLL TO BOTTOM ON TAB OPEN =========
+    if (agentModeRef.current) {
+      // Only perform a single initial bottom scroll per mount in agent mode
+      if (hasAgentModeInitialScrollRef.current) {
+        scrollLog('Agent mode: initial bottom scroll already performed, skipping');
+        return;
+      }
+
+      scrollLog('Agent mode: performing one-time initial bottom scroll');
+      hasAgentModeInitialScrollRef.current = true;
+      scrollAbortRef.current = false;
+      isAutoScrollingRef.current = true;
+
+      const performInitialAgentScroll = async () => {
+        const isReady = await waitForVListReady(vListRef, getContainer, len);
+        if (scrollAbortRef.current) {
+          scrollLog('Agent mode: initial scroll aborted');
+          isAutoScrollingRef.current = false;
+          return;
+        }
+        if (!isReady) {
+          scrollLog('Agent mode: VList not ready, skipping initial scroll');
+          isAutoScrollingRef.current = false;
+          return;
+        }
+
+        const currentLen = messagesRef.current.length;
+        if (currentLen === 0 || !vListRef.current) {
+          scrollLog('Agent mode: no messages or VList unavailable for initial scroll');
+          isAutoScrollingRef.current = false;
+          return;
+        }
+
+        scrollLog(`Agent mode: scrolling to index ${currentLen - 1} on tab open`);
+        vListRef.current.scrollToIndex(currentLen - 1, { align: "end" });
+        isAutoScrollingRef.current = false;
+      };
+
+      performInitialAgentScroll();
+
+      return () => {
+        scrollLog('Agent mode: cleanup, aborting initial bottom scroll if pending');
+        scrollAbortRef.current = true;
+      };
     }
     
     // Create a composite signature using first message ID + count + last message ID
@@ -606,7 +719,7 @@ const useAutoScroll = (
     }
     
     return undefined;
-  }, [messages.length, messages[0]?.id, messages[messages.length - 1]?.id, getContainer]); // Depend on first AND last message ID
+  }, [messages.length, messages[0]?.id, messages[messages.length - 1]?.id, getContainer, agentModeRef]); // Depend on first AND last message ID
 
   // Track previous messages length to detect new messages (not initial load)
   const prevMessagesLengthRef = useRef(messages.length);
@@ -647,14 +760,16 @@ const useAutoScroll = (
 };
 
 /**
- * Hook to manage sticky user messages
+ * Hook to manage sticky user messages and user scroll detection
  */
 const useStickyUserMessage = (
   messagesRef: React.MutableRefObject<Message[]>,
   agentMode: boolean,
   vListRef: React.RefObject<VListHandle | null>,
   isAutoScrollingRef: React.MutableRefObject<boolean>,
-  inProgress: boolean
+  inProgress: boolean,
+  shouldStickToBottomRef: React.MutableRefObject<boolean>,
+  getContainer: () => HTMLElement
 ) => {
   const [stickyMessageId, setStickyMessageId] = useState<string | null>(null);
 
@@ -667,6 +782,26 @@ const useStickyUserMessage = (
 
   // Handle scroll using VList's findItemIndex API
   const handleScroll = useCallback((offset: number) => {
+    // ============== USER SCROLL DETECTION ==============
+    // When user manually scrolls during streaming, detect if they scrolled away from bottom
+    // This allows users to scroll up to read earlier content without being forced back down
+    if (!isAutoScrollingRef.current && inProgress) {
+      const container = getContainer();
+      if (container) {
+        const atBottom = isAtBottom(container);
+        // Only update if the value actually changed to avoid unnecessary updates
+        if (shouldStickToBottomRef.current !== atBottom) {
+          shouldStickToBottomRef.current = atBottom;
+          if (!atBottom) {
+            scrollLog('👆 User scrolled away from bottom - auto-scroll disabled');
+          } else {
+            scrollLog('👇 User scrolled back to bottom - auto-scroll re-enabled');
+          }
+        }
+      }
+    }
+
+    // ============== STICKY MESSAGE LOGIC ==============
     // Disable sticky in agent mode only when streaming
     if (agentMode && inProgress) {
       if (stickyMessageId !== null) {
@@ -738,7 +873,7 @@ const useStickyUserMessage = (
     if (stickyMessageId !== newStickyId) {
       setStickyMessageId(newStickyId);
     }
-  }, [stickyMessageId, agentMode, inProgress]);
+  }, [stickyMessageId, agentMode, inProgress, getContainer]);
 
   return { stickyMessageId, handleScroll };
 };

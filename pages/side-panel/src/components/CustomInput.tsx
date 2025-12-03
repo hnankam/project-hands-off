@@ -1392,7 +1392,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
             </DropdownMenuItem>
           </DropdownMenu>
 
-          {/* Pages selector - leftmost control */}
+          {/* Pages selector */}
           {onSelectedPageURLsChange && (
               <PagesSelector
                 selectedPageURLs={selectedPageURLs}
