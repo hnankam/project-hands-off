@@ -68,6 +68,9 @@ import { useProgressBarState } from '../hooks/useProgressBarState';
 import { usePageMetadata, type PageContent } from '../hooks/usePageMetadata';
 import { useMultiPageMetadata } from '../hooks/useMultiPageMetadata';
 import { useProgressCardCollapse } from '../hooks/useProgressCardCollapse';
+
+// Context
+import { ChatSessionIdProvider } from '../context/ChatSessionIdContext';
 import { useAgentStateManagement } from '../hooks/useAgentStateManagement';
 
 // Note: Scroll management is handled entirely by CustomMessages via Virtua's VList API
@@ -667,6 +670,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   
   const customMarkdownTagRenderers = useMemo(() => ({
     think: showThoughtBlocks ? ThinkingBlock : EmptyThinkingBlock,
+    thinking: showThoughtBlocks ? ThinkingBlock : EmptyThinkingBlock,
     mermaid: MermaidBlock,
   }), [showThoughtBlocks]);
 
@@ -854,6 +858,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ================================================================================
     
   return (
+    <ChatSessionIdProvider sessionId={sessionId}>
     <div className="flex h-full flex-col overflow-hidden">
       <div 
         className={cn("copilot-chat-wrapper relative min-h-0 flex-1 overflow-y-auto", !isAgentAndModelSelected && "chat-input-disabled")}
@@ -894,6 +899,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         />
       </div>
     </div>
+    </ChatSessionIdProvider>
   );
 };
 

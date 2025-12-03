@@ -176,109 +176,235 @@ export const CustomMessages = ({
     return null;
   }, [stickyMessageId, messages]);
 
-  // ============== AGENT MODE BLANKSIZE LOGIC ==============
-  // Based on Virtua Chatbot example with dynamic calculation for tool messages:
-  // Key formula: blankSize = viewport - userHeight - heightOfAllMessagesBetweenUserAndLast
+  // ============== AGENT MODE BLANKSIZE LOGIC (BUDGET-BASED) ==============
+  // Instead of recalculating from scratch each time, we use a "remaining space budget":
+  // 1. When streaming starts: budget = viewport - userMessageHeight
+  // 2. ResizeObserver tracks all messages after user, subtracting height deltas
+  // 3. Budget only decreases (never increases mid-turn), eliminating flicker
+  // 4. Budget is applied as minHeight to the last message only
   
   const [trackedUserIndex, setTrackedUserIndex] = useState<number | null>(null);
-  const [measureTrigger, setMeasureTrigger] = useState(0); // Trigger re-calculation after VList measures
+  const [minHeightBudget, setMinHeightBudget] = useState<number>(0);
   const previousInProgressRef = useRef<boolean>(false);
   const previousMessagesLengthRef = useRef<number>(0);
-  const lastValidBlankSizeRef = useRef<number>(0); // Store last valid blankSize to avoid flicker
-  const lastBlankForMessageIdRef = useRef<string | number | null>(null); // Track which message the blankSize was applied to
   
-  // Calculate blankSize synchronously using useMemo (prevents flash)
-  const blankSize = useMemo(() => {
-    // Include measureTrigger in deps to allow re-calculation after VList measures
-    void measureTrigger;
-    
+  // Track heights of each message after the user (messageId -> height)
+  const trackedHeightsRef = useRef<Map<string, number>>(new Map());
+  // Prevent re-initializing budget mid-stream
+  const budgetInitializedRef = useRef<boolean>(false);
+  // Debounce timer for budget updates to prevent flickering
+  const budgetUpdateTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Current budget ref to avoid stale closures - DO NOT sync from state on every render
+  // as that would reset it before debounced updates apply
+  const currentBudgetRef = useRef<number>(0);
+  // Track last update time to prevent rapid successive updates
+  const lastUpdateTimeRef = useRef<number>(0);
+  // Accumulate deltas during debounce period instead of updating ref immediately
+  const pendingDeltaRef = useRef<number>(0);
+  
+  // Alias for compatibility with existing render logic
+  const blankSize = minHeightBudget;
+  
+  // Effect: Reset budget when not in agent mode or no tracked user
+  useEffect(() => {
     if (!agentMode || trackedUserIndex === null) {
-      lastValidBlankSizeRef.current = 0;
-      return 0;
-    }
-    
-    const handle = vListRef.current;
-    if (!handle) return lastValidBlankSizeRef.current;
-    
-    const currentMessages = messagesRef.current;
-    const lastIndex = currentMessages.length - 1;
-    
-    if (lastIndex <= trackedUserIndex) {
-      lastValidBlankSizeRef.current = 0;
-      lastBlankForMessageIdRef.current = null;
-      return 0;
-    }
-
-    const lastMessage = currentMessages[lastIndex] as any;
-    const lastMessageId = lastMessage?.id ?? lastIndex;
-    const sameLastMessage = lastBlankForMessageIdRef.current === lastMessageId;
-
-    // Sum heights of ALL messages from user to last (INCLUDING last message)
-    // For the last message, we only subtract the previous blankSize when it's
-    // the *same* message that previously had the blank applied. When a new
-    // assistant message becomes the last item, its measured height does NOT
-    // yet include the previous blank, so we must not subtract it — otherwise
-    // the computed blankSize would grow and push the user message further up.
-    let totalHeight = 0;
-    let allMeasured = true;
-    
-    for (let i = trackedUserIndex; i <= lastIndex; i++) {
-      let size = handle.getItemSize(i);
-      if (size <= 0) {
-        allMeasured = false;
-        break; // Stop if any item is unmeasured
+      if (minHeightBudget !== 0) {
+        currentBudgetRef.current = 0;
+        setMinHeightBudget(0);
+        pendingDeltaRef.current = 0;
       }
-      if (i === lastIndex && sameLastMessage && lastValidBlankSizeRef.current > 0) {
-        // Same last message as before: measured size = content + previous blank
-        // → subtract old blank to recover true content height.
-        size = Math.max(0, size - lastValidBlankSizeRef.current);
-      }
-      totalHeight += size;
+      trackedHeightsRef.current.clear();
+      budgetInitializedRef.current = false;
     }
-    
-    // If not all items are measured, keep the previous valid blankSize
-    if (!allMeasured) {
-      return lastValidBlankSizeRef.current;
-    }
-    
-    // blankSize = viewport - totalHeight (all messages including last's content)
-    const newBlankSize = Math.max(handle.viewportSize - totalHeight, 0);
-    lastValidBlankSizeRef.current = newBlankSize;
-    lastBlankForMessageIdRef.current = lastMessageId;
-    return newBlankSize;
-  }, [agentMode, trackedUserIndex, messages.length, measureTrigger]);
+  }, [agentMode, trackedUserIndex, minHeightBudget]);
   
-  // Effect: Trigger an initial re-calculation after VList has time to measure items
+  // Effect: Initialize budget when streaming starts, observe all wrappers for height changes
   useEffect(() => {
-    if (!agentMode || trackedUserIndex === null) return;
-    
-    const timeoutId = setTimeout(() => {
-      setMeasureTrigger(prev => prev + 1);
-    }, 100);
-    
-    return () => clearTimeout(timeoutId);
-  }, [agentMode, trackedUserIndex, messages.length]);
-
-  // Effect: Recalculate blankSize whenever the LAST message's height changes.
-  // Uses ResizeObserver on the last message wrapper so that as the assistant
-  // response grows (or new assistant messages are appended), blankSize shrinks
-  // accordingly until content exceeds the viewport.
-  useEffect(() => {
-    if (!agentMode || trackedUserIndex === null) return;
+    if (!agentMode || trackedUserIndex === null) {
+      return;
+    }
 
     const container = getContainer();
     if (!container) return;
-
-    const lastWrapper = container.querySelector('[data-message-wrapper="true"]:last-of-type') as HTMLElement | null;
-    if (!lastWrapper) return;
-
-    const observer = new ResizeObserver(() => {
-      setMeasureTrigger(prev => prev + 1);
+    
+    // Get all message wrappers with their indices
+    const wrappers = Array.from(
+      container.querySelectorAll('[data-message-wrapper="true"]')
+    ) as HTMLElement[];
+    
+    if (wrappers.length === 0) return;
+    
+    // Find user wrapper by data-wrapper-index attribute (handles Virtua virtualization)
+    const userWrapper = container.querySelector(
+      `[data-message-wrapper="true"][data-wrapper-index="${trackedUserIndex}"]`
+    ) as HTMLElement | null;
+    
+    // Initialize budget on first run (streaming just started)
+    if (!budgetInitializedRef.current && userWrapper) {
+      const viewportHeight = container.clientHeight;
+      const userHeight = userWrapper.getBoundingClientRect().height;
+      
+      const initialBudget = Math.max(viewportHeight - userHeight, 0);
+      
+      console.log('[BLANKSIZE] Budget initialized:', {
+        viewportHeight: Math.round(viewportHeight),
+        userHeight: Math.round(userHeight),
+        initialBudget: Math.round(initialBudget),
+        trackedUserIndex,
+      });
+      
+      // Update both ref and state for initialization (no debounce needed)
+      currentBudgetRef.current = initialBudget;
+      setMinHeightBudget(initialBudget);
+      pendingDeltaRef.current = 0;
+      lastUpdateTimeRef.current = Date.now();
+      trackedHeightsRef.current.clear();
+      budgetInitializedRef.current = true;
+    }
+    
+    // Measure and track current heights of all messages after user (EXCEPT the last one)
+    // The last wrapper has minHeight applied which distorts its measured height,
+    // so we skip it. When a new message arrives, the previous-last becomes measurable.
+    const measureAndUpdateBudget = () => {
+      const allWrappers = Array.from(
+        container.querySelectorAll('[data-message-wrapper="true"]')
+      ) as HTMLElement[];
+      
+      // Find the highest wrapper index (last message) - we'll skip this one
+      let maxWrapperIndex = -1;
+      for (const wrapper of allWrappers) {
+        const idx = parseInt(wrapper.getAttribute('data-wrapper-index') || '-1', 10);
+        if (idx > maxWrapperIndex) maxWrapperIndex = idx;
+      }
+      
+      let totalDelta = 0;
+      const heightUpdates: { idx: number; oldH: number; newH: number; delta: number; cappedDelta?: number; isFirst?: boolean }[] = [];
+      
+      // Iterate through all wrappers and filter by index
+      for (const wrapper of allWrappers) {
+        const indexAttr = wrapper.getAttribute('data-wrapper-index');
+        if (!indexAttr) continue;
+        
+        const wrapperIndex = parseInt(indexAttr, 10);
+        
+        // Skip user message and earlier messages
+        if (wrapperIndex <= trackedUserIndex) continue;
+        
+        // Skip the LAST wrapper - it has minHeight applied which distorts measurement
+        // Its height will be tracked when it's no longer the last (when a new message arrives)
+        if (wrapperIndex === maxWrapperIndex) continue;
+        
+        const messageId = `msg-${wrapperIndex}`;
+        
+        // Measure wrapper height directly (no minHeight on non-last wrappers)
+        const newHeight = wrapper.getBoundingClientRect().height;
+        
+        const oldHeight = trackedHeightsRef.current.get(messageId) || 0;
+        const isFirstMeasurement = oldHeight === 0;
+        const delta = newHeight - oldHeight;
+        
+        if (delta !== 0) {
+          // For FIRST measurement of a message (when it transitions from "last" to "not-last"),
+          // cap the delta to prevent large jumps. The message may have grown significantly
+          // while we couldn't measure it (e.g., expanded thinking block).
+          // Subsequent measurements will track incremental growth accurately.
+          const cappedDelta = isFirstMeasurement ? Math.min(delta, 60) : delta;
+          
+          heightUpdates.push({ 
+            idx: wrapperIndex, 
+            oldH: Math.round(oldHeight), 
+            newH: Math.round(newHeight), 
+            delta: Math.round(delta),
+            cappedDelta: Math.round(cappedDelta),
+            isFirst: isFirstMeasurement 
+          });
+          trackedHeightsRef.current.set(messageId, newHeight);
+          // Only count positive deltas (growth) - ignore shrinking
+          if (cappedDelta > 0) {
+            totalDelta += cappedDelta;
+          }
+        }
+      }
+      
+      if (totalDelta > 0) {
+        // Accumulate deltas instead of updating immediately to batch rapid updates
+        pendingDeltaRef.current += totalDelta;
+        
+        const currentBudget = currentBudgetRef.current;
+        const projectedBudget = Math.max(currentBudget - pendingDeltaRef.current, 0);
+        
+        console.log('[BLANKSIZE] Budget update queued:', {
+          previousBudget: Math.round(currentBudget),
+          totalDelta: Math.round(totalDelta),
+          pendingDelta: Math.round(pendingDeltaRef.current),
+          projectedBudget: Math.round(projectedBudget),
+          updates: heightUpdates,
+        });
+        
+        // Clear existing timer and set new one
+        if (budgetUpdateTimerRef.current) {
+          clearTimeout(budgetUpdateTimerRef.current);
+        }
+        
+        // Use requestAnimationFrame + setTimeout for smoother batching
+        const now = Date.now();
+        const timeSinceLastUpdate = now - lastUpdateTimeRef.current;
+        const minUpdateInterval = 150; // Minimum 150ms between updates
+        
+        const debounceDelay = timeSinceLastUpdate < minUpdateInterval 
+          ? minUpdateInterval - timeSinceLastUpdate 
+          : 100;
+        
+        budgetUpdateTimerRef.current = setTimeout(() => {
+          requestAnimationFrame(() => {
+            // Apply accumulated delta
+            const finalBudget = Math.max(currentBudgetRef.current - pendingDeltaRef.current, 0);
+            currentBudgetRef.current = finalBudget;
+            setMinHeightBudget(finalBudget);
+            pendingDeltaRef.current = 0;
+            lastUpdateTimeRef.current = Date.now();
+          });
+        }, debounceDelay);
+      }
+    };
+    
+    // Initial measurement
+    measureAndUpdateBudget();
+  
+    // Set up ResizeObserver on all wrappers after user message (by index)
+    const wrappersToObserve = wrappers.filter(w => {
+      const idx = parseInt(w.getAttribute('data-wrapper-index') || '-1', 10);
+      return idx > trackedUserIndex;
     });
-
-    observer.observe(lastWrapper);
-
-    return () => observer.disconnect();
+    
+    if (wrappersToObserve.length === 0) {
+      console.log('[BLANKSIZE] ResizeObserver: No wrappers to observe after user');
+      return;
+    }
+    
+    console.log('[BLANKSIZE] ResizeObserver: Observing', wrappersToObserve.length, 'wrappers after index', trackedUserIndex);
+    
+    const observer = new ResizeObserver(() => {
+      measureAndUpdateBudget();
+    });
+    
+    wrappersToObserve.forEach(wrapper => observer.observe(wrapper));
+    
+    return () => {
+      observer.disconnect();
+      // Clear pending budget update timer and apply any accumulated delta immediately
+      if (budgetUpdateTimerRef.current) {
+        clearTimeout(budgetUpdateTimerRef.current);
+        budgetUpdateTimerRef.current = null;
+      }
+      // Apply any pending delta before cleanup
+      if (pendingDeltaRef.current > 0) {
+        const finalBudget = Math.max(currentBudgetRef.current - pendingDeltaRef.current, 0);
+        currentBudgetRef.current = finalBudget;
+        setMinHeightBudget(finalBudget);
+        pendingDeltaRef.current = 0;
+      }
+    };
   }, [agentMode, trackedUserIndex, messages.length, getContainer]);
   
   // Effect: Handle streaming start and message deletion
@@ -290,12 +416,24 @@ export const CustomMessages = ({
     const isNowStreaming = inProgress;
     const prevLength = previousMessagesLengthRef.current;
     
+    // Log message count changes
+    if (currentMessages.length !== prevLength) {
+      console.log('[BLANKSIZE] Message count changed:', {
+        prevLength,
+        newLength: currentMessages.length,
+        change: currentMessages.length - prevLength,
+        trackedUserIndex,
+        lastMessageRole: currentMessages.length > 0 ? (currentMessages[currentMessages.length - 1] as any)?.role : 'N/A',
+      });
+    }
+    
     // Update refs
     previousInProgressRef.current = inProgress;
     previousMessagesLengthRef.current = currentMessages.length;
     
     // Messages deleted - clear tracking
     if (currentMessages.length < prevLength) {
+      console.log('[BLANKSIZE] Messages deleted, clearing trackedUserIndex');
       setTrackedUserIndex(null);
       return;
     }
@@ -306,13 +444,29 @@ export const CustomMessages = ({
       
       // Find user message index (second to last, since assistant message is added after)
       const userIndex = currentMessages.length - 2;
-      if (userIndex < 0) return;
+      if (userIndex < 0) {
+        console.log('[BLANKSIZE] Streaming started but userIndex < 0, skipping');
+        return;
+      }
+      
+      console.log('[BLANKSIZE] Streaming started:', {
+        userIndex,
+        messageCount: currentMessages.length,
+        userMessageId: (currentMessages[userIndex] as any)?.id?.toString().slice(0, 12),
+        lastMessageId: (currentMessages[currentMessages.length - 1] as any)?.id?.toString().slice(0, 12),
+        lastMessageRole: (currentMessages[currentMessages.length - 1] as any)?.role,
+      });
+      
+      // Reset budget tracking for new turn
+      budgetInitializedRef.current = false;
+      trackedHeightsRef.current.clear();
       
       setTrackedUserIndex(userIndex);
       
       // Wait for items to mount, then scroll user message to top
       setTimeout(() => {
         if (!vListRef.current) return;
+        console.log('[BLANKSIZE] Scrolling user message to top, index:', userIndex);
         vListRef.current.scrollToIndex(userIndex, { align: "start", smooth: true });
       }, 50);
       
@@ -372,11 +526,24 @@ export const CustomMessages = ({
           
           // Apply blankSize to LAST message (dynamically)
           const shouldApplyBlankSize = agentMode && isLastMessage && blankSize > 0;
+          
+          // Log when blankSize is applied
+          if (isLastMessage && agentMode && trackedUserIndex !== null) {
+            console.log('[BLANKSIZE] Rendering last message:', {
+              index,
+              messageId: String(message.id).slice(0, 12),
+              role: (message as any).role,
+              shouldApplyBlankSize,
+              blankSize: Math.round(blankSize),
+              trackedUserIndex,
+            });
+          }
             
             return (
               <div
               key={messageKey}
                 data-message-wrapper="true"
+                data-wrapper-index={index}
                 style={shouldApplyBlankSize ? { minHeight: `${blankSize}px` } : undefined}
               >
                 <MessageRenderer

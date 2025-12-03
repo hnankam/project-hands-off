@@ -338,11 +338,11 @@ export class SemanticSearchManager {
         topResults = await embeddingsStorage.fullTextSearchHTMLChunks(pageURL, query, limitedTopK, pageURLs);
       } else {
         // Semantic or hybrid - need embeddings
-        const embeddingResult = await this.embedQuery(query);
-        if (!embeddingResult.success) {
-          logger.separator();
-          return this.createErrorResult(embeddingResult.error);
-        }
+      const embeddingResult = await this.embedQuery(query);
+      if (!embeddingResult.success) {
+        logger.separator();
+        return this.createErrorResult(embeddingResult.error);
+      }
 
         if (mode === 'semantic') {
           // Pure semantic search

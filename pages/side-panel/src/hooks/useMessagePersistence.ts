@@ -582,33 +582,100 @@ export const useMessagePersistence = ({
   }, [runtimeState]);
 
   // Wrap reset function to track manual resets
+  // IMPORTANT: resetChatRef.current is set by ChatInner in a separate effect.
+  // On first render it may still be null when this effect runs, so we attach
+  // the wrapper lazily once a reset function becomes available.
   useEffect(() => {
-    if (!resetChatRef?.current) return;
-    
-    const originalReset = resetChatRef.current;
-    
-    const wrappedReset = () => {
-      debug.log('[useMessagePersistence] Manual reset initiated');
-      manualResetInProgressRef.current = true;
-      persistenceLock.setManualReset(sessionId, true);
-      
-      originalReset();
-      updateStoredMessagesState([]);
-      
-      setTimeout(() => {
-        manualResetInProgressRef.current = false;
-        debug.log('[useMessagePersistence] Manual reset complete');
-      }, MANUAL_RESET_STABILIZATION_DELAY);
+    if (!resetChatRef) return;
+
+    let isMounted = true;
+    let originalReset: (() => void) | null = null;
+
+    const attachWrapperIfNeeded = () => {
+      // If ref has a reset function and we haven't wrapped it yet, wrap it
+      if (!isMounted || !resetChatRef.current) {
+        return false;
+      }
+
+      originalReset = resetChatRef.current;
+
+      // Define wrapper that marks manual reset for persistence guards
+      const wrapped: (() => void) = () => {
+        if (!originalReset) return;
+        debug.log('[useMessagePersistence] Manual reset initiated');
+        manualResetInProgressRef.current = true;
+        persistenceLock.setManualReset(sessionId, true);
+
+        try {
+          originalReset();
+        } finally {
+          // Keep storedMessages in sync so guards don't try to restore
+          updateStoredMessagesState([]);
+
+          setTimeout(() => {
+            manualResetInProgressRef.current = false;
+            debug.log('[useMessagePersistence] Manual reset complete');
+          }, MANUAL_RESET_STABILIZATION_DELAY);
+        }
+      };
+
+      // Store on ref so callers (SessionsPage) always invoke the wrapped version
+      const wrappedReset = wrapped;
+      resetChatRef.current = wrappedReset;
+      debug.log('[useMessagePersistence] Attached manual reset wrapper for session', sessionId.slice(0, 8));
+      return true;
     };
-    
-    resetChatRef.current = wrappedReset;
-    
+
+    // Try immediately
+    if (!attachWrapperIfNeeded()) {
+      // If not yet available, poll briefly until ChatInner sets the reset function
+      const intervalId = setInterval(() => {
+        if (attachWrapperIfNeeded()) {
+          clearInterval(intervalId);
+        }
+      }, 50);
+
+      return () => {
+        isMounted = false;
+        clearInterval(intervalId);
+      };
+    }
+
     return () => {
-      if (resetChatRef?.current === wrappedReset) {
+      isMounted = false;
+      // On cleanup, restore original reset if we wrapped it
+      if (originalReset && resetChatRef.current) {
         resetChatRef.current = originalReset;
       }
     };
   }, [resetChatRef, sessionId, updateStoredMessagesState]);
+
+  // Monitor for manual message deletion (via CustomUserMessage controls)
+  // When persistenceLock.isManualReset is set externally, sync storedMessages to prevent force-restore
+  useEffect(() => {
+    if (!isActive) return;
+    
+    const checkManualReset = setInterval(() => {
+      if (persistenceLock.isManualReset(sessionId) && !manualResetInProgressRef.current) {
+        // External manual reset detected (e.g., from CustomUserMessage delete)
+        // Check if messages are actually empty to confirm the delete happened
+        if (saveMessagesRef.current) {
+          const currentMessageData = saveMessagesRef.current();
+          if (currentMessageData.allMessages.length === 0 && storedMessages.length > 0) {
+            debug.log('[useMessagePersistence] External manual delete detected, clearing stored messages');
+            manualResetInProgressRef.current = true;
+            updateStoredMessagesState([]);
+            
+            setTimeout(() => {
+              manualResetInProgressRef.current = false;
+            }, MANUAL_RESET_STABILIZATION_DELAY);
+          }
+        }
+      }
+    }, 100); // Check frequently to catch the flag before it auto-clears
+    
+    return () => clearInterval(checkManualReset);
+  }, [isActive, sessionId, storedMessages.length, updateStoredMessagesState]);
 
   // Track panel visibility and reset auto-restore on panel reopen
   useEffect(() => {
@@ -719,7 +786,8 @@ export const useMessagePersistence = ({
     // Monitor for unexpected clearing and immediately restore
     const guardIntervalId = setInterval(() => {
       if (!saveMessagesRef.current || !restoreMessagesRef.current) return;
-      if (manualResetInProgressRef.current) return; // Skip if manual reset in progress
+      // Skip if manual reset in progress (either local ref or global persistence lock)
+      if (manualResetInProgressRef.current || persistenceLock.isManualReset(sessionId)) return;
       
       const currentMessageData = saveMessagesRef.current();
       if (currentMessageData.allMessages.length === 0 && storedMessages.length > 0) {
@@ -757,6 +825,9 @@ export const useMessagePersistence = ({
 
     let watchdogRestoreDone = false;
     const intervalId = setInterval(() => {
+      // Skip if manual reset in progress (user intentionally deleted messages)
+      if (manualResetInProgressRef.current || persistenceLock.isManualReset(sessionId)) return;
+      
       if (saveMessagesRef.current && restoreMessagesRef.current && storedMessages.length > 0) {
         const currentMessageData = saveMessagesRef.current();
         if (!watchdogRestoreDone && currentMessageData.allMessages.length === 0) {

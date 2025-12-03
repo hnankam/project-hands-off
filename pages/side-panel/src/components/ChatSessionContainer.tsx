@@ -921,6 +921,15 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         const timeSinceInitialReport = Date.now() - initialReportTimeRef.current;
         const isInGracePeriod = timeSinceInitialReport < 500;
         
+        // Special case: Always report when count changes significantly
+        // This handles: 1) user deleted all messages (0), 2) force-restore after failed clear
+        if (headlessMessagesCount !== lastReportedCountRef.current) {
+          debug.log(`[ChatSessionContainer] Reporting count change: ${lastReportedCountRef.current} → ${headlessMessagesCount} for session ${sessionId}`);
+          onMessagesCountChange(sessionId, headlessMessagesCount);
+          lastReportedCountRef.current = headlessMessagesCount;
+          return;
+        }
+        
         // Only log if count changed significantly AND we're past the grace period
         const countDiff = Math.abs(headlessMessagesCount - (lastReportedCountRef.current || 0));
         if (countDiff > 5 && !isInGracePeriod) {
@@ -936,11 +945,19 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     }, [onMessagesCountChange, sessionId, headlessMessagesCount, hydrationCompleted]);
 
     // Register reset function with parent when available
+    // We register a wrapper that always calls the current value of resetChatRef.current
+    // This ensures we always call the wrapped version (with manual reset tracking) even if
+    // the ref was updated after registration
     useEffect(() => {
-      if (onRegisterResetFunction && resetChatRef.current) {
-        onRegisterResetFunction(sessionId, resetChatRef.current);
+      if (onRegisterResetFunction) {
+        const resetWrapper = () => {
+          if (resetChatRef.current) {
+            resetChatRef.current();
+          }
+        };
+        onRegisterResetFunction(sessionId, resetWrapper);
       }
-    }, [onRegisterResetFunction, sessionId, resetChatRef.current]);
+    }, [onRegisterResetFunction, sessionId]);
 
     // Register save function with parent when available
     useEffect(() => {

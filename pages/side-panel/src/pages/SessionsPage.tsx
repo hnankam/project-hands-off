@@ -3,7 +3,7 @@ import { ChatSessionContainer } from '../components/ChatSessionContainer';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ChatSkeleton, MessagesOnlySkeleton, StatusBarSkeleton, SelectorsBarSkeleton } from '../components/LoadingStates';
 import type { SessionMetadata } from '@extension/shared';
-import { sessionStorageDBWrapper, generateSessionName } from '@extension/shared';
+import { sessionStorageDBWrapper, generateSessionName, persistenceLock, debug } from '@extension/shared';
 import { useAuth } from '../context/AuthContext';
 import UserMenu from '../components/UserMenu';
 import { ViewOptionsMenu } from '../components/ViewOptionsMenu';
@@ -452,6 +452,14 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     if (!currentSessionId) {
       console.error('[SessionsPage] No current session to reset');
       return;
+    }
+    
+    // Mark this as an intentional manual reset so persistence guards allow empty writes
+    try {
+      persistenceLock.setManualReset(currentSessionId, true);
+      debug.log('[SessionsPage] Marked manual reset for session:', currentSessionId);
+    } catch (e) {
+      debug.warn?.('[SessionsPage] Failed to mark manual reset flag:', e);
     }
     
     // Call the reset function for this session

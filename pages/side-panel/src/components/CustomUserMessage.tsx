@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useStorage } from '@extension/shared';
+import { useStorage, persistenceLock } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
 import { ImageRenderer, type UserMessageProps } from '@copilotkit/react-ui';
 import { MarkdownRenderer } from './tiptap/MarkdownRenderer';
+import { useChatSessionIdSafe } from '../context/ChatSessionIdContext';
 
 /**
  * Custom UserMessage Component for CopilotChat
@@ -27,6 +28,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
 }) => {
   const { isLight } = useStorage(themeStorage);
   const { messages, setMessages, reloadMessages } = useCopilotChatHeadless_c();
+  const sessionId = useChatSessionIdSafe();
 
   // Find the index of the current message
   const index = useMemo(() => {
@@ -298,10 +300,18 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
   };
 
   // Handle delete operations
+  // Signal intentional delete when result would be empty to prevent data loss protection from blocking
+  const signalIntentionalDeleteIfEmpty = (newMessages: typeof messages) => {
+    if (sessionId && (!newMessages || newMessages.length === 0)) {
+      persistenceLock.setManualReset(sessionId, true);
+    }
+  };
+
   const handleDeleteMessage = () => {
     if (!messages || index === -1) return;
 
     const updatedMessages = messages.filter((_, i) => i !== index);
+    signalIntentionalDeleteIfEmpty(updatedMessages);
     setMessages(updatedMessages);
     setShowDeleteMenu(false);
   };
@@ -311,6 +321,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
 
     // Delete all messages from index 0 to current index (inclusive)
     const updatedMessages = messages.filter((_, i) => i > index);
+    signalIntentionalDeleteIfEmpty(updatedMessages);
     setMessages(updatedMessages);
     setShowDeleteMenu(false);
   };
@@ -320,6 +331,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
 
     // Delete all messages from current index to end (inclusive)
     const updatedMessages = messages.filter((_, i) => i < index);
+    signalIntentionalDeleteIfEmpty(updatedMessages);
     setMessages(updatedMessages);
     setShowDeleteMenu(false);
   };

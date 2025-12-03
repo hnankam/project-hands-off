@@ -14,6 +14,7 @@ const manualOnlyCache: Map<string, boolean> = new Map();
  * 
  * An accordion-style component that displays the AI agent's thinking process.
  * Used in markdown rendering to show agent's thought process.
+ * Supports both <think> and <thinking> tags.
  * 
  * Features:
  * - Accordion (collapsible) interface
@@ -30,6 +31,7 @@ const manualOnlyCache: Map<string, boolean> = new Map();
  * @example
  * ```tsx
  * <think>Analyzing the page structure...</think>
+ * <thinking>Processing user request...</thinking>
  * ```
  */
 export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolean; instanceId?: string }> = ({ children, isComplete = false, instanceId }) => {

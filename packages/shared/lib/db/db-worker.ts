@@ -421,20 +421,20 @@ async function searchHTMLChunks(payload: {
   } else if (urls.length === 1) {
     // Single page search (original behavior)
     results = await db.query<any[]>(`
-      LET $q = $embedding;
-      SELECT 
-        id,
-        pageURL,
-        pageTitle,
-        chunkIndex,
-        text,
-        html,
-        vector::distance::knn() AS distance
-      FROM html_chunks
-      WHERE 
-        pageURL = $url
-        AND embedding <|${payload.topK},${efSearch}|> $q;
-    `, {
+    LET $q = $embedding;
+    SELECT 
+      id,
+      pageURL,
+      pageTitle,
+      chunkIndex,
+      text,
+      html,
+      vector::distance::knn() AS distance
+    FROM html_chunks
+    WHERE 
+      pageURL = $url
+      AND embedding <|${payload.topK},${efSearch}|> $q;
+  `, {
       url: urls[0],
       embedding: payload.queryEmbedding,
     });
@@ -458,8 +458,8 @@ async function searchHTMLChunks(payload: {
           AND embedding <|${payload.topK},${efSearch}|> $q;
       `, {
         url,
-        embedding: payload.queryEmbedding,
-      });
+    embedding: payload.queryEmbedding,
+  });
       
       if (pageResults && pageResults.length > 1 && pageResults[1]) {
         allResults.push(...pageResults[1]);
@@ -553,24 +553,24 @@ async function searchFormFields(payload: {
     return processResults(groupResults).slice(0, payload.topK);
   } else if (urls.length === 1) {
     // Single page search
-    const groupResults = await db.query<any[]>(`
-      LET $q = $embedding;
-      SELECT 
-        id,
-        pageURL,
-        groupIndex,
-        fieldsJSON,
-        vector::distance::knn() AS distance
-      FROM form_fields
-      WHERE 
-        pageURL = $url
-        AND embedding <|${groupTopK},${efSearch}|> $q;
-    `, {
+  const groupResults = await db.query<any[]>(`
+    LET $q = $embedding;
+    SELECT 
+      id,
+      pageURL,
+      groupIndex,
+      fieldsJSON,
+      vector::distance::knn() AS distance
+    FROM form_fields
+    WHERE 
+      pageURL = $url
+      AND embedding <|${groupTopK},${efSearch}|> $q;
+  `, {
       url: urls[0],
-      embedding: payload.queryEmbedding,
-    });
-    
-    log('[DB Worker] Query complete, results:', groupResults?.length);
+    embedding: payload.queryEmbedding,
+  });
+  
+  log('[DB Worker] Query complete, results:', groupResults?.length);
     return processResults(groupResults).slice(0, payload.topK);
   } else {
     // Multiple pages - search each and merge
@@ -625,7 +625,7 @@ async function searchClickableElements(payload: {
   const efSearch = Math.max(groupTopK * 3, 50);
   
   const processResults = (groupResults: any[]): any[] => {
-    if (!groupResults || groupResults.length < 2 || !groupResults[1] || groupResults[1].length === 0) {
+  if (!groupResults || groupResults.length < 2 || !groupResults[1] || groupResults[1].length === 0) {
       return [];
     }
 
@@ -1105,7 +1105,7 @@ async function fullTextSearchClickableElements(payload: {
   topK: number;
 }): Promise<any[]> {
   if (!db) throw new Error('Database not connected');
-
+  
   const groupResults = await db.query<any[]>(`
     SELECT 
       id,
