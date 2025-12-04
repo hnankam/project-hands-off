@@ -3,6 +3,17 @@ import { debug } from '@extension/shared';
 import { TIMING_CONSTANTS, ERROR_MESSAGES } from '../constants';
 
 // ================================================================================
+// FEATURE FLAGS
+// ================================================================================
+
+/**
+ * Temporarily disable the "Page content changed" notification banner.
+ * Set to true to hide the stale content indicator UI when DOM updates are received.
+ * This is useful during development or when the notification is too noisy.
+ */
+const DISABLE_STALE_CONTENT_INDICATOR = true;
+
+// ================================================================================
 // TYPES & INTERFACES
 // ================================================================================
 
@@ -368,9 +379,11 @@ export const useContentManager = ({
     // Use ref for stable comparison
     if (message.tabId !== currentTabIdRef.current) return;
     
-    // Show indicator immediately
+    // Show indicator immediately (unless disabled by feature flag)
     debug.log( '[ContentManager] Content became stale');
-    setShowStaleIndicator(true);
+    if (!DISABLE_STALE_CONTENT_INDICATOR) {
+      setShowStaleIndicator(true);
+    }
       
     // Capture the incremental DOM update if available
     if (message.domUpdate) {

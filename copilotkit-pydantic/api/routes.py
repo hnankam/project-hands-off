@@ -583,7 +583,8 @@ def register_info_routes(app: FastAPI) -> None:
                 tool_type = (tool_cfg.get("tool_type") or "custom").lower()
                 name = tool_cfg.get("tool_name") or tool_key
                 entry = {
-                    "name": name,
+                    "key": tool_key,  # Tool identifier (e.g., "clickElement")
+                    "name": name,  # Display name (e.g., "Click Element")
                     "description": tool_cfg.get("description", ""),
                     "parameters": _extract_parameters(tool_cfg.get("config")),
                     "source": tool_type,

@@ -36,6 +36,7 @@ export interface TabManagerProps {
 export interface TabManagerReturn {
   currentTabId: number | null;
   currentTabTitle: string;
+  currentTabUrl: string | null;
   getCurrentTabTitle: () => string;
   setCurrentTabId: (id: number | null) => void;
   setCurrentTabTitle: (title: string) => void;
@@ -65,6 +66,7 @@ export const useTabManager = ({
   
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
   const [currentTabTitle, setCurrentTabTitle] = useState<string>('');
+  const [currentTabUrl, setCurrentTabUrl] = useState<string | null>(null);
   const [tabTitleVersion, setTabTitleVersion] = useState(0);
   
   // Track tab title in ref to avoid heavy re-renders
@@ -145,10 +147,13 @@ export const useTabManager = ({
       // Update tab ID immediately
       setCurrentTabId(activeInfo.tabId);
       
-      // Get and update tab title
+      // Get and update tab info (title and URL)
       chrome.tabs.get(activeInfo.tabId, (tab) => {
-        if (!chrome.runtime.lastError && tab.title) {
-          updateTabTitle(tab.title);
+        if (!chrome.runtime.lastError) {
+          if (tab.title) {
+            updateTabTitle(tab.title);
+          }
+          setCurrentTabUrl(tab.url || null);
         }
       });
       
@@ -175,6 +180,9 @@ export const useTabManager = ({
       // Handle URL changes
       if (tabId === currentTabId && changeInfo.url) {
         // debug.log( `[TabManager] URL changed (interactive: ${isPanelInteractive})`);
+        
+        // Update URL for restricted page detection
+        setCurrentTabUrl(changeInfo.url);
         
         // Update title if available
         if (changeInfo.title || tab.title) {
@@ -277,9 +285,10 @@ export const useTabManager = ({
             const isFirstTimeGettingTab = !currentTabId && !initialTabFetchRef.current;
             const needsRefreshAfterPanelOpen = panelJustBecameVisible;
             
-            // Update tab info
+            // Update tab info (including URL for restricted page detection)
             setCurrentTabId(response.tabId);
             setCurrentTabTitle(response.title || '');
+            setCurrentTabUrl(response.url || null);
             updateTabTitle(response.title || '');
             
             // Auto-fetch content when needed
@@ -317,6 +326,7 @@ export const useTabManager = ({
   return {
     currentTabId,
     currentTabTitle,
+    currentTabUrl,
     getCurrentTabTitle,
     setCurrentTabId,
     setCurrentTabTitle

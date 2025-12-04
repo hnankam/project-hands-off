@@ -199,6 +199,8 @@ export interface ChatInnerProps {
   modelType?: string;
   organizationId?: string;
   teamId?: string;
+  /** Set of enabled frontend tool names. If undefined, all tools are enabled. */
+  enabledFrontendTools?: Set<string>;
 }
 
 // ================================================================================
@@ -232,6 +234,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   dbTotals,
   triggerManualRefresh,
   isAgentAndModelSelected = true,
+  enabledFrontendTools,
 }) => {
   // ================================================================================
   // THEME & STORAGE
@@ -452,6 +455,32 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
 
   const yesNo = useCallback((b: unknown) => (b ? 'yes' : 'no'), []);
 
+  /**
+   * Check if a frontend tool is enabled based on agent configuration.
+   * If enabledFrontendTools is undefined, all tools are enabled (default behavior).
+   */
+  const isToolEnabled = useCallback(
+    (toolName: string): boolean => {
+      return enabledFrontendTools === undefined || enabledFrontendTools.has(toolName);
+    },
+    [enabledFrontendTools],
+  );
+
+  /**
+   * Wrap a tool configuration to set its availability based on agent config.
+   * Uses CopilotKit's `available` property to control tool visibility.
+   * See: https://docs.copilotkit.ai/reference/hooks/useFrontendTool
+   */
+  const wrapToolConfig = useCallback(
+    <T extends { name: string }>(config: T): T & { available: 'enabled' | 'disabled' } => {
+      return {
+        ...config,
+        available: isToolEnabled(config.name) ? 'enabled' : 'disabled',
+      };
+    },
+    [isToolEnabled],
+  );
+
   // ================================================================================
   // DEFAULT TOOL RENDER
   // ================================================================================
@@ -526,81 +555,112 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     [searchManager, isLight, clipText, yesNo, currentPageContent, themeColor, selectedPageURLs],
   );
 
-  // Search Actions
-  useFrontendTool(createSearchPageContentAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
-  useFrontendTool(createSearchFormDataAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
-  useFrontendTool(createSearchDOMUpdatesAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [actionDeps]);
-  useFrontendTool(createSearchClickableElementsAction(actionDeps) as Parameters<typeof useFrontendTool>[0], [
-    actionDeps,
-  ]);
+  // Search Actions - conditionally enabled based on agent config
+  useFrontendTool(
+    wrapToolConfig(createSearchPageContentAction(actionDeps)) as Parameters<typeof useFrontendTool>[0],
+    [actionDeps, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createSearchFormDataAction(actionDeps)) as Parameters<typeof useFrontendTool>[0],
+    [actionDeps, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createSearchDOMUpdatesAction(actionDeps)) as Parameters<typeof useFrontendTool>[0],
+    [actionDeps, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createSearchClickableElementsAction(actionDeps)) as Parameters<typeof useFrontendTool>[0],
+    [actionDeps, wrapToolConfig],
+  );
 
-  // Data Retrieval Actions
+  // Data Retrieval Actions - conditionally enabled based on agent config
   const retrievalDeps = useMemo(() => ({ currentPageContent, isLight }), [currentPageContent, isLight]);
-  useFrontendTool(createGetHtmlChunksByRangeAction(retrievalDeps) as Parameters<typeof useFrontendTool>[0], [
-    retrievalDeps,
-  ]);
-  useFrontendTool(createGetFormChunksByRangeAction(retrievalDeps) as Parameters<typeof useFrontendTool>[0], [
-    retrievalDeps,
-  ]);
-  useFrontendTool(createGetClickableChunksByRangeAction(retrievalDeps) as Parameters<typeof useFrontendTool>[0], [
-    retrievalDeps,
-  ]);
+  useFrontendTool(
+    wrapToolConfig(createGetHtmlChunksByRangeAction(retrievalDeps)) as Parameters<typeof useFrontendTool>[0],
+    [retrievalDeps, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createGetFormChunksByRangeAction(retrievalDeps)) as Parameters<typeof useFrontendTool>[0],
+    [retrievalDeps, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createGetClickableChunksByRangeAction(retrievalDeps)) as Parameters<typeof useFrontendTool>[0],
+    [retrievalDeps, wrapToolConfig],
+  );
 
-  // DOM Manipulation Actions
+  // DOM Manipulation Actions - conditionally enabled based on agent config
   const domDeps = useMemo(
     () => ({ isLight, clipText, pageDataRef, triggerManualRefresh }),
     [isLight, clipText, triggerManualRefresh],
   );
-  useFrontendTool(createMoveCursorToElementAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [
-    domDeps,
-  ]);
   useFrontendTool(
-    createRefreshPageContentAction({ isLight, pageDataRef, triggerManualRefresh }) as Parameters<
-      typeof useFrontendTool
-    >[0],
-    [domDeps],
+    wrapToolConfig(createMoveCursorToElementAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    [domDeps, wrapToolConfig],
   );
-  useFrontendTool(createCleanupExtensionUIAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
-  useFrontendTool(createClickElementAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [domDeps]);
-  useFrontendTool(createVerifySelectorAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [
-    domDeps,
-  ]);
-  useFrontendTool(createGetSelectorAtPointAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
-  useFrontendTool(createGetSelectorsAtPointsAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
-  useFrontendTool(createSendKeystrokesAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [
-    domDeps,
-  ]);
+  useFrontendTool(
+    wrapToolConfig(
+      createRefreshPageContentAction({ isLight, pageDataRef, triggerManualRefresh }),
+    ) as Parameters<typeof useFrontendTool>[0],
+    [domDeps, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createCleanupExtensionUIAction({ isLight })) as Parameters<typeof useFrontendTool>[0],
+    [isLight, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createClickElementAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    [domDeps, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createVerifySelectorAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    [domDeps, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createGetSelectorAtPointAction({ isLight })) as Parameters<typeof useFrontendTool>[0],
+    [isLight, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createGetSelectorsAtPointsAction({ isLight })) as Parameters<typeof useFrontendTool>[0],
+    [isLight, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createSendKeystrokesAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    [domDeps, wrapToolConfig],
+  );
 
-  // Form Actions
-  useFrontendTool(createInputDataAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [
-    isLight,
-    clipText,
-  ]);
+  // Form Actions - conditionally enabled based on agent config
+  useFrontendTool(
+    wrapToolConfig(createInputDataAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    [isLight, clipText, wrapToolConfig],
+  );
 
-  // Navigation Actions
-  useFrontendTool(createOpenNewTabAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [
-    isLight,
-    clipText,
-  ]);
-  useFrontendTool(createScrollAction({ isLight, clipText, yesNo }) as Parameters<typeof useFrontendTool>[0], [
-    isLight,
-    clipText,
-    yesNo,
-  ]);
-  useFrontendTool(createDragAndDropAction({ isLight, clipText }) as Parameters<typeof useFrontendTool>[0], [
-    isLight,
-    clipText,
-  ]);
+  // Navigation Actions - conditionally enabled based on agent config
+  useFrontendTool(
+    wrapToolConfig(createOpenNewTabAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    [isLight, clipText, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createScrollAction({ isLight, clipText, yesNo })) as Parameters<typeof useFrontendTool>[0],
+    [isLight, clipText, yesNo, wrapToolConfig],
+  );
+  useFrontendTool(
+    wrapToolConfig(createDragAndDropAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    [isLight, clipText, wrapToolConfig],
+  );
 
-  // Screenshot Actions
-  useFrontendTool(createTakeScreenshotAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
+  // Screenshot Actions - conditionally enabled based on agent config
+  useFrontendTool(
+    wrapToolConfig(createTakeScreenshotAction({ isLight })) as Parameters<typeof useFrontendTool>[0],
+    [isLight, wrapToolConfig],
+  );
 
-  // Image Generation Actions
+  // Image Generation Actions - conditionally enabled based on agent config
+  // Note: useRenderToolCall is for rendering, not registration - the tool itself is registered elsewhere
   useRenderToolCall(createGenerateImagesAction({ themeColor }) as Parameters<typeof useRenderToolCall>[0], [
     themeColor,
   ]);
 
-  // Builtin Tool Renders
+  // Builtin Tool Renders (these are render handlers, not tool registration)
   useRenderToolCall(createWebSearchRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [
     isLight,
     clipText,
@@ -614,11 +674,26 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     clipText,
   ]);
 
-  // Utility Actions
-  useFrontendTool(createWaitAction({ isLight }) as Parameters<typeof useFrontendTool>[0], [isLight]);
+  // Utility Actions - conditionally enabled based on agent config
+  useFrontendTool(
+    wrapToolConfig(createWaitAction({ isLight })) as Parameters<typeof useFrontendTool>[0],
+    [isLight, wrapToolConfig],
+  );
 
-  // Human in the Loop
-  useHumanInTheLoop(createConfirmActionHumanInTheLoop({ isLight }) as Parameters<typeof useHumanInTheLoop>[0]);
+  // Human in the Loop - conditionally enabled based on agent config
+  // Uses CopilotKit's `available` property for proper tool visibility control
+  const confirmActionConfig = useMemo(
+    () => {
+      const config = createConfirmActionHumanInTheLoop({ isLight });
+      const isEnabled = enabledFrontendTools === undefined || enabledFrontendTools.has('confirmAction');
+      return {
+        ...config,
+        available: isEnabled ? ('enabled' as const) : ('disabled' as const),
+      };
+    },
+    [isLight, enabledFrontendTools],
+  );
+  useHumanInTheLoop(confirmActionConfig as Parameters<typeof useHumanInTheLoop>[0]);
 
   // ================================================================================
   // AGENT STATE RENDERING

@@ -21,6 +21,7 @@ import { usePageContentEmbedding } from '../hooks/usePageContentEmbedding';
 import { useDOMUpdateEmbedding } from '../hooks/useDOMUpdateEmbedding';
 import { useAgentSwitching } from '../hooks/useAgentSwitching';
 import { useAutoSave } from '../hooks/useAutoSave';
+import { useEnabledFrontendTools } from '../hooks/useEnabledFrontendTools';
 import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG } from '../constants';
 import { ts } from '../utils/logging';
 import { useAuth } from '../context/AuthContext';
@@ -254,6 +255,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const {
       currentTabId: managedTabId,
       currentTabTitle: managedTabTitle,
+      currentTabUrl: managedTabUrl,
       setCurrentTabId: setManagedTabId,
       setCurrentTabTitle: setManagedTabTitle,
     } = useTabManager({
@@ -719,6 +721,14 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       saveMessagesToStorage,
     });
 
+    // Enabled frontend tools hook - fetches which frontend tools are enabled for this agent
+    const { enabledFrontendTools, isLoading: isLoadingFrontendTools } = useEnabledFrontendTools({
+      agentType: activeAgent,
+      modelType: activeModel,
+      organizationId: organization?.id,
+      teamId: activeTeam || undefined,
+    });
+
     // Track if this is a user-initiated change - ONLY save when user explicitly changes agent/model
     // This ref is set to true ONLY by handleAgentChange/handleModelChange handlers
     const isUserInitiatedChange = useRef(false);
@@ -859,6 +869,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
             isConnected: isUsageConnected,
           }}
           onUsageClick={() => setIsUsagePopupOpen(true)}
+          currentPageUrl={managedTabUrl}
         />
       ),
       [
@@ -879,6 +890,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         lastUsage,
         cumulativeUsage,
         isUsageConnected,
+        managedTabUrl,
       ],
     );
 
@@ -1003,6 +1015,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           modelType={activeModel}
           organizationId={organization?.id || undefined}
           teamId={activeTeam || undefined}
+          enabledFrontendTools={enabledFrontendTools}
         />
       ),
       [
@@ -1013,6 +1026,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         currentAgentStepState,
         currentPageContent,
         dbTotals,
+        enabledFrontendTools,
         latestDOMUpdate,
         organization?.id,
         saveMessagesToStorage,

@@ -503,8 +503,8 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                       className={cn(
                         'flex-shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity',
                         isLight 
-                          ? 'hover:bg-red-100 text-red-500 hover:text-red-600' 
-                          : 'hover:bg-red-900/30 text-red-400 hover:text-red-300',
+                          ? 'hover:bg-gray-200 text-gray-400 hover:text-gray-600' 
+                          : 'hover:bg-gray-700 text-gray-500 hover:text-gray-300',
                       )}>
                       {isDeleting ? (
                         <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">

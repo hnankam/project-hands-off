@@ -1,7 +1,24 @@
 import type { FC, CSSProperties } from 'react';
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { UsageDisplay } from './UsageDisplay';
 import type { CumulativeUsage, UsageData } from '../hooks/useUsageStream';
+
+/** URL protocols that cannot have content scripts injected */
+const RESTRICTED_URL_PREFIXES = [
+  'chrome://',
+  'chrome-extension://',
+  'about:',
+  'edge://',
+  'brave://',
+  'moz-extension://',
+  'opera://',
+] as const;
+
+/** Check if a URL is a restricted page where content extraction is not possible */
+function isRestrictedPage(url: string | undefined | null): boolean {
+  if (!url) return false;
+  return RESTRICTED_URL_PREFIXES.some(prefix => url.startsWith(prefix));
+}
 
 export interface StatusBarProps {
   isLight: boolean;
@@ -33,6 +50,8 @@ export interface StatusBarProps {
     isConnected: boolean;
   } | null;
   onUsageClick?: () => void;
+  // Current page URL for detecting restricted pages
+  currentPageUrl?: string | null;
 }
 
 export const StatusBar: FC<StatusBarProps> = memo(({
@@ -51,8 +70,21 @@ export const StatusBar: FC<StatusBarProps> = memo(({
   isEmbedding,
   embeddingStatus,
   usageData,
-  onUsageClick
+  onUsageClick,
+  currentPageUrl,
 }) => {
+  // Get the current page URL from available sources
+  const currentUrl = useMemo(() => {
+    return contentState.current?.url || contentState.current?.pageURL || currentPageUrl || null;
+  }, [contentState.current?.url, contentState.current?.pageURL, currentPageUrl]);
+
+  // Check if we're on a restricted page (chrome://, about:, etc.)
+  const isOnRestrictedPage = useMemo(() => {
+    return isRestrictedPage(currentUrl);
+  }, [currentUrl]);
+
+  // If we have an error but no URL info yet, don't show error (still loading URL info)
+  const hasUrlInfo = currentUrl !== null;
   return (
     <div 
       className={`flex items-center justify-between gap-2 px-2 py-1 border-b h-[34px] ${
@@ -171,14 +203,38 @@ export const StatusBar: FC<StatusBarProps> = memo(({
             </div>
           </div>
         ) : contentState.status === 'error' ? (
-          <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
-            isLight ? 'text-red-600' : 'text-red-400'
-          }`}>
-            <svg width="15" height="15" fill="currentColor" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-            <span>Error loading content</span>
-          </div>
+          isOnRestrictedPage ? (
+            // Neutral status for restricted pages (chrome://, about:, etc.)
+            <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
+              isLight ? 'text-gray-500' : 'text-gray-400'
+            }`}>
+              <svg width="15" height="15" fill="currentColor" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
+                <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+              </svg>
+              <span>Restricted page</span>
+            </div>
+          ) : !hasUrlInfo ? (
+            // Still waiting for URL info - show loading instead of error
+            <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
+              isLight ? 'text-blue-600' : 'text-blue-400'
+            }`}>
+              <svg className="animate-spin" width="15" height="15" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span>Loading...</span>
+            </div>
+          ) : (
+            // Actual error for regular pages
+            <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
+              isLight ? 'text-red-600' : 'text-red-400'
+            }`}>
+              <svg width="15" height="15" fill="currentColor" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <span>Error loading content</span>
+            </div>
+          )
         ) : contentState.status === 'none' ? (
           <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
             isLight ? 'text-blue-600' : 'text-blue-400'
