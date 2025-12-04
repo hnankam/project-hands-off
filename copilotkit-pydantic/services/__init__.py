@@ -1,7 +1,7 @@
 """Business services for the Pydantic Agent Server."""
 
 from .session_manager import get_or_create_session_state, cleanup_session, session_states
-from .websocket_manager import ConnectionManager, manager
+from .ably_publisher import AblyPublisher, ably_publisher
 from .usage_tracker import create_usage_tracking_callback, log_usage_failure
 from .deployment_manager import (
     ensure_agent_ready,
@@ -18,8 +18,8 @@ __all__ = [
     'get_or_create_session_state',
     'cleanup_session',
     'session_states',
-    'ConnectionManager',
-    'manager',
+    'AblyPublisher',
+    'ably_publisher',
     'create_usage_tracking_callback',
     'log_usage_failure',
     'ensure_agent_ready',

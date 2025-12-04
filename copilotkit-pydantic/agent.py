@@ -6,7 +6,7 @@ For new code, please import directly from the appropriate modules:
 
 - config/ : Configuration (environment, models, prompts)
 - core/ : Core business logic (models, agent factory)
-- services/ : Business services (session, websocket, usage tracking)
+- services/ : Business services (session, ably publisher, usage tracking)
 - utils/ : Utility functions (anthropic cache, message processor)
 - tools/ : Agent tools
 """

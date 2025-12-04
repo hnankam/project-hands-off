@@ -1,6 +1,6 @@
 """Configuration module for Pydantic Agent Server."""
 
-from .environment import DEBUG, logger, HOST, PORT
+from .environment import DEBUG, logger, HOST, PORT, ABLY_API_KEY
 from .models import (
     get_models,
     get_model_names,
@@ -45,6 +45,7 @@ __all__ = [
     'logger',
     'HOST',
     'PORT',
+    'ABLY_API_KEY',
     'get_models',
     'get_model_names',
     'get_models_for_context',

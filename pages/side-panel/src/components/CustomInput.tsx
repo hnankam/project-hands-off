@@ -18,6 +18,7 @@ import { Mention } from '@tiptap/extension-mention';
 import Link from '@tiptap/extension-link';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import { common, createLowlight } from 'lowlight';
+import { Markdown } from 'tiptap-markdown';
 import { EnterToSend } from './tiptap/EnterToSendExtension';
 import { createSlashCommandExtension, type SlashCommand } from './tiptap/SlashCommandExtension';
 import { createMentionSuggestion, type MentionSuggestion } from './tiptap/MentionExtension';
@@ -594,17 +595,25 @@ export const CustomInput: React.FC<CustomInputProps> = ({
         blockquote: {},
         codeBlock: false, // We'll use CodeBlockLowlight instead
       }),
-      // Link extension is already included or handled elsewhere causing duplication warning
-      // Link.configure({
-      //   openOnClick: true,
-      //   autolink: true,
-      //   defaultProtocol: 'https',
-      //   HTMLAttributes: {
-      //     class: 'editor-link',
-      //     rel: 'noopener noreferrer',
-      //     target: '_blank',
-      //   },
-      // }),
+      Link.configure({
+        openOnClick: false, // Don't open links in editor, let the message render handle it
+        autolink: true, // Auto-detect URLs and convert to links
+        defaultProtocol: 'https',
+        HTMLAttributes: {
+          class: 'editor-link',
+          rel: 'noopener noreferrer',
+        },
+      }),
+      Markdown.configure({
+        html: false, // Don't allow HTML in markdown
+        tightLists: true, // No <p> inside <li> for single-line items
+        tightListClass: 'tight',
+        bulletListMarker: '-',
+        linkify: true, // Auto-convert URLs to links
+        breaks: false, // Don't convert single line breaks to <br>
+        transformPastedText: true, // Transform pasted markdown to rich text
+        transformCopiedText: true, // Transform copied content to markdown
+      }),
       CodeBlockLowlight.configure({
         lowlight,
         HTMLAttributes: {
@@ -1289,35 +1298,34 @@ export const CustomInput: React.FC<CustomInputProps> = ({
             disabled={!isInputEnabled}
           />
           
-          <button
-            ref={planButtonRef}
-            type="button"
-            onClick={handleToggleTaskProgress}
-            onMouseEnter={(e) => {
-              if (!canToggleTaskProgress) return;
-              const rect = e.currentTarget.getBoundingClientRect();
-              setPlanTooltipRect({ left: rect.left + rect.width / 2, top: rect.top });
-              setShowPlanTooltip(true);
-            }}
-            onMouseLeave={() => {
-              setShowPlanTooltip(false);
-            }}
-            className={`copilotKitInputControlButton ${
-              canToggleTaskProgress
-                ? showTaskProgress
+          {/* Plan toggle button - only shown when a plan is available */}
+          {canToggleTaskProgress && (
+            <button
+              ref={planButtonRef}
+              type="button"
+              onClick={handleToggleTaskProgress}
+              onMouseEnter={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setPlanTooltipRect({ left: rect.left + rect.width / 2, top: rect.top });
+                setShowPlanTooltip(true);
+              }}
+              onMouseLeave={() => {
+                setShowPlanTooltip(false);
+              }}
+              className={`copilotKitInputControlButton ${
+                showTaskProgress
                   ? isLight
                     ? 'text-blue-600 bg-blue-100 hover:bg-blue-200'
                     : 'text-blue-400 bg-blue-900/50 hover:bg-blue-900/70'
                   : isLight
                     ? 'text-gray-600 hover:bg-gray-200'
                     : 'text-gray-400 hover:bg-gray-700'
-                : 'opacity-40 cursor-not-allowed'
-            }`}
-            disabled={!canToggleTaskProgress}
-            aria-label={showTaskProgress ? 'Hide plan progress' : 'Show plan progress'}
-          >
-            {CustomIcons.plan}
-          </button>
+              }`}
+              aria-label={showTaskProgress ? 'Hide plan progress' : 'Show plan progress'}
+            >
+              {CustomIcons.plan}
+            </button>
+          )}
           
           {/* Upload dropdown menu */}
           <DropdownMenu

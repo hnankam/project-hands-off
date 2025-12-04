@@ -13,7 +13,7 @@ from core.models import AgentState
 from services import (
     cleanup_session,
     session_states,
-    manager,
+    ably_publisher,
     create_usage_tracking_callback,
     log_usage_failure,
     ensure_agent_ready,
@@ -224,7 +224,7 @@ def register_agent_routes(app: FastAPI) -> None:
                 agent_label=agent_type,
                 model_label=model,
                 error_message=exc,
-                broadcast_func=manager.broadcast_to_session,
+                broadcast_func=ably_publisher.broadcast_to_session,
                 organization_id=organization_id,
                 team_id=team_id,
                 user_id=user_id,
@@ -249,7 +249,7 @@ def register_agent_routes(app: FastAPI) -> None:
             model_id=model_db_id or model,
             agent_label=agent_type,
             model_label=model,
-            broadcast_func=manager.broadcast_to_session,
+            broadcast_func=ably_publisher.broadcast_to_session,
             auth_session_id=session_id,
             user_id=user_id,
             organization_id=organization_id,
@@ -336,7 +336,7 @@ def register_agent_routes(app: FastAPI) -> None:
                 agent_label=agent_type,
                 model_label=model,
                 error_message=exc,
-                broadcast_func=manager.broadcast_to_session,
+                broadcast_func=ably_publisher.broadcast_to_session,
                 organization_id=organization_id,
                 team_id=team_id,
                 user_id=user_id,
@@ -374,14 +374,13 @@ def register_info_routes(app: FastAPI) -> None:
         """Root endpoint with server info."""
         return {
             "status": "running",
-            "message": "Pydantic AI Agent Server with WebSocket Usage Streaming",
+            "message": "Pydantic AI Agent Server with Ably Pub/Sub",
             "endpoints": {
                 "agents": "POST /agent/{agent_type}/{model}",
-                "websocket": "WS /ws/usage/{session_id}",
                 "sessions": "GET /sessions",
                 "cleanup": "POST /sessions/{session_id}/cleanup",
             },
-            "usage_streaming": "Connect via WebSocket to receive real-time usage updates",
+            "realtime": "Subscribe to Ably channel 'usage:{session_id}' for live updates",
         }
 
     @app.get("/healthz")
@@ -419,25 +418,21 @@ def register_info_routes(app: FastAPI) -> None:
 
     @app.get("/sessions")
     async def list_sessions():
-        """List all active sessions and their WebSocket connections.
+        """List all active sessions.
 
         Returns:
             Dictionary with session information
         """
         sessions = {}
         for session_id, states in session_states.items():
-            ws_connections = len(manager.active_connections.get(session_id, set()))
             sessions[session_id] = {
                 "agents": list(states.keys()),
                 "agent_count": len(states),
-                "websocket_connections": ws_connections,
             }
         return {
             "sessions": sessions,
             "total_sessions": len(session_states),
-            "total_websocket_connections": sum(
-                len(conns) for conns in manager.active_connections.values()
-            ),
+            "realtime_provider": "ably",
         }
 
     @app.post("/deployments/context")

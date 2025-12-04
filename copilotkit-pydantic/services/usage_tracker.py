@@ -94,7 +94,7 @@ def create_usage_tracking_callback(
     organization_id: Optional[str] = None,
     team_id: Optional[str] = None,
 ) -> Callable[[AgentRunResult[Any]], Awaitable[None]]:
-    """Factory function that creates an OnCompleteFunc that broadcasts usage via WebSocket.
+    """Factory function that creates an OnCompleteFunc that broadcasts usage via Ably Pub/Sub.
     
     Args:
         session_id: The session ID to associate with this usage
@@ -123,7 +123,7 @@ def create_usage_tracking_callback(
             return 0
 
     async def on_complete_usage_tracking(result: AgentRunResult[Any]):
-        """OnCompleteFunc to track token usage and broadcast via WebSocket."""
+        """OnCompleteFunc to track token usage and broadcast via Ably."""
         usage = result.usage()
         details_dict = usage.details if isinstance(getattr(usage, "details", None), dict) else None
 

@@ -20,17 +20,25 @@ export const EnterToSend = Extension.create<EnterToSendOptions>({
       Enter: () => {
         const { onSend, canSend } = this.options;
         
-        // Shift+Enter = new line (default behavior)
-        // Enter alone = send message
+        // Enter = send message (if can send)
         if (canSend()) {
           onSend();
           return true; // Prevent default
         }
-        return false; // Allow default (new line)
+        // If can't send, create new paragraph (allows input rules to work)
+        return false;
       },
       'Shift-Enter': () => {
-        // Always allow new line with Shift+Enter
-        return false;
+        // Shift+Enter = new paragraph (not hard break)
+        // This allows markdown input rules to work on the new line
+        // because input rules fire at the start of new paragraphs
+        this.editor.commands.splitBlock();
+        return true; // Prevent default hard break
+      },
+      'Mod-Enter': () => {
+        // Cmd/Ctrl+Enter = hard break (for when you really want <br>)
+        this.editor.commands.setHardBreak();
+        return true;
       },
     };
   },

@@ -55,3 +55,7 @@ logger = setup_logging()
 # Server configuration
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8001))
+
+# Ably Pub/Sub configuration
+# API key for real-time messaging (same key used by backend to publish, frontend to subscribe)
+ABLY_API_KEY = os.getenv("ABLY_API_KEY", "")

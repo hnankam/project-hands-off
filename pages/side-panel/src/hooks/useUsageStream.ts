@@ -1,10 +1,11 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import * as Ably from 'ably';
 
 // Debug toggle (set false in production)
 const DEBUG = true;
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
-const log = (...args: any[]) => DEBUG && console.log(ts(), ...args);
-const err = (...args: any[]) => console.error(ts(), ...args);
+const log = (...args: unknown[]) => DEBUG && console.log(ts(), ...args);
+const err = (...args: unknown[]) => console.error(ts(), ...args);
 
 export interface UsageData {
   session_id: string;
@@ -33,51 +34,12 @@ export interface UseUsageStreamReturn {
   setLastUsage: (usage: UsageData | null) => void;
 }
 
-type ConnectionSnapshot = {
-  lastUsage: UsageData | null;
-  cumulativeUsage: CumulativeUsage;
-  isConnected: boolean;
-  error: string | null;
-};
-
-interface ConnectionEntry {
-  key: string;
-  sessionId: string;
-  wsUrl: string;
-  ws: WebSocket | null;
-  listeners: Set<(snapshot: ConnectionSnapshot) => void>;
-  enabledCount: number;
-  reconnectAttempts: number;
-  reconnectTimeout: NodeJS.Timeout | null;
-  immediateFailureCount: number;
-  connectionOpenedAt: number;
-  hasReceivedMessage: boolean;
-  lastUsage: UsageData | null;
-  cumulativeUsage: CumulativeUsage;
-  isConnected: boolean;
-  error: string | null;
-  pingInterval: NodeJS.Timeout | null;
-  initializedFromStorage: boolean;
-  isIntentionalClose: boolean; // Track when close is intentional to suppress errors
-}
-
-const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;
-
-const connectionPool = new Map<string, ConnectionEntry>();
-
 const createEmptyCumulative = (): CumulativeUsage => ({
   request: 0,
   response: 0,
   total: 0,
   requestCount: 0,
 });
-
-const normalizeWsUrl = (url: string): string => {
-  if (!url) {
-    return '';
-  }
-  return url.endsWith('/') ? url.slice(0, -1) : url;
-};
 
 const cloneCumulative = (usage?: CumulativeUsage): CumulativeUsage => ({
   request: usage?.request ?? 0,
@@ -86,490 +48,204 @@ const cloneCumulative = (usage?: CumulativeUsage): CumulativeUsage => ({
   requestCount: usage?.requestCount ?? 0,
 });
 
-const createSnapshot = (entry: ConnectionEntry): ConnectionSnapshot => ({
-  lastUsage: entry.lastUsage,
-  cumulativeUsage: cloneCumulative(entry.cumulativeUsage),
-  isConnected: entry.isConnected,
-  error: entry.error,
-});
+// Shared Ably client instance (singleton pattern)
+let sharedAblyClient: Ably.Realtime | null = null;
+let clientRefCount = 0;
 
-const notifyListeners = (entry: ConnectionEntry) => {
-  const snapshot = createSnapshot(entry);
-  entry.listeners.forEach(listener => {
-    try {
-      listener(snapshot);
-    } catch (e) {
-      err('Listener error in useUsageStream:', e);
-    }
-  });
+const getAblyClient = (apiKey: string): Ably.Realtime => {
+  if (!sharedAblyClient) {
+    sharedAblyClient = new Ably.Realtime({ key: apiKey });
+    log('[useUsageStream] Created shared Ably client');
+  }
+  clientRefCount++;
+  return sharedAblyClient;
 };
 
-const cleanupEntryIfIdle = (entry: ConnectionEntry) => {
-  if (entry.enabledCount > 0 || entry.listeners.size > 0) {
-    return;
-  }
-
-  log(`🧹 [useUsageStream] Cleaning up entry for session ${entry.sessionId}`);
-
-  if (entry.reconnectTimeout) {
-    clearTimeout(entry.reconnectTimeout);
-    entry.reconnectTimeout = null;
-  }
-
-  if (entry.pingInterval) {
-    clearInterval(entry.pingInterval);
-    entry.pingInterval = null;
-  }
-
-  if (entry.ws) {
-    try {
-      entry.isIntentionalClose = true; // Mark as intentional to suppress error logs
-      entry.ws.close();
-    } catch {}
-    entry.ws = null;
-  }
-
-  connectionPool.delete(entry.key);
-};
-
-const scheduleReconnect = (entry: ConnectionEntry) => {
-  if (entry.enabledCount <= 0) {
-    cleanupEntryIfIdle(entry);
-    return;
-  }
-
-  if (entry.reconnectAttempts >= DEFAULT_MAX_RECONNECT_ATTEMPTS) {
-    entry.error = 'Max reconnection attempts reached';
-    notifyListeners(entry);
-    return;
-  }
-
-  entry.reconnectAttempts += 1;
-  const delay = Math.min(1000 * Math.pow(2, entry.reconnectAttempts), 30000);
-  log(
-    `🔄 [useUsageStream] Reconnecting session ${entry.sessionId} in ${delay}ms ` +
-      `(attempt ${entry.reconnectAttempts}/${DEFAULT_MAX_RECONNECT_ATTEMPTS})`,
-  );
-
-  if (entry.reconnectTimeout) {
-    clearTimeout(entry.reconnectTimeout);
-  }
-
-  entry.reconnectTimeout = setTimeout(() => {
-    entry.reconnectTimeout = null;
-    ensureConnection(entry);
-  }, delay);
-};
-
-const ensureConnection = (entry: ConnectionEntry) => {
-  if (entry.enabledCount <= 0) {
-    log(`[useUsageStream] Skipping connection for session ${entry.sessionId} (no enabled listeners)`);
-    return;
-  }
-
-  if (
-    entry.ws &&
-    (entry.ws.readyState === WebSocket.OPEN || entry.ws.readyState === WebSocket.CONNECTING)
-  ) {
-    return;
-  }
-
-  if (entry.reconnectTimeout) {
-    clearTimeout(entry.reconnectTimeout);
-    entry.reconnectTimeout = null;
-  }
-
-  if (entry.ws) {
-    try {
-      entry.isIntentionalClose = true;
-      entry.ws.close();
-    } catch {}
-    entry.ws = null;
-  }
-
-  // Reset intentional close flag for new connection
-  entry.isIntentionalClose = false;
-
-  // Add minimal delay before creating new connection to allow cleanup to complete
-  // This prevents the "WebSocket is closed before connection is established" browser error
-  // Using requestAnimationFrame for minimal delay while still allowing event loop to process
-  setTimeout(() => {
-    // Re-check if still enabled after delay
-    if (entry.enabledCount <= 0) {
-      log(`[useUsageStream] Connection cancelled after delay for session ${entry.sessionId}`);
-      return;
-    }
-    
-    createWebSocketConnection(entry);
-  }, 20); // Reduced from 50ms to 20ms - just enough for cleanup
-};
-
-const createWebSocketConnection = (entry: ConnectionEntry) => {
-  const baseUrl = entry.wsUrl || 'ws://localhost:8001';
-  const url = `${baseUrl}/ws/usage/${entry.sessionId}`;
-
-  log(`[useUsageStream] Opening WebSocket for session ${entry.sessionId}: ${url}`);
-
-  try {
-    const ws = new WebSocket(url);
-    entry.ws = ws;
-    entry.connectionOpenedAt = 0;
-    entry.hasReceivedMessage = false;
-
-    ws.onopen = () => {
-      log(`[useUsageStream] WebSocket connected for session ${entry.sessionId}`);
-      entry.isConnected = true;
-      entry.error = null;
-      entry.reconnectAttempts = 0;
-      entry.connectionOpenedAt = Date.now();
-      entry.immediateFailureCount = 0;
-      notifyListeners(entry);
-
-      if (entry.pingInterval) {
-        clearInterval(entry.pingInterval);
-      }
-
-      entry.pingInterval = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send('ping');
-        }
-      }, 30000);
-    };
-
-    ws.onmessage = event => {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.type === 'pong') {
-          return;
-        }
-
-        const requestTokens = Number(data.request_tokens) || 0;
-        const responseTokens = Number(data.response_tokens) || 0;
-        const totalTokens = Number(data.total_tokens) || requestTokens + responseTokens;
-
-        entry.lastUsage = data;
-        entry.cumulativeUsage = {
-          request: entry.cumulativeUsage.request + requestTokens,
-          response: entry.cumulativeUsage.response + responseTokens,
-          total: entry.cumulativeUsage.total + totalTokens,
-          requestCount: entry.cumulativeUsage.requestCount + 1,
-        };
-
-        entry.hasReceivedMessage = true;
-        notifyListeners(entry);
-      } catch (e) {
-        err('[useUsageStream] Failed to parse WebSocket message:', e);
-      }
-    };
-
-    ws.onerror = event => {
-      // Suppress error logs for intentional closes (cleanup during session switch)
-      if (entry.isIntentionalClose) {
-        log(`[useUsageStream] WebSocket error suppressed (intentional close) for session ${entry.sessionId}`);
-        return;
-      }
-      err('[useUsageStream] WebSocket error:', event);
-      entry.error = 'WebSocket connection error';
-      notifyListeners(entry);
-    };
-
-    ws.onclose = event => {
-      const duration = entry.connectionOpenedAt ? Date.now() - entry.connectionOpenedAt : 0;
-      
-      // Suppress close logs for intentional closes
-      if (!entry.isIntentionalClose) {
-      log('[useUsageStream] WebSocket closed', {
-        sessionId: entry.sessionId,
-        code: event.code,
-        reason: event.reason,
-        wasClean: event.wasClean,
-        duration,
-      });
-      }
-
-      entry.isConnected = false;
-      notifyListeners(entry);
-
-      if (entry.pingInterval) {
-        clearInterval(entry.pingInterval);
-        entry.pingInterval = null;
-      }
-
-      entry.ws = null;
-
-      // Skip reconnection logic for intentional closes
-      if (entry.isIntentionalClose) {
-        cleanupEntryIfIdle(entry);
-        return;
-      }
-
-      const neverOpened = entry.connectionOpenedAt === 0;
-      const closedImmediately =
-        entry.connectionOpenedAt > 0 && duration < 200 && !entry.hasReceivedMessage;
-      const immediateFailure = neverOpened || closedImmediately;
-
-      if (immediateFailure) {
-        entry.immediateFailureCount += 1;
-        log(
-          `[useUsageStream] Immediate failure for session ${entry.sessionId} ` +
-            `(${entry.immediateFailureCount}/3)`,
-        );
-
-        if (entry.immediateFailureCount >= 3) {
-          entry.error = 'Connection rejected by server (limit may be reached)';
-          notifyListeners(entry);
-          return;
-        }
-      } else {
-        entry.immediateFailureCount = 0;
-      }
-
-      if (entry.enabledCount > 0) {
-        scheduleReconnect(entry);
-      } else {
-        cleanupEntryIfIdle(entry);
-      }
-    };
-  } catch (error) {
-    err('[useUsageStream] Error creating WebSocket:', error);
-    entry.error = error instanceof Error ? error.message : 'Connection failed';
-    notifyListeners(entry);
-    scheduleReconnect(entry);
+const releaseAblyClient = () => {
+  clientRefCount--;
+  if (clientRefCount <= 0 && sharedAblyClient) {
+    log('[useUsageStream] Closing shared Ably client');
+    sharedAblyClient.close();
+    sharedAblyClient = null;
+    clientRefCount = 0;
   }
 };
 
 /**
- * Check if usage data has actual values (not just default zeros)
- */
-const hasActualUsageData = (usage?: CumulativeUsage): boolean => {
-  if (!usage) return false;
-  return usage.request > 0 || usage.response > 0 || usage.total > 0 || usage.requestCount > 0;
-};
-
-/**
- * Get the total token count for comparison
- */
-const getTotalTokens = (usage?: CumulativeUsage): number => {
-  if (!usage) return 0;
-  return usage.total || (usage.request + usage.response);
-};
-
-const getOrCreateEntry = (
-  sessionId: string,
-  wsUrl: string,
-  initialCumulative?: CumulativeUsage,
-  initialLastUsage?: UsageData | null,
-): ConnectionEntry => {
-  const normalizedUrl = normalizeWsUrl(wsUrl || 'ws://localhost:8001');
-  const key = `${normalizedUrl}::${sessionId}`;
-  const existing = connectionPool.get(key);
-
-  // Check if we have ACTUAL data (not just default zeros)
-  const hasRealData = hasActualUsageData(initialCumulative) || Boolean(initialLastUsage);
-  const incomingTotal = getTotalTokens(initialCumulative);
-
-  if (existing) {
-    const existingTotal = getTotalTokens(existing.cumulativeUsage);
-    
-    // ALWAYS update with DB data if:
-    // 1. We have real incoming data AND
-    // 2. Either: entry wasn't initialized from storage, OR incoming data is higher (DB has full history)
-    // This ensures DB data (which has historical totals) takes precedence over partial WebSocket data
-    const shouldUpdate = hasRealData && (
-      !existing.initializedFromStorage || 
-      incomingTotal > existingTotal
-    );
-    
-    if (shouldUpdate) {
-      log(`[useUsageStream] Updating entry for session ${sessionId}: incoming=${incomingTotal}, existing=${existingTotal}`);
-      if (initialCumulative) {
-        existing.cumulativeUsage = cloneCumulative(initialCumulative);
-      }
-      if (initialLastUsage) {
-        existing.lastUsage = initialLastUsage;
-      }
-      existing.initializedFromStorage = true;
-      notifyListeners(existing);
-    }
-    return existing;
-  }
-
-  const entry: ConnectionEntry = {
-    key,
-    sessionId,
-    wsUrl: normalizedUrl,
-    ws: null,
-    listeners: new Set(),
-    enabledCount: 0,
-    reconnectAttempts: 0,
-    reconnectTimeout: null,
-    immediateFailureCount: 0,
-    connectionOpenedAt: 0,
-    hasReceivedMessage: false,
-    lastUsage: initialLastUsage ?? null,
-    cumulativeUsage: cloneCumulative(initialCumulative),
-    isConnected: false,
-    error: null,
-    pingInterval: null,
-    // Only mark as initialized if we have REAL data, not just default zeros
-    initializedFromStorage: hasRealData,
-    isIntentionalClose: false,
-  };
-
-  log(`[useUsageStream] Created new entry for session ${sessionId} with total=${incomingTotal}`);
-  connectionPool.set(key, entry);
-  return entry;
-};
-
-const incrementEnabled = (entry: ConnectionEntry) => {
-  entry.enabledCount += 1;
-  ensureConnection(entry);
-};
-
-const decrementEnabled = (entry: ConnectionEntry) => {
-  if (entry.enabledCount > 0) {
-    entry.enabledCount -= 1;
-  }
-
-  if (entry.enabledCount === 0) {
-    if (entry.reconnectTimeout) {
-      clearTimeout(entry.reconnectTimeout);
-      entry.reconnectTimeout = null;
-    }
-
-    if (entry.ws) {
-      try {
-        entry.isIntentionalClose = true; // Mark as intentional to suppress error logs
-        entry.ws.close();
-      } catch {}
-    } else {
-      cleanupEntryIfIdle(entry);
-    }
-  }
-};
-
-/**
- * Custom hook to stream usage statistics via WebSocket.
- * Ensures only one underlying WebSocket connection per session, shared across all hook consumers.
+ * Custom hook to stream usage statistics via Ably Pub/Sub.
+ * 
+ * Subscribes to session-specific usage channels and receives
+ * real-time updates when the backend publishes usage data.
  */
 export function useUsageStream(
   sessionId: string | null,
   enabled: boolean = true,
-  wsUrl: string = 'ws://localhost:8001',
+  ablyKey: string = '',
   initialCumulative?: CumulativeUsage,
   initialLastUsage?: UsageData | null,
 ): UseUsageStreamReturn {
-  const [snapshot, setSnapshot] = useState<ConnectionSnapshot>(() => ({
-    lastUsage: initialLastUsage ?? null,
-    cumulativeUsage: cloneCumulative(initialCumulative),
-    isConnected: false,
-    error: null,
-  }));
+  const [lastUsage, setLastUsageState] = useState<UsageData | null>(initialLastUsage ?? null);
+  const [cumulativeUsage, setCumulativeState] = useState<CumulativeUsage>(
+    () => cloneCumulative(initialCumulative)
+  );
+  const [isConnected, setIsConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const entryRef = useRef<ConnectionEntry | null>(null);
-  const enabledRef = useRef<boolean>(false);
+  const channelRef = useRef<Ably.RealtimeChannel | null>(null);
+  const clientRef = useRef<Ably.Realtime | null>(null);
+  const listenersAttachedRef = useRef(false);
+
+  // Update cumulative when initial values change (e.g., from DB)
+  useEffect(() => {
+    if (initialCumulative) {
+      const hasRealData = 
+        initialCumulative.request > 0 || 
+        initialCumulative.response > 0 || 
+        initialCumulative.total > 0;
+      
+      if (hasRealData) {
+        setCumulativeState(prev => {
+          const incomingTotal = initialCumulative.total || (initialCumulative.request + initialCumulative.response);
+          const currentTotal = prev.total || (prev.request + prev.response);
+          
+          if (incomingTotal > currentTotal) {
+            return cloneCumulative(initialCumulative);
+          }
+          return prev;
+        });
+      }
+    }
+    if (initialLastUsage) {
+      setLastUsageState(initialLastUsage);
+    }
+  }, [initialCumulative, initialLastUsage]);
 
   useEffect(() => {
-    if (!sessionId) {
-      setSnapshot({
-        lastUsage: null,
-        cumulativeUsage: cloneCumulative(initialCumulative),
-        isConnected: false,
-        error: null,
-      });
-      const previousEntry = entryRef.current;
-      if (previousEntry && enabledRef.current) {
-        decrementEnabled(previousEntry);
+    if (!sessionId || !enabled || !ablyKey) {
+      // Cleanup channel subscription only (keep client alive for other sessions)
+      if (channelRef.current) {
+        log(`[useUsageStream] Unsubscribing from channel`);
+        channelRef.current.unsubscribe();
+        channelRef.current = null;
       }
-      entryRef.current = null;
-      enabledRef.current = false;
+      if (clientRef.current) {
+        releaseAblyClient();
+        clientRef.current = null;
+        listenersAttachedRef.current = false;
+      }
+      setIsConnected(false);
+      
+      if (!ablyKey && enabled && sessionId) {
+        log('[useUsageStream] Ably key not configured');
+      }
       return;
     }
 
-    const entry = getOrCreateEntry(sessionId, wsUrl, initialCumulative, initialLastUsage);
-    entryRef.current = entry;
+    const channelName = `usage:${sessionId}`;
+    log(`[useUsageStream] Subscribing to channel: ${channelName}`);
 
-    const listener = (state: ConnectionSnapshot) => {
-      setSnapshot(state);
-    };
+    try {
+      const client = getAblyClient(ablyKey);
+      clientRef.current = client;
 
-    entry.listeners.add(listener);
-    listener(createSnapshot(entry));
+      // Connection state handlers (only attach once per client)
+      const onConnected = () => {
+        log('[useUsageStream] Connected to Ably!');
+        setIsConnected(true);
+        setError(null);
+      };
 
-    if (enabled) {
-      incrementEnabled(entry);
-      enabledRef.current = true;
-    } else {
-      enabledRef.current = false;
+      const onDisconnected = () => {
+        log('[useUsageStream] Disconnected from Ably (will auto-reconnect)');
+        setIsConnected(false);
+      };
+
+      const onFailed = () => {
+        err('[useUsageStream] Ably connection failed');
+        setIsConnected(false);
+        setError('Connection failed');
+      };
+
+      // Only attach listeners if not already attached
+      if (!listenersAttachedRef.current) {
+        client.connection.on('connected', onConnected);
+        client.connection.on('disconnected', onDisconnected);
+        client.connection.on('failed', onFailed);
+        listenersAttachedRef.current = true;
+      }
+
+      // Set initial connection state
+      if (client.connection.state === 'connected') {
+        setIsConnected(true);
+      }
+
+      // Get channel and subscribe
+      const channel = client.channels.get(channelName);
+      channelRef.current = channel;
+
+      // Message handler
+      const onMessage = (message: Ably.Message) => {
+        try {
+          const data = message.data as UsageData;
+          log('[useUsageStream] Message received:', data);
+
+          const requestTokens = Number(data.request_tokens) || 0;
+          const responseTokens = Number(data.response_tokens) || 0;
+          const totalTokens = Number(data.total_tokens) || requestTokens + responseTokens;
+
+          setLastUsageState(data);
+          setCumulativeState(prev => ({
+            request: prev.request + requestTokens,
+            response: prev.response + responseTokens,
+            total: prev.total + totalTokens,
+            requestCount: prev.requestCount + 1,
+          }));
+        } catch (e) {
+          err('[useUsageStream] Failed to process message:', e);
+        }
+      };
+
+      channel.subscribe('update', onMessage);
+
+      // Cleanup on unmount or dependency change
+      return () => {
+        log(`[useUsageStream] Cleanup: unsubscribing from ${channelName}`);
+        channel.unsubscribe('update', onMessage);
+        
+        // Only remove listeners and release client if we're the last user
+        if (clientRef.current) {
+          releaseAblyClient();
+          clientRef.current = null;
+          listenersAttachedRef.current = false;
+        }
+        channelRef.current = null;
+      };
+
+    } catch (e) {
+      err('[useUsageStream] Error setting up Ably:', e);
+      setError(e instanceof Error ? e.message : 'Failed to connect');
+      return undefined;
     }
-
-    return () => {
-      entry.listeners.delete(listener);
-
-      if (enabledRef.current) {
-        // decrementEnabled handles cleanup via ws.onclose or cleanupEntryIfIdle
-        decrementEnabled(entry);
-        enabledRef.current = false;
-      } else {
-        // Only call cleanupEntryIfIdle if decrementEnabled wasn't called
-        // (decrementEnabled already handles cleanup internally)
-        cleanupEntryIfIdle(entry);
-      }
-
-      if (entryRef.current === entry) {
-        entryRef.current = null;
-      }
-    };
-    // Re-run when any dependency changes to update subscription/connection state
-  }, [sessionId, wsUrl, enabled, initialCumulative, initialLastUsage]);
+  }, [sessionId, enabled, ablyKey]);
 
   const resetCumulative = useCallback(() => {
-    const entry = entryRef.current;
-    if (entry) {
-      entry.cumulativeUsage = createEmptyCumulative();
-      entry.lastUsage = null;
-      notifyListeners(entry);
-    } else {
-      setSnapshot(prev => ({
-        ...prev,
-        lastUsage: null,
-        cumulativeUsage: createEmptyCumulative(),
-      }));
-    }
+    setCumulativeState(createEmptyCumulative());
+    setLastUsageState(null);
   }, []);
 
   const setCumulative = useCallback((usage: CumulativeUsage) => {
-    const entry = entryRef.current;
-    if (entry) {
-      entry.cumulativeUsage = cloneCumulative(usage);
-      notifyListeners(entry);
-    } else {
-      setSnapshot(prev => ({
-        ...prev,
-        cumulativeUsage: cloneCumulative(usage),
-      }));
-    }
+    setCumulativeState(cloneCumulative(usage));
   }, []);
 
   const setLastUsage = useCallback((usage: UsageData | null) => {
-    const entry = entryRef.current;
-    if (entry) {
-      entry.lastUsage = usage;
-      notifyListeners(entry);
-    } else {
-      setSnapshot(prev => ({
-        ...prev,
-        lastUsage: usage,
-      }));
-    }
+    setLastUsageState(usage);
   }, []);
 
   return {
-    lastUsage: snapshot.lastUsage,
-    cumulativeUsage: snapshot.cumulativeUsage,
-    isConnected: snapshot.isConnected,
-    error: snapshot.error,
+    lastUsage,
+    cumulativeUsage,
+    isConnected,
+    error,
     resetCumulative,
     setCumulative,
     setLastUsage,

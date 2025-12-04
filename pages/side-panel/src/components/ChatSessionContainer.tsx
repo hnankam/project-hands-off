@@ -22,7 +22,7 @@ import { useDOMUpdateEmbedding } from '../hooks/useDOMUpdateEmbedding';
 import { useAgentSwitching } from '../hooks/useAgentSwitching';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { useEnabledFrontendTools } from '../hooks/useEnabledFrontendTools';
-import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG } from '../constants';
+import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG, ABLY_CONFIG } from '../constants';
 import { ts } from '../utils/logging';
 import { useAuth } from '../context/AuthContext';
 import { SessionRuntimePortal, useSessionRuntimeState } from '../context/SessionRuntimeContext';
@@ -575,7 +575,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       resetCumulative,
       setCumulative,
       setLastUsage,
-    } = useUsageStream(sessionId, true, 'ws://localhost:8001', initialUsage, initialLastUsage);
+    } = useUsageStream(
+      sessionId,
+      true,
+      ABLY_CONFIG.API_KEY,
+      initialUsage,
+      initialLastUsage,
+    );
 
     // Ref for backward compatibility
     const isUsageHydratingRef = useRef(isUsageHydrating);

@@ -92,8 +92,10 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
   }, [selectedPageURLs, pages]);
 
   // Fetch indexed pages function
-  const fetchPages = useCallback(async () => {
-    setLoading(true);
+  const fetchPages = useCallback(async (showLoading: boolean = true) => {
+    if (showLoading) {
+      setLoading(true);
+    }
     debug.log('[PagesSelector] Fetching indexed pages for sessionId:', sessionId);
     try {
       // Don't filter by sessionId - show all indexed pages across all sessions
@@ -111,19 +113,21 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       debug.error('[PagesSelector] Failed to load indexed pages:', error);
       setPages([]);
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   }, [sessionId]);
 
-  // Fetch on mount
+  // Fetch on mount (with loading indicator)
   useEffect(() => {
-    fetchPages();
+    fetchPages(true);
   }, [fetchPages]);
 
-  // Refresh pages when dropdown opens to catch newly indexed pages
+  // Refresh pages when dropdown opens (background refresh, no loading indicator)
   useEffect(() => {
     if (isOpen) {
-      fetchPages();
+      fetchPages(false);
     }
   }, [isOpen, fetchPages]);
 
@@ -165,15 +169,16 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       }
     };
 
-    // Small delay to ensure dropdown is rendered before attaching listener
+    // Use 'click' instead of 'mousedown' to avoid race conditions
+    // and add delay to ensure dropdown is rendered
     const timeoutId = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('click', handleClickOutside, true);
       document.addEventListener('keydown', handleEscape);
-    }, 0);
+    }, 10);
     
     return () => {
       clearTimeout(timeoutId);
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('click', handleClickOutside, true);
       document.removeEventListener('keydown', handleEscape);
     };
   }, [isOpen]);
@@ -321,10 +326,10 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
         disabled={loading || isLoadingSession}
         title={isTruncated ? displayText : undefined}
         className={cn(
-          'flex items-center gap-1.5 px-0 pt-[3px] text-xs rounded-md h-[26px] transition-all',
+          'flex items-center gap-1.5 rounded-xl h-[22px] transition-all mt-[3px]',
           isCompact
-            ? 'min-w-0'
-            : 'min-w-[120px] max-w-[200px] border',
+            ? 'min-w-0 px-2 py-1 ml-1.5 text-[12px] leading-tight'
+            : 'min-w-[120px] max-w-[200px] px-0 pt-[3px] border text-xs',
           isLoadingSession
             ? 'cursor-wait opacity-70'
             : loading
@@ -332,8 +337,8 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
             : 'cursor-pointer',
           isCompact
             ? isLight
-              ? 'text-gray-500'
-              : 'text-gray-400'
+              ? 'text-gray-500 bg-gray-200/60 hover:bg-gray-200/80'
+              : 'text-gray-500 bg-gray-700/40 hover:bg-gray-700/60'
             : isLight
             ? 'border-gray-300 bg-gray-100 text-gray-600 hover:border-gray-400 hover:bg-gray-200'
             : 'border-gray-600 bg-gray-800 text-gray-400 hover:border-gray-500 hover:bg-gray-700',

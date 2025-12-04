@@ -9,3 +9,4 @@ psycopg_pool>=3.1
 openai>=1.50.0
 requests>=2.31.0
 google-cloud-storage>=2.10.0
+ably>=2.0.0

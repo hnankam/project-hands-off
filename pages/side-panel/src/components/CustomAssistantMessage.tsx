@@ -830,9 +830,9 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
           )}
         </div>
       )}
-      <div style={{ marginBottom: "0.5rem" }}>{subComponent}</div>
+      <div>{subComponent}</div>
       {isLoading && (
-        <div style={{ paddingLeft: '12px' }}>
+        <div className="copilotKitMessage copilotKitAssistantMessage">
           <LoadingIcon />
         </div>
       )}

@@ -2,10 +2,23 @@ import { Editor } from '@tiptap/react';
 
 /**
  * Converts Tiptap editor content to Markdown format
+ * Uses tiptap-markdown extension if available, falls back to custom serializer
  * Supports: headings, bold, italic, code blocks, code inline, mentions, paragraphs, 
- *           hard breaks, blockquotes, horizontal rules, lists (ordered and unordered)
+ *           hard breaks, blockquotes, horizontal rules, lists (ordered and unordered), links
  */
 export function editorToMarkdown(editor: Editor): string {
+  // Use tiptap-markdown extension's getMarkdown() if available (more robust)
+  try {
+    const storage = editor.storage as Record<string, any>;
+    const markdown = storage.markdown?.getMarkdown?.();
+    if (typeof markdown === 'string') {
+      return markdown.trim();
+    }
+  } catch {
+    // Fall through to custom serializer
+  }
+  
+  // Fallback to custom serializer
   const json = editor.getJSON();
   return jsonToMarkdown(json);
 }

@@ -166,3 +166,10 @@ export const COPIOLITKIT_CONFIG = {
     appId: "1:1095327983558:web:7178975fca572f8fe534c7"
   } as any,
 } as const;
+
+// Ably Pub/Sub configuration for real-time usage streaming
+export const ABLY_CONFIG = {
+  // API key for subscribing to real-time usage updates
+  // Get this from your Ably dashboard: https://ably.com/accounts
+  API_KEY: 'kmzefw.9jSK0A:SEvImH9LfyiVKLSu6VyOCF19CGk44ddzu_brdkvd1Sk',
+} as const;

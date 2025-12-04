@@ -1,7 +1,7 @@
 """Main entry point for the Pydantic AI Agent Server.
 
 This server provides REST API endpoints for various AI agent types with 
-multiple model options, along with WebSocket support for real-time usage tracking.
+multiple model options, with Ably Pub/Sub for real-time usage tracking.
 """
 
 import os
@@ -13,7 +13,11 @@ from fastapi.responses import JSONResponse
 from config import DEBUG, HOST, PORT, logger
 from database.connection import init_connection_pool
 from middleware import agent_error_middleware, agent_model_middleware
-from api import register_agent_routes, register_info_routes, register_websocket_routes, register_admin_routes
+from api import (
+    register_agent_routes,
+    register_info_routes,
+    register_admin_routes,
+)
 from services import initialize_deployments
 from pydantic_ai.exceptions import AgentRunError, ModelHTTPError
 
@@ -39,9 +43,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"   Debug mode: {DEBUG}")
     logger.info(f"   Available endpoints:")
     logger.info(f"   - POST /agent/{{agent_type}}/{{model}}")
-    logger.info(f"   - WS /ws/usage/{{session_id}}")
     logger.info(f"   - GET /sessions")
     logger.info(f"   - POST /sessions/{{session_id}}/cleanup")
+    logger.info(f"   Real-time: Ably Pub/Sub (usage:{{session_id}} channel)")
     
     yield
     
@@ -56,7 +60,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI application with lifespan
 app = FastAPI(
     title="Pydantic AI Agent Server",
-    description="AI Agent Server with multi-agent support and WebSocket usage streaming",
+    description="AI Agent Server with multi-agent support and Ably Pub/Sub usage streaming",
     version="2.0.0",
     lifespan=lifespan,
 )
@@ -121,7 +125,6 @@ async def handle_agent_run_error(request: Request, exc: AgentRunError) -> JSONRe
 # Register routes (routes will warm cache on first access if needed)
 register_agent_routes(app)
 register_info_routes(app)
-register_websocket_routes(app)
 register_admin_routes(app)
 
 # Run server if executed directly

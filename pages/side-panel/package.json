@@ -32,6 +32,7 @@
     "@extension/storage": "workspace:*",
     "@extension/ui": "workspace:*",
     "@tiptap/html": "^3.10.7",
+    "ably": "^2.4.0",
     "better-auth": "1.4.0-beta.14",
     "codemirror": "^6.0.2",
     "firebase": "^11.1.0",
