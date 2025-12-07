@@ -12,7 +12,7 @@ import { themeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';
 import { AUTO_DISMISS_DELAYS } from '../constants/ui';
 import { requestPasswordReset, resetPasswordWithToken, signInWithSocial, SocialProvider } from '../lib/auth-client';
-import { LoginSettingsDropdown } from '../components/LoginSettingsDropdown';
+import { LoginSettingsDropdown } from '../components/menus/LoginSettingsDropdown';
 
 // ============================================================================
 // CONSTANTS
@@ -214,7 +214,7 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
                     isLight ? 'bg-blue-500/10 text-blue-600' : 'bg-white/10 text-blue-200',
                   )}>
                   <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                  Project Hands-Off
+                  Hands-Off
                 </span>
               </div>
 
@@ -237,7 +237,7 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
                       ? "Enter your email and we'll send you a link to reset your password."
                       : isSignUp 
                         ? 'invite your teammates and get set up in minutes.' 
-                        : 'Securely sign in to continue where your team left off.'}
+                        : 'Securely sign in to continue where you left off.'}
                 </p>
               </div>
 
@@ -835,7 +835,7 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
                     <div className={cn('w-full border-t', isLight ? 'border-gray-200' : 'border-gray-700')} />
                   </div>
                   <div className="relative flex justify-center text-xs">
-                    <span className={cn('px-2', isLight ? 'bg-white text-gray-500' : 'bg-[#0D1117] text-gray-400')}>
+                    <span className={cn('px-2', isLight ? 'bg-white text-gray-500' : 'bg-[#21272F] text-gray-400')}>
                       Or continue with
                     </span>
                   </div>
@@ -927,7 +927,7 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
 
               {/* Bottom links - Hidden during forgot password */}
               {!isForgotPassword && (
-              <div className="mt-4 space-y-2 text-center text-xs sm:text-sm">
+              <div className="mt-4 space-y-2 text-center text-sm">
                 {!INVITATION_ONLY && (
                   <div>
                     <button

@@ -13,9 +13,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { OrganizationSelector } from './OrganizationSelector';
-import { TeamSelector } from './TeamSelector';
-import { ModelMultiSelector } from './ModelMultiSelector';
+import { OrganizationSelector, TeamSelector, ModelMultiSelector } from './selectors';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 

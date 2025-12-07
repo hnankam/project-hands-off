@@ -6,7 +6,7 @@
 
 import React from 'react';
 import type { SemanticSearchManager } from '../../lib/SemanticSearchManager';
-import { ActionStatus } from '../../components/ActionStatus';
+import { ActionStatus } from '../../components/feedback/ActionStatus';
 import { debug } from '@extension/shared';
 
 // ============================================================================

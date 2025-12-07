@@ -1,9 +1,9 @@
 /**
  * Admin Page for Organization, Team, and User Management
- * Refactored to use separate tab components
+ * Refactored to use separate tab components and shared UI components
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { authClient } from '../lib/auth-client';
 import { useAuth } from '../context/AuthContext';
 import { cn, Button } from '@extension/ui';
@@ -19,36 +19,22 @@ import AgentsTab from '@src/components/admin/AgentsTab';
 import { DeploymentsTab } from '../components/admin/DeploymentsTab';
 import { UsageTab } from '../components/admin/UsageTab';
 import { usePendingInvitations } from '../hooks/usePendingInvitations';
-import UserMenu from '../components/UserMenu';
-import InfoMenu from '../components/InfoMenu';
-import { ViewOptionsMenu } from '../components/ViewOptionsMenu';
-import { InstallAppHelper } from '../components/InstallAppHelper';
-import { SettingsButton } from '../components/SettingsButton';
-import { Z_INDEX, ANIMATION_DURATIONS, AUTO_DISMISS_DELAYS } from '../constants/ui';
-
-// ============================================================================
-// TYPES
-// ============================================================================
-
-interface Organization {
-  id: string;
-  name: string;
-  slug: string;
-  logo?: string | null;
-  metadata?: Record<string, unknown> | null;
-  createdAt: string | Date;
-}
-
-type AdminTabKey =
-  | 'organizations'
-  | 'teams'
-  | 'users'
-  | 'usage'
-  | 'providers'
-  | 'models'
-  | 'tools'
-  | 'agents'
-  | 'deployments';
+import { useAlerts } from '../hooks/useAlerts';
+import UserMenu from '../components/menus/UserMenu';
+import InfoMenu from '../components/menus/InfoMenu';
+import { ViewOptionsMenu } from '../components/layout/ViewOptionsMenu';
+import { InstallAppHelper } from '../components/menus/InstallAppHelper';
+import { SettingsButton } from '../components/menus/SettingsButton';
+import {
+  PageHeader,
+  PageFooter,
+  TabBar,
+  AlertBanner,
+  InvitationBanner,
+  AccessDenied,
+} from '../components/shared';
+import { Z_INDEX } from '../constants/ui';
+import type { Organization, AdminTabKey } from '../types';
 
 interface AdminPageProps {
   onGoHome?: () => void;
@@ -67,12 +53,8 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
   
-  // Refs for tab scrolling
-  const tabContainerRef = useRef<HTMLDivElement>(null);
-  const tabRefs = useRef<Map<AdminTabKey, HTMLButtonElement>>(new Map());
-  
-  // Track whether tabs overflow (to conditionally center them)
-  const [tabsOverflow, setTabsOverflow] = useState(false);
+  // Alert management using custom hook
+  const { error, success, setError, setSuccess, dismissError, dismissSuccess } = useAlerts();
   
   // Initialize activeTab from localStorage, fallback to initialTab
   const [activeTab, setActiveTab] = useState<AdminTabKey>(() => {
@@ -94,22 +76,6 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
   // Check if user is owner or admin (can access all tabs)
   const memberRoles = Array.isArray(member?.role) ? member.role : member?.role ? [member.role] : [];
   const isOwnerOrAdmin = memberRoles.includes('owner') || memberRoles.includes('admin');
-  
-  // Persist activeTab to localStorage whenever it changes
-  useEffect(() => {
-    try {
-      localStorage.setItem('adminPageActiveTab', activeTab);
-    } catch (error) {
-      console.error('[AdminPage] Failed to save tab to localStorage:', error);
-    }
-  }, [activeTab]);
-
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [errorVisible, setErrorVisible] = useState(false);
-  const [successVisible, setSuccessVisible] = useState(false);
-  const [errorClosing, setErrorClosing] = useState(false);
-  const [successClosing, setSuccessClosing] = useState(false);
 
   // Load organizations for team selector
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -122,31 +88,13 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
   // Memoized callbacks
   const loadOrganizations = useCallback(async () => {
     try {
-      const { data, error } = await authClient.organization.list();
-      if (error) throw new Error(error.message);
+      const { data, error: loadError } = await authClient.organization.list();
+      if (loadError) throw new Error(loadError.message);
       setOrganizations(data || []);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Error loading organizations';
       console.error('[AdminPage]', errorMessage, err);
     }
-  }, []);
-
-  const handleDismissError = useCallback(() => {
-    setErrorClosing(true);
-    setTimeout(() => {
-      setError('');
-      setErrorVisible(false);
-      setErrorClosing(false);
-    }, ANIMATION_DURATIONS.dismiss);
-  }, []);
-
-  const handleDismissSuccess = useCallback(() => {
-    setSuccessClosing(true);
-    setTimeout(() => {
-      setSuccess('');
-      setSuccessVisible(false);
-      setSuccessClosing(false);
-    }, ANIMATION_DURATIONS.dismiss);
   }, []);
 
   // Load organizations on mount and when user changes (e.g., after login)
@@ -157,7 +105,6 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
   }, [user, loadOrganizations]);
 
   // Only update activeTab when initialTab changes and is not the default
-  // This allows navigation from HomePage to work while preserving the last active tab on reopen
   useEffect(() => {
     if (initialTab !== 'organizations') {
       setActiveTab(initialTab);
@@ -171,319 +118,73 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
     }
   }, [organization?.id, selectedOrgForTeams]);
 
-  // Auto-scroll to active tab when it changes
-  useEffect(() => {
-    const activeTabElement = tabRefs.current.get(activeTab);
-    
-    if (activeTabElement && tabContainerRef.current) {
-      setTimeout(() => {
-        activeTabElement.scrollIntoView({
-          behavior: 'smooth',
-          block: 'nearest',
-          inline: 'center'
-        });
-      }, ANIMATION_DURATIONS.scrollDelay);
-    }
-  }, [activeTab]);
-
-  // Check if tabs overflow to conditionally apply centering
-  useEffect(() => {
-    const checkOverflow = () => {
-      if (tabContainerRef.current) {
-        const hasOverflow = tabContainerRef.current.scrollWidth > tabContainerRef.current.clientWidth;
-        setTabsOverflow(hasOverflow);
-      }
-    };
-
-    // Check on mount and when window resizes
-    checkOverflow();
-    window.addEventListener('resize', checkOverflow);
-    
-    // Also check after a short delay to ensure tabs are rendered
-    const timer = setTimeout(checkOverflow, ANIMATION_DURATIONS.scrollDelay);
-
-    return () => {
-      window.removeEventListener('resize', checkOverflow);
-      clearTimeout(timer);
-    };
-  }, [activeTab, isOwnerOrAdmin]); // Re-check when tabs might change
-
-  // Error auto-dismiss
-  useEffect(() => {
-    if (!error) return;
-
-    setErrorVisible(true);
-    setErrorClosing(false);
-
-    const timer = setTimeout(() => {
-      setErrorClosing(true);
-      setTimeout(() => {
-        setError('');
-        setErrorVisible(false);
-        setErrorClosing(false);
-      }, ANIMATION_DURATIONS.dismiss);
-    }, AUTO_DISMISS_DELAYS.error);
-
-    return () => clearTimeout(timer);
-  }, [error]);
-
-  // Success auto-dismiss
-  useEffect(() => {
-    if (!success) return;
-
-    setSuccessVisible(true);
-    setSuccessClosing(false);
-
-    const timer = setTimeout(() => {
-      setSuccessClosing(true);
-      setTimeout(() => {
-        setSuccess('');
-        setSuccessVisible(false);
-        setSuccessClosing(false);
-      }, ANIMATION_DURATIONS.dismiss);
-    }, AUTO_DISMISS_DELAYS.success);
-
-    return () => clearTimeout(timer);
-  }, [success]);
+  // Build tab configuration with hidden flags
+  const tabConfigs = [
+    { key: 'organizations' as AdminTabKey },
+    { key: 'teams' as AdminTabKey },
+    { key: 'users' as AdminTabKey },
+    { key: 'usage' as AdminTabKey },
+    { key: 'providers' as AdminTabKey, hidden: !isOwnerOrAdmin },
+    { key: 'models' as AdminTabKey, hidden: !isOwnerOrAdmin },
+    { key: 'tools' as AdminTabKey, hidden: !isOwnerOrAdmin },
+    { key: 'agents' as AdminTabKey, hidden: !isOwnerOrAdmin },
+    { key: 'deployments' as AdminTabKey, hidden: !isOwnerOrAdmin },
+  ];
 
   return (
     <div className={cn('flex h-full max-h-full min-h-0 flex-col overflow-hidden relative', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
       {/* Admin Page Header */}
-      <div
-        className={cn(
-          'flex flex-shrink-0 items-center justify-between px-2 py-[0.4em]',
-          isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
-        )}>
-        <div className="flex items-center min-w-0 flex-1">
-          <h1 className={cn('text-sm font-semibold truncate', mainTextColor)}>
-            Administration
-          </h1>
-        </div>
-
-        <div className="flex flex-shrink-0 items-center gap-1">
-          {/* View Options Menu - Open in Popup/New Tab */}
-          <ViewOptionsMenu
-            isLight={isLight}
-            currentSessionId={null}
-          />
-          
-          {/* Home Button */}
-          {onGoHome && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onGoHome}
-              title="Home"
-              className={cn(
-                'h-7 w-7 p-0',
-                isLight ? 'text-gray-600 bg-gray-200/70 hover:bg-gray-300/70' : 'text-gray-400 bg-gray-800/50 hover:bg-gray-700/60',
-              )}>
-              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
-            </Button>
-          )}
-          
-          {/* User Menu with Organization and Team Selectors */}
-          <UserMenu
-            isLight={isLight}
-            onGoToSessions={onGoToSessions}
-          />
-        </div>
-      </div>
+      <PageHeader
+        title="Administration"
+        isLight={isLight}
+        showBorder={false}
+        rightContent={
+          <>
+            <ViewOptionsMenu isLight={isLight} currentSessionId={null} />
+            {onGoHome && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onGoHome}
+                title="Home"
+                className={cn(
+                  'h-7 w-7 p-0',
+                  isLight ? 'text-gray-600 bg-gray-200/70 hover:bg-gray-300/70' : 'text-gray-400 bg-gray-800/50 hover:bg-gray-700/60',
+                )}>
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+              </Button>
+            )}
+            <UserMenu isLight={isLight} onGoToSessions={onGoToSessions} />
+          </>
+        }
+      />
 
       {/* Tab Bar */}
-      <div
-        className={cn(
-          'flex items-center justify-center gap-2 px-2 py-1 border-t border-b h-[34px]',
-          isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#151C24] border-gray-700',
-        )}>
-        <div 
-          ref={tabContainerRef}
-          className={cn(
-            'flex items-center gap-1 overflow-x-auto session-tabs-scroll',
-            !tabsOverflow && 'justify-center'
-          )}
-        >
-          {(['organizations', 'teams', 'users', 'usage', 'providers', 'models', 'tools', 'agents', 'deployments'] as const)
-            .filter(tab => {
-              // Hide providers, models, tools, and agents tabs for member users
-              if (['providers', 'models', 'tools', 'agents', 'deployments'].includes(tab) && !isOwnerOrAdmin) {
-                return false;
-              }
-              return true;
-            })
-            .map(tab => (
-              <button
-                key={tab}
-                ref={(el) => {
-                  if (el) {
-                    tabRefs.current.set(tab, el);
-                  } else {
-                    tabRefs.current.delete(tab);
-                  }
-                }}
-                onClick={() => setActiveTab(tab)}
-                className={cn(
-                  'flex-shrink-0 px-3 py-1 text-xs font-medium rounded transition-colors capitalize',
-                  activeTab === tab
-                    ? isLight
-                      ? 'bg-gray-200 text-gray-700'
-                      : 'bg-gray-700 text-[#bcc1c7]'
-                    : isLight
-                    ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
-                    : 'text-gray-400 hover:bg-gray-800 hover:text-[#bcc1c7]',
-                )}>
-                {tab}
-              </button>
-            ))}
-        </div>
-      </div>
+      <TabBar
+        tabs={tabConfigs}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        isLight={isLight}
+        storageKey="adminPageActiveTab"
+      />
 
       {/* Pending Invitations Banner */}
       {hasPendingInvitations && showInvitationBanner && (
-        <div
-          className={cn(
-            'px-4 py-3 border-b',
-            isLight
-              ? 'bg-yellow-50 border-yellow-200'
-              : 'bg-yellow-900/20 border-yellow-800',
-          )}>
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 mt-0.5">
-              <svg
-                className={cn('w-5 h-5', isLight ? 'text-yellow-600' : 'text-yellow-500')}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth={2}>
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M3 19v-8.93a2 2 0 01.89-1.664l7-4.666a2 2 0 012.22 0l7 4.666A2 2 0 0121 10.07V19M3 19a2 2 0 002 2h14a2 2 0 002-2M3 19l6.75-4.5M21 19l-6.75-4.5M3 10l6.75 4.5M21 10l-6.75 4.5m0 0l-1.14.76a2 2 0 01-2.22 0l-1.14-.76"
-                />
-              </svg>
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3
-                className={cn(
-                  'text-sm font-semibold mb-1',
-                  isLight ? 'text-yellow-900' : 'text-yellow-200',
-                )}>
-                {pendingInvitations.length === 1
-                  ? 'You have 1 pending invitation'
-                  : `You have ${pendingInvitations.length} pending invitations`}
-              </h3>
-              <div className="space-y-2">
-                {pendingInvitations.slice(0, 3).map(inv => (
-                  <div
-                    key={inv.id}
-                    className={cn(
-                      'text-xs',
-                      isLight ? 'text-yellow-800' : 'text-yellow-300',
-                    )}>
-                    <strong>{inv.organization.name}</strong> ({inv.role})
-                    {' - '}
-                    <button
-                      onClick={() => {
-                        window.location.hash = `#/accept-invitation/${inv.id}`;
-                        window.location.reload();
-                      }}
-                      className={cn(
-                        'font-medium underline hover:no-underline',
-                        isLight ? 'text-yellow-700' : 'text-yellow-200',
-                      )}>
-                      View & Accept
-                    </button>
-                  </div>
-                ))}
-                {pendingInvitations.length > 3 && (
-                  <div
-                    className={cn(
-                      'text-xs italic',
-                      isLight ? 'text-yellow-700' : 'text-yellow-300',
-                    )}>
-                    +{pendingInvitations.length - 3} more
-                  </div>
-                )}
-              </div>
-            </div>
-            <button
-              onClick={() => setShowInvitationBanner(false)}
-              className={cn(
-                'flex-shrink-0 p-1 rounded hover:bg-black/5',
-                isLight ? 'text-yellow-600' : 'text-yellow-500',
-              )}
-              title="Dismiss">
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
+        <InvitationBanner
+          invitations={pendingInvitations}
+          isLight={isLight}
+          onDismiss={() => setShowInvitationBanner(false)}
+        />
       )}
 
       {/* Content Area */}
       <div className="flex-1 min-h-0 overflow-y-auto admin-page-scroll relative isolate">
         <div className="p-4 max-w-4xl mx-auto relative">
           {/* Alerts */}
-          {error && errorVisible && (
-            <div
-              className={cn(
-                'mb-4 p-3 rounded-lg text-sm flex items-start justify-between gap-3 transform transition-all duration-300 ease-out',
-                isLight ? 'bg-red-50 text-red-700' : 'bg-red-900/20 text-red-400',
-                errorClosing ? 'opacity-0 scale-95' : 'opacity-100 scale-100',
-              )}>
-              <div className="flex-1 flex items-start gap-2">
-                <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-                <span>{error}</span>
-              </div>
-              <button
-                onClick={handleDismissError}
-                className={cn(
-                  'flex-shrink-0 p-0.5 rounded transition-colors',
-                  isLight ? 'text-red-500 hover:bg-red-100' : 'text-red-400 hover:bg-red-900/40',
-                )}
-                title="Dismiss">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          )}
-          {success && successVisible && (
-            <div
-              className={cn(
-                'mb-4 p-3 rounded-lg text-sm flex items-start justify-between gap-3 transform transition-all duration-300 ease-out',
-                isLight ? 'bg-green-50 text-green-700' : 'bg-green-900/20 text-green-400',
-                successClosing ? 'opacity-0 scale-95' : 'opacity-100 scale-100',
-              )}>
-              <div className="flex-1 flex items-start gap-2">
-                <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                <span>{success}</span>
-              </div>
-              <button
-                onClick={handleDismissSuccess}
-                className={cn(
-                  'flex-shrink-0 p-0.5 rounded transition-colors',
-                  isLight ? 'text-green-500 hover:bg-green-100' : 'text-green-400 hover:bg-green-900/40',
-                )}
-                title="Dismiss">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          )}
+          <AlertBanner alert={error} type="error" isLight={isLight} onDismiss={dismissError} />
+          <AlertBanner alert={success} type="success" isLight={isLight} onDismiss={dismissSuccess} />
 
         {/* Tab Content */}
         {activeTab === 'organizations' && (
@@ -548,13 +249,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
               />
             </div>
           ) : (
-            <div className={cn('flex-1 flex items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
-              <div className="text-center">
-                <p className={cn('text-sm', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                  You need owner or admin permissions to access this section.
-                </p>
-              </div>
-            </div>
+            <AccessDenied isLight={isLight} />
           )
         )}
 
@@ -570,13 +265,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
               />
             </div>
           ) : (
-            <div className={cn('flex-1 flex items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
-              <div className="text-center">
-                <p className={cn('text-sm', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                  You need owner or admin permissions to access this section.
-                </p>
-              </div>
-            </div>
+            <AccessDenied isLight={isLight} />
           )
         )}
 
@@ -592,13 +281,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
               />
             </div>
           ) : (
-            <div className={cn('flex-1 flex items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
-              <div className="text-center">
-                <p className={cn('text-sm', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                  You need owner or admin permissions to access this section.
-                </p>
-              </div>
-            </div>
+            <AccessDenied isLight={isLight} />
           )
         )}
 
@@ -614,13 +297,7 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
               />
             </div>
           ) : (
-            <div className={cn('flex-1 flex items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
-              <div className="text-center">
-                <p className={cn('text-sm', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                  You need owner or admin permissions to access this section.
-                </p>
-              </div>
-            </div>
+            <AccessDenied isLight={isLight} />
           )
         )}
 
@@ -635,35 +312,23 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
               />
             </div>
           ) : (
-            <div className={cn('flex-1 flex items-center justify-center', isLight ? 'bg-white' : 'bg-[#0D1117]')}>
-              <div className="text-center">
-                <p className={cn('text-sm', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                  You need owner or admin permissions to access this section.
-                </p>
-              </div>
-            </div>
+            <AccessDenied isLight={isLight} />
           )
         )}
         </div>
       </div>
 
       {/* Footer Bar with Settings */}
-      <div
-        className={cn(
-          'flex-shrink-0 border-t',
-          isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
-        )}>
-        <div className="flex items-center justify-between px-4 py-1.5">
-          <div className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
-            v {version}
-          </div>
-          <div className="flex items-center gap-1">
-          <SettingsButton isLight={isLight} theme={theme} onOpenSettings={() => setSettingsOpen(true)} />
-            {/* Info Menu - About and Support */}
+      <PageFooter
+        version={version}
+        isLight={isLight}
+        rightContent={
+          <>
+            <SettingsButton isLight={isLight} theme={theme} onOpenSettings={() => setSettingsOpen(true)} />
             <InfoMenu isLight={isLight} />
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Settings Modal */}
       {settingsOpen && (

@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { authClient } from '../../lib/auth-client';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '@extension/ui';
+import { AdminConfirmDialog } from './modals';
 
 interface Organization {
   id: string;
@@ -662,112 +663,33 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
       </div>
 
       {/* Delete Organization Confirmation Modal */}
-      {deleteOrgConfirmOpen && orgToDelete && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
-            onClick={() => setDeleteOrgConfirmOpen(false)}
-          />
-
-          {/* Modal */}
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-            <div
-              className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
-              )}
-              onClick={e => e.stopPropagation()}>
-              {/* Header */}
-              <div
-                className={cn(
-                  'flex items-center justify-between border-b px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
-                  Delete Organization
-                </h2>
-                <button
-                  onClick={() => setDeleteOrgConfirmOpen(false)}
-                  className={cn(
-                    'rounded-md p-0.5 transition-colors',
-                    isLight
-                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-                  )}>
-                  <svg
-                    width="14"
-                    height="14"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round">
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Content */}
-              <div className="space-y-3 px-3 py-4">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={cn(
-                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
-                      isLight ? 'bg-red-100' : 'bg-red-900/30',
-                    )}>
-                    <svg
-                      className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')}
-                      fill="currentColor"
-                      viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                    </svg>
-                  </div>
-
-                  <div className="flex-1">
-                    <p className={cn('text-sm font-medium', mainTextColor)}>
-                      Permanently delete "{orgToDelete.name}"?
-                    </p>
-                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      This organization and all its teams, members, and associated data will be permanently deleted. This
-                      action cannot be undone.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div
-                className={cn(
-                  'flex items-center justify-end gap-2 border-t px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <button
-                  onClick={() => setDeleteOrgConfirmOpen(false)}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    isLight
-                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
-                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
-                  )}>
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDeleteOrganization}
-                  disabled={loading}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    'bg-red-600 text-white hover:bg-red-700',
-                    loading && 'opacity-50 cursor-not-allowed',
-                  )}>
-                  {loading ? 'Deleting...' : 'Delete Organization'}
-                </button>
-              </div>
+      <AdminConfirmDialog
+        isOpen={deleteOrgConfirmOpen && !!orgToDelete}
+        onClose={() => setDeleteOrgConfirmOpen(false)}
+        onConfirm={confirmDeleteOrganization}
+        title="Delete Organization"
+        message={
+          <div className="flex items-start gap-3">
+            <div className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full', isLight ? 'bg-red-100' : 'bg-red-900/30')}>
+              <svg className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')} fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className={cn('text-sm font-medium', mainTextColor)}>
+                Permanently delete "{orgToDelete?.name}"?
+              </p>
+              <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                This organization and all its teams, members, and associated data will be permanently deleted. This action cannot be undone.
+              </p>
             </div>
           </div>
-        </>
-      )}
+        }
+        confirmText="Delete Organization"
+        variant="danger"
+        isLight={isLight}
+        isLoading={loading}
+      />
     </div>
   );
 }

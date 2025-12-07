@@ -118,7 +118,7 @@ export default function OAuthPage({ provider, onSuccess, onError }: OAuthPagePro
             )}
           >
             <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            Project Hands-Off
+            Hands-Off
           </span>
         </div>
 

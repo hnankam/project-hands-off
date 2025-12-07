@@ -40,9 +40,9 @@ import { useNavigationManager } from './hooks/useNavigationManager';
 import { useSessionUrlSync } from './hooks/useSessionUrlSync';
 import { useThemeManager } from './hooks/useThemeManager';
 import { useMessageHandlers } from './hooks/useMessageHandlers';
-import { ChatSkeleton } from './components/LoadingStates';
-import { InvitationModal } from './components/InvitationModal';
-import { AboutModal } from './components/AboutModal';
+import { ChatSkeleton } from './components/feedback/LoadingStates';
+import { InvitationModal } from './components/modals/InvitationModal';
+import { AboutModal } from './components/modals/AboutModal';
 
 // TODO: Move to environment variable (VITE_COPILOTKIT_PUBLIC_KEY)
 const COPILOTKIT_PUBLIC_KEY = 'ck_pub_c94e406d9327510d0463f3dbe3c1f2e8';

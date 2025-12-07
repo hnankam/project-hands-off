@@ -1,7 +1,7 @@
 import { useRef, useMemo, useCallback, useEffect } from 'react';
 import { useCoAgent } from '@copilotkit/react-core';
 import { debug } from '@extension/shared';
-import type { AgentStepState } from '../components/TaskProgressCard';
+import type { AgentStepState } from '../components/cards/TaskProgressCard';
 
 // Step type from AgentStepState
 type Step = AgentStepState['steps'][number];

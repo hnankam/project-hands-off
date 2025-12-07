@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { ImageGalleryCard } from '../../components/ImageGalleryCard';
+import { ImageGalleryCard } from '../../components/cards/ImageGalleryCard';
 
 // ============================================================================
 // TYPES

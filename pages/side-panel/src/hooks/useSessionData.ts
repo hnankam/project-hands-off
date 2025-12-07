@@ -22,7 +22,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { sessionStorageDBWrapper, debug } from '@extension/shared';
-import type { AgentStepState } from '../components/TaskProgressCard';
+import type { AgentStepState } from '../components/cards/TaskProgressCard';
 
 // ============================================================================
 // TYPES

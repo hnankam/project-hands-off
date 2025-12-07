@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { ActionStatus } from '../../components/ActionStatus';
+import { ActionStatus } from '../../components/feedback/ActionStatus';
 
 // ============================================================================
 // CONSTANTS

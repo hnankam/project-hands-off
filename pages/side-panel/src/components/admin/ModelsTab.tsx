@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
-import { OrganizationSelector } from './OrganizationSelector';
-import { TeamMultiSelector } from './TeamMultiSelector';
-import { Radio, Checkbox } from './FormControls';
-import { CodeMirrorJsonEditor } from './CodeMirrorJsonEditor';
+import { OrganizationSelector, TeamMultiSelector } from './selectors';
+import { Radio, Checkbox } from './form-controls';
+import { CodeMirrorJsonEditor } from './editors';
+import { AdminConfirmDialog } from './modals';
 
 interface Organization {
   id: string;
@@ -1865,83 +1865,36 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
         </>
       )}
 
-      {deleteDialogOpen && deleteConfirm && (
-        <>
-          <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm" onClick={() => setDeleteDialogOpen(false)} />
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-            <div
-              className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
-              )}
-              onClick={e => e.stopPropagation()}
-            >
-              <div
-                className={cn(
-                  'flex items-center justify-between border-b px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}
-              >
-                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
-                  Delete Model
-                </h2>
-                <button
-                  onClick={() => setDeleteDialogOpen(false)}
-                  className={cn(
-                    'rounded-md p-0.5 transition-colors',
-                    isLight ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700' : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-                  )}
-                >
-                  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="space-y-3 px-3 py-4">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full', isLight ? 'bg-red-100' : 'bg-red-900/30')}
-                  >
-                    <svg className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')} fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M12 9V3H8v6H5l5 6 5-6h-3z" />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <p className={cn('text-sm font-medium', mainTextColor)}>
-                      Delete model "{deleteConfirm.modelKey}"?
-                    </p>
-                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      This model will be removed and will no longer be available for selection.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className={cn('flex items-center justify-end gap-2 border-t px-3 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
-                <button
-                  onClick={() => {
-                    setDeleteDialogOpen(false);
-                    setDeleteConfirm(null);
-                  }}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
-                  )}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteModel}
-                  className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700"
-                >
-                  Delete
-                </button>
-              </div>
+      {/* Delete Confirmation Modal */}
+      <AdminConfirmDialog
+        isOpen={deleteDialogOpen && !!deleteConfirm}
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          setDeleteConfirm(null);
+        }}
+        onConfirm={handleDeleteModel}
+        title="Delete Model"
+        message={
+          <div className="flex items-start gap-3">
+            <div className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full', isLight ? 'bg-red-100' : 'bg-red-900/30')}>
+              <svg className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')} fill="currentColor" viewBox="0 0 20 20">
+                <path d="M12 9V3H8v6H5l5 6 5-6h-3z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className={cn('text-sm font-medium', mainTextColor)}>
+                Delete model "{deleteConfirm?.modelKey}"?
+              </p>
+              <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                This model will be removed and will no longer be available for selection.
+              </p>
             </div>
           </div>
-        </>
-      )}
+        }
+        confirmText="Delete"
+        variant="danger"
+        isLight={isLight}
+      />
     </div>
   );
 }

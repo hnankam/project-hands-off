@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
-import { OrganizationSelector } from './OrganizationSelector';
-import { TeamSelector } from './TeamSelector';
+import { OrganizationSelector, TeamSelector } from './selectors';
 
 interface Organization {
   id: string;
@@ -234,6 +233,7 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamFilterIds, setTeamFilterIds] = useState<string[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
+  const [expandedEntitySections, setExpandedEntitySections] = useState<Record<string, Record<string, boolean>>>({});
   const autoRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   const teamCacheRef = useRef<Record<string, Record<string, string>>>({});
   const isMountedRef = useRef<boolean>(false);
@@ -723,46 +723,102 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
     return teamId;
   };
 
-  const renderEntityList = (title: string, items?: DeploymentEntitySummary[]) => {
+  const toggleEntitySection = (deploymentKey: string, section: string) => {
+    setExpandedEntitySections(prev => ({
+      ...prev,
+      [deploymentKey]: {
+        ...prev[deploymentKey],
+        [section]: !prev[deploymentKey]?.[section],
+      },
+    }));
+  };
+
+  const getEntityStatusSummary = (items?: DeploymentEntitySummary[]) => {
+    if (!items || items.length === 0) return { ready: 0, disabled: 0, other: 0 };
+    const ready = items.filter(i => i.status === 'ready' || i.enabled === true).length;
+    const disabled = items.filter(i => i.status === 'disabled' || i.enabled === false).length;
+    const other = items.length - ready - disabled;
+    return { ready, disabled, other };
+  };
+
+  const renderEntityAccordion = (deploymentKey: string, title: string, items?: DeploymentEntitySummary[]) => {
     if (!items || items.length === 0) {
       return null;
     }
+    
+    const sectionKey = title.toLowerCase();
+    const isExpanded = expandedEntitySections[deploymentKey]?.[sectionKey] ?? false;
+    const statusSummary = getEntityStatusSummary(items);
+    
     return (
       <div>
-        <div className={cn('text-[11px] font-semibold uppercase tracking-wide mb-1', isLight ? 'text-gray-500' : 'text-gray-400')}>
-          {title}
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {items.slice(0, 6).map(item => (
-            <span
-              key={`${title}-${item.key}`}
-              className={cn(
-                'px-2 py-0.5 rounded-full border text-[11px] flex items-center gap-1',
-                isLight ? 'bg-white border-gray-200 text-gray-700' : 'bg-[#151C24] border-gray-700 text-gray-200',
-              )}
-              title={item.display_name || item.name || item.description || undefined}
+        {/* Section Header */}
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+          <button
+            type="button"
+            onClick={() => toggleEntitySection(deploymentKey, sectionKey)}
+            className={cn(
+              'flex items-center gap-1.5 text-xs font-medium transition-colors text-left',
+              isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-[#bcc1c7]'
+            )}
+          >
+            <svg
+              className={cn('w-3 h-3 transition-transform', isExpanded && 'rotate-90')}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
             >
-              <span className="font-medium">
-                {item.display_name || item.name || item.key || item.type}
-              </span>
-              {item.provider && (
-                <span className={cn('text-[10px]', isLight ? 'text-gray-400' : 'text-gray-500')}>
-                  · {item.provider}
-                </span>
-              )}
-              {item.status && (
-                <span className={cn('text-[10px]', item.status === 'ready' ? 'text-green-500' : 'text-yellow-500')}>
-                  {item.status}
-                </span>
-              )}
-            </span>
-          ))}
-          {items.length > 6 && (
-            <span className={cn('px-2 py-0.5 rounded-full border text-[11px]', isLight ? 'border-gray-200 text-gray-500' : 'border-gray-700 text-gray-400')}>
-              +{items.length - 6} more
-            </span>
-          )}
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            <span>{title}</span>
+          </button>
+          <span className={cn('text-[10px] flex-shrink-0', isLight ? 'text-gray-500' : 'text-gray-400')}>
+            {items.length} {items.length === 1 ? title.toLowerCase().slice(0, -1) : title.toLowerCase()}
+          </span>
         </div>
+
+        {/* Section Content */}
+        {isExpanded && (
+          <div className="px-1">
+            {items.map(item => {
+              const statusColor = item.status === 'ready' || item.enabled === true
+                ? 'text-green-500'
+                : item.status === 'disabled' || item.enabled === false
+                ? 'text-amber-500'
+                : 'text-gray-400';
+              const statusLabel = item.status || (item.enabled === true ? 'ready' : item.enabled === false ? 'disabled' : '');
+              
+              return (
+                <div
+                  key={`${title}-${item.key}`}
+                  className={cn(
+                    'flex items-center justify-between gap-2 w-full px-3 py-1.5 text-xs rounded',
+                    isLight
+                      ? 'text-gray-700 hover:bg-gray-100'
+                      : 'text-gray-200 hover:bg-gray-700/50'
+                  )}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-medium truncate">
+                      {item.display_name || item.name || item.key || item.type}
+                    </span>
+                    {item.provider && (
+                      <span className={cn('text-[10px] flex-shrink-0', isLight ? 'text-gray-400' : 'text-gray-500')}>
+                        · {item.provider}
+                      </span>
+                    )}
+                  </div>
+                  {statusLabel && (
+                    <span className={cn('text-[10px] flex-shrink-0', statusColor)}>
+                      {statusLabel}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
@@ -1315,8 +1371,8 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
                                   ? 'text-blue-600 cursor-not-allowed'
                                   : 'text-blue-400 cursor-not-allowed'
                                 : isLight
-                                ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                                : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                                ? 'text-gray-400 hover:text-gray-600'
+                                : 'text-gray-500 hover:text-gray-300',
                             )}
                             title={isRestarting ? 'Restarting endpoint...' : 'Restart endpoint (reloads from database)'}
                           >
@@ -1385,62 +1441,63 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
                           </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => handleRestart(deployment)}
-                          disabled={restartContext === `${deployment.context?.organization_id || ''}:${deployment.context?.team_id || ''}`}
-                          className={cn(
-                            'p-1 rounded transition-colors',
-                            restartContext === `${deployment.context?.organization_id || ''}:${deployment.context?.team_id || ''}`
-                              ? isLight
-                                ? 'text-blue-600 cursor-not-allowed'
-                                : 'text-blue-400 cursor-not-allowed'
-                              : isLight
-                              ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                              : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
-                          )}
-                          title={restartContext === `${deployment.context?.organization_id || ''}:${deployment.context?.team_id || ''}` ? 'Restarting context...' : 'Restart context (reloads from database)'}
-                        >
-                          {restartContext === `${deployment.context?.organization_id || ''}:${deployment.context?.team_id || ''}` ? (
-                            <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                          ) : (
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                          )}
-                        </button>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpanded(key)}
+                            className={cn(
+                              'p-1 rounded transition-colors',
+                              isLight
+                                ? 'text-gray-400 hover:text-gray-600'
+                                : 'text-gray-500 hover:text-gray-300',
+                            )}
+                            title={isExpanded ? 'Hide details' : 'Show details'}
+                          >
+                            {isExpanded ? (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
+                              </svg>
+                            ) : (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
+                              </svg>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRestart(deployment)}
+                            disabled={restartContext === `${deployment.context?.organization_id || ''}:${deployment.context?.team_id || ''}`}
+                            className={cn(
+                              'p-1 rounded transition-colors',
+                              restartContext === `${deployment.context?.organization_id || ''}:${deployment.context?.team_id || ''}`
+                                ? isLight
+                                  ? 'text-blue-600 cursor-not-allowed'
+                                  : 'text-blue-400 cursor-not-allowed'
+                                : isLight
+                                ? 'text-gray-400 hover:text-gray-600'
+                                : 'text-gray-500 hover:text-gray-300',
+                            )}
+                            title={restartContext === `${deployment.context?.organization_id || ''}:${deployment.context?.team_id || ''}` ? 'Restarting context...' : 'Restart context (reloads from database)'}
+                          >
+                            {restartContext === `${deployment.context?.organization_id || ''}:${deployment.context?.team_id || ''}` ? (
+                              <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            ) : (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => toggleExpanded(key)}
-                        className={cn(
-                          'p-1 rounded transition-colors self-start',
-                          isLight
-                            ? 'text-gray-400 hover:text-gray-600'
-                            : 'text-gray-500 hover:text-gray-300',
-                        )}
-                        title={isExpanded ? 'Hide details' : 'Show details'}
-                      >
-                        {isExpanded ? (
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
-                          </svg>
-                        ) : (
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
-                          </svg>
-                        )}
-                      </button>
                     </div>
 
                     {isExpanded && (
-                      <div className={cn('grid gap-3 text-xs rounded-md border p-3', isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-800 bg-[#101720]')}>
-                        {renderEntityList('Agents', deployment.agents)}
-                        {renderEntityList('Models', deployment.models)}
-                        {renderEntityList('Providers', deployment.providers)}
+                      <div className={cn('text-xs rounded mt-2 max-h-80 overflow-auto', isLight ? 'bg-gray-50' : 'bg-gray-900/40')}>
+                        {renderEntityAccordion(key, 'Agents', deployment.agents)}
+                        {renderEntityAccordion(key, 'Models', deployment.models)}
+                        {renderEntityAccordion(key, 'Providers', deployment.providers)}
                       </div>
                     )}
                   </div>

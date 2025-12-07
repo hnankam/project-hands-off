@@ -6,9 +6,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { authClient, adminResetPassword, banUser, unbanUser } from '../../lib/auth-client';
 import { cn } from '@extension/ui';
-import { OrganizationSelector } from './OrganizationSelector';
-import { TeamSelector } from './TeamSelector';
-import { RoleSelector } from './RoleSelector';
+import { OrganizationSelector, TeamSelector, RoleSelector } from './selectors';
+import { AdminConfirmDialog, BanUserDialog } from './modals';
 
 interface Organization {
   id: string;
@@ -814,7 +813,7 @@ useEffect(() => {
                     type="email"
                     value={inviteEmail}
                     onChange={e => setInviteEmail(e.target.value)}
-                    placeholder="[email protected]"
+                    placeholder="Type email address"
                     required
                     className={cn(
                       'w-full px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-blue-500 outline-none',
@@ -1407,476 +1406,118 @@ useEffect(() => {
       )}
 
       {/* Delete User Confirmation Modal */}
-      {deleteUserConfirmOpen && userToDelete && (
-        <>
-          <div
-            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
-            onClick={() => setDeleteUserConfirmOpen(false)}
-          />
-
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-            <div
-              className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
-              )}
-              onClick={e => e.stopPropagation()}>
-              <div
-                className={cn(
-                  'flex items-center justify-between border-b px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
-                  Remove User
-                </h2>
-                  <button
-                  onClick={() => setDeleteUserConfirmOpen(false)}
-                  className={cn(
-                    'rounded-md p-0.5 transition-colors',
-                    isLight
-                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-                  )}>
-                  <svg
-                    width="14"
-                    height="14"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round">
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  </button>
-              </div>
-
-              <div className="space-y-3 px-3 py-4">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={cn(
-                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
-                      isLight ? 'bg-red-100' : 'bg-red-900/30',
-                    )}>
-                    <svg
-                      className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')}
-                      fill="currentColor"
-                      viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                    </svg>
-                  </div>
-
-                  <div className="flex-1">
-                    <p className={cn('text-sm font-medium', mainTextColor)}>
-                      Permanently remove "{userToDelete.email}"?
-                    </p>
-                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      This user will be removed from the organization. This action cannot be undone.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className={cn(
-                  'flex items-center justify-end gap-2 border-t px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                  <button
-                    onClick={() => {
-                      setDeleteUserConfirmOpen(false);
-                      setUserToDelete(null);
-                    }}
-                    className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                      isLight
-                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
-                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
-                    )}>
-                    Cancel
-                  </button>
-                <button
-                  onClick={confirmDeleteUser}
-                  disabled={loading}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    'bg-red-600 text-white hover:bg-red-700',
-                    loading && 'opacity-50 cursor-not-allowed',
-                  )}>
-                  {loading ? 'Removing...' : 'Remove User'}
-                </button>
-                </div>
+      <AdminConfirmDialog
+        isOpen={deleteUserConfirmOpen && !!userToDelete}
+        onClose={() => {
+          setDeleteUserConfirmOpen(false);
+          setUserToDelete(null);
+        }}
+        onConfirm={confirmDeleteUser}
+        title="Remove User"
+        message={
+          <div className="flex items-start gap-3">
+            <div className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full', isLight ? 'bg-red-100' : 'bg-red-900/30')}>
+              <svg className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')} fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className={cn('text-sm font-medium', mainTextColor)}>
+                Permanently remove "{userToDelete?.email}"?
+              </p>
+              <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                This user will be removed from the organization. This action cannot be undone.
+              </p>
             </div>
           </div>
-        </>
-      )}
+        }
+        confirmText="Remove User"
+        variant="danger"
+        isLight={isLight}
+        isLoading={loading}
+      />
 
       {/* Cancel Invitation Confirmation Modal */}
-      {cancelInviteConfirmOpen && inviteToCancel && (
-        <>
-          <div
-            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
-            onClick={() => setCancelInviteConfirmOpen(false)}
-          />
-
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-            <div
-              className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
-              )}
-              onClick={e => e.stopPropagation()}>
-              <div
-                className={cn(
-                  'flex items-center justify-between border-b px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
-                  Cancel Invitation
-                </h2>
-                <button
-                  onClick={() => setCancelInviteConfirmOpen(false)}
-                  className={cn(
-                    'rounded-md p-0.5 transition-colors',
-                    isLight
-                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-                  )}>
-                  <svg
-                    width="14"
-                    height="14"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round">
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="space-y-3 px-3 py-4">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={cn(
-                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
-                      isLight ? 'bg-red-100' : 'bg-red-900/30',
-                    )}>
-                    <svg
-                      className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')}
-                      fill="currentColor"
-                      viewBox="0 0 24 24">
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                    </svg>
-                  </div>
-
-                  <div className="flex-1">
-                    <p className={cn('text-sm font-medium', mainTextColor)}>
-                      Cancel invitation for "{inviteToCancel.email}"?
-                    </p>
-                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      This invitation will be cancelled and the user will not be able to join. This action cannot be undone.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className={cn(
-                  'flex items-center justify-end gap-2 border-t px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <button
-                  onClick={() => {
-                    setCancelInviteConfirmOpen(false);
-                    setInviteToCancel(null);
-                  }}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    isLight
-                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
-                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
-                  )}>
-                  Keep
-                </button>
-                <button
-                  onClick={confirmCancelInvite}
-                  disabled={loading}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    'bg-red-600 text-white hover:bg-red-700',
-                    loading && 'opacity-50 cursor-not-allowed',
-                  )}>
-                  {loading ? 'Cancelling...' : 'Cancel Invitation'}
-                </button>
-              </div>
+      <AdminConfirmDialog
+        isOpen={cancelInviteConfirmOpen && !!inviteToCancel}
+        onClose={() => {
+          setCancelInviteConfirmOpen(false);
+          setInviteToCancel(null);
+        }}
+        onConfirm={confirmCancelInvite}
+        title="Cancel Invitation"
+        message={
+          <div className="flex items-start gap-3">
+            <div className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full', isLight ? 'bg-red-100' : 'bg-red-900/30')}>
+              <svg className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')} fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className={cn('text-sm font-medium', mainTextColor)}>
+                Cancel invitation for "{inviteToCancel?.email}"?
+              </p>
+              <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                This invitation will be cancelled and the user will not be able to join. This action cannot be undone.
+              </p>
             </div>
           </div>
-        </>
-      )}
+        }
+        confirmText="Cancel Invitation"
+        cancelText="Keep"
+        variant="danger"
+        isLight={isLight}
+        isLoading={loading}
+      />
 
       {/* Reset Password Confirmation Modal */}
-      {resetPasswordConfirmOpen && userToResetPassword && (
-        <>
-          <div
-            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
-            onClick={() => setResetPasswordConfirmOpen(false)}
-          />
-
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-            <div
-              className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
-              )}
-              onClick={e => e.stopPropagation()}>
-              <div
-                className={cn(
-                  'flex items-center justify-between border-b px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
-                  Reset User Password
-                </h2>
-                <button
-                  onClick={() => setResetPasswordConfirmOpen(false)}
-                  className={cn(
-                    'rounded-md p-0.5 transition-colors',
-                    isLight
-                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-                  )}>
-                  <svg
-                    width="14"
-                    height="14"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round">
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="space-y-3 px-3 py-4">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={cn(
-                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
-                      isLight ? 'bg-orange-100' : 'bg-orange-900/30',
-                    )}>
-                    <svg
-                      className={cn('h-3.5 w-3.5', isLight ? 'text-orange-600' : 'text-orange-400')}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      strokeWidth={2}>
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"
-                      />
-                    </svg>
-                  </div>
-
-                  <div className="flex-1">
-                    <p className={cn('text-sm font-medium', mainTextColor)}>
-                      Reset password for "{userToResetPassword.name || userToResetPassword.email}"?
-                    </p>
-                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      A password reset email will be sent to <strong>{userToResetPassword.email}</strong>. 
-                      The user will need to click the link in the email to set a new password.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className={cn(
-                  'flex items-center justify-end gap-2 border-t px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <button
-                  onClick={() => {
-                    setResetPasswordConfirmOpen(false);
-                    setUserToResetPassword(null);
-                  }}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    isLight
-                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
-                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
-                  )}>
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmResetPassword}
-                  disabled={loading}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    'bg-orange-600 text-white hover:bg-orange-700',
-                    loading && 'opacity-50 cursor-not-allowed',
-                  )}>
-                  {loading ? 'Sending...' : 'Send Reset Email'}
-                </button>
-              </div>
+      <AdminConfirmDialog
+        isOpen={resetPasswordConfirmOpen && !!userToResetPassword}
+        onClose={() => {
+          setResetPasswordConfirmOpen(false);
+          setUserToResetPassword(null);
+        }}
+        onConfirm={confirmResetPassword}
+        title="Reset User Password"
+        message={
+          <div className="flex items-start gap-3">
+            <div className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full', isLight ? 'bg-orange-100' : 'bg-orange-900/30')}>
+              <svg className={cn('h-3.5 w-3.5', isLight ? 'text-orange-600' : 'text-orange-400')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className={cn('text-sm font-medium', mainTextColor)}>
+                Reset password for "{userToResetPassword?.name || userToResetPassword?.email}"?
+              </p>
+              <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                A password reset email will be sent to <strong>{userToResetPassword?.email}</strong>. 
+                The user will need to click the link in the email to set a new password.
+              </p>
             </div>
           </div>
-        </>
-      )}
+        }
+        confirmText="Send Reset Email"
+        variant="warning"
+        isLight={isLight}
+        isLoading={loading}
+      />
 
       {/* Ban/Unban User Confirmation Modal */}
-      {banUserConfirmOpen && userToBan && (
-        <>
-          <div
-            className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm"
-            onClick={() => setBanUserConfirmOpen(false)}
-          />
-
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-            <div
-              className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
-              )}
-              onClick={e => e.stopPropagation()}>
-              <div
-                className={cn(
-                  'flex items-center justify-between border-b px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <h2 className={cn('text-sm font-semibold', mainTextColor)}>
-                  {userToBan.isBanned ? 'Reactivate User' : 'Deactivate User'}
-                </h2>
-                <button
-                  onClick={() => setBanUserConfirmOpen(false)}
-                  className={cn(
-                    'rounded-md p-0.5 transition-colors',
-                    isLight
-                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-                  )}>
-                  <svg
-                    width="14"
-                    height="14"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round">
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="space-y-3 px-3 py-4">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={cn(
-                      'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
-                      userToBan.isBanned
-                        ? isLight ? 'bg-green-100' : 'bg-green-900/30'
-                        : isLight ? 'bg-yellow-100' : 'bg-yellow-900/30',
-                    )}>
-                    {userToBan.isBanned ? (
-                      <svg
-                        className={cn('h-3.5 w-3.5', isLight ? 'text-green-600' : 'text-green-400')}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    ) : (
-                      <svg
-                        className={cn('h-3.5 w-3.5', isLight ? 'text-yellow-600' : 'text-yellow-400')}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                      </svg>
-                    )}
-                  </div>
-
-                  <div className="flex-1">
-                    <p className={cn('text-sm font-medium', mainTextColor)}>
-                      {userToBan.isBanned
-                        ? `Reactivate "${userToBan.name || userToBan.email}"?`
-                        : `Deactivate "${userToBan.name || userToBan.email}"?`}
-                    </p>
-                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      {userToBan.isBanned
-                        ? 'This will restore the user\'s access to the application. They will be able to sign in again.'
-                        : 'This will prevent the user from signing in. Their data will be preserved and they can be reactivated later.'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Ban reason input (only for banning) */}
-                {!userToBan.isBanned && (
-                  <div className="mt-3">
-                    <label className={cn('block text-xs font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                      Reason (optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={banReason}
-                      onChange={e => setBanReason(e.target.value)}
-                      placeholder="Enter reason for deactivation..."
-                      className={cn(
-                        'w-full px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-yellow-500 outline-none',
-                        isLight
-                          ? 'bg-white border-gray-300 text-gray-900'
-                          : 'bg-[#151C24] border-gray-600 text-white',
-                      )}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div
-                className={cn(
-                  'flex items-center justify-end gap-2 border-t px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}>
-                <button
-                  onClick={() => {
-                    setBanUserConfirmOpen(false);
-                    setUserToBan(null);
-                    setBanReason('');
-                  }}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    isLight
-                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
-                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
-                  )}>
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmBanUser}
-                  disabled={loading}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    userToBan.isBanned
-                      ? 'bg-green-600 text-white hover:bg-green-700'
-                      : 'bg-yellow-600 text-white hover:bg-yellow-700',
-                    loading && 'opacity-50 cursor-not-allowed',
-                  )}>
-                  {loading
-                    ? userToBan.isBanned ? 'Reactivating...' : 'Deactivating...'
-                    : userToBan.isBanned ? 'Reactivate User' : 'Deactivate User'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      <BanUserDialog
+        isOpen={banUserConfirmOpen && !!userToBan}
+        onClose={() => {
+          setBanUserConfirmOpen(false);
+          setUserToBan(null);
+          setBanReason('');
+        }}
+        onConfirm={confirmBanUser}
+        user={userToBan}
+        banReason={banReason}
+        onBanReasonChange={setBanReason}
+        isLight={isLight}
+        isLoading={loading}
+      />
     </div>
   );
 }

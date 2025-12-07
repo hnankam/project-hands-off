@@ -1,16 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
-import { OrganizationSelector } from './OrganizationSelector';
-import { TeamSelector } from './TeamSelector';
-import { TeamMultiSelector } from './TeamMultiSelector';
-import { Radio, Checkbox } from './FormControls';
-import { ModelMultiSelector } from './ModelMultiSelector';
-import ToolMultiSelector from './ToolMultiSelector';
-import { RichTextEditor } from './RichTextEditor';
-import { CodeMirrorJsonEditor } from './CodeMirrorJsonEditor';
+import { OrganizationSelector, TeamSelector, TeamMultiSelector, ModelMultiSelector, ToolMultiSelector, AuxiliaryAgentSelector } from './selectors';
+import { Radio, Checkbox } from './form-controls';
+import { RichTextEditor, CodeMirrorJsonEditor } from './editors';
 import { MarkdownRenderer } from '../tiptap/MarkdownRenderer';
-import { AuxiliaryAgentSelector, type AuxiliaryAgentType } from './AuxiliaryAgentSelector';
+import { AdminConfirmDialog, SaveTemplateDialog } from './modals';
+import type { TemplateFormData } from './modals';
+import type { AuxiliaryAgentType } from './types';
 
 interface Organization {
   id: string;
@@ -364,7 +361,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [saveTemplateDialogOpen, setSaveTemplateDialogOpen] = useState(false);
   const [saveTemplateFor, setSaveTemplateFor] = useState<'create' | 'edit' | null>(null);
-  const [templateForm, setTemplateForm] = useState({ key: '', description: '', scope: 'organization' as 'organization' | 'team', teamIds: [] as string[] });
+  const [templateForm, setTemplateForm] = useState<TemplateFormData>({ key: '', description: '', scope: 'organization', teamIds: [] });
   const [expandedInstructions, setExpandedInstructions] = useState<Set<string>>(new Set());
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [expandedAuxAgents, setExpandedAuxAgents] = useState<Set<string>>(new Set());
@@ -2695,211 +2692,47 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         </>
       )}
 
-      {deleteDialogOpen && deleteConfirm && (
-        <>
-          <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm" onClick={() => setDeleteDialogOpen(false)} />
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-            <div
-              className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
-              )}
-              onClick={e => e.stopPropagation()}
-            >
-              <div
-                className={cn(
-                  'flex items-center justify-between border-b px-3 py-2',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}
-              >
-                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
-                  Delete Agent
-                </h2>
-                <button
-                  onClick={() => setDeleteDialogOpen(false)}
-                  className={cn(
-                    'rounded-md p-0.5 transition-colors',
-                    isLight ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700' : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-                  )}
-                >
-                  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="space-y-3 px-3 py-4">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full', isLight ? 'bg-red-100' : 'bg-red-900/30')}
-                  >
-                    <svg className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')} fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M12 9V3H8v6H5l5 6 5-6h-3z" />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
-                      Delete agent "{deleteConfirm.agentType}"?
-                    </p>
-                    <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      This agent will be removed and will no longer be available for selection.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className={cn('flex items-center justify-end gap-2 border-t px-3 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
-                <button
-                  onClick={() => {
-                    setDeleteDialogOpen(false);
-                    setDeleteConfirm(null);
-                  }}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
-                  )}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteAgent}
-                  className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-red-600 text-white hover:bg-red-700"
-                >
-                  Delete
-                </button>
-              </div>
+      {/* Delete Confirmation Modal */}
+      <AdminConfirmDialog
+        isOpen={deleteDialogOpen && !!deleteConfirm}
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          setDeleteConfirm(null);
+        }}
+        onConfirm={handleDeleteAgent}
+        title="Delete Agent"
+        message={
+          <div className="flex items-start gap-3">
+            <div className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full', isLight ? 'bg-red-100' : 'bg-red-900/30')}>
+              <svg className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')} fill="currentColor" viewBox="0 0 20 20">
+                <path d="M12 9V3H8v6H5l5 6 5-6h-3z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                Delete agent "{deleteConfirm?.agentType}"?
+              </p>
+              <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                This agent will be removed and will no longer be available for selection.
+              </p>
             </div>
           </div>
-        </>
-      )}
+        }
+        confirmText="Delete"
+        variant="danger"
+        isLight={isLight}
+      />
 
-      {saveTemplateDialogOpen && (
-        <>
-          <div className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-sm" onClick={() => setSaveTemplateDialogOpen(false)} />
-          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
-            <div
-              className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl',
-                isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]',
-              )}
-              onClick={e => e.stopPropagation()}
-            >
-              <div
-                className={cn(
-                  'flex items-center justify-between border-b px-4 py-3',
-                  isLight ? 'border-gray-200' : 'border-gray-700',
-                )}
-              >
-                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
-                  Save as Template
-                </h2>
-                <button
-                  onClick={() => setSaveTemplateDialogOpen(false)}
-                  className={cn(
-                    'rounded-md p-0.5 transition-colors',
-                    isLight ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700' : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
-                  )}
-                >
-                  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="space-y-3 px-4 py-4">
-                <div>
-                  <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                    Template Key
-                  </label>
-                  <input
-                    type="text"
-                    value={templateForm.key}
-                    onChange={e => setTemplateForm(prev => ({ ...prev, key: e.target.value }))}
-                    placeholder="e.g., helpful-assistant"
-                    required
-                    className={cn(
-                      'w-full px-3 py-1.5 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500',
-                      isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                    )}
-                  />
-                </div>
-
-                <div>
-                  <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                    Description (optional)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={templateForm.description}
-                    onChange={e => setTemplateForm(prev => ({ ...prev, description: e.target.value }))}
-                    className={cn(
-                      'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                      isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                      Scope
-                    </label>
-                    <div className="flex items-center gap-4">
-                      <Radio
-                        name="template-scope"
-                        value="organization"
-                        checked={templateForm.scope === 'organization'}
-                        onChange={() => setTemplateForm(prev => ({ ...prev, scope: 'organization', teamId: '' }))}
-                        label="Organization"
-                        isLight={isLight}
-                      />
-                      <Radio
-                        name="template-scope"
-                        value="team"
-                        checked={templateForm.scope === 'team'}
-                        onChange={() => setTemplateForm(prev => ({ ...prev, scope: 'team' }))}
-                        label="Team"
-                        isLight={isLight}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                      Teams (optional)
-                    </label>
-                    <TeamMultiSelector
-                      isLight={isLight}
-                      teams={teams}
-                      selectedTeamIds={templateForm.teamIds}
-                      onTeamChange={(value: string[]) => setTemplateForm(prev => ({ ...prev, teamIds: value }))}
-                      placeholder="Select teams"
-                      disabled={templateForm.scope !== 'team'}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className={cn('flex items-center justify-end gap-2 border-t px-4 py-3', isLight ? 'border-gray-200' : 'border-gray-700')}>
-                <button
-                  onClick={() => setSaveTemplateDialogOpen(false)}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
-                  )}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveTemplate}
-                  className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-blue-600 text-white hover:bg-blue-700"
-                >
-                  Save Template
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      {/* Save Template Dialog */}
+      <SaveTemplateDialog
+        isOpen={saveTemplateDialogOpen}
+        onClose={() => setSaveTemplateDialogOpen(false)}
+        onSave={handleSaveTemplate}
+        formData={templateForm}
+        onFormChange={setTemplateForm}
+        teams={teams}
+        isLight={isLight}
+      />
     </div>
   );
 }

@@ -6,8 +6,8 @@
 
 import React from 'react';
 import { debug } from '@extension/shared';
-import { WaitCountdown } from '../../components/WaitCountdown';
-import { ConfirmationCard } from '../../components/ConfirmationCard';
+import { WaitCountdown } from '../../components/feedback/WaitCountdown';
+import { ConfirmationCard } from '../../components/cards/ConfirmationCard';
 
 // ============================================================================
 // CONSTANTS

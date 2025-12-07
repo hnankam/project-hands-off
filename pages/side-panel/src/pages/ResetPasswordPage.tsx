@@ -102,7 +102,7 @@ export default function ResetPasswordPage({ token, onSuccess, onCancel }: ResetP
                     isLight ? 'bg-blue-500/10 text-blue-600' : 'bg-white/10 text-blue-200',
                   )}>
                   <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                  Project Hands-Off
+                  Hands-Off
                 </span>
               </div>
 

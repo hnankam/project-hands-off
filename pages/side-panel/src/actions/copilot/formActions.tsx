@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { debug } from '@extension/shared';
-import { ActionStatus } from '../../components/ActionStatus';
+import { ActionStatus } from '../../components/feedback/ActionStatus';
 import { handleInputData } from '../index';
 
 // ============================================================================

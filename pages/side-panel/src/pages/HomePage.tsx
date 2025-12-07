@@ -2,17 +2,17 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@extension/ui';
 import { useStorage, useSessionStorageDB, sessionStorageDBWrapper } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
-import UserMenu from '../components/UserMenu';
-import InfoMenu from '../components/InfoMenu';
-import { ViewOptionsMenu } from '../components/ViewOptionsMenu';
-import { InstallAppHelper } from '../components/InstallAppHelper';
-import { SettingsButton } from '../components/SettingsButton';
+import UserMenu from '../components/menus/UserMenu';
+import InfoMenu from '../components/menus/InfoMenu';
+import { ViewOptionsMenu } from '../components/layout/ViewOptionsMenu';
+import { InstallAppHelper } from '../components/menus/InstallAppHelper';
+import { SettingsButton } from '../components/menus/SettingsButton';
 import { useAuth } from '../context/AuthContext';
-import { UsageDisplay } from '../components/UsageDisplay';
+import { UsageDisplay } from '../components/menus/UsageDisplay';
 import type { CumulativeUsage } from '../hooks/useUsageStream';
 import { API_CONFIG } from '../constants';
 import { Z_INDEX, POLLING_INTERVALS } from '../constants/ui';
-import { teamsCache } from '../components/TeamSelectorDropdown';
+import { teamsCache } from '../components/selectors/TeamSelectorDropdown';
 
 // ============================================================================
 // TYPES

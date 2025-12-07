@@ -1,11 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn, Button } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
-import { OrganizationSelector } from './OrganizationSelector';
-import { TeamSelector } from './TeamSelector';
-import { TeamMultiSelector } from './TeamMultiSelector';
-import { Checkbox, Radio } from './FormControls';
-import { CodeMirrorJsonEditor } from './CodeMirrorJsonEditor';
+import { OrganizationSelector, TeamSelector, TeamMultiSelector } from './selectors';
+import { Checkbox, Radio } from './form-controls';
+import { CodeMirrorJsonEditor } from './editors';
 
 interface Organization {
   id: string;
