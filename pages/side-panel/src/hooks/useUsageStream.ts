@@ -94,8 +94,28 @@ export function useUsageStream(
   const channelRef = useRef<Ably.RealtimeChannel | null>(null);
   const clientRef = useRef<Ably.Realtime | null>(null);
   const listenersAttachedRef = useRef(false);
+  
+  // Track previous sessionId to detect session changes
+  const prevSessionIdRef = useRef<string | null>(sessionId);
 
-  // Update cumulative when initial values change (e.g., from DB)
+  // Reset state when sessionId changes (e.g., switching to a new session tab)
+  // This ensures new sessions start with fresh stats, not inherited from previous session
+  useEffect(() => {
+    const prevSessionId = prevSessionIdRef.current;
+    
+    if (prevSessionId !== null && prevSessionId !== sessionId) {
+      log(`[useUsageStream] Session changed from ${prevSessionId?.slice(0, 8)} to ${sessionId?.slice(0, 8)}, resetting cumulative state`);
+      
+      // Reset to initial values for the new session (will be zeros for new sessions)
+      setCumulativeState(cloneCumulative(initialCumulative));
+      setLastUsageState(initialLastUsage ?? null);
+    }
+    
+    prevSessionIdRef.current = sessionId;
+  }, [sessionId, initialCumulative, initialLastUsage]);
+
+  // Update cumulative when initial values change (e.g., from DB hydration)
+  // This only applies updates when DB data is larger than current state
   useEffect(() => {
     if (initialCumulative) {
       const hasRealData = 

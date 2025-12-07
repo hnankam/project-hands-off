@@ -830,8 +830,8 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
                 <span
                   key={agent.type}
                   className={cn(
-                    'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
-                    isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
+                    'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
+                    isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
                   )}
                   onClick={e => e.stopPropagation()}
                 >
@@ -971,8 +971,8 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
                 <span
                   key={model.key}
                   className={cn(
-                    'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
-                    isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
+                    'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
+                    isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
                   )}
                   onClick={e => e.stopPropagation()}
                 >
@@ -1287,16 +1287,14 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
                                 {endpoint.model.display_name || endpoint.model.key}
                               </span>
                               {endpoint.model.provider && (
-                                <span className={cn('text-[11px] px-1.5 py-0.5 rounded', isLight ? 'bg-blue-50 text-blue-600' : 'bg-blue-900/30 text-blue-400')}>
+                                <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium', isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300')}>
                                   {endpoint.model.provider}
                                 </span>
                               )}
-                            </div>
-                            
-                            <div className={cn('text-xs flex items-center gap-2', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                              <span>{orgLabel}</span>
-                              <span>•</span>
-                              <span>{teamLabel}</span>
+                              <span className={cn(isLight ? 'text-gray-400' : 'text-gray-500')}>|</span>
+                              <span className={cn(isLight ? 'text-gray-500' : 'text-gray-400')}>{orgLabel}</span>
+                              <span className={cn(isLight ? 'text-gray-400' : 'text-gray-500')}>•</span>
+                              <span className={cn(isLight ? 'text-gray-500' : 'text-gray-400')}>{teamLabel}</span>
                             </div>
                             
                             {endpoint.agent.description && (
@@ -1419,13 +1417,22 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
                         type="button"
                         onClick={() => toggleExpanded(key)}
                         className={cn(
-                          'px-2.5 py-1 text-xs font-medium rounded border transition-colors self-start',
+                          'p-1 rounded transition-colors self-start',
                           isLight
-                            ? 'border-gray-200 text-gray-600 hover:bg-gray-100'
-                            : 'border-gray-700 text-gray-300 hover:bg-gray-800',
+                            ? 'text-gray-400 hover:text-gray-600'
+                            : 'text-gray-500 hover:text-gray-300',
                         )}
+                        title={isExpanded ? 'Hide details' : 'Show details'}
                       >
-                        {isExpanded ? 'Hide details' : 'View details'}
+                        {isExpanded ? (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
+                          </svg>
+                        ) : (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
+                          </svg>
+                        )}
                       </button>
                     </div>
 

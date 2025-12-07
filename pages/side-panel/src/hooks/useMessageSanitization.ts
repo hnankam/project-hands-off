@@ -236,7 +236,7 @@ interface SanitizationResult {
  * @param setMessages - Function to update messages
  * @param saveMessagesRef - Ref to expose save functionality
  * @param restoreMessagesRef - Ref to expose restore functionality
- * @param setHeadlessMessagesCount - Callback to update filtered message count
+ * @param setMessageCounts - Callback to update user and assistant message counts
  * 
  * @returns Object containing:
  *   - filteredMessages: Messages excluding "thinking" and empty messages
@@ -248,11 +248,12 @@ export const useMessageSanitization = (
   setMessages: (messages: any[]) => void,
   saveMessagesRef: React.MutableRefObject<(() => MessageData) | null>,
   restoreMessagesRef: React.MutableRefObject<((messages: any[]) => void) | null>,
-  setHeadlessMessagesCount: (count: number) => void
+  setMessageCounts: (counts: { userCount: number; assistantCount: number }) => void
 ) => {
   // Caching and tracking refs
   const cachedSanitizedRef = useRef<{ signature: string; result: SanitizationResult } | null>(null);
-  const previousCountRef = useRef(0);
+  const previousUserCountRef = useRef(0);
+  const previousAssistantCountRef = useRef(0);
   const previousMessagesRef = useRef<any[]>([]);
   const cachedFilteredRef = useRef<{ messages: any[]; filtered: any[] }>({ messages: [], filtered: [] });
 
@@ -520,16 +521,21 @@ export const useMessageSanitization = (
   }, [setMessages, restoreMessagesRef, messages, sanitizeMessages, computeMessagesSignature]);
 
   /**
-   * Update message count whenever filtered messages change
-   * PERFORMANCE: Only updates if count actually changed
+   * Update message counts whenever filtered messages change
+   * Counts USER and ASSISTANT messages separately (ignores tool calls and other types)
+   * PERFORMANCE: Only updates if counts actually changed
    */
   useEffect(() => {
-    const newCount = filteredMessages.length;
-    if (newCount !== previousCountRef.current) {
-      setHeadlessMessagesCount(newCount);
-      previousCountRef.current = newCount;
+    // Count messages by role (only user and assistant)
+    const userCount = filteredMessages.filter(msg => msg?.role === 'user').length;
+    const assistantCount = filteredMessages.filter(msg => msg?.role === 'assistant').length;
+    
+    if (userCount !== previousUserCountRef.current || assistantCount !== previousAssistantCountRef.current) {
+      setMessageCounts({ userCount, assistantCount });
+      previousUserCountRef.current = userCount;
+      previousAssistantCountRef.current = assistantCount;
     }
-  }, [filteredMessages, setHeadlessMessagesCount, messages]);
+  }, [filteredMessages, setMessageCounts, messages]);
 
   return {
     filteredMessages,

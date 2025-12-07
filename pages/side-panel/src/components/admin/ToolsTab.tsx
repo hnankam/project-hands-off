@@ -446,7 +446,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                 key={toolTeam.id}
                 className={cn(
                   'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-                  isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
+                  isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
                 )}
               >
                 Team · {team?.name || 'Unknown'}
@@ -460,7 +460,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
       <span
         className={cn(
           'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-          isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-400',
+          isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
         )}
       >
         Organization
@@ -490,7 +490,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
       <span
         className={cn(
           'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-          isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-400',
+          isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
         )}
       >
         Organization
@@ -2216,7 +2216,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                               {serverToolCount > 0 && (
                                 <span className={cn(
                                   'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-                                  isLight ? 'bg-blue-100 text-blue-600' : 'bg-blue-900/30 text-blue-400'
+                                  isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300'
                                 )}>
                                   {serverToolCount} tool{serverToolCount !== 1 ? 's' : ''}
                                 </span>
@@ -2230,8 +2230,8 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                               className={cn(
                                 'p-1 rounded transition-colors',
                                 isLight
-                                  ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                                  ? 'text-gray-400 hover:text-blue-600'
+                                  : 'text-gray-500 hover:text-blue-400',
                               )}
                               title="Edit server"
                             >
@@ -2249,8 +2249,8 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                               className={cn(
                                 'p-1 rounded transition-colors',
                                 isLight
-                                  ? 'text-red-600 hover:bg-red-50 hover:text-red-700'
-                                  : 'text-red-400 hover:bg-red-900/20 hover:text-red-300',
+                                  ? 'text-gray-400 hover:text-red-600'
+                                  : 'text-gray-500 hover:text-red-400',
                               )}
                               title="Remove server"
                             >
@@ -2285,13 +2285,19 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                             >
                               <span>Arguments ({server.args.length})</span>
                               <svg
-                                className={cn('w-4 h-4 transition-transform', expandedServerArgs.has(server.id) && 'rotate-180')}
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
                                 fill="none"
                                 stroke="currentColor"
-                                viewBox="0 0 24 24"
                                 strokeWidth={2}
-                              >
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                style={{
+                                  transition: 'transform 0.2s ease-in-out',
+                                  transform: expandedServerArgs.has(server.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                                }}>
+                                <polyline points="9 18 15 12 9 6" />
                               </svg>
                             </button>
                             {expandedServerArgs.has(server.id) && (

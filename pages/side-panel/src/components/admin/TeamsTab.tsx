@@ -541,25 +541,28 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                         <button
                           onClick={() => toggleTeamExpansion(team.id)}
                           className={cn(
-                            'p-1 rounded transition-all duration-200',
-                            isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-800',
+                            'p-1 rounded transition-colors',
+                            isLight
+                              ? 'text-gray-400 hover:text-gray-600'
+                              : 'text-gray-500 hover:text-gray-300',
                           )}
                           title={expandedTeamIds.has(team.id) ? "Collapse" : "Expand members"}>
-                          <svg 
-                            className={cn('w-3.5 h-3.5 transition-transform duration-300 ease-in-out', expandedTeamIds.has(team.id) && 'rotate-180')} 
-                            fill="none" 
-                            stroke="currentColor" 
-                            viewBox="0 0 24 24" 
-                            strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                          </svg>
+                          {expandedTeamIds.has(team.id) ? (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
+                            </svg>
+                          ) : (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
+                            </svg>
+                          )}
                         </button>
                         {canManageTeams && (
                           <button
                             onClick={() => startEditTeam(team)}
                             className={cn(
                               'p-1 rounded transition-colors',
-                              isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-800',
+                              isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400',
                             )}
                             title="Edit">
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -572,7 +575,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                             onClick={() => openDeleteTeamConfirm(team.id, team.name)}
                             className={cn(
                               'p-1 rounded transition-colors',
-                              isLight ? 'text-red-600 hover:bg-red-50' : 'text-red-400 hover:bg-red-900/20',
+                              isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400',
                             )}
                             title="Delete">
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -687,7 +690,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                                           </span>
                                         </div>
                                       </div>
-                                      <span className={cn('text-[10px] px-2 py-0.5 rounded transition-colors flex-shrink-0', isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-300')}>
+                                      <span className={cn('text-[10px] px-2 py-0.5 rounded transition-colors flex-shrink-0', isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300')}>
                                         {Array.isArray(member.role) ? member.role[0] : member.role}
                                       </span>
                                     </div>

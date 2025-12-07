@@ -944,15 +944,15 @@ useEffect(() => {
                           <div className="flex items-center gap-2 mt-1">
                             <span
                               className={cn(
-                                'inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium',
+                                'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
                                 isLight ? 'bg-orange-100 text-orange-700' : 'bg-orange-900/30 text-orange-400',
                               )}>
                               Pending Invitation
                             </span>
                             <span
                               className={cn(
-                                'inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium',
-                                isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-400',
+                                'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
                               )}>
                               {invitation.role}
                             </span>
@@ -981,8 +981,8 @@ useEffect(() => {
                           className={cn(
                             'p-1 rounded transition-colors',
                             isLight
-                              ? 'text-red-600 hover:bg-red-50 hover:text-red-700'
-                              : 'text-red-400 hover:bg-red-900/20 hover:text-red-300',
+                              ? 'text-gray-400 hover:text-red-600'
+                              : 'text-gray-500 hover:text-red-400',
                             loading && 'opacity-50 cursor-not-allowed',
                           )}
                           title="Cancel invitation">
@@ -1114,8 +1114,8 @@ useEffect(() => {
                                       <span
                                         key={teamId}
                                         className={cn(
-                                          'inline-flex items-center px-2 py-1 rounded text-xs font-medium',
-                                          isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
+                                          'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                          isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
                                         )}>
                                         {team.name}
                                       </span>
@@ -1192,7 +1192,7 @@ useEffect(() => {
                             {member.user.banned && (
                               <span
                                 className={cn(
-                                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
+                                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
                                   isLight ? 'bg-red-100 text-red-700' : 'bg-red-900/30 text-red-400',
                                 )}
                                 title={member.user.banReason ? `Reason: ${member.user.banReason}` : undefined}>
@@ -1204,8 +1204,8 @@ useEffect(() => {
                             )}
                             <span
                               className={cn(
-                                'inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium',
-                                isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-400',
+                                'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
                               )}>
                               {Array.isArray(member.role) ? member.role.join(', ') : member.role}
                             </span>
@@ -1218,8 +1218,8 @@ useEffect(() => {
                                   <span
                                     key={teamId}
                                     className={cn(
-                                      'inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium',
-                                      isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
+                                      'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                      isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
                                     )}>
                                     {team.name}
                                   </span>
@@ -1269,8 +1269,8 @@ useEffect(() => {
                               className={cn(
                                 'p-1 rounded transition-colors',
                                 isLight
-                                  ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                                  ? 'text-gray-400 hover:text-gray-600'
+                                  : 'text-gray-500 hover:text-gray-300',
                               )}
                               title="More options">
                               <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
@@ -1358,8 +1358,8 @@ useEffect(() => {
                                   className={cn(
                                     'w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors text-left',
                                     isLight
-                                      ? 'text-red-600 hover:bg-red-50'
-                                      : 'text-red-400 hover:bg-red-900/20',
+                                      ? 'text-gray-600 hover:text-red-600'
+                                      : 'text-gray-400 hover:text-red-400',
                                     loading && 'opacity-50 cursor-not-allowed',
                                   )}>
                                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>

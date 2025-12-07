@@ -1,0 +1,351 @@
+"""Graph builder for multi-agent orchestration.
+
+This module constructs the pydantic-graph that routes queries to specialized
+agents based on the orchestrator's routing decisions.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Literal, Any
+import json
+
+from pydantic_graph.beta import GraphBuilder, StepContext, TypeExpression
+from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
+
+from config import logger
+from .types import (
+    QueryState,
+    GraphDeps,
+    ActionType,
+    WorkerResult,
+    RoutingDecision,
+)
+from .agents import create_agents
+from .state import send_graph_state_snapshot
+from .steps import (
+    run_worker_step,
+    create_orchestrator_run_input,
+    extract_image_result,
+    extract_code_result,
+    build_aggregator_prompt,
+)
+from .constants import DEFAULT_IMAGE_MODEL, DEFAULT_GENERAL_MODEL
+
+
+def create_multi_agent_graph(
+    orchestrator_model: Any,
+    api_key: str | None = None,
+):
+    """Create a multi-agent graph using the beta API builder pattern.
+    
+    Args:
+        orchestrator_model: The model from ctx.model to use for orchestrator (REQUIRED).
+        api_key: Optional Google API key. If None, uses environment variable.
+        
+    Returns:
+        Built graph ready for execution
+    """
+    agents = create_agents(
+        orchestrator_model=orchestrator_model,
+        api_key=api_key,
+    )
+    
+    g = GraphBuilder(
+        state_type=QueryState,
+        input_type=str,
+        output_type=str,
+        deps_type=GraphDeps,
+    )
+    
+    # ==================== ORCHESTRATOR STEP ====================
+    @g.step
+    async def orchestrator_step(ctx: StepContext[QueryState, None, None | WorkerResult]) -> ActionType:
+        """Orchestrator that analyzes context and determines next action."""
+        # Initialize original query
+        if not ctx.state.original_query:
+            ctx.state.original_query = ctx.state.query
+        
+        # Increment iteration count
+        ctx.state.iteration_count += 1
+        
+        logger.info(f"🤖 Orchestrator (Iteration {ctx.state.iteration_count})")
+        logger.info(f"Query: {ctx.state.query}")
+        if ctx.state.execution_history:
+            logger.info(f"History: {' → '.join(ctx.state.execution_history)}")
+        
+        send_stream = ctx.deps.send_stream if ctx.deps else None
+        shared_state = ctx.deps.shared_state if ctx.deps else None
+        await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
+        
+        # Check iteration limit
+        if ctx.state.iteration_count > ctx.state.max_iterations:
+            logger.warning("Max iterations reached")
+            ctx.state.errors.append({
+                "node": "Orchestrator",
+                "error": f"Max iterations ({ctx.state.max_iterations}) reached",
+                "timestamp": datetime.now().isoformat()
+            })
+            await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "error", shared_state)
+            return "end"
+        
+        # Build context
+        context = f"Original Query: {ctx.state.original_query}\n"
+        if ctx.state.execution_history:
+            context += f"Executed: {', '.join(ctx.state.execution_history)}\n"
+        if ctx.state.intermediate_results:
+            context += "\nResults:\n"
+            for node, result in ctx.state.intermediate_results.items():
+                context += f"  - {node}: {result[:100]}...\n"
+        
+        # Get decision - run through AGUIAdapter to access frontend tools
+        try:
+            orchestrator_run_input = create_orchestrator_run_input(
+                ctx.deps.ag_ui_adapter.run_input,
+                context
+            )
+            
+            orchestrator_adapter = AGUIAdapter(
+                agent=agents['orchestrator'],
+                run_input=orchestrator_run_input,
+                accept=SSE_CONTENT_TYPE
+            )
+            
+            result_holder = [None]
+            orchestrator_streaming_text = []
+            
+            def capture_result(result):
+                result_holder[0] = result
+            
+            # Run orchestrator and capture streaming content
+            async for event in orchestrator_adapter.run_stream(on_complete=capture_result):
+                if isinstance(event, str) and 'TEXT_MESSAGE_CONTENT' in event:
+                    try:
+                        for line in event.split('\n'):
+                            if line.startswith('data:'):
+                                data = json.loads(line[5:].strip())
+                                if data.get('type') == 'TEXT_MESSAGE_CONTENT' and data.get('delta'):
+                                    orchestrator_streaming_text.append(data['delta'])
+                    except:
+                        pass
+            
+            # Store orchestrator streaming text
+            if orchestrator_streaming_text:
+                ctx.state.streaming_text["Orchestrator"] = ''.join(orchestrator_streaming_text)
+                logger.debug(f"   [Orchestrator] Captured streaming text: {len(ctx.state.streaming_text.get('Orchestrator', ''))} chars")
+            
+            # Get the captured result
+            final_result = result_holder[0]
+            decision: RoutingDecision | None = None
+            
+            if final_result:
+                # Check if it's a DeferredToolRequests (frontend tool needs user interaction)
+                if hasattr(final_result, 'calls') or type(final_result).__name__ == 'DeferredToolRequests':
+                    logger.info("   Orchestrator returned DeferredToolRequests - falling back to direct run")
+                    result = await agents['orchestrator'].run(context)
+                    decision = result.output
+                elif hasattr(final_result, 'output'):
+                    output = final_result.output
+                    if hasattr(output, 'next_task_type'):
+                        decision = output
+                    else:
+                        logger.warning(f"   Orchestrator output is not RoutingDecision: {type(output)}")
+                        result = await agents['orchestrator'].run(context)
+                        decision = result.output
+            
+            if not decision:
+                logger.warning("Orchestrator adapter didn't return expected result, falling back to direct run")
+                result = await agents['orchestrator'].run(context)
+                decision = result.output
+            
+            logger.info(f"📊 Decision: {decision.next_task_type.upper()}")
+            logger.info(f"   Reasoning: {decision.reasoning[:100]}...")
+            
+            # Store orchestrator reasoning with iteration index
+            orchestrator_iteration = ctx.state.iteration_count - 1
+            indexed_key = f"Orchestrator:{orchestrator_iteration}"
+            
+            if decision.reasoning:
+                thinking_content = f"<think>\n{decision.reasoning}\n</think>"
+                ctx.state.streaming_text[indexed_key] = thinking_content
+                ctx.state.streaming_text["Orchestrator"] = thinking_content
+            
+            # Track orchestrator in execution history
+            ctx.state.execution_history.append(indexed_key)
+            
+            # Handle execution plan
+            if decision.planned_sequence and not ctx.state.planned_steps:
+                ctx.state.planned_steps = list(decision.planned_sequence)
+                logger.info(f"   Planned: {' → '.join(ctx.state.planned_steps)}")
+            elif ctx.state.planned_steps and decision.next_task_type.lower() != "end":
+                _update_planned_steps(ctx.state, decision.next_task_type.lower())
+            
+            # Store task-specific prompt for next worker
+            ctx.state.current_task_prompt = decision.task_prompt if decision.task_prompt else ctx.state.query
+            logger.info(f"   Task prompt: {ctx.state.current_task_prompt[:100]}...")
+            
+            # Store for worker nodes
+            ctx.state.should_continue = decision.needs_followup
+            ctx.state.next_action = decision.next_task_type.lower()
+            
+            await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "completed", shared_state)
+            
+            return decision.next_task_type.lower()  # type: ignore
+            
+        except Exception as e:
+            logger.exception(f"Orchestrator failed: {e}")
+            ctx.state.errors.append({
+                "node": "Orchestrator",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            })
+            await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "error", shared_state)
+            return "end"
+    
+    # ==================== WORKER STEPS ====================
+    @g.step
+    async def image_generation_step(ctx: StepContext[QueryState, None, ActionType]) -> WorkerResult:
+        """Generate an image using AGUIAdapter for streaming and upload to Firebase."""
+        logger.info("🎨 ImageGeneration processing...")
+        return await run_worker_step(
+            state=ctx.state,
+            deps=ctx.deps,
+            node_name="ImageGeneration",
+            agent=agents['image_generation'],
+            model_label=DEFAULT_IMAGE_MODEL,
+            result_extractor=extract_image_result,
+        )
+    
+    @g.step
+    async def web_search_step(ctx: StepContext[QueryState, None, ActionType]) -> WorkerResult:
+        """Perform web search using AGUIAdapter for streaming."""
+        logger.info("🔍 WebSearch processing...")
+        return await run_worker_step(
+            state=ctx.state,
+            deps=ctx.deps,
+            node_name="WebSearch",
+            agent=agents['web_search'],
+            model_label=DEFAULT_GENERAL_MODEL,
+        )
+    
+    @g.step
+    async def code_execution_step(ctx: StepContext[QueryState, None, ActionType]) -> WorkerResult:
+        """Execute code using AGUIAdapter for streaming."""
+        logger.info("💻 CodeExecution processing...")
+        return await run_worker_step(
+            state=ctx.state,
+            deps=ctx.deps,
+            node_name="CodeExecution",
+            agent=agents['code_execution'],
+            model_label=DEFAULT_GENERAL_MODEL,
+            result_extractor=extract_code_result,
+        )
+    
+    @g.step
+    async def result_aggregator_step(ctx: StepContext[QueryState, None, ActionType]) -> WorkerResult:
+        """Aggregate results using AGUIAdapter for streaming."""
+        logger.info("📋 ResultAggregator processing...")
+        
+        # Result aggregator always ends
+        result = await run_worker_step(
+            state=ctx.state,
+            deps=ctx.deps,
+            node_name="ResultAggregator",
+            agent=agents['result_aggregator'],
+            model_label=DEFAULT_GENERAL_MODEL,
+            prompt_builder=build_aggregator_prompt,
+        )
+        
+        # Override to always end after aggregation
+        return "end" if result != "error" else "error"
+    
+    # ==================== FINALIZE STEP ====================
+    @g.step
+    async def finalize_result(ctx: StepContext[QueryState, None, WorkerResult | ActionType]) -> str:
+        """Extract final result from state."""
+        logger.info("✅ Finalizing result")
+        
+        send_stream = ctx.deps.send_stream if ctx.deps else None
+        shared_state = ctx.deps.shared_state if ctx.deps else None
+        
+        final_result = ctx.state.result if ctx.state.result else "Task completed."
+        
+        # Add summary
+        if ctx.state.execution_history:
+            final_result = f"{final_result}\n\n[Executed: {' → '.join(ctx.state.execution_history)}]"
+        
+        ctx.state.result = final_result
+        ctx.state.should_continue = False
+        
+        logger.info(f"   [Finalize] Sending final snapshot with result length={len(final_result)}")
+        await send_graph_state_snapshot(send_stream, ctx.state, "", "completed", shared_state)
+        
+        return final_result
+    
+    # ==================== BUILD GRAPH WITH DECISION NODES ====================
+    # Start -> Orchestrator
+    g.add(g.edge_from(g.start_node).to(orchestrator_step))
+    
+    # Orchestrator -> Decision (route to workers or finalize)
+    g.add(
+        g.edge_from(orchestrator_step).to(
+            g.decision()
+            .branch(g.match(TypeExpression[Literal["image_generation"]]).to(image_generation_step))
+            .branch(g.match(TypeExpression[Literal["web_search"]]).to(web_search_step))
+            .branch(g.match(TypeExpression[Literal["code_execution"]]).to(code_execution_step))
+            .branch(g.match(TypeExpression[Literal["result_aggregator"]]).to(result_aggregator_step))
+            .branch(g.match(TypeExpression[Literal["end"]]).to(finalize_result))
+        )
+    )
+    
+    # Workers -> Decision (continue to orchestrator or finalize)
+    for worker_step in [image_generation_step, web_search_step, code_execution_step, result_aggregator_step]:
+        g.add(
+            g.edge_from(worker_step).to(
+                g.decision()
+                .branch(g.match(TypeExpression[Literal["continue"]]).to(orchestrator_step))
+                .branch(g.match(TypeExpression[Literal["end"]]).to(finalize_result))
+                .branch(g.match(TypeExpression[Literal["error"]]).to(finalize_result))
+            )
+        )
+    
+    # Finalize -> End
+    g.add(g.edge_from(finalize_result).to(g.end_node))
+    
+    return g.build()
+
+
+def _update_planned_steps(state: QueryState, next_step: str) -> None:
+    """Update planned steps if orchestrator decides to add more runs."""
+    action_to_step = {
+        "image_generation": "image_generation",
+        "web_search": "web_search",
+        "code_execution": "code_execution",
+        "result_aggregator": "result_aggregator",
+    }
+    step_to_history = {
+        "image_generation": "ImageGeneration",
+        "web_search": "WebSearch",
+        "code_execution": "CodeExecution",
+        "result_aggregator": "ResultAggregator",
+    }
+    
+    step_name = action_to_step.get(next_step, next_step)
+    if step_name not in action_to_step.values():
+        return
+    
+    history_name = step_to_history.get(step_name, step_name)
+    
+    # Only count actual sub-agent executions, not orchestrator entries
+    executed_count = len([
+        h for h in state.execution_history
+        if h == history_name or h.startswith(f"{history_name}:")
+    ])
+    
+    planned_count = state.planned_steps.count(step_name)
+    
+    # If we're about to execute more times than planned, append
+    if executed_count >= planned_count:
+        state.planned_steps.append(step_name)
+        logger.info(f"   Updated plan (added {step_name}): {' → '.join(state.planned_steps)}")
+

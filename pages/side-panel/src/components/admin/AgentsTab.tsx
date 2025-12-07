@@ -367,6 +367,12 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   const [templateForm, setTemplateForm] = useState({ key: '', description: '', scope: 'organization' as 'organization' | 'team', teamIds: [] as string[] });
   const [expandedInstructions, setExpandedInstructions] = useState<Set<string>>(new Set());
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
+  const [expandedAuxAgents, setExpandedAuxAgents] = useState<Set<string>>(new Set());
+  const [expandedAgentDetails, setExpandedAgentDetails] = useState<Set<string>>(new Set());
+  const [createFormAuxExpanded, setCreateFormAuxExpanded] = useState(false);
+  const [editFormAuxExpanded, setEditFormAuxExpanded] = useState(false);
+  // Track expanded tool categories per agent: { agentId: { frontend: true, backend: false, ... } }
+  const [expandedToolCategories, setExpandedToolCategories] = useState<Record<string, Record<string, boolean>>>({});
 
   const initialLoadCompleteRef = useRef(false);
 
@@ -1166,6 +1172,30 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     });
   };
 
+  const toggleAuxAgents = (agentId: string) => {
+    setExpandedAuxAgents(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(agentId)) {
+        newSet.delete(agentId);
+      } else {
+        newSet.add(agentId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleAgentDetails = (agentId: string) => {
+    setExpandedAgentDetails(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(agentId)) {
+        newSet.delete(agentId);
+      } else {
+        newSet.add(agentId);
+      }
+      return newSet;
+    });
+  };
+
   const handleSaveTemplate = async () => {
     if (!selectedOrgId) return;
 
@@ -1226,7 +1256,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
               key={team.id}
               className={cn(
                 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-                isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
+                isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
               )}
             >
               Team · {team.name}
@@ -1529,87 +1559,116 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                 />
               </div>
 
-              {/* Auxiliary Agents Configuration */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                    Auxiliary Agents
-                  </label>
-                  <span className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    Configure specialized agents for backend tools
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <AuxiliaryAgentSelector
-                    isLight={isLight}
-                    agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
-                    auxType="image_generation"
-                    selectedAgentType={createForm.auxiliaryAgents.image_generation?.agent_type || null}
-                    onChange={(agentType) => setCreateForm(prev => ({
-                      ...prev,
-                      auxiliaryAgents: {
-                        ...prev.auxiliaryAgents,
-                        image_generation: agentType ? { agent_type: agentType } : undefined,
-                      }
-                    }))}
-                    excludeAgentType={createForm.agentType}
-                  />
-                  <AuxiliaryAgentSelector
-                    isLight={isLight}
-                    agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
-                    auxType="web_search"
-                    selectedAgentType={createForm.auxiliaryAgents.web_search?.agent_type || null}
-                    onChange={(agentType) => setCreateForm(prev => ({
-                      ...prev,
-                      auxiliaryAgents: {
-                        ...prev.auxiliaryAgents,
-                        web_search: agentType ? { agent_type: agentType } : undefined,
-                      }
-                    }))}
-                    excludeAgentType={createForm.agentType}
-                  />
-                  <AuxiliaryAgentSelector
-                    isLight={isLight}
-                    agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
-                    auxType="code_execution"
-                    selectedAgentType={createForm.auxiliaryAgents.code_execution?.agent_type || null}
-                    onChange={(agentType) => setCreateForm(prev => ({
-                      ...prev,
-                      auxiliaryAgents: {
-                        ...prev.auxiliaryAgents,
-                        code_execution: agentType ? { agent_type: agentType } : undefined,
-                      }
-                    }))}
-                    excludeAgentType={createForm.agentType}
-                  />
-                  <AuxiliaryAgentSelector
-                    isLight={isLight}
-                    agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
-                    auxType="url_context"
-                    selectedAgentType={createForm.auxiliaryAgents.url_context?.agent_type || null}
-                    onChange={(agentType) => setCreateForm(prev => ({
-                      ...prev,
-                      auxiliaryAgents: {
-                        ...prev.auxiliaryAgents,
-                        url_context: agentType ? { agent_type: agentType } : undefined,
-                      }
-                    }))}
-                    excludeAgentType={createForm.agentType}
-                  />
-                  <AuxiliaryAgentSelector
-                    isLight={isLight}
-                    agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
-                    auxType="memory"
-                    selectedAgentType={createForm.auxiliaryAgents.memory?.agent_type || null}
-                    onChange={(agentType) => setCreateForm(prev => ({
-                      ...prev,
-                      auxiliaryAgents: {
-                        ...prev.auxiliaryAgents,
-                        memory: agentType ? { agent_type: agentType } : undefined,
-                      }
-                    }))}
-                    excludeAgentType={createForm.agentType}
-                  />
+              {/* Auxiliary Agents Configuration - Accordion */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setCreateFormAuxExpanded(prev => !prev)}
+                  className={cn(
+                    'flex items-center justify-between w-full text-xs font-medium mb-1 transition-colors',
+                    isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-gray-100'
+                  )}>
+                  <div className="flex items-center gap-2">
+                    <span>Auxiliary Agents</span>
+                    <span className={cn('text-[10px] font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                      Configure specialized agents for backend tools
+                    </span>
+                  </div>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{
+                      transition: 'transform 0.2s ease-in-out',
+                      transform: createFormAuxExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                    }}>
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </button>
+                <div
+                  style={{
+                    overflow: 'hidden',
+                    transition: 'max-height 0.2s ease-in-out, opacity 0.2s ease-in-out',
+                    maxHeight: createFormAuxExpanded ? '500px' : '0',
+                    opacity: createFormAuxExpanded ? 1 : 0,
+                  }}>
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <AuxiliaryAgentSelector
+                      isLight={isLight}
+                      agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                      auxType="image_generation"
+                      selectedAgentType={createForm.auxiliaryAgents.image_generation?.agent_type || null}
+                      onChange={(agentType) => setCreateForm(prev => ({
+                        ...prev,
+                        auxiliaryAgents: {
+                          ...prev.auxiliaryAgents,
+                          image_generation: agentType ? { agent_type: agentType } : undefined,
+                        }
+                      }))}
+                      excludeAgentType={createForm.agentType}
+                    />
+                    <AuxiliaryAgentSelector
+                      isLight={isLight}
+                      agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                      auxType="web_search"
+                      selectedAgentType={createForm.auxiliaryAgents.web_search?.agent_type || null}
+                      onChange={(agentType) => setCreateForm(prev => ({
+                        ...prev,
+                        auxiliaryAgents: {
+                          ...prev.auxiliaryAgents,
+                          web_search: agentType ? { agent_type: agentType } : undefined,
+                        }
+                      }))}
+                      excludeAgentType={createForm.agentType}
+                    />
+                    <AuxiliaryAgentSelector
+                      isLight={isLight}
+                      agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                      auxType="code_execution"
+                      selectedAgentType={createForm.auxiliaryAgents.code_execution?.agent_type || null}
+                      onChange={(agentType) => setCreateForm(prev => ({
+                        ...prev,
+                        auxiliaryAgents: {
+                          ...prev.auxiliaryAgents,
+                          code_execution: agentType ? { agent_type: agentType } : undefined,
+                        }
+                      }))}
+                      excludeAgentType={createForm.agentType}
+                    />
+                    <AuxiliaryAgentSelector
+                      isLight={isLight}
+                      agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                      auxType="url_context"
+                      selectedAgentType={createForm.auxiliaryAgents.url_context?.agent_type || null}
+                      onChange={(agentType) => setCreateForm(prev => ({
+                        ...prev,
+                        auxiliaryAgents: {
+                          ...prev.auxiliaryAgents,
+                          url_context: agentType ? { agent_type: agentType } : undefined,
+                        }
+                      }))}
+                      excludeAgentType={createForm.agentType}
+                    />
+                    <AuxiliaryAgentSelector
+                      isLight={isLight}
+                      agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                      auxType="memory"
+                      selectedAgentType={createForm.auxiliaryAgents.memory?.agent_type || null}
+                      onChange={(agentType) => setCreateForm(prev => ({
+                        ...prev,
+                        auxiliaryAgents: {
+                          ...prev.auxiliaryAgents,
+                          memory: agentType ? { agent_type: agentType } : undefined,
+                        }
+                      }))}
+                      excludeAgentType={createForm.agentType}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -1912,87 +1971,116 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                           />
                         </div>
 
-                        {/* Auxiliary Agents Configuration */}
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                              Auxiliary Agents
-                            </label>
-                            <span className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                              Configure specialized agents for backend tools
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <AuxiliaryAgentSelector
-                              isLight={isLight}
-                              agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
-                              auxType="image_generation"
-                              selectedAgentType={editForm.auxiliaryAgents.image_generation?.agent_type || null}
-                              onChange={(agentType) => setEditForm(prev => prev ? {
-                                ...prev,
-                                auxiliaryAgents: {
-                                  ...prev.auxiliaryAgents,
-                                  image_generation: agentType ? { agent_type: agentType } : undefined,
-                                }
-                              } : prev)}
-                              excludeAgentType={editForm.agentType}
-                            />
-                            <AuxiliaryAgentSelector
-                              isLight={isLight}
-                              agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
-                              auxType="web_search"
-                              selectedAgentType={editForm.auxiliaryAgents.web_search?.agent_type || null}
-                              onChange={(agentType) => setEditForm(prev => prev ? {
-                                ...prev,
-                                auxiliaryAgents: {
-                                  ...prev.auxiliaryAgents,
-                                  web_search: agentType ? { agent_type: agentType } : undefined,
-                                }
-                              } : prev)}
-                              excludeAgentType={editForm.agentType}
-                            />
-                            <AuxiliaryAgentSelector
-                              isLight={isLight}
-                              agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
-                              auxType="code_execution"
-                              selectedAgentType={editForm.auxiliaryAgents.code_execution?.agent_type || null}
-                              onChange={(agentType) => setEditForm(prev => prev ? {
-                                ...prev,
-                                auxiliaryAgents: {
-                                  ...prev.auxiliaryAgents,
-                                  code_execution: agentType ? { agent_type: agentType } : undefined,
-                                }
-                              } : prev)}
-                              excludeAgentType={editForm.agentType}
-                            />
-                            <AuxiliaryAgentSelector
-                              isLight={isLight}
-                              agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
-                              auxType="url_context"
-                              selectedAgentType={editForm.auxiliaryAgents.url_context?.agent_type || null}
-                              onChange={(agentType) => setEditForm(prev => prev ? {
-                                ...prev,
-                                auxiliaryAgents: {
-                                  ...prev.auxiliaryAgents,
-                                  url_context: agentType ? { agent_type: agentType } : undefined,
-                                }
-                              } : prev)}
-                              excludeAgentType={editForm.agentType}
-                            />
-                            <AuxiliaryAgentSelector
-                              isLight={isLight}
-                              agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
-                              auxType="memory"
-                              selectedAgentType={editForm.auxiliaryAgents.memory?.agent_type || null}
-                              onChange={(agentType) => setEditForm(prev => prev ? {
-                                ...prev,
-                                auxiliaryAgents: {
-                                  ...prev.auxiliaryAgents,
-                                  memory: agentType ? { agent_type: agentType } : undefined,
-                                }
-                              } : prev)}
-                              excludeAgentType={editForm.agentType}
-                            />
+                        {/* Auxiliary Agents Configuration - Accordion */}
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => setEditFormAuxExpanded(prev => !prev)}
+                            className={cn(
+                              'flex items-center justify-between w-full text-xs font-medium mb-1 transition-colors',
+                              isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-gray-100'
+                            )}>
+                            <div className="flex items-center gap-2">
+                              <span>Auxiliary Agents</span>
+                              <span className={cn('text-[10px] font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                Configure specialized agents for backend tools
+                              </span>
+                            </div>
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              style={{
+                                transition: 'transform 0.2s ease-in-out',
+                                transform: editFormAuxExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                              }}>
+                              <polyline points="9 18 15 12 9 6" />
+                            </svg>
+                          </button>
+                          <div
+                            style={{
+                              overflow: 'hidden',
+                              transition: 'max-height 0.2s ease-in-out, opacity 0.2s ease-in-out',
+                              maxHeight: editFormAuxExpanded ? '500px' : '0',
+                              opacity: editFormAuxExpanded ? 1 : 0,
+                            }}>
+                            <div className="grid grid-cols-2 gap-3 pt-2">
+                              <AuxiliaryAgentSelector
+                                isLight={isLight}
+                                agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                                auxType="image_generation"
+                                selectedAgentType={editForm.auxiliaryAgents.image_generation?.agent_type || null}
+                                onChange={(agentType) => setEditForm(prev => prev ? {
+                                  ...prev,
+                                  auxiliaryAgents: {
+                                    ...prev.auxiliaryAgents,
+                                    image_generation: agentType ? { agent_type: agentType } : undefined,
+                                  }
+                                } : prev)}
+                                excludeAgentType={editForm.agentType}
+                              />
+                              <AuxiliaryAgentSelector
+                                isLight={isLight}
+                                agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                                auxType="web_search"
+                                selectedAgentType={editForm.auxiliaryAgents.web_search?.agent_type || null}
+                                onChange={(agentType) => setEditForm(prev => prev ? {
+                                  ...prev,
+                                  auxiliaryAgents: {
+                                    ...prev.auxiliaryAgents,
+                                    web_search: agentType ? { agent_type: agentType } : undefined,
+                                  }
+                                } : prev)}
+                                excludeAgentType={editForm.agentType}
+                              />
+                              <AuxiliaryAgentSelector
+                                isLight={isLight}
+                                agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                                auxType="code_execution"
+                                selectedAgentType={editForm.auxiliaryAgents.code_execution?.agent_type || null}
+                                onChange={(agentType) => setEditForm(prev => prev ? {
+                                  ...prev,
+                                  auxiliaryAgents: {
+                                    ...prev.auxiliaryAgents,
+                                    code_execution: agentType ? { agent_type: agentType } : undefined,
+                                  }
+                                } : prev)}
+                                excludeAgentType={editForm.agentType}
+                              />
+                              <AuxiliaryAgentSelector
+                                isLight={isLight}
+                                agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                                auxType="url_context"
+                                selectedAgentType={editForm.auxiliaryAgents.url_context?.agent_type || null}
+                                onChange={(agentType) => setEditForm(prev => prev ? {
+                                  ...prev,
+                                  auxiliaryAgents: {
+                                    ...prev.auxiliaryAgents,
+                                    url_context: agentType ? { agent_type: agentType } : undefined,
+                                  }
+                                } : prev)}
+                                excludeAgentType={editForm.agentType}
+                              />
+                              <AuxiliaryAgentSelector
+                                isLight={isLight}
+                                agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                                auxType="memory"
+                                selectedAgentType={editForm.auxiliaryAgents.memory?.agent_type || null}
+                                onChange={(agentType) => setEditForm(prev => prev ? {
+                                  ...prev,
+                                  auxiliaryAgents: {
+                                    ...prev.auxiliaryAgents,
+                                    memory: agentType ? { agent_type: agentType } : undefined,
+                                  }
+                                } : prev)}
+                                excludeAgentType={editForm.agentType}
+                              />
+                            </div>
                           </div>
                         </div>
 
@@ -2170,22 +2258,61 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                             <div className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                               {agent.agentName}
                             </div>
-                            <div className={cn('text-xs mt-0.5', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                              {agent.agentType}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className={cn('flex items-center gap-2 text-xs mt-0.5 flex-wrap', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              <span>{agent.agentType}</span>
+                              <span>|</span>
                               {renderScopeBadge(agent)}
+                              <span>|</span>
+                              {(agent.modelIds && agent.modelIds.length > 0) ? (
+                                agent.modelIds.map(modelId => {
+                                  const model = modelLookup[modelId];
+                                  const displayName = model?.name || modelId;
+                                  return (
+                                    <span
+                                      key={`${agent.id}-${modelId}`}
+                                      className={cn(
+                                        'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                        isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300'
+                                      )}
+                                    >
+                                      {displayName}
+                                    </span>
+                                  );
+                                })
+                              ) : (
+                                <span>All models</span>
+                              )}
                             </div>
                           </div>
 
                           <div className="flex gap-1">
                             <button
+                              onClick={() => toggleAgentDetails(agent.id)}
+                              className={cn(
+                                'p-1 rounded transition-colors',
+                                isLight
+                                  ? 'text-gray-400 hover:text-gray-600'
+                                  : 'text-gray-500 hover:text-gray-300',
+                              )}
+                              title={expandedAgentDetails.has(agent.id) ? 'Hide details' : 'Show details'}
+                            >
+                              {expandedAgentDetails.has(agent.id) ? (
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
+                                </svg>
+                              ) : (
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
+                                </svg>
+                              )}
+                            </button>
+                            <button
                               onClick={() => startEditAgent(agent)}
                               className={cn(
                                 'p-1 rounded transition-colors',
                                 isLight
-                                  ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                                  ? 'text-gray-400 hover:text-blue-600'
+                                  : 'text-gray-500 hover:text-blue-400',
                               )}
                               title="Edit agent"
                             >
@@ -2205,8 +2332,8 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                               className={cn(
                                 'p-1 rounded transition-colors',
                                 isLight
-                                  ? 'text-red-600 hover:bg-red-50 hover:text-red-700'
-                                  : 'text-red-400 hover:bg-red-900/20 hover:text-red-300',
+                                  ? 'text-gray-400 hover:text-red-600'
+                                  : 'text-gray-500 hover:text-red-400',
                               )}
                               title="Remove agent"
                             >
@@ -2222,36 +2349,25 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                         </div>
 
                         {agent.description && (
-                          <div className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                          <div className={cn('text-xs mb-2', isLight ? 'text-gray-600' : 'text-gray-400')}>
                             {agent.description}
                           </div>
                         )}
 
-                        <div className="flex flex-wrap items-center gap-2 text-xs">
-                          <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                            Models:
-                          </span>
-                          {(agent.modelIds && agent.modelIds.length > 0) ? (
-                            agent.modelIds.map(modelId => {
-                              const model = modelLookup[modelId];
-                              const displayName = model?.name || modelId;
-                              return (
-                                <span
-                                  key={`${agent.id}-${modelId}`}
-                                  className={cn(
-                                    'inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-medium',
-                                    isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-300'
-                                  )}
-                                >
-                                  {displayName}
-                                </span>
-                              );
-                            })
-                          ) : (
-                            <span className={cn(isLight ? 'text-gray-500' : 'text-gray-400')}>All models</span>
+                        <div
+                          className={cn(
+                            'overflow-hidden transition-all ease-in-out',
+                            expandedAgentDetails.has(agent.id)
+                              ? 'max-h-[800px] opacity-100 mt-2 duration-500'
+                              : 'max-h-0 opacity-0 mt-0 duration-400',
                           )}
-                        </div>
-
+                        >
+                          <div
+                            className={cn(
+                              'transition-all ease-in-out',
+                              expandedAgentDetails.has(agent.id) ? 'translate-y-0 duration-300 delay-100' : '-translate-y-4 duration-200',
+                            )}
+                          >
                         <div>
                           <button
                             type="button"
@@ -2284,16 +2400,23 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                               })() : ' (All tools)'}
                             </span>
                             <svg
-                              className={cn('w-4 h-4 transition-transform', expandedTools.has(agent.id) && 'rotate-180')}
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
                               fill="none"
                               stroke="currentColor"
-                              viewBox="0 0 24 24"
-                              strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                              strokeWidth={2}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              style={{
+                                transition: 'transform 0.2s ease-in-out',
+                                transform: expandedTools.has(agent.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                              }}>
+                              <polyline points="9 18 15 12 9 6" />
                             </svg>
                           </button>
                           {expandedTools.has(agent.id) && (
-                            <div className={cn('text-xs p-2 rounded max-h-48 overflow-auto agents-tab-scrollbar', isLight ? 'bg-gray-50' : 'bg-gray-900/40')}>
+                            <div className={cn('text-xs p-2 rounded max-h-64 overflow-auto agents-tab-scrollbar', isLight ? 'bg-gray-50' : 'bg-gray-900/40')}>
                               {(agent.toolIds && agent.toolIds.length > 0) ? (() => {
                                 const categorizedTools: Record<string, ToolSummary[]> = {
                                   frontend: [],
@@ -2308,92 +2431,89 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                                   }
                                 });
 
+                                const agentCategories = expandedToolCategories[agent.id] || {};
+                                const toggleCategory = (category: string) => {
+                                  setExpandedToolCategories(prev => ({
+                                    ...prev,
+                                    [agent.id]: {
+                                      ...prev[agent.id],
+                                      [category]: !prev[agent.id]?.[category],
+                                    },
+                                  }));
+                                };
+
+                                const categoryConfig: { key: string; label: string }[] = [
+                                  { key: 'frontend', label: 'Frontend' },
+                                  { key: 'backend', label: 'Backend' },
+                                  { key: 'builtin', label: 'Built-in' },
+                                  { key: 'mcp', label: 'MCP' },
+                                ];
+
                                 return (
-                                  <div className="space-y-3">
-                                    {categorizedTools.frontend.length > 0 && (
-                                      <div>
-                                        <div className={cn('font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                                          Frontend Tools ({categorizedTools.frontend.length})
-                                        </div>
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {categorizedTools.frontend.map(tool => (
-                                            <span
-                                              key={`${agent.id}-tool-${tool.id}`}
+                                  <div>
+                                    {categoryConfig.map(({ key, label }) => {
+                                      const tools = categorizedTools[key];
+                                      if (tools.length === 0) return null;
+                                      const isExpanded = agentCategories[key] ?? false;
+
+                                      return (
+                                        <div key={key}>
+                                          {/* Category Header */}
+                                          <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleCategory(key)}
                                               className={cn(
-                                                'inline-flex items-center gap-1 px-2 py-1 rounded font-medium',
-                                                isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-300'
+                                                'flex items-center gap-1.5 text-xs font-medium transition-colors text-left',
+                                                isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-[#bcc1c7]'
                                               )}
                                             >
-                                              {tool.name}
+                                              <svg
+                                                className={cn('w-3 h-3 transition-transform', isExpanded && 'rotate-90')}
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                                strokeWidth={2}
+                                              >
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                              </svg>
+                                              <span>{label}</span>
+                                            </button>
+                                            <span className={cn('text-[10px] flex-shrink-0', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                              {tools.length} {tools.length === 1 ? 'tool' : 'tools'}
                                             </span>
-                                          ))}
+                                          </div>
+
+                                          {/* Category Tools */}
+                                          {isExpanded && (
+                                            <div>
+                                              {tools.map(tool => (
+                                                <div
+                                                  key={`${agent.id}-tool-${tool.id}`}
+                                                  className={cn(
+                                                    'flex items-center gap-2 w-full px-3 py-1.5 text-xs',
+                                                    isLight
+                                                      ? 'text-gray-700 hover:bg-gray-100'
+                                                      : 'text-gray-200 hover:bg-gray-700/50'
+                                                  )}
+                                                >
+                                                  <div className="w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 bg-blue-600 border-blue-600">
+                                                    <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                  </div>
+                                                  <span className="font-medium">{tool.name}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
                                         </div>
-                                      </div>
-                                    )}
-                                    {categorizedTools.backend.length > 0 && (
-                                      <div>
-                                        <div className={cn('font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                                          Backend Tools ({categorizedTools.backend.length})
-                                        </div>
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {categorizedTools.backend.map(tool => (
-                                            <span
-                                              key={`${agent.id}-tool-${tool.id}`}
-                                              className={cn(
-                                                'inline-flex items-center gap-1 px-2 py-1 rounded font-medium',
-                                                isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-300'
-                                              )}
-                                            >
-                                              {tool.name}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {categorizedTools.builtin.length > 0 && (
-                                      <div>
-                                        <div className={cn('font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                                          Built-in Tools ({categorizedTools.builtin.length})
-                                        </div>
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {categorizedTools.builtin.map(tool => (
-                                            <span
-                                              key={`${agent.id}-tool-${tool.id}`}
-                                              className={cn(
-                                                'inline-flex items-center gap-1 px-2 py-1 rounded font-medium',
-                                                isLight ? 'bg-orange-100 text-orange-700' : 'bg-orange-900/30 text-orange-300'
-                                              )}
-                                            >
-                                              {tool.name}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {categorizedTools.mcp.length > 0 && (
-                                      <div>
-                                        <div className={cn('font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                                          MCP Tools ({categorizedTools.mcp.length})
-                                        </div>
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {categorizedTools.mcp.map(tool => (
-                                            <span
-                                              key={`${agent.id}-tool-${tool.id}`}
-                                              className={cn(
-                                                'inline-flex items-center gap-1 px-2 py-1 rounded font-medium',
-                                                isLight ? 'bg-green-100 text-green-700' : 'bg-green-900/30 text-green-300'
-                                              )}
-                                            >
-                                              {tool.name}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
+                                      );
+                                    })}
                                   </div>
                                 );
                               })() : (
-                                <div className={cn(isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                <div className={cn('px-3 py-2', isLight ? 'text-gray-500' : 'text-gray-400')}>
                                   All tools are available for this agent
                                 </div>
                               )}
@@ -2411,12 +2531,19 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                             )}>
                             <span>Base Instructions</span>
                             <svg
-                              className={cn('w-4 h-4 transition-transform', expandedInstructions.has(agent.id) && 'rotate-180')}
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
                               fill="none"
                               stroke="currentColor"
-                              viewBox="0 0 24 24"
-                              strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                              strokeWidth={2}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              style={{
+                                transition: 'transform 0.2s ease-in-out',
+                                transform: expandedInstructions.has(agent.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                              }}>
+                              <polyline points="9 18 15 12 9 6" />
                             </svg>
                           </button>
                           {expandedInstructions.has(agent.id) && (
@@ -2432,6 +2559,95 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                           )}
                         </div>
 
+                        {/* Auxiliary Agents Accordion */}
+                        {(() => {
+                          const auxAgents = (agent.metadata as any)?.auxiliary_agents || {};
+                          const configuredCount = Object.values(auxAgents).filter((v: any) => v?.agent_type).length;
+                          const isExpanded = expandedAuxAgents.has(agent.id);
+                          
+                          return (
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() => toggleAuxAgents(agent.id)}
+                                className={cn(
+                                  'flex items-center justify-between w-full text-xs font-medium mb-1 transition-colors',
+                                  isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-gray-100'
+                                )}>
+                                <span>
+                                  Auxiliary Agents
+                                  {configuredCount > 0 ? ` (${configuredCount} configured)` : ' (None)'}
+                                </span>
+                                <svg
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth={2}
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  style={{
+                                    transition: 'transform 0.2s ease-in-out',
+                                    transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                  }}>
+                                  <polyline points="9 18 15 12 9 6" />
+                                </svg>
+                              </button>
+                              <div
+                                style={{
+                                  overflow: 'hidden',
+                                  transition: 'max-height 0.2s ease-in-out, opacity 0.2s ease-in-out',
+                                  maxHeight: isExpanded ? '300px' : '0',
+                                  opacity: isExpanded ? 1 : 0,
+                                }}>
+                                <div className={cn('text-xs p-2 rounded', isLight ? 'bg-gray-50' : 'bg-gray-900/40')}>
+                                  {configuredCount === 0 ? (
+                                    <div className={cn(isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                      No auxiliary agents configured
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-1.5">
+                                      {auxAgents.image_generation?.agent_type && (
+                                        <div className="flex items-center gap-2">
+                                          <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>Image Generation:</span>
+                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.agentType === auxAgents.image_generation.agent_type)?.agentName || auxAgents.image_generation.agent_type}</span>
+                                        </div>
+                                      )}
+                                      {auxAgents.web_search?.agent_type && (
+                                        <div className="flex items-center gap-2">
+                                          <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>Web Search:</span>
+                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.agentType === auxAgents.web_search.agent_type)?.agentName || auxAgents.web_search.agent_type}</span>
+                                        </div>
+                                      )}
+                                      {auxAgents.code_execution?.agent_type && (
+                                        <div className="flex items-center gap-2">
+                                          <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>Code Execution:</span>
+                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.agentType === auxAgents.code_execution.agent_type)?.agentName || auxAgents.code_execution.agent_type}</span>
+                                        </div>
+                                      )}
+                                      {auxAgents.url_context?.agent_type && (
+                                        <div className="flex items-center gap-2">
+                                          <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>URL Context:</span>
+                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.agentType === auxAgents.url_context.agent_type)?.agentName || auxAgents.url_context.agent_type}</span>
+                                        </div>
+                                      )}
+                                      {auxAgents.memory?.agent_type && (
+                                        <div className="flex items-center gap-2">
+                                          <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>Memory:</span>
+                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.agentType === auxAgents.memory.agent_type)?.agentName || auxAgents.memory.agent_type}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                          </div>
+                        </div>
+
                         <div
                           className={cn(
                             'flex items-center justify-between pt-3 border-t',
@@ -2443,11 +2659,8 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                               htmlFor={`agent-enabled-${agent.id}`}
                               className={cn('text-xs font-medium cursor-pointer block', isLight ? 'text-gray-900' : 'text-gray-100')}
                             >
-                              Agent Enabled
+                              {agent.enabled ? 'Agent Enabled' : 'Agent Disabled'}
                             </label>
-                            <p className={cn('text-xs mt-0.5', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                              {agent.enabled ? 'Agent is active and selectable' : 'Agent is disabled'}
-                            </p>
                           </div>
                           <button
                             id={`agent-enabled-${agent.id}`}

@@ -60,7 +60,7 @@ import {
   isGraphSteps,
   isPlanSteps,
   convertToGraphAgentState,
-} from './GraphStateCard';
+} from './graph-state';
 import { CustomUserMessage } from './CustomUserMessage';
 import { CustomAssistantMessage } from './CustomAssistantMessage';
 import { CustomInput } from './CustomInput';
@@ -189,7 +189,7 @@ export interface ChatInnerProps {
   themeColor: string;
   setThemeColor: (color: string) => void;
   saveMessagesToStorage: (messages: unknown[]) => Promise<void>;
-  setHeadlessMessagesCount: (count: number) => void;
+  setMessageCounts: (counts: { userCount: number; assistantCount: number }) => void;
   saveMessagesRef: React.MutableRefObject<(() => MessageData) | null>;
   restoreMessagesRef: React.MutableRefObject<((messages: unknown[]) => void) | null>;
   resetChatRef: React.MutableRefObject<(() => void) | null>;
@@ -227,7 +227,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   themeColor,
   setThemeColor,
   saveMessagesToStorage,
-  setHeadlessMessagesCount,
+  setMessageCounts,
   saveMessagesRef,
   restoreMessagesRef,
   resetChatRef,
@@ -416,7 +416,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     setMessages,
     saveMessagesRef,
     restoreMessagesRef,
-    setHeadlessMessagesCount,
+    setMessageCounts,
   );
 
   // Update pageDataRef when embeddings or content changes

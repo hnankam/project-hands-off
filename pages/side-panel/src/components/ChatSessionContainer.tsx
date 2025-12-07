@@ -77,7 +77,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     // Agent/model loading is now handled by useSessionData hook.
     const { showAgentCursor, showSuggestions, showThoughtBlocks, agentModeChat } = useStorage(preferencesStorage);
     const { organization, activeTeam } = useAuth();
-    const [headlessMessagesCount, setHeadlessMessagesCount] = useState<number>(0);
+    const [userMessagesCount, setUserMessagesCount] = useState<number>(0);
+    const [assistantMessagesCount, setAssistantMessagesCount] = useState<number>(0);
     const [isCounterReady, setIsCounterReady] = useState<boolean>(false); // Hide counter until stable
     const [isLoading, setIsLoading] = useState(true);
     const [isAgentLoading, setIsAgentLoading] = useState(false);
@@ -109,7 +110,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
 
         // OPTIMIZATION: Batch state updates using startTransition to reduce re-renders
         React.startTransition(() => {
-          setHeadlessMessagesCount(0);
+          setUserMessagesCount(0);
+          setAssistantMessagesCount(0);
           setIsCounterReady(false);
           hasReportedInitialCountRef.current = false;
           setCurrentAgentStepState({
@@ -864,8 +866,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           onRefreshClick={triggerManualRefresh}
           showStaleIndicator={showStaleIndicator}
           isContentFetching={isContentFetching}
-          headlessMessagesCount={headlessMessagesCount}
-          storedMessagesCount={storedFilteredMessagesCount}
+          userMessagesCount={userMessagesCount}
+          assistantMessagesCount={assistantMessagesCount}
           isCounterReady={isCounterReady}
           isEmbedding={isEmbedding}
           embeddingStatus={embeddingStatus}
@@ -888,8 +890,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         triggerManualRefresh,
         showStaleIndicator,
         isContentFetching,
-        headlessMessagesCount,
-        storedFilteredMessagesCount,
+        userMessagesCount,
+        assistantMessagesCount,
         isCounterReady,
         isEmbedding,
         embeddingStatus,
@@ -900,11 +902,16 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       ],
     );
 
-    // Notify parent whenever headlessMessagesCount changes
+    // Notify parent whenever message counts change
     // IMPORTANT: Only report count AFTER hydration completes to prevent flickering from transient zero counts
+    // Total count (user + assistant) is reported to parent for backward compatibility
+    const totalMessagesCount = userMessagesCount + assistantMessagesCount;
+    
     useEffect(() => {
       debug.log(`[ChatSessionContainer] Message count effect triggered for session ${sessionId}:`, {
-        headlessMessagesCount,
+        userMessagesCount,
+        assistantMessagesCount,
+        totalMessagesCount,
         hydrationCompleted,
         hasReportedInitialCount: hasReportedInitialCountRef.current,
         willReport: hydrationCompleted && !hasReportedInitialCountRef.current,
@@ -916,11 +923,11 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       // This prevents reporting transient zero counts during restore
       if (hydrationCompleted && !hasReportedInitialCountRef.current) {
         debug.log(
-          `[ChatSessionContainer] Reporting message count to parent: ${headlessMessagesCount} for session ${sessionId}`,
+          `[ChatSessionContainer] Reporting message count to parent: ${totalMessagesCount} for session ${sessionId}`,
         );
-        onMessagesCountChange(sessionId, headlessMessagesCount);
+        onMessagesCountChange(sessionId, totalMessagesCount);
         hasReportedInitialCountRef.current = true;
-        lastReportedCountRef.current = headlessMessagesCount;
+        lastReportedCountRef.current = totalMessagesCount;
         initialReportTimeRef.current = Date.now();
 
         // Signal that counter is stable - this will trigger skeleton to hide
@@ -933,30 +940,30 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
 
         // Special case: Always report when count changes significantly
         // This handles: 1) user deleted all messages (0), 2) force-restore after failed clear
-        if (headlessMessagesCount !== lastReportedCountRef.current) {
+        if (totalMessagesCount !== lastReportedCountRef.current) {
           debug.log(
-            `[ChatSessionContainer] Reporting count change: ${lastReportedCountRef.current} → ${headlessMessagesCount} for session ${sessionId}`,
+            `[ChatSessionContainer] Reporting count change: ${lastReportedCountRef.current} → ${totalMessagesCount} for session ${sessionId}`,
           );
-          onMessagesCountChange(sessionId, headlessMessagesCount);
-          lastReportedCountRef.current = headlessMessagesCount;
+          onMessagesCountChange(sessionId, totalMessagesCount);
+          lastReportedCountRef.current = totalMessagesCount;
           return;
         }
 
         // Only log if count changed significantly AND we're past the grace period
-        const countDiff = Math.abs(headlessMessagesCount - (lastReportedCountRef.current || 0));
+        const countDiff = Math.abs(totalMessagesCount - (lastReportedCountRef.current || 0));
         if (countDiff > 5 && !isInGracePeriod) {
           debug.warn(
-            `[ChatSessionContainer] Significant message count change AFTER initial report (BLOCKED): ${headlessMessagesCount} for session ${sessionId.slice(0, 8)} (diff: ${countDiff})`,
+            `[ChatSessionContainer] Significant message count change AFTER initial report (BLOCKED): ${totalMessagesCount} for session ${sessionId.slice(0, 8)} (diff: ${countDiff})`,
           );
         }
 
         // Update last reported count even during grace period (for future comparisons)
         if (isInGracePeriod) {
-          lastReportedCountRef.current = headlessMessagesCount;
+          lastReportedCountRef.current = totalMessagesCount;
         }
       }
       // After initial report, do NOT update anymore to prevent flickering
-    }, [onMessagesCountChange, sessionId, headlessMessagesCount, hydrationCompleted]);
+    }, [onMessagesCountChange, sessionId, totalMessagesCount, hydrationCompleted]);
 
     // Register reset function with parent when available
     // We register a wrapper that always calls the current value of resetChatRef.current
@@ -987,6 +994,15 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
     }, [onRegisterLoadFunction, sessionId, handleLoadMessages]);
 
+    // Callback to update message counts (user and assistant separately)
+    const handleSetMessageCounts = useCallback(
+      (counts: { userCount: number; assistantCount: number }) => {
+        setUserMessagesCount(counts.userCount);
+        setAssistantMessagesCount(counts.assistantCount);
+      },
+      [],
+    );
+
     const renderChatInner = useCallback(
       () => (
         <ChatInner
@@ -1004,7 +1020,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           themeColor={themeColor}
           setThemeColor={setThemeColor}
           saveMessagesToStorage={saveMessagesToStorage}
-          setHeadlessMessagesCount={setHeadlessMessagesCount}
+          setMessageCounts={handleSetMessageCounts}
           saveMessagesRef={saveMessagesRef}
           restoreMessagesRef={restoreMessagesRef}
           resetChatRef={resetChatRef}
@@ -1042,7 +1058,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         setSelectedPageURLs,
         sessionId,
         // Removed: sessionTitle (was unused)
-        setHeadlessMessagesCount,
+        handleSetMessageCounts,
         setIsAgentLoading,
         setThemeColor,
         showSuggestions,

@@ -52,8 +52,10 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
   // Show loading if no cache exists
   const [loading, setLoading] = useState(() => !cachedPages);
   const [deletingPages, setDeletingPages] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [isTruncated, setIsTruncated] = useState(false);
   const textRef = useRef<HTMLSpanElement>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -128,6 +130,13 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
   useEffect(() => {
     if (isOpen) {
       fetchPages();
+      // Focus search input when dropdown opens
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 10);
+    } else {
+      // Clear search when dropdown closes
+      setSearchQuery('');
     }
   }, [isOpen, fetchPages]);
 
@@ -230,16 +239,41 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     }
   }, [currentPageURL, selectedPageURLs, onPagesChange]);
 
-  // Handle select all
-  const handleSelectAll = useCallback(() => {
-    if (selectedPageURLs.length === pages.length) {
-      // Deselect all except current page
-      onPagesChange(currentPageURL ? [currentPageURL] : []);
-    } else {
-      // Select all
-      onPagesChange(pages.map(p => p.pageURL));
+  // Get domain from URL - defined before filteredPages which uses it
+  const getDomain = useCallback((url: string): string => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return url;
     }
-  }, [pages, selectedPageURLs, currentPageURL, onPagesChange]);
+  }, []);
+
+  // Filter pages by search query
+  const filteredPages = useMemo(() => {
+    if (!searchQuery.trim()) return pages;
+    const query = searchQuery.toLowerCase().trim();
+    return pages.filter(page => 
+      page.pageTitle.toLowerCase().includes(query) ||
+      page.pageURL.toLowerCase().includes(query) ||
+      getDomain(page.pageURL).toLowerCase().includes(query)
+    );
+  }, [pages, searchQuery, getDomain]);
+
+  // Handle select all (filtered)
+  const handleSelectAll = useCallback(() => {
+    const filteredURLs = filteredPages.map(p => p.pageURL);
+    const allFilteredSelected = filteredURLs.every(url => selectedPageURLs.includes(url));
+    
+    if (allFilteredSelected) {
+      // Deselect all filtered except current page
+      const newSelection = selectedPageURLs.filter(url => !filteredURLs.includes(url));
+      onPagesChange(currentPageURL && !filteredURLs.includes(currentPageURL) ? [...newSelection, currentPageURL] : newSelection);
+    } else {
+      // Select all filtered
+      const newSelection = Array.from(new Set([...selectedPageURLs, ...filteredURLs]));
+      onPagesChange(newSelection);
+    }
+  }, [filteredPages, selectedPageURLs, currentPageURL, onPagesChange]);
 
   // Display text
   const displayText = useMemo(() => {
@@ -302,16 +336,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     }
   };
 
-  // Get domain from URL
-  const getDomain = (url: string): string => {
-    try {
-      return new URL(url).hostname;
-    } catch {
-      return url;
-    }
-  };
-
-  const allSelected = pages.length > 0 && selectedPageURLs.length === pages.length;
+  const allFilteredSelected = filteredPages.length > 0 && filteredPages.every(p => selectedPageURLs.includes(p.pageURL));
 
   const isCompact = variant === 'compact';
 
@@ -404,36 +429,84 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
               'max-h-[400px] rounded-md border shadow-lg flex flex-col',
               isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
             )}>
-          {/* Header with Select All */}
+          {/* Header with Search and Select All */}
         <div
           className={cn(
-            'flex items-center justify-between px-2.5 py-1.5 border-b',
-            isLight ? 'border-gray-200 bg-gray-100' : 'border-gray-700 bg-gray-800/50',
+            'flex items-center gap-2 px-2 py-1.5 border-b rounded-t-md',
+            isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
           )}>
-          <span className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
-            Indexed Pages ({pages.length})
-          </span>
-          <button
-            type="button"
-            onClick={() => handleSelectAll()}
-            className={cn(
-              'text-xs font-medium transition-colors',
-              isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
-            )}>
-            {allSelected ? 'Deselect All' : 'Select All'}
-          </button>
+          {/* Search */}
+          <div className="relative flex-1">
+            <svg
+              className={cn(
+                'absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5',
+                isLight ? 'text-gray-400' : 'text-gray-500'
+              )}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              placeholder="Search pages..."
+              className={cn(
+                'w-full pl-7 pr-2 py-1 text-xs rounded border outline-none focus:ring-2 focus:ring-blue-500',
+                isLight
+                  ? 'bg-gray-50 border-gray-300 text-gray-700 placeholder-gray-400'
+                  : 'bg-[#0D1117] border-gray-600 text-[#bcc1c7] placeholder-gray-500'
+              )}
+            />
+          </div>
+
+          {/* Select All with Checkbox */}
+          {filteredPages.length > 0 && (
+            <button
+              type="button"
+              onClick={handleSelectAll}
+              className={cn(
+                'flex items-center gap-1.5 px-2 py-1 text-xs font-medium transition-colors rounded whitespace-nowrap',
+                isLight
+                  ? 'text-gray-700 hover:bg-gray-200'
+                  : 'text-gray-200 hover:bg-gray-700'
+              )}
+            >
+              <div className={cn(
+                'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0',
+                allFilteredSelected
+                  ? 'bg-blue-600 border-blue-600'
+                  : isLight
+                    ? 'border-gray-400'
+                    : 'border-gray-500'
+              )}>
+                {allFilteredSelected && (
+                  <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </div>
+              <span>All ({filteredPages.length})</span>
+            </button>
+          )}
         </div>
 
         {/* Pages List */}
         <div className="overflow-y-auto flex-1">
           {loading ? (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex items-center justify-center py-6">
               <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                 Loading pages...
               </div>
             </div>
           ) : pages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 px-4">
+            <div className="flex flex-col items-center justify-center py-6 px-4">
               <svg
                 className={cn('h-8 w-8 mb-2', isLight ? 'text-gray-400' : 'text-gray-600')}
                 fill="none"
@@ -453,18 +526,25 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                 Navigate to pages to index them
               </div>
             </div>
+          ) : filteredPages.length === 0 ? (
+            <div className={cn('px-3 py-4 text-xs text-center', isLight ? 'text-gray-500' : 'text-gray-400')}>
+              No pages match your search
+            </div>
           ) : (
-            pages.map(page => {
+            filteredPages.map(page => {
               const isSelected = selectedPageURLs.includes(page.pageURL);
               const isCurrent = page.pageURL === currentPageURL;
               const isDeleting = deletingPages.has(page.pageURL);
               const totalChunks = page.htmlChunkCount + page.formChunkCount + page.clickableChunkCount;
 
               return (
-                <div
+                <button
+                  type="button"
                   key={page.pageURL}
+                  onClick={() => !isDeleting && handleTogglePage(page.pageURL)}
+                  disabled={isDeleting}
                   className={cn(
-                    'flex w-full items-start px-2.5 py-1.5 text-xs transition-colors border-b gap-2 group',
+                    'flex w-full items-center px-2.5 py-1 text-xs transition-colors border-b gap-2 group text-left',
                     isLight ? 'border-gray-100' : 'border-gray-700/50',
                     isDeleting && 'opacity-50 pointer-events-none',
                     isSelected
@@ -475,13 +555,8 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                       ? 'text-gray-500 hover:bg-gray-100'
                       : 'text-gray-400 hover:bg-gray-700/50',
                   )}>
-                  <button
-                    type="button"
-                    onClick={() => handleTogglePage(page.pageURL)}
-                    className="flex-1 min-w-0 flex flex-col gap-0.5 text-left"
-                    disabled={isDeleting}
-                  >
-                    <div className="font-medium truncate">
+                  <div className="flex-1 min-w-0 flex flex-col text-left">
+                    <div className="font-medium truncate leading-tight">
                       {isCurrent && (
                         <span
                           className={cn(
@@ -493,23 +568,24 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                       )}
                       <span className="truncate">{page.pageTitle}</span>
                     </div>
-                    <div className={cn('text-[10px] truncate', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                    <div className={cn('text-[10px] truncate leading-tight', isLight ? 'text-gray-500' : 'text-gray-500')}>
                       {getDomain(page.pageURL)} • {totalChunks} chunks • {formatRelativeTime(page.lastIndexed)}
                     </div>
-                  </button>
+                  </div>
                   
-                  {/* Delete button - hidden for current page */}
+                  {/* Delete button - hidden for current page, turns red on hover (color only, no bg) */}
                   {!isCurrent && (
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeletePage(page.pageURL, e)}
-                      disabled={isDeleting}
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => { e.stopPropagation(); handleDeletePage(page.pageURL, e); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); handleDeletePage(page.pageURL, e as any); } }}
                       title="Delete indexed page"
                       className={cn(
-                        'flex-shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity',
+                        'flex-shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 transition-all cursor-pointer',
                         isLight 
-                          ? 'hover:bg-gray-200 text-gray-400 hover:text-gray-600' 
-                          : 'hover:bg-gray-700 text-gray-500 hover:text-gray-300',
+                          ? 'text-gray-400 hover:text-red-600' 
+                          : 'text-gray-500 hover:text-red-400',
                       )}>
                       {isDeleting ? (
                         <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -521,20 +597,26 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                           <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                       )}
-                    </button>
+                    </span>
                   )}
                   
-                  {/* Checkmark for selected */}
-                  {isSelected && (
-                    <svg className="h-4 w-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                      <path
-                        fillRule="evenodd"
-                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  )}
-                </div>
+                  {/* Checkbox - only show on hover or when selected */}
+                  <div className={cn(
+                    'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
+                    isSelected
+                      ? 'bg-blue-600 border-blue-600 opacity-100'
+                      : cn(
+                          'opacity-0 group-hover:opacity-100',
+                          isLight ? 'border-gray-400' : 'border-gray-500'
+                        )
+                  )}>
+                    {isSelected && (
+                      <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                </button>
               );
             })
           )}

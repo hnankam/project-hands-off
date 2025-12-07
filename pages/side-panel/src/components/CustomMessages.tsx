@@ -482,15 +482,29 @@ export const CustomMessages = ({
     }
   }, [agentMode, inProgress, messages.length, shouldStickToBottomRef]);
 
+  // Track if auto-scroll has been initially enabled for this streaming session
+  // This prevents re-enabling auto-scroll if user has manually scrolled up
+  const autoScrollEnabledForSessionRef = useRef(false);
+
+  // Reset the session flag when streaming ends
+  useEffect(() => {
+    if (!inProgress) {
+      autoScrollEnabledForSessionRef.current = false;
+    }
+  }, [inProgress]);
+
   // Effect: Enable scroll-to-bottom when content exceeds viewport (blankSize becomes 0)
   // This allows the user message to scroll out of view as the assistant message grows
+  // Only enables ONCE per streaming session - respects user scroll after that
   useEffect(() => {
     if (!agentMode || !inProgress || trackedUserIndex === null) return;
 
     // When blankSize is 0, content has exceeded viewport - enable scroll-to-bottom
-    if (blankSize === 0 && !shouldStickToBottomRef.current) {
+    // But only if we haven't already enabled it for this session (to respect user scroll)
+    if (blankSize === 0 && !shouldStickToBottomRef.current && !autoScrollEnabledForSessionRef.current) {
       shouldStickToBottomRef.current = true;
-      scrollLog('📐 Content exceeded viewport - auto-scroll enabled');
+      autoScrollEnabledForSessionRef.current = true;
+      scrollLog('📐 Content exceeded viewport - auto-scroll enabled (once)');
     }
   }, [agentMode, inProgress, trackedUserIndex, blankSize, shouldStickToBottomRef]);
 
@@ -664,7 +678,7 @@ const useAutoScroll = (
         isAutoScrollingRef.current = true;
         const currentMessages = messagesRef.current;
         if (currentMessages.length > 0) {
-          vListRef.current.scrollToIndex(currentMessages.length - 1, { align: 'end' });
+          vListRef.current.scrollToIndex(currentMessages.length - 1, { align: 'end', smooth: true });
         }
         setTimeout(() => {
           isAutoScrollingRef.current = false;
@@ -758,7 +772,7 @@ const useAutoScroll = (
         }
 
         scrollLog(`Agent mode: scrolling to index ${currentLen - 1} on tab open`);
-        vListRef.current.scrollToIndex(currentLen - 1, { align: 'end' });
+        vListRef.current.scrollToIndex(currentLen - 1, { align: 'end', smooth: true });
         isAutoScrollingRef.current = false;
       };
 
@@ -777,13 +791,29 @@ const useAutoScroll = (
     const currentSignature = `${firstId}:${len}:${lastId}`;
 
     const hasMessagesChanged = lastScrollSignatureRef.current !== currentSignature;
+    
+    // Check if this is just a new message added (same session) vs a session switch
+    const previousParts = lastScrollSignatureRef.current.split(':');
+    const previousFirstId = previousParts[0] || '';
+    const isSameSession = previousFirstId === firstId && previousFirstId !== '';
+    const isNewMessageInSession = isSameSession && hasMessagesChanged;
 
     scrollLog('Checking scroll trigger:', {
       currentSignature: currentSignature.slice(0, 50),
       previousSignature: lastScrollSignatureRef.current.slice(0, 50),
       hasMessagesChanged,
+      isSameSession,
+      isNewMessageInSession,
       messageCount: len,
     });
+
+    // If it's a new message in the same session, respect user scroll position
+    if (isNewMessageInSession && !shouldStickToBottomRef.current) {
+      scrollLog('📌 New message in session but user has scrolled up - skipping scroll');
+      // Still update the signature so we don't keep trying to scroll
+      lastScrollSignatureRef.current = currentSignature;
+      return;
+    }
 
     // If messages changed (new session/tab/load), scroll to bottom
     if (hasMessagesChanged) {
@@ -822,7 +852,7 @@ const useAutoScroll = (
         scrollLog(`Scrolling to index ${currentLen - 1}`);
 
         try {
-          vListRef.current.scrollToIndex(currentLen - 1, { align: 'end' });
+          vListRef.current.scrollToIndex(currentLen - 1, { align: 'end', smooth: true });
           // Commit signature now that scroll was initiated
           lastScrollSignatureRef.current = targetSignature;
           scrollLog('✅ Scroll command sent, signature committed');
@@ -846,7 +876,7 @@ const useAutoScroll = (
             // Retry once if not at bottom
             if (!isAtBottomNow && vListRef.current) {
               scrollLog('⚠️ Not at bottom, retrying...');
-              vListRef.current.scrollToIndex(currentLen - 1, { align: 'end' });
+              vListRef.current.scrollToIndex(currentLen - 1, { align: 'end', smooth: true });
 
               // One more verification after retry
               await new Promise(resolve => setTimeout(resolve, SCROLL_SETTLE_DELAY));
@@ -904,9 +934,15 @@ const useAutoScroll = (
       return;
     }
 
+    // Respect user scroll position - don't force scroll if user has scrolled up
+    if (!shouldStickToBottomRef.current) {
+      scrollLog('📌 New message arrived but user has scrolled up - skipping auto-scroll');
+      return;
+    }
+
     // Scroll to bottom when new messages arrive
     isAutoScrollingRef.current = true;
-    vListRef.current.scrollToIndex(messages.length - 1, { align: 'end' });
+    vListRef.current.scrollToIndex(messages.length - 1, { align: 'end', smooth: true });
 
     setTimeout(() => {
       isAutoScrollingRef.current = false;
@@ -934,6 +970,9 @@ const useStickyUserMessage = (
   getContainer: () => HTMLElement,
 ) => {
   const [stickyMessageId, setStickyMessageId] = useState<string | null>(null);
+  
+  // Track previous scroll position to detect scroll direction
+  const prevScrollTopRef = useRef<number>(0);
 
   // Disable sticky in agent mode ONLY when streaming
   useEffect(() => {
@@ -946,20 +985,33 @@ const useStickyUserMessage = (
   const handleScroll = useCallback(
     (offset: number) => {
       // ============== USER SCROLL DETECTION ==============
-      // When user manually scrolls during streaming, detect if they scrolled away from bottom
-      // This allows users to scroll up to read earlier content without being forced back down
+      // Detect user scroll by tracking scroll DIRECTION, not just position
+      // Only disable auto-scroll when user actively scrolls UP (scrollTop decreases)
       if (!isAutoScrollingRef.current && inProgress) {
         const container = getContainer();
         if (container) {
+          const currentScrollTop = container.scrollTop;
+          const prevScrollTop = prevScrollTopRef.current;
           const atBottom = isAtBottom(container);
-          // Only update if the value actually changed to avoid unnecessary updates
-          if (shouldStickToBottomRef.current !== atBottom) {
-            shouldStickToBottomRef.current = atBottom;
-            if (!atBottom) {
-              scrollLog('👆 User scrolled away from bottom - auto-scroll disabled');
-            } else {
-              scrollLog('👇 User scrolled back to bottom - auto-scroll re-enabled');
+          
+          // Detect scroll direction
+          const scrolledUp = currentScrollTop < prevScrollTop - 5; // 5px threshold to avoid noise
+          const scrolledDown = currentScrollTop > prevScrollTop + 5;
+          
+          // Update previous scroll position
+          prevScrollTopRef.current = currentScrollTop;
+          
+          // User actively scrolled UP - disable auto-scroll
+          if (scrolledUp && !atBottom) {
+            if (shouldStickToBottomRef.current) {
+              shouldStickToBottomRef.current = false;
+              scrollLog('👆 User scrolled UP - auto-scroll disabled');
             }
+          }
+          // User scrolled back to bottom - re-enable auto-scroll
+          else if (atBottom && !shouldStickToBottomRef.current) {
+            shouldStickToBottomRef.current = true;
+            scrollLog('👇 User scrolled back to bottom - auto-scroll re-enabled');
           }
         }
       }

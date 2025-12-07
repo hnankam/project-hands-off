@@ -912,7 +912,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
               key={team.id}
               className={cn(
                 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-                isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
+                isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
               )}
             >
               Team · {team.name}
@@ -926,7 +926,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
       <span
         className={cn(
           'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-          isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-400',
+          isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
         )}
       >
         Organization
@@ -940,7 +940,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
       <span
         className={cn(
           'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-          isLight ? 'bg-gray-200 text-gray-700' : 'bg-gray-700 text-gray-100',
+          isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
         )}
       >
         {label}
@@ -1632,20 +1632,20 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                             <button
                               onClick={() => toggleProviderDetails(provider.id)}
                               className={cn(
-                                'p-1 rounded border transition-colors',
+                                'p-1 rounded transition-colors',
                                 isLight
-                                  ? 'text-gray-600 border-gray-200 hover:bg-gray-100'
-                                  : 'text-gray-300 border-gray-700 hover:bg-gray-800',
+                                  ? 'text-gray-400 hover:text-gray-600'
+                                  : 'text-gray-500 hover:text-gray-300',
                               )}
                               title={expandedProviderIds.has(provider.id) ? 'Show less details' : 'Show more details'}
                             >
                               {expandedProviderIds.has(provider.id) ? (
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
                                 </svg>
                               ) : (
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
                                 </svg>
                               )}
                             </button>
@@ -1654,8 +1654,8 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                               className={cn(
                                 'p-1 rounded transition-colors',
                                 isLight
-                                  ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                                  ? 'text-gray-400 hover:text-blue-600'
+                                  : 'text-gray-500 hover:text-blue-400',
                               )}
                               title="Edit provider">
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -1674,8 +1674,8 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                               className={cn(
                                 'p-1 rounded transition-colors',
                                 isLight
-                                  ? 'text-red-600 hover:bg-red-50 hover:text-red-700'
-                                  : 'text-red-400 hover:bg-red-900/20 hover:text-red-300',
+                                  ? 'text-gray-400 hover:text-red-600'
+                                  : 'text-gray-500 hover:text-red-400',
                               )}
                               title="Remove provider">
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -1803,16 +1803,8 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                                 mainTextColor
                               )}
                             >
-                              Provider Enabled
+                              {provider.enabled ? 'Provider Enabled' : 'Provider Disabled'}
                             </label>
-                            <p
-                              className={cn(
-                                'text-xs mt-0.5',
-                                isLight ? 'text-gray-500' : 'text-gray-400'
-                              )}
-                            >
-                              {provider.enabled ? 'Provider is active and available' : 'Provider is disabled'}
-                            </p>
                           </div>
                           <button
                             id={`provider-enabled-${provider.id}`}

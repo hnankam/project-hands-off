@@ -36,8 +36,8 @@ export interface StatusBarProps {
   onRefreshClick: () => void;
   showStaleIndicator: boolean;
   isContentFetching: boolean;
-  headlessMessagesCount: number;
-  storedMessagesCount: number;
+  userMessagesCount: number;
+  assistantMessagesCount: number;
   // Counter visibility
   isCounterReady?: boolean; // Hide counter until messages are stable after hydration
   // Embedding status
@@ -64,8 +64,8 @@ export const StatusBar: FC<StatusBarProps> = memo(({
   onRefreshClick,
   showStaleIndicator,
   isContentFetching,
-  headlessMessagesCount,
-  storedMessagesCount,
+  userMessagesCount,
+  assistantMessagesCount,
   isCounterReady = true, // Default to true for backward compatibility
   isEmbedding,
   embeddingStatus,
@@ -103,9 +103,9 @@ export const StatusBar: FC<StatusBarProps> = memo(({
           {/* Message counters - only show when stable after hydration */}
           {isCounterReady ? (
             <span className="whitespace-nowrap">
-              <span title="Current Messages">{headlessMessagesCount} ↑</span>
+              <span title="User Messages">{userMessagesCount} ↑</span>
               {' / '}
-              <span title="Stored Messages">{storedMessagesCount} ↓</span>
+              <span title="Assistant Messages">{assistantMessagesCount} ↓</span>
             </span>
           ) : (
             <span className="whitespace-nowrap opacity-50">

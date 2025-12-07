@@ -1023,7 +1023,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
               key={team.id}
               className={cn(
                 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-                isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
+                isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
               )}
             >
               Team · {team.name}
@@ -1037,7 +1037,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
       <span
         className={cn(
           'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-          isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-900/30 text-purple-400',
+          isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
         )}
       >
         Organization
@@ -1049,7 +1049,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
     <span
       className={cn(
         'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-        isLight ? 'bg-gray-200 text-gray-700' : 'bg-gray-700 text-gray-100',
+        isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
       )}
     >
       {model.providerKey}
@@ -1761,10 +1761,9 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                             <div className={cn('text-sm font-semibold', mainTextColor)}>
                               {model.displayName || model.modelKey}
                             </div>
-                            <div className={cn('text-xs mt-0.5', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                              {model.modelKey} · {model.modelName}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className={cn('flex items-center gap-2 text-xs mt-0.5 flex-wrap', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              <span>{model.modelKey} · {model.modelName}</span>
+                              <span>|</span>
                               {renderProviderBadge(model)}
                               {renderScopeBadge(model)}
                             </div>
@@ -1776,8 +1775,8 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                               className={cn(
                                 'p-1 rounded transition-colors',
                                 isLight
-                                  ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                                  ? 'text-gray-400 hover:text-blue-600'
+                                  : 'text-gray-500 hover:text-blue-400',
                               )}
                               title="Edit model"
                             >
@@ -1797,8 +1796,8 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                               className={cn(
                                 'p-1 rounded transition-colors',
                                 isLight
-                                  ? 'text-red-600 hover:bg-red-50 hover:text-red-700'
-                                  : 'text-red-400 hover:bg-red-900/20 hover:text-red-300',
+                                  ? 'text-gray-400 hover:text-red-600'
+                                  : 'text-gray-500 hover:text-red-400',
                               )}
                               title="Remove model"
                             >

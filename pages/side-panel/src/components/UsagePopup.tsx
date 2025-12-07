@@ -25,6 +25,21 @@ interface TimeseriesPoint {
   callCount: number;
 }
 
+interface SessionStats {
+  totalTokens: number;
+  requestTokens: number;
+  responseTokens: number;
+  requestCount: number;
+  lastUsage: {
+    agentType: string;
+    model: string;
+    requestTokens: number;
+    responseTokens: number;
+    totalTokens: number;
+    timestamp: string;
+  } | null;
+}
+
 const chartColors = {
   total: { light: '#9CA3AF', dark: '#6B7280' }, // Gray
   request: { light: '#3B82F6', dark: '#60A5FA' }, // Blue
@@ -55,6 +70,9 @@ export const UsagePopup: FC<UsagePopupProps> = ({
     requestTokens: true,
     responseTokens: true,
   });
+  
+  // DB-fetched session stats (loaded when popup opens, provides accurate totals)
+  const [dbSessionStats, setDbSessionStats] = useState<SessionStats | null>(null);
 
   const toggleSeries = (seriesKey: 'totalTokens' | 'requestTokens' | 'responseTokens') => {
     setVisibleSeries(prev => ({
@@ -64,6 +82,7 @@ export const UsagePopup: FC<UsagePopupProps> = ({
   };
 
   // Fetch usage data from API when popup opens
+  // This loads accurate DB data for all cards - NO local fallback
   useEffect(() => {
     if (!isOpen || !sessionId) {
       return;
@@ -72,31 +91,136 @@ export const UsagePopup: FC<UsagePopupProps> = ({
     const fetchUsageData = async () => {
       setLoadingUsage(true);
       try {
-        const params = new URLSearchParams();
-        params.set('range', '30d');
-        params.set('sessionId', sessionId);
+        // Fetch three things in parallel:
+        // 1. All-time session stats (no date limit)
+        // 2. 30-day timeseries for the chart
+        // 3. Latest usage event for Last Request card
+        const [statsResponse, chartResponse, latestResponse] = await Promise.all([
+          // All-time stats for Session Tokens card
+          fetch(`${API_BASE_URL}/api/admin/usage?sessionId=${sessionId}&range=all`, {
+            credentials: 'include',
+          }),
+          // 30-day timeseries for chart
+          fetch(`${API_BASE_URL}/api/admin/usage?sessionId=${sessionId}&range=30d`, {
+            credentials: 'include',
+          }),
+          // Latest usage event for Last Request card (limit=1 to get most recent)
+          fetch(`${API_BASE_URL}/api/admin/usage?sessionId=${sessionId}&limit=1`, {
+            credentials: 'include',
+          }),
+        ]);
 
-        const url = `${API_BASE_URL}/api/admin/usage?${params.toString()}`;
-        console.log('[UsagePopup] Fetching usage data from:', url);
+        // Process latest usage event first (for Last Request card)
+        // The API returns recent.data with individual events that have agent/model labels
+        let latestUsageEvent: SessionStats['lastUsage'] = null;
+        if (latestResponse.ok) {
+          const latestData = await latestResponse.json();
+          console.log('[UsagePopup] Received latest usage data:', latestData);
+          
+          // The API returns recent.data array with individual usage events
+          if (latestData.recent?.data && Array.isArray(latestData.recent.data) && latestData.recent.data.length > 0) {
+            const event = latestData.recent.data[0]; // First event is the most recent
+            latestUsageEvent = {
+              agentType: event.agent || 'unknown',
+              model: event.model || 'unknown',
+              requestTokens: event.requestTokens || 0,
+              responseTokens: event.responseTokens || 0,
+              totalTokens: event.totalTokens || 0,
+              timestamp: event.createdAt || new Date().toISOString(),
+            };
+            console.log('[UsagePopup] Extracted latest usage event:', latestUsageEvent);
+          } else if (latestData.lastUsage) {
+            latestUsageEvent = latestData.lastUsage;
+          }
+        }
 
-        const response = await fetch(url, {
-          credentials: 'include',
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          console.log('[UsagePopup] Received usage data:', data);
-          if (data.timeseries && Array.isArray(data.timeseries)) {
-            console.log('[UsagePopup] Timeseries data points:', data.timeseries.length);
-            setUsageData(data.timeseries);
+        // Process all-time stats
+        if (statsResponse.ok) {
+          const statsData = await statsResponse.json();
+          console.log('[UsagePopup] Received all-time stats:', statsData);
+          
+          // Try to get lastUsage from stats response's recent data if not already found
+          if (!latestUsageEvent && statsData.recent?.data && Array.isArray(statsData.recent.data) && statsData.recent.data.length > 0) {
+            const event = statsData.recent.data[0];
+            latestUsageEvent = {
+              agentType: event.agent || 'unknown',
+              model: event.model || 'unknown',
+              requestTokens: event.requestTokens || 0,
+              responseTokens: event.responseTokens || 0,
+              totalTokens: event.totalTokens || 0,
+              timestamp: event.createdAt || new Date().toISOString(),
+            };
+            console.log('[UsagePopup] Extracted latest usage from stats response:', latestUsageEvent);
+          }
+          
+          // Use summary from API response if available
+          if (statsData.summary) {
+            setDbSessionStats({
+              totalTokens: statsData.summary.totalTokens || 0,
+              requestTokens: statsData.summary.requestTokens || 0,
+              responseTokens: statsData.summary.responseTokens || 0,
+              requestCount: statsData.summary.callCount || 0,
+              lastUsage: latestUsageEvent,
+            });
+          } else if (statsData.totals) {
+            setDbSessionStats({
+              totalTokens: statsData.totals.totalTokens || 0,
+              requestTokens: statsData.totals.requestTokens || 0,
+              responseTokens: statsData.totals.responseTokens || 0,
+              requestCount: statsData.totals.callCount || 0,
+              lastUsage: latestUsageEvent,
+            });
+          } else if (statsData.timeseries && Array.isArray(statsData.timeseries)) {
+            // Compute from timeseries if summary/totals not provided
+            const totalTokens = statsData.timeseries.reduce((sum: number, p: TimeseriesPoint) => sum + p.totalTokens, 0);
+            const requestTokens = statsData.timeseries.reduce((sum: number, p: TimeseriesPoint) => sum + p.requestTokens, 0);
+            const responseTokens = statsData.timeseries.reduce((sum: number, p: TimeseriesPoint) => sum + p.responseTokens, 0);
+            const requestCount = statsData.timeseries.reduce((sum: number, p: TimeseriesPoint) => sum + p.callCount, 0);
+            
+            setDbSessionStats({
+              totalTokens,
+              requestTokens,
+              responseTokens,
+              requestCount,
+              lastUsage: latestUsageEvent,
+            });
+            
+            console.log('[UsagePopup] Computed all-time session stats from DB:', {
+              totalTokens,
+              requestTokens,
+              responseTokens,
+              requestCount,
+              hasLastUsage: !!latestUsageEvent,
+            });
           } else {
-            console.log('[UsagePopup] No timeseries data in response');
+            console.log('[UsagePopup] No stats data in response');
+            setDbSessionStats(null);
           }
         } else {
-          console.error('[UsagePopup] Failed to fetch usage data:', response.status, response.statusText);
+          console.error('[UsagePopup] Failed to fetch all-time stats:', statsResponse.status);
+          setDbSessionStats(null);
+        }
+
+        // Process 30-day chart data
+        if (chartResponse.ok) {
+          const chartData = await chartResponse.json();
+          console.log('[UsagePopup] Received 30-day chart data:', chartData);
+          
+          if (chartData.timeseries && Array.isArray(chartData.timeseries)) {
+            console.log('[UsagePopup] Chart timeseries data points:', chartData.timeseries.length);
+            setUsageData(chartData.timeseries);
+          } else {
+            console.log('[UsagePopup] No timeseries data for chart');
+            setUsageData([]);
+          }
+        } else {
+          console.error('[UsagePopup] Failed to fetch chart data:', chartResponse.status);
+          setUsageData([]);
         }
       } catch (error) {
         console.error('[UsagePopup] Error fetching usage data:', error);
+        setDbSessionStats(null);
+        setUsageData([]);
       } finally {
         setLoadingUsage(false);
       }
@@ -195,16 +319,50 @@ export const UsagePopup: FC<UsagePopupProps> = ({
 
           {/* Content */}
           <div className="p-3 space-y-2.5">
-            <UsageDisplay
-              lastUsage={lastUsage}
-              cumulativeUsage={cumulativeUsage}
-              isConnected={isConnected}
-              isLight={isLight}
-              compact={false}
-            />
+            {/* Session Tokens - DB data only (all-time, not limited to 30 days) */}
+            {loadingUsage ? (
+              <div className={cn(
+                'rounded border p-2.5 flex items-center justify-center h-32',
+                isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
+              )}>
+                <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                  Loading session stats...
+                </div>
+              </div>
+            ) : dbSessionStats ? (
+              <UsageDisplay
+                lastUsage={dbSessionStats.lastUsage ? {
+                  session_id: sessionId || '',
+                  agent_type: dbSessionStats.lastUsage.agentType,
+                  model: dbSessionStats.lastUsage.model,
+                  request_tokens: dbSessionStats.lastUsage.requestTokens,
+                  response_tokens: dbSessionStats.lastUsage.responseTokens,
+                  total_tokens: dbSessionStats.lastUsage.totalTokens,
+                  timestamp: dbSessionStats.lastUsage.timestamp,
+                } : null}
+                cumulativeUsage={{
+                  total: dbSessionStats.totalTokens,
+                  request: dbSessionStats.requestTokens,
+                  response: dbSessionStats.responseTokens,
+                  requestCount: dbSessionStats.requestCount,
+                }}
+                isConnected={isConnected}
+                isLight={isLight}
+                compact={false}
+              />
+            ) : (
+              <div className={cn(
+                'rounded border p-2.5 flex items-center justify-center h-32',
+                isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
+              )}>
+                <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                  No usage data available
+                </div>
+              </div>
+            )}
 
-            {/* Usage Chart - 30 Day History */}
-            {cumulativeUsage.total > 0 && (
+            {/* Usage Chart - 30 Day History (chart only, session stats are all-time) */}
+            {(dbSessionStats || loadingUsage) && (
               <div
                 className={cn(
                   'rounded border p-2.5',
@@ -401,50 +559,52 @@ export const UsagePopup: FC<UsagePopupProps> = ({
               </div>
             )}
 
-            {/* Additional Info */}
-            {lastUsage && (
+            {/* Last Request - DB data only, always visible */}
+            <div
+              className={cn(
+                'rounded border p-2.5 text-[11px]',
+                isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
+              )}
+            >
+              <div className={`font-medium mb-1.5 ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>
+                Last Request
+              </div>
+              <div className={`space-y-1 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
+                <div className="flex justify-between gap-2">
+                  <span>Agent:</span>
+                  <span className="font-mono">{dbSessionStats?.lastUsage?.agentType || '--'}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span>Model:</span>
+                  <span className="font-mono truncate">{dbSessionStats?.lastUsage?.model || '--'}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span>Time:</span>
+                  <span className="font-mono">
+                    {dbSessionStats?.lastUsage?.timestamp 
+                      ? new Date(dbSessionStats.lastUsage.timestamp).toLocaleTimeString() 
+                      : '--'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Averages - DB data only */}
+            {dbSessionStats && dbSessionStats.requestCount > 1 && (
               <div
-                className={`rounded p-2 text-[11px] ${
-                  isLight ? 'bg-gray-50' : 'bg-gray-800'
-                }`}
+                className={cn(
+                  'rounded border p-2.5 text-[11px]',
+                  isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
+                )}
               >
                 <div className={`font-medium mb-1.5 ${isLight ? 'text-gray-700' : 'text-[#bcc1c7]'}`}>
-                  Last Request
+                  Averages
                 </div>
                 <div className={`space-y-1 ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
                   <div className="flex justify-between gap-2">
-                    <span>Agent:</span>
-                    <span className="font-mono">{lastUsage.agent_type}</span>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <span>Model:</span>
-                    <span className="font-mono truncate">{lastUsage.model}</span>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <span>Time:</span>
-                    <span className="font-mono">
-                      {new Date(lastUsage.timestamp).toLocaleTimeString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Average Stats */}
-            {cumulativeUsage.requestCount > 1 && (
-              <div
-                className={`rounded p-2 text-[11px] ${
-                  isLight ? 'bg-blue-50' : 'bg-blue-900/20'
-                }`}
-              >
-                <div className={`font-medium mb-1.5 ${isLight ? 'text-blue-900' : 'text-blue-300'}`}>
-                  Averages
-                </div>
-                <div className={`space-y-1 ${isLight ? 'text-blue-700' : 'text-blue-400'}`}>
-                  <div className="flex justify-between gap-2">
                     <span>Per Request:</span>
                     <span className="font-mono">
-                      {Math.round(cumulativeUsage.total / cumulativeUsage.requestCount).toLocaleString()}
+                      {Math.round(dbSessionStats.totalTokens / dbSessionStats.requestCount).toLocaleString()}
                     </span>
                   </div>
                 </div>

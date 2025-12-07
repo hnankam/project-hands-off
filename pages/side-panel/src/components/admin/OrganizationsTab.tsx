@@ -496,25 +496,28 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
                     <button
                       onClick={() => toggleOrgExpansion(org.id)}
                       className={cn(
-                        'p-1 rounded transition-all duration-200',
-                        isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-800',
+                        'p-1 rounded transition-colors',
+                        isLight
+                          ? 'text-gray-400 hover:text-gray-600'
+                          : 'text-gray-500 hover:text-gray-300',
                       )}
                       title={expandedOrgIds.has(org.id) ? "Collapse" : "Expand teams"}>
-                      <svg 
-                        className={cn('w-3.5 h-3.5 transition-transform duration-300 ease-in-out', expandedOrgIds.has(org.id) && 'rotate-180')} 
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24" 
-                        strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                      </svg>
+                      {expandedOrgIds.has(org.id) ? (
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
+                        </svg>
+                      ) : (
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
+                        </svg>
+                      )}
                     </button>
                     {(userRoles[org.id]?.includes('owner') || userRoles[org.id]?.includes('admin')) && (
                       <button
                         onClick={() => startEditOrganization(org)}
                         className={cn(
                           'p-1 rounded transition-colors',
-                          isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-800',
+                          isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400',
                         )}
                         title="Edit">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -527,7 +530,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
                         onClick={() => openDeleteOrgConfirm(org.id, org.name)}
                         className={cn(
                           'p-1 rounded transition-colors',
-                          isLight ? 'text-red-600 hover:bg-red-50' : 'text-red-400 hover:bg-red-900/20',
+                          isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400',
                         )}
                         title="Delete">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
