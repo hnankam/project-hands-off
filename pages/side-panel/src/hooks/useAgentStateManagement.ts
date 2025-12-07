@@ -3,6 +3,20 @@ import { useCoAgent } from '@copilotkit/react-core';
 import { debug } from '@extension/shared';
 import type { AgentStepState } from '../components/TaskProgressCard';
 
+// Step type from AgentStepState
+type Step = AgentStepState['steps'][number];
+
+/**
+ * Check if steps are plan steps (have 'description' field) vs graph steps (have 'node' field).
+ * This prevents graph execution steps from being rendered as task progress.
+ */
+function isPlanSteps(steps: unknown[]): steps is Step[] {
+  if (!steps || steps.length === 0) return false;
+  const first = steps[0] as Record<string, unknown>;
+  // Plan steps have 'description', graph steps have 'node'
+  return 'description' in first && !('node' in first);
+}
+
 export interface UseAgentStateManagementProps {
   sessionId: string;
   messages: unknown[];
@@ -63,6 +77,7 @@ export const useAgentStateManagement = ({
    * - Plan deleted (returns empty steps)
    * - Session mismatch (returns empty steps)
    * - Missing sessionId on raw state (adds current sessionId)
+   * - Graph steps (have 'node' instead of 'description') - filtered out
    */
   const dynamicAgentState = useMemo<AgentStepState>(() => {
     // No raw state available
@@ -80,13 +95,21 @@ export const useAgentStateManagement = ({
       return { sessionId, steps: [] };
     }
     
-    // Session matches - return raw state as-is
+    // Check if steps are plan steps (have 'description') vs graph steps (have 'node')
+    // Graph steps should be rendered by GraphStateCard, not TaskProgressCard
+    const steps = rawDynamicAgentState.steps ?? [];
+    if (steps.length > 0 && !isPlanSteps(steps)) {
+      // These are graph steps - return empty to let useCoAgentStateRender handle them
+      return { sessionId, steps: [] };
+    }
+    
+    // Session matches - return raw state as-is (with valid plan steps)
     if (rawDynamicAgentState.sessionId === sessionId) {
       return rawDynamicAgentState;
     }
     
     // No sessionId on raw state - attach current sessionId
-    return { sessionId, steps: rawDynamicAgentState.steps ?? [] };
+    return { sessionId, steps: steps as Step[] };
   }, [rawDynamicAgentState, sessionId]);
   
   /**

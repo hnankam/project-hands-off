@@ -13,6 +13,10 @@ import { createPortal } from 'react-dom';
 import { cn } from '@extension/ui';
 import { embeddingsStorage, debug } from '@extension/shared';
 
+// Simple module-level cache - no complex TTL, just stores last fetched pages
+let cachedPages: IndexedPage[] | null = null;
+let lastFetchedCount = 0; // Track page count to detect new embeddings
+
 interface IndexedPage {
   pageURL: string;
   pageTitle: string;
@@ -43,8 +47,10 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
   variant = 'default',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [pages, setPages] = useState<IndexedPage[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Initialize from cache if available
+  const [pages, setPages] = useState<IndexedPage[]>(() => cachedPages || []);
+  // Show loading if no cache exists
+  const [loading, setLoading] = useState(() => !cachedPages);
   const [deletingPages, setDeletingPages] = useState<Set<string>>(new Set());
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -91,43 +97,37 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     return () => resizeObserver.disconnect();
   }, [selectedPageURLs, pages]);
 
-  // Fetch indexed pages function
-  const fetchPages = useCallback(async (showLoading: boolean = true) => {
-    if (showLoading) {
-      setLoading(true);
-    }
-    debug.log('[PagesSelector] Fetching indexed pages for sessionId:', sessionId);
+  // Simple fetch function - called on mount and when dropdown opens
+  const fetchPages = useCallback(async () => {
     try {
-      // Don't filter by sessionId - show all indexed pages across all sessions
       const result = await embeddingsStorage.getAllIndexedPages({
         limit: 50,
         includeEmpty: false,
       });
-      setPages(result);
-      debug.log('[PagesSelector] Loaded indexed pages:', result.length, 'pages:', result);
       
-      if (result.length === 0) {
-        debug.warn('[PagesSelector] No indexed pages found. User may need to index pages first.');
-      }
+      // Always update cache and state
+      cachedPages = result;
+      lastFetchedCount = result.length;
+      setPages(result);
+      debug.log(`[PagesSelector] Fetched ${result.length} indexed pages`);
     } catch (error) {
       debug.error('[PagesSelector] Failed to load indexed pages:', error);
-      setPages([]);
+      // Don't clear pages on error - keep showing cached data
     } finally {
-      if (showLoading) {
         setLoading(false);
-      }
     }
-  }, [sessionId]);
+  }, []);
 
-  // Fetch on mount (with loading indicator)
+  // Fetch on mount - always fetch, don't skip
   useEffect(() => {
-    fetchPages(true);
-  }, [fetchPages]);
+    fetchPages();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
-  // Refresh pages when dropdown opens (background refresh, no loading indicator)
+  // Refresh when dropdown opens (background refresh)
   useEffect(() => {
     if (isOpen) {
-      fetchPages(false);
+      fetchPages();
     }
   }, [isOpen, fetchPages]);
 

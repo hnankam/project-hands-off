@@ -1,5 +1,6 @@
 """API route handlers for agent endpoints."""
 
+from typing import Any
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -47,6 +48,14 @@ class ExtendedDeps:
     team_id: str | None = None
     agent_type: str | None = None
     agent_info: dict | None = None
+    # Usage tracking context (for sub-agents in multi-agent graphs)
+    session_id: str | None = None
+    user_id: str | None = None
+    auth_session_id: str | None = None
+    broadcast_func: Any | None = None  # Async function to broadcast usage
+    # Database IDs for usage tracking (resolved UUIDs)
+    agent_id: str | None = None  # DB UUID of the parent agent
+    model_id: str | None = None  # DB UUID of the model
 
 class DeploymentRequest(BaseModel):
     organization_id: str
@@ -300,6 +309,14 @@ def register_agent_routes(app: FastAPI) -> None:
                         team_id=team_id,
                         agent_type=agent_type,
                         agent_info=agent_info,
+                        # Usage tracking context for sub-agents in multi-agent graphs
+                        session_id=conversation_id,
+                        user_id=user_id,
+                        auth_session_id=session_id,
+                        broadcast_func=ably_publisher.broadcast_to_session,
+                        # Database IDs for usage tracking (passed to sub-agents)
+                        agent_id=agent_db_id,
+                        model_id=model_db_id,
                     )
                     event_stream = run_ag_ui(
                         agent=agent_instance,

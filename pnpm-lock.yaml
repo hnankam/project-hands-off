@@ -77,6 +77,9 @@ importers:
       recharts:
         specifier: ^3.3.0
         version: 3.3.0(@types/react@19.1.12)(react-dom@19.1.1(react@19.1.1))(react-is@18.3.1)(react@19.1.1)(redux@5.0.1)
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
       surrealdb:
         specifier: ^1.3.2
         version: 1.3.2(tslib@2.8.1)(typescript@5.9.2)(ws@8.18.3)
@@ -7944,7 +7947,7 @@ snapshots:
       '@urql/core': 5.2.0(graphql@16.11.0)
       react: 19.1.1
       untruncate-json: 0.0.1
-      urql: 4.2.2(@urql/core@5.2.0)(react@19.1.1)
+      urql: 4.2.2(@urql/core@5.2.0(graphql@16.11.0))(react@19.1.1)
     transitivePeerDependencies:
       - encoding
       - graphql
@@ -15895,7 +15898,7 @@ snapshots:
 
   urlpattern-polyfill@10.1.0: {}
 
-  urql@4.2.2(@urql/core@5.2.0)(react@19.1.1):
+  urql@4.2.2(@urql/core@5.2.0(graphql@16.11.0))(react@19.1.1):
     dependencies:
       '@urql/core': 5.2.0(graphql@16.11.0)
       react: 19.1.1

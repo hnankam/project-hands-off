@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+// @ts-ignore - Types package not installed, but functionality works fine
+import remarkGfm from 'remark-gfm';
 // @ts-ignore - Types package not installed, but functionality works fine
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 // @ts-ignore
@@ -8,6 +10,181 @@ import { MermaidBlock } from '../MermaidBlock';
 
 // Type for syntax highlighter style
 type SyntaxStyle = Record<string, React.CSSProperties>;
+
+/**
+ * Get file extension based on language
+ */
+const getFileExtension = (language: string): string => {
+  const extensionMap: Record<string, string> = {
+    javascript: 'js', typescript: 'ts', python: 'py', java: 'java',
+    cpp: 'cpp', 'c++': 'cpp', c: 'c', csharp: 'cs', 'c#': 'cs',
+    ruby: 'rb', go: 'go', rust: 'rs', swift: 'swift', kotlin: 'kt',
+    php: 'php', html: 'html', css: 'css', scss: 'scss', sass: 'sass',
+    less: 'less', json: 'json', yaml: 'yaml', yml: 'yml', xml: 'xml',
+    markdown: 'md', md: 'md', sql: 'sql', bash: 'sh', shell: 'sh',
+    sh: 'sh', zsh: 'zsh', powershell: 'ps1', dockerfile: 'dockerfile',
+    text: 'txt',
+  };
+  const normalizedLang = language?.toLowerCase() || 'text';
+  return extensionMap[normalizedLang] || normalizedLang;
+};
+
+/**
+ * CodeBlockWithToolbar Component
+ * Renders a code block with syntax highlighting and a toolbar (copy/download buttons)
+ */
+const CodeBlockWithToolbar: React.FC<{
+  language: string;
+  code: string;
+  isLight: boolean;
+}> = ({ language, code, isLight }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy code:', error);
+    }
+  };
+
+  const handleDownload = () => {
+    const extension = getFileExtension(language);
+    const blob = new Blob([code], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `code-${Date.now()}.${extension}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        borderRadius: '6px',
+        border: `1px solid ${isLight ? '#e5e7eb' : '#374151'}`,
+        backgroundColor: isLight ? '#f9fafb' : '#151C24',
+        overflow: 'hidden',
+        margin: '0.25em 0',
+      }}
+    >
+      {/* Toolbar */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          height: '28px',
+          padding: '0 8px',
+          background: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)',
+          borderBottom: `1px solid ${isLight ? '#e5e7eb' : '#374151'}`,
+        }}
+      >
+        {/* Language label */}
+        <span
+          style={{
+            fontSize: '11px',
+            fontWeight: 500,
+            color: isLight ? '#6b7280' : '#9ca3af',
+            textTransform: 'lowercase',
+          }}
+        >
+          {language || 'text'}
+        </span>
+        {/* Action buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <button
+            onClick={handleDownload}
+            title="Download"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: isLight ? '#6b7280' : '#9ca3af',
+              borderRadius: '4px',
+              transition: 'background-color 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+          <button
+            onClick={handleCopy}
+            title={copied ? 'Copied!' : 'Copy'}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: copied ? '#22c55e' : (isLight ? '#6b7280' : '#9ca3af'),
+              borderRadius: '4px',
+              transition: 'background-color 0.2s, color 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              if (!copied) e.currentTarget.style.backgroundColor = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
+            {copied ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+              </svg>
+            )}
+          </button>
+        </div>
+      </div>
+      {/* Code Content */}
+      <SyntaxHighlighter
+        style={(isLight ? oneLight : oneDark) as SyntaxStyle}
+        language={language || 'text'}
+        PreTag="div"
+        customStyle={{
+          margin: 0,
+          padding: '12px 14px',
+          borderRadius: 0,
+          backgroundColor: isLight ? '#ffffff' : '#0d1117',
+          fontSize: '13px',
+        }}
+        codeTagProps={{
+          style: {
+            backgroundColor: 'transparent',
+          }
+        }}
+      >
+        {code.replace(/\n$/, '')}
+      </SyntaxHighlighter>
+    </div>
+  );
+};
 
 export interface MarkdownRendererProps {
   /**
@@ -30,17 +207,13 @@ export interface MarkdownRendererProps {
  * Preprocess markdown content to ensure proper spacing around code blocks
  */
 const preprocessMarkdown = (content: string): string => {
-  // Ensure newlines before and after code block fences
+  if (!content) return content;
+  
   let processed = content;
   
-  // Add newline before opening ``` if not present (but not at start of content)
-  processed = processed.replace(/([^\n])```/g, '$1\n```');
-  
-  // Add single newline after closing ``` if not present (and there's content after)
-  processed = processed.replace(/```([^\n\s])/g, '```\n$1');
-  
-  // Handle closing ``` followed by whitespace but not newline
-  processed = processed.replace(/```([ \t]+)([^\n])/g, '```\n$2');
+  // Only fix: ensure newline before ``` if text is directly adjacent
+  // This handles "text```python" -> "text\n```python"
+  processed = processed.replace(/([^\n\s])```/g, '$1\n```');
   
   return processed.trim();
 };
@@ -104,7 +277,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   return (
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
-        remarkPlugins={[]}
+        remarkPlugins={[remarkGfm]}
         rehypePlugins={[]}
         components={{
           // Code blocks with syntax highlighting and mermaid diagram support
@@ -128,25 +301,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
             const isCodeBlock = !isInline;
             
             return isCodeBlock ? (
-              <SyntaxHighlighter
-                style={(isLight ? oneLight : oneDark) as SyntaxStyle}
+              <CodeBlockWithToolbar
                 language={language || 'text'}
-                PreTag="div"
-                customStyle={{
-                  margin: '0',
-                  padding: '12px',
-                  borderRadius: '6px',
-                  backgroundColor: isLight ? '#e8eaed' : '#0d1117',
-                  fontSize: '13px',
-                }}
-                codeTagProps={{
-                  style: {
-                    backgroundColor: 'transparent',
-                  }
-                }}
-              >
-                {codeString.replace(/\n$/, '')}
-              </SyntaxHighlighter>
+                code={codeString.replace(/\n$/, '')}
+                isLight={isLight}
+              />
             ) : (
               <code className={className} {...rest}>
                 {children}
@@ -226,6 +385,32 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
           // Emphasized/italic text
           em({ node, children, ...props }) {
             return <em className="markdown-italic" {...props}>{children}</em>;
+          },
+          // Table components (GFM tables) - matches session table design
+          // Wrapper provides horizontal scroll with fixed header
+          table({ node, children, ...props }: any) {
+            return (
+              <div className="markdown-table-wrapper">
+                <table {...props}>
+                  {children}
+                </table>
+              </div>
+            );
+          },
+          thead({ node, children, ...props }: any) {
+            return <thead {...props}>{children}</thead>;
+          },
+          tbody({ node, children, ...props }: any) {
+            return <tbody {...props}>{children}</tbody>;
+          },
+          tr({ node, children, ...props }: any) {
+            return <tr {...props}>{children}</tr>;
+          },
+          th({ node, children, ...props }: any) {
+            return <th {...props}>{children}</th>;
+          },
+          td({ node, children, ...props }: any) {
+            return <td {...props}>{children}</td>;
           },
         }}
       >

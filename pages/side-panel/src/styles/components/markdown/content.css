@@ -360,3 +360,218 @@
   pointer-events: none !important;
   opacity: 0.5 !important;
 }
+
+/* ==========================================================
+   GRAPH STATE CARD MARKDOWN CONTENT
+   Ensure proper list rendering in graph state cards
+   ========================================================== */
+[data-graph-state] .markdown-content ul,
+[data-graph-state] .markdown-content ol {
+  margin: 0.5em 0 !important;
+  padding-left: 24px !important;
+  display: block !important;
+  line-height: 1.6 !important;
+}
+
+[data-graph-state] .markdown-content li {
+  margin: 0.3em 0 !important;
+  padding-left: 4px !important;
+  display: list-item !important;
+  list-style-position: outside !important;
+  line-height: 1.6 !important;
+}
+
+[data-graph-state] .markdown-content ul > li {
+  list-style-type: disc !important;
+}
+
+[data-graph-state] .markdown-content ol > li {
+  list-style-type: decimal !important;
+}
+
+/* Nested lists */
+[data-graph-state] .markdown-content ul ul > li,
+[data-graph-state] .markdown-content ol ul > li {
+  list-style-type: circle !important;
+}
+
+[data-graph-state] .markdown-content ul ul ul > li,
+[data-graph-state] .markdown-content ol ul ul > li {
+  list-style-type: square !important;
+}
+
+/* ==========================================================
+   MARKDOWN TABLES
+   Matches session table design from HomePage
+   - Horizontal scroll with fixed header
+   - No wrap on content
+   - Clean divide-y style (no cell borders)
+   ========================================================== */
+
+/* Table container - enables horizontal scroll */
+.markdown-content .markdown-table-wrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 400px;
+  margin: 0.8em 0;
+  border-radius: 6px;
+  -webkit-overflow-scrolling: touch;
+  /* Light mode background */
+  background-color: #ffffff;
+}
+
+.dark .markdown-content .markdown-table-wrapper {
+  background-color: #151C24;
+}
+
+/* Table scrollbar styling */
+.markdown-content .markdown-table-wrapper::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.markdown-content .markdown-table-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.markdown-content .markdown-table-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 2px;
+}
+
+.markdown-content .markdown-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+.dark .markdown-content .markdown-table-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.4);
+}
+
+.dark .markdown-content .markdown-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.6);
+}
+
+.markdown-content .markdown-table-wrapper::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Base table styles */
+.markdown-content table {
+  min-width: 100%;
+  width: max-content;
+  border-collapse: collapse;
+  font-size: 11px;
+  line-height: 1.4 !important;
+  display: table;
+  margin: 0;
+  /* Light mode text */
+  color: #374151;
+}
+
+.dark .markdown-content table {
+  color: #d1d5db;
+}
+
+/* Table structure */
+.markdown-content thead {
+  display: table-header-group;
+}
+
+.markdown-content tbody {
+  display: table-row-group;
+}
+
+.markdown-content tr {
+  display: table-row;
+}
+
+/* Row dividers - divide-y style */
+.markdown-content tbody tr {
+  border-top: 1px solid #e5e7eb;
+}
+
+.dark .markdown-content tbody tr {
+  border-top-color: #374151;
+}
+
+/* Header row bottom border */
+.markdown-content thead tr {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.dark .markdown-content thead tr {
+  border-bottom-color: #374151;
+}
+
+/* Header cells */
+.markdown-content th {
+  display: table-cell;
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: middle;
+  font-weight: 600;
+  font-size: 11px;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  /* Light mode header */
+  background-color: #f9fafb;
+  color: #4b5563;
+}
+
+.dark .markdown-content th {
+  background-color: #151C24;
+  color: #9ca3af;
+}
+
+/* Data cells */
+.markdown-content td {
+  display: table-cell;
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+  /* Light mode cells */
+  background-color: #ffffff;
+  color: #374151;
+}
+
+.dark .markdown-content td {
+  background-color: transparent;
+  color: #d1d5db;
+}
+
+/* Hover effect for rows */
+.markdown-content tbody tr:hover td {
+  background-color: #f3f4f6;
+}
+
+.dark .markdown-content tbody tr:hover td {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* Critical: Override any conflicting line-height that causes overlap */
+.markdown-content table,
+.markdown-content table *,
+.markdown-content thead,
+.markdown-content tbody,
+.markdown-content tr,
+.markdown-content th,
+.markdown-content td {
+  line-height: 1.4 !important;
+}
+
+/* Graph state card specific table styles */
+[data-graph-state] .markdown-content table {
+  font-size: 10.5px;
+}
+
+[data-graph-state] .markdown-content th,
+[data-graph-state] .markdown-content td {
+  padding: 6px 10px;
+}
+
+[data-graph-state] .markdown-content .markdown-table-wrapper {
+  max-height: 300px;
+}

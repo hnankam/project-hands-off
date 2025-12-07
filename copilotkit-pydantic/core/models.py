@@ -1,6 +1,6 @@
 """Pydantic models for agent state and data structures."""
 
-from typing import Any, Literal
+from typing import Any, Literal, Union
 from pydantic import BaseModel, Field
 
 # Type definitions
@@ -41,8 +41,26 @@ class JSONPatchOp(BaseModel):
     )
 
 
+class GraphStep(BaseModel):
+    """Represents a step in a graph execution (different from plan Step)."""
+    
+    node: str = Field(description='The node name (e.g., WebSearch, CodeExecution)')
+    status: str = Field(default='pending', description='Status: pending, in_progress, completed, error')
+    result: str = Field(default='', description='Result or error message')
+    prompt: str = Field(default='', description='Prompt sent to the sub-agent')
+    streaming_text: str = Field(default='', description='Live streaming text during execution')
+    tool_calls: list[dict] = Field(default_factory=list, description='Tool calls made during this step')
+    timestamp: str = Field(default='', description='ISO timestamp')
+
+
 class GraphState(BaseModel):
     """State for multi-agent graph execution."""
+    
+    # Graph-specific steps (different from plan steps)
+    steps: list[GraphStep] = Field(
+        default_factory=list,
+        description='The steps in the graph execution'
+    )
     
     query: str = Field(
         default="",
@@ -51,6 +69,10 @@ class GraphState(BaseModel):
     original_query: str = Field(
         default="",
         description='The original user query'
+    )
+    mermaid_diagram: str = Field(
+        default="",
+        description='Mermaid diagram showing the graph structure'
     )
     result: str = Field(
         default="",
@@ -67,6 +89,18 @@ class GraphState(BaseModel):
     intermediate_results: dict[str, str] = Field(
         default_factory=dict,
         description='Track results from each node'
+    )
+    streaming_text: dict[str, str] = Field(
+        default_factory=dict,
+        description='Track streaming text per node during execution'
+    )
+    prompts: dict[str, str] = Field(
+        default_factory=dict,
+        description='Track prompts sent to each node'
+    )
+    tool_calls: dict[str, list] = Field(
+        default_factory=dict,
+        description='Track tool calls per node: {node: [ToolCallInfo]}'
     )
     errors: list[dict[str, str]] = Field(
         default_factory=list,
@@ -105,10 +139,11 @@ class GraphState(BaseModel):
 class AgentState(BaseModel):
     """Shared agent state including multi-agent graph state."""
     
-    # Original agent state fields
-    steps: list[Step] = Field(
+    # Original agent state fields - accepts both plan Steps and graph GraphSteps
+    # This is needed because the frontend may send back graph steps in the root steps field
+    steps: list[Union[Step, GraphStep]] = Field(
         default_factory=list,
-        description='The steps in the plan'
+        description='The steps in the plan or graph execution'
     )
     
     # Multi-agent graph state

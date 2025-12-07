@@ -38,6 +38,77 @@ type LayoutEngine = 'dagre-wrapper' | 'dagre-d3' | 'elk';
 type Direction = 'TB' | 'BT' | 'LR' | 'RL';
 type DiagramType = 'flowchart' | 'sequence' | 'class' | 'state' | 'er' | 'journey' | 'gantt' | 'pie' | 'git' | 'other';
 
+/**
+ * Sanitize mermaid content to escape special characters in node labels and edge labels.
+ * Wraps labels containing special chars in quotes, being careful not to double-quote.
+ * Also handles edge label syntax issues.
+ */
+const sanitizeMermaidContent = (content: string): string => {
+  let result = content;
+  
+  // Characters that require the label to be quoted
+  const needsQuote = /[()<>=]/;
+  
+  // Process each line separately to avoid cross-line matching issues
+  result = result.split('\n').map(line => {
+    // Skip empty lines or comments
+    if (!line.trim() || line.trim().startsWith('%%')) {
+      return line;
+    }
+    
+    // Fix edge labels with special characters: -->|label| or ---|label|
+    // Edge labels with parentheses/equals need to be quoted
+    line = line.replace(/(-->|---)\|([^"|]+)\|/g, (match, arrow, label) => {
+      if (needsQuote.test(label)) {
+        // Escape quotes and wrap in quotes
+        const escapedLabel = label.replace(/"/g, "'");
+        return `${arrow}|"${escapedLabel}"|`;
+      }
+      return match;
+    });
+    
+    // Handle & operator with edge labels - this is often invalid
+    // Convert "A & B -->|label| C" to separate edges: "A --> C" and "B --> C"
+    // But only if there's an edge label which causes issues
+    const ampersandWithLabel = /(\w+)\s*&\s*(\w+)\s*(-->|---)\|([^|]+)\|\s*(\w+)/g;
+    if (ampersandWithLabel.test(line)) {
+      line = line.replace(ampersandWithLabel, (match, node1, node2, arrow, label, target) => {
+        // Remove the edge label from combined sources - it's the source of parsing issues
+        return `${node1} ${arrow} ${target}\n    ${node2} ${arrow} ${target}`;
+      });
+    }
+    
+    // Handle node definitions if present
+    if (line.includes('[') || line.includes('{')) {
+    // Match node definitions: ID[label] or ID{label}
+    // But skip if already quoted: ID["label"] or ID{"label"}
+    
+    // Handle square brackets [] - match ID[label] where label doesn't start with "
+    line = line.replace(/(\b\w+)\[([^"\]]+)\]/g, (match, nodeId, label) => {
+      if (needsQuote.test(label)) {
+        // Escape any existing quotes in the label
+        const escapedLabel = label.replace(/"/g, "'");
+        return `${nodeId}["${escapedLabel}"]`;
+      }
+      return match;
+    });
+    
+    // Handle curly braces {} for diamonds
+    line = line.replace(/(\b\w+)\{([^"\}]+)\}/g, (match, nodeId, label) => {
+      if (needsQuote.test(label)) {
+        const escapedLabel = label.replace(/"/g, "'");
+        return `${nodeId}{"${escapedLabel}"}`;
+      }
+      return match;
+    });
+    }
+    
+    return line;
+  }).join('\n');
+  
+  return result;
+};
+
 export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) => {
   const { isLight } = useStorage(themeStorage);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -118,6 +189,9 @@ export const MermaidBlock: FC<{ children?: React.ReactNode }> = ({ children }) =
     } else if (children && typeof children === 'object') {
       rawContent = String(children);
     }
+    
+    // Sanitize content to escape special characters in node labels
+    rawContent = sanitizeMermaidContent(rawContent);
     
     // Replace direction in the graph definition for flowcharts
     if (diagramType === 'flowchart') {

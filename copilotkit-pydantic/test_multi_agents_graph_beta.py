@@ -50,6 +50,13 @@ class ErrorRecoveryDecision(BaseModel):
     reasoning: str  # Explanation of the recovery decision
     error_message: str  # User-friendly error message
 
+class CodeExecutionOutput(BaseModel):
+    """Structured output for the code execution agent."""
+    language: str  # Programming language used (e.g., "python", "javascript")
+    code: str  # The source code that was executed
+    output: str  # The output/result from executing the code
+    success: bool = True  # Whether the execution was successful
+    error_message: str = ""  # Error message if execution failed
 
 # Create specialized agents
 orchestrator_agent = Agent(
@@ -98,7 +105,7 @@ web_search_agent = Agent(
 code_execution_agent = Agent(
     model=general_model,
     builtin_tools=[CodeExecutionTool()],
-    output_type=str,
+    output_type=CodeExecutionOutput,
     system_prompt="You are a code execution assistant. Execute code to solve problems.",
 )
 
@@ -906,14 +913,14 @@ if __name__ == "__main__":
             #     "query": "Search the web for the latest news on the latest AI models.",
             #     "description": "Web search task"
             # },
-            {
-                "query": "Search for the latest SpaceX rocket launch details, then create an image visualizing it and provide a brief description of the launch..",
-                "description": "Multi-step: Web search → Image generation"
-            },
             # {
-            #     "query": "Write a story about the latest election results in Cameroon, using images and various illustrations.",
+            #     "query": "Find the Fibonacci sequence formula, calculate the 10th number, then generate a visual chart of it and a mermaid chart as well. Between each step, the orchestrator should reevaluate the results and decide the next step.",
             #     "description": "Multi-step"
             # },
+            {
+                "query": "Run a graph to Calculate the factorial of 15 and summarize the results",
+                "description": "Multi-step"
+            },
         ]
         
         for i, test_case in enumerate(test_queries, 1):

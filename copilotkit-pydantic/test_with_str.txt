@@ -1,0 +1,277 @@
+
+========================================
+TEST 1: Direct Graph Execution
+========================================
+
+============================================================
+MULTI-AGENT GRAPH STRUCTURE (Beta API)
+============================================================
+---
+title: Multi-Agent Graph (Beta)
+---
+stateDiagram-v2
+  direction TB
+  orchestrator_step
+  state decision <<choice>>
+  code_execution_step
+  finalize_result
+  image_generation_step
+  result_aggregator_step
+  web_search_step
+  state decision_2 <<choice>>
+  state decision_3 <<choice>>
+  state decision_4 <<choice>>
+  state decision_5 <<choice>>
+
+  [*] --> orchestrator_step
+  orchestrator_step --> decision
+  decision --> code_execution_step
+  decision --> finalize_result
+  decision --> image_generation_step
+  decision --> result_aggregator_step
+  decision --> web_search_step
+  code_execution_step --> decision_4
+  finalize_result --> [*]
+  image_generation_step --> decision_2
+  result_aggregator_step --> decision_5
+  web_search_step --> decision_3
+  decision_2 --> orchestrator_step
+  decision_3 --> orchestrator_step
+  decision_4 --> orchestrator_step
+  decision_5 --> orchestrator_step
+  decision_2 --> finalize_result
+  decision_2 --> finalize_result
+  decision_3 --> finalize_result
+  decision_3 --> finalize_result
+  decision_4 --> finalize_result
+  decision_4 --> finalize_result
+  decision_5 --> finalize_result
+  decision_5 --> finalize_result
+
+
+
+========================================
+TEST 2: AG UI Event Streaming Pattern
+========================================
+
+========================================
+EXAMPLE 1: Multi-step
+========================================
+Query: Run a graph to Calculate the factorial of 15 and summarize the results
+
+============================================================
+🚀 Running Multi-Agent Graph with AG UI
+============================================================
+Thread ID: 22b86a3bcb634519b1e426dd724cc6a1
+Run ID: c540e3fdced248e3b1304e70773e1975
+Query: Run a graph to Calculate the factorial of 15 and summarize the results
+============================================================
+
+[EVENT] data: {"type":"CUSTOM","name":"graph_start","value":{"query":"Run a graph to Calculate the factorial of 15 and summarize the results","thread_id":"22b86a3bcb634519b1e426dd724cc6a1"}}
+
+
+[EVENT] data: {"type":"CUSTOM","name":"state_initialized","value":{"query":"Run a graph to Calculate the factorial of 15 and summarize the results","max_iterations":5}}
+
+
+
+============================================================
+🤖 Orchestrator (Iteration 1)
+============================================================
+Query: Run a graph to Calculate the factorial of 15 and summarize the results
+[EVENT] data: {"type":"CUSTOM","name":"orchestrator_start","value":{"iteration":1,"query":"Run a graph to Calculate the factorial of 15 and summarize the results","history":[]}}
+
+
+
+📊 Decision: CODE_EXECUTION
+   Reasoning: The user wants to calculate the factorial of 15, which is a computational task suitable for the CODE...
+[EVENT] data: {"type":"CUSTOM","name":"orchestrator_decision","value":{"next_task":"CODE_EXECUTION","should_continue":true,"needs_followup":true,"confidence":1.0,"reasoning":"The user wants to calculate the factorial of 15, which is a computational task suitable for the CODE_EXECUTION agent. This is the first step in a multi-step request, so a follow-up will be needed to summarize the result."}}
+
+
+💻 CodeExecution processing...
+[EVENT] data: {"type":"CUSTOM","name":"code_execution_start","value":{"query":"Run a graph to Calculate the factorial of 15 and summarize the results"}}
+
+
+[EVENT] type=<EventType.RUN_STARTED: 'RUN_STARTED'> timestamp=None raw_event=None thread_id='22b86a3bcb634519b1e426dd724cc6a1' run_id='c540e3fdced248e3b1304e70773e1975'
+[EVENT] type=<EventType.TOOL_CALL_START: 'TOOL_CALL_START'> timestamp=None raw_event=None tool_call_id='pyd_ai_builtin|google-gla|pyd_ai_1f1fdbc801464aa588ef1b4ffa1ab6bd' tool_call_name='code_execution' parent_message_id='459d4288-4707-4244-92cf-fc1c5c56a221'
+[EVENT] type=<EventType.TOOL_CALL_ARGS: 'TOOL_CALL_ARGS'> timestamp=None raw_event=None tool_call_id='pyd_ai_builtin|google-gla|pyd_ai_1f1fdbc801464aa588ef1b4ffa1ab6bd' delta='{"code":"import math\\n\\nfactorial_of_15 = math.factorial(15)\\nprint(f\'{factorial_of_15=}\')\\n","language":"PYTHON"}'
+[EVENT] type=<EventType.TOOL_CALL_END: 'TOOL_CALL_END'> timestamp=None raw_event=None tool_call_id='pyd_ai_builtin|google-gla|pyd_ai_1f1fdbc801464aa588ef1b4ffa1ab6bd'
+[EVENT] type=<EventType.TOOL_CALL_RESULT: 'TOOL_CALL_RESULT'> timestamp=None raw_event=None message_id='b032500b-12cc-4d99-881e-1ebb167c55b0' tool_call_id='pyd_ai_builtin|google-gla|pyd_ai_1f1fdbc801464aa588ef1b4ffa1ab6bd' content='{"outcome":"OUTCOME_OK","output":"factorial_of_15=1307674368000\\n"}' role='tool'
+[EVENT] type=<EventType.TEXT_MESSAGE_START: 'TEXT_MESSAGE_START'> timestamp=None raw_event=None message_id='c437e15c-8f30-41b5-9417-565eb3698f63' role='assistant'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='c437e15c-8f30-41b5-9417-565eb3698f63' delta='The factorial of '
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='c437e15c-8f30-41b5-9417-565eb3698f63' delta='15 (15!) is 1,307,67'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='c437e15c-8f30-41b5-9417-565eb3698f63' delta='4,368,000.'
+[EVENT] type=<EventType.TEXT_MESSAGE_END: 'TEXT_MESSAGE_END'> timestamp=None raw_event=None message_id='c437e15c-8f30-41b5-9417-565eb3698f63'
+   ✓ Complete
+[EVENT] type=<EventType.RUN_FINISHED: 'RUN_FINISHED'> timestamp=None raw_event=None thread_id='22b86a3bcb634519b1e426dd724cc6a1' run_id='c540e3fdced248e3b1304e70773e1975' result=None
+[EVENT] data: {"type":"CUSTOM","name":"code_execution_complete","value":{"result":"The factorial of 15 (15!) is 1,307,674,368,000.","should_continue":true}}
+
+
+
+============================================================
+🤖 Orchestrator (Iteration 2)
+============================================================
+Query: Run a graph to Calculate the factorial of 15 and summarize the results
+History: CodeExecution
+[EVENT] data: {"type":"CUSTOM","name":"orchestrator_start","value":{"iteration":2,"query":"Run a graph to Calculate the factorial of 15 and summarize the results","history":["CodeExecution"]}}
+
+
+
+📊 Decision: RESULT_AGGREGATOR
+   Reasoning: The factorial has been calculated. The next step is to summarize the results using the RESULT_AGGREG...
+[EVENT] data: {"type":"CUSTOM","name":"orchestrator_decision","value":{"next_task":"RESULT_AGGREGATOR","should_continue":false,"needs_followup":false,"confidence":1.0,"reasoning":"The factorial has been calculated. The next step is to summarize the results using the RESULT_AGGREGATOR to provide a final answer to the user. This will complete the original query."}}
+
+
+📋 ResultAggregator processing...
+[EVENT] data: {"type":"CUSTOM","name":"result_aggregator_start","value":{"num_results":1,"nodes":["CodeExecution"]}}
+
+
+[EVENT] type=<EventType.RUN_STARTED: 'RUN_STARTED'> timestamp=None raw_event=None thread_id='22b86a3bcb634519b1e426dd724cc6a1' run_id='c540e3fdced248e3b1304e70773e1975'
+[EVENT] type=<EventType.TEXT_MESSAGE_START: 'TEXT_MESSAGE_START'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' role='assistant'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='Calculating the factorial of 15 means multiplying all positive integers from 1 up to 15.\n\nSince "running a graph" for a simple factorial calculation isn\'t typically done with visual charts (which are more for data analysis or function'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta=" plotting), I'll interpret this as showing a **computational graph** or **step-by-step process** of the calculation. This illustrates how the result accumulates.\n\n---\n\n### Computational Graph (Step-by-Step Calculation) for"
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta=" 15!\n\nHere's a representation of the calculation process:\n\n```\n--- Running 'Computational Graph' for Factorial(15) ---\nGoal: Calculate 15! (15 factorial), which is 15"
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta=' * 14 * 13 * ... * 1\n------------------------------------------------------------\nInitial value (representing 0! or empty product): 1\nStep 1: 1 * 1 = 1 (This is '
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='1!)\nStep 2: 1 * 2 = 2\nStep 3: 2 * 3 = 6\nStep 4: 6 * 4 = 24\nStep 5: '
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='24 * 5 = 120\nStep 6: 120 * 6 = 720\nStep 7: 720 * 7 = 5040\nStep '
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='8: 5040 * 8 = 40320\nStep 9: 40320 * 9 = 362880\nStep 10: 36'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='2880 * 10 = 3628800\nStep 11: 3628800 * 11 = 39916800\nStep 12'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta=': 39916800 * 12 = 479001600\nStep 13: 479001600 * 13 = 6'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='227020800\nStep 14: 6227020800 * 14 = 87178291200\nStep 15'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta=': 87178291200 * 15 = 1307674368000\n------------------------------------------------------------\nCalculation Complete!\nThe factorial of 15'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta=' is: 1307674368000\n------------------------------------------------------------\n```\n\n### Summary of Results\n\n*   **Calculated Factorial of:** 15\n*   **Result (15!'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='):** 1,307,674,368,000\n*   **Description:** The factorial of 15 is the product of all positive integers from 1 up to 15.\n*   '
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='**Magnitude:** This number is a very large integer, consisting of 13 digits.\n*   **Context:** Factorials grow extremely rapidly. Even for a relatively small number like 15, the result is well over a trillion.'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='\n\n---\n\n### Python Code (for verification and generating the steps)\n\n```python\ndef calculate_and_visualize_factorial(n):\n    print(f"--- Running \'Computational Graph\' for Factorial({n}) ---")\n'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='    print(f"Goal: Calculate {n}! (n factorial), which is {n} * ({n}-1) * ... * 1")\n    print("-" * 60)\n\n    factorial_value = '
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='1\n    intermediate_steps = []\n\n    # Step 0: Initialize\n    intermediate_steps.append(f"Initial value (representing 0! or empty product): {factorial_value}")\n\n    # Loop to perform'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta=' multiplications\n    for i in range(1, n + 1):\n        old_value = factorial_value\n        factorial_value *= i\n        if i == 1:\n            intermediate_steps.append(f'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='"Step {i}: {old_value} * {i} = {factorial_value} (This is 1!)")\n        else:\n            intermediate_steps.append(f"Step {i}: {old_'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='value} * {i} = {factorial_value}")\n\n    # Print the "graph" steps\n    for step in intermediate_steps:\n        print(step)\n\n    print("-" * 60)\n    print'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='(f"Calculation Complete!")\n    print(f"The factorial of {n} is: {factorial_value}")\n    print("-" * 60)\n\n    # Summarize results\n    print("\\n--- Summary of'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta=' Factorial Calculation ---")\n    print(f"Calculated Factorial of: {n}")\n    print(f"Result ({n}!): {factorial_value}")\n    print(f"This number has {len('
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='str(factorial_value))} digits.")\n    print("Factorial is a product of all positive integers less than or equal to n.")\n    if factorial_value > 1_000_000_00'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='0_000:\n        print(f"As you can see, {n}! is a very large number!")\n    print("-" * 40)\n\n    return factorial_value\n\n# Run the calculation for 1'
+[EVENT] type=<EventType.TEXT_MESSAGE_CONTENT: 'TEXT_MESSAGE_CONTENT'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0' delta='5\nfactorial_of_15 = calculate_and_visualize_factorial(15)\n```'
+[EVENT] type=<EventType.TEXT_MESSAGE_END: 'TEXT_MESSAGE_END'> timestamp=None raw_event=None message_id='530ec8ce-7b05-445f-91f3-b0f5ca2834b0'
+   ✓ Complete
+[EVENT] type=<EventType.RUN_FINISHED: 'RUN_FINISHED'> timestamp=None raw_event=None thread_id='22b86a3bcb634519b1e426dd724cc6a1' run_id='c540e3fdced248e3b1304e70773e1975' result=None
+[EVENT] data: {"type":"CUSTOM","name":"result_aggregator_complete","value":{"result":"Calculating the factorial of 15 means multiplying all positive integers from 1 up to 15.\n\nSince \"running a graph\" for a simple factorial calculation isn't typically done with visual charts (which are more for data analysis or function plotting), I'll interpret this as showing a **computational graph** or **step-by-step process** of the calculation. This illustrates how the result accumulates.\n\n---\n\n### Computational Graph (Step-by-Step Calculation) for 15!\n\nHere's a representation of the calculation process:\n\n```\n--- Running 'Computational Graph' for Factorial(15) ---\nGoal: Calculate 15! (15 factorial), which is 15 * 14 * 13 * ... * 1\n------------------------------------------------------------\nInitial value (representing 0! or empty product): 1\nStep 1: 1 * 1 = 1 (This is 1!)\nStep 2: 1 * 2 = 2\nStep 3: 2 * 3 = 6\nStep 4: 6 * 4 = 24\nStep 5: 24 * 5 = 120\nStep 6: 120 * 6 = 720\nStep 7: 720 * 7 = 5040\nStep 8: 5040 * 8 = 40320\nStep 9: 40320 * 9 = 362880\nStep 10: 362880 * 10 = 3628800\nStep 11: 3628800 * 11 = 39916800\nStep 12: 39916800 * 12 = 479001600\nStep 13: 479001600 * 13 = 6227020800\nStep 14: 6227020800 * 14 = 87178291200\nStep 15: 87178291200 * 15 = 1307674368000\n------------------------------------------------------------\nCalculation Complete!\nThe factorial of 15 is: 1307674368000\n------------------------------------------------------------\n```\n\n### Summary of Results\n\n*   **Calculated Factorial of:** 15\n*   **Result (15!):** 1,307,674,368,000\n*   **Description:** The factorial of 15 is the product of all positive integers from 1 up to 15.\n*   **Magnitude:** This number is a very large integer, consisting of 13 digits.\n*   **Context:** Factorials grow extremely rapidly. Even for a relatively small number like 15, the result is well over a trillion.\n\n---\n\n### Python Code (for verification and generating the steps)\n\n```python\ndef calculate_and_visualize_factorial(n):\n    print(f\"--- Running 'Computational Graph' for Factorial({n}) ---\")\n    print(f\"Goal: Calculate {n}! (n factorial), which is {n} * ({n}-1) * ... * 1\")\n    print(\"-\" * 60)\n\n    factorial_value = 1\n    intermediate_steps = []\n\n    # Step 0: Initialize\n    intermediate_steps.append(f\"Initial value (representing 0! or empty product): {factorial_value}\")\n\n    # Loop to perform multiplications\n    for i in range(1, n + 1):\n        old_value = factorial_value\n        factorial_value *= i\n        if i == 1:\n            intermediate_steps.append(f\"Step {i}: {old_value} * {i} = {factorial_value} (This is 1!)\")\n        else:\n            intermediate_steps.append(f\"Step {i}: {old_value} * {i} = {factorial_value}\")\n\n    # Print the \"graph\" steps\n    for step in intermediate_steps:\n        print(step)\n\n    print(\"-\" * 60)\n    print(f\"Calculation Complete!\")\n    print(f\"The factorial of {n} is: {factorial_value}\")\n    print(\"-\" * 60)\n\n    # Summarize results\n    print(\"\\n--- Summary of Factorial Calculation ---\")\n    print(f\"Calculated Factorial of: {n}\")\n    print(f\"Result ({n}!): {factorial_value}\")\n    print(f\"This number has {len(str(factorial_value))} digits.\")\n    print(\"Factorial is a product of all positive integers less than or equal to n.\")\n    if factorial_value > 1_000_000_000_000:\n        print(f\"As you can see, {n}! is a very large number!\")\n    print(\"-\" * 40)\n\n    return factorial_value\n\n# Run the calculation for 15\nfactorial_of_15 = calculate_and_visualize_factorial(15)\n```"}}
+
+
+
+============================================================
+✅ Finalizing result
+============================================================
+[EVENT] data: {"type":"CUSTOM","name":"graph_finalize","value":{"final_result":"Calculating the factorial of 15 means multiplying all positive integers from 1 up to 15.\n\nSince \"running a graph\" for a simple factorial calculation isn't typically done with visual charts (which are more for data analysis or function plotting), I'll interpret this as showing a **computational graph** or **step-by-step process** of the calculation. This illustrates how the result accumulates.\n\n---\n\n### Computational Graph (Step-by-Step Calculation) for 15!\n\nHere's a representation of the calculation process:\n\n```\n--- Running 'Computational Graph' for Factorial(15) ---\nGoal: Calculate 15! (15 factorial), which is 15 * 14 * 13 * ... * 1\n------------------------------------------------------------\nInitial value (representing 0! or empty product): 1\nStep 1: 1 * 1 = 1 (This is 1!)\nStep 2: 1 * 2 = 2\nStep 3: 2 * 3 = 6\nStep 4: 6 * 4 = 24\nStep 5: 24 * 5 = 120\nStep 6: 120 * 6 = 720\nStep 7: 720 * 7 = 5040\nStep 8: 5040 * 8 = 40320\nStep 9: 40320 * 9 = 362880\nStep 10: 362880 * 10 = 3628800\nStep 11: 3628800 * 11 = 39916800\nStep 12: 39916800 * 12 = 479001600\nStep 13: 479001600 * 13 = 6227020800\nStep 14: 6227020800 * 14 = 87178291200\nStep 15: 87178291200 * 15 = 1307674368000\n------------------------------------------------------------\nCalculation Complete!\nThe factorial of 15 is: 1307674368000\n------------------------------------------------------------\n```\n\n### Summary of Results\n\n*   **Calculated Factorial of:** 15\n*   **Result (15!):** 1,307,674,368,000\n*   **Description:** The factorial of 15 is the product of all positive integers from 1 up to 15.\n*   **Magnitude:** This number is a very large integer, consisting of 13 digits.\n*   **Context:** Factorials grow extremely rapidly. Even for a relatively small number like 15, the result is well over a trillion.\n\n---\n\n### Python Code (for verification and generating the steps)\n\n```python\ndef calculate_and_visualize_factorial(n):\n    print(f\"--- Running 'Computational Graph' for Factorial({n}) ---\")\n    print(f\"Goal: Calculate {n}! (n factorial), which is {n} * ({n}-1) * ... * 1\")\n    print(\"-\" * 60)\n\n    factorial_value = 1\n    intermediate_steps = []\n\n    # Step 0: Initialize\n    intermediate_steps.append(f\"Initial value (representing 0! or empty product): {factorial_value}\")\n\n    # Loop to perform multiplications\n    for i in range(1, n + 1):\n        old_value = factorial_value\n        factorial_value *= i\n        if i == 1:\n            intermediate_steps.append(f\"Step {i}: {old_value} * {i} = {factorial_value} (This is 1!)\")\n        else:\n            intermediate_steps.append(f\"Step {i}: {old_value} * {i} = {factorial_value}\")\n\n    # Print the \"graph\" steps\n    for step in intermediate_steps:\n        print(step)\n\n    print(\"-\" * 60)\n    print(f\"Calculation Complete!\")\n    print(f\"The factorial of {n} is: {factorial_value}\")\n    print(\"-\" * 60)\n\n    # Summarize results\n    print(\"\\n--- Summary of Factorial Calculation ---\")\n    print(f\"Calculated Factorial of: {n}\")\n    print(f\"Result ({n}!): {factorial_value}\")\n    print(f\"This number has {len(str(factorial_value))} digits.\")\n    print(\"Factorial is a product of all positive integers less than or equal to n.\")\n    if factorial_value > 1_000_000_000_000:\n        print(f\"As you can see, {n}! is a very large number!\")\n    print(\"-\" * 40)\n\n    return factorial_value\n\n# Run the calculation for 15\nfactorial_of_15 = calculate_and_visualize_factorial(15)\n```\n\n[Executed: CodeExecution → ResultAggregator]","execution_history":["CodeExecution","ResultAggregator"],"iteration_count":2}}
+
+
+
+============================================================
+✅ FINAL RESULT:
+============================================================
+Calculating the factorial of 15 means multiplying all positive integers from 1 up to 15.
+
+Since "running a graph" for a simple factorial calculation isn't typically done with visual charts (which are more for data analysis or function plotting), I'll interpret this as showing a **computational graph** or **step-by-step process** of the calculation. This illustrates how the result accumulates.
+
+---
+
+### Computational Graph (Step-by-Step Calculation) for 15!
+
+Here's a representation of the calculation process:
+
+```
+--- Running 'Computational Graph' for Factorial(15) ---
+Goal: Calculate 15! (15 factorial), which is 15 * 14 * 13 * ... * 1
+------------------------------------------------------------
+Initial value (representing 0! or empty product): 1
+Step 1: 1 * 1 = 1 (This is 1!)
+Step 2: 1 * 2 = 2
+Step 3: 2 * 3 = 6
+Step 4: 6 * 4 = 24
+Step 5: 24 * 5 = 120
+Step 6: 120 * 6 = 720
+Step 7: 720 * 7 = 5040
+Step 8: 5040 * 8 = 40320
+Step 9: 40320 * 9 = 362880
+Step 10: 362880 * 10 = 3628800
+Step 11: 3628800 * 11 = 39916800
+Step 12: 39916800 * 12 = 479001600
+Step 13: 479001600 * 13 = 6227020800
+Step 14: 6227020800 * 14 = 87178291200
+Step 15: 87178291200 * 15 = 1307674368000
+------------------------------------------------------------
+Calculation Complete!
+The factorial of 15 is: 1307674368000
+------------------------------------------------------------
+```
+
+### Summary of Results
+
+*   **Calculated Factorial of:** 15
+*   **Result (15!):** 1,307,674,368,000
+*   **Description:** The factorial of 15 is the product of all positive integers from 1 up to 15.
+*   **Magnitude:** This number is a very large integer, consisting of 13 digits.
+*   **Context:** Factorials grow extremely rapidly. Even for a relatively small number like 15, the result is well over a trillion.
+
+---
+
+### Python Code (for verification and generating the steps)
+
+```python
+def calculate_and_visualize_factorial(n):
+    print(f"--- Running 'Computational Graph' for Factorial({n}) ---")
+    print(f"Goal: Calculate {n}! (n factorial), which is {n} * ({n}-1) * ... * 1")
+    print("-" * 60)
+
+    factorial_value = 1
+    intermediate_steps = []
+
+    # Step 0: Initialize
+    intermediate_steps.append(f"Initial value (representing 0! or empty product): {factorial_value}")
+
+    # Loop to perform multiplications
+    for i in range(1, n + 1):
+        old_value = factorial_value
+        factorial_value *= i
+        if i == 1:
+            intermediate_steps.append(f"Step {i}: {old_value} * {i} = {factorial_value} (This is 1!)")
+        else:
+            intermediate_steps.append(f"Step {i}: {old_value} * {i} = {factorial_value}")
+
+    # Print the "graph" steps
+    for step in intermediate_steps:
+        print(step)
+
+    print("-" * 60)
+    print(f"Calculation Complete!")
+    print(f"The factorial of {n} is: {factorial_value}")
+    print("-" * 60)
+
+    # Summarize results
+    print("\n--- Summary of Factorial Calculation ---")
+    print(f"Calculated Factorial of: {n}")
+    print(f"Result ({n}!): {factorial_value}")
+    print(f"This number has {len(str(factorial_value))} digits.")
+    print("Factorial is a product of all positive integers less than or equal to n.")
+    if factorial_value > 1_000_000_000_000:
+        print(f"As you can see, {n}! is a very large number!")
+    print("-" * 40)
+
+    return factorial_value
+
+# Run the calculation for 15
+factorial_of_15 = calculate_and_visualize_factorial(15)
+```
+
+[Executed: CodeExecution → ResultAggregator]
+
+============================================================
+
+[EVENT] data: {"type":"CUSTOM","name":"graph_complete","value":{"result":"Calculating the factorial of 15 means multiplying all positive integers from 1 up to 15.\n\nSince \"running a graph\" for a simple factorial calculation isn't typically done with visual charts (which are more for data analysis or function plotting), I'll interpret this as showing a **computational graph** or **step-by-step process** of the calculation. This illustrates how the result accumulates.\n\n---\n\n### Computational Graph (Step-by-Step Calculation) for 15!\n\nHere's a representation of the calculation process:\n\n```\n--- Running 'Computational Graph' for Factorial(15) ---\nGoal: Calculate 15! (15 factorial), which is 15 * 14 * 13 * ... * 1\n------------------------------------------------------------\nInitial value (representing 0! or empty product): 1\nStep 1: 1 * 1 = 1 (This is 1!)\nStep 2: 1 * 2 = 2\nStep 3: 2 * 3 = 6\nStep 4: 6 * 4 = 24\nStep 5: 24 * 5 = 120\nStep 6: 120 * 6 = 720\nStep 7: 720 * 7 = 5040\nStep 8: 5040 * 8 = 40320\nStep 9: 40320 * 9 = 362880\nStep 10: 362880 * 10 = 3628800\nStep 11: 3628800 * 11 = 39916800\nStep 12: 39916800 * 12 = 479001600\nStep 13: 479001600 * 13 = 6227020800\nStep 14: 6227020800 * 14 = 87178291200\nStep 15: 87178291200 * 15 = 1307674368000\n------------------------------------------------------------\nCalculation Complete!\nThe factorial of 15 is: 1307674368000\n------------------------------------------------------------\n```\n\n### Summary of Results\n\n*   **Calculated Factorial of:** 15\n*   **Result (15!):** 1,307,674,368,000\n*   **Description:** The factorial of 15 is the product of all positive integers from 1 up to 15.\n*   **Magnitude:** This number is a very large integer, consisting of 13 digits.\n*   **Context:** Factorials grow extremely rapidly. Even for a relatively small number like 15, the result is well over a trillion.\n\n---\n\n### Python Code (for verification and generating the steps)\n\n```python\ndef calculate_and_visualize_factorial(n):\n    print(f\"--- Running 'Computational Graph' for Factorial({n}) ---\")\n    print(f\"Goal: Calculate {n}! (n factorial), which is {n} * ({n}-1) * ... * 1\")\n    print(\"-\" * 60)\n\n    factorial_value = 1\n    intermediate_steps = []\n\n    # Step 0: Initialize\n    intermediate_steps.append(f\"Initial value (representing 0! or empty product): {factorial_value}\")\n\n    # Loop to perform multiplications\n    for i in range(1, n + 1):\n        old_value = factorial_value\n        factorial_value *= i\n        if i == 1:\n            intermediate_steps.append(f\"Step {i}: {old_value} * {i} = {factorial_value} (This is 1!)\")\n        else:\n            intermediate_steps.append(f\"Step {i}: {old_value} * {i} = {factorial_value}\")\n\n    # Print the \"graph\" steps\n    for step in intermediate_steps:\n        print(step)\n\n    print(\"-\" * 60)\n    print(f\"Calculation Complete!\")\n    print(f\"The factorial of {n} is: {factorial_value}\")\n    print(\"-\" * 60)\n\n    # Summarize results\n    print(\"\\n--- Summary of Factorial Calculation ---\")\n    print(f\"Calculated Factorial of: {n}\")\n    print(f\"Result ({n}!): {factorial_value}\")\n    print(f\"This number has {len(str(factorial_value))} digits.\")\n    print(\"Factorial is a product of all positive integers less than or equal to n.\")\n    if factorial_value > 1_000_000_000_000:\n        print(f\"As you can see, {n}! is a very large number!\")\n    print(\"-\" * 40)\n\n    return factorial_value\n\n# Run the calculation for 15\nfactorial_of_15 = calculate_and_visualize_factorial(15)\n```\n\n[Executed: CodeExecution → ResultAggregator]","status":"success"}}
+
+
+
+============================================================
+COLLECTED 52 EVENTS
+============================================================
+

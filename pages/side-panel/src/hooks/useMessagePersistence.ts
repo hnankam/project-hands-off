@@ -410,6 +410,24 @@ export const useMessagePersistence = ({
         session: sessionId.slice(0, 8),
       });
 
+      // DEBUG: Log raw messages for comparison
+      console.log('=== RAW MESSAGES DEBUG (Save Button Clicked) ===');
+      console.log('Session:', sessionId);
+      console.log('Total messages:', allMessages.length);
+      allMessages.forEach((msg: any, index: number) => {
+        console.log(`\n--- Message ${index} ---`);
+        console.log('Type:', msg?.role || msg?.type || 'unknown');
+        console.log('ID:', msg?.id);
+        if (msg?.content) {
+          console.log(msg.content);
+        }
+        // Log state if present (for coagent state messages)
+        if (msg?.state) {
+          console.log(msg.state);
+        }
+      });
+      console.log('=== END RAW MESSAGES DEBUG ===\n');
+
       // Filter out any undefined/null messages before saving
       const validMessages = allMessages.filter((msg: any) => msg !== null && msg !== undefined);
 

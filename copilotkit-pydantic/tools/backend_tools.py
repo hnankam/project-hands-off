@@ -38,7 +38,7 @@ from typing import Any
 from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext, BinaryImage, ToolReturn
 from pydantic_ai.ag_ui import StateDeps
-from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, CustomEvent
+from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, CustomEvent, RunAgentInput, UserMessage
 
 from core.models import AgentState, Step, StepStatus
 
@@ -52,7 +52,11 @@ from utils.firebase_storage import upload_binary_image_to_storage
 # Import auxiliary agent factory
 from tools.auxiliary_agents import get_auxiliary_agent
 
+# Import multi-agent graph
+from tools.multi_agent_graph import run_multi_agent_graph, GraphDeps, QueryState
+
 import os
+import uuid
 
 # ========== State Management Tools ==========
 
@@ -423,6 +427,153 @@ async def url_context(ctx: RunContext[StateDeps[AgentState]], urls: list[str]) -
         raise
 
 
+# ========== Multi-Agent Graph Tools ==========
+
+async def run_graph(
+    ctx: RunContext[StateDeps[AgentState]], 
+    query: str,
+    max_iterations: int = 5
+) -> ToolReturn:
+    """Run a multi-agent graph to process complex queries.
+    
+    This tool orchestrates multiple specialized agents (image generation, web search,
+    code execution) to handle complex, multi-step queries. The graph uses an orchestrator
+    agent to analyze the query and route it to the appropriate worker agents.
+    
+    State updates are sent via StateSnapshotEvent, using the shared AgentState.graph field.
+    This allows the frontend to render graph progress alongside task progress.
+    
+    Use cases:
+    - Complex queries requiring multiple steps (e.g., "Search for X and create an image of it")
+    - Queries that need specialized processing (calculations, image generation, web search)
+    - Multi-modal tasks that combine different capabilities
+    
+    Args:
+        ctx: The run context with agent state and context
+        query: The user query to process through the multi-agent graph
+        max_iterations: Maximum number of orchestrator iterations (default: 5)
+        
+    Returns:
+        ToolReturn with the final result and StateSnapshotEvent for state sync
+        
+    Example:
+        run_graph(ctx, "Search for the latest SpaceX launch and create an image visualizing it")
+    """
+    logger.info(f"🚀 run_graph tool invoked with query: {query[:100]}...")
+    
+    # Get context from deps
+    deps = ctx.deps
+    send_stream = getattr(deps, 'send_stream', None)
+    adapter = getattr(deps, 'adapter', None)
+    
+    # Debug logging
+    logger.info(f"   [run_graph] deps type: {type(deps).__name__}")
+    logger.info(f"   [run_graph] send_stream available: {send_stream is not None}")
+    logger.info(f"   [run_graph] adapter available: {adapter is not None}")
+    
+    # Initialize the graph state in the shared AgentState
+    ctx.deps.state.graph.query = query
+    ctx.deps.state.graph.original_query = query
+    ctx.deps.state.graph.max_iterations = max_iterations
+    ctx.deps.state.graph.iteration_count = 0
+    ctx.deps.state.graph.execution_history = []
+    ctx.deps.state.graph.intermediate_results = {}
+    ctx.deps.state.graph.streaming_text = {}  # Track streaming text per node
+    ctx.deps.state.graph.prompts = {}  # Track prompts sent to each node
+    ctx.deps.state.graph.tool_calls = {}  # Track tool calls per node
+    ctx.deps.state.graph.errors = []
+    ctx.deps.state.graph.result = ""
+    ctx.deps.state.graph.should_continue = True
+    ctx.deps.state.graph.mermaid_diagram = ""  # Will be populated by run_multi_agent_graph
+    
+    # Create RunAgentInput from adapter or create a new one
+    if adapter and hasattr(adapter, 'run_input'):
+        run_input = adapter.run_input
+    else:
+        # Create a minimal RunAgentInput
+        run_input = RunAgentInput(
+            thread_id=uuid.uuid4().hex,
+            run_id=uuid.uuid4().hex,
+            messages=[
+                UserMessage(
+                    id=f'msg_{uuid.uuid4().hex[:8]}',
+                    content=query,
+                )
+            ],
+            state={},
+            context=[],
+            tools=[],
+            forwarded_props=None,
+        )
+    
+    try:
+        # Extract usage tracking context from deps if available
+        session_id = getattr(deps, 'session_id', None)
+        user_id = getattr(deps, 'user_id', None)
+        organization_id = getattr(deps, 'organization_id', None)
+        team_id = getattr(deps, 'team_id', None)
+        auth_session_id = getattr(deps, 'auth_session_id', None)
+        broadcast_func = getattr(deps, 'broadcast_func', None)
+        # Database UUIDs for usage tracking
+        agent_id = getattr(deps, 'agent_id', None)
+        model_id = getattr(deps, 'model_id', None)
+        
+        # Run the multi-agent graph, passing the model from context (REQUIRED)
+        # Note: The orchestrator uses its built-in sub-agents (web_search_step, code_execution_step,
+        # image_generation_step, result_aggregator_step) instead of external tools.
+        result = await run_multi_agent_graph(
+            query=query,
+            orchestrator_model=ctx.model,  # Use model from RunContext (never create new)
+            run_input=run_input,
+            send_stream=send_stream,
+            max_iterations=max_iterations,
+            shared_state=ctx.deps.state,  # Pass shared state for updates
+            # Usage tracking context
+            session_id=session_id,
+            user_id=user_id,
+            organization_id=organization_id,
+            team_id=team_id,
+            auth_session_id=auth_session_id,
+            broadcast_func=broadcast_func,
+            # Database IDs for sub-agent usage tracking (use parent agent's IDs)
+            agent_id=agent_id,
+            model_id=model_id,
+        )
+        
+        # Update the shared state with the result
+        ctx.deps.state.graph.result = result
+        
+        logger.info(f"✅ run_graph completed successfully")
+        
+        # NOTE: Do NOT send StateSnapshotEvent here!
+        # The graph already sends GraphAgentState format during execution.
+        # Sending AgentState format here would overwrite the graph progress
+        # with { steps: [], graph: {...} } which causes the UI to hide progress.
+        # The final GraphAgentState is sent by the finalize_result step.
+        
+        return ToolReturn(
+            return_value=result,
+        )
+        
+    except Exception as e:
+        error_msg = f"Multi-agent graph execution failed: {str(e)}"
+        logger.exception(error_msg)
+        
+        # Update state with error
+        ctx.deps.state.graph.errors.append({
+            "node": "run_graph",
+            "error": str(e),
+            "timestamp": ""
+        })
+        
+        # On error, we also don't send StateSnapshotEvent to avoid format conflicts
+        # The graph's error state is already sent during execution
+        
+        return ToolReturn(
+            return_value=error_msg,
+        )
+
+
 # ========== Tool Registry ==========
 # Maps tool keys to their function implementations
 
@@ -433,6 +584,7 @@ BACKEND_TOOLS = {
     'web_search': web_search,
     'code_execution': code_execution,
     'url_context': url_context,
+    'run_graph': run_graph,
 }
 
 

@@ -671,7 +671,7 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
     );
   }, [markdownTagRenderers, isLight, message]);
 
-  // Extend markdownTagRenderers with code block renderer
+  // Extend markdownTagRenderers with code block renderer and table components
   // Handle mermaid with MermaidBlock, other code blocks with CodeBlockWithToolbar
   const extendedMarkdownRenderers = useMemo(() => {
     return {
@@ -701,6 +701,28 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
           </code>
         );
       },
+      // Table components (GFM tables) - matches session table design
+      // Styles are handled by CSS in content.css
+      table: ({ node, children, ...props }: any) => (
+        <div className="markdown-table-wrapper">
+          <table {...props}>{children}</table>
+        </div>
+      ),
+      thead: ({ node, children, ...props }: any) => (
+        <thead {...props}>{children}</thead>
+      ),
+      tbody: ({ node, children, ...props }: any) => (
+        <tbody {...props}>{children}</tbody>
+      ),
+      tr: ({ node, children, ...props }: any) => (
+        <tr {...props}>{children}</tr>
+      ),
+      th: ({ node, children, ...props }: any) => (
+        <th {...props}>{children}</th>
+      ),
+      td: ({ node, children, ...props }: any) => (
+        <td {...props}>{children}</td>
+      ),
     };
   }, [markdownTagRenderers, isLight]);
 

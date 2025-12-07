@@ -53,6 +53,14 @@ import { cn } from '@extension/ui';
 // UI Components
 import { ActionStatus } from './ActionStatus';
 import { TaskProgressCard, AgentStepState } from './TaskProgressCard';
+import { 
+  GraphStateCard, 
+  GraphAgentState,
+  UnifiedAgentState,
+  isGraphSteps,
+  isPlanSteps,
+  convertToGraphAgentState,
+} from './GraphStateCard';
 import { CustomUserMessage } from './CustomUserMessage';
 import { CustomAssistantMessage } from './CustomAssistantMessage';
 import { CustomInput } from './CustomInput';
@@ -696,25 +704,102 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   useHumanInTheLoop(confirmActionConfig as Parameters<typeof useHumanInTheLoop>[0]);
 
   // ================================================================================
-  // AGENT STATE RENDERING
+  // UNIFIED AGENT STATE RENDERING
   // ================================================================================
+  // Single hook that handles both:
+  // - Plan steps (from create_plan/update_plan_step) - steps with 'description' field
+  // - Graph execution (from run_graph) - steps with 'node' field or nested 'graph' object
+  //
+  // Matches backend's AgentState which contains both { steps: Step[], graph: GraphState }
 
-  useCoAgentStateRender<AgentStepState>({
+  useCoAgentStateRender<UnifiedAgentState>({
     name: 'dynamic_agent',
-    render: ({ state: scopedState }) => {
-      if (!scopedState?.steps || scopedState.steps.length === 0) {
+    render: ({ state: unifiedState }) => {
+      // Check if we have any meaningful state to render
+      const hasSteps = unifiedState?.steps && unifiedState.steps.length > 0;
+      const hasGraph = unifiedState?.graph && (
+        unifiedState.graph.execution_history?.length > 0 || 
+        unifiedState.graph.next_action ||
+        unifiedState.graph.result
+      );
+      
+      if (!hasSteps && !hasGraph) {
         return null;
       }
 
-      if (scopedState.sessionId && scopedState.sessionId !== sessionId) {
-        return null;
+      // Determine what type of state we have and render appropriately
+      const elements: React.ReactNode[] = [];
+      
+      // Case 1: Graph execution state (either flat GraphAgentState or nested graph)
+      // Check if steps contain graph nodes (have 'node' field) OR if we have a graph object
+      const steps = unifiedState?.steps || [];
+      if (hasSteps && isGraphSteps(steps)) {
+        // Flat GraphAgentState format - steps are GraphStep[]
+        const graphState = convertToGraphAgentState(unifiedState);
+        if (graphState && graphState.steps.length > 0) {
+          elements.push(
+            <div
+              key="graph-progress"
+              data-graph-progress="true"
+              data-session-id={sessionId}
+              data-timestamp={Date.now()}
+              className="w-full pt-2"
+              style={{
+                maxWidth: '56rem',
+                marginLeft: 'auto',
+                marginRight: 'auto',
+                paddingLeft: 12,
+                paddingRight: 12,
+              }}>
+              <GraphStateCard
+                state={graphState}
+                isCollapsed={false}
+                sessionId={sessionId}
+              />
+            </div>
+          );
+        }
+      } else if (hasGraph) {
+        // Nested graph format from full AgentState
+        const graphState = convertToGraphAgentState(unifiedState);
+        if (graphState && graphState.steps.length > 0) {
+          elements.push(
+            <div
+              key="graph-progress-nested"
+              data-graph-progress="true"
+              data-session-id={sessionId}
+              data-timestamp={Date.now()}
+              className="w-full pt-2"
+              style={{
+                maxWidth: '56rem',
+                marginLeft: 'auto',
+                marginRight: 'auto',
+                paddingLeft: 12,
+                paddingRight: 12,
+              }}>
+              <GraphStateCard
+                state={graphState}
+                isCollapsed={false}
+                sessionId={sessionId}
+              />
+            </div>
+          );
+        }
       }
-
-      // Add sessionId if missing
-      const stateWithSession = scopedState.sessionId ? scopedState : { ...scopedState, sessionId };
-
-      return (
+      
+      // Case 2: Plan steps (have 'description' field)
+      if (hasSteps && isPlanSteps(steps)) {
+        const planState: AgentStepState = {
+          steps: steps,
+          sessionId: unifiedState.sessionId || sessionId,
+        };
+        
+        if (planState.sessionId !== sessionId) {
+          // Skip if this is for a different session
+        } else {
+          elements.push(
         <div
+              key="task-progress"
           data-task-progress="true"
           data-session-id={sessionId}
           data-timestamp={Date.now()}
@@ -731,7 +816,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
             ['--task-progress-rendered-border-color' as string]: isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151',
           }}>
           <TaskProgressCard
-            state={stateWithSession}
+                state={planState}
             setState={setDynamicAgentState}
             isCollapsed={true}
             isHistorical={true}
@@ -739,6 +824,14 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           />
         </div>
       );
+        }
+      }
+      
+      if (elements.length === 0) {
+        return null;
+      }
+      
+      return <>{elements}</>;
     },
   });
 
