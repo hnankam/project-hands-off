@@ -1829,11 +1829,8 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                               htmlFor={`model-enabled-${model.id}`}
                               className={cn('text-xs font-medium cursor-pointer block', mainTextColor)}
                             >
-                              Model Enabled
+                              {model.enabled ? 'Model Enabled' : 'Model Disabled'}
                             </label>
-                            <p className={cn('text-xs mt-0.5', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                              {model.enabled ? 'Model is active and selectable' : 'Model is disabled'}
-                            </p>
                           </div>
                           <button
                             id={`model-enabled-${model.id}`}

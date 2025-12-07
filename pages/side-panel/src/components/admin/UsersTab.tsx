@@ -82,7 +82,7 @@ const UserSkeletonCard: React.FC<{ isLight: boolean }> = ({ isLight }) => (
         <div className={cn('h-3 w-1/3 rounded', isLight ? 'bg-gray-200' : 'bg-gray-700')} />
         <div className={cn('h-2.5 w-1/2 rounded', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
         <div className="flex items-center gap-2">
-          <div className={cn('h-2.5 w-16 rounded-full', isLight ? 'bg-blue-100' : 'bg-blue-900/30')} />
+          <div className={cn('h-2.5 w-16 rounded-full', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
           <div className={cn('h-2.5 w-20 rounded-full', isLight ? 'bg-gray-100' : 'bg-gray-800')} />
         </div>
       </div>
@@ -128,6 +128,7 @@ export function UsersTab({ isLight, organizations, preselectedOrgId, onError, on
   const [openMenuMemberId, setOpenMenuMemberId] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
+  const [copiedInvitationId, setCopiedInvitationId] = useState<string | null>(null);
 
   // Auto-select organization if there's only one
   useEffect(() => {
@@ -791,7 +792,7 @@ useEffect(() => {
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
-              Invite
+              Invite User
             </button>
             )}
           </div>
@@ -944,9 +945,12 @@ useEffect(() => {
                           <div className="flex items-center gap-2 mt-1">
                             <span
                               className={cn(
-                                'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-                                isLight ? 'bg-orange-100 text-orange-700' : 'bg-orange-900/30 text-orange-400',
+                                'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
                               )}>
+                              <svg className={cn('w-3 h-3', isLight ? 'text-orange-500' : 'text-orange-400')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
                               Pending Invitation
                             </span>
                             <span
@@ -961,13 +965,38 @@ useEffect(() => {
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(invitation.id);
+                            setCopiedInvitationId(invitation.id);
+                            setTimeout(() => setCopiedInvitationId(null), 2000);
+                          }}
+                          className={cn(
+                            'p-1 rounded transition-colors',
+                            copiedInvitationId === invitation.id
+                              ? 'text-green-500'
+                              : isLight
+                                ? 'text-gray-400 hover:text-blue-600'
+                                : 'text-gray-500 hover:text-blue-400',
+                          )}
+                          title={copiedInvitationId === invitation.id ? 'Copied!' : 'Copy invitation ID'}>
+                          {copiedInvitationId === invitation.id ? (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <polyline points="20 6 9 17 4 12" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          ) : (
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          )}
+                        </button>
+                        <button
                           onClick={() => resendInvitation(invitation)}
                           disabled={loading}
                           className={cn(
                             'p-1 rounded transition-colors',
                             isLight
-                              ? 'text-blue-600 hover:bg-blue-50 hover:text-blue-700'
-                              : 'text-blue-400 hover:bg-blue-900/20 hover:text-blue-300',
+                              ? 'text-gray-400 hover:text-blue-600'
+                              : 'text-gray-500 hover:text-blue-400',
                             loading && 'opacity-50 cursor-not-allowed',
                           )}
                           title="Resend invitation">
@@ -1004,26 +1033,19 @@ useEffect(() => {
                     key={member.id}
                     className={cn(
                       'p-3 rounded-lg border transition-all relative',
-                      isBanned
-                        ? isLight
-                          ? 'bg-red-50/50 border-red-200 opacity-75'
-                          : 'bg-red-900/10 border-red-900/50 opacity-75'
-                        : isLight
-                          ? isCurrentUser
-                            ? 'bg-blue-50/50 border-blue-300 hover:border-blue-400 hover:shadow-sm'
-                            : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm'
-                          : isCurrentUser
-                            ? 'bg-blue-900/10 border-blue-500/50 hover:border-blue-400/70'
-                            : 'bg-[#151C24] border-gray-700 hover:border-gray-600',
+                      isLight
+                        ? 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                        : 'bg-[#151C24] border-gray-700 hover:border-gray-600',
+                      isBanned && 'opacity-75',
                     )}>
                     {/* "You" tag for current user */}
                     {isCurrentUser && (
                       <div
                         className={cn(
-                          'absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-semibold',
+                          'absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-medium',
                           isLight
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-blue-600 text-white',
+                            ? 'bg-gray-100 text-gray-700'
+                            : 'bg-gray-800 text-gray-300',
                         )}>
                         You
                       </div>
@@ -1167,7 +1189,7 @@ useEffect(() => {
                         <div
                           className={cn(
                             'w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0',
-                            isLight ? 'bg-blue-100 text-blue-600' : 'bg-blue-900/30 text-blue-400',
+                            isLight ? 'bg-gray-100 text-gray-500' : 'bg-gray-700/50 text-gray-400',
                           )}>
                           {member.user.image ? (
                             <img
@@ -1193,10 +1215,10 @@ useEffect(() => {
                               <span
                                 className={cn(
                                   'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
-                                  isLight ? 'bg-red-100 text-red-700' : 'bg-red-900/30 text-red-400',
+                                  isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
                                 )}
                                 title={member.user.banReason ? `Reason: ${member.user.banReason}` : undefined}>
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                <svg className={cn('w-3 h-3', isLight ? 'text-red-600' : 'text-red-400')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                                 </svg>
                                 Deactivated
@@ -1236,8 +1258,8 @@ useEffect(() => {
                           className={cn(
                               'p-1 rounded transition-colors',
                             isLight
-                              ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                                : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                              ? 'text-gray-400 hover:text-blue-600'
+                              : 'text-gray-500 hover:text-blue-400',
                           )}
                             title={isCurrentUser ? 'Edit your profile' : 'Edit role and teams'}>
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>

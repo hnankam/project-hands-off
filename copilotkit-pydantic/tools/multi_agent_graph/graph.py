@@ -271,8 +271,8 @@ def create_multi_agent_graph(
         final_result = ctx.state.result if ctx.state.result else "Task completed."
         
         # Add summary
-        if ctx.state.execution_history:
-            final_result = f"{final_result}\n\n[Executed: {' → '.join(ctx.state.execution_history)}]"
+        # if ctx.state.execution_history:
+        #     final_result = f"{final_result}\n\n[Executed: {' → '.join(ctx.state.execution_history)}]"
         
         ctx.state.result = final_result
         ctx.state.should_continue = False

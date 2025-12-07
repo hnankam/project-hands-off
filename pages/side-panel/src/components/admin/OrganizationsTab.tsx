@@ -345,7 +345,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
-            New
+            Add Organization
           </button>
         )}
       </div>

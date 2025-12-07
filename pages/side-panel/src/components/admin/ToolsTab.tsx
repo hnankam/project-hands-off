@@ -5,6 +5,7 @@ import { OrganizationSelector } from './OrganizationSelector';
 import { TeamSelector } from './TeamSelector';
 import { TeamMultiSelector } from './TeamMultiSelector';
 import { Checkbox, Radio } from './FormControls';
+import { CodeMirrorJsonEditor } from './CodeMirrorJsonEditor';
 
 interface Organization {
   id: string;
@@ -477,7 +478,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
               key={team.id}
               className={cn(
                 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-                isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
+                isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
               )}
             >
               Team · {team.name}
@@ -1074,24 +1075,14 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
           </button>
           <div className="flex items-center gap-2">
             {!isEditing && (
-              <>
-                <span
-                  className={cn(
-                    'text-xs px-2 py-1 rounded transition-colors',
-                    isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-400',
-                  )}
-                >
-                  {enabledCount}
-          </span>
-                <span
-                  className={cn(
-                    'text-xs px-2 py-1 rounded transition-colors',
-                    isLight ? 'bg-gray-100 text-gray-600' : 'bg-gray-800 text-gray-300',
-                  )}
-                >
-                  {items.length}
-                </span>
-              </>
+              <span
+                className={cn(
+                  'text-[10px] px-1.5 py-0.5 rounded font-medium transition-colors',
+                  isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
+                )}
+              >
+                {enabledCount} / {items.length}
+              </span>
             )}
             <button
               type="button"
@@ -1103,11 +1094,11 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                 'p-1 rounded transition-colors',
                 isEditing
                   ? isLight
-                    ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                    : 'bg-blue-900/30 text-blue-400 hover:bg-blue-900/50'
+                    ? 'text-blue-600 hover:text-blue-700'
+                    : 'text-blue-400 hover:text-blue-300'
                   : isLight
-                  ? 'text-gray-600 hover:text-gray-700 hover:bg-gray-100'
-                  : 'text-gray-400 hover:text-[#bcc1c7] hover:bg-gray-800',
+                    ? 'text-gray-400 hover:text-blue-600'
+                    : 'text-gray-500 hover:text-blue-400',
               )}
               title={isEditing ? 'Exit edit mode' : 'Edit scope'}
             >
@@ -1411,17 +1402,17 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
         {renderToolAccordion(
           'frontend',
           'Frontend Tools',
-          'User Interface actions (non-deletable, toggle to enable/disable)'
+          'User Interface actions'
         )}
         {renderToolAccordion(
           'builtin',
           'Built-in Tools',
-          'Platform built-in tools (non-deletable, toggle to enable/disable)'
+          'Platform built-in tools'
         )}
         {renderToolAccordion(
           'backend',
           'Backend Tools',
-          'Python-defined backend tools (non-deletable, toggle to enable/disable)'
+          'Python-defined backend tools'
         )}
 
         {renderToolAccordion(
@@ -1573,31 +1564,29 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                 <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                   Environment Variables JSON
                 </label>
-                <textarea
-                  rows={3}
+                <CodeMirrorJsonEditor
                   value={serverForm.env}
-                  onChange={e => setServerForm(prev => ({ ...prev, env: e.target.value }))}
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                  )}
+                  onChange={value => setServerForm(prev => ({ ...prev, env: value }))}
+                  placeholder="{}"
+                  isLight={isLight}
+                  minHeight="20px"
+                  maxHeight="150px"
                 />
-                </div>
+              </div>
 
-                        <div>
+              <div>
                 <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                   Metadata JSON
                 </label>
-                <textarea
-                  rows={3}
+                <CodeMirrorJsonEditor
                   value={serverForm.metadata}
-                  onChange={e => setServerForm(prev => ({ ...prev, metadata: e.target.value }))}
-                  className={cn(
-                    'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                  )}
+                  onChange={value => setServerForm(prev => ({ ...prev, metadata: value }))}
+                  placeholder="{}"
+                  isLight={isLight}
+                  minHeight="20px"
+                  maxHeight="150px"
                 />
-                          </div>
+              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1923,29 +1912,27 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                           <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                             Environment Variables JSON
                           </label>
-              <textarea
-                            rows={3}
+                          <CodeMirrorJsonEditor
                             value={editServerForm.env}
-                            onChange={e => setEditServerForm(prev => prev ? { ...prev, env: e.target.value } : prev)}
-                className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                )}
-              />
-            </div>
+                            onChange={value => setEditServerForm(prev => prev ? { ...prev, env: value } : prev)}
+                            placeholder="{}"
+                            isLight={isLight}
+                            minHeight="20px"
+                            maxHeight="150px"
+                          />
+                        </div>
 
                         <div>
                           <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
                             Metadata JSON
                           </label>
-                          <textarea
-                            rows={3}
+                          <CodeMirrorJsonEditor
                             value={editServerForm.metadata}
-                            onChange={e => setEditServerForm(prev => prev ? { ...prev, metadata: e.target.value } : prev)}
-                            className={cn(
-                              'w-full px-3 py-2 text-xs border rounded outline-none font-mono focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
-                              isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-gray-100',
-                            )}
+                            onChange={value => setEditServerForm(prev => prev ? { ...prev, metadata: value } : prev)}
+                            placeholder="{}"
+                            isLight={isLight}
+                            minHeight="20px"
+                            maxHeight="150px"
                           />
                         </div>
 
@@ -2208,10 +2195,9 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                             <div className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                               {server.displayName}
                             </div>
-                            <div className={cn('text-xs mt-0.5', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                              {server.serverKey} · {server.transport}{server.command && ` · ${server.command}`}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className={cn('flex items-center gap-2 text-xs mt-0.5 flex-wrap', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              <span>{server.serverKey} · {server.transport}{server.command && ` · ${server.command}`}</span>
+                              <span>|</span>
                               {renderServerScopeBadge(server)}
                               {serverToolCount > 0 && (
                                 <span className={cn(
@@ -2301,10 +2287,12 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                               </svg>
                             </button>
                             {expandedServerArgs.has(server.id) && (
-                              <div className={cn(
-                                'text-xs font-mono p-2 rounded max-h-32 overflow-auto tools-tab-scrollbar',
-                                isLight ? 'bg-gray-50 text-gray-800' : 'bg-gray-900/40 text-gray-200'
-                              )}>
+                              <div 
+                                className={cn(
+                                  'text-xs p-2 rounded max-h-32 overflow-auto agents-tab-scrollbar',
+                                  isLight ? 'bg-gray-50 text-gray-800' : 'bg-gray-900/40 text-gray-200'
+                                )}
+                              >
                                 {server.args.map((arg, idx) => (
                                   <div key={idx} className="whitespace-pre-wrap break-all">
                                     {arg}
