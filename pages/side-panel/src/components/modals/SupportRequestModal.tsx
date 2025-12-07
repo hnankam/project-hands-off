@@ -8,6 +8,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
 import { useAuth } from '../../context/AuthContext';
+import { RichTextEditor } from '../admin/editors';
 
 interface SupportRequestModalProps {
   isLight: boolean;
@@ -43,18 +44,25 @@ export default function SupportRequestModal({
 }: SupportRequestModalProps) {
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
   const mainTextColor = isLight ? 'text-gray-700' : 'text-[#bcc1c7]';
-  const { organization } = useAuth();
+  const { user, organization } = useAuth();
 
   const [formData, setFormData] = useState<SupportRequestData>({
     subject: '',
     priority: '',
     team: userTeam,
-    email: userEmail,
+    email: userEmail || user?.email || '',
     organization: userOrganization,
     problemDescription: '',
     attachments: [],
     consent: false,
   });
+
+  // Update email from user context when it becomes available
+  useEffect(() => {
+    if (user?.email && !formData.email) {
+      setFormData(prev => ({ ...prev, email: user.email }));
+    }
+  }, [user?.email]);
 
   // Track selected organization ID separately for loading teams
   const [selectedOrgId, setSelectedOrgId] = useState<string>(organization?.id || '');
@@ -74,16 +82,25 @@ export default function SupportRequestModal({
   const teamDropdownRef = useRef<HTMLDivElement>(null);
   const priorityDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Load organizations and teams when modal opens
+  // Load organizations and teams when modal opens, and set initial values
   useEffect(() => {
     if (isOpen) {
       loadOrganizations();
+      // Set email from user context
+      if (user?.email && !formData.email) {
+        setFormData(prev => ({ ...prev, email: user.email }));
+      }
+      // Set organization from context
       if (organization?.id) {
         setSelectedOrgId(organization.id);
+        setFormData(prev => ({ 
+          ...prev, 
+          organization: organization.name || organization.slug || organization.id 
+        }));
         loadTeams(organization.id);
       }
     }
-  }, [isOpen, organization?.id]);
+  }, [isOpen, organization?.id, user?.email]);
 
   // Click outside handlers
   useEffect(() => {
@@ -173,8 +190,8 @@ export default function SupportRequestModal({
       subject: '',
       priority: '',
       team: userTeam,
-      email: userEmail,
-      organization: userOrganization,
+      email: userEmail || user?.email || '',
+      organization: userOrganization || organization?.name || '',
       problemDescription: '',
       attachments: [],
       consent: false,
@@ -561,18 +578,13 @@ export default function SupportRequestModal({
               <label className={cn('block text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
                 Problem description <span className="text-red-500">*</span>
               </label>
-              <textarea
+              <RichTextEditor
                 value={formData.problemDescription}
-                onChange={(e) => setFormData({ ...formData, problemDescription: e.target.value })}
+                onChange={(value) => setFormData({ ...formData, problemDescription: value })}
                 placeholder="Please provide a detailed description of the problem"
-                rows={6}
-                className={cn(
-                  'w-full rounded-md border px-3 py-2 text-sm transition-colors resize-none',
-                  'focus:outline-none focus:ring-2',
-                  isLight
-                    ? 'border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500/20'
-                    : 'border-gray-600 bg-[#0D1117] text-gray-100 placeholder-gray-500 focus:border-blue-400 focus:ring-blue-400/20'
-                )}
+                isLight={isLight}
+                minHeight="150px"
+                maxHeight="250px"
               />
             </div>
 

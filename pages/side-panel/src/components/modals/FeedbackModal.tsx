@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { cn } from '@extension/ui';
+import { RichTextEditor } from '../admin/editors';
 
 interface FeedbackModalProps {
   isLight: boolean;
@@ -86,18 +87,13 @@ export default function FeedbackModal({
               <label className={cn('block text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
                 Share your thoughts
               </label>
-              <textarea
+              <RichTextEditor
                 value={feedbackText}
-                onChange={(e) => onFeedbackChange(e.target.value)}
+                onChange={onFeedbackChange}
                 placeholder="What's working well? What's confusing? What's missing?"
-                rows={6}
-                className={cn(
-                  'w-full rounded-md border px-3 py-2 text-sm transition-colors resize-none',
-                  'focus:outline-none focus:ring-2',
-                  isLight
-                    ? 'border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500/20'
-                    : 'border-gray-600 bg-[#0D1117] text-gray-100 placeholder-gray-500 focus:border-blue-400 focus:ring-blue-400/20'
-                )}
+                isLight={isLight}
+                minHeight="120px"
+                maxHeight="200px"
               />
             </div>
 
