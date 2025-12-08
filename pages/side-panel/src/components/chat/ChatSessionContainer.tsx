@@ -698,19 +698,30 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       sessionId,
     });
 
-    // Auto-add current page to selection when it changes (without removing existing selections)
+    // Track the previous page URL to detect actual navigation changes
+    const previousPageURLRef = useRef<string | null>(null);
+    
+    // Auto-add current page to selection only when user NAVIGATES to a new page
+    // (not when they manually deselect - that should be respected)
     useEffect(() => {
       const currentURL = currentPageContent?.url;
-      if (currentURL && !selectedPageURLs.includes(currentURL)) {
-        setSelectedPageURLs(prev => {
-          // Simply add the new URL to existing selections
-          if (!prev.includes(currentURL)) {
-            return [...prev, currentURL];
-          }
-          return prev;
-        });
+      const previousURL = previousPageURLRef.current;
+      
+      // Only auto-add if the URL actually changed (user navigated to a new page)
+      if (currentURL && currentURL !== previousURL) {
+        previousPageURLRef.current = currentURL;
+        
+        // Add the new page to selection if not already there
+        if (!selectedPageURLs.includes(currentURL)) {
+          setSelectedPageURLs(prev => {
+            if (!prev.includes(currentURL)) {
+              return [...prev, currentURL];
+            }
+            return prev;
+          });
+        }
       }
-    }, [currentPageContent?.url, selectedPageURLs]);
+    }, [currentPageContent?.url]); // Removed selectedPageURLs from deps - we don't want to re-run when selection changes
 
     // Agent switching hook - replaces agent switching state machine
     const { activeAgent, activeModel, isSwitchingAgent, switchingStep } = useAgentSwitching({

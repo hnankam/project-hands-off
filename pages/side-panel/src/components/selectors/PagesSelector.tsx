@@ -506,11 +506,8 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
   const handleDeletePage = useCallback(async (pageURL: string, e: React.MouseEvent) => {
     e.stopPropagation();
     
-    if (pageURL === currentPageURL) {
-      debug.warn('[PagesSelector] Cannot delete current page');
-      return;
-    }
-    
+    // Allow deleting any page including the current one
+    // User should have full control over their indexed pages
     setDeletingPages(prev => new Set(prev).add(pageURL));
     
     try {
@@ -542,21 +539,22 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     const allFilteredSelected = filteredURLs.every(url => selectedPageURLs.includes(url));
     
     if (allFilteredSelected) {
+      // Deselect all filtered pages - user can choose to have no pages selected
       const newSelection = selectedPageURLs.filter(url => !filteredURLs.includes(url));
-      onPagesChange(currentPageURL && !filteredURLs.includes(currentPageURL) ? [...newSelection, currentPageURL] : newSelection);
+      onPagesChange(newSelection);
     } else {
       const newSelection = Array.from(new Set([...selectedPageURLs, ...filteredURLs]));
       onPagesChange(newSelection);
     }
-  }, [filteredPages, selectedPageURLs, currentPageURL, onPagesChange]);
+  }, [filteredPages, selectedPageURLs, onPagesChange]);
 
   // Bulk delete selected indexed pages
   const handleBulkDeleteIndexed = useCallback(async () => {
-    // Get selected pages that can be deleted (not current page)
-    const pagesToDelete = selectedPageURLs.filter(url => url !== currentPageURL);
+    // Get all selected pages to delete (including current page if selected)
+    const pagesToDelete = [...selectedPageURLs];
     
     if (pagesToDelete.length === 0) {
-      debug.warn('[PagesSelector] No pages to delete (current page cannot be deleted)');
+      debug.warn('[PagesSelector] No pages to delete');
       return;
     }
     
@@ -586,7 +584,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       }
       
       // Remove deleted pages from selection
-      onPagesChange(selectedPageURLs.filter(url => !pagesToDelete.includes(url) || url === currentPageURL));
+      onPagesChange(selectedPageURLs.filter(url => !pagesToDelete.includes(url)));
       
       debug.log('[PagesSelector] Bulk delete complete:', successCount, '/', pagesToDelete.length);
     } catch (error) {
@@ -594,7 +592,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     } finally {
       setDeletingPages(new Set());
     }
-  }, [selectedPageURLs, currentPageURL, onPagesChange]);
+  }, [selectedPageURLs, onPagesChange]);
 
   // Open page in new tab
   const handleOpenInNewTab = useCallback((pageURL: string, e: React.MouseEvent) => {
@@ -1162,7 +1160,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                       </span>
                       <div className="flex items-center gap-2">
                         {/* Delete Selected Button */}
-                        {selectedPageURLs.filter(url => url !== currentPageURL && filteredPages.some(p => p.pageURL === url)).length > 0 && (
+                        {selectedPageURLs.filter(url => filteredPages.some(p => p.pageURL === url)).length > 0 && (
                           <button
                             type="button"
                             onClick={handleBulkDeleteIndexed}
@@ -1186,7 +1184,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                               </svg>
                             )}
-                            Delete ({selectedPageURLs.filter(url => url !== currentPageURL && filteredPages.some(p => p.pageURL === url)).length})
+                            Delete ({selectedPageURLs.filter(url => filteredPages.some(p => p.pageURL === url)).length})
                           </button>
                         )}
                         {/* Select All Button */}
@@ -1356,14 +1354,11 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                               <span
                                 role="button"
                                 tabIndex={0}
-                                onClick={(e) => { e.stopPropagation(); if (!isCurrent) handleDeletePage(page.pageURL, e); }}
-                                onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !isCurrent) { e.stopPropagation(); handleDeletePage(page.pageURL, e as any); } }}
-                                title={isCurrent ? "Cannot delete current page" : "Delete indexed page"}
+                                onClick={(e) => { e.stopPropagation(); handleDeletePage(page.pageURL, e); }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); handleDeletePage(page.pageURL, e as any); } }}
+                                title="Delete indexed page"
                                 className={cn(
-                                  'w-6 h-6 flex items-center justify-center rounded transition-all cursor-pointer',
-                                  isCurrent 
-                                    ? 'opacity-0 pointer-events-none' 
-                                    : 'opacity-0 group-hover:opacity-100',
+                                  'w-6 h-6 flex items-center justify-center rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100',
                                   isLight 
                                     ? 'text-gray-400 hover:text-red-600' 
                                     : 'text-gray-500 hover:text-red-400',
