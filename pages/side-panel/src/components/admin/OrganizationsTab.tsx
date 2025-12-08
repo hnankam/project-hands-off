@@ -648,14 +648,16 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
             isLight ? 'text-gray-500 border-gray-200 bg-gray-50' : 'text-gray-400 border-gray-700 bg-[#151C24]',
           )}>
             <p>No organizations yet.</p>
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className={cn(
-                'mt-2 text-xs font-medium',
-                isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
-              )}>
-              Create your first organization
-            </button>
+            {hasOwnerRole && (
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className={cn(
+                  'mt-2 text-xs font-medium',
+                  isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
+                )}>
+                Create your first organization
+              </button>
+            )}
           </div>
         )}
           </>

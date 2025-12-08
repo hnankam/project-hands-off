@@ -15,6 +15,8 @@ export interface TabConfig<T extends string = string> {
   label?: string;
   /** Whether this tab is hidden */
   hidden?: boolean;
+  /** Whether this tab is disabled (shown but not clickable) */
+  disabled?: boolean;
 }
 
 export interface TabBarProps<T extends string = string> {
@@ -133,10 +135,15 @@ export function TabBar<T extends string = string>({
                 tabRefs.current.delete(tab.key);
               }
             }}
-            onClick={() => handleTabClick(tab.key)}
+            onClick={() => !tab.disabled && handleTabClick(tab.key)}
+            disabled={tab.disabled}
             className={cn(
               'flex-shrink-0 px-3 py-1 text-xs font-medium rounded transition-colors capitalize',
-              activeTab === tab.key
+              tab.disabled
+                ? isLight
+                  ? 'text-gray-400 cursor-not-allowed'
+                  : 'text-gray-600 cursor-not-allowed'
+                : activeTab === tab.key
                 ? isLight
                   ? 'bg-gray-200 text-gray-700'
                   : 'bg-gray-700 text-[#bcc1c7]'

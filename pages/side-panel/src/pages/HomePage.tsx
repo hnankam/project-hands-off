@@ -669,11 +669,13 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                   </button>
                   <button
                     onClick={handleCreateSession}
-                    disabled={creatingSession}
+                    disabled={creatingSession || !canAccessSessions}
                     className={cn(
                       'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-3 text-xs font-semibold transition-colors border',
                       creatingSession
                         ? isLight ? 'bg-gray-200 text-gray-400 cursor-wait border-gray-300' : 'bg-gray-700 text-gray-400 cursor-wait border-gray-600'
+                        : !canAccessSessions
+                        ? isLight ? 'bg-gray-200 text-gray-500 cursor-not-allowed border-gray-300' : 'bg-gray-800 text-gray-500 cursor-not-allowed border-gray-700'
                         : isLight ? 'bg-white text-gray-600 hover:bg-gray-50 border-blue-300' : 'bg-[#151C24] text-gray-300 hover:bg-[#1a2330] border-blue-700'
                     )}
                   >

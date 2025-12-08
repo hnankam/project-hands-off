@@ -47,7 +47,7 @@ interface AdminPageProps {
 // ============================================================================
 
 export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organizations' }: AdminPageProps) {
-  const { user, organization, member } = useAuth();
+  const { user, organization, member, activeTeam } = useAuth();
   const { isLight, theme } = useStorage(themeStorage);
 
   // Main text colors - gray-700 for light mode, gray-350 (#bcc1c7) for dark mode
@@ -76,6 +76,9 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
   // Check if user is owner or admin (can access all tabs)
   const memberRoles = Array.isArray(member?.role) ? member.role : member?.role ? [member.role] : [];
   const isOwnerOrAdmin = memberRoles.includes('owner') || memberRoles.includes('admin');
+  
+  // Check if user has org and team selected (required for accessing most tabs)
+  const canAccessTabs = !!(organization && activeTeam);
 
   // Load organizations for team selector
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -118,17 +121,17 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
     }
   }, [organization?.id, selectedOrgForTeams]);
 
-  // Build tab configuration with hidden flags
+  // Build tab configuration with hidden and disabled flags
   const tabConfigs = [
     { key: 'organizations' as AdminTabKey },
-    { key: 'teams' as AdminTabKey },
-    { key: 'users' as AdminTabKey },
-    { key: 'usage' as AdminTabKey },
-    { key: 'providers' as AdminTabKey, hidden: !isOwnerOrAdmin },
-    { key: 'models' as AdminTabKey, hidden: !isOwnerOrAdmin },
-    { key: 'tools' as AdminTabKey, hidden: !isOwnerOrAdmin },
-    { key: 'agents' as AdminTabKey, hidden: !isOwnerOrAdmin },
-    { key: 'deployments' as AdminTabKey, hidden: !isOwnerOrAdmin },
+    { key: 'teams' as AdminTabKey, disabled: !canAccessTabs },
+    { key: 'users' as AdminTabKey, disabled: !canAccessTabs },
+    { key: 'usage' as AdminTabKey, disabled: !canAccessTabs },
+    { key: 'providers' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
+    { key: 'models' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
+    { key: 'tools' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
+    { key: 'agents' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
+    { key: 'deployments' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
   ];
 
   return (
