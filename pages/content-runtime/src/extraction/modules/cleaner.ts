@@ -1,5 +1,9 @@
 /**
  * @fileoverview HTML cleaning utilities
+ * 
+ * OPTIMIZED: Single-pass DOM traversal for large pages (1MB+)
+ * Previous implementation did 4+ querySelectorAll('*') passes which
+ * caused timeouts on pages with many elements.
  */
 
 import { sanitizeText } from './sanitizer';
@@ -7,6 +11,9 @@ import type { CleaningResult } from './types';
 
 // Content size warning threshold (5MB)
 const LARGE_CONTENT_THRESHOLD = 5 * 1024 * 1024;
+
+// Tags to remove entirely
+const TAGS_TO_REMOVE = new Set(['head', 'script', 'style', 'link', 'meta', 'noscript', 'object', 'embed']);
 
 export const cleanHtmlForAgent = (html: string): CleaningResult => {
   if (!html || html.length === 0) {
@@ -26,114 +33,136 @@ export const cleanHtmlForAgent = (html: string): CleaningResult => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
 
-  // Remove unnecessary elements
-  const selectorsToRemove = ['head', 'script', 'style', 'link', 'meta', 'noscript', 'iframe', 'object', 'embed', 'svg'];
-
-  selectorsToRemove.forEach(selector => {
-    const elements = doc.querySelectorAll(selector);
-    elements.forEach(element => {
-      if (selector === 'iframe') {
+  // Collect elements to remove first (avoid modifying DOM while iterating)
+  const elementsToRemove: Element[] = [];
+  const elementsToReplace: Array<{element: Element, replacement: Element}> = [];
+  
+  // Use TreeWalker for efficient single-pass traversal
+  const walker = document.createTreeWalker(
+    doc.documentElement,
+    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT,
+    null
+  );
+  
+  let node: Node | null = walker.currentNode;
+  const nodesToRemove: Node[] = [];
+  
+  while (node) {
+    if (node.nodeType === Node.COMMENT_NODE) {
+      // Collect comments for removal
+      nodesToRemove.push(node);
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const element = node as Element;
+      const tagName = element.tagName.toLowerCase();
+      
+      // Check if element should be removed or replaced
+      if (TAGS_TO_REMOVE.has(tagName)) {
+        elementsToRemove.push(element);
+      } else if (tagName === 'iframe') {
         const placeholder = doc.createElement('div');
         placeholder.setAttribute('data-iframe-placeholder', 'true');
         placeholder.setAttribute('data-src', element.getAttribute('src') || '');
         placeholder.textContent = `[IFRAME: ${element.getAttribute('src') || 'unknown'}]`;
-        element.replaceWith(placeholder);
-      } else if (selector === 'svg') {
+        elementsToReplace.push({ element, replacement: placeholder });
+      } else if (tagName === 'svg') {
         const placeholder = doc.createElement('div');
         placeholder.setAttribute('data-svg-placeholder', 'true');
         placeholder.textContent = '[SVG]';
-        element.replaceWith(placeholder);
+        elementsToReplace.push({ element, replacement: placeholder });
+      } else if (tagName === 'source') {
+        const placeholder = doc.createElement('span');
+        placeholder.textContent = `[SOURCE: ${element.getAttribute('src') || 'unknown'}]`;
+        elementsToReplace.push({ element, replacement: placeholder });
       } else {
-        element.remove();
-      }
-    });
-  });
-
-  // Remove inline styles
-  doc.querySelectorAll('*').forEach(element => {
-    element.removeAttribute('style');
-  });
-
-  // Remove inline event handlers
-  doc.querySelectorAll('*').forEach(el => {
-    const attrs = Array.from(el.attributes);
-    for (const attr of attrs) {
-      if (attr.name && attr.name.toLowerCase().startsWith('on')) {
-        el.removeAttribute(attr.name);
-      }
-    }
-  });
-
-  // Neutralize javascript: URLs
-  doc.querySelectorAll('[href], [src], form[action]').forEach(el => {
-    const attrs = ['href', 'src', 'action'];
-    for (const name of attrs) {
-      if (el.hasAttribute(name)) {
-        const val = (el.getAttribute(name) || '').trim();
-        if (/^javascript:/i.test(val)) {
-          el.removeAttribute(name);
+        // Process attributes in single pass (instead of 4 separate querySelectorAll('*'))
+        const attrsToRemove: string[] = [];
+        const attrsToUpdate: Array<{name: string, value: string}> = [];
+        
+        for (const attr of Array.from(element.attributes)) {
+          const attrName = attr.name.toLowerCase();
+          
+          // Remove style attribute
+          if (attrName === 'style') {
+            attrsToRemove.push(attr.name);
+            continue;
+          }
+          
+          // Remove event handlers (onclick, onload, etc.)
+          if (attrName.startsWith('on')) {
+            attrsToRemove.push(attr.name);
+            continue;
+          }
+          
+          // Remove empty attributes
+          if (attr.value === '') {
+            attrsToRemove.push(attr.name);
+            continue;
+          }
+          
+          // Neutralize javascript: URLs
+          if ((attrName === 'href' || attrName === 'src' || attrName === 'action') &&
+              /^javascript:/i.test(attr.value.trim())) {
+            attrsToRemove.push(attr.name);
+            continue;
+          }
+          
+          // Handle img-specific attributes
+          if (tagName === 'img') {
+            if (attrName === 'src' && attr.value.startsWith('data:')) {
+              element.setAttribute('data-original-src', 'data:image/...[removed]');
+              attrsToRemove.push('src');
+              continue;
+            }
+            if (attrName === 'srcset') {
+              attrsToRemove.push('srcset');
+              continue;
+            }
+          }
+          
+          // Sanitize attribute values (skip if too expensive for very large values)
+          if (attr.value.length > 0 && attr.value.length < 10000) {
+            const cleaned = sanitizeText(attr.value, {
+              trimLines: true,
+              collapseSpaces: true,
+              collapseNewlines: true,
+              maxNewlines: 1,
+              trim: true,
+              removeZeroWidth: true,
+              normalizeUnicode: true
+            });
+            if (cleaned !== attr.value) {
+              attrsToUpdate.push({ name: attr.name, value: cleaned });
+            }
+          }
+        }
+        
+        // Apply attribute changes
+        for (const name of attrsToRemove) {
+          element.removeAttribute(name);
+        }
+        for (const { name, value } of attrsToUpdate) {
+          element.setAttribute(name, value);
         }
       }
     }
-  });
-
-  // Remove data URLs from images
-  doc.querySelectorAll('img').forEach(img => {
-    const src = img.getAttribute('src');
-    if (src && src.startsWith('data:')) {
-      img.setAttribute('data-original-src', 'data:image/...[removed]');
-      img.removeAttribute('src');
-    }
-    img.removeAttribute('srcset');
-  });
-
-  // Remove video/audio sources
-  doc.querySelectorAll('source').forEach(source => {
-    const placeholder = doc.createElement('span');
-    placeholder.textContent = `[SOURCE: ${source.getAttribute('src') || 'unknown'}]`;
-    source.replaceWith(placeholder);
-  });
-
-  // Remove comments
-  const removeComments = (node: Node) => {
-    Array.from(node.childNodes).forEach(child => {
-      if (child.nodeType === Node.COMMENT_NODE) {
-        child.remove();
-      } else if (child.nodeType === Node.ELEMENT_NODE) {
-        removeComments(child);
-      }
-    });
-  };
-  removeComments(doc.body);
-
-  // Remove empty attributes
-  doc.querySelectorAll('*').forEach(element => {
-    Array.from(element.attributes).forEach(attr => {
-      if (attr.value === '') {
-        element.removeAttribute(attr.name);
-      }
-    });
-  });
-
-  // Sanitize attribute values
-  doc.querySelectorAll('*').forEach(element => {
-    Array.from(element.attributes).forEach(attr => {
-      if (attr.value && attr.value.length > 0) {
-        const cleaned = sanitizeText(attr.value, {
-          trimLines: true,
-          collapseSpaces: true,
-          collapseNewlines: true,
-          maxNewlines: 1,
-          trim: true,
-          removeZeroWidth: true,
-          normalizeUnicode: true
-        });
-        if (cleaned !== attr.value) {
-          element.setAttribute(attr.name, cleaned);
-        }
-      }
-    });
-  });
+    
+    node = walker.nextNode();
+  }
+  
+  // Remove collected comments
+  for (const comment of nodesToRemove) {
+    comment.parentNode?.removeChild(comment);
+  }
+  
+  // Remove collected elements
+  for (const element of elementsToRemove) {
+    element.remove();
+  }
+  
+  // Replace collected elements
+  for (const { element, replacement } of elementsToReplace) {
+    element.replaceWith(replacement);
+  }
 
   let cleanedHtml = doc.documentElement.outerHTML;
   

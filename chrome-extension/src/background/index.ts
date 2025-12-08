@@ -568,6 +568,32 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
           // Extraction script hasn't run yet - inject it
           logger.info(`[ExtractContent] No cached content, injecting extraction scripts...`);
           
+          // Set up message listener BEFORE injecting script to catch completion message
+          const maxWaitTime = 60000; // 60 seconds max for very large pages
+          const extractionPromise = new Promise<{success: boolean; error?: string}>((resolve) => {
+            const startTime = Date.now();
+            
+            // Create a one-time listener for extraction completion
+            const messageListener = (message: any, sender: chrome.runtime.MessageSender) => {
+              // Only handle messages from the target tab
+              if (message.type === 'extractionComplete' && sender.tab?.id === tabId) {
+                chrome.runtime.onMessage.removeListener(messageListener);
+                const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+                logger.info(`[ExtractContent] Received extractionComplete from tab ${tabId} after ${duration}s (success=${message.success}, size=${(message.contentSize / 1024).toFixed(0)}KB)`);
+                resolve({ success: message.success, error: message.error });
+              }
+            };
+            
+            chrome.runtime.onMessage.addListener(messageListener);
+            
+            // Set timeout to clean up listener and resolve if no message received
+            setTimeout(() => {
+              chrome.runtime.onMessage.removeListener(messageListener);
+              logger.warn(`[ExtractContent] Extraction message timeout after ${maxWaitTime / 1000}s`);
+              resolve({ success: false, error: 'Extraction timed out' });
+            }, maxWaitTime);
+          });
+          
           // Inject utils.js first
           try {
             await withTimeout(
@@ -583,14 +609,14 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
             logger.warn(`[ExtractContent] utils.js injection failed:`, utilsError);
           }
           
-          // Inject extraction script
+          // Inject extraction script (returns quickly since extraction is async)
           try {
             await withTimeout(
               chrome.scripting.executeScript({
                 target: { tabId },
                 files: ['content-runtime/extraction.iife.js']
               }),
-              15000,
+              10000,
               'extraction.iife.js injection timed out'
             );
             logger.debug(`[ExtractContent] extraction.iife.js injected for tab ${tabId}`);
@@ -598,10 +624,15 @@ async function extractPageContent(tabId?: number, sendResponse?: (response: any)
             logger.warn(`[ExtractContent] extraction.iife.js injection failed:`, extractionError);
           }
           
-          // Wait for extraction to complete
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Wait for extraction completion message (no polling needed!)
+          logger.info(`[ExtractContent] Waiting for extractionComplete message (max ${maxWaitTime / 1000}s)...`);
+          const extractionResult = await extractionPromise;
           
-          // Try to read content
+          if (!extractionResult.success) {
+            logger.error(`[ExtractContent] Extraction failed: ${extractionResult.error}`);
+          }
+          
+          // Read the extracted content
           const contentResult = await chrome.scripting.executeScript({
             target: { tabId },
             func: () => (window as any).__extractPageContent

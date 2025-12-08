@@ -287,21 +287,51 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
-// Auto-extract on script load (for backwards compatibility with executeScript approach)
-console.log('[Extraction] Starting auto-extraction...');
-try {
-  const result = extractPageContent();
-  if (result) {
-    (window as any).__extractPageContent = result;
-    console.log('[Extraction] Auto-extraction successful, result stored in window.__extractPageContent');
-  } else {
-    console.error('[Extraction] Auto-extraction returned null/undefined result');
+// Auto-extract on script load (ASYNC to avoid blocking executeScript)
+// This allows the script injection to return immediately while extraction runs in background
+console.log('[Extraction] Script loaded, scheduling async auto-extraction...');
+
+// Use setTimeout to make extraction async - executeScript will return immediately
+setTimeout(() => {
+  console.log('[Extraction] Starting auto-extraction (async)...');
+  const startTime = performance.now();
+  let success = false;
+  let error: string | undefined;
+  
+  try {
+    const result = extractPageContent();
+    const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+    if (result) {
+      (window as any).__extractPageContent = result;
+      console.log(`[Extraction] Auto-extraction successful in ${duration}s, result stored in window.__extractPageContent`);
+      success = true;
+    } else {
+      console.error('[Extraction] Auto-extraction returned null/undefined result');
+      error = 'Extraction returned null';
+    }
+  } catch (e) {
+    console.error('[Extraction] Auto-extraction failed:', e);
+    error = e instanceof Error ? e.message : String(e);
+    (window as any).__extractPageContentError = error;
   }
-} catch (e) {
-  console.error('[Extraction] Auto-extraction failed:', e);
-  // Store error info for debugging
-  (window as any).__extractPageContentError = e instanceof Error ? e.message : String(e);
-}
+  
+  // Notify background script that extraction is complete via message passing
+  // This is more efficient than polling
+  try {
+    chrome.runtime.sendMessage({
+      type: 'extractionComplete',
+      success,
+      error,
+      contentSize: success ? JSON.stringify((window as any).__extractPageContent).length : 0
+    }).catch(() => {
+      // Message may fail if no listener - that's OK (e.g., page loaded normally without on-demand request)
+    });
+    console.log('[Extraction] Sent extractionComplete message to background');
+  } catch (msgError) {
+    // Sending message may fail in some contexts - that's OK
+    console.log('[Extraction] Could not send extractionComplete message (normal if page loaded naturally)');
+  }
+}, 0);
 
 console.log('[Extraction] Content extraction script loaded, __extractPageContent set:', !!(window as any).__extractPageContent);
 

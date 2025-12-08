@@ -57,6 +57,7 @@ interface BrowserWindow {
 }
 
 type ViewMode = 'all' | 'indexed' | 'tabs';
+type SortOption = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc';
 
 // Tab group colors from Chrome API
 const TAB_GROUP_COLORS: Record<string, string> = {
@@ -100,6 +101,9 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
   const [loading, setLoading] = useState(() => !cachedPages);
   const [deletingPages, setDeletingPages] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortOption, setSortOption] = useState<SortOption>('date-desc');
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -379,6 +383,26 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     };
   }, [isOpen]);
 
+  // Close sort menu on outside click
+  useEffect(() => {
+    if (!showSortMenu) return;
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
+        setShowSortMenu(false);
+      }
+    };
+    
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('click', handleClickOutside, true);
+    }, 10);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('click', handleClickOutside, true);
+    };
+  }, [showSortMenu]);
+
   // ============================================================================
   // HELPER FUNCTIONS
   // ============================================================================
@@ -444,14 +468,33 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
   // ============================================================================
   
   const filteredPages = useMemo(() => {
-    if (!searchQuery.trim()) return pages;
-    const query = searchQuery.toLowerCase().trim();
-    return pages.filter(page => 
-      page.pageTitle.toLowerCase().includes(query) ||
-      page.pageURL.toLowerCase().includes(query) ||
-      getDomain(page.pageURL).toLowerCase().includes(query)
-    );
-  }, [pages, searchQuery, getDomain]);
+    // First filter
+    let result = pages;
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      result = pages.filter(page => 
+        page.pageTitle.toLowerCase().includes(query) ||
+        page.pageURL.toLowerCase().includes(query) ||
+        getDomain(page.pageURL).toLowerCase().includes(query)
+      );
+    }
+    
+    // Then sort
+    return [...result].sort((a, b) => {
+      switch (sortOption) {
+        case 'date-desc':
+          return new Date(b.lastIndexed).getTime() - new Date(a.lastIndexed).getTime();
+        case 'date-asc':
+          return new Date(a.lastIndexed).getTime() - new Date(b.lastIndexed).getTime();
+        case 'name-asc':
+          return a.pageTitle.localeCompare(b.pageTitle);
+        case 'name-desc':
+          return b.pageTitle.localeCompare(a.pageTitle);
+        default:
+          return 0;
+      }
+    });
+  }, [pages, searchQuery, getDomain, sortOption]);
 
   const handleTogglePage = useCallback((pageURL: string) => {
     const newSelection = selectedPageURLs.includes(pageURL)
@@ -506,6 +549,68 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       onPagesChange(newSelection);
     }
   }, [filteredPages, selectedPageURLs, currentPageURL, onPagesChange]);
+
+  // Bulk delete selected indexed pages
+  const handleBulkDeleteIndexed = useCallback(async () => {
+    // Get selected pages that can be deleted (not current page)
+    const pagesToDelete = selectedPageURLs.filter(url => url !== currentPageURL);
+    
+    if (pagesToDelete.length === 0) {
+      debug.warn('[PagesSelector] No pages to delete (current page cannot be deleted)');
+      return;
+    }
+    
+    // Mark all as deleting
+    setDeletingPages(new Set(pagesToDelete));
+    
+    try {
+      debug.log('[PagesSelector] Bulk deleting pages:', pagesToDelete.length);
+      
+      // Delete in parallel with concurrency limit
+      const CONCURRENCY = 3;
+      let successCount = 0;
+      
+      for (let i = 0; i < pagesToDelete.length; i += CONCURRENCY) {
+        const batch = pagesToDelete.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map(url => embeddingsStorage.deletePageEmbeddings(url))
+        );
+        
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled' && result.value.deleted) {
+            successCount++;
+            const url = batch[index];
+            setPages(prev => prev.filter(p => p.pageURL !== url));
+          }
+        });
+      }
+      
+      // Remove deleted pages from selection
+      onPagesChange(selectedPageURLs.filter(url => !pagesToDelete.includes(url) || url === currentPageURL));
+      
+      debug.log('[PagesSelector] Bulk delete complete:', successCount, '/', pagesToDelete.length);
+    } catch (error) {
+      debug.error('[PagesSelector] Bulk delete failed:', error);
+    } finally {
+      setDeletingPages(new Set());
+    }
+  }, [selectedPageURLs, currentPageURL, onPagesChange]);
+
+  // Open page in new tab
+  const handleOpenInNewTab = useCallback((pageURL: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    chrome.tabs.create({ url: pageURL, active: false });
+  }, []);
+
+  // Switch to an existing tab
+  const handleSwitchToTab = useCallback((url: string) => {
+    // Find the tab with this URL and switch to it
+    const tab = browserTabs.find(t => t.url === url);
+    if (tab) {
+      chrome.tabs.update(tab.id, { active: true });
+      chrome.windows.update(tab.windowId, { focused: true });
+    }
+  }, [browserTabs]);
 
   // ============================================================================
   // BROWSER TABS - Filtering & Organization
@@ -1053,32 +1158,120 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                         'text-[10px] font-semibold uppercase tracking-wider',
                         isLight ? 'text-gray-500' : 'text-gray-400'
                       )}>
-                        Indexed Pages ({filteredPages.length})
+                        Indexed ({filteredPages.length})
                       </span>
-          {filteredPages.length > 0 && (
-            <button
-              type="button"
-                          onClick={handleSelectAllIndexed}
-              className={cn(
-                            'flex items-center gap-1 text-[10px] font-medium transition-colors',
-                            isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300'
-              )}
-            >
-              <div className={cn(
-                            'w-3 h-3 rounded border flex items-center justify-center',
-                allFilteredSelected
-                  ? 'bg-blue-600 border-blue-600'
-                              : isLight ? 'border-gray-400' : 'border-gray-500'
-              )}>
-                {allFilteredSelected && (
-                  <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </div>
-                          All
-            </button>
-          )}
+                      <div className="flex items-center gap-2">
+                        {/* Delete Selected Button */}
+                        {selectedPageURLs.filter(url => url !== currentPageURL && filteredPages.some(p => p.pageURL === url)).length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleBulkDeleteIndexed}
+                            disabled={deletingPages.size > 0}
+                            className={cn(
+                              'flex items-center gap-1 text-[10px] font-medium transition-colors',
+                              deletingPages.size > 0
+                                ? 'opacity-50 cursor-not-allowed'
+                                : isLight 
+                                  ? 'text-red-600 hover:text-red-700' 
+                                  : 'text-red-400 hover:text-red-300'
+                            )}
+                          >
+                            {deletingPages.size > 0 ? (
+                              <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                              </svg>
+                            ) : (
+                              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            )}
+                            Delete ({selectedPageURLs.filter(url => url !== currentPageURL && filteredPages.some(p => p.pageURL === url)).length})
+                          </button>
+                        )}
+                        {/* Select All Button */}
+                        {filteredPages.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleSelectAllIndexed}
+                            className={cn(
+                              'flex items-center gap-1 text-[10px] font-medium transition-colors',
+                              isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300'
+                            )}
+                          >
+                            <div className={cn(
+                              'w-3 h-3 rounded border flex items-center justify-center',
+                              allFilteredSelected
+                                ? 'bg-blue-600 border-blue-600'
+                                : isLight ? 'border-gray-400' : 'border-gray-500'
+                            )}>
+                              {allFilteredSelected && (
+                                <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </div>
+                            All
+                          </button>
+                        )}
+                        {/* Sort Button with Dropdown */}
+                        <div className="relative" ref={sortMenuRef}>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setShowSortMenu(!showSortMenu); }}
+                            title={`Sort: ${sortOption === 'date-desc' ? 'Newest' : sortOption === 'date-asc' ? 'Oldest' : sortOption === 'name-asc' ? 'A-Z' : 'Z-A'}`}
+                            className={cn(
+                              'p-1 rounded transition-colors',
+                              isLight 
+                                ? 'text-gray-500 hover:bg-gray-200 hover:text-gray-700' 
+                                : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                            )}
+                          >
+                            {/* Sort icon - up/down arrows */}
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                              {/* Up arrow */}
+                              <path d="M8 5L8 19M4 9L8 5L12 9" />
+                              {/* Down arrow */}
+                              <path d="M16 19L16 5M12 15L16 19L20 15" />
+                            </svg>
+                          </button>
+                          {/* Sort Menu */}
+                          {showSortMenu && (
+                            <div className={cn(
+                              'absolute right-0 top-full mt-1 py-1 rounded-md shadow-lg border z-50 min-w-[100px]',
+                              isLight ? 'bg-white border-gray-200' : 'bg-gray-800 border-gray-700'
+                            )}>
+                              {[
+                                { value: 'date-desc', label: 'Newest' },
+                                { value: 'date-asc', label: 'Oldest' },
+                                { value: 'name-asc', label: 'A-Z' },
+                                { value: 'name-desc', label: 'Z-A' },
+                              ].map((option) => (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    setSortOption(option.value as SortOption); 
+                                    setShowSortMenu(false); 
+                                  }}
+                                  className={cn(
+                                    'w-full px-3 py-1 text-left text-[10px] transition-colors',
+                                    sortOption === option.value
+                                      ? isLight ? 'bg-blue-50 text-blue-600' : 'bg-blue-900/30 text-blue-400'
+                                      : isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-300 hover:bg-gray-700'
+                                  )}
+                                >
+                                  {option.label}
+                                  {sortOption === option.value && (
+                                    <span className="ml-2">✓</span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
         </div>
 
                     {/* Indexed Pages List */}
@@ -1139,49 +1332,75 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                     </div>
                   </div>
                   
-                            {/* Delete button */}
-                  {!isCurrent && (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => { e.stopPropagation(); handleDeletePage(page.pageURL, e); }}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); handleDeletePage(page.pageURL, e as any); } }}
-                      title="Delete indexed page"
-                      className={cn(
-                        'flex-shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 transition-all cursor-pointer',
-                        isLight 
-                          ? 'text-gray-400 hover:text-red-600' 
-                          : 'text-gray-500 hover:text-red-400',
-                      )}>
-                      {isDeleting ? (
-                        <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                      ) : (
-                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      )}
-                    </span>
-                  )}
+                            {/* Action buttons - equally spaced */}
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              {/* Open in new tab button */}
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => handleOpenInNewTab(page.pageURL, e)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); handleOpenInNewTab(page.pageURL, e as any); } }}
+                                title="Open in new tab"
+                                className={cn(
+                                  'w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-all cursor-pointer',
+                                  isLight 
+                                    ? 'text-gray-400 hover:text-blue-600' 
+                                    : 'text-gray-500 hover:text-blue-400',
+                                )}>
+                                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </span>
+
+                              {/* Delete button */}
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => { e.stopPropagation(); if (!isCurrent) handleDeletePage(page.pageURL, e); }}
+                                onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !isCurrent) { e.stopPropagation(); handleDeletePage(page.pageURL, e as any); } }}
+                                title={isCurrent ? "Cannot delete current page" : "Delete indexed page"}
+                                className={cn(
+                                  'w-6 h-6 flex items-center justify-center rounded transition-all cursor-pointer',
+                                  isCurrent 
+                                    ? 'opacity-0 pointer-events-none' 
+                                    : 'opacity-0 group-hover:opacity-100',
+                                  isLight 
+                                    ? 'text-gray-400 hover:text-red-600' 
+                                    : 'text-gray-500 hover:text-red-400',
+                                )}>
+                                {isDeleting ? (
+                                  <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                  </svg>
+                                ) : (
+                                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                )}
+                              </span>
                   
-                            {/* Checkbox */}
-                  <div className={cn(
-                    'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
-                    isSelected
-                      ? 'bg-blue-600 border-blue-600 opacity-100'
-                      : cn(
-                          'opacity-0 group-hover:opacity-100',
-                          isLight ? 'border-gray-400' : 'border-gray-500'
-                        )
-                  )}>
-                    {isSelected && (
-                      <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </div>
+                              {/* Checkbox */}
+                              <div className={cn(
+                                'w-6 h-6 flex items-center justify-center flex-shrink-0',
+                              )}>
+                                <div className={cn(
+                                  'w-3.5 h-3.5 rounded border flex items-center justify-center transition-opacity',
+                                  isSelected
+                                    ? 'bg-blue-600 border-blue-600 opacity-100'
+                                    : cn(
+                                        'opacity-0 group-hover:opacity-100',
+                                        isLight ? 'border-gray-400' : 'border-gray-500'
+                                      )
+                                )}>
+                                  {isSelected && (
+                                    <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
                 </button>
               );
             })
@@ -1204,8 +1423,8 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                         Browser Tabs ({filteredBrowserTabs.length})
                         {unindexedTabCount > 0 && (
                           <span className={cn(
-                            'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium normal-case',
-                            isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300'
+                            'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium normal-case',
+                            isLight ? 'bg-gray-200/80 text-gray-600' : 'bg-gray-700 text-gray-300'
                           )}>
                             {unindexedTabCount} not indexed
                           </span>
@@ -1336,6 +1555,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                                           getDomain={getDomain}
                                           onToggle={handleTogglePage}
                                           onEmbed={() => handleEmbedAndSelect(tab)}
+                                          onOpenTab={handleSwitchToTab}
                                         />
                                       ))}
                                     </div>
@@ -1370,6 +1590,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                                       getDomain={getDomain}
                                       onToggle={handleTogglePage}
                                       onEmbed={() => handleEmbedAndSelect(tab)}
+                                      onOpenTab={handleSwitchToTab}
                                     />
                                   ))}
                                 </div>
@@ -1459,6 +1680,7 @@ interface TabItemProps {
   getDomain: (url: string) => string;
   onToggle: (url: string) => void;
   onEmbed: () => void;
+  onOpenTab: (url: string) => void;
 }
 
 const TabItem: React.FC<TabItemProps> = ({
@@ -1471,6 +1693,7 @@ const TabItem: React.FC<TabItemProps> = ({
   getDomain,
   onToggle,
   onEmbed,
+  onOpenTab,
 }) => {
   const handleClick = () => {
     if (isIndexed) {
@@ -1552,6 +1775,27 @@ const TabItem: React.FC<TabItemProps> = ({
         </div>
       </div>
       
+      {/* Open tab button - switches to this tab */}
+      {!tab.isCurrentTab && (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => { e.stopPropagation(); onOpenTab(tab.url); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onOpenTab(tab.url); } }}
+          title="Switch to this tab"
+          className={cn(
+            'flex-shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 transition-all cursor-pointer',
+            isLight 
+              ? 'text-gray-400 hover:text-blue-600' 
+              : 'text-gray-500 hover:text-blue-400',
+          )}
+        >
+          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+        </span>
+      )}
+
       {/* Embed button for unindexed tabs */}
       {!isIndexed && !isEmbedding && (
         <span
