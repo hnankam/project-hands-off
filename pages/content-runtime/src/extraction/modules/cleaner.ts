@@ -5,6 +5,9 @@
 import { sanitizeText } from './sanitizer';
 import type { CleaningResult } from './types';
 
+// Content size warning threshold (5MB)
+const LARGE_CONTENT_THRESHOLD = 5 * 1024 * 1024;
+
 export const cleanHtmlForAgent = (html: string): CleaningResult => {
   if (!html || html.length === 0) {
     return {
@@ -143,6 +146,11 @@ export const cleanHtmlForAgent = (html: string): CleaningResult => {
   const cleanedSize = cleanedHtml.length;
   const cleanedSample = cleanedHtml.substring(0, 500);
   const reductionPercentage = ((originalSize - cleanedSize) / originalSize) * 100;
+
+  // Log warning for very large content (will be chunked during embedding)
+  if (cleanedSize > LARGE_CONTENT_THRESHOLD) {
+    console.warn(`[Cleaner] Large content: ${(cleanedSize / 1024 / 1024).toFixed(2)} MB (will be chunked during embedding)`);
+  }
 
   return {
     cleanedHtml,

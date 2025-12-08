@@ -19,15 +19,20 @@ import { buildShadowRootMap } from './modules/shadow-dom';
 import { extractFormFields } from './modules/form-extractor';
 import { extractClickableElements } from './modules/clickable-extractor';
 
-// IIFE wrapper to return result
-const result = (() => {
-  // Cast window to include utils
-  const win = window as WindowWithUtils;
-  
-  /**
-   * Main extraction function
-   */
-  const extractPageContent = () => {
+// Immediate logging to verify script execution
+console.log('[Extraction] Script starting execution...');
+
+// Cast window to include utils
+const win = window as WindowWithUtils;
+
+// Flag to check if script is loaded
+(window as any).__CEB_EXTRACTION_LOADED__ = true;
+console.log('[Extraction] Script flag set, __CEB_EXTRACTION_LOADED__ = true');
+
+/**
+ * Main extraction function
+ */
+const extractPageContent = () => {
     // Build shadow root map once (O(n) where n = total DOM nodes)
     const shadowRootMap = new Map<ShadowRoot, ShadowRootMetadata>();
     buildShadowRootMap(document, shadowRootMap, 0, 'document');
@@ -236,10 +241,69 @@ const result = (() => {
       timestamp: Date.now()
     };
   };
-  
-  // Execute and return the result
-  return extractPageContent();
-})();
 
-// Export for Vite/Rollup to preserve
-export default result;
+// Set up message listener for on-demand extraction
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === 'extractPageContent') {
+    console.log('[Extraction] Received extraction request');
+    try {
+      // First check if we have valid cached content from auto-extraction
+      let content = (window as any).__extractPageContent;
+      
+      // Validate cached content has required fields
+      if (content && content.url && content.allDOMContent) {
+        console.log('[Extraction] Using cached content from auto-extraction');
+      } else {
+        console.log('[Extraction] No valid cached content, extracting now...');
+        content = extractPageContent();
+        if (content) {
+          (window as any).__extractPageContent = content;
+        }
+      }
+      
+      if (!content) {
+        console.error('[Extraction] Failed to extract content');
+        sendResponse({ success: false, error: 'Extraction returned null' });
+        return true;
+      }
+      
+      // DON'T send full content via message (Chrome has ~500KB limit)
+      // Instead, signal that content is ready and let background use executeScript to fetch it
+      console.log('[Extraction] Content ready, signaling to background');
+      sendResponse({ 
+        success: true, 
+        ready: true,
+        url: content.url,
+        title: content.title,
+        // Only send metadata, not the full content
+        contentSize: JSON.stringify(content).length
+      });
+    } catch (error) {
+      console.error('[Extraction] Extraction failed:', error);
+      sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+    return true; // Keep channel open for async response
+  }
+  return false;
+});
+
+// Auto-extract on script load (for backwards compatibility with executeScript approach)
+console.log('[Extraction] Starting auto-extraction...');
+try {
+  const result = extractPageContent();
+  if (result) {
+    (window as any).__extractPageContent = result;
+    console.log('[Extraction] Auto-extraction successful, result stored in window.__extractPageContent');
+  } else {
+    console.error('[Extraction] Auto-extraction returned null/undefined result');
+  }
+} catch (e) {
+  console.error('[Extraction] Auto-extraction failed:', e);
+  // Store error info for debugging
+  (window as any).__extractPageContentError = e instanceof Error ? e.message : String(e);
+}
+
+console.log('[Extraction] Content extraction script loaded, __extractPageContent set:', !!(window as any).__extractPageContent);
+
+// Export for Vite/Rollup - export the extraction function for potential direct use
+export default extractPageContent;

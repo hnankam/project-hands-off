@@ -83,6 +83,10 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
  * @returns Embedding result with full embedding, chunks, and grouped embeddings
  */
 export async function embedPageContent(content: PageContent): Promise<EmbeddingResult> {
+  // Calculate and log incoming content size
+  const contentSize = JSON.stringify(content).length;
+  log('[Embeddings] embedPageContent called with content size:', (contentSize / 1024 / 1024).toFixed(2), 'MB');
+  
   // Debug: Log what we received
   log('[Embeddings] DEBUG - Received content object:');
   log('[Embeddings]   - content.allDOMContent?:', !!content.allDOMContent);
@@ -91,6 +95,9 @@ export async function embedPageContent(content: PageContent): Promise<EmbeddingR
   
   const textContent = content.textContent || JSON.stringify(content);
   const fullHTML = content.allDOMContent?.fullHTML || '';
+  
+  log('[Embeddings]   - textContent length:', (textContent.length / 1024).toFixed(2), 'KB');
+  log('[Embeddings]   - fullHTML length:', (fullHTML.length / 1024).toFixed(2), 'KB');
 
   // OPTIMIZED: Batch all embeddings into ONE request
   const allTextsToEmbed: string[] = [];
@@ -224,9 +231,18 @@ export async function embedPageContent(content: PageContent): Promise<EmbeddingR
     type: typeof allEmbeddings[0]?.[0]
   });
   
+  // For large content, truncate text/html to reduce message size
+  // Embeddings are what matter for search - full content can be refetched
+  const MAX_CHUNK_TEXT_SIZE = 500; // Reduced from full ~1000 chars
+  const MAX_CHUNK_HTML_SIZE = 1000;
+  
   const chunks = chunkData.map((chunk, i) => ({
-    text: chunk.text,
-    html: chunk.html,
+    text: chunk.text.length > MAX_CHUNK_TEXT_SIZE 
+      ? chunk.text.substring(0, MAX_CHUNK_TEXT_SIZE) + '...' 
+      : chunk.text,
+    html: chunk.html.length > MAX_CHUNK_HTML_SIZE 
+      ? chunk.html.substring(0, MAX_CHUNK_HTML_SIZE) + '<!-- truncated -->' 
+      : chunk.html,
     embedding: allEmbeddings[textIndexMap.find(m => m.type === 'chunk' && m.dataIndex === i)!.index]
   }));
   
@@ -251,11 +267,19 @@ export async function embedPageContent(content: PageContent): Promise<EmbeddingR
     embedding: allEmbeddings[textIndexMap.find(m => m.type === 'clickableGroup' && m.dataIndex === i)!.index]
   }));
 
-  // Debug: Log what we're returning
+  // Debug: Log what we're returning and estimate size
+  const resultSizeEstimate = JSON.stringify({ 
+    fullEmbedding, 
+    chunks,
+    formFieldGroupEmbeddings,
+    clickableElementGroupEmbeddings
+  }).length;
+  
   log('[Embeddings]   Final results:');
   log('[Embeddings]   - chunks:', chunks.length);
   log('[Embeddings]   - formFieldGroupEmbeddings:', formFieldGroupEmbeddings.length, 'groups');
   log('[Embeddings]   - clickableElementGroupEmbeddings:', clickableElementGroupEmbeddings.length, 'groups');
+  log('[Embeddings]   - Estimated result size:', (resultSizeEstimate / 1024 / 1024).toFixed(2), 'MB');
   
   return { 
     fullEmbedding, 

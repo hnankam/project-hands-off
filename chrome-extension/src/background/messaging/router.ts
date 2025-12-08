@@ -117,7 +117,7 @@ export function registerStandardHandlers(handlers: {
   // Embedding handlers
   onInitializeEmbedding: (requestId: string) => void;
   onEmbedPageContent: (content: PageContent, requestId: string) => void;
-  onEmbedPageContentForTab: (tabId: number, requestId: string) => void;
+  onEmbedPageContentForTab: (tabId: number, requestId: string, skipActivation?: boolean) => void;
   onGenerateEmbedding: (text: string, requestId: string) => void;
   onGenerateEmbeddings: (texts: string[], requestId: string) => void;
   
@@ -165,7 +165,7 @@ export function registerStandardHandlers(handlers: {
     const requestId = message.requestId || `embed_tab_${Date.now()}`;
     const tabId = message.tabId || sender.tab?.id;
     if (tabId) {
-      handlers.onEmbedPageContentForTab(tabId, requestId);
+      handlers.onEmbedPageContentForTab(tabId, requestId, message.skipActivation);
     }
     return false;
   });

@@ -1,17 +1,22 @@
 /**
  * PagesSelector Component
  * 
- * Multi-select dropdown for choosing which indexed pages should be included
- * in the agent's context via useCopilotReadable.
+ * Unified multi-select dropdown for:
+ * 1. Selecting indexed pages for agent context (via useCopilotReadable)
+ * 2. Browsing all open browser tabs grouped by window and tab group
+ * 3. Embedding new tabs on-the-fly without leaving the selector
  * 
- * Displays all indexed pages with metadata (title, chunk counts, last indexed time)
- * and allows users to select multiple pages to share with the agent.
+ * Displays indexed pages with metadata and browser tabs with embed capability.
  */
 
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@extension/ui';
 import { embeddingsStorage, debug } from '@extension/shared';
+
+// ============================================================================
+// TYPES
+// ============================================================================
 
 // Simple module-level cache - no complex TTL, just stores last fetched pages
 let cachedPages: IndexedPage[] | null = null;
@@ -27,6 +32,45 @@ interface IndexedPage {
   sessionId?: string;
 }
 
+interface BrowserTab {
+  id: number;
+  url: string;
+  title: string;
+  windowId: number;
+  groupId: number; // -1 if ungrouped
+  discarded: boolean;
+  favIconUrl?: string;
+  isCurrentTab?: boolean;
+}
+
+interface TabGroup {
+  id: number;
+  title: string;
+  color: string;
+  windowId: number;
+}
+
+interface BrowserWindow {
+  id: number;
+  focused: boolean;
+  type: string;
+}
+
+type ViewMode = 'all' | 'indexed' | 'tabs';
+
+// Tab group colors from Chrome API
+const TAB_GROUP_COLORS: Record<string, string> = {
+  grey: '#5f6368',
+  blue: '#1a73e8',
+  red: '#d93025',
+  yellow: '#f9ab00',
+  green: '#1e8e3e',
+  pink: '#d01884',
+  purple: '#a142f4',
+  cyan: '#007b83',
+  orange: '#e8710a',
+};
+
 interface PagesSelectorProps {
   isLight: boolean;
   selectedPageURLs: string[];
@@ -35,6 +79,7 @@ interface PagesSelectorProps {
   onPagesChange: (pageURLs: string[]) => void;
   isLoadingSession?: boolean;
   variant?: 'compact' | 'default'; // compact = input controls, default = selector bar
+  showBrowserTabs?: boolean; // Enable browser tabs integration (default: true)
 }
 
 export const PagesSelector: React.FC<PagesSelectorProps> = ({
@@ -45,11 +90,13 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
   onPagesChange,
   isLoadingSession = false,
   variant = 'default',
+  showBrowserTabs = true,
 }) => {
+  // ============================================================================
+  // STATE - Existing
+  // ============================================================================
   const [isOpen, setIsOpen] = useState(false);
-  // Initialize from cache if available
   const [pages, setPages] = useState<IndexedPage[]>(() => cachedPages || []);
-  // Show loading if no cache exists
   const [loading, setLoading] = useState(() => !cachedPages);
   const [deletingPages, setDeletingPages] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -61,7 +108,34 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
 
-  // Create or get portal container (same pattern as DropdownMenu)
+  // ============================================================================
+  // STATE - Browser Tabs Integration
+  // ============================================================================
+  const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([]);
+  const [tabGroups, setTabGroups] = useState<TabGroup[]>([]);
+  const [windows, setWindows] = useState<BrowserWindow[]>([]);
+  const [loadingTabs, setLoadingTabs] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('all');
+  const [expandedWindows, setExpandedWindows] = useState<Set<number>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+  
+  // Embedding state
+  const [embeddingTabs, setEmbeddingTabs] = useState<Set<number>>(new Set());
+  const [embeddingProgress, setEmbeddingProgress] = useState<{ current: number; total: number } | null>(null);
+  const [embeddingErrors, setEmbeddingErrors] = useState<Map<number, string>>(new Map());
+  const embeddingAbortRef = useRef<AbortController | null>(null);
+  
+  // Track newly embedded URLs for immediate UI feedback (before pages refresh)
+  const [newlyEmbeddedURLs, setNewlyEmbeddedURLs] = useState<Set<string>>(new Set());
+  
+
+  // Protected URL patterns that can't be embedded
+  const PROTECTED_PATTERNS = ['chrome://', 'chrome-extension://', 'devtools://', 'about:', 'edge://', 'brave://'];
+
+  // ============================================================================
+  // PORTAL SETUP
+  // ============================================================================
+  
   useEffect(() => {
     let container = document.getElementById('pages-selector-portal');
     if (!container) {
@@ -79,7 +153,10 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     setPortalContainer(container);
   }, []);
 
-  // Check if text is truncated
+  // ============================================================================
+  // TEXT TRUNCATION CHECK
+  // ============================================================================
+  
   useEffect(() => {
     const checkTruncation = () => {
       if (textRef.current) {
@@ -90,7 +167,6 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
 
     checkTruncation();
     
-    // Re-check on resize
     const resizeObserver = new ResizeObserver(checkTruncation);
     if (textRef.current) {
       resizeObserver.observe(textRef.current);
@@ -99,7 +175,10 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     return () => resizeObserver.disconnect();
   }, [selectedPageURLs, pages]);
 
-  // Simple fetch function - called on mount and when dropdown opens
+  // ============================================================================
+  // DATA FETCHING - Indexed Pages
+  // ============================================================================
+  
   const fetchPages = useCallback(async () => {
     try {
       const result = await embeddingsStorage.getAllIndexedPages({
@@ -107,40 +186,149 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
         includeEmpty: false,
       });
       
-      // Always update cache and state
       cachedPages = result;
       lastFetchedCount = result.length;
       setPages(result);
+      // Clear newly embedded URLs since they're now in the pages list
+      setNewlyEmbeddedURLs(new Set());
       debug.log(`[PagesSelector] Fetched ${result.length} indexed pages`);
     } catch (error) {
       debug.error('[PagesSelector] Failed to load indexed pages:', error);
-      // Don't clear pages on error - keep showing cached data
     } finally {
         setLoading(false);
     }
   }, []);
 
-  // Fetch on mount - always fetch, don't skip
+  // ============================================================================
+  // DATA FETCHING - Browser Tabs
+  // ============================================================================
+  
+  const fetchBrowserTabs = useCallback(async () => {
+    if (!showBrowserTabs) return;
+    
+    setLoadingTabs(true);
+    try {
+      // Get current tab ID for marking
+      let currentTabId: number | null = null;
+      try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        currentTabId = activeTab?.id ?? null;
+      } catch (e) {
+        debug.warn('[PagesSelector] Could not get current tab:', e);
+      }
+
+      // Get all windows
+      const allWindows = await chrome.windows.getAll();
+      setWindows(allWindows.map(w => ({
+        id: w.id!,
+        focused: w.focused ?? false,
+        type: w.type ?? 'normal',
+      })));
+      
+      // Auto-expand focused window
+      const focusedWindow = allWindows.find(w => w.focused);
+      if (focusedWindow?.id) {
+        setExpandedWindows(prev => new Set(prev).add(focusedWindow.id!));
+      }
+
+      // Get all tabs
+      const allTabs = await chrome.tabs.query({});
+      
+      // Filter out protected URLs
+      const accessibleTabs = allTabs.filter(tab => 
+        tab.url && !PROTECTED_PATTERNS.some(p => tab.url!.startsWith(p))
+      );
+      
+      // IMPORTANT: Fetch tab groups BEFORE setting browserTabs
+      // This prevents timing issues where organizedTabs runs with empty tabGroups
+      let fetchedGroups: TabGroup[] = [];
+      
+      if (chrome.tabGroups) {
+        try {
+          const allGroups = await chrome.tabGroups.query({});
+          
+          if (allGroups.length > 0) {
+            fetchedGroups = allGroups.map(g => ({
+              id: g.id,
+              title: g.title || '',
+              color: g.color,
+              windowId: g.windowId,
+            }));
+          }
+        } catch (e) {
+          debug.warn('[PagesSelector] Tab groups API error:', e);
+        }
+      }
+      
+      // Set tab groups FIRST, then browser tabs
+      // This ensures groups are available when tabs trigger organizedTabs memo
+      setTabGroups(fetchedGroups);
+      // Tab groups are collapsed by default - don't auto-expand
+      
+      // Now set browser tabs - organizedTabs will have access to groups
+      // Check multiple indicators for discarded/suspended tabs:
+      // 1. tab.discarded - explicitly discarded by Chrome
+      // 2. tab.status === 'unloaded' - content not loaded
+      // 3. !tab.active && tab never loaded content (no status 'complete')
+      const mappedTabs = accessibleTabs.map(tab => {
+        // A tab is considered "discarded" if:
+        // - Chrome's discarded property is true, OR
+        // - The tab status is 'unloaded' (memory saver feature), OR
+        // - The tab is not active and status is not 'complete' or 'loading'
+        const isDiscarded = tab.discarded === true || 
+                           tab.status === 'unloaded' ||
+                           (!tab.active && tab.status !== 'complete' && tab.status !== 'loading');
+        
+        return {
+          id: tab.id!,
+          url: tab.url!,
+          title: tab.title || 'Untitled',
+          windowId: tab.windowId,
+          groupId: tab.groupId ?? -1,
+          discarded: isDiscarded,
+          favIconUrl: tab.favIconUrl,
+          isCurrentTab: tab.id === currentTabId,
+        };
+      });
+      
+      setBrowserTabs(mappedTabs);
+      
+      const discardedCount = mappedTabs.filter(t => t.discarded).length;
+      debug.log(`[PagesSelector] Fetched ${accessibleTabs.length} browser tabs (${discardedCount} discarded)`, 
+        accessibleTabs.slice(0, 3).map(t => ({ id: t.id, status: t.status, discarded: t.discarded, active: t.active })));
+    } catch (error) {
+      debug.error('[PagesSelector] Failed to fetch browser tabs:', error);
+    } finally {
+      setLoadingTabs(false);
+    }
+  }, [showBrowserTabs]);
+
+  // ============================================================================
+  // INITIAL FETCH & REFRESH
+  // ============================================================================
+  
   useEffect(() => {
     fetchPages();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount
+  }, []);
 
-  // Refresh when dropdown opens (background refresh)
   useEffect(() => {
     if (isOpen) {
       fetchPages();
-      // Focus search input when dropdown opens
+      if (showBrowserTabs) {
+        fetchBrowserTabs();
+      }
       setTimeout(() => {
         searchInputRef.current?.focus();
       }, 10);
     } else {
-      // Clear search when dropdown closes
       setSearchQuery('');
     }
-  }, [isOpen, fetchPages]);
+  }, [isOpen, fetchPages, fetchBrowserTabs, showBrowserTabs]);
 
-  // Update dropdown position when opening
+  // ============================================================================
+  // DROPDOWN POSITION
+  // ============================================================================
+  
   useEffect(() => {
     if (isOpen && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
@@ -152,21 +340,22 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     }
   }, [isOpen]);
 
-  // Close dropdown on outside click or Escape
+  // ============================================================================
+  // OUTSIDE CLICK & ESCAPE HANDLING
+  // ============================================================================
+  
   useEffect(() => {
     if (!isOpen) return;
 
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
       
-      // Check if clicking inside dropdown using data attribute (more reliable than refs for portals)
       if (target.closest('[data-pages-selector-dropdown]')) {
-        return; // Don't close - clicking inside dropdown
+        return;
       }
       
-      // Check if clicking on trigger button
       if (target.closest('[data-pages-selector-trigger]')) {
-        return; // Don't close - clicking on trigger (it will toggle)
+        return;
       }
       
       setIsOpen(false);
@@ -178,8 +367,6 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       }
     };
 
-    // Use 'click' instead of 'mousedown' to avoid race conditions
-    // and add delay to ensure dropdown is rendered
     const timeoutId = setTimeout(() => {
       document.addEventListener('click', handleClickOutside, true);
       document.addEventListener('keydown', handleEscape);
@@ -192,54 +379,10 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     };
   }, [isOpen]);
 
-  // Handle page toggle
-  const handleTogglePage = useCallback((pageURL: string) => {
-    const newSelection = selectedPageURLs.includes(pageURL)
-      ? selectedPageURLs.filter(url => url !== pageURL)
-      : [...selectedPageURLs, pageURL];
-    onPagesChange(newSelection);
-  }, [selectedPageURLs, onPagesChange]);
-
-  // Handle page deletion
-  const handleDeletePage = useCallback(async (pageURL: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent toggle
-    
-    // Don't allow deleting current page
-    if (pageURL === currentPageURL) {
-      debug.warn('[PagesSelector] Cannot delete current page');
-      return;
-    }
-    
-    // Mark as deleting
-    setDeletingPages(prev => new Set(prev).add(pageURL));
-    
-    try {
-      debug.log('[PagesSelector] Deleting page embeddings:', pageURL);
-      const result = await embeddingsStorage.deletePageEmbeddings(pageURL);
-      
-      if (result.deleted) {
-        // Remove from pages list
-        setPages(prev => prev.filter(p => p.pageURL !== pageURL));
-        
-        // Remove from selection if selected
-        if (selectedPageURLs.includes(pageURL)) {
-          onPagesChange(selectedPageURLs.filter(url => url !== pageURL));
-        }
-        
-        debug.log('[PagesSelector] Successfully deleted page:', pageURL, result.counts);
-      }
-    } catch (error) {
-      debug.error('[PagesSelector] Failed to delete page:', error);
-    } finally {
-      setDeletingPages(prev => {
-        const next = new Set(prev);
-        next.delete(pageURL);
-        return next;
-      });
-    }
-  }, [currentPageURL, selectedPageURLs, onPagesChange]);
-
-  // Get domain from URL - defined before filteredPages which uses it
+  // ============================================================================
+  // HELPER FUNCTIONS
+  // ============================================================================
+  
   const getDomain = useCallback((url: string): string => {
     try {
       return new URL(url).hostname;
@@ -248,46 +391,8 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     }
   }, []);
 
-  // Filter pages by search query
-  const filteredPages = useMemo(() => {
-    if (!searchQuery.trim()) return pages;
-    const query = searchQuery.toLowerCase().trim();
-    return pages.filter(page => 
-      page.pageTitle.toLowerCase().includes(query) ||
-      page.pageURL.toLowerCase().includes(query) ||
-      getDomain(page.pageURL).toLowerCase().includes(query)
-    );
-  }, [pages, searchQuery, getDomain]);
-
-  // Handle select all (filtered)
-  const handleSelectAll = useCallback(() => {
-    const filteredURLs = filteredPages.map(p => p.pageURL);
-    const allFilteredSelected = filteredURLs.every(url => selectedPageURLs.includes(url));
-    
-    if (allFilteredSelected) {
-      // Deselect all filtered except current page
-      const newSelection = selectedPageURLs.filter(url => !filteredURLs.includes(url));
-      onPagesChange(currentPageURL && !filteredURLs.includes(currentPageURL) ? [...newSelection, currentPageURL] : newSelection);
-    } else {
-      // Select all filtered
-      const newSelection = Array.from(new Set([...selectedPageURLs, ...filteredURLs]));
-      onPagesChange(newSelection);
-    }
-  }, [filteredPages, selectedPageURLs, currentPageURL, onPagesChange]);
-
-  // Display text
-  const displayText = useMemo(() => {
-    if (loading) return 'Loading pages...';
-    if (pages.length === 0) return 'No pages indexed';
-    if (selectedPageURLs.length === 0) return 'No pages selected';
-    if (selectedPageURLs.length === 1) return '1 page selected';
-    return `${selectedPageURLs.length} pages selected`;
-  }, [loading, pages.length, selectedPageURLs.length]);
-
-  // Format relative time - matches session timestamp format
   const formatRelativeTime = (date: Date | string | number): string => {
     try {
-      // Handle string dates that might be in ISO format
       let dateObj: Date;
       if (date instanceof Date) {
         dateObj = date;
@@ -297,7 +402,6 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
         dateObj = new Date(date);
       }
       
-      // Check if date is valid
       if (isNaN(dateObj.getTime())) {
         return 'Recently';
       }
@@ -305,7 +409,6 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       const now = new Date();
       const diff = now.getTime() - dateObj.getTime();
       
-      // Handle future dates
       if (diff < 0) {
         return 'Just now';
       }
@@ -336,9 +439,439 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     }
   };
 
-  const allFilteredSelected = filteredPages.length > 0 && filteredPages.every(p => selectedPageURLs.includes(p.pageURL));
+  // ============================================================================
+  // INDEXED PAGES - Filtering & Selection
+  // ============================================================================
+  
+  const filteredPages = useMemo(() => {
+    if (!searchQuery.trim()) return pages;
+    const query = searchQuery.toLowerCase().trim();
+    return pages.filter(page => 
+      page.pageTitle.toLowerCase().includes(query) ||
+      page.pageURL.toLowerCase().includes(query) ||
+      getDomain(page.pageURL).toLowerCase().includes(query)
+    );
+  }, [pages, searchQuery, getDomain]);
 
+  const handleTogglePage = useCallback((pageURL: string) => {
+    const newSelection = selectedPageURLs.includes(pageURL)
+      ? selectedPageURLs.filter(url => url !== pageURL)
+      : [...selectedPageURLs, pageURL];
+    onPagesChange(newSelection);
+  }, [selectedPageURLs, onPagesChange]);
+
+  const handleDeletePage = useCallback(async (pageURL: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (pageURL === currentPageURL) {
+      debug.warn('[PagesSelector] Cannot delete current page');
+      return;
+    }
+    
+    setDeletingPages(prev => new Set(prev).add(pageURL));
+    
+    try {
+      debug.log('[PagesSelector] Deleting page embeddings:', pageURL);
+      const result = await embeddingsStorage.deletePageEmbeddings(pageURL);
+      
+      if (result.deleted) {
+        setPages(prev => prev.filter(p => p.pageURL !== pageURL));
+        
+        if (selectedPageURLs.includes(pageURL)) {
+          onPagesChange(selectedPageURLs.filter(url => url !== pageURL));
+        }
+        
+        debug.log('[PagesSelector] Successfully deleted page:', pageURL, result.counts);
+      }
+    } catch (error) {
+      debug.error('[PagesSelector] Failed to delete page:', error);
+    } finally {
+      setDeletingPages(prev => {
+        const next = new Set(prev);
+        next.delete(pageURL);
+        return next;
+      });
+    }
+  }, [currentPageURL, selectedPageURLs, onPagesChange]);
+
+  const handleSelectAllIndexed = useCallback(() => {
+    const filteredURLs = filteredPages.map(p => p.pageURL);
+    const allFilteredSelected = filteredURLs.every(url => selectedPageURLs.includes(url));
+    
+    if (allFilteredSelected) {
+      const newSelection = selectedPageURLs.filter(url => !filteredURLs.includes(url));
+      onPagesChange(currentPageURL && !filteredURLs.includes(currentPageURL) ? [...newSelection, currentPageURL] : newSelection);
+    } else {
+      const newSelection = Array.from(new Set([...selectedPageURLs, ...filteredURLs]));
+      onPagesChange(newSelection);
+    }
+  }, [filteredPages, selectedPageURLs, currentPageURL, onPagesChange]);
+
+  // ============================================================================
+  // BROWSER TABS - Filtering & Organization
+  // ============================================================================
+  
+  // Combine pages with newly embedded URLs for immediate UI feedback
+  const indexedURLs = useMemo(() => {
+    const urls = new Set(pages.map(p => p.pageURL));
+    newlyEmbeddedURLs.forEach(url => urls.add(url));
+    return urls;
+  }, [pages, newlyEmbeddedURLs]);
+
+  const filteredBrowserTabs = useMemo(() => {
+    if (!searchQuery.trim()) return browserTabs;
+    const query = searchQuery.toLowerCase().trim();
+    return browserTabs.filter(tab => 
+      tab.title.toLowerCase().includes(query) ||
+      tab.url.toLowerCase().includes(query) ||
+      getDomain(tab.url).toLowerCase().includes(query)
+    );
+  }, [browserTabs, searchQuery, getDomain]);
+
+  // Organize tabs by window and group
+  const organizedTabs = useMemo(() => {
+    const result: Map<number, {
+      window: BrowserWindow;
+      groups: Map<number, { group: TabGroup | null; tabs: BrowserTab[] }>;
+      ungroupedTabs: BrowserTab[];
+    }> = new Map();
+
+    // Initialize windows
+    for (const window of windows) {
+      result.set(window.id, {
+        window,
+        groups: new Map(),
+        ungroupedTabs: [],
+      });
+    }
+
+    // Organize tabs
+    for (const tab of filteredBrowserTabs) {
+      const windowData = result.get(tab.windowId);
+      if (!windowData) continue;
+
+      if (tab.groupId === -1) {
+        windowData.ungroupedTabs.push(tab);
+      } else {
+        if (!windowData.groups.has(tab.groupId)) {
+          const group = tabGroups.find(g => g.id === tab.groupId) || null;
+          windowData.groups.set(tab.groupId, { group, tabs: [] });
+        }
+        windowData.groups.get(tab.groupId)!.tabs.push(tab);
+      }
+    }
+
+    return result;
+  }, [filteredBrowserTabs, windows, tabGroups]);
+
+  // Count unindexed tabs
+  const unindexedTabCount = useMemo(() => {
+    return browserTabs.filter(tab => !indexedURLs.has(tab.url)).length;
+  }, [browserTabs, indexedURLs]);
+
+  // ============================================================================
+  // EMBEDDING FUNCTIONS
+  // ============================================================================
+  
+  /**
+   * Store embedding results to IndexedDB
+   */
+  const storeEmbeddings = useCallback(async (
+    result: any,
+    pageURL: string,
+    pageTitle: string
+  ): Promise<void> => {
+    try {
+      debug.log('[PagesSelector] Storing embeddings in IndexedDB...');
+      
+      // Store HTML chunks
+      if (result.chunks && result.chunks.length > 0) {
+        await embeddingsStorage.storeHTMLChunks({
+          pageURL,
+          pageTitle,
+          chunks: result.chunks.map((chunk: any, index: number) => ({
+            text: chunk.text,
+            html: chunk.html || '',
+            embedding: chunk.embedding,
+            index,
+          })),
+          sessionId: sessionId || 'default',
+        });
+        debug.log('[PagesSelector] HTML chunks stored:', result.chunks.length);
+      }
+      
+      // Store form field groups
+      if (result.formFieldGroupEmbeddings && result.formFieldGroupEmbeddings.length > 0) {
+        await embeddingsStorage.storeFormFields({
+          pageURL,
+          groups: result.formFieldGroupEmbeddings,
+          sessionId: sessionId || 'default',
+        });
+        debug.log('[PagesSelector] Form field groups stored:', result.formFieldGroupEmbeddings.length);
+      }
+
+      // Store clickable element groups
+      if (result.clickableElementGroupEmbeddings && result.clickableElementGroupEmbeddings.length > 0) {
+        await embeddingsStorage.storeClickableElements({
+          pageURL,
+          groups: result.clickableElementGroupEmbeddings,
+          sessionId: sessionId || 'default',
+        });
+        debug.log('[PagesSelector] Clickable element groups stored:', result.clickableElementGroupEmbeddings.length);
+      }
+
+      debug.log('[PagesSelector] All embeddings stored successfully for:', pageURL);
+    } catch (error) {
+      debug.error('[PagesSelector] Failed to store embeddings:', error);
+      throw error;
+    }
+  }, [sessionId]);
+  
+  const embedTab = useCallback(async (tabId: number, url: string, title: string, skipActivation?: boolean): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const requestId = `embed_tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      const timeout = setTimeout(() => {
+        chrome.runtime.onMessage.removeListener(listener);
+        debug.error('[PagesSelector] Embed timeout for tab:', tabId);
+        setEmbeddingErrors(prev => new Map(prev).set(tabId, 'Timeout'));
+        resolve(false);
+      }, 60000);
+
+      const listener = async (message: any) => {
+        if (message.type === 'embeddingComplete' && message.requestId === requestId) {
+          clearTimeout(timeout);
+          chrome.runtime.onMessage.removeListener(listener);
+          
+          if (message.error) {
+            debug.error('[PagesSelector] Embed failed:', message.error);
+            setEmbeddingErrors(prev => new Map(prev).set(tabId, message.error));
+            resolve(false);
+      } else {
+            debug.log('[PagesSelector] Tab embedded, now storing...', tabId);
+            
+            try {
+              // Store the embeddings to IndexedDB
+              await storeEmbeddings(message.result, url, title);
+              debug.log('[PagesSelector] Tab embedded and stored successfully:', tabId);
+              resolve(true);
+            } catch (storeError) {
+              debug.error('[PagesSelector] Failed to store embeddings:', storeError);
+              setEmbeddingErrors(prev => new Map(prev).set(tabId, 'Failed to save embeddings'));
+              resolve(false);
+            }
+          }
+        }
+      };
+
+      chrome.runtime.onMessage.addListener(listener);
+      
+      chrome.runtime.sendMessage({
+        type: 'embedPageContentForTab',
+        tabId,
+        requestId,
+        skipActivation,
+      }).catch(err => {
+        clearTimeout(timeout);
+        chrome.runtime.onMessage.removeListener(listener);
+        debug.error('[PagesSelector] Failed to send embed request:', err);
+        setEmbeddingErrors(prev => new Map(prev).set(tabId, err.message));
+        resolve(false);
+      });
+    });
+  }, [storeEmbeddings]);
+
+  const handleEmbedAndSelect = useCallback(async (tab: BrowserTab) => {
+    if (embeddingTabs.has(tab.id)) return;
+    
+    setEmbeddingTabs(prev => new Set(prev).add(tab.id));
+    setEmbeddingErrors(prev => {
+      const next = new Map(prev);
+      next.delete(tab.id);
+      return next;
+    });
+    
+    // For discarded tabs, the background script will handle activation and loading
+    // We don't need to pre-activate here - just let embedTab handle it
+    // This avoids duplicate activation and simplifies the flow
+    
+    try {
+      const success = await embedTab(tab.id, tab.url, tab.title);
+      
+      if (success) {
+        // Refresh indexed pages
+        await fetchPages();
+        
+        // Auto-select the newly embedded page
+        if (!selectedPageURLs.includes(tab.url)) {
+          onPagesChange([...selectedPageURLs, tab.url]);
+        }
+      }
+    } finally {
+      setEmbeddingTabs(prev => {
+        const next = new Set(prev);
+        next.delete(tab.id);
+        return next;
+      });
+    }
+  }, [embeddingTabs, embedTab, fetchPages, selectedPageURLs, onPagesChange]);
+
+  // Initiate bulk embed - processes tabs in parallel with real-time updates
+  // Background script handles discarded tab activation/reload automatically
+  const handleBulkEmbed = useCallback(async (tabs: BrowserTab[]) => {
+    // Helper to check if URL is protected/uembeddable
+    const isProtectedUrl = (url: string) => {
+      // Skip protected browser pages
+      if (PROTECTED_PATTERNS.some(pattern => url.startsWith(pattern))) return true;
+      // Skip PDF files
+      if (url.endsWith('.pdf') || url.includes('/pdf/viewer')) return true;
+      // Skip empty URLs
+      if (!url || url === 'about:blank') return true;
+      return false;
+    };
+    
+    // Filter to only embeddable, unindexed tabs that aren't already being embedded
+    const tabsToEmbed = tabs.filter(tab => 
+      !indexedURLs.has(tab.url) && 
+      !embeddingTabs.has(tab.id) &&
+      !isProtectedUrl(tab.url)
+    );
+      
+    const skippedCount = tabs.length - tabsToEmbed.length - tabs.filter(t => indexedURLs.has(t.url) || embeddingTabs.has(t.id)).length;
+    if (skippedCount > 0) {
+      debug.log('[PagesSelector] Skipped', skippedCount, 'protected/PDF pages');
+    }
+    
+    if (tabsToEmbed.length === 0) return;
+    
+    const discardedCount = tabsToEmbed.filter(tab => tab.discarded).length;
+    debug.log('[PagesSelector] Bulk embed starting (parallel):', {
+      total: tabsToEmbed.length,
+      discarded: discardedCount,
+      regular: tabsToEmbed.length - discardedCount,
+    });
+    
+    embeddingAbortRef.current = new AbortController();
+    setEmbeddingProgress({ current: 0, total: tabsToEmbed.length });
+    
+    // Add all tabs to embedding set
+    const newEmbeddingSet = new Set(embeddingTabs);
+    tabsToEmbed.forEach(tab => newEmbeddingSet.add(tab.id));
+    setEmbeddingTabs(newEmbeddingSet);
+    
+    let completedCount = 0;
+    const successfulUrls: string[] = [];
+    
+    // Process each tab and update UI immediately when complete
+    const embedSingleTab = async (tab: BrowserTab) => {
+      if (embeddingAbortRef.current?.signal.aborted) return;
+      
+      try {
+        const success = await embedTab(tab.id, tab.url, tab.title);
+        
+        if (success) {
+          successfulUrls.push(tab.url);
+          debug.log('[PagesSelector] Bulk: Tab embedded successfully:', tab.title);
+          
+          // Immediately update newlyEmbeddedURLs so UI reflects completion
+          setNewlyEmbeddedURLs(prev => new Set(prev).add(tab.url));
+          
+          // Auto-select the newly embedded page
+          if (!selectedPageURLs.includes(tab.url)) {
+            onPagesChange([...selectedPageURLs, tab.url]);
+          }
+        } else {
+          debug.warn('[PagesSelector] Bulk: Failed to embed tab:', tab.title);
+        }
+      } catch (embedError) {
+        debug.error('[PagesSelector] Bulk embed error for tab:', tab.id, embedError);
+        setEmbeddingErrors(prev => new Map(prev).set(tab.id, 'Failed to embed'));
+      } finally {
+        // Remove from embedding set immediately
+        setEmbeddingTabs(prev => {
+          const next = new Set(prev);
+          next.delete(tab.id);
+          return next;
+        });
+        
+        // Update progress
+        completedCount++;
+        setEmbeddingProgress(prev => prev ? { current: completedCount, total: prev.total } : null);
+      }
+    };
+    
+    // Run all embeds in parallel with concurrency limit
+    const CONCURRENCY = 5; // Process 5 tabs at a time
+    const chunks: BrowserTab[][] = [];
+    for (let i = 0; i < tabsToEmbed.length; i += CONCURRENCY) {
+      chunks.push(tabsToEmbed.slice(i, i + CONCURRENCY));
+    }
+    
+    for (const chunk of chunks) {
+      if (embeddingAbortRef.current?.signal.aborted) break;
+      await Promise.all(chunk.map(tab => embedSingleTab(tab)));
+    }
+    
+    // Cleanup
+    setEmbeddingProgress(null);
+    embeddingAbortRef.current = null;
+    
+    // Final refresh to ensure everything is in sync
+    await fetchPages();
+    
+    debug.log('[PagesSelector] Bulk embed complete:', successfulUrls.length, 'of', tabsToEmbed.length, 'succeeded');
+  }, [indexedURLs, embeddingTabs, embedTab, fetchPages, selectedPageURLs, onPagesChange]);
+      
+  const handleCancelBulkEmbed = useCallback(() => {
+    embeddingAbortRef.current?.abort();
+  }, []);
+
+  // ============================================================================
+  // TOGGLE HANDLERS
+  // ============================================================================
+  
+  const toggleWindow = useCallback((windowId: number) => {
+    setExpandedWindows(prev => {
+      const next = new Set(prev);
+      if (next.has(windowId)) {
+        next.delete(windowId);
+      } else {
+        next.add(windowId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleGroup = useCallback((groupId: number) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }, []);
+
+  // ============================================================================
+  // DISPLAY TEXT
+  // ============================================================================
+  
+  const displayText = useMemo(() => {
+    if (loading) return 'Loading pages...';
+    if (pages.length === 0 && browserTabs.length === 0) return 'No pages available';
+    if (selectedPageURLs.length === 0) return 'No pages selected';
+    if (selectedPageURLs.length === 1) return '1 page selected';
+    return `${selectedPageURLs.length} pages selected`;
+  }, [loading, pages.length, browserTabs.length, selectedPageURLs.length]);
+
+  const allFilteredSelected = filteredPages.length > 0 && filteredPages.every(p => selectedPageURLs.includes(p.pageURL));
   const isCompact = variant === 'compact';
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
 
   return (
     <div className="relative">
@@ -411,7 +944,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
         </svg>
       </button>
 
-      {/* Dropdown - Rendered via portal with fixed positioning */}
+      {/* Dropdown - Portal */}
       {isOpen && dropdownPosition && portalContainer && createPortal(
           <div
             ref={dropdownRef}
@@ -421,21 +954,22 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
               top: dropdownPosition.top - 8,
               left: dropdownPosition.left,
               transform: 'translateY(-100%)',
-              minWidth: Math.max(dropdownPosition.width, 300),
-              maxWidth: 400,
+            minWidth: Math.max(dropdownPosition.width, 340),
+            maxWidth: 420,
+            minHeight: 300,
               pointerEvents: 'auto',
             }}
             className={cn(
-              'max-h-[400px] rounded-md border shadow-lg flex flex-col',
+            'max-h-[500px] rounded-md border shadow-lg flex flex-col',
               isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
             )}>
-          {/* Header with Search and Select All */}
+          
+          {/* Header with Search */}
         <div
           className={cn(
             'flex items-center gap-2 px-2 py-1.5 border-b rounded-t-md',
             isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
           )}>
-          {/* Search */}
           <div className="relative flex-1">
             <svg
               className={cn(
@@ -456,35 +990,85 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
-              placeholder="Search pages..."
+                placeholder="Search pages & tabs..."
               className={cn(
-                'w-full pl-7 pr-2 py-1 text-xs rounded-md outline-none transition-colors',
+                  'w-full pl-7 pr-2 py-1.5 text-xs rounded-md outline-none transition-colors',
                 isLight
                   ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-50 focus:ring-1 focus:ring-gray-300'
                   : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800 focus:ring-1 focus:ring-gray-600'
               )}
             />
+            </div>
           </div>
 
-          {/* Select All with Checkbox */}
+          {/* View Mode Tabs */}
+          {showBrowserTabs && (
+            <div className={cn(
+              'flex items-center justify-center gap-1 px-2 py-1.5 border-b',
+              isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]'
+            )}>
+              {(['all', 'indexed', 'tabs'] as ViewMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setViewMode(mode)}
+                  className={cn(
+                    'flex-shrink-0 px-3 py-1 text-xs font-medium rounded transition-colors',
+                    viewMode === mode
+                      ? isLight
+                        ? 'bg-gray-200 text-gray-700'
+                        : 'bg-gray-700 text-[#bcc1c7]'
+                      : isLight
+                        ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
+                        : 'text-gray-400 hover:bg-gray-800 hover:text-[#bcc1c7]'
+                  )}
+                >
+                  {mode === 'all' && 'All'}
+                  {mode === 'indexed' && `Indexed (${pages.length})`}
+                  {mode === 'tabs' && `Tabs (${browserTabs.length})`}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Content */}
+          <div className="overflow-y-auto flex-1 min-h-[200px]">
+            {loading && loadingTabs ? (
+              <div className="flex items-center justify-center py-6">
+                <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                  Loading...
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* INDEXED PAGES SECTION */}
+                {(viewMode === 'all' || viewMode === 'indexed') && (
+                  <>
+                    {/* Section Header */}
+                    <div className={cn(
+                      'flex items-center justify-between px-2.5 py-1.5 sticky top-0 z-10',
+                      isLight ? 'bg-gray-100/95 border-b border-gray-200' : 'bg-gray-800/95 border-b border-gray-700'
+                    )}>
+                      <span className={cn(
+                        'text-[10px] font-semibold uppercase tracking-wider',
+                        isLight ? 'text-gray-500' : 'text-gray-400'
+                      )}>
+                        Indexed Pages ({filteredPages.length})
+                      </span>
           {filteredPages.length > 0 && (
             <button
               type="button"
-              onClick={handleSelectAll}
+                          onClick={handleSelectAllIndexed}
               className={cn(
-                'flex items-center gap-1.5 px-2 py-1 text-xs font-medium transition-colors rounded whitespace-nowrap',
-                isLight
-                  ? 'text-gray-700 hover:bg-gray-200'
-                  : 'text-gray-200 hover:bg-gray-700'
+                            'flex items-center gap-1 text-[10px] font-medium transition-colors',
+                            isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300'
               )}
             >
               <div className={cn(
-                'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0',
+                            'w-3 h-3 rounded border flex items-center justify-center',
                 allFilteredSelected
                   ? 'bg-blue-600 border-blue-600'
-                  : isLight
-                    ? 'border-gray-400'
-                    : 'border-gray-500'
+                              : isLight ? 'border-gray-400' : 'border-gray-500'
               )}>
                 {allFilteredSelected && (
                   <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
@@ -492,43 +1076,15 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                   </svg>
                 )}
               </div>
-              <span>All ({filteredPages.length})</span>
+                          All
             </button>
           )}
         </div>
 
-        {/* Pages List */}
-        <div className="overflow-y-auto flex-1">
-          {loading ? (
-            <div className="flex items-center justify-center py-6">
-              <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                Loading pages...
-              </div>
-            </div>
-          ) : pages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-6 px-4">
-              <svg
-                className={cn('h-8 w-8 mb-2', isLight ? 'text-gray-400' : 'text-gray-600')}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-              <div className={cn('text-xs text-center', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                No pages indexed yet
-              </div>
-              <div className={cn('text-[10px] text-center mt-1', isLight ? 'text-gray-400' : 'text-gray-500')}>
-                Navigate to pages to index them
-              </div>
-            </div>
-          ) : filteredPages.length === 0 ? (
+                    {/* Indexed Pages List */}
+                    {filteredPages.length === 0 ? (
             <div className={cn('px-3 py-4 text-xs text-center', isLight ? 'text-gray-500' : 'text-gray-400')}>
-              No pages match your search
+                        {pages.length === 0 ? 'No pages indexed yet' : 'No indexed pages match your search'}
             </div>
           ) : (
             filteredPages.map(page => {
@@ -555,12 +1111,22 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                       ? 'text-gray-500 hover:bg-gray-100'
                       : 'text-gray-400 hover:bg-gray-700/50',
                   )}>
+                            {/* Status indicator */}
+                            <span className={cn(
+                              'w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0',
+                              isLight ? 'bg-gray-100 text-gray-500' : 'bg-gray-800 text-gray-400'
+                            )}>
+                              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </span>
+                            
                   <div className="flex-1 min-w-0 flex flex-col text-left">
-                    <div className="font-medium truncate leading-tight">
+                              <div className="font-medium truncate leading-tight flex items-center gap-1.5">
                       {isCurrent && (
                         <span
                           className={cn(
-                            'text-[9px] font-semibold px-1 py-0.5 rounded mr-1.5',
+                                      'text-[9px] font-semibold px-1 py-0.5 rounded flex-shrink-0',
                             isLight ? 'bg-green-100 text-green-700' : 'bg-green-900/30 text-green-400',
                           )}>
                           CURRENT
@@ -573,7 +1139,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                     </div>
                   </div>
                   
-                  {/* Delete button - hidden for current page, turns red on hover (color only, no bg) */}
+                            {/* Delete button */}
                   {!isCurrent && (
                     <span
                       role="button"
@@ -600,7 +1166,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                     </span>
                   )}
                   
-                  {/* Checkbox - only show on hover or when selected */}
+                            {/* Checkbox */}
                   <div className={cn(
                     'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
                     isSelected
@@ -619,12 +1185,409 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                 </button>
               );
             })
+                    )}
+                  </>
+                )}
+
+                {/* BROWSER TABS SECTION */}
+                {showBrowserTabs && (viewMode === 'all' || viewMode === 'tabs') && (
+                  <>
+                    {/* Section Header */}
+                    <div className={cn(
+                      'flex items-center justify-between px-2.5 py-1.5 sticky top-0 z-10',
+                      isLight ? 'bg-gray-100/95 border-b border-gray-200' : 'bg-gray-800/95 border-b border-gray-700'
+                    )}>
+                      <span className={cn(
+                        'text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5',
+                        isLight ? 'text-gray-500' : 'text-gray-400'
+                      )}>
+                        Browser Tabs ({filteredBrowserTabs.length})
+                        {unindexedTabCount > 0 && (
+                          <span className={cn(
+                            'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium normal-case',
+                            isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300'
+                          )}>
+                            {unindexedTabCount} not indexed
+                          </span>
+                        )}
+                      </span>
+                      {unindexedTabCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleBulkEmbed(browserTabs.filter(t => !indexedURLs.has(t.url)))}
+                          disabled={embeddingProgress !== null}
+                          className={cn(
+                            'text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors',
+                            embeddingProgress
+                              ? 'opacity-50 cursor-not-allowed'
+                              : isLight
+                                ? 'text-blue-600 hover:bg-blue-50'
+                                : 'text-blue-400 hover:bg-blue-900/30'
+                          )}
+                        >
+                          Embed All
+                        </button>
           )}
         </div>
+
+                    {loadingTabs ? (
+                      <div className={cn('px-3 py-4 text-xs text-center', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                        Loading browser tabs...
+                      </div>
+                    ) : filteredBrowserTabs.length === 0 ? (
+                      <div className={cn('px-3 py-4 text-xs text-center', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                        {browserTabs.length === 0 ? 'No accessible tabs' : 'No tabs match your search'}
+                      </div>
+                    ) : (
+                      /* Render organized tabs by window and group */
+                      Array.from(organizedTabs.entries()).map(([windowId, windowData]) => (
+                        <div key={windowId}>
+                          {/* Window Header */}
+                          <button
+                            type="button"
+                            onClick={() => toggleWindow(windowId)}
+                            className={cn(
+                              'w-full flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-colors',
+                              isLight ? 'bg-gray-50 hover:bg-gray-100 text-gray-700' : 'bg-gray-800/50 hover:bg-gray-800 text-gray-300'
+                            )}
+                          >
+                            <svg
+                              className={cn('w-3 h-3 transition-transform', expandedWindows.has(windowId) && 'rotate-90')}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              strokeWidth={2}
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                            </svg>
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <rect x="3" y="3" width="18" height="18" rx="2" />
+                              <path d="M3 9h18" />
+                            </svg>
+                            <span>
+                              Window {windowData.window.focused ? '(Current)' : ''}
+                            </span>
+                            <span className={cn('ml-auto text-[10px]', isLight ? 'text-gray-400' : 'text-gray-500')}>
+                              {windowData.ungroupedTabs.length + Array.from(windowData.groups.values()).reduce((a, g) => a + g.tabs.length, 0)} tabs
+                            </span>
+                          </button>
+
+                          {expandedWindows.has(windowId) && (
+                            <div className="pl-2">
+                              {/* Tab Groups */}
+                              {Array.from(windowData.groups.entries()).map(([groupId, groupData]) => (
+                                <div key={groupId}>
+                                  {/* Group Header */}
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleGroup(groupId)}
+                                    className={cn(
+                                      'w-full flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium transition-colors',
+                                      isLight ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-gray-800/40 text-gray-400'
+                                    )}
+                                  >
+                                    <svg
+                                      className={cn('w-2.5 h-2.5 transition-transform', expandedGroups.has(groupId) && 'rotate-90')}
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                      strokeWidth={2}
+                                    >
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                    <span
+                                      className="w-2.5 h-2.5 rounded-full"
+                                      style={{ backgroundColor: TAB_GROUP_COLORS[groupData.group?.color || 'grey'] }}
+                                    />
+                                    <span>{groupData.group?.title || 'Untitled Group'}</span>
+                                    <span className={cn('ml-auto', isLight ? 'text-gray-400' : 'text-gray-500')}>
+                                      {groupData.tabs.length}
+                                    </span>
+                                    {/* Group embed button */}
+                                    {groupData.tabs.some(t => !indexedURLs.has(t.url)) && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleBulkEmbed(groupData.tabs.filter(t => !indexedURLs.has(t.url)));
+                                        }}
+                                        className={cn(
+                                          'px-1 py-0.5 rounded text-[9px]',
+                                          isLight ? 'text-blue-600 hover:bg-blue-50' : 'text-blue-400 hover:bg-blue-900/30'
+                                        )}
+                                      >
+                                        Embed
+                                      </button>
+                                    )}
+                                  </button>
+
+                                  {/* Group Tabs */}
+                                  {expandedGroups.has(groupId) && (
+                                    <div className="pl-4">
+                                      {groupData.tabs.map(tab => (
+                                        <TabItem
+                                          key={tab.id}
+                                          tab={tab}
+                                          isLight={isLight}
+                                          isIndexed={indexedURLs.has(tab.url)}
+                                          isSelected={selectedPageURLs.includes(tab.url)}
+                                          isEmbedding={embeddingTabs.has(tab.id)}
+                                          error={embeddingErrors.get(tab.id)}
+                                          getDomain={getDomain}
+                                          onToggle={handleTogglePage}
+                                          onEmbed={() => handleEmbedAndSelect(tab)}
+                                        />
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+
+                              {/* Ungrouped Tabs */}
+                              {windowData.ungroupedTabs.length > 0 && (
+                                <div className={cn(
+                                  'pl-2',
+                                  windowData.groups.size > 0 && 'border-t',
+                                  isLight ? 'border-gray-100' : 'border-gray-700/50'
+                                )}>
+                                  {windowData.groups.size > 0 && (
+                                    <div className={cn(
+                                      'px-2 py-1 text-[9px] font-medium uppercase tracking-wider',
+                                      isLight ? 'text-gray-400' : 'text-gray-500'
+                                    )}>
+                                      Ungrouped
+                                    </div>
+                                  )}
+                                  {windowData.ungroupedTabs.map(tab => (
+                                    <TabItem
+                                      key={tab.id}
+                                      tab={tab}
+                                      isLight={isLight}
+                                      isIndexed={indexedURLs.has(tab.url)}
+                                      isSelected={selectedPageURLs.includes(tab.url)}
+                                      isEmbedding={embeddingTabs.has(tab.id)}
+                                      error={embeddingErrors.get(tab.id)}
+                                      getDomain={getDomain}
+                                      onToggle={handleTogglePage}
+                                      onEmbed={() => handleEmbedAndSelect(tab)}
+                                    />
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Progress Bar - Shows for bulk embedding OR multiple individual embeddings */}
+          {(embeddingProgress || embeddingTabs.size > 1) && (
+            <div className={cn(
+              'px-3 py-2 border-t flex items-center gap-2',
+              isLight ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/50 border-gray-700'
+            )}>
+              <div className="flex-1">
+                {embeddingProgress ? (
+                  <>
+                    <div className={cn(
+                      'h-1.5 rounded-full overflow-hidden',
+                      isLight ? 'bg-gray-200' : 'bg-gray-700'
+                    )}>
+                      <div
+                        className="h-full bg-blue-500 transition-all duration-300"
+                        style={{ width: `${(embeddingProgress.current / embeddingProgress.total) * 100}%` }}
+                      />
+                    </div>
+                    <div className={cn(
+                      'text-[10px] mt-0.5',
+                      isLight ? 'text-gray-600' : 'text-gray-400'
+                    )}>
+                      Embedding {embeddingProgress.current}/{embeddingProgress.total}...
+                    </div>
+                  </>
+                ) : (
+                  <div className={cn(
+                    'text-[10px] flex items-center gap-2',
+                    isLight ? 'text-gray-600' : 'text-gray-400'
+                  )}>
+                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Embedding {embeddingTabs.size} tabs...
+                  </div>
+                )}
+              </div>
+              {embeddingProgress && (
+                <button
+                  type="button"
+                  onClick={handleCancelBulkEmbed}
+                  className={cn(
+                    'text-[10px] px-2 py-1 rounded font-medium',
+                    isLight ? 'text-red-600 hover:bg-red-50' : 'text-red-400 hover:bg-red-900/20'
+                  )}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          )}
       </div>,
       portalContainer
       )}
+
     </div>
   );
 };
 
+// ============================================================================
+// TAB ITEM COMPONENT
+// ============================================================================
+
+interface TabItemProps {
+  tab: BrowserTab;
+  isLight: boolean;
+  isIndexed: boolean;
+  isSelected: boolean;
+  isEmbedding: boolean;
+  error?: string;
+  getDomain: (url: string) => string;
+  onToggle: (url: string) => void;
+  onEmbed: () => void;
+}
+
+const TabItem: React.FC<TabItemProps> = ({
+  tab,
+  isLight,
+  isIndexed,
+  isSelected,
+  isEmbedding,
+  error,
+  getDomain,
+  onToggle,
+  onEmbed,
+}) => {
+  const handleClick = () => {
+    if (isIndexed) {
+      onToggle(tab.url);
+    } else if (!isEmbedding) {
+      onEmbed();
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={isEmbedding}
+      className={cn(
+        'flex w-full items-center px-2 py-1.5 text-xs transition-colors border-b gap-2 group text-left',
+        isLight ? 'border-gray-100' : 'border-gray-700/50',
+        isEmbedding && 'opacity-70',
+        isSelected
+          ? isLight
+            ? 'bg-gray-100/80 text-gray-700'
+            : 'bg-gray-700/40 text-gray-200'
+          : isLight
+          ? 'text-gray-500 hover:bg-gray-100'
+          : 'text-gray-400 hover:bg-gray-700/50',
+      )}>
+      {/* Status indicator */}
+      <span className={cn(
+        'w-4 h-4 rounded-full flex items-center justify-center text-[9px] flex-shrink-0',
+        isLight ? 'bg-gray-100 text-gray-500' : 'bg-gray-800 text-gray-400'
+      )}>
+        {isEmbedding ? (
+          <svg className={cn('w-3 h-3 animate-spin', isLight ? 'text-gray-500' : 'text-gray-400')} fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+        ) : isIndexed ? (
+          <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        ) : tab.discarded ? (
+          <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          </svg>
+        ) : (
+          <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <circle cx="12" cy="12" r="8" />
+          </svg>
+        )}
+      </span>
+      
+      {/* Favicon */}
+      {tab.favIconUrl && (
+        <img
+          src={tab.favIconUrl}
+          alt=""
+          className="w-3.5 h-3.5 flex-shrink-0 rounded-sm"
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
+      )}
+      
+      <div className="flex-1 min-w-0 flex flex-col text-left">
+        <div className="font-medium truncate leading-tight flex items-center gap-1.5">
+          {tab.isCurrentTab && (
+            <span
+              className={cn(
+                'text-[9px] font-semibold px-1 py-0.5 rounded flex-shrink-0',
+                isLight ? 'bg-gray-200 text-gray-600' : 'bg-gray-700 text-gray-300',
+              )}>
+              CURRENT
+            </span>
+          )}
+          <span className="truncate">{tab.title}</span>
+        </div>
+        <div className={cn('text-[10px] truncate leading-tight', isLight ? 'text-gray-500' : 'text-gray-500')}>
+          {getDomain(tab.url)}
+          {tab.discarded && ' • Discarded'}
+          {error && <span className="text-red-500"> • {error}</span>}
+        </div>
+      </div>
+      
+      {/* Embed button for unindexed tabs */}
+      {!isIndexed && !isEmbedding && (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => { e.stopPropagation(); onEmbed(); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onEmbed(); } }}
+          className={cn(
+            'flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer',
+            isLight
+              ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+              : 'bg-blue-900/30 text-blue-400 hover:bg-blue-900/50'
+          )}
+        >
+          Embed
+        </span>
+      )}
+      
+      {/* Checkbox for indexed/selected tabs */}
+      {isIndexed && (
+        <div className={cn(
+          'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
+          isSelected
+            ? 'bg-blue-600 border-blue-600 opacity-100'
+            : cn(
+                'opacity-0 group-hover:opacity-100',
+                isLight ? 'border-gray-400' : 'border-gray-500'
+              )
+        )}>
+          {isSelected && (
+            <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+        </div>
+      )}
+    </button>
+  );
+};

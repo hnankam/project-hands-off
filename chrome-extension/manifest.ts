@@ -31,7 +31,7 @@ const manifest = {
   version: packageJson.version,
   description: '__MSG_extensionDescription__',
   host_permissions: ['<all_urls>'],
-  permissions: ['storage', 'unlimitedStorage', 'scripting', 'tabs', 'notifications', 'sidePanel', 'offscreen', 'contextMenus', 'debugger'],
+  permissions: ['storage', 'unlimitedStorage', 'scripting', 'tabs', 'tabGroups', 'notifications', 'sidePanel', 'offscreen', 'contextMenus', 'debugger'],
   options_page: 'options/index.html',
   background: {
     service_worker: 'background.js',
@@ -64,6 +64,11 @@ const manifest = {
     //   matches: ['https://example.com/*'],
     //   js: ['content-ui/example.iife.js'],
     // },
+    {
+      matches: ['http://*/*', 'https://*/*', '<all_urls>'],
+      js: ['utils.js', 'content-runtime/extraction.iife.js'],
+      run_at: 'document_idle',
+    },
     {
       matches: ['http://*/*', 'https://*/*', '<all_urls>'],
       css: ['content.css'],
