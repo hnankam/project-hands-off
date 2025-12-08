@@ -269,10 +269,10 @@ export const ToolMultiSelector: React.FC<ToolMultiSelectorProps> = ({
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search tools..."
                 className={cn(
-                  'w-full pl-7 pr-2 py-1.5 text-xs rounded border outline-none focus:ring-2 focus:ring-blue-500',
+                  'w-full pl-7 pr-2 py-1.5 text-xs rounded-md outline-none transition-colors',
                   isLight
-                    ? 'bg-gray-50 border-gray-300 text-gray-700 placeholder-gray-400'
-                    : 'bg-[#0D1117] border-gray-600 text-[#bcc1c7] placeholder-gray-500'
+                    ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-50 focus:ring-1 focus:ring-gray-300'
+                    : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800 focus:ring-1 focus:ring-gray-600'
                 )}
               />
             </div>

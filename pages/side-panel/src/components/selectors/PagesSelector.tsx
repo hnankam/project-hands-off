@@ -458,10 +458,10 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
               onMouseDown={(e) => e.stopPropagation()}
               placeholder="Search pages..."
               className={cn(
-                'w-full pl-7 pr-2 py-1 text-xs rounded border outline-none focus:ring-2 focus:ring-blue-500',
+                'w-full pl-7 pr-2 py-1 text-xs rounded-md outline-none transition-colors',
                 isLight
-                  ? 'bg-gray-50 border-gray-300 text-gray-700 placeholder-gray-400'
-                  : 'bg-[#0D1117] border-gray-600 text-[#bcc1c7] placeholder-gray-500'
+                  ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-50 focus:ring-1 focus:ring-gray-300'
+                  : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800 focus:ring-1 focus:ring-gray-600'
               )}
             />
           </div>
@@ -549,8 +549,8 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                     isDeleting && 'opacity-50 pointer-events-none',
                     isSelected
                       ? isLight
-                        ? 'bg-blue-50 text-blue-700'
-                        : 'bg-blue-900/30 text-blue-300'
+                        ? 'bg-gray-100/80 text-gray-700'
+                        : 'bg-gray-700/40 text-gray-200'
                       : isLight
                       ? 'text-gray-500 hover:bg-gray-100'
                       : 'text-gray-400 hover:bg-gray-700/50',
