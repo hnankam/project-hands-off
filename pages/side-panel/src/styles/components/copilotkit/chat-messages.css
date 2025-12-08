@@ -155,7 +155,6 @@
   overflow-x: auto !important;
   overflow-y: hidden !important;
   max-width: 100%;
-  scrollbar-width: thin;
 }
 
 /* ==========================================================
@@ -438,40 +437,8 @@ footer div[class*="suggestions"] button {
 }
 
 /* ==========================================================
-   MESSAGE SCROLLBARS
+   MESSAGE SCROLLBARS - Removed for default behavior
    ========================================================== */
-/* Vertical and horizontal scrollbars */
-.copilot-chat-container .overflow-y-auto::-webkit-scrollbar {
-  width: 6px;
-  height: 6px; /* Thin horizontal scrollbar (only shows when needed) */
-}
-
-.copilot-chat-container .overflow-y-auto::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.3);
-  border-radius: 3px;
-}
-
-.copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.5);
-}
-
-/* Dark theme scrollbar */
-.dark .copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: rgba(75, 85, 99, 0.3);
-}
-
-.dark .copilot-chat-container .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: rgba(75, 85, 99, 0.5);
-}
-
-/* Scrollbar corner (where horizontal and vertical meet) */
-.copilot-chat-container .overflow-y-auto::-webkit-scrollbar-corner {
-  background: transparent;
-}
 
 /* Individual message containers - allow horizontal scroll when content overflows */
 .copilot-chat-container .copilotKitToolMessage,
@@ -488,8 +455,6 @@ footer div[class*="suggestions"] button {
   max-height: 150px !important;
   overflow-y: auto !important;
   overflow-x: visible !important;
-  scrollbar-width: thin !important;
-  scrollbar-color: transparent transparent !important;
 }
 
 /* Reduce max height in sticky mode for more compact display */
@@ -508,8 +473,6 @@ footer div[class*="suggestions"] button {
 .copilot-chat-container .copilotKitUserMessage .edit-mode textarea {
   max-height: 150px !important;
   overflow-y: auto !important;
-  scrollbar-width: thin !important;
-  scrollbar-color: transparent transparent !important;
 }
 
 /* Light mode: slightly grey background for edit textarea */
@@ -517,39 +480,4 @@ footer div[class*="suggestions"] button {
   background-color: #f3f4f6 !important; /* bg-gray-100 - subtle grey */
 }
 
-/* Match thin scrollbar styling for message-level horizontal scrollbars */
-.copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar,
-.copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar,
-.copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar,
-.copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar {
-  height: 6px;
-}
-
-.copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb,
-.copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar-thumb,
-.copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb,
-.copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.3);
-  border-radius: 3px;
-}
-
-.copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb:hover,
-.copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar-thumb:hover,
-.copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb:hover,
-.copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.5);
-}
-
-.dark .copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb,
-.dark .copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar-thumb,
-.dark .copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb,
-.dark .copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb {
-  background: rgba(75, 85, 99, 0.3);
-}
-
-.dark .copilot-chat-container .copilotKitAssistantMessage::-webkit-scrollbar-thumb:hover,
-.dark .copilot-chat-container .copilotKitAssistantMessage > *:not(.copilotKitMessageControls)::-webkit-scrollbar-thumb:hover,
-.dark .copilot-chat-container .copilotKitUserMessage::-webkit-scrollbar-thumb:hover,
-.dark .copilot-chat-container .copilotKitToolMessage::-webkit-scrollbar-thumb:hover {
-  background: rgba(75, 85, 99, 0.5);
-}
+/* Message-level horizontal scrollbars - using default behavior */

@@ -301,7 +301,7 @@ const FinalResult: FC<{ result: string; isLight: boolean }> = memo(({ result, is
           return (
             <div 
               key={`final-content-${idx}`}
-              className={`graph-scrollbar max-h-96 overflow-y-auto ${isLight ? 'text-gray-700' : 'text-gray-200'} ${idx > 0 ? 'mt-2' : ''}`}
+              className={`max-h-96 overflow-y-auto ${isLight ? 'text-gray-700' : 'text-gray-200'} ${idx > 0 ? 'mt-2' : ''}`}
             >
               <MarkdownRenderer content={formattedContent} isLight={isLight} />
             </div>

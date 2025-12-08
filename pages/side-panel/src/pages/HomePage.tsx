@@ -656,7 +656,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                     onClick={() => canAccessSessions && onGoToSessions()}
               disabled={!canAccessSessions}
               className={cn(
-                      'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold transition-colors',
+                      'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-3 text-xs font-semibold transition-colors',
                 canAccessSessions
                         ? isLight ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-blue-600 text-white hover:bg-blue-500'
                         : isLight ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-gray-800 text-gray-500 cursor-not-allowed'
@@ -671,7 +671,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                     onClick={handleCreateSession}
                     disabled={creatingSession}
                     className={cn(
-                      'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold transition-colors border',
+                      'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-3 text-xs font-semibold transition-colors border',
                       creatingSession
                         ? isLight ? 'bg-gray-200 text-gray-400 cursor-wait border-gray-300' : 'bg-gray-700 text-gray-400 cursor-wait border-gray-600'
                         : isLight ? 'bg-white text-gray-600 hover:bg-gray-50 border-blue-300' : 'bg-[#151C24] text-gray-300 hover:bg-[#1a2330] border-blue-700'
@@ -692,7 +692,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
               <button
                 onClick={() => onGoAdmin('organizations')}
                 className={cn(
-                          'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold transition-colors border',
+                          'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-3 text-xs font-semibold transition-colors border',
                           isLight ? 'bg-white text-gray-600 hover:bg-gray-50 border-gray-300' : 'bg-[#151C24] text-gray-300 hover:bg-[#1a2330] border-gray-700'
                         )}
                       >

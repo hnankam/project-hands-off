@@ -119,8 +119,8 @@ export const InlineThinkingBlock: FC<InlineThinkingBlockProps> = memo(({
             ref={contentRef}
             className={`mb-4 text-xs opacity-80 ${
               isComplete
-                ? 'graph-scrollbar max-h-40 overflow-y-auto overscroll-contain'
-                : 'graph-scrollbar max-h-[75vh] overflow-y-auto overscroll-contain'
+                ? 'max-h-40 overflow-y-auto overscroll-contain'
+                : 'max-h-[75vh] overflow-y-auto overscroll-contain'
             }`}
           >
             <div className="thinking-block-content">

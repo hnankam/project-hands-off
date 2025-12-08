@@ -282,7 +282,7 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
           {hasPrompt && (
             <div className={`mt-2 p-2.5 rounded-md ${isLight ? 'bg-slate-50' : 'bg-slate-800/50'}`}>
               <p className={`text-xs font-medium mb-1.5 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Prompt</p>
-              <div className={`graph-scrollbar max-h-32 overflow-y-auto text-sm ${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
+              <div className={`max-h-32 overflow-y-auto text-sm ${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
                 <MarkdownRenderer content={step.prompt || ''} isLight={isLight} />
               </div>
             </div>
@@ -387,7 +387,7 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
                             <AutoScrollDiv 
                               content={tc.args}
                               isStreaming={tc.status === 'in_progress'}
-                              className={`mt-2 text-xs graph-scrollbar ${isLight ? 'text-slate-600' : 'text-slate-300'} max-h-48 overflow-y-auto`}
+                              className={`mt-2 text-xs ${isLight ? 'text-slate-600' : 'text-slate-300'} max-h-48 overflow-y-auto`}
                             >
                               <MarkdownRenderer 
                                 content={formatToolArgsAsMarkdown(tc.tool_name, tc.args)} 
@@ -404,7 +404,7 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
                               <AutoScrollDiv 
                                 content={tc.result}
                                 isStreaming={tc.status === 'in_progress'}
-                                className={`text-xs graph-scrollbar ${isLight ? 'text-slate-600' : 'text-slate-300'} max-h-60 overflow-y-auto`}
+                                className={`text-xs ${isLight ? 'text-slate-600' : 'text-slate-300'} max-h-60 overflow-y-auto`}
                               >
                                 <MarkdownRenderer content={formatToolResultAsMarkdown(tc.tool_name, tc.result)} isLight={isLight} />
                               </AutoScrollDiv>
@@ -605,7 +605,7 @@ const ResultContent: FC<{ step: GraphStep; isLight: boolean; hasProcessContent: 
               key={`content-${idx}`}
               content={formattedContent}
               isStreaming={step.status === 'in_progress'}
-              className={`graph-scrollbar max-h-64 overflow-y-auto text-sm ${isLight ? 'text-gray-600' : 'text-gray-300'} ${idx > 0 ? 'mt-2' : ''}`}
+              className={`max-h-64 overflow-y-auto text-sm ${isLight ? 'text-gray-600' : 'text-gray-300'} ${idx > 0 ? 'mt-2' : ''}`}
             >
               <MarkdownRenderer content={formattedContent} isLight={isLight} />
             </AutoScrollDiv>

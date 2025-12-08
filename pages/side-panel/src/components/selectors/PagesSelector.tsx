@@ -1223,8 +1223,8 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                             className={cn(
                               'p-1 rounded transition-colors',
                               isLight 
-                                ? 'text-gray-500 hover:bg-gray-200 hover:text-gray-700' 
-                                : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                                ? 'text-gray-400 hover:bg-gray-200 hover:text-gray-700' 
+                                : 'text-gray-500 hover:bg-gray-700 hover:text-gray-200'
                             )}
                           >
                             {/* Sort icon - up/down arrows */}

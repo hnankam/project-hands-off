@@ -312,8 +312,8 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
             ref={contentRef}
             className={`mb-4 text-xs opacity-80 ${
               isComplete
-                ? 'session-tabs-scroll max-h-40 overflow-y-auto overscroll-contain'
-                : 'session-tabs-scroll max-h-[75vh] overflow-y-auto overscroll-contain'
+                ? 'max-h-40 overflow-y-auto overscroll-contain'
+                : 'max-h-[75vh] overflow-y-auto overscroll-contain'
             }`}>
             <div className="thinking-block-content">{renderedContent}</div>
           </div>

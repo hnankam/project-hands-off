@@ -1,10 +1,10 @@
 /* ==========================================================
    GLOBAL SCROLLBARS
-   Keep subtle and theme-aware
+   Thin scrollbars with transparent tracks
    ========================================================================== */
-/* Scrollbar styles for dark theme */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 3px;
+  height: 3px;
 }
 
 ::-webkit-scrollbar-track {
@@ -13,14 +13,22 @@
 
 ::-webkit-scrollbar-thumb {
   background: rgba(156, 163, 175, 0.3);
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(156, 163, 175, 0.5);
 }
 
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Dark theme scrollbar */
+.dark ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .dark ::-webkit-scrollbar-thumb {
   background: rgba(75, 85, 99, 0.3);
 }
@@ -29,14 +37,17 @@
   background: rgba(75, 85, 99, 0.5);
 }
 
+.dark ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* ==========================================================
    SESSION TABS SCROLLBAR (HORIZONTAL)
    Ultra-minimal; hidden by default, 1px on hover
    ========================================================== */
-/* Session tabs scrollbar - ultra-minimal horizontal scrollbar */
 .session-tabs-scroll {
-  scrollbar-width: none !important; /* Firefox */
-  -ms-overflow-style: none !important; /* IE and Edge */
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 
 .session-tabs-scroll::-webkit-scrollbar,
@@ -45,7 +56,7 @@
 .session-tabs-scroll::-webkit-scrollbar-thumb,
 .session-tabs-scroll::-webkit-scrollbar-button,
 .session-tabs-scroll::-webkit-scrollbar-corner {
-  display: none !important; /* Chrome, Safari, Opera */
+  display: none !important;
   width: 0 !important;
   height: 0 !important;
   background: transparent !important;
@@ -53,10 +64,10 @@
 
 /* ==========================================================
    HOME PAGE SCROLLBAR
-   Thin scrollbar for home page content (2px)
+   Thin scrollbar with transparent track
    ========================================================== */
 .home-page-scroll::-webkit-scrollbar {
-  width: 2px;
+  width: 6px;
 }
 
 .home-page-scroll::-webkit-scrollbar-track {
@@ -65,14 +76,17 @@
 
 .home-page-scroll::-webkit-scrollbar-thumb {
   background: rgba(156, 163, 175, 0.3);
-  border-radius: 1px;
+  border-radius: 2px;
 }
 
 .home-page-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(156, 163, 175, 0.5);
 }
 
-/* Dark theme home page scrollbar */
+.dark .home-page-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .dark .home-page-scroll::-webkit-scrollbar-thumb {
   background: rgba(75, 85, 99, 0.3);
 }
@@ -86,12 +100,12 @@
    Hidden scrollbar (scrolling still works)
    ========================================================== */
 .admin-page-scroll {
-  scrollbar-width: none !important; /* Firefox */
-  -ms-overflow-style: none !important; /* IE and Edge */
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 
 .admin-page-scroll::-webkit-scrollbar {
-  display: none !important; /* Chrome, Safari, Opera */
+  display: none !important;
   width: 0 !important;
   height: 0 !important;
 }
@@ -106,15 +120,15 @@
 
 /* ==========================================================
    RECENT SESSIONS TABLE SCROLLBAR
-   Thin scrollbar for recent sessions table (2px)
+   Thin scrollbar with transparent track
    ========================================================== */
 .recent-sessions-scroll {
   background-color: var(--table-scroll-bg, transparent);
 }
 
 .recent-sessions-scroll::-webkit-scrollbar {
-  width: 2px;
-  height: 2px;
+  width: 3px;
+  height: 3px;
 }
 
 .recent-sessions-scroll::-webkit-scrollbar-track {
@@ -123,7 +137,7 @@
 
 .recent-sessions-scroll::-webkit-scrollbar-thumb {
   background: rgba(156, 163, 175, 0.3);
-  border-radius: 1px;
+  border-radius: 2px;
 }
 
 .recent-sessions-scroll::-webkit-scrollbar-thumb:hover {
@@ -131,7 +145,19 @@
 }
 
 .recent-sessions-scroll::-webkit-scrollbar-corner {
-  background: var(--table-scroll-bg, transparent);
+  background: transparent;
+}
+
+.dark .recent-sessions-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dark .recent-sessions-scroll::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3);
+}
+
+.dark .recent-sessions-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5);
 }
 
 /* ==========================================================
@@ -173,13 +199,3 @@
   background-size: 8px 8px;
   background-position: right 2px bottom 2px;
 }
-
-/* Dark theme recent sessions scrollbar */
-.dark .recent-sessions-scroll::-webkit-scrollbar-thumb {
-  background: rgba(75, 85, 99, 0.3);
-}
-
-.dark .recent-sessions-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(75, 85, 99, 0.5);
-}
-
