@@ -16,8 +16,8 @@ if TYPE_CHECKING:
 
 # ========== Action Types ==========
 
-ActionType = Literal["image_generation", "web_search", "code_execution", "result_aggregator", "end"]
-WorkerResult = Literal["continue", "end", "error"]
+ActionType = Literal["image_generation", "web_search", "code_execution", "result_aggregator", "confirmation", "deferred", "end"]
+WorkerResult = Literal["continue", "end", "error", "deferred"]
 
 
 # ========== Orchestrator Output Types ==========
@@ -107,6 +107,7 @@ class QueryState:
     should_continue: bool = True  # Control flag for orchestrator loop
     next_action: str = ""  # Next action to take
     planned_steps: list[str] = field(default_factory=list)  # Planned execution sequence from orchestrator
+    deferred_tool_requests: Any = None  # DeferredToolRequests when waiting for user interaction
 
 
 # ========== Frontend State Types ==========
@@ -122,7 +123,7 @@ class GraphToolCall(BaseModel):
 class GraphStep(BaseModel):
     """A step in the graph execution - rendered on the frontend."""
     node: str  # Node name (e.g., "WebSearch", "ImageGeneration")
-    status: str  # "pending", "in_progress", "completed", "error", "cancelled"
+    status: str  # "pending", "in_progress", "completed", "error", "cancelled", "waiting"
     result: str = ""  # Result or error message
     prompt: str = ""  # Prompt sent to the sub-agent
     streaming_text: str = ""  # Live streaming text during execution
@@ -139,7 +140,7 @@ class GraphAgentState(BaseModel):
     max_iterations: int = 5
     steps: list[GraphStep] = []  # Execution steps with status
     final_result: str = ""
-    status: str = "pending"  # "pending", "running", "completed", "error"
+    status: str = "pending"  # "pending", "running", "completed", "error", "waiting"
 
 
 # ========== Node Name Mapping ==========
@@ -150,6 +151,7 @@ ACTION_TO_NODE = {
     "image_generation": "ImageGeneration",
     "code_execution": "CodeExecution",
     "result_aggregator": "ResultAggregator",
+    "confirmation": "Confirmation",
 }
 
 # Map history node names back to action types

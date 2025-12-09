@@ -628,6 +628,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       sessionStorageDBWrapper.updateAgentStepState(sessionId, {
         sessionId,
         steps: currentAgentStepState.steps ?? [],
+        graph: currentAgentStepState.graph,
+        graphSteps: currentAgentStepState.graphSteps,
       });
     }, [sessionId, currentAgentStepState, isUsageHydrating]);
 

@@ -122,8 +122,135 @@ async def run_multi_agent_graph(
         accept=SSE_CONTENT_TYPE
     )
     
-    # Initialize internal graph state
-    state = QueryState(query=query, max_iterations=max_iterations)
+    # Check if we're resuming from a waiting state
+    is_resuming = (
+        shared_state and 
+        hasattr(shared_state, 'graph') and 
+        hasattr(shared_state.graph, 'status') and
+        shared_state.graph.status == 'running' and  # Changed from waiting to running by backend_tools
+        shared_state.graph.execution_history and
+        len(shared_state.graph.execution_history) > 0
+    )
+    
+    if is_resuming:
+        logger.info(f"🔄 RESUMING graph from previous state")
+        logger.info(f"   Execution history: {shared_state.graph.execution_history}")
+        logger.info(f"   Planned steps: {getattr(shared_state.graph, 'planned_steps', [])}")
+        
+        # Check if user confirmed or cancelled by looking at tool result in messages
+        user_confirmed = True  # Default to confirmed
+        for msg in run_input.messages:
+            # Check for tool result message
+            if hasattr(msg, 'role') and msg.role == 'tool':
+                # Tool result message
+                result_content = getattr(msg, 'content', '')
+                if isinstance(result_content, str) and 'confirmed' in result_content.lower():
+                    try:
+                        import json
+                        result_data = json.loads(result_content)
+                        if isinstance(result_data, dict) and 'confirmed' in result_data:
+                            user_confirmed = result_data['confirmed']
+                            logger.info(f"   Found confirmAction result: confirmed={user_confirmed}")
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            # Also check for ToolResultMessage type
+            elif hasattr(msg, 'result'):
+                result_content = msg.result
+                if isinstance(result_content, str) and 'confirmed' in result_content.lower():
+                    try:
+                        import json
+                        result_data = json.loads(result_content)
+                        if isinstance(result_data, dict) and 'confirmed' in result_data:
+                            user_confirmed = result_data['confirmed']
+                            logger.info(f"   Found confirmAction result: confirmed={user_confirmed}")
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                elif isinstance(result_content, dict) and 'confirmed' in result_content:
+                    user_confirmed = result_content['confirmed']
+                    logger.info(f"   Found confirmAction result: confirmed={user_confirmed}")
+        
+        # Create QueryState from existing shared_state
+        state = QueryState(
+            query=shared_state.graph.query or query,
+            original_query=shared_state.graph.original_query or query,
+            max_iterations=shared_state.graph.max_iterations or max_iterations,
+            iteration_count=shared_state.graph.iteration_count or 0,
+            execution_history=list(shared_state.graph.execution_history or []),
+            intermediate_results=dict(shared_state.graph.intermediate_results or {}),
+            streaming_text=dict(shared_state.graph.streaming_text or {}),
+            prompts=dict(shared_state.graph.prompts or {}),
+            tool_calls=dict(shared_state.graph.tool_calls or {}),
+            errors=list(shared_state.graph.errors or []),
+            result=shared_state.graph.result or "",
+            should_continue=user_confirmed,  # Only continue if user confirmed
+            planned_steps=list(getattr(shared_state.graph, 'planned_steps', []) or []),
+        )
+        
+        # Set result based on user's choice
+        confirmation_result = '{"confirmed": true}' if user_confirmed else '{"confirmed": false}'
+        confirmation_text = "User confirmed the action" if user_confirmed else "User cancelled the action"
+        
+        # Mark Confirmation step as completed with user's choice
+        # Find any Confirmation steps in history and update their tool calls
+        for entry in state.execution_history:
+            if entry.startswith("Confirmation:") or entry == "Confirmation":
+                confirmation_key = entry
+                # Update the indexed key
+                if confirmation_key in state.tool_calls:
+                    for tc in state.tool_calls[confirmation_key]:
+                        if isinstance(tc, dict):
+                            tc["status"] = "completed"
+                            tc["result"] = confirmation_result
+                        elif hasattr(tc, 'status'):
+                            tc.status = "completed"
+                            tc.result = confirmation_result
+                    logger.info(f"   Updated {confirmation_key} tool calls to completed (confirmed={user_confirmed})")
+                # Also update the base "Confirmation" key
+                if "Confirmation" in state.tool_calls:
+                    for tc in state.tool_calls["Confirmation"]:
+                        if isinstance(tc, dict):
+                            tc["status"] = "completed"
+                            tc["result"] = confirmation_result
+                        elif hasattr(tc, 'status'):
+                            tc.status = "completed"
+                            tc.result = confirmation_result
+                # Update streaming text
+                if confirmation_key in state.streaming_text:
+                    state.streaming_text[confirmation_key] = confirmation_text
+                if "Confirmation" in state.streaming_text:
+                    state.streaming_text["Confirmation"] = confirmation_text
+        
+        # Clear the result from waiting state since we're continuing
+        if state.result and "Waiting for user interaction" in state.result:
+            state.result = ""
+        
+        # If user cancelled, set appropriate result and stop
+        if not user_confirmed:
+            state.result = "User cancelled the action"
+            state.should_continue = False
+            logger.info(f"   User cancelled - graph will end")
+        
+        # Sync updated state to shared_state and send snapshot to show Confirmation completed
+        if shared_state:
+            sync_to_shared_state(state, shared_state, "")
+            if send_stream and encoder:
+                from .state import build_graph_agent_state
+                graph_state = build_graph_agent_state(state, "", "completed")
+                if hasattr(shared_state.graph, 'mermaid_diagram'):
+                    graph_state["mermaid_diagram"] = shared_state.graph.mermaid_diagram
+                await send_stream.send(
+                    encoder.encode(
+                        StateSnapshotEvent(
+                            type=EventType.STATE_SNAPSHOT,
+                            snapshot={"steps": graph_state.get("steps", []), "graph": shared_state.graph.__dict__ if hasattr(shared_state.graph, '__dict__') else {}, **graph_state},
+                        )
+                    )
+                )
+                logger.info(f"   Sent snapshot with updated Confirmation step")
+    else:
+        logger.info(f"🆕 Starting NEW graph execution")
+        # Initialize internal graph state (only for NEW executions)
+        state = QueryState(query=query, max_iterations=max_iterations)
     
     # Create GraphDeps with all required context
     deps = GraphDeps(

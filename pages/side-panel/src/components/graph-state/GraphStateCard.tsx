@@ -18,7 +18,8 @@ import {
   SpinningLoader, 
   CheckIcon, 
   ErrorIcon, 
-  GraphIcon 
+  GraphIcon,
+  WaitingIcon 
 } from './icons';
 import { GraphDiagram } from './GraphDiagram';
 import { GraphStepItem } from './GraphStepItem';
@@ -54,7 +55,8 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
   
   // Keep newly created cards open unless user manually closes them
   useEffect(() => {
-    const isRunning = state.status === 'running' || state.steps.some(s => s.status === 'in_progress');
+    const isRunning = state.status === 'running' || state.status === 'waiting' || 
+      state.steps.some(s => s.status === 'in_progress' || s.status === 'waiting');
     if (isRunning && !userClosedRef.current) {
       setIsExpanded(true);
     }
@@ -68,8 +70,9 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
   const toggleExpanded = () => {
     const newState = !isExpanded;
     setIsExpanded(newState);
-    // Track if user is closing a running card
-    if (!newState && (state.status === 'running' || state.steps.some(s => s.status === 'in_progress'))) {
+    // Track if user is closing a running or waiting card
+    if (!newState && (state.status === 'running' || state.status === 'waiting' || 
+        state.steps.some(s => s.status === 'in_progress' || s.status === 'waiting'))) {
       userClosedRef.current = true;
       userClosedCache.set(cacheKey, true);
     }
@@ -80,26 +83,35 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
   const errorSteps = state.steps.filter(s => s.status === 'error').length;
   const inProgressSteps = state.steps.filter(s => s.status === 'in_progress').length;
   const pendingSteps = state.steps.filter(s => s.status === 'pending').length;
+  const waitingSteps = state.steps.filter(s => s.status === 'waiting').length;
   const totalSteps = state.steps.length;
   const progressPercent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
-  // Compute actual status from steps
+  // Compute actual status - prefer backend state.status when available
   const computedStatus = useMemo(() => {
-    if (errorSteps > 0) {
+    // Prefer backend-provided status for 'waiting' and 'error' states
+    if (state.status === 'waiting' || waitingSteps > 0) {
+      return 'waiting';
+    }
+    if (state.status === 'error' || errorSteps > 0) {
       return 'error';
     }
     if (inProgressSteps > 0) {
       return 'running';
     }
-    // Graph is done when no steps are pending or in_progress
-    if (pendingSteps === 0 && totalSteps > 0) {
+    // Graph is done when no steps are pending, in_progress, or waiting
+    if (pendingSteps === 0 && waitingSteps === 0 && totalSteps > 0) {
       return 'completed';
     }
     if (completedSteps > 0 || pendingSteps > 0) {
       return 'running';
     }
+    // Fall back to backend status if available
+    if (state.status && state.status !== 'pending') {
+      return state.status;
+    }
     return 'pending';
-  }, [errorSteps, inProgressSteps, completedSteps, pendingSteps, totalSteps]);
+  }, [state.status, errorSteps, inProgressSteps, completedSteps, pendingSteps, waitingSteps, totalSteps]);
 
   // Status badge based on computed status
   const statusBadge = useMemo(() => {
@@ -116,6 +128,13 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400">
             <SpinningLoader size="h-3 w-3" color="currentColor" />
             Running
+          </span>
+        );
+      case 'waiting':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700/30 dark:text-gray-300">
+            <WaitingIcon className="h-3 w-3" />
+            Waiting
           </span>
         );
       case 'error':

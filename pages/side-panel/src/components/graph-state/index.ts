@@ -50,6 +50,7 @@ export {
   ErrorIcon,
   PendingIcon,
   CancelledIcon,
+  WaitingIcon,
   GraphIcon,
   getNodeIcon,
   getFlowNodeIcon,

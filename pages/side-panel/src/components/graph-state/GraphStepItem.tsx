@@ -14,6 +14,7 @@ import {
   ErrorIcon, 
   PendingIcon, 
   CancelledIcon,
+  WaitingIcon,
   getNodeIcon 
 } from './icons';
 import { InlineThinkingBlock } from './InlineThinkingBlock';
@@ -146,6 +147,350 @@ const AutoScrollDiv: FC<AutoScrollDivProps> = memo(({
 
 AutoScrollDiv.displayName = 'AutoScrollDiv';
 
+// ========== Confirmation Card Content ==========
+
+interface ConfirmationStepContentProps {
+  step: GraphStep;
+  isLight: boolean;
+}
+
+/**
+ * Renders the confirmation step content with a ConfirmationCard-like UI
+ * when there's an active confirmAction tool call.
+ */
+const ConfirmationStepContent: FC<ConfirmationStepContentProps> = memo(({ step, isLight }) => {
+  // Find the confirmAction tool call
+  const confirmToolCall = step.tool_calls?.find(tc => tc.tool_name === 'confirmAction');
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  if (!confirmToolCall) {
+    return null;
+  }
+  
+  // Extract action description from args
+  let actionDescription = 'proceed with the action';
+  try {
+    const args = JSON.parse(confirmToolCall.args || '{}');
+    actionDescription = args.actionDescription || actionDescription;
+  } catch {
+    // Use default if parsing fails
+  }
+  
+  // Card styling matching ConfirmationCard.tsx
+  const cardBackground = isLight ? 'rgba(249, 250, 251, 0.5)' : 'rgba(21, 28, 36, 0.4)';
+  const borderColor = isLight ? 'rgba(229, 231, 235, 0.5)' : 'rgba(55, 65, 81, 0.4)';
+  const textColor = isLight ? '#1f2937' : '#f3f4f6';
+  const mutedTextColor = isLight ? '#6b7280' : '#9ca3af';
+  const chevronColor = isLight ? '#6b7280' : '#9ca3af';
+  
+  const isWaiting = confirmToolCall.status === 'in_progress';
+  const isComplete = confirmToolCall.status === 'completed';
+  
+  // If completed, check result - show collapsible card like ConfirmationCard.tsx
+  if (isComplete && confirmToolCall.result) {
+    let confirmed = false;
+    try {
+      const result = JSON.parse(confirmToolCall.result);
+      confirmed = result.confirmed === true;
+    } catch {
+      // Default to not confirmed
+    }
+    
+    return (
+      <div
+        className="rounded-lg border transition-all duration-300 ease-in-out mt-3"
+        style={{
+          backgroundColor: cardBackground,
+          borderColor: borderColor,
+        }}
+      >
+        {/* Header - show result with chevron toggle */}
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 8px',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+        >
+          {/* Chevron toggle */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '16px',
+              height: '16px',
+              flexShrink: 0,
+              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s ease',
+            }}
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={chevronColor}
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </div>
+
+          {/* Result icon */}
+          {confirmed ? (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              style={{ 
+                flexShrink: 0,
+                color: isLight ? '#059669' : '#10b981'
+              }}
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clipRule="evenodd"
+              />
+            </svg>
+          ) : (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              style={{ 
+                flexShrink: 0,
+                color: isLight ? '#dc2626' : '#ef4444'
+              }}
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                clipRule="evenodd"
+              />
+            </svg>
+          )}
+          
+          {/* Result text */}
+          <span
+            style={{
+              fontSize: '12px',
+              fontWeight: 400,
+              color: confirmed 
+                ? (isLight ? '#059669' : '#10b981')
+                : (isLight ? '#dc2626' : '#ef4444'),
+            }}
+          >
+            {confirmed ? 'Action confirmed' : 'Action cancelled'}
+          </span>
+        </button>
+
+        {/* Content - collapsible section with action description */}
+        <div
+          style={{
+            maxHeight: isExpanded ? '1000px' : '0',
+            opacity: isExpanded ? 1 : 0,
+            overflow: 'hidden',
+            transition: 'max-height 0.3s ease-in-out, opacity 0.3s ease-in-out',
+          }}
+        >
+          <div
+            style={{
+              borderTop: `1px solid ${borderColor}`,
+              padding: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+              {/* Question mark icon */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '50%',
+                  backgroundColor: isLight ? '#dbeafe' : 'rgba(37, 99, 235, 0.2)',
+                  flexShrink: 0,
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  style={{ 
+                    color: isLight ? '#2563eb' : '#60a5fa'
+                  }}
+                >
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                </svg>
+              </div>
+
+              <div style={{ flex: 1 }}>
+                {/* Title */}
+                <div
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: 400,
+                    color: textColor,
+                    marginBottom: '4px',
+                  }}
+                >
+                  Confirmation Required
+                </div>
+
+                {/* Description */}
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: mutedTextColor,
+                    lineHeight: '1.5',
+                  }}
+                >
+                  Do you want to {actionDescription}?
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // Waiting state - show confirmation card with buttons (matching ConfirmationCard.tsx exactly)
+  if (isWaiting) {
+    return (
+      <div
+        className="rounded-lg border transition-all duration-300 ease-in-out mt-3"
+        style={{
+          backgroundColor: cardBackground,
+          borderColor: borderColor,
+        }}
+      >
+        {/* Content */}
+        <div style={{ padding: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            {/* Question mark icon */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                backgroundColor: isLight ? '#dbeafe' : 'rgba(37, 99, 235, 0.2)',
+                flexShrink: 0,
+              }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                style={{ 
+                  color: isLight ? '#2563eb' : '#60a5fa'
+                }}
+              >
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+              </svg>
+            </div>
+
+            <div style={{ flex: 1 }}>
+              {/* Title */}
+              <div
+                style={{
+                  fontSize: '14px',
+                  fontWeight: 400,
+                  color: textColor,
+                  marginBottom: '4px',
+                }}
+              >
+                Confirmation Required
+              </div>
+
+              {/* Description - matching ConfirmationCard format */}
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: mutedTextColor,
+                  lineHeight: '1.5',
+                }}
+              >
+                Do you want to {actionDescription}?
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer with action buttons - matching ConfirmationCard.tsx exactly */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: '8px',
+            borderTop: `1px solid ${borderColor}`,
+            padding: '8px 12px',
+          }}
+        >
+          <button
+            className="transition-colors duration-200"
+            style={{
+              padding: '6px 12px',
+              fontSize: '12px',
+              fontWeight: 500,
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'default',
+              opacity: 0.6,
+              backgroundColor: isLight ? '#e5e7eb' : '#374151',
+              color: isLight ? '#374151' : '#bcc1c7',
+            }}
+            disabled
+          >
+            Cancel
+          </button>
+          <button
+            className="transition-colors duration-200"
+            style={{
+              padding: '6px 12px',
+              fontSize: '12px',
+              fontWeight: 500,
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'default',
+              opacity: 0.6,
+              backgroundColor: '#2563eb',
+              color: 'white',
+            }}
+            disabled
+          >
+            Confirm
+          </button>
+        </div>
+      </div>
+    );
+  }
+  
+  return null;
+});
+
+ConfirmationStepContent.displayName = 'ConfirmationStepContent';
+
 interface GraphStepItemProps {
   step: GraphStep;
   isLight: boolean;
@@ -178,8 +523,10 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
   // Check if we have meaningful process content to show
   const hasToolCalls = Boolean(step.tool_calls && step.tool_calls.length > 0);
   const isResultAggregator = step.node === 'ResultAggregator';
-  const hasPrompt = !isResultAggregator && Boolean(step.prompt && step.prompt.trim().length > 0);
-  const hasProcessContent = hasToolCalls;
+  const isConfirmationStep = step.node === 'Confirmation' || step.node.startsWith('Confirmation:');
+  const hasConfirmAction = step.tool_calls?.some(tc => tc.tool_name === 'confirmAction');
+  const hasPrompt = !isResultAggregator && !isConfirmationStep && Boolean(step.prompt && step.prompt.trim().length > 0);
+  const hasProcessContent = hasToolCalls && !isConfirmationStep;
   
   // Show process content when: in_progress (always show), or user has expanded it
   const showProcessBlock = step.status === 'in_progress' || isProcessExpanded;
@@ -195,6 +542,8 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
         return <ErrorIcon color={isLight ? '#ef4444' : '#f87171'} />;
       case 'cancelled':
         return <CancelledIcon color={isLight ? '#9ca3af' : '#6b7280'} />;
+      case 'waiting':
+        return <WaitingIcon color={isLight ? '#6b7280' : '#9ca3af'} />;
       default:
         return <PendingIcon color={isLight ? '#9ca3af' : '#6b7280'} />;
     }
@@ -233,20 +582,23 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div 
-          className={`flex items-center gap-2 ${(hasResult || hasPrompt || hasProcessContent) ? 'cursor-pointer' : ''}`}
-          onClick={() => (hasResult || hasPrompt || hasProcessContent) && setIsResultExpanded(!isResultExpanded)}
+          className={`flex items-center gap-2 ${!isConfirmationStep && (hasResult || hasPrompt || hasProcessContent) ? 'cursor-pointer' : ''}`}
+          onClick={() => !isConfirmationStep && (hasResult || hasPrompt || hasProcessContent) && setIsResultExpanded(!isResultExpanded)}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
           <span className="flex-shrink-0" style={{ color: isLight ? '#6b7280' : '#9ca3af' }}>
             {getNodeIcon(step.node, 'h-4 w-4')}
           </span>
-          <span className={`font-medium ${textColor}`}>{step.node}</span>
-          {step.status === 'in_progress' && (
+          <span className={`font-medium ${textColor}`}>{isConfirmationStep ? 'Confirmation' : step.node}</span>
+          {step.status === 'in_progress' && !isConfirmationStep && (
             <span className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Processing...</span>
           )}
-          {/* Expand/collapse chevron */}
-          {(hasResult || hasPrompt || hasProcessContent) && (
+          {step.status === 'waiting' && (
+            <span className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Waiting...</span>
+          )}
+          {/* Expand/collapse chevron (not for Confirmation steps) */}
+          {!isConfirmationStep && (hasResult || hasPrompt || hasProcessContent) && (
             <svg
               width="12"
               height="12"
@@ -269,13 +621,18 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
           )}
         </div>
         
-        {/* Result accordion - contains prompt, process block, and result content */}
+        {/* Confirmation step - show special ConfirmationStepContent directly */}
+        {isConfirmationStep && hasConfirmAction && (
+          <ConfirmationStepContent step={step} isLight={isLight} />
+        )}
+        
+        {/* Result accordion - contains prompt, process block, and result content (not for Confirmation steps) */}
         <div
           style={{
             overflow: 'hidden',
             transition: 'max-height 0.3s ease-in-out, opacity 0.2s ease-in-out',
-            maxHeight: (hasResult || hasPrompt || hasProcessContent) && isResultExpanded ? '2000px' : '0',
-            opacity: (hasResult || hasPrompt || hasProcessContent) && isResultExpanded ? 1 : 0,
+            maxHeight: !isConfirmationStep && (hasResult || hasPrompt || hasProcessContent) && isResultExpanded ? '2000px' : '0',
+            opacity: !isConfirmationStep && (hasResult || hasPrompt || hasProcessContent) && isResultExpanded ? 1 : 0,
           }}
         >
           {/* Prompt sent to sub-agent */}

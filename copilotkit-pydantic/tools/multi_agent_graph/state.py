@@ -24,6 +24,22 @@ if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectSendStream
 
 
+def _serialize_tool_call(tc: Any) -> dict:
+    """Convert ToolCallInfo or dict to serializable dict format.
+    
+    Handles both ToolCallInfo dataclass objects and already-serialized dicts
+    (from resumed state).
+    """
+    if isinstance(tc, dict):
+        return tc  # Already a dict
+    return {"tool_name": tc.tool_name, "args": tc.args, "result": tc.result, "status": tc.status}
+
+
+def _serialize_tool_calls(calls: list) -> list:
+    """Convert a list of tool calls to serializable format."""
+    return [_serialize_tool_call(tc) for tc in calls] if calls else []
+
+
 def _is_orchestrator_entry(entry: str) -> bool:
     """Check if a history entry is an orchestrator entry."""
     return entry.startswith("Orchestrator:")
@@ -61,10 +77,7 @@ def build_graph_agent_state(
         
         # Get orchestrator tool calls
         orchestrator_tool_calls = state.tool_calls.get(indexed_key, state.tool_calls.get("Orchestrator", []))
-        tool_calls_list = [
-            {"tool_name": tc.tool_name, "args": tc.args, "result": tc.result, "status": tc.status}
-            for tc in orchestrator_tool_calls
-        ] if orchestrator_tool_calls else []
+        tool_calls_list = _serialize_tool_calls(orchestrator_tool_calls)
         
         steps.append({
             "node": "Orchestrator",
@@ -85,10 +98,7 @@ def build_graph_agent_state(
             
             # Get orchestrator tool calls for this iteration
             orchestrator_tool_calls = state.tool_calls.get(history_entry, [])
-            tool_calls_list = [
-                {"tool_name": tc.tool_name, "args": tc.args, "result": tc.result, "status": tc.status}
-                for tc in orchestrator_tool_calls
-            ] if orchestrator_tool_calls else []
+            tool_calls_list = _serialize_tool_calls(orchestrator_tool_calls)
             
             steps.append({
                 "node": "Orchestrator",
@@ -108,20 +118,31 @@ def build_graph_agent_state(
             result = state.intermediate_results.get(indexed_key, state.intermediate_results.get(base_node, ""))
             node_errors = [e for e in state.errors if e.get("node") == base_node or e.get("node") == indexed_key]
             
+            # Convert tool calls to serializable format
+            node_tool_calls = state.tool_calls.get(indexed_key, state.tool_calls.get(base_node, []))
+            tool_calls_list = _serialize_tool_calls(node_tool_calls)
+            
+            # Determine status
             if node_errors:
                 status = "error"
                 result = node_errors[-1].get("error", "Unknown error")
             elif base_node == current_node and step_status == "in_progress":
                 status = "in_progress"
+            elif base_node == "Confirmation":
+                # Confirmation step: check if confirmAction tool is still waiting
+                confirm_tool = next((tc for tc in tool_calls_list if tc.get("tool_name") == "confirmAction"), None)
+                if confirm_tool:
+                    if confirm_tool.get("status") == "in_progress":
+                        status = "waiting"  # Tool is waiting for user response
+                    elif confirm_tool.get("status") == "completed":
+                        status = "completed"  # User responded
+                    else:
+                        status = "waiting"  # Default to waiting if no clear status
+                else:
+                    # No confirmAction tool call found, still waiting
+                    status = "waiting"
             else:
                 status = "completed"
-            
-            # Convert tool calls to serializable format
-            node_tool_calls = state.tool_calls.get(indexed_key, state.tool_calls.get(base_node, []))
-            tool_calls_list = [
-                {"tool_name": tc.tool_name, "args": tc.args, "result": tc.result, "status": tc.status}
-                for tc in node_tool_calls
-            ] if node_tool_calls else []
             
             steps.append({
                 "node": base_node,
@@ -141,10 +162,7 @@ def build_graph_agent_state(
     
     if current_node and current_node != "Orchestrator" and not current_node_in_history:
         node_tool_calls = state.tool_calls.get(current_node, [])
-        tool_calls_list = [
-            {"tool_name": tc.tool_name, "args": tc.args, "result": tc.result, "status": tc.status}
-            for tc in node_tool_calls
-        ] if node_tool_calls else []
+        tool_calls_list = _serialize_tool_calls(node_tool_calls)
         
         steps.append({
             "node": current_node,
@@ -179,12 +197,25 @@ def build_graph_agent_state(
                 if node == current_node and run_index == runs_executed:
                     continue
                 
-                step_stat = "cancelled" if is_completing else "pending"
+                # Determine step status based on graph state
+                # If graph is waiting (deferred tool request), pending steps should show as "waiting"
+                has_deferred = hasattr(state, 'deferred_tool_requests') and state.deferred_tool_requests is not None
+                is_waiting_state = has_deferred or step_status == "waiting"
+                
+                if is_completing and not is_waiting_state:
+                    step_stat = "cancelled"
+                    step_result = "Skipped - graph completed early"
+                elif is_waiting_state:
+                    step_stat = "waiting"
+                    step_result = ""
+                else:
+                    step_stat = "pending"
+                    step_result = ""
                 
                 steps.append({
                     "node": node,
                     "status": step_stat,
-                    "result": "Skipped - graph completed early" if is_completing else "",
+                    "result": step_result,
                     "prompt": "",
                     "streaming_text": "",
                     "tool_calls": [],
@@ -194,6 +225,10 @@ def build_graph_agent_state(
     # Determine overall status
     if state.errors:
         overall_status = "error"
+    elif hasattr(state, 'deferred_tool_requests') and state.deferred_tool_requests is not None:
+        overall_status = "waiting"  # Waiting for user interaction
+    elif state.result and step_status == "waiting":
+        overall_status = "waiting"  # Explicitly marked as waiting
     elif state.result:
         overall_status = "completed"
     elif current_node:
@@ -234,11 +269,9 @@ def sync_to_shared_state(state: QueryState, shared_state: Any, current_node: str
     shared_state.graph.streaming_text = dict(state.streaming_text)
     shared_state.graph.prompts = dict(state.prompts)
     # Convert ToolCallInfo dataclass instances to dicts for serialization
+    # Handle both ToolCallInfo objects and already-serialized dicts (from resumed state)
     shared_state.graph.tool_calls = {
-        node: [
-            {"tool_name": tc.tool_name, "args": tc.args, "result": tc.result, "status": tc.status}
-            for tc in calls
-        ] if calls else []
+        node: _serialize_tool_calls(calls)
         for node, calls in state.tool_calls.items()
     }
     shared_state.graph.errors = list(state.errors)
@@ -247,6 +280,18 @@ def sync_to_shared_state(state: QueryState, shared_state: Any, current_node: str
     shared_state.graph.iteration_count = state.iteration_count
     shared_state.graph.should_continue = state.should_continue
     shared_state.graph.next_action = current_node or state.next_action
+    shared_state.graph.planned_steps = list(state.planned_steps) if state.planned_steps else []
+    
+    # Sync deferred tool requests if present
+    if hasattr(state, 'deferred_tool_requests') and state.deferred_tool_requests:
+        shared_state.graph.deferred_tool_requests = state.deferred_tool_requests
+        shared_state.graph.status = 'waiting'
+    elif state.result:
+        shared_state.graph.status = 'completed'
+    elif state.errors:
+        shared_state.graph.status = 'error'
+    else:
+        shared_state.graph.status = 'running'
 
 
 async def send_graph_state_snapshot(
@@ -281,12 +326,46 @@ async def send_graph_state_snapshot(
         if shared_state and hasattr(shared_state, 'graph'):
             sync_to_shared_state(state, shared_state, current_node)
         
-        # Build GraphAgentState format
-        snapshot = build_graph_agent_state(state, current_node, step_status)
+        # Build GraphAgentState format for frontend rendering
+        graph_agent_state = build_graph_agent_state(state, current_node, step_status)
         
         # Include mermaid_diagram from shared_state if available
         if shared_state and hasattr(shared_state, 'graph') and hasattr(shared_state.graph, 'mermaid_diagram'):
-            snapshot["mermaid_diagram"] = shared_state.graph.mermaid_diagram
+            graph_agent_state["mermaid_diagram"] = shared_state.graph.mermaid_diagram
+        
+        # Build nested AgentState format for CopilotKit state persistence
+        # This ensures the state sent back from frontend has the 'graph' field
+        nested_snapshot = {
+            "steps": graph_agent_state.get("steps", []),  # GraphStep[] for rendering
+            "graph": {
+                # GraphState fields for resumption
+                "query": state.query,
+                "original_query": state.original_query or state.query,
+                "result": state.result,
+                "query_type": state.query_type,
+                "execution_history": list(state.execution_history),
+                "intermediate_results": dict(state.intermediate_results),
+                "streaming_text": dict(state.streaming_text),
+                "prompts": dict(state.prompts),
+                "tool_calls": {
+                    node: _serialize_tool_calls(calls)
+                    for node, calls in state.tool_calls.items()
+                },
+                "errors": list(state.errors),
+                "last_error_node": state.last_error_node,
+                "retry_count": state.retry_count,
+                "max_retries": state.max_retries,
+                "iteration_count": state.iteration_count,
+                "max_iterations": state.max_iterations,
+                "should_continue": state.should_continue,
+                "next_action": current_node or state.next_action,
+                "planned_steps": list(state.planned_steps) if state.planned_steps else [],
+                "status": graph_agent_state.get("status", "running"),
+                "mermaid_diagram": graph_agent_state.get("mermaid_diagram", ""),
+            },
+            # Also include flat fields for frontend rendering compatibility
+            **graph_agent_state,
+        }
         
         logger.info(f"   [StateSnapshot] Sending for {current_node} ({step_status})")
         
@@ -294,7 +373,7 @@ async def send_graph_state_snapshot(
             encoder.encode(
                 StateSnapshotEvent(
                     type=EventType.STATE_SNAPSHOT,
-                    snapshot=snapshot,
+                    snapshot=nested_snapshot,
                 )
             )
         )

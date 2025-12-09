@@ -471,20 +471,56 @@ async def run_graph(
     logger.info(f"   [run_graph] send_stream available: {send_stream is not None}")
     logger.info(f"   [run_graph] adapter available: {adapter is not None}")
     
-    # Initialize the graph state in the shared AgentState
-    ctx.deps.state.graph.query = query
-    ctx.deps.state.graph.original_query = query
-    ctx.deps.state.graph.max_iterations = max_iterations
-    ctx.deps.state.graph.iteration_count = 0
-    ctx.deps.state.graph.execution_history = []
-    ctx.deps.state.graph.intermediate_results = {}
-    ctx.deps.state.graph.streaming_text = {}  # Track streaming text per node
-    ctx.deps.state.graph.prompts = {}  # Track prompts sent to each node
-    ctx.deps.state.graph.tool_calls = {}  # Track tool calls per node
-    ctx.deps.state.graph.errors = []
-    ctx.deps.state.graph.result = ""
-    ctx.deps.state.graph.should_continue = True
-    ctx.deps.state.graph.mermaid_diagram = ""  # Will be populated by run_multi_agent_graph
+    # Check if there's existing graph state in "waiting" status (e.g., after confirmation)
+    existing_graph = ctx.deps.state.graph
+    
+    # Debug logging to understand graph state
+    logger.info(f"   [run_graph] Checking existing graph state:")
+    logger.info(f"   [run_graph]   - graph exists: {existing_graph is not None}")
+    if existing_graph:
+        logger.info(f"   [run_graph]   - status: {getattr(existing_graph, 'status', 'NO STATUS')}")
+        logger.info(f"   [run_graph]   - execution_history: {getattr(existing_graph, 'execution_history', [])}")
+        logger.info(f"   [run_graph]   - planned_steps: {getattr(existing_graph, 'planned_steps', [])}")
+    
+    is_resuming = (
+        existing_graph and 
+        hasattr(existing_graph, 'status') and 
+        existing_graph.status == 'waiting' and
+        existing_graph.execution_history and
+        len(existing_graph.execution_history) > 0
+    )
+    
+    if is_resuming:
+        logger.info(f"   [run_graph] RESUMING from waiting state")
+        logger.info(f"   [run_graph] Execution history: {existing_graph.execution_history}")
+        logger.info(f"   [run_graph] Planned steps: {existing_graph.planned_steps}")
+        
+        # Update only what's needed to continue
+        ctx.deps.state.graph.should_continue = True
+        ctx.deps.state.graph.status = 'running'
+        
+        # Clear the deferred_tool_requests since we're resuming
+        if hasattr(ctx.deps.state.graph, 'deferred_tool_requests'):
+            ctx.deps.state.graph.deferred_tool_requests = None
+    else:
+        logger.info(f"   [run_graph] Starting NEW graph execution")
+        
+        # Initialize the graph state in the shared AgentState (only for NEW executions)
+        ctx.deps.state.graph.query = query
+        ctx.deps.state.graph.original_query = query
+        ctx.deps.state.graph.max_iterations = max_iterations
+        ctx.deps.state.graph.iteration_count = 0
+        ctx.deps.state.graph.execution_history = []
+        ctx.deps.state.graph.intermediate_results = {}
+        ctx.deps.state.graph.streaming_text = {}  # Track streaming text per node
+        ctx.deps.state.graph.prompts = {}  # Track prompts sent to each node
+        ctx.deps.state.graph.tool_calls = {}  # Track tool calls per node
+        ctx.deps.state.graph.errors = []
+        ctx.deps.state.graph.result = ""
+        ctx.deps.state.graph.should_continue = True
+        ctx.deps.state.graph.mermaid_diagram = ""  # Will be populated by run_multi_agent_graph
+        ctx.deps.state.graph.planned_steps = []
+        ctx.deps.state.graph.status = 'running'
     
     # Create RunAgentInput from adapter or create a new one
     if adapter and hasattr(adapter, 'run_input'):

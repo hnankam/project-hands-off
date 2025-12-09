@@ -418,6 +418,7 @@ export const useMessagePersistence = ({
         console.log(`\n--- Message ${index} ---`);
         console.log('Type:', msg?.role || msg?.type || 'unknown');
         console.log('ID:', msg?.id);
+        console.log('Full message:', msg);
         if (msg?.content) {
           console.log(msg.content);
         }

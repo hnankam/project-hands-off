@@ -134,6 +134,18 @@ class GraphState(BaseModel):
         default="",
         description='Next action to take'
     )
+    planned_steps: list[str] = Field(
+        default_factory=list,
+        description='Planned execution sequence from orchestrator'
+    )
+    status: str = Field(
+        default="pending",
+        description='Graph status: pending, running, completed, error, waiting'
+    )
+    deferred_tool_requests: Any = Field(
+        default=None,
+        description='DeferredToolRequests when waiting for user interaction'
+    )
 
 
 class AgentState(BaseModel):

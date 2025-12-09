@@ -36,6 +36,7 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
   const mutedTextColor = isLight ? '#6b7280' : '#9ca3af';
 
   // Executing state - show confirmation buttons
+  console.log('[ConfirmationCard] response:', respond);
   if (status === 'executing' && respond) {
     return (
       <div

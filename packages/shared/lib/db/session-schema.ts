@@ -54,10 +54,11 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
       DEFINE FIELD IF NOT EXISTS lastUsage ON session_usage TYPE option<object>;
       DEFINE INDEX IF NOT EXISTS idx_usage_session ON session_usage FIELDS sessionId;
 
-      -- Session Agent Step State Table
+      -- Session Agent State Table (includes plan steps and graph state)
       DEFINE TABLE IF NOT EXISTS session_agent_state SCHEMALESS;
       DEFINE FIELD IF NOT EXISTS sessionId ON session_agent_state TYPE string;
       DEFINE FIELD IF NOT EXISTS steps ON session_agent_state TYPE array;
+      DEFINE FIELD IF NOT EXISTS graph ON session_agent_state TYPE option<object>;
       DEFINE INDEX IF NOT EXISTS idx_agent_state_session ON session_agent_state FIELDS sessionId;
 
       -- Current Session Tracker (single record table)
@@ -189,11 +190,65 @@ export interface SessionUsageStats {
   lastUsage?: SessionUsageLastRecord | null;
 }
 
+/** Tool call info for graph steps */
+export interface GraphToolCall {
+  tool_name: string;
+  args: string;
+  result?: string;
+  status: 'in_progress' | 'completed' | 'error';
+  tool_call_id?: string;
+}
+
+/** Graph step representing a node execution in the multi-agent graph */
+export interface GraphStep {
+  node: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'error' | 'cancelled' | 'waiting';
+  result: string;
+  prompt?: string;
+  streaming_text?: string;
+  tool_calls?: GraphToolCall[];
+  timestamp: string;
+}
+
+/** Full graph state from backend */
+export interface GraphState {
+  query: string;
+  original_query: string;
+  result: string;
+  query_type: string;
+  execution_history: string[];
+  intermediate_results: Record<string, string>;
+  streaming_text: Record<string, string>;
+  prompts: Record<string, string>;
+  tool_calls: Record<string, GraphToolCall[]>;
+  errors: Array<{ node?: string; error?: string; timestamp?: string }>;
+  last_error_node: string;
+  retry_count: number;
+  max_retries: number;
+  iteration_count: number;
+  max_iterations: number;
+  should_continue: boolean;
+  next_action: string;
+  planned_steps?: string[];
+  mermaid_diagram?: string;
+  status: 'pending' | 'running' | 'completed' | 'error' | 'waiting';
+  deferred_tool_requests?: unknown;
+}
+
+/** Plan step for task progress tracking */
+export interface PlanStep {
+  description: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'deleted';
+}
+
+/** Full agent state including plan steps, graph steps, and graph state */
 export interface SessionAgentState {
   sessionId: string;
-  steps: Array<{
-    description: string;
-    status: 'pending' | 'running' | 'completed' | 'failed' | 'deleted';
-  }>;
+  /** Plan steps (task progress) - steps with 'description' field */
+  steps: PlanStep[];
+  /** Graph execution state from multi-agent graph */
+  graph?: GraphState;
+  /** Graph steps for rendering - steps with 'node' field (derived from graph state) */
+  graphSteps?: GraphStep[];
 }
 

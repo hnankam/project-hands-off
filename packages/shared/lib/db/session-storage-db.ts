@@ -1191,7 +1191,7 @@ export class SessionStorageDB {
   }
 
   /**
-   * Update agent state for a session
+   * Update agent state for a session (includes plan steps, graph state, and graph steps)
    */
   async updateAgentState(sessionId: string, state: Omit<SessionAgentState, 'sessionId'>): Promise<void> {
     const worker = this.getWorker();
@@ -1201,15 +1201,39 @@ export class SessionStorageDB {
       { id: sessionId }
     );
 
+    // Build update payload with all fields
+    const payload: Record<string, any> = {
+      steps: state.steps || [],
+    };
+    
+    // Include graph state if present
+    if (state.graph !== undefined) {
+      payload.graph = state.graph;
+    }
+    
+    // Include graph steps if present
+    if (state.graphSteps !== undefined) {
+      payload.graphSteps = state.graphSteps;
+    }
+
     if (existing[0]?.length > 0) {
+      // Build dynamic SET clause based on what fields are present
+      const setClauses: string[] = ['steps = $steps'];
+      if (state.graph !== undefined) {
+        setClauses.push('graph = $graph');
+      }
+      if (state.graphSteps !== undefined) {
+        setClauses.push('graphSteps = $graphSteps');
+      }
+      
       await worker.query(
-        'UPDATE session_agent_state SET steps = $steps WHERE sessionId = $id;',
-        { id: sessionId, steps: state.steps }
+        `UPDATE session_agent_state SET ${setClauses.join(', ')} WHERE sessionId = $id;`,
+        { id: sessionId, ...payload }
       );
     } else {
       await worker.query(
-        'CREATE session_agent_state CONTENT { sessionId: $id, steps: $steps };',
-        { id: sessionId, steps: state.steps }
+        'CREATE session_agent_state CONTENT { sessionId: $id, steps: $steps, graph: $graph, graphSteps: $graphSteps };',
+        { id: sessionId, steps: payload.steps, graph: payload.graph || null, graphSteps: payload.graphSteps || null }
       );
     }
   }

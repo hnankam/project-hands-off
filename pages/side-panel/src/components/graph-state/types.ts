@@ -16,7 +16,7 @@ export interface GraphToolCall {
 
 export interface GraphStep {
   node: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'error' | 'cancelled';
+  status: 'pending' | 'in_progress' | 'completed' | 'error' | 'cancelled' | 'waiting';
   result: string;
   prompt?: string;  // Prompt sent to the sub-agent
   streaming_text?: string;  // Live streaming text during execution
@@ -35,7 +35,7 @@ export interface GraphAgentState {
   planned_steps?: string[];  // Planned execution sequence from orchestrator
   mermaid_diagram?: string;  // Mermaid diagram of the graph structure
   final_result: string;
-  status: 'pending' | 'running' | 'completed' | 'error';
+  status: 'pending' | 'running' | 'completed' | 'error' | 'waiting';
 }
 
 // Backend GraphState format (nested inside full AgentState)
@@ -46,6 +46,9 @@ export interface BackendGraphState {
   query_type: string;
   execution_history: string[];
   intermediate_results: Record<string, string>;
+  streaming_text: Record<string, string>;  // Track streaming text per node during execution
+  prompts: Record<string, string>;  // Track prompts sent to each node
+  tool_calls: Record<string, GraphToolCall[]>;  // Track tool calls per node
   errors: Array<{ node?: string; error?: string; timestamp?: string }>;
   last_error_node: string;
   retry_count: number;
@@ -56,6 +59,8 @@ export interface BackendGraphState {
   next_action: string;
   planned_steps?: string[];  // Planned execution sequence from orchestrator
   mermaid_diagram?: string;  // Mermaid diagram of the graph structure
+  status: 'pending' | 'running' | 'completed' | 'error' | 'waiting';  // Graph status
+  deferred_tool_requests?: unknown;  // DeferredToolRequests when waiting for user interaction
 }
 
 // Plan step format (from create_plan/update_plan_step)
@@ -79,9 +84,11 @@ export interface UnifiedAgentState {
   max_iterations?: number;
   planned_steps?: string[];  // Planned execution sequence from orchestrator
   final_result?: string;
-  status?: 'pending' | 'running' | 'completed' | 'error';
+  status?: 'pending' | 'running' | 'completed' | 'error' | 'waiting';
   // Session tracking
   sessionId?: string;
+  // Deferred tool requests for human-in-the-loop
+  deferred_tool_requests?: unknown;
 }
 
 // ========== Component Props Types ==========
@@ -137,6 +144,9 @@ export function convertToGraphAgentState(state: UnifiedAgentState): GraphAgentSt
     const steps: GraphStep[] = g.execution_history.map((node) => {
       const result = g.intermediate_results?.[node] || '';
       const nodeErrors = g.errors?.filter(e => e.node === node) || [];
+      const streaming_text = g.streaming_text?.[node] || '';
+      const prompt = g.prompts?.[node] || '';
+      const tool_calls = g.tool_calls?.[node] || [];
       
       let status: GraphStep['status'] = 'completed';
       let stepResult = result;
@@ -144,24 +154,35 @@ export function convertToGraphAgentState(state: UnifiedAgentState): GraphAgentSt
       if (nodeErrors.length > 0) {
         status = 'error';
         stepResult = nodeErrors[nodeErrors.length - 1]?.error || 'Unknown error';
+      } else if (node.startsWith('Confirmation') && tool_calls.some(tc => tc.status === 'in_progress')) {
+        // Confirmation step is waiting for user action
+        status = 'waiting';
       }
       
       return {
         node,
         status,
         result: stepResult,
+        prompt,
+        streaming_text,
+        tool_calls,
         timestamp: new Date().toISOString(),
       };
     });
     
-    // Determine overall status
-    let status: GraphAgentState['status'] = 'pending';
-    if (g.errors && g.errors.length > 0) {
-      status = 'error';
-    } else if (g.result) {
-      status = 'completed';
-    } else if (g.execution_history.length > 0 || g.next_action) {
-      status = 'running';
+    // Determine overall status - prefer backend status if available
+    let status: GraphAgentState['status'] = g.status || 'pending';
+    if (!g.status) {
+      // Fallback to deriving status from state
+      if (g.errors && g.errors.length > 0) {
+        status = 'error';
+      } else if (g.deferred_tool_requests) {
+        status = 'waiting';
+      } else if (g.result) {
+        status = 'completed';
+      } else if (g.execution_history.length > 0 || g.next_action) {
+        status = 'running';
+      }
     }
     
     return {

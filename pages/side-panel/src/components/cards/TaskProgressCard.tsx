@@ -37,6 +37,57 @@ const RedFailIcon: FC<{ color?: string }> = ({ color = '#ef4444' }) => (
   </svg>
 );
 
+/** Plan step for task progress tracking */
+export interface PlanStep {
+  description: string;
+  status: "pending" | "running" | "completed" | "failed" | "deleted";
+}
+
+/** Graph tool call info */
+export interface GraphToolCall {
+  tool_name: string;
+  args: string;
+  result?: string;
+  status: 'in_progress' | 'completed' | 'error';
+  tool_call_id?: string;
+}
+
+/** Graph step for multi-agent graph execution */
+export interface GraphStep {
+  node: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'error' | 'cancelled' | 'waiting';
+  result: string;
+  prompt?: string;
+  streaming_text?: string;
+  tool_calls?: GraphToolCall[];
+  timestamp: string;
+}
+
+/** Full graph state from backend */
+export interface GraphState {
+  query: string;
+  original_query: string;
+  result: string;
+  query_type: string;
+  execution_history: string[];
+  intermediate_results: Record<string, string>;
+  streaming_text: Record<string, string>;
+  prompts: Record<string, string>;
+  tool_calls: Record<string, GraphToolCall[]>;
+  errors: Array<{ node?: string; error?: string; timestamp?: string }>;
+  last_error_node: string;
+  retry_count: number;
+  max_retries: number;
+  iteration_count: number;
+  max_iterations: number;
+  should_continue: boolean;
+  next_action: string;
+  planned_steps?: string[];
+  mermaid_diagram?: string;
+  status: 'pending' | 'running' | 'completed' | 'error' | 'waiting';
+  deferred_tool_requests?: unknown;
+}
+
 export interface AgentStepState {
   /**
    * Session identifier that owns this task progress. Used to scope progress
@@ -44,10 +95,12 @@ export interface AgentStepState {
    * Copilot agent name.
    */
   sessionId?: string;
-  steps: {
-    description: string;
-    status: "pending" | "running" | "completed" | "failed" | "deleted";
-  }[];
+  /** Plan steps for task progress tracking */
+  steps: PlanStep[];
+  /** Full graph state from multi-agent graph execution */
+  graph?: GraphState;
+  /** Graph steps for rendering (derived from graph.execution_history) */
+  graphSteps?: GraphStep[];
 }
 
 interface TaskProgressCardProps {

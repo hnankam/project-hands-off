@@ -53,6 +53,14 @@ export const CancelledIcon: FC<{ className?: string; color?: string }> = ({ clas
   </svg>
 );
 
+export const WaitingIcon: FC<{ className?: string; color?: string }> = ({ className = 'h-4 w-4', color }) => (
+  <svg className={`${className} flex-shrink-0`} style={{ color: color || '#9ca3af' }} fill="none" stroke="currentColor" viewBox="0 0 20 20" strokeLinecap="round" strokeLinejoin="round">
+    {/* Simple non-filled circle with clock hands - waiting state */}
+    <circle cx="10" cy="10" r="7" strokeWidth="2" />
+    <path d="M10 6v4l2.5 2.5" strokeWidth="2" />
+  </svg>
+);
+
 // ========== Node Type Icons ==========
 
 export const OrchestratorIcon: FC<{ className?: string; color?: string }> = ({ className = 'h-4 w-4', color }) => (
@@ -97,6 +105,15 @@ export const ResultAggregatorIcon: FC<{ className?: string; color?: string }> = 
   </svg>
 );
 
+export const ConfirmationIcon: FC<{ className?: string; color?: string }> = ({ className = 'h-4 w-4', color }) => (
+  <svg className={className} style={{ color }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    {/* Question mark in circle - asking for confirmation */}
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+);
+
 export const DefaultNodeIcon: FC<{ className?: string; color?: string }> = ({ className = 'h-4 w-4', color }) => (
   <svg className={className} style={{ color }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3" />
@@ -125,6 +142,7 @@ export const normalizeNodeName = (node: string): string => {
     case 'codeexecution': return 'CodeExecution';
     case 'resultaggregator': return 'ResultAggregator';
     case 'orchestrator': return 'Orchestrator';
+    case 'confirmation': return 'Confirmation';
     default: return node;
   }
 };
@@ -144,6 +162,8 @@ export const getNodeIcon = (node: string, className?: string, color?: string): R
       return <CodeExecutionIcon {...props} />;
     case 'resultaggregator':
       return <ResultAggregatorIcon {...props} />;
+    case 'confirmation':
+      return <ConfirmationIcon {...props} />;
     default:
       return <DefaultNodeIcon {...props} />;
   }
@@ -161,6 +181,8 @@ export const getFlowNodeIcon = (node: string, className: string, color: string):
       return <CodeExecutionIcon className={className} color={color} />;
     case 'ResultAggregator':
       return <ResultAggregatorIcon className={className} color={color} />;
+    case 'Confirmation':
+      return <ConfirmationIcon className={className} color={color} />;
     default:
       return <DefaultNodeIcon className={className} color={color} />;
   }
@@ -174,6 +196,7 @@ export const getNodeLabel = (node: string): string => {
     case 'ImageGeneration': return 'Image';
     case 'CodeExecution': return 'Code';
     case 'ResultAggregator': return 'Aggregate';
+    case 'Confirmation': return 'Confirm';
     default: return node;
   }
 };
