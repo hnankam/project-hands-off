@@ -22,6 +22,159 @@ This document provides a comprehensive migration plan for upgrading from Copilot
 
 ---
 
+## New V2 Features (from Pre-Release Packet)
+
+Based on the [CopilotKit v1.50 Pre-Release Packet](https://copilotkit.notion.site/CopilotKit-v1-50-Pre-Release-Packet-2b23aa381852800fae86ca323de6fc1e):
+
+### 1. BasicAgent - Direct to LLM Improvements ✅
+
+**Broader model support** with simple `provider/model` syntax:
+
+```typescript
+import { BasicAgent } from "@copilotkitnext/agent";
+
+const agent = new BasicAgent({
+  model: "openai/gpt-4o",  // Much broader model support!
+  prompt: "You are a helpful AI assistant.",
+  temperature: 0.7,
+});
+```
+
+### 2. Shared State Support ✅
+
+Access and update shared state from frontend:
+
+```typescript
+import { useAgent } from "@copilotkit/react-core/v2";
+
+const { agent } = useAgent({ agentId: "myBasicAgent" });
+const { state, setState } = agent;
+```
+
+### 3. MCP (Model Context Protocol) Support 🆕
+
+BasicAgent supports MCP servers for enhanced tool capabilities:
+
+```typescript
+import { BasicAgent } from "@copilotkitnext/agent";
+
+const agent = new BasicAgent({
+  model: "openai/gpt-4o",
+  prompt: "You are a helpful assistant.",
+  mcpServers: [
+    {
+      type: "http",
+      url: "http://localhost:3001/mcp",
+    },
+    {
+      type: "sse", 
+      url: "http://localhost:3002/mcp/sse",
+      headers: { "Authorization": "Bearer token" },
+    },
+  ],
+});
+```
+
+### 4. CopilotPopup Component 🆕
+
+New popup variant in addition to CopilotSidebar:
+
+```typescript
+import { CopilotPopup } from "@copilotkit/react-core/v2";
+
+<CopilotPopup
+  agentId="my_agent"
+  defaultOpen={false}
+  width={400}
+  height={600}
+  clickOutsideToClose={true}
+  header={(props) => <CustomHeader {...props} />}
+/>
+```
+
+### 5. CopilotKitInspector Component 🆕
+
+Dev tools for debugging CopilotKit:
+
+```typescript
+import { CopilotKitInspector } from "@copilotkit/react-core/v2";
+
+// Add to your app (usually in development only)
+<CopilotKitProvider showDevConsole="auto">
+  <CopilotKitInspector />
+  {/* ... your app */}
+</CopilotKitProvider>
+```
+
+### 6. Audio Recording Support 🆕
+
+Built-in audio transcription:
+
+```typescript
+<CopilotChatInput
+  onStartTranscribe={() => console.log("Recording started")}
+  onCancelTranscribe={() => console.log("Recording cancelled")}
+  onFinishTranscribe={() => console.log("Recording finished")}
+/>
+```
+
+### 7. Message Branching 🆕
+
+Edit and branch conversation history:
+
+```typescript
+<CopilotChatUserMessage
+  message={message}
+  onEditMessage={(newContent) => handleEdit(newContent)}
+  branchIndex={0}
+  numberOfBranches={3}
+  onSwitchToBranch={(index) => switchToBranch(index)}
+/>
+```
+
+### 8. Agent Abort Support 🆕
+
+Cancel running agent requests:
+
+```typescript
+// Via BasicAgent
+const agent = new BasicAgent({ ... });
+agent.abortRun();
+
+// Via CopilotKit hook
+const { copilotkit } = useCopilotKit();
+copilotkit.stopAgent({ agentId: "my_agent" });
+```
+
+### 9. Activity Messages 🆕
+
+Display agent activity/progress:
+
+```typescript
+<CopilotKitProvider
+  renderActivityMessages={[
+    {
+      activityType: "thinking",
+      content: z.object({ message: z.string() }),
+      render: ({ content }) => <ThinkingIndicator message={content.message} />,
+    },
+  ]}
+>
+```
+
+### 10. Overridable Properties 🆕
+
+BasicAgent allows runtime overrides via forwardedProps:
+
+```typescript
+const agent = new BasicAgent({
+  model: "openai/gpt-4o",
+  overridableProperties: ["temperature", "maxOutputTokens"],
+});
+```
+
+---
+
 ## Package Version Updates
 
 ### `copilot-runtime-server/package.json`
@@ -2064,6 +2217,15 @@ Before proceeding with migration, verify the following exports/APIs exist in Cop
   - Labels customization guide
   - Slot-based customization patterns
   - Key migration patterns (agent selection, thread ID, tool rendering, suggestions)
+- **NEW:** Added "New V2 Features" section covering Pre-Release Packet features:
+  - MCP (Model Context Protocol) support
+  - CopilotPopup component
+  - CopilotKitInspector (dev tools)
+  - Audio recording/transcription support
+  - Message branching (edit/switch branches)
+  - Agent abort support
+  - Activity messages
+  - Overridable properties for BasicAgent
 - **FINAL REVIEW:** All open items resolved
   - `Markdown` → `CopilotChatAssistantMessage.MarkdownRenderer` (uses Streamdown)
   - `ImageRenderer` → Handle in custom message component (not in v2)
