@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useCallback, useState } from 'react';
-import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
-import { useChatContext } from '@copilotkit/react-ui';
-import type { MessagesProps } from '@copilotkit/react-ui';
+import {
+  useCopilotChat,
+  useCopilotChatContext,
+  type MessagesProps,
+  type Message,
+} from '../../hooks/copilotkit';
 import { VList, type VListHandle } from 'virtua';
-import type { Message } from '@copilotkit/shared';
 
 /**
  * Custom Messages Component for CopilotChat
@@ -130,8 +132,8 @@ export const CustomMessages = ({
   chatError,
   agentMode = false,
 }: CustomMessagesProps) => {
-  const { labels } = useChatContext();
-  const { messages: visibleMessages, interrupt } = useCopilotChatHeadless_c();
+  const { labels } = useCopilotChatContext();
+  const { messages: visibleMessages, interrupt } = useCopilotChat();
 
   const { messages, messagesRef } = useProcessedMessages(labels.initial, visibleMessages);
 

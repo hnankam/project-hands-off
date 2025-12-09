@@ -1,5 +1,5 @@
 import { useRef, useMemo, useCallback, useEffect } from 'react';
-import { useCoAgent } from '@copilotkit/react-core';
+import { useCopilotAgent } from './copilotkit';
 import { debug } from '@extension/shared';
 import type { AgentStepState } from '../components/cards/TaskProgressCard';
 
@@ -58,12 +58,12 @@ export const useAgentStateManagement = ({
   // Track latest assistant message ID
   const latestAssistantMessageIdRef = useRef<string | null>(null);
   
-  // Use CopilotKit's coAgent for state management
+  // Use centralized CopilotKit agent hook for state management
   const {
     state: rawDynamicAgentState,
     setState: setRawDynamicAgentState,
-  } = useCoAgent<AgentStepState>({
-    name: 'dynamic_agent',
+  } = useCopilotAgent<AgentStepState>({
+    agentId: 'dynamic_agent',
     initialState:
       initialAgentStepState && initialAgentStepState.sessionId === sessionId
         ? initialAgentStepState
@@ -99,7 +99,7 @@ export const useAgentStateManagement = ({
     // Graph steps should be rendered by GraphStateCard, not TaskProgressCard
     const steps = rawDynamicAgentState.steps ?? [];
     if (steps.length > 0 && !isPlanSteps(steps)) {
-      // These are graph steps - return empty to let useCoAgentStateRender handle them
+      // These are graph steps - return empty to let useCopilotAgentStateRender handle them
       return { sessionId, steps: [] };
     }
     

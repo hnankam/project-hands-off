@@ -2,8 +2,11 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useStorage, persistenceLock } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
-import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
-import { ImageRenderer, type UserMessageProps } from '@copilotkit/react-ui';
+import {
+  useCopilotChat,
+  ImageRenderer,
+  type UserMessageProps,
+} from '../../hooks/copilotkit';
 import { MarkdownRenderer } from '../tiptap/MarkdownRenderer';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
 
@@ -27,7 +30,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
   ImageRenderer: ImageRendererComponent = ImageRenderer,
 }) => {
   const { isLight } = useStorage(themeStorage);
-  const { messages, setMessages, reloadMessages } = useCopilotChatHeadless_c();
+  const { messages, setMessages, reloadMessages } = useCopilotChat();
   const sessionId = useChatSessionIdSafe();
 
   // Find the index of the current message

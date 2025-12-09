@@ -1,7 +1,7 @@
 import type { FC } from 'react';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
+import { useCopilotChat } from '../../hooks/copilotkit';
 import { useStorage, sessionStorageDBWrapper } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 
@@ -164,7 +164,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Chat hook for triggering runs
-  const { sendMessage, isLoading: isChatLoading } = useCopilotChatHeadless_c();
+  const { sendMessage, isLoading: isChatLoading } = useCopilotChat();
 
   // Debug logging
   React.useEffect(() => {

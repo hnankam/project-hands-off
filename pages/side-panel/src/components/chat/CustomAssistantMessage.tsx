@@ -1,7 +1,10 @@
 import React, { useMemo, useState, useCallback } from "react";
-import type { AssistantMessageProps } from '@copilotkit/react-ui';
-import { useChatContext, Markdown } from '@copilotkit/react-ui';
-import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
+import {
+  useCopilotChat,
+  useCopilotChatContext,
+  Markdown,
+  type AssistantMessageProps,
+} from '../../hooks/copilotkit';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { MermaidBlock } from './MermaidBlock';
@@ -398,7 +401,7 @@ const CodeBlockWithToolbar: React.FC<{
  * Source: https://github.com/CopilotKit/CopilotKit/blob/main/CopilotKit/packages/react-ui/src/components/chat/messages/AssistantMessage.tsx
  */
 export const CustomAssistantMessage = (props: AssistantMessageProps) => {
-  const { icons, labels } = useChatContext();
+  const { icons, labels } = useCopilotChatContext();
   const { isLight } = useStorage(themeStorage);
   const {
     message,
@@ -411,7 +414,7 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
     markdownTagRenderers,
   } = props;
   const [copied, setCopied] = useState(false);
-  const { messages } = useCopilotChatHeadless_c();
+  const { messages } = useCopilotChat();
 
   const { isLastInSeries, assistantSeries } = useMemo(() => {
     if (!message) {

@@ -31,19 +31,24 @@
 import type { FC } from 'react';
 import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 
-// CopilotKit Hooks & Components
+// Centralized CopilotKit Hooks, Components & Types (v2 migration ready)
 import {
-  useCoAgent,
-  useCoAgentStateRender,
-  useCopilotReadable,
-  useCopilotChatHeadless_c,
+  // Components
+  CopilotChat,
+  // Types
+  type InputProps,
+  type MessagesProps,
+  // Hooks
+  useCopilotChat,
+  useCopilotAgentStateRender,
+  useCopilotReadableData,
+  useCopilotSuggestions,
+  // Tool hooks (centralized for v2 migration)
   useFrontendTool,
   useHumanInTheLoop,
   useDefaultTool,
   useRenderToolCall,
-} from '@copilotkit/react-core';
-import { CopilotChat, useCopilotChatSuggestions } from '@copilotkit/react-ui';
-import type { InputProps, MessagesProps } from '@copilotkit/react-ui';
+} from '../../hooks/copilotkit';
 
 // Extension Utilities & Storage
 import { debug, useStorage, sessionStorageDBWrapper } from '@extension/shared';
@@ -288,7 +293,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ================================================================================
 
   const { messages, setMessages, isLoading, generateSuggestions, reloadMessages, reset, stopGeneration } =
-    useCopilotChatHeadless_c();
+    useCopilotChat();
 
   // Track streaming state to avoid restoring messages after edits/deletes
   const wasStreamingRef = useRef(false);
@@ -446,7 +451,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   });
 
   // Share multi-page metadata with agent (includes current page + selected pages)
-  useCopilotReadable({
+  useCopilotReadableData({
     description:
       'Multi-page context including current page (full metadata) and selected indexed pages (lightweight summaries). Current page: pageTitle, pageURL, hasContent, hasEmbeddings, totalHtmlChunks, totalFormChunks, totalClickableChunks, documentInfo, windowInfo. Selected pages: array of page summaries with URL, title, chunk counts, lastIndexed. Use searchPageContent to query current page content. Additional pages provide context awareness.',
     value: multiPageMetadata,
@@ -712,8 +717,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   //
   // Matches backend's AgentState which contains both { steps: Step[], graph: GraphState }
 
-  useCoAgentStateRender<UnifiedAgentState>({
-    name: 'dynamic_agent',
+  useCopilotAgentStateRender<UnifiedAgentState>({
+    agentId: 'dynamic_agent',
     render: ({ state: unifiedState }) => {
       // Check if we have any meaningful state to render
       const hasSteps = unifiedState?.steps && unifiedState.steps.length > 0;
@@ -841,12 +846,13 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ================================================================================
   // CHAT SUGGESTIONS
   // ================================================================================
-  // Note: useCopilotChatSuggestions must be called unconditionally per React rules.
-  // We control behavior via the disabled parameter.
-  useCopilotChatSuggestions({
-    instructions: showSuggestions ? CHAT_SUGGESTIONS_INSTRUCTIONS : '',
-    minSuggestions: showSuggestions ? 2 : 0,
-    maxSuggestions: showSuggestions ? DEFAULT_MAX_SUGGESTIONS : 0,
+  // Note: Hook must be called unconditionally per React rules.
+  // We control behavior via the enabled parameter.
+  useCopilotSuggestions({
+    enabled: showSuggestions,
+    instructions: CHAT_SUGGESTIONS_INSTRUCTIONS,
+    minSuggestions: 2,
+    maxSuggestions: DEFAULT_MAX_SUGGESTIONS,
   });
 
   // ================================================================================

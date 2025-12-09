@@ -10,7 +10,7 @@ import React, {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { CopilotKit, useCopilotChatHeadless_c } from '@copilotkit/react-core';
+import { CopilotKit, useCopilotChat } from '../hooks/copilotkit';
 import { sessionStorageDBWrapper, persistenceLock, debug } from '@extension/shared';
 
 type RuntimeConfig = {
@@ -225,7 +225,7 @@ type RuntimeStateBridgeProps = {
 };
 
 const RuntimeStateBridge: React.FC<RuntimeStateBridgeProps> = ({ sessionId, updateRuntimeState }) => {
-  const { messages, isLoading } = useCopilotChatHeadless_c();
+  const { messages, isLoading } = useCopilotChat();
   const messagesSignatureRef = useRef('');
   const lastPersistedSignatureRef = useRef('');
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);

@@ -1,8 +1,10 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import type { InputProps } from '@copilotkit/react-ui';
-import { useChatContext } from '@copilotkit/react-ui';
-import { useCopilotContext } from '@copilotkit/react-core';
+import {
+  useCopilotRuntimeContext,
+  useCopilotChatContext,
+  type InputProps,
+} from '../../hooks/copilotkit';
 import { COPIOLITKIT_CONFIG } from '../../constants';
 import { ensureFirebase, ensureFirebaseAuth } from '../../utils/firebaseStorage';
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
@@ -156,7 +158,7 @@ interface UsePushToTalkProps {
 
 const usePushToTalk = ({ sendFunction, inProgress }: UsePushToTalkProps) => {
   const [pushToTalkState, setPushToTalkState] = useState<PushToTalkState>('idle');
-  const copilotContext = useCopilotContext();
+  const { copilotApiConfig } = useCopilotRuntimeContext();
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
@@ -177,12 +179,12 @@ const usePushToTalk = ({ sendFunction, inProgress }: UsePushToTalkProps) => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
 
         // Transcribe the audio
-        if (copilotContext.copilotApiConfig?.transcribeAudioUrl) {
+        if (copilotApiConfig?.transcribeAudioUrl) {
           try {
             const formData = new FormData();
             formData.append('audio', audioBlob);
 
-            const response = await fetch(copilotContext.copilotApiConfig.transcribeAudioUrl, {
+            const response = await fetch(copilotApiConfig.transcribeAudioUrl, {
               method: 'POST',
               body: formData,
             });
@@ -420,8 +422,8 @@ export const CustomInput: React.FC<CustomInputProps> = ({
   onSelectedPageURLsChange,
   currentPageURL = null,
 }) => {
-  const context = useChatContext();
-  const copilotContext = useCopilotContext();
+  const context = useCopilotChatContext();
+  const { _rawContext: copilotContext } = useCopilotRuntimeContext();
   const { isLight } = useStorage(themeStorage);
   const inputBackground = isLight ? '#ffffff' : '#151C24';
   const inputBackgroundVar = `var(--copilot-kit-input-background-color, ${inputBackground})`;
