@@ -413,28 +413,50 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
   const hasTeams = teams.length > 0;
   const hasMemberTeams = memberTeamsCount > 0;
 
-  const teamDisplayName = activeTeamName
-    ? activeTeamName
-    : isLoading
-      ? 'Loading teams…'
-      : hasMemberTeams
-        ? 'Selecting team…'
-        : hasTeams
-          ? 'Join a team'
-          : 'No teams';
+  const teamDisplayName = !organization
+    ? 'Select organization'
+    : activeTeamName
+      ? activeTeamName
+      : isLoading
+        ? 'Loading teams…'
+        : hasMemberTeams
+          ? 'Selecting team…'
+          : hasTeams && canJoinTeams
+            ? 'Join a team'
+            : hasTeams
+              ? 'No team access'
+              : 'No teams';
 
-  const teamDisplaySubtext = isLoading
-    ? 'Please wait'
-    : hasMemberTeams
-      ? `${memberTeamsCount} ${memberTeamsCount === 1 ? 'team' : 'teams'}`
-      : hasTeams
-        ? 'Join a team to get started'
-        : 'Create team in Admin';
+  const teamDisplaySubtext = !organization
+    ? 'Organization required'
+    : isLoading
+      ? 'Please wait'
+      : hasMemberTeams
+        ? `${memberTeamsCount} ${memberTeamsCount === 1 ? 'team' : 'teams'}`
+        : hasTeams && canJoinTeams
+          ? 'Join a team to get started'
+          : hasTeams
+            ? 'Ask admin to add you'
+            : 'Create team in Admin';
 
   return (
     <div ref={containerRef} className="relative">
       <button
         onClick={() => {
+          // Don't open dropdown if:
+          // - No organization selected
+          // - No teams exist
+          // - User is not a member of any team AND can't join teams (not admin/owner)
+          const canInteract = organization && (
+            isLoading || 
+            memberTeamsCount > 0 || 
+            (teams.length > 0 && canJoinTeams)
+          );
+          
+          if (!canInteract) {
+            return;
+          }
+          
           setIsOpen((prev) => {
             const next = !prev;
             if (next) {
@@ -466,18 +488,20 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
             {teamDisplaySubtext}
           </p>
         </div>
-        <svg
-          className={cn(
-            'w-3 h-3 transition-transform',
-            isOpen ? 'rotate-180' : '',
-            isLight ? 'text-gray-500' : 'text-gray-400'
-          )}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        {organization && (isLoading || memberTeamsCount > 0 || (teams.length > 0 && canJoinTeams)) && (
+          <svg
+            className={cn(
+              'w-3 h-3 transition-transform',
+              isOpen ? 'rotate-180' : '',
+              isLight ? 'text-gray-500' : 'text-gray-400'
+            )}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        )}
       </button>
 
       {isOpen && (
@@ -489,9 +513,57 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
             <div className="p-4 text-center">
               <div className="animate-spin h-6 w-6 border-2 border-purple-500 border-t-transparent rounded-full mx-auto"></div>
             </div>
+          ) : !organization ? (
+            <div className="p-4 text-center">
+              <div className={cn(
+                'w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2',
+                isLight ? 'bg-gray-100' : 'bg-gray-800'
+              )}>
+                <svg className={cn('w-5 h-5', isLight ? 'text-gray-400' : 'text-gray-500')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              <p className={cn('text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                Select an organization first
+              </p>
+              <p className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                Choose an organization above to see its teams
+              </p>
+            </div>
           ) : teams.length === 0 ? (
-            <div className="p-3 text-center text-xs text-gray-500 dark:text-gray-400">
-              No teams available. Create a team in the Admin page.
+            <div className="p-4 text-center">
+              <div className={cn(
+                'w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2',
+                isLight ? 'bg-gray-100' : 'bg-gray-800'
+              )}>
+                <svg className={cn('w-5 h-5', isLight ? 'text-gray-400' : 'text-gray-500')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <p className={cn('text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                No teams yet
+              </p>
+              <p className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                Create a team in the Admin Dashboard
+              </p>
+            </div>
+          ) : memberTeamsCount === 0 && !canJoinTeams ? (
+            // User is not a member of any team and can't join teams (not admin/owner)
+            <div className="p-4 text-center">
+              <div className={cn(
+                'w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2',
+                isLight ? 'bg-gray-100' : 'bg-gray-800'
+              )}>
+                <svg className={cn('w-5 h-5', isLight ? 'text-gray-400' : 'text-gray-500')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <p className={cn('text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                No team access
+              </p>
+              <p className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                Ask an admin to add you to a team
+              </p>
             </div>
           ) : (
             <>

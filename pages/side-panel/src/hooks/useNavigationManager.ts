@@ -26,6 +26,7 @@ export interface NavigationState {
   invitationId: string | null;
   resetPasswordToken: string | null;
   oauthProvider: OAuthProvider | null;
+  ssoEmail: string | null;
   isPageRestored: boolean;
 }
 
@@ -36,6 +37,7 @@ export interface NavigationActions {
   setInvitationId: (id: string | null) => void;
   setResetPasswordToken: (token: string | null) => void;
   setOAuthProvider: (provider: OAuthProvider | null) => void;
+  setSSOEmail: (email: string | null) => void;
 }
 
 // ============================================================================
@@ -56,6 +58,7 @@ const HASH_ROUTES = {
   INVITATION: '#/accept-invitation/',
   RESET_PASSWORD: '#/reset-password',
   OAUTH: '#/oauth/',
+  SSO: '#/sso',
 } as const;
 
 /** Valid OAuth providers */
@@ -158,6 +161,7 @@ export function useNavigationManager(): NavigationState & NavigationActions {
   const [invitationId, setInvitationId] = useState<string | null>(null);
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const [oauthProvider, setOAuthProvider] = useState<OAuthProvider | null>(null);
+  const [ssoEmail, setSSOEmail] = useState<string | null>(null);
   const [isPageRestored, setIsPageRestored] = useState(false);
   
   // ============================================================================
@@ -248,7 +252,18 @@ export function useNavigationManager(): NavigationState & NavigationActions {
       
       debug.log('[NavigationManager] Checking hash:', hash);
       
-      // Check for OAuth route first (#/oauth/{provider})
+      // Check for SSO route first (#/sso?email=...)
+      if (hash.startsWith(HASH_ROUTES.SSO)) {
+        const urlParams = new URLSearchParams(hash.split('?')[1] || '');
+        const email = urlParams.get('email');
+        if (email) {
+          debug.log('[NavigationManager] SSO route detected:', email);
+          setSSOEmail(decodeURIComponent(email));
+          return;
+        }
+      }
+      
+      // Check for OAuth route (#/oauth/{provider})
       const oauthMatch = hash.match(/oauth\/(google|microsoft|github)/);
       if (oauthMatch) {
         const provider = oauthMatch[1] as OAuthProvider;
@@ -301,6 +316,7 @@ export function useNavigationManager(): NavigationState & NavigationActions {
     invitationId,
     resetPasswordToken,
     oauthProvider,
+    ssoEmail,
     isPageRestored,
     navigateToHome,
     navigateToSessions,
@@ -308,6 +324,7 @@ export function useNavigationManager(): NavigationState & NavigationActions {
     setInvitationId,
     setResetPasswordToken,
     setOAuthProvider,
+    setSSOEmail,
   };
 }
 

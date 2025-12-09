@@ -772,6 +772,140 @@ router.get('/oauth-success', (req, res) => {
 });
 
 /**
+ * GET /api/auth/list-sso-providers
+ * Lists SSO providers for a given organization
+ * 
+ * Query params:
+ * - organizationId: (optional) Filter by organization
+ * 
+ * Returns: Array of SSO provider configurations
+ */
+router.get('/list-sso-providers', async (req, res) => {
+  try {
+    const { organizationId } = req.query;
+    const pool = getPool();
+    
+    console.log('[SSO] Listing providers for org:', organizationId || 'all');
+    
+    let query = `
+      SELECT 
+        id,
+        "providerId",
+        issuer,
+        domain,
+        "oidcConfig",
+        "samlConfig",
+        "userId",
+        "organizationId",
+        "domainVerified",
+        "createdAt",
+        "updatedAt"
+      FROM "ssoProvider"
+    `;
+    const params = [];
+    
+    if (organizationId) {
+      query += ` WHERE "organizationId" = $1`;
+      params.push(organizationId);
+    }
+    
+    query += ` ORDER BY "createdAt" DESC`;
+    
+    const result = await pool.query(query, params);
+    
+    console.log('[SSO] Found', result.rows.length, 'providers');
+    
+    // Parse JSON fields
+    const providers = result.rows.map(row => ({
+      ...row,
+      oidcConfig: row.oidcConfig ? JSON.parse(row.oidcConfig) : null,
+      samlConfig: row.samlConfig ? JSON.parse(row.samlConfig) : null,
+    }));
+    
+    res.json({ providers });
+  } catch (error) {
+    console.error('[SSO] Error listing providers:', error);
+    res.status(500).json({ error: 'Failed to list SSO providers' });
+  }
+});
+
+/**
+ * GET /api/auth/debug-sso-provider
+ * Debug endpoint to inspect SSO provider configuration
+ */
+router.get('/debug-sso-provider', async (req, res) => {
+  try {
+    const { providerId, domain } = req.query;
+    const pool = getPool();
+    
+    let query = 'SELECT * FROM "ssoProvider"';
+    const params = [];
+    
+    if (providerId) {
+      query += ' WHERE "providerId" = $1';
+      params.push(providerId);
+    } else if (domain) {
+      query += ' WHERE domain = $1';
+      params.push(domain);
+    }
+    
+    const result = await pool.query(query, params);
+    
+    console.log('[SSO Debug] Provider config:', JSON.stringify(result.rows, null, 2));
+    
+    res.json({ 
+      count: result.rows.length,
+      providers: result.rows.map(row => ({
+        ...row,
+        oidcConfig: row.oidcConfig ? JSON.parse(row.oidcConfig) : null,
+        samlConfig: row.samlConfig ? JSON.parse(row.samlConfig) : null,
+      }))
+    });
+  } catch (error) {
+    console.error('[SSO Debug] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/auth/delete-sso-provider
+ * Deletes an SSO provider by providerId
+ * 
+ * Body params:
+ * - providerId: The provider ID to delete
+ * 
+ * Returns: Success status
+ */
+router.post('/delete-sso-provider', express.json(), async (req, res) => {
+  try {
+    const { providerId } = req.body;
+    
+    if (!providerId) {
+      return res.status(400).json({ error: 'providerId is required' });
+    }
+    
+    const pool = getPool();
+    
+    console.log('[SSO] Deleting provider:', providerId);
+    
+    const result = await pool.query(
+      'DELETE FROM "ssoProvider" WHERE "providerId" = $1 RETURNING id',
+      [providerId]
+    );
+    
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'SSO provider not found' });
+    }
+    
+    console.log('[SSO] Provider deleted successfully');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[SSO] Error deleting provider:', error);
+    res.status(500).json({ error: 'Failed to delete SSO provider' });
+  }
+});
+
+/**
  * Mount Better Auth handler
  * 
  * Uses Better Auth's official Node.js adapter (toNodeHandler) to handle all

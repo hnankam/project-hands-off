@@ -721,14 +721,18 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                 isLight ? 'text-gray-500 border-gray-200 bg-gray-50' : 'text-gray-400 border-gray-700 bg-[#151C24]',
               )}>
                 <p>No teams yet.</p>
-                <button
-                  onClick={() => setShowCreateTeamForm(true)}
-                  className={cn(
-                    'mt-2 text-xs font-medium',
-                    isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
-                  )}>
-                  Create your first team
-                </button>
+                {canManageTeams ? (
+                  <button
+                    onClick={() => setShowCreateTeamForm(true)}
+                    className={cn(
+                      'mt-2 text-xs font-medium',
+                      isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
+                    )}>
+                    Create your first team
+                  </button>
+                ) : (
+                  <p className="mt-2">Ask an admin to create a team.</p>
+                )}
               </div>
             )}
               </>

@@ -112,6 +112,11 @@ export default function OrganizationSelector({ isLight = true }: OrganizationSel
   };
 
   const handleToggle = () => {
+    // Don't open dropdown if there are no organizations to show
+    if (organizations.length === 0 && !isLoading) {
+      return;
+    }
+    
     setIsOpen((prev) => {
       const next = !prev;
       if (next) {
@@ -149,18 +154,20 @@ export default function OrganizationSelector({ isLight = true }: OrganizationSel
               {organization?.slug || (isLoading ? 'Please wait' : organizations.length > 0 ? 'Auto-selecting default' : 'Create or join an organization')}
             </p>
           </div>
-          <svg
-            className={cn(
-              'w-3 h-3 transition-transform',
-              isOpen ? 'rotate-180' : '',
-              isLight ? 'text-gray-500' : 'text-gray-400'
-            )}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          {(organizations.length > 0 || isLoading) && (
+            <svg
+              className={cn(
+                'w-3 h-3 transition-transform',
+                isOpen ? 'rotate-180' : '',
+                isLight ? 'text-gray-500' : 'text-gray-400'
+              )}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          )}
         </button>
 
         {/* Dropdown - Always mounted, visibility controlled with CSS */}
@@ -172,6 +179,23 @@ export default function OrganizationSelector({ isLight = true }: OrganizationSel
           {isLoading ? (
               <div className="p-4 text-center">
                 <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto"></div>
+              </div>
+            ) : organizations.length === 0 ? (
+              <div className="p-4 text-center">
+                <div className={cn(
+                  'w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2',
+                  isLight ? 'bg-gray-100' : 'bg-gray-800'
+                )}>
+                  <svg className={cn('w-5 h-5', isLight ? 'text-gray-400' : 'text-gray-500')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                </div>
+                <p className={cn('text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                  No organizations yet
+                </p>
+                <p className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                  Ask an admin to invite you, or create one in the Admin Dashboard
+                </p>
               </div>
             ) : (
               <>

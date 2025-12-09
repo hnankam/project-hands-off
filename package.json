@@ -44,6 +44,7 @@
     "postinstall": "pnpm copy-env && pnpm download-onnx-wasm"
   },
   "dependencies": {
+    "@better-auth/sso": "^1.4.5",
     "@copilotkit/react-core": "^1.10.6",
     "@copilotkit/react-ui": "^1.10.6",
     "@huggingface/transformers": "^3.7.5",

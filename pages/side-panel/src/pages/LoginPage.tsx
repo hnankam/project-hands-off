@@ -11,7 +11,7 @@ import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';
 import { AUTO_DISMISS_DELAYS } from '../constants/ui';
-import { requestPasswordReset, resetPasswordWithToken, signInWithSocial, SocialProvider } from '../lib/auth-client';
+import { requestPasswordReset, resetPasswordWithToken, signInWithSocial, signInWithSSO, SocialProvider } from '../lib/auth-client';
 import { LoginSettingsDropdown } from '../components/menus/LoginSettingsDropdown';
 
 // ============================================================================
@@ -134,6 +134,37 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
         setError(result.error);
       } else if (result.success) {
         // Refresh auth state after successful OAuth
+        await refreshAuth();
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSSOLogin = async () => {
+    if (!email) {
+      setError('Please enter your email address');
+      return;
+    }
+
+    setError(null);
+    setSuccessMessage(null);
+    setIsLoading(true);
+
+    try {
+      const result = await signInWithSSO(email);
+      if (result.error) {
+        // If no SSO provider found for domain, show helpful message
+        if (result.error.includes('not found') || result.error.includes('not available')) {
+          setError('SSO is not configured for your domain. Please use email/password or social login.');
+        } else {
+          setError(result.error);
+        }
+      } else if (result.success) {
+        // Refresh auth state after successful SSO
         await refreshAuth();
       }
     } catch (err) {
@@ -922,6 +953,29 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
                     <span className="hidden sm:inline">GitHub</span>
                   </button>
                 </div>
+
+                {/* Enterprise SSO */}
+                {!isSignUp && (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={handleSSOLogin}
+                      disabled={isLoading || !email}
+                      className={cn(
+                        'w-full flex items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors',
+                        isLight
+                          ? 'border-gray-300 bg-gray-50 text-gray-700 hover:bg-gray-100'
+                          : 'border-gray-600 bg-gray-800 text-gray-200 hover:bg-gray-700',
+                        (isLoading || !email) && 'cursor-not-allowed opacity-70',
+                      )}
+                      title="Sign in with your organization's SSO">
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.7}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                      </svg>
+                      Sign in with SSO
+                    </button>
+                  </div>
+                )}
               </form>
               )}
 
@@ -948,7 +1002,7 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
                       type="button"
                       onClick={onGoToInvitation}
                       className={cn(
-                        'font-medium underline-offset-4 transition-colors hover:underline',
+                        'font-medium text-xs underline-offset-4 transition-colors hover:underline',
                         isLight ? 'text-gray-600 hover:text-gray-700' : 'text-gray-400 hover:text-gray-300',
                       )}>
                       Have an invitation? Join an organization

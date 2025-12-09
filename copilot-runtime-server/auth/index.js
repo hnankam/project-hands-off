@@ -6,15 +6,17 @@
  * 
  * Features:
  * - Email/password authentication
- * - Social login (Google, GitHub)
+ * - Social login (Google, GitHub, Microsoft)
  * - Organization and team management
  * - Forgot password flow (email-based)
  * - Admin password reset capability
+ * - SSO (OIDC/SAML) support for enterprise organizations
  */
 
 import { betterAuth } from "better-auth";
 import { organization, admin } from "better-auth/plugins";
 import { defaultAc } from "better-auth/plugins/organization/access";
+import { sso } from "@better-auth/sso";
 import { getPool } from '../config/database.js';
 import { sendOrganizationInvitation, sendPasswordResetEmail } from './email.js';
 
@@ -285,6 +287,42 @@ export const auth = betterAuth({
           return { success: false, error: error.message };
         }
       },
+    }),
+    
+    // SSO plugin for enterprise OIDC/SAML authentication
+    sso({
+      // Organization provisioning - automatically add SSO users to their organization
+      organizationProvisioning: {
+        disabled: false,
+        defaultRole: 'member',
+        // Custom role mapping from IdP claims
+        getRole: async ({ user, ssoUser, account }) => {
+          // Check for admin role in IdP claims
+          const extraFields = account?.extraFields || {};
+          if (extraFields.role === 'admin' || extraFields.groups?.includes('admins')) {
+            return 'admin';
+          }
+          return 'member';
+        },
+      },
+      
+      // Domain verification for enterprise security
+      domainVerification: {
+        enabled: true,
+        tokenPrefix: 'better-auth-sso-',
+      },
+      
+      // Limit SSO providers per organization (0 = unlimited)
+      providersLimit: 5,
+      
+      // Trust email_verified from IdP (careful: only enable if you control provider registration)
+      // trustEmailVerified: false,
+      
+      // Don't override existing user info by default
+      defaultOverrideUserInfo: false,
+      
+      // Allow implicit sign-up for SSO users
+      disableImplicitSignUp: false,
     }),
   ],
 });

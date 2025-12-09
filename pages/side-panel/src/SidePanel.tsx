@@ -34,6 +34,7 @@ import LoginPage from './pages/LoginPage';
 import AcceptInvitationPage from './pages/AcceptInvitationPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import OAuthPage from './pages/OAuthPage';
+import SSOPage from './pages/SSOPage';
 import { useAuth } from './context/AuthContext';
 import { useDBWorkerClient } from './hooks/useDBWorkerClient';
 import { useNavigationManager } from './hooks/useNavigationManager';
@@ -72,6 +73,7 @@ const SidePanel = () => {
     invitationId,
     resetPasswordToken,
     oauthProvider,
+    ssoEmail,
     isPageRestored,
     navigateToHome,
     navigateToSessions,
@@ -79,6 +81,7 @@ const SidePanel = () => {
     setInvitationId,
     setResetPasswordToken,
     setOAuthProvider,
+    setSSOEmail,
   } = useNavigationManager();
   
   // Session URL synchronization
@@ -199,6 +202,24 @@ const SidePanel = () => {
         }}
         onError={(error) => {
           console.error('[OAuth] Error:', error);
+        }}
+      />
+    );
+  }
+  
+  // ============================================================================
+  // Route: SSO (opened in popup for enterprise SSO login)
+  // ============================================================================
+  
+  if (ssoEmail) {
+    return (
+      <SSOPage
+        email={ssoEmail}
+        onSuccess={() => {
+          // SSO redirect will handle success
+        }}
+        onError={(error) => {
+          console.error('[SSO] Error:', error);
         }}
       />
     );

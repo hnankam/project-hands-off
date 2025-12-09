@@ -77,6 +77,9 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
   const memberRoles = Array.isArray(member?.role) ? member.role : member?.role ? [member.role] : [];
   const isOwnerOrAdmin = memberRoles.includes('owner') || memberRoles.includes('admin');
   
+  // Check if user has org selected (required for Teams/Users tabs)
+  const hasOrganization = !!organization;
+  
   // Check if user has org and team selected (required for accessing most tabs)
   const canAccessTabs = !!(organization && activeTeam);
 
@@ -124,8 +127,8 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
   // Build tab configuration with hidden and disabled flags
   const tabConfigs = [
     { key: 'organizations' as AdminTabKey },
-    { key: 'teams' as AdminTabKey, disabled: !canAccessTabs },
-    { key: 'users' as AdminTabKey, disabled: !canAccessTabs },
+    { key: 'teams' as AdminTabKey, disabled: !hasOrganization },
+    { key: 'users' as AdminTabKey, disabled: !hasOrganization },
     { key: 'usage' as AdminTabKey, disabled: !canAccessTabs },
     { key: 'providers' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
     { key: 'models' as AdminTabKey, hidden: !isOwnerOrAdmin, disabled: !canAccessTabs },
