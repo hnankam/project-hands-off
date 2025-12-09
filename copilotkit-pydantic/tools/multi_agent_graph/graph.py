@@ -20,6 +20,7 @@ from .types import (
     ActionType,
     WorkerResult,
     RoutingDecision,
+    ToolCallInfo,
 )
 from .agents import create_agents
 from .state import send_graph_state_snapshot
@@ -114,25 +115,89 @@ def create_multi_agent_graph(
             result_holder = [None]
             orchestrator_streaming_text = []
             
+            # Initialize tool call tracking for orchestrator
+            orchestrator_key = f"Orchestrator:{ctx.state.iteration_count - 1}"
+            ctx.state.tool_calls[orchestrator_key] = []
+            ctx.state.tool_calls["Orchestrator"] = []
+            current_tool_call: ToolCallInfo | None = None
+            
             def capture_result(result):
                 result_holder[0] = result
             
-            # Run orchestrator and capture streaming content
+            # Run orchestrator and capture streaming content AND tool calls
             async for event in orchestrator_adapter.run_stream(on_complete=capture_result):
-                if isinstance(event, str) and 'TEXT_MESSAGE_CONTENT' in event:
+                if isinstance(event, str):
                     try:
                         for line in event.split('\n'):
                             if line.startswith('data:'):
                                 data = json.loads(line[5:].strip())
-                                if data.get('type') == 'TEXT_MESSAGE_CONTENT' and data.get('delta'):
+                                event_type = data.get('type', '')
+                                
+                                # Handle TEXT_MESSAGE_CONTENT events (streaming text)
+                                if event_type == 'TEXT_MESSAGE_CONTENT' and data.get('delta'):
                                     orchestrator_streaming_text.append(data['delta'])
-                    except:
+                                
+                                # Handle TOOL_CALL_START - new tool call begins
+                                elif event_type == 'TOOL_CALL_START':
+                                    tool_name = data.get('tool_call_name', 'unknown')
+                                    current_tool_call = ToolCallInfo(tool_name=tool_name, status="in_progress")
+                                    ctx.state.tool_calls[orchestrator_key].append(current_tool_call)
+                                    ctx.state.tool_calls["Orchestrator"] = ctx.state.tool_calls[orchestrator_key]
+                                    logger.info(f"   [Orchestrator] Tool call started: {tool_name}")
+                                    # Send snapshot to show tool call started
+                                    await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
+                                
+                                # Handle TOOL_CALL_ARGS - tool arguments streaming
+                                elif event_type == 'TOOL_CALL_ARGS':
+                                    if current_tool_call and data.get('delta'):
+                                        current_tool_call.args += data['delta']
+                                
+                                # Handle TOOL_CALL_END - tool call arguments complete
+                                elif event_type == 'TOOL_CALL_END':
+                                    if current_tool_call:
+                                        args_preview = current_tool_call.args[:50] if current_tool_call.args else "(no args)"
+                                        logger.debug(f"   [Orchestrator] Tool call args complete: {args_preview}...")
+                                
+                                # Handle TOOL_CALL_RESULT - tool execution result
+                                elif event_type == 'TOOL_CALL_RESULT':
+                                    result_content = data.get('content', '')
+                                    if isinstance(result_content, str):
+                                        result_str = result_content
+                                    else:
+                                        result_str = str(result_content)[:500]  # Truncate long results
+                                    
+                                    # Mark the last in_progress tool call as completed
+                                    for tc in ctx.state.tool_calls[orchestrator_key]:
+                                        if tc.status == "in_progress":
+                                            tc.result = result_str
+                                            tc.status = "completed"
+                                            logger.info(f"   [Orchestrator] Tool call completed: {tc.tool_name} -> {result_str[:50]}...")
+                                            break
+                                    ctx.state.tool_calls["Orchestrator"] = ctx.state.tool_calls[orchestrator_key]
+                                    # Send snapshot to show tool call result
+                                    await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
+                    except json.JSONDecodeError:
                         pass
+                    except Exception as e:
+                        logger.debug(f"   [Orchestrator] Error processing event: {e}")
+            
+            # Finalize any in-progress tool calls
+            for tc in ctx.state.tool_calls.get(orchestrator_key, []):
+                if tc.status == "in_progress":
+                    tc.status = "completed"
+                    if not tc.result:
+                        tc.result = "(completed - no output)"
+                    logger.debug(f"   [Orchestrator] Finalized in-progress tool call: {tc.tool_name}")
             
             # Store orchestrator streaming text
             if orchestrator_streaming_text:
                 ctx.state.streaming_text["Orchestrator"] = ''.join(orchestrator_streaming_text)
                 logger.debug(f"   [Orchestrator] Captured streaming text: {len(ctx.state.streaming_text.get('Orchestrator', ''))} chars")
+            
+            # Log tool call summary
+            tool_call_count = len(ctx.state.tool_calls.get(orchestrator_key, []))
+            if tool_call_count > 0:
+                logger.info(f"   [Orchestrator] Made {tool_call_count} tool call(s): {[tc.tool_name for tc in ctx.state.tool_calls[orchestrator_key]]}")
             
             # Get the captured result
             final_result = result_holder[0]

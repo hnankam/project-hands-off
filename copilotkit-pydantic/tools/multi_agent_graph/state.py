@@ -59,13 +59,20 @@ def build_graph_agent_state(
         indexed_key = f"Orchestrator:{orchestrator_iteration}"
         orchestrator_streaming = state.streaming_text.get(indexed_key, state.streaming_text.get("Orchestrator", ""))
         
+        # Get orchestrator tool calls
+        orchestrator_tool_calls = state.tool_calls.get(indexed_key, state.tool_calls.get("Orchestrator", []))
+        tool_calls_list = [
+            {"tool_name": tc.tool_name, "args": tc.args, "result": tc.result, "status": tc.status}
+            for tc in orchestrator_tool_calls
+        ] if orchestrator_tool_calls else []
+        
         steps.append({
             "node": "Orchestrator",
             "status": "in_progress",
             "result": orchestrator_streaming,
             "prompt": state.original_query or state.query,
             "streaming_text": orchestrator_streaming,
-            "tool_calls": [],
+            "tool_calls": tool_calls_list,
             "timestamp": datetime.now().isoformat(),
         })
     
@@ -76,13 +83,20 @@ def build_graph_agent_state(
             orchestrator_streaming = state.streaming_text.get(history_entry, "")
             iteration_num = int(history_entry.split(":")[1]) if ":" in history_entry else 0
             
+            # Get orchestrator tool calls for this iteration
+            orchestrator_tool_calls = state.tool_calls.get(history_entry, [])
+            tool_calls_list = [
+                {"tool_name": tc.tool_name, "args": tc.args, "result": tc.result, "status": tc.status}
+                for tc in orchestrator_tool_calls
+            ] if orchestrator_tool_calls else []
+            
             steps.append({
                 "node": "Orchestrator",
                 "status": "completed",
                 "result": orchestrator_streaming,
                 "prompt": state.original_query or state.query if iteration_num == 0 else f"Re-evaluating after iteration {iteration_num}",
                 "streaming_text": orchestrator_streaming,
-                "tool_calls": [],
+                "tool_calls": tool_calls_list,
                 "timestamp": datetime.now().isoformat(),
             })
         else:
