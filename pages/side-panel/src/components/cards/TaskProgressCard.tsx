@@ -86,6 +86,7 @@ export interface GraphState {
   mermaid_diagram?: string;
   status: 'pending' | 'running' | 'completed' | 'error' | 'waiting';
   deferred_tool_requests?: unknown;
+  current_graph_id?: string;  // Unique ID for this graph execution
 }
 
 export interface AgentStepState {
@@ -95,6 +96,8 @@ export interface AgentStepState {
    * Copilot agent name.
    */
   sessionId?: string;
+  /** Unique ID for this plan (for activity message updates) */
+  planId?: string;
   /** Plan steps for task progress tracking */
   steps: PlanStep[];
   /** Full graph state from multi-agent graph execution */

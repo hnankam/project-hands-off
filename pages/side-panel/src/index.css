@@ -1,1 +1,5 @@
 @import '@extension/ui/global.css';
+@import '@copilotkitnext/react/styles.css';
+
+/* CopilotKit V2 styles content source */
+@source "../../../../node_modules/@copilotkitnext/react";

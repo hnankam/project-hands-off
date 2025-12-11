@@ -15,7 +15,7 @@
  */
 
 import './SidePanel.css';
-import '@copilotkit/react-ui/styles.css';
+// CopilotKit styles now imported in index.css (after Tailwind base for @layer support)
 import React, { useCallback } from 'react';
 import {
   useStorage,
@@ -277,10 +277,17 @@ const SidePanel = () => {
   
   return (
     <div className={cn('flex h-screen max-h-screen min-h-0 flex-col overflow-hidden relative', isLight ? 'bg-white' : 'bg-[#151C24]')}>
-      {/* Page Content with smooth transitions */}
+      {/* Page Content - Sessions page stays mounted to preserve session cache */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
-        {activePage === 'sessions' && (
-          <div key="sessions" className="flex-1 min-h-0 flex flex-col overflow-hidden animate-fadeIn">
+        {/* Sessions Page - Always mounted once visited to preserve LRU session cache */}
+        <div 
+          key="sessions" 
+          className={cn(
+            'absolute inset-0 flex flex-col overflow-hidden',
+            activePage === 'sessions' && 'animate-fadeIn'
+          )}
+          style={{ display: activePage === 'sessions' ? 'flex' : 'none' }}
+        >
             <SessionsPage
               isLight={isLight}
               sessions={sessions}
@@ -294,14 +301,17 @@ const SidePanel = () => {
               onGoAdmin={navigateToAdmin}
             />
           </div>
-        )}
+        
+        {/* Admin Page - Conditionally rendered (no persistent state to preserve) */}
         {activePage === 'admin' && (
-          <div key="admin" className="flex-1 min-h-0 flex flex-col overflow-hidden animate-fadeIn">
+          <div key="admin" className="absolute inset-0 flex flex-col overflow-hidden animate-fadeIn">
             <AdminPage onGoHome={navigateToHome} onGoToSessions={navigateToSessions} initialTab={adminInitialTab} />
           </div>
         )}
+        
+        {/* Home Page - Conditionally rendered (no persistent state to preserve) */}
         {activePage === 'home' && (
-          <div key="home" className="flex-1 min-h-0 flex flex-col overflow-hidden animate-fadeIn">
+          <div key="home" className="absolute inset-0 flex flex-col overflow-hidden animate-fadeIn">
             <HomePage
               isLight={isLight}
               onGoToSessions={navigateToSessions}

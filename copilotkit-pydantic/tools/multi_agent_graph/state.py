@@ -6,10 +6,12 @@ to the frontend for visualization.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
 
-from ag_ui.core import EventType, StateSnapshotEvent
+from pydantic import Field
+from ag_ui.core import EventType, StateSnapshotEvent, BaseEvent
 from ag_ui.encoder import EventEncoder
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE
 
@@ -19,6 +21,16 @@ from .types import (
     GraphAgentState,
     ACTION_TO_NODE,
 )
+
+# ActivitySnapshotEvent is not in the Python ag_ui.core package (only in TypeScript SDK)
+# We create a custom BaseEvent subclass that will serialize to the correct AG-UI format
+class ActivitySnapshotEvent(BaseEvent):
+    """Activity snapshot event for inline rendering in V2."""
+    type: str = Field(default="ACTIVITY_SNAPSHOT")
+    messageId: str
+    activityType: str
+    content: dict
+    replace: bool = True
 
 if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectSendStream
@@ -369,6 +381,7 @@ async def send_graph_state_snapshot(
         
         logger.info(f"   [StateSnapshot] Sending for {current_node} ({step_status})")
         
+        # Send StateSnapshotEvent for agent state persistence
         await send_stream.send(
             encoder.encode(
                 StateSnapshotEvent(
@@ -377,6 +390,45 @@ async def send_graph_state_snapshot(
                 )
             )
         )
+        
+        # Also send ActivitySnapshotEvent for inline V2 rendering
+        # Use stable graph_id from shared_state, or generate one and store it
+        graph_id = None
+        if shared_state and hasattr(shared_state, 'graph') and hasattr(shared_state.graph, 'current_graph_id'):
+            graph_id = shared_state.graph.current_graph_id
+        
+        if not graph_id:
+            # Generate new graph_id and persist it
+            graph_id = uuid.uuid4().hex[:12]
+            if shared_state and hasattr(shared_state, 'graph'):
+                shared_state.graph.current_graph_id = graph_id
+        
+        activity_message_id = f"graph-{graph_id}"
+        activity_content = {
+            "steps": graph_agent_state.get("steps", []),
+            "graph": nested_snapshot.get("graph", {}),
+            "query": graph_agent_state.get("query", ""),
+            "original_query": graph_agent_state.get("original_query", ""),
+            "current_node": graph_agent_state.get("current_node", ""),
+            "iteration": graph_agent_state.get("iteration", 0),
+            "max_iterations": graph_agent_state.get("max_iterations", 5),
+            "planned_steps": graph_agent_state.get("planned_steps", []),
+            "mermaid_diagram": graph_agent_state.get("mermaid_diagram", ""),
+            "final_result": graph_agent_state.get("final_result", ""),
+            "status": graph_agent_state.get("status", "running"),
+            "graphId": graph_id,
+        }
+        
+        await send_stream.send(
+            encoder.encode(
+                ActivitySnapshotEvent(
+                    messageId=activity_message_id,
+                    activityType="agent_state",
+                    content=activity_content,
+                )
+            )
+        )
+        
         logger.info(f"   [StateSnapshot] ✓ Sent successfully for {current_node}")
         return True
     except Exception as e:

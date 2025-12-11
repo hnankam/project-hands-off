@@ -3,6 +3,8 @@
    Complete chat interface organized into logical sub-modules
    =============================================================================
    
+   COMMENTED OUT: Using CopilotKit default styles only
+   
    This file serves as the main entry point for all CopilotKit chat-related styles.
    The styles are organized into four focused modules:
    
@@ -21,7 +23,9 @@
    
    ============================================================================= */
 
+/* COMMENTED OUT: All custom CopilotKit styling disabled
 @import './chat-layout.css';
 @import './chat-messages.css';
 @import './chat-input-footer.css';
 @import './chat-animations.css';
+*/

@@ -56,6 +56,12 @@ class GraphStep(BaseModel):
 class GraphState(BaseModel):
     """State for multi-agent graph execution."""
     
+    # Unique ID for the current graph execution (generated when graph starts)
+    current_graph_id: str | None = Field(
+        default=None,
+        description='Unique ID for the current graph execution, used for activity message updates'
+    )
+    
     # Graph-specific steps (different from plan steps)
     steps: list[GraphStep] = Field(
         default_factory=list,
@@ -156,6 +162,12 @@ class AgentState(BaseModel):
     steps: list[Union[Step, GraphStep]] = Field(
         default_factory=list,
         description='The steps in the plan or graph execution'
+    )
+    
+    # Unique ID for the current plan (generated when create_plan is called)
+    current_plan_id: str | None = Field(
+        default=None,
+        description='Unique ID for the current plan, used for activity message updates'
     )
     
     # Multi-agent graph state

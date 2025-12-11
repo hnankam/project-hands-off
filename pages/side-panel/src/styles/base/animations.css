@@ -135,16 +135,14 @@
 
 /* ==========================================================
    CUSTOM INPUT BUTTON STYLES
-   Positioned near end of file to ensure these styles take precedence
+   COMMENTED OUT: Using CopilotKit default styles only
    ========================================================== */
-/* Custom Input Button Styles */
-/* Override the default SVG size */
+/*
 .copilot-chat-container .copilotKitInputControls svg {
   width: auto !important;
   height: auto !important;
 }
 
-/* Base button styles */
 .copilotKitInputControlButton {
   display: flex !important;
   align-items: center !important;
@@ -156,7 +154,6 @@
   padding: 0 !important;
 }
 
-/* Ensure dropdown wrappers don't add extra spacing */
 .copilotKitInputControls > div {
   display: inline-flex !important;
   align-items: flex-start !important;
@@ -172,7 +169,6 @@
   padding: 0 !important;
 }
 
-/* Secondary buttons (upload, microphone) */
 .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child),
 .copilotKitInputControls > * > .copilotKitInputControlButton,
 .copilotKitInputControls > div button.copilotKitInputControlButton,
@@ -204,7 +200,6 @@
   flex-shrink: 0 !important;
 }
 
-/* Primary button (send/stop - last button) */
 .copilotKitInputControls > .copilotKitInputControlButton:last-child {
   width: 25px !important;
   height: 25px !important;
@@ -218,7 +213,6 @@
   height: 24px !important;
 }
 
-/* Light mode colors for secondary buttons */
 .copilotKitInputControlButton {
   background-color: transparent !important;
 }
@@ -227,21 +221,18 @@
   background-color: rgba(0, 0, 0, 0.05) !important;
 }
 
-/* Override CopilotKit's default primary color for secondary buttons */
 .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child):not([disabled]),
 .copilotKitInputControls > * > .copilotKitInputControlButton:not([disabled]),
 .copilotKitInputControls .copilotKitInputControlButton:not(:last-child):not([disabled]) {
-  color: #374151 !important; /* gray-700 - darker for better visibility in light mode */
+  color: #374151 !important;
 }
 
-/* Light mode - secondary button icon colors */
 .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) svg,
 .copilotKitInputControls > * > .copilotKitInputControlButton svg,
 .copilotKitInputControls .copilotKitInputControlButton:not(:last-child) svg {
-  color: #374151 !important; /* gray-700 - darker for better visibility in light mode */
+  color: #374151 !important;
 }
 
-/* Light mode - primary button (send/stop) colors */
 .copilotKitInputControls > .copilotKitInputControlButton:last-child svg {
   color: #2563eb !important;
 }
@@ -250,31 +241,26 @@
   color: #9ca3af !important;
 }
 
-/* Dark mode colors */
 .dark .copilotKitInputControlButton:hover:not(:disabled) {
   background-color: rgba(255, 255, 255, 0.1) !important;
 }
 
-/* Override CopilotKit's default primary color for secondary buttons in dark mode */
 .dark .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child):not([disabled]),
 .dark .copilotKitInputControls > * > .copilotKitInputControlButton:not([disabled]),
 .dark .copilotKitInputControls .copilotKitInputControlButton:not(:last-child):not([disabled]) {
-  color: #9ca3af !important; /* gray-400 - better visibility in dark mode */
+  color: #9ca3af !important;
 }
 
-/* Dark mode - secondary button icon colors */
 .dark .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) svg,
 .dark .copilotKitInputControls > * > .copilotKitInputControlButton svg,
 .dark .copilotKitInputControls .copilotKitInputControlButton svg {
-  color: #9ca3af !important; /* gray-400 - better visibility in dark mode */
+  color: #9ca3af !important;
 }
 
-/* Dark mode - primary button (send/stop) colors */
 .dark .copilotKitInputControls > .copilotKitInputControlButton:last-child svg {
   color: #60a5fa !important;
 }
 
-/* Dark mode - send/stop button arrow/square color matches message panel background */
 .dark .copilotKitInputControls > .copilotKitInputControlButton:last-child svg path,
 .dark .copilotKitInputControls > .copilotKitInputControlButton:last-child svg rect {
   stroke: #151C24 !important;
@@ -285,7 +271,6 @@
   color: #4b5563 !important;
 }
 
-/* Hover effects for primary button */
 .copilotKitInputControls > .copilotKitInputControlButton:last-child:not(:disabled):hover {
   background-color: rgba(37, 99, 235, 0.1) !important;
 }
@@ -294,12 +279,10 @@
   background-color: rgba(96, 165, 250, 0.15) !important;
 }
 
-/* Active/pressed state */
 .copilotKitInputControlButton:active:not(:disabled) {
   transform: scale(0.95) !important;
 }
 
-/* Recording state for microphone */
 .copilotKitPushToTalkRecording {
   background-color: rgba(239, 68, 68, 0.1) !important;
 }
@@ -316,15 +299,15 @@
   color: #f87171 !important;
 }
 
-/* Input placeholder colors - matches main text colors */
 .copilotKitInputTextarea::placeholder,
 .copilotKitInput textarea::placeholder {
-  color: #4b5563 !important; /* gray-600 for light mode */
+  color: #4b5563 !important;
   opacity: 0.6 !important;
 }
 
 .dark .copilotKitInputTextarea::placeholder,
 .dark .copilotKitInput textarea::placeholder {
-  color: #6b7280 !important; /* gray-500 for dark mode */
+  color: #6b7280 !important;
   opacity: 0.6 !important;
 }
+*/

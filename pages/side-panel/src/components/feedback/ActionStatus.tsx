@@ -1,11 +1,24 @@
 import React, { useState, useEffect } from 'react';
+import { useStorage } from '@extension/shared';
+import { themeStorage } from '@extension/storage';
 
+/**
+ * V2 API Status Values:
+ * - 'inProgress' - Tool is being processed/streamed
+ * - 'executing' - Tool is actively executing
+ * - 'complete' - Tool finished successfully
+ * - undefined - Initial state before processing starts
+ */
 export type ActionPhase = 'inProgress' | 'executing' | 'complete' | string | undefined;
 
 export interface ActionStatusMessages {
-  pending?: string; // default when not in progress or complete
+  /** Message shown when status is undefined (before processing starts) */
+  pending?: string;
+  /** Message shown when status is 'inProgress' */
   inProgress?: string;
-  executing?: string; // falls back to inProgress if absent
+  /** Message shown when status is 'executing' (falls back to inProgress if absent) */
+  executing?: string;
+  /** Message shown when status is 'complete' */
   complete?: string;
 }
 
@@ -15,7 +28,6 @@ const expandedStateCache: Map<string, boolean> = new Map();
 export interface ActionStatusProps {
   toolName: string;
   status?: ActionPhase;
-  isLight: boolean;
   messages?: ActionStatusMessages;
   className?: string;
   extra?: React.ReactNode; // optional trailing content (icons, counters, etc.)
@@ -29,7 +41,6 @@ export interface ActionStatusProps {
 export const ActionStatus: React.FC<ActionStatusProps> = ({
   toolName,
   status,
-  isLight,
   messages,
   className,
   extra,
@@ -39,6 +50,8 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
   error,
   instanceId,
 }) => {
+  // Read theme directly from storage for live updates
+  const { isLight } = useStorage(themeStorage);
   // Generate a stable cache key from instanceId or fallback to toolName + args hash
   const cacheKey = instanceId ?? `${toolName}-${JSON.stringify(args ?? {})}`;
   
@@ -57,19 +70,36 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
   const defaultMessages: Required<ActionStatusMessages> = {
     pending: `Starting ${toolName}…`,
     inProgress: `${toolName} in progress…`,
-    executing: `${toolName} in progress…`,
+    executing: `${toolName} executing…`,
     complete: `${toolName} complete`,
   } as const;
 
-  const baseText =
-    status === 'complete'
-      ? (messages?.complete ?? defaultMessages.complete)
-      : isWorking
-        ? (messages?.inProgress ?? messages?.executing ?? defaultMessages.inProgress)
-        : (messages?.pending ?? defaultMessages.pending);
+  // Select message based on V2 status:
+  // - 'complete' → complete message
+  // - 'executing' → executing message (fallback to inProgress)
+  // - 'inProgress' → inProgress message (fallback to executing)
+  // - undefined/other → pending message
+  const getStatusMessage = (): string => {
+    if (status === 'complete') {
+      return messages?.complete ?? defaultMessages.complete;
+    }
+    if (status === 'executing') {
+      return messages?.executing ?? messages?.inProgress ?? defaultMessages.executing;
+    }
+    if (status === 'inProgress') {
+      return messages?.inProgress ?? messages?.executing ?? defaultMessages.inProgress;
+    }
+    // Pending or unknown status
+    return messages?.pending ?? defaultMessages.pending;
+  };
+
+  const baseText = getStatusMessage();
 
   // Add contextual tool name so short phrases like "Search complete" read with meaning
   const text = `${baseText}`;
+
+  // Icon color based on current theme (read from storage, not from props)
+  const iconColor = isLight ? '#4b5563' : '#6b7280'; // gray-600 for light, gray-500 for dark
 
   // Default icon: use a playful sparkle/magic wand icon for agent actions
   const defaultIcon = (
@@ -84,7 +114,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
       style={{ 
         flexShrink: 0, 
         marginRight: 6,
-        color: isLight ? '#4b5563' : '#6b7280' // gray-600 for light, gray-500 for dark
+        color: iconColor,
       }}
     >
       {/* Magic wand with sparkles */}
@@ -93,7 +123,12 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
     </svg>
   );
 
-  const icon = customIcon || defaultIcon;
+  // Wrap custom icon to apply theme-aware color (icons may have stale colors from creation time)
+  const icon = customIcon ? (
+    <span style={{ color: iconColor, display: 'inline-flex', alignItems: 'center' }}>
+      {customIcon}
+    </span>
+  ) : defaultIcon;
 
   // Check if we have data to show in expanded view
   const hasExpandableData = args || result || error;

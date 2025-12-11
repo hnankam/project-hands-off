@@ -1,19 +1,34 @@
 /**
  * Centralized CopilotKit Agent Hook
  *
- * This abstraction layer enables easy migration to CopilotKit v2.
- * When upgrading to v2, only this file needs to change.
+ * This abstraction layer provides a stable API for agent state management.
  *
- * v1: Uses useCoAgent
- * v2: Will use useAgent({ agentId })
+ * V2 Implementation:
+ * Uses useAgent from @copilotkit/react-core/v2
  */
 
-import { useCoAgent } from '@copilotkit/react-core';
+import { useAgent } from '@copilotkit/react-core/v2';
+import { useCallback, useMemo, useRef } from 'react';
+
+// UseAgentUpdate enum values (not exported from the package)
+// These control which updates trigger re-renders
+const UseAgentUpdate = {
+  OnMessagesChanged: 'OnMessagesChanged',
+  OnStateChanged: 'OnStateChanged',
+  OnRunStatusChanged: 'OnRunStatusChanged',
+} as const;
+
+// Stable updates array (prevents re-initialization on each render)
+const AGENT_UPDATES = [
+  UseAgentUpdate.OnStateChanged,
+  UseAgentUpdate.OnMessagesChanged,
+  UseAgentUpdate.OnRunStatusChanged,
+] as const;
 
 export interface CopilotAgentOptions<T> {
   /** The agent identifier */
   agentId: string;
-  /** Initial state for the agent */
+  /** Initial state for the agent (not used in V2 - state comes from backend) */
   initialState?: T;
 }
 
@@ -39,35 +54,74 @@ export interface CopilotAgentState<T> {
 /**
  * Centralized hook for CopilotKit agent state management.
  *
+ * V2 implementation using useAgent from @copilotkit/react-core/v2
+ *
  * @example
  * ```tsx
  * const { state, setState } = useCopilotAgent<MyState>({
  *   agentId: 'my-agent',
- *   initialState: { count: 0 },
  * });
  * ```
  */
 export function useCopilotAgent<T>({
   agentId,
-  initialState,
 }: CopilotAgentOptions<T>): CopilotAgentState<T> {
-  // v1 implementation using useCoAgent
-  const {
-    name,
-    nodeName,
-    state,
-    setState,
-    running,
-    start,
-    stop,
-    run,
-  } = useCoAgent<T>({
-    name: agentId,
-    initialState,
+  // Stable empty state fallback (prevents new object reference each render)
+  const emptyStateRef = useRef<T>({} as T);
+  
+  // V2 implementation using useAgent
+  // IMPORTANT: Must subscribe to OnStateChanged to re-render when STATE_SNAPSHOT events arrive
+  const { agent } = useAgent({
+    agentId,
+    updates: AGENT_UPDATES as any,
   });
 
+  // Get agent state with proper typing
+  // Note: V2 AbstractAgent type is limited, use type assertions for extended properties
+  const agentAny = agent as any;
+  
+  // Use stable empty state ref to prevent new object reference each render
+  const state = useMemo<T>(() => {
+    return (agentAny?.state ?? emptyStateRef.current) as T;
+  }, [agentAny?.state]);
+  
+  const nodeName = agentAny?.nodeName as string | undefined;
+  const running = agentAny?.isRunning ?? false;
+
+  // setState wrapper for compatibility - use ref to avoid state in deps
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  
+  const setState = useCallback((newState: T | ((prev: T) => T)) => {
+    if (agentAny?.setState) {
+      if (typeof newState === 'function') {
+        const updateFn = newState as (prev: T) => T;
+        agentAny.setState(updateFn(stateRef.current));
+      } else {
+        agentAny.setState(newState);
+      }
+    }
+  }, [agentAny]);
+
+  // Start agent - V2 agent runs are triggered via CopilotChat component
+  const start = useCallback(() => {
+    // No-op: V2 agent runs are triggered via CopilotChat component input
+  }, []);
+
+  // Stop agent
+  const stop = useCallback(() => {
+    if (agentAny?.stop) {
+      agentAny.stop();
+    }
+  }, [agentAny]);
+
+  // Run agent - V2 agent runs are triggered via CopilotChat component
+  const run = useCallback((_hint?: string) => {
+    // No-op: V2 agent runs are triggered via CopilotChat component input
+  }, []);
+
   return {
-    name,
+    name: agentId,
     nodeName,
     state,
     setState,
@@ -77,33 +131,3 @@ export function useCopilotAgent<T>({
     run,
   };
 }
-
-// === V2 MIGRATION ===
-// When migrating to v2, replace the implementation with:
-//
-// import { useAgent } from '@copilotkit/react-core/v2';
-//
-// export function useCopilotAgent<T>({
-//   agentId,
-//   initialState,
-// }: CopilotAgentOptions<T>): CopilotAgentState<T> {
-//   const agent = useAgent({ agentId });
-//
-//   return {
-//     name: agent.name,
-//     nodeName: agent.nodeName, // verify v2 API
-//     state: agent.state as T,
-//     setState: (newState) => {
-//       if (typeof newState === 'function') {
-//         agent.setState((newState as Function)(agent.state));
-//       } else {
-//         agent.setState(newState);
-//       }
-//     },
-//     running: agent.isRunning, // verify v2 API
-//     start: agent.start, // verify v2 API
-//     stop: agent.stop, // verify v2 API
-//     run: agent.run, // verify v2 API
-//   };
-// }
-

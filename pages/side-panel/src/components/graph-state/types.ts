@@ -36,6 +36,7 @@ export interface GraphAgentState {
   mermaid_diagram?: string;  // Mermaid diagram of the graph structure
   final_result: string;
   status: 'pending' | 'running' | 'completed' | 'error' | 'waiting';
+  graphId?: string;  // Unique ID for this graph execution (for activity updates)
 }
 
 // Backend GraphState format (nested inside full AgentState)
@@ -61,6 +62,7 @@ export interface BackendGraphState {
   mermaid_diagram?: string;  // Mermaid diagram of the graph structure
   status: 'pending' | 'running' | 'completed' | 'error' | 'waiting';  // Graph status
   deferred_tool_requests?: unknown;  // DeferredToolRequests when waiting for user interaction
+  current_graph_id?: string;  // Unique ID for this graph execution
 }
 
 // Plan step format (from create_plan/update_plan_step)
@@ -87,6 +89,9 @@ export interface UnifiedAgentState {
   status?: 'pending' | 'running' | 'completed' | 'error' | 'waiting';
   // Session tracking
   sessionId?: string;
+  // Unique IDs for activity message updates
+  planId?: string;  // Unique ID for plan (from create_plan)
+  graphId?: string;  // Unique ID for graph execution
   // Deferred tool requests for human-in-the-loop
   deferred_tool_requests?: unknown;
 }

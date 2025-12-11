@@ -40,54 +40,43 @@ import {
   type MessagesProps,
   // Hooks
   useCopilotChat,
-  useCopilotAgentStateRender,
   useCopilotReadableData,
   useCopilotSuggestions,
   // Tool hooks (centralized for v2 migration)
   useFrontendTool,
   useHumanInTheLoop,
-  useDefaultTool,
-  useRenderToolCall,
 } from '../../hooks/copilotkit';
 
 // Extension Utilities & Storage
-import { debug, useStorage, sessionStorageDBWrapper } from '@extension/shared';
+import { debug, useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';
 
 // UI Components
-import { ActionStatus } from '../feedback/ActionStatus';
-import { TaskProgressCard, AgentStepState } from '../cards/TaskProgressCard';
-import { 
-  GraphStateCard, 
-  GraphAgentState,
-  UnifiedAgentState,
-  isGraphSteps,
-  isPlanSteps,
-  convertToGraphAgentState,
-} from '../graph-state';
-import { CustomUserMessage } from './CustomUserMessage';
-import { CustomAssistantMessage } from './CustomAssistantMessage';
+import type { AgentStepState } from '../cards/TaskProgressCard';
+// Note: Graph state rendering is handled by renderActivityMessages at Provider level
+// Custom components available for future use after V2 styles import:
+// import { CustomUserMessage } from './CustomUserMessage';
+// import { CustomAssistantMessage } from './CustomAssistantMessage';
 import { CustomInput } from './CustomInput';
 import { CustomMessages } from './CustomMessages';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MermaidBlock } from './MermaidBlock';
 import { ChatErrorDisplay } from './ChatErrorDisplay';
+import { CustomAssistantMessageV2 } from './CustomAssistantMessageV2';
+import { CustomScrollToBottomButton } from './slots';
 
 // Custom Hooks
 import { useMessageSanitization, MessageData } from '../../hooks/useMessageSanitization';
 import { useContextMenuPrefill } from '../../hooks/useContextMenuPrefill';
 import { useProgressBarState } from '../../hooks/useProgressBarState';
-import { usePageMetadata, type PageContent } from '../../hooks/usePageMetadata';
+import type { PageContent } from '../../hooks/usePageMetadata';
 import { useMultiPageMetadata } from '../../hooks/useMultiPageMetadata';
 import { useProgressCardCollapse } from '../../hooks/useProgressCardCollapse';
 
 // Context
 import { ChatSessionIdProvider } from '../../context/ChatSessionIdContext';
 import { useAgentStateManagement } from '../../hooks/useAgentStateManagement';
-
-// Note: Scroll management is handled entirely by CustomMessages via Virtua's VList API
-// Do NOT add duplicate scroll logic here - it won't work with virtualized lists
 
 // Utilities
 import {
@@ -99,7 +88,7 @@ import {
 } from '../../utils/sanitizationHelper';
 
 // Constants
-import { CHAT_SUGGESTIONS_INSTRUCTIONS, DEFAULT_MAX_SUGGESTIONS } from '../../constants/chatSuggestions';
+import { CHAT_SUGGESTIONS_INSTRUCTIONS } from '../../constants/chatSuggestions';
 
 // CopilotKit Action Creators
 import {
@@ -130,48 +119,15 @@ import {
   createDragAndDropAction,
 } from '../../actions/copilot/navigationActions';
 import { createTakeScreenshotAction } from '../../actions/copilot/screenshotActions';
-import { createGenerateImagesAction } from '../../actions/copilot/imageActions';
 import { createWaitAction, createConfirmActionHumanInTheLoop } from '../../actions/copilot/utilityActions';
-import {
-  createWebSearchRender,
-  createCodeExecutionRender,
-  createUrlContextRender,
-} from '../../actions/copilot/builtinToolActions';
+// Note: Backend tool renderers are configured at CopilotKitProvider level via
+// renderToolCalls prop. See ChatSessionContainer.tsx and builtinToolActions.tsx.
 
 // Types & Libraries
 import { SemanticSearchManager } from '../../lib/SemanticSearchManager';
 
-// Local type for CopilotKit agent state
-// interface AgentState {
-//   proverbs: string[];
-// }
-
 // Empty component for hiding thinking blocks
 const EmptyThinkingBlock: React.FC<{ children?: React.ReactNode }> = () => null;
-
-// Default tool icon component
-const DefaultToolIcon: React.FC<{ isLight: boolean }> = ({ isLight }) => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 24 24"
-    fill="none"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    style={{
-      flexShrink: 0,
-      marginRight: 6,
-      color: isLight ? '#4b5563' : '#6b7280',
-    }}>
-    <path
-      stroke="currentColor"
-      fill="none"
-      d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
-    />
-    <circle cx="12" cy="12" r="3" stroke="currentColor" fill="none" />
-  </svg>
-);
 
 // ================================================================================
 // TYPES & INTERFACES
@@ -292,7 +248,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // COPILOTKIT HOOKS
   // ================================================================================
 
-  const { messages, setMessages, isLoading, generateSuggestions, reloadMessages, reset, stopGeneration } =
+  const { messages, setMessages, isLoading, reloadMessages, reset, stopGeneration } =
     useCopilotChat();
 
   // Track streaming state to avoid restoring messages after edits/deletes
@@ -305,9 +261,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // CUSTOM HOOKS
   // ================================================================================
 
-  // Note: Scroll management is handled by CustomMessages via Virtua's VList API
-  // No duplicate scroll logic needed here
-
   // Agent state management (extracted to hook)
   const { dynamicAgentState, setDynamicAgentState, latestAssistantMessageIdRef } = useAgentStateManagement({
     sessionId,
@@ -315,14 +268,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     initialAgentStepState,
     onAgentStepStateChange,
   });
-
-  // Shared agent state for maintaining agent context across interactions
-  //   const { state, setState } = useCoAgent<AgentState>({
-  //   name: 'dynamic_agent',
-  //     initialState: {
-  //     proverbs: ['CopilotKit may be new, but its the best thing since sliced bread.'],
-  //   },
-  // });
 
   // Totals for DB-backed counts (HTML, form, clickable element chunks)
   const [totals, setTotals] = useState<{ html: number; form: number; click: number }>({ html: 0, form: 0, click: 0 });
@@ -352,6 +297,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   }, [messages.length]);
 
   // Persist immediately when messages are removed (e.g., user deletion)
+  // NOTE: All persistence goes through useMessagePersistence.saveMessagesToStorage
   const previousMessageCountRef = useRef(messages.length);
 
   useEffect(() => {
@@ -367,15 +313,13 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
       const sanitizedMessages =
         (data && Array.isArray(data.allMessages) && data.allMessages.length >= 0 ? data.allMessages : messages) ?? [];
 
-      if (sanitizedMessages.length > 0) {
-        void saveMessagesToStorage(sanitizedMessages as unknown[]);
-      } else {
-        void sessionStorageDBWrapper.updateAllMessages(sessionId, []);
-      }
+      // Always use saveMessagesToStorage (from useMessagePersistence) for persistence
+      // This ensures consistent data handling and prevents race conditions
+      void saveMessagesToStorage(sanitizedMessages as unknown[]);
     } catch (error) {
       debug.warn?.('[ChatInner] Failed to persist messages after deletion:', error);
     }
-  }, [messages, isLoading, saveMessagesRef, saveMessagesToStorage, sessionId]);
+  }, [messages, isLoading, saveMessagesRef, saveMessagesToStorage]);
 
   // Comprehensive ref cleanup on session change
   useEffect(() => {
@@ -433,14 +377,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ================================================================================
   // PAGE METADATA
   // ================================================================================
-  const pageMetadataForAgent = usePageMetadata({
-    currentPageContent,
-    pageContentEmbedding,
-    totals,
-    enableLogging: false,
-  });
 
-  // Multi-page metadata for enhanced agent context
+  // Multi-page metadata for enhanced agent context (includes current page metadata)
   const multiPageMetadata = useMultiPageMetadata({
     selectedPageURLs,
     currentPageURL,
@@ -495,64 +433,10 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   );
 
   // ================================================================================
-  // DEFAULT TOOL RENDER
-  // ================================================================================
-
-  const defaultToolRender = useCallback(
-    (props: { name?: string; status?: string; args?: Record<string, unknown>; result?: unknown; error?: unknown }) => {
-      const { name, status, args, result } = props;
-      const error =
-        props?.error ?? (typeof result === 'object' && result ? (result as Record<string, unknown>)?.error : undefined);
-
-      const formatName = (value: string) => {
-        const cleaned = value
-          .replace(/^(mcp_|builtin_)/, '')
-          .split(/[_-]/)
-          .filter(Boolean)
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-          .join(' ');
-        return cleaned || value || 'Tool';
-      };
-
-      const displayName = formatName(typeof name === 'string' ? name : 'Tool');
-      let argsSummary = '';
-      try {
-        if (args && Object.keys(args).length > 0) {
-          argsSummary = clipText(JSON.stringify(args), 80);
-        }
-      } catch {
-        argsSummary = '';
-      }
-
-      const baseMessage = argsSummary ? `${displayName} (${argsSummary})` : displayName;
-
-      const messages = {
-        pending: `Starting ${baseMessage}...`,
-        inProgress: `${baseMessage} in progress...`,
-        complete: error ? `${displayName} failed: ${clipText(String(error), 60)}` : `${displayName} complete`,
-      };
-
-      return (
-        <ActionStatus
-          toolName={displayName}
-          status={status as 'pending' | 'executing' | 'complete'}
-          isLight={isLight}
-          icon={<DefaultToolIcon isLight={isLight} />}
-          messages={messages}
-          args={args}
-          result={result}
-          error={error}
-        />
-      );
-    },
-    [clipText, isLight],
-  );
-
-  useDefaultTool({ render: defaultToolRender }, [defaultToolRender]);
-
-  // ================================================================================
   // COPILOTKIT ACTIONS
   // ================================================================================
+  // Note: Default tool rendering is now handled by renderToolCalls at Provider level
+  // See ChatSessionContainer.tsx - createAllToolRenderers includes wildcard '*' renderer
 
   const actionDeps = useMemo(
     () => ({
@@ -570,34 +454,34 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
 
   // Search Actions - conditionally enabled based on agent config
   useFrontendTool(
-    wrapToolConfig(createSearchPageContentAction(actionDeps)) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createSearchPageContentAction(actionDeps)) as any,
     [actionDeps, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createSearchFormDataAction(actionDeps)) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createSearchFormDataAction(actionDeps)) as any,
     [actionDeps, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createSearchDOMUpdatesAction(actionDeps)) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createSearchDOMUpdatesAction(actionDeps)) as any,
     [actionDeps, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createSearchClickableElementsAction(actionDeps)) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createSearchClickableElementsAction(actionDeps)) as any,
     [actionDeps, wrapToolConfig],
   );
 
   // Data Retrieval Actions - conditionally enabled based on agent config
   const retrievalDeps = useMemo(() => ({ currentPageContent, isLight }), [currentPageContent, isLight]);
   useFrontendTool(
-    wrapToolConfig(createGetHtmlChunksByRangeAction(retrievalDeps)) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createGetHtmlChunksByRangeAction(retrievalDeps)) as any,
     [retrievalDeps, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createGetFormChunksByRangeAction(retrievalDeps)) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createGetFormChunksByRangeAction(retrievalDeps)) as any,
     [retrievalDeps, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createGetClickableChunksByRangeAction(retrievalDeps)) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createGetClickableChunksByRangeAction(retrievalDeps)) as any,
     [retrievalDeps, wrapToolConfig],
   );
 
@@ -607,89 +491,69 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     [isLight, clipText, triggerManualRefresh],
   );
   useFrontendTool(
-    wrapToolConfig(createMoveCursorToElementAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createMoveCursorToElementAction({ isLight, clipText })) as any,
     [domDeps, wrapToolConfig],
   );
   useFrontendTool(
     wrapToolConfig(
       createRefreshPageContentAction({ isLight, pageDataRef, triggerManualRefresh }),
-    ) as Parameters<typeof useFrontendTool>[0],
+    ) as any,
     [domDeps, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createCleanupExtensionUIAction({ isLight })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createCleanupExtensionUIAction({ isLight })) as any,
     [isLight, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createClickElementAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createClickElementAction({ isLight, clipText })) as any,
     [domDeps, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createVerifySelectorAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createVerifySelectorAction({ isLight, clipText })) as any,
     [domDeps, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createGetSelectorAtPointAction({ isLight })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createGetSelectorAtPointAction({ isLight })) as any,
     [isLight, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createGetSelectorsAtPointsAction({ isLight })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createGetSelectorsAtPointsAction({ isLight })) as any,
     [isLight, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createSendKeystrokesAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createSendKeystrokesAction({ isLight, clipText })) as any,
     [domDeps, wrapToolConfig],
   );
 
   // Form Actions - conditionally enabled based on agent config
   useFrontendTool(
-    wrapToolConfig(createInputDataAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createInputDataAction({ isLight, clipText })) as any,
     [isLight, clipText, wrapToolConfig],
   );
 
   // Navigation Actions - conditionally enabled based on agent config
   useFrontendTool(
-    wrapToolConfig(createOpenNewTabAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createOpenNewTabAction({ isLight, clipText })) as any,
     [isLight, clipText, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createScrollAction({ isLight, clipText, yesNo })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createScrollAction({ isLight, clipText, yesNo })) as any,
     [isLight, clipText, yesNo, wrapToolConfig],
   );
   useFrontendTool(
-    wrapToolConfig(createDragAndDropAction({ isLight, clipText })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createDragAndDropAction({ isLight, clipText })) as any,
     [isLight, clipText, wrapToolConfig],
   );
 
   // Screenshot Actions - conditionally enabled based on agent config
   useFrontendTool(
-    wrapToolConfig(createTakeScreenshotAction({ isLight })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createTakeScreenshotAction({ isLight })) as any,
     [isLight, wrapToolConfig],
   );
 
-  // Image Generation Actions - conditionally enabled based on agent config
-  // Note: useRenderToolCall is for rendering, not registration - the tool itself is registered elsewhere
-  useRenderToolCall(createGenerateImagesAction({ themeColor }) as Parameters<typeof useRenderToolCall>[0], [
-    themeColor,
-  ]);
-
-  // Builtin Tool Renders (these are render handlers, not tool registration)
-  useRenderToolCall(createWebSearchRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [
-    isLight,
-    clipText,
-  ]);
-  useRenderToolCall(createCodeExecutionRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [
-    isLight,
-    clipText,
-  ]);
-  useRenderToolCall(createUrlContextRender({ isLight, clipText }) as Parameters<typeof useRenderToolCall>[0], [
-    isLight,
-    clipText,
-  ]);
-
   // Utility Actions - conditionally enabled based on agent config
   useFrontendTool(
-    wrapToolConfig(createWaitAction({ isLight })) as Parameters<typeof useFrontendTool>[0],
+    wrapToolConfig(createWaitAction({ isLight })) as any,
     [isLight, wrapToolConfig],
   );
 
@@ -709,136 +573,10 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   useHumanInTheLoop(confirmActionConfig as Parameters<typeof useHumanInTheLoop>[0]);
 
   // ================================================================================
-  // UNIFIED AGENT STATE RENDERING
+  // AGENT STATE RENDERING - Handled by renderActivityMessages at Provider level
   // ================================================================================
-  // Single hook that handles both:
-  // - Plan steps (from create_plan/update_plan_step) - steps with 'description' field
-  // - Graph execution (from run_graph) - steps with 'node' field or nested 'graph' object
-  //
-  // Matches backend's AgentState which contains both { steps: Step[], graph: GraphState }
-
-  useCopilotAgentStateRender<UnifiedAgentState>({
-    agentId: 'dynamic_agent',
-    render: ({ state: unifiedState }) => {
-      // Check if we have any meaningful state to render
-      const hasSteps = unifiedState?.steps && unifiedState.steps.length > 0;
-      const hasGraph = unifiedState?.graph && (
-        unifiedState.graph.execution_history?.length > 0 || 
-        unifiedState.graph.next_action ||
-        unifiedState.graph.result
-      );
-      
-      if (!hasSteps && !hasGraph) {
-        return null;
-      }
-
-      // Determine what type of state we have and render appropriately
-      const elements: React.ReactNode[] = [];
-      
-      // Case 1: Graph execution state (either flat GraphAgentState or nested graph)
-      // Check if steps contain graph nodes (have 'node' field) OR if we have a graph object
-      const steps = unifiedState?.steps || [];
-      if (hasSteps && isGraphSteps(steps)) {
-        // Flat GraphAgentState format - steps are GraphStep[]
-        const graphState = convertToGraphAgentState(unifiedState);
-        if (graphState && graphState.steps.length > 0) {
-          elements.push(
-            <div
-              key="graph-progress"
-              data-graph-progress="true"
-              data-session-id={sessionId}
-              data-timestamp={Date.now()}
-              className="w-full pt-2"
-              style={{
-                maxWidth: '56rem',
-                marginLeft: 'auto',
-                marginRight: 'auto',
-                paddingLeft: 12,
-                paddingRight: 12,
-              }}>
-              <GraphStateCard
-                state={graphState}
-                isCollapsed={false}
-                sessionId={sessionId}
-              />
-            </div>
-          );
-        }
-      } else if (hasGraph) {
-        // Nested graph format from full AgentState
-        const graphState = convertToGraphAgentState(unifiedState);
-        if (graphState && graphState.steps.length > 0) {
-          elements.push(
-            <div
-              key="graph-progress-nested"
-              data-graph-progress="true"
-              data-session-id={sessionId}
-              data-timestamp={Date.now()}
-              className="w-full pt-2"
-              style={{
-                maxWidth: '56rem',
-                marginLeft: 'auto',
-                marginRight: 'auto',
-                paddingLeft: 12,
-                paddingRight: 12,
-              }}>
-              <GraphStateCard
-                state={graphState}
-                isCollapsed={false}
-                sessionId={sessionId}
-              />
-            </div>
-          );
-        }
-      }
-      
-      // Case 2: Plan steps (have 'description' field)
-      if (hasSteps && isPlanSteps(steps)) {
-        const planState: AgentStepState = {
-          steps: steps,
-          sessionId: unifiedState.sessionId || sessionId,
-        };
-        
-        if (planState.sessionId !== sessionId) {
-          // Skip if this is for a different session
-        } else {
-          elements.push(
-        <div
-              key="task-progress"
-          data-task-progress="true"
-          data-session-id={sessionId}
-          data-timestamp={Date.now()}
-          className="w-full pt-2"
-          style={{
-            maxWidth: '56rem',
-            marginLeft: 'auto',
-            marginRight: 'auto',
-            paddingLeft: 12,
-            paddingRight: 12,
-            ['--copilot-kit-input-background-color' as string]: 'transparent',
-            ['--copilot-kit-separator-color' as string]: isLight ? '#e5e7eb' : '#374151',
-            ['--copilot-kit-border-color' as string]: isLight ? '#e5e7eb' : '#374151',
-            ['--task-progress-rendered-border-color' as string]: isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151',
-          }}>
-          <TaskProgressCard
-                state={planState}
-            setState={setDynamicAgentState}
-            isCollapsed={true}
-            isHistorical={true}
-            showControls={false}
-          />
-        </div>
-      );
-        }
-      }
-      
-      if (elements.length === 0) {
-        return null;
-      }
-      
-      return <>{elements}</>;
-    },
-  });
+  // V2: Agent state (plan/graph) is now rendered via CopilotKitProvider's
+  // renderActivityMessages prop. See ChatSessionContainer.tsx.
 
   // Auto-collapse older progress cards
   useProgressCardCollapse();
@@ -851,8 +589,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   useCopilotSuggestions({
     enabled: showSuggestions,
     instructions: CHAT_SUGGESTIONS_INSTRUCTIONS,
-    minSuggestions: 2,
-    maxSuggestions: DEFAULT_MAX_SUGGESTIONS,
   });
 
   // ================================================================================
@@ -989,16 +725,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         if (all.length > 0) {
           void saveMessagesToStorage(all as unknown[]);
         }
-
-        // Generate suggestions after streaming stops
-        if (showSuggestions && generateSuggestions) {
-          debug.log('[ChatInner] Generating suggestions...');
-          try {
-            await Promise.resolve(generateSuggestions());
-          } catch (err) {
-            debug.warn?.('[ChatInner] Failed to generate suggestions:', err);
-          }
-        }
+        // Note: V2 suggestions are generated automatically via useConfigureSuggestions
       } catch (e) {
         debug.warn?.('[ChatInner] Auto-save on stop failed:', e);
       }
@@ -1006,8 +733,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     [
       saveMessagesRef,
       saveMessagesToStorage,
-      showSuggestions,
-      generateSuggestions,
       cachedSanitizedRef,
       sanitizeMessages,
       setMessages,
@@ -1092,42 +817,18 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
       <div className="flex h-full flex-col overflow-hidden">
         <div
           className={cn(
-            'copilot-chat-wrapper relative min-h-0 flex-1 overflow-y-auto',
+            'copilot-chat-wrapper relative min-h-0 flex-1 overflow-hidden',
             !isAgentAndModelSelected && 'chat-input-disabled',
           )}>
           <CopilotChat
-            imageUploadsEnabled={false}
-            onSubmitMessage={handleSubmitMessage}
-            onError={errorEvent => {
-              debug.log('[ChatInner] Error:', errorEvent);
+            agentId="dynamic_agent"
+            threadId={sessionId}
+            messageView={{
+              assistantMessage: CustomAssistantMessageV2,
             }}
-            onInProgress={handleInProgress}
-            renderError={renderError}
-            onRegenerate={() => {
-              debug.log('[ChatInner] Regenerate');
+            chatView={{
+              scrollToBottomButton: CustomScrollToBottomButton,
             }}
-            onCopy={(text: string) => {
-              debug.log('[ChatInner] Copy:', text.substring(0, 50));
-            }}
-            onStopGeneration={() => {
-              debug.log('[ChatInner] Stop generation');
-              try {
-                stopGeneration?.();
-              } catch (error) {
-                debug.warn?.('[ChatInner] Failed to stop generation', error);
-              }
-            }}
-            onThumbsDown={() => {
-              debug.log('[ChatInner] Thumbs down');
-            }}
-            onThumbsUp={() => {
-              debug.log('[ChatInner] Thumbs up');
-            }}
-            markdownTagRenderers={customMarkdownTagRenderers}
-            AssistantMessage={CustomAssistantMessage}
-            UserMessage={CustomUserMessage}
-            Messages={MessagesComponent}
-            Input={ScopedInput}
           />
         </div>
       </div>

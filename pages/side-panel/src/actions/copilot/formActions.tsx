@@ -2,12 +2,30 @@
  * Form Manipulation CopilotKit Actions
  *
  * Actions for filling form fields (inputs, textareas, selects, checkboxes, contenteditable)
+ * V2: Uses Zod schemas for parameter definitions.
  */
 
 import React from 'react';
+import { z } from 'zod';
 import { debug } from '@extension/shared';
 import { ActionStatus } from '../../components/feedback/ActionStatus';
 import { handleInputData } from '../index';
+
+// ============================================================================
+// ZOD SCHEMAS FOR TOOL PARAMETERS
+// ============================================================================
+
+/** Schema for inputData parameters */
+export const inputDataSchema = z.object({
+  cssSelector: z.string().describe(
+    "A valid CSS selector for the input field (e.g., '#email', 'document > x-app >> #message'). Use searchPageContent() to find appropriate selectors."
+  ),
+  value: z.string().describe(
+    "The value to input into the field. For checkboxes/radio, use 'true' or 'false'. For select, use option value or text."
+  ),
+  clearFirst: z.boolean().optional().describe('Whether to clear the field before inputting (default: true). Set to false to append.'),
+  moveCursor: z.boolean().optional().describe('Whether to move the mouse cursor to the input element (default: true).'),
+});
 
 // ============================================================================
 // CONSTANTS
@@ -77,35 +95,7 @@ export const createInputDataAction = ({ isLight, clipText }: FormActionDependenc
   name: 'inputData',
   description:
     'Fill a form field matched by selector (inputs, textareas, selects, checkboxes, contenteditable). Supports Shadow DOM with >> notation.',
-  parameters: [
-    {
-      name: 'cssSelector',
-      type: 'string',
-      description:
-        "A valid CSS selector for the input field (e.g., '#email', 'document > x-app >> #message'). Use searchPageContent() to find appropriate selectors.",
-      required: true,
-    },
-    {
-      name: 'value',
-      type: 'string',
-      description:
-        "The value to input into the field. For checkboxes/radio, use 'true' or 'false'. For select, use option value or text.",
-      required: true,
-    },
-    {
-      name: 'clearFirst',
-      type: 'boolean',
-      description: 'Whether to clear the field before inputting (default: true). Set to false to append.',
-      required: false,
-    },
-    {
-      name: 'moveCursor',
-      type: 'boolean',
-      description:
-        'Whether to move the mouse cursor to the input element (default: true). Set to false to disable cursor movement.',
-      required: false,
-    },
-  ],
+  parameters: inputDataSchema,
   render: ({ status, args, result, error }: ActionRenderProps) => {
     const selector = args?.cssSelector ?? '';
     const value = args?.value ?? '';

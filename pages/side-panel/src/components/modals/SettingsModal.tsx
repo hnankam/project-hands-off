@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@extension/ui';
 import { useStorage } from '@extension/shared';
-import { themeStorage } from '@extension/storage';
+import { themeStorage, preferencesStorage, type ChatFontSize } from '@extension/storage';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -61,6 +61,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onAgentModeChatChange,
 }) => {
   const { theme } = useStorage(themeStorage);
+  const { chatFontSize } = useStorage(preferencesStorage);
   const [toolsExpanded, setToolsExpanded] = useState(false);
   const [categoryExpanded, setCategoryExpanded] = useState<Record<string, boolean>>({
     frontend: false,
@@ -368,6 +369,73 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
                   <span>System</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div className={cn('border-t', isLight ? 'border-gray-200' : 'border-gray-700')} />
+
+            {/* Font Size Selection */}
+            <div className="space-y-1.5">
+              <label
+                className={cn(
+                  'text-xs font-medium',
+                  isLight ? 'text-gray-900' : 'text-gray-100'
+                )}
+              >
+                Chat Font Size
+              </label>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => preferencesStorage.setChatFontSize('small')}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
+                    chatFontSize === 'small'
+                      ? 'bg-blue-500 text-white'
+                      : isLight
+                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
+                  )}
+                >
+                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+                  </svg>
+                  <span>Small</span>
+                </button>
+                
+                <button
+                  onClick={() => preferencesStorage.setChatFontSize('medium')}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
+                    chatFontSize === 'medium'
+                      ? 'bg-blue-500 text-white'
+                      : isLight
+                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
+                  )}
+                >
+                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                  <span>Medium</span>
+                </button>
+                
+                <button
+                  onClick={() => preferencesStorage.setChatFontSize('large')}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs transition-colors',
+                    chatFontSize === 'large'
+                      ? 'bg-blue-500 text-white'
+                      : isLight
+                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
+                  )}
+                >
+                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                  </svg>
+                  <span>Large</span>
                 </button>
               </div>
             </div>

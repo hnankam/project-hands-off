@@ -1,0 +1,27 @@
+/* =============================================================================
+   COPILOTKIT V2 CHAT COMPONENT
+   Main entry point for CopilotKit V2 chat-related styles
+   =============================================================================
+   
+   V2 Migration Notes:
+   - CopilotKit V1.50 uses AG-UI protocol with different DOM structure
+   - Class names may differ from V1 (e.g., different prefix patterns)
+   - Messages use Message type from @ag-ui/core
+   - Tool calls rendered via ReactToolCallRenderer API
+   - Activity messages rendered via ReactActivityMessageRenderer API
+   
+   This file imports all V2 sub-modules:
+   1. chat-layout.v2.css       - Container structure, flex ordering
+   2. chat-messages.v2.css     - Messages, controls, typography
+   3. chat-input-footer.v2.css - Input controls, suggestions footer
+   4. chat-animations.v2.css   - Sparkle effects, transitions, animations
+   
+   ============================================================================= */
+
+/* Import V2 sub-modules */
+@import './chat-layout.v2.css';
+@import './chat-messages.v2.css';
+@import './chat-input-footer.v2.css';
+@import './chat-animations.v2.css';
+@import './tables.v2.css';
+

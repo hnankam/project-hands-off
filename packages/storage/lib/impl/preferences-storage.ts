@@ -1,10 +1,13 @@
 import { createStorage, StorageEnum } from '../base/index.js';
 
+export type ChatFontSize = 'small' | 'medium' | 'large';
+
 export interface PreferencesStateType {
   showAgentCursor: boolean;
   showSuggestions: boolean;
   showThoughtBlocks: boolean;
   agentModeChat: boolean;
+  chatFontSize: ChatFontSize;
 }
 
 export type PreferencesStorageType = ReturnType<typeof createStorage<PreferencesStateType>> & {
@@ -16,6 +19,7 @@ export type PreferencesStorageType = ReturnType<typeof createStorage<Preferences
   toggleShowThoughtBlocks: () => Promise<void>;
   setAgentModeChat: (enabled: boolean) => Promise<void>;
   toggleAgentModeChat: () => Promise<void>;
+  setChatFontSize: (size: ChatFontSize) => Promise<void>;
 };
 
 const storage = createStorage<PreferencesStateType>(
@@ -25,6 +29,7 @@ const storage = createStorage<PreferencesStateType>(
     showSuggestions: true, // Default to showing suggestions
     showThoughtBlocks: true, // Default to showing thought blocks
     agentModeChat: false, // Default to disabled (normal chat mode)
+    chatFontSize: 'medium', // Default to medium font size
   },
   {
     storageEnum: StorageEnum.Local,
@@ -80,6 +85,12 @@ export const preferencesStorage: PreferencesStorageType = {
     await storage.set(currentState => ({
       ...currentState,
       agentModeChat: !currentState.agentModeChat,
+    }));
+  },
+  setChatFontSize: async (size: ChatFontSize) => {
+    await storage.set(currentState => ({
+      ...currentState,
+      chatFontSize: size,
     }));
   },
 };

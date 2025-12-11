@@ -28,9 +28,10 @@
 @import './styles/layout/dropdown.css';
 
 /* Components */
-@import './styles/components/copilotkit/chat.css';
-@import './styles/components/copilotkit/code-blocks.css';
-@import './styles/components/copilotkit/thinking-block.css';
+/* V2 Custom CopilotKit styles */
+@import './styles/components/copilotkit/chat.v2.css';
+@import './styles/components/copilotkit/code-blocks.v2.css';
+@import './styles/components/copilotkit/thinking-block.v2.css';
 @import './styles/components/editors/tiptap.css';
 @import './styles/components/editors/codemirror.css';
 @import './styles/components/markdown/content.css';

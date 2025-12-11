@@ -1,7 +1,7 @@
 {
   "name": "copilot-runtime-server",
-  "version": "1.0.0",
-  "description": "CopilotKit Runtime Server for Chrome Extension",
+  "version": "2.0.0",
+  "description": "CopilotKit V2 Runtime Server for Chrome Extension",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -10,35 +10,26 @@
     "dev": "NODE_ENV=development node --watch server.js"
   },
   "dependencies": {
-    "@ag-ui/client": "0.0.39",
-    "@ag-ui/langgraph": "0.0.18",
-    "@anthropic-ai/bedrock-sdk": "0.25.0",
-    "@aws-crypto/sha256-js": "5.2.0",
-    "@aws-sdk/client-bedrock-runtime": "3.907.0",
-    "@aws-sdk/credential-provider-node": "3.907.0",
-    "@aws-sdk/types": "3.901.0",
+    "@ag-ui/client": "^0.0.42",
+    "@ag-ui/core": "^0.0.42",
+    "@aws-sdk/client-bedrock-runtime": "^3.907.0",
     "@better-auth/sso": "^1.4.5",
-    "@copilotkit/runtime": "1.10.6",
-    "@google/generative-ai": "0.17.0",
-    "@langchain/community": "0.3.57",
-    "@langchain/core": "0.3.78",
-    "@smithy/eventstream-codec": "2.2.0",
-    "@smithy/protocol-http": "4.1.7",
-    "@smithy/signature-v4": "4.2.3",
-    "@smithy/util-utf8": "3.0.0",
+    "@copilotkit/runtime": "^1.50.0-beta.7",
+    "@hono/node-server": "^1.19.7",
     "better-auth": "^1.4.5",
-    "cors": "2.8.5",
+    "cors": "^2.8.5",
     "dotenv": "16.6.1",
-    "express": "4.21.1",
-    "express-rate-limit": "7.4.0",
-    "helmet": "7.1.0",
-    "openai": "4.104.0",
+    "express": "^4.21.1",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "hono": "^4.10.8",
     "pg": "8.16.3",
     "resend": "6.3.0"
   },
   "devDependencies": {
-    "@types/cors": "2.8.13",
-    "@types/express": "4.17.17"
+    "@types/cors": "^2.8.13",
+    "@types/express": "^4.17.17",
+    "@types/node": "^20.0.0"
   },
   "engines": {
     "node": ">=20.9.0"

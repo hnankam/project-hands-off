@@ -1,0 +1,221 @@
+/* =============================================================================
+   COPILOTKIT V2 CHAT LAYOUT
+   Container structure, flex ordering, and virtualization for V2
+   =============================================================================
+   
+   V2 Changes:
+   - CopilotChat component structure may differ from V1
+   - Messages container uses different class names
+   - Flex layout ordering may need adjustment
+   
+   ============================================================================= */
+
+/* ==========================================================
+   MAIN CONTAINER STRUCTURE
+   ========================================================== */
+
+/* CopilotChat - Ensure proper scrolling and layout */
+.copilot-chat-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.4;
+  transition: opacity 0.2s ease-in-out;
+  background-color: #ffffff;
+}
+
+/* Dark mode background - matches home/admin pages */
+.copilot-chat-container.dark {
+  background-color: #0D1117;
+}
+
+/* ==========================================================
+   FONT SIZE VARIANTS
+   Override CopilotKit default font-size rules
+   ========================================================== */
+
+.copilot-chat-container.font-size-small,
+.copilot-chat-container.font-size-small p,
+.copilot-chat-container.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.font-size-small span:not([role=group] span):not([class*=gallery]) {
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+.copilot-chat-container.font-size-medium,
+.copilot-chat-container.font-size-medium p,
+.copilot-chat-container.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.font-size-medium span:not([role=group] span):not([class*=gallery]) {
+  font-size: 16px !important;
+  line-height: 1.5 !important;
+}
+
+.copilot-chat-container.font-size-large,
+.copilot-chat-container.font-size-large p,
+.copilot-chat-container.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.font-size-large span:not([role=group] span):not([class*=gallery]) {
+  font-size: 19px !important;
+  line-height: 1.55 !important;
+}
+
+/* Target CopilotKit V2 DOM structure */
+.copilot-chat-container > div {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* V2 CopilotKit chat fills its container */
+.copilotKitChat {
+  height: 100%;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden;
+  background-color: inherit;
+}
+
+/* ==========================================================
+   FLEX ORDERING
+   ========================================================== */
+
+/* Direct children maintain proper order */
+.copilotKitChat > * {
+  order: 0;
+}
+
+/* Messages container - grows to fill available space */
+.copilotKitChat > div:first-child,
+.copilotKitChat > [class*="Messages"]:not([class*="Footer"]) {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  order: 0 !important;
+}
+
+/* Error container - should NOT grow */
+.copilotKitChat > div:first-child:has(.bg-red-50),
+.copilotKitChat > div:first-child:has([class*="bg-red"]) {
+  flex: 0 0 auto !important;
+  min-height: auto !important;
+}
+
+/* Footer - fixed at natural size */
+.copilotKitChat > .copilotKitMessagesFooter,
+.copilotKitChat > footer,
+.copilotKitChat footer {
+  flex: 0 0 auto !important;
+  order: 1 !important;
+}
+
+/* ==========================================================
+   CHAT WRAPPER
+   ========================================================== */
+
+.copilot-chat-wrapper {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.copilot-chat-wrapper > div:not(.sticky) {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* ==========================================================
+   MESSAGES AREA
+   ========================================================== */
+
+/* Messages area - scrollable and constrained */
+.copilot-chat-container .overflow-y-auto {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  order: 0 !important;
+}
+
+/* Messages container padding and sizing */
+.copilotKitMessagesContainer {
+  padding-left: 0.75rem !important;
+  padding-right: 0.75rem !important;
+  padding-top: 0 !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding-bottom: 5px !important;
+  box-sizing: border-box !important;
+  align-self: stretch !important;
+  height: 100% !important;
+  position: relative !important;
+}
+
+/* ==========================================================
+   SCROLLBAR STYLING
+   ========================================================== */
+
+.copilotKitMessagesContainer::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+
+.copilotKitMessagesContainer::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.copilotKitMessagesContainer::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3) !important;
+  border-radius: 2px !important;
+}
+
+.copilotKitMessagesContainer::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5) !important;
+}
+
+.copilotKitMessagesContainer::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+/* Dark mode scrollbar */
+.dark .copilotKitMessagesContainer::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.dark .copilotKitMessagesContainer::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3) !important;
+}
+
+.dark .copilotKitMessagesContainer::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5) !important;
+}
+
+.dark .copilotKitMessagesContainer::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+/* ==========================================================
+   MESSAGES WRAPPER
+   ========================================================== */
+
+.copilotKitMessages {
+  width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  margin-right: -0.375rem !important;
+  box-sizing: border-box !important;
+  overflow-y: auto !important;
+}
+
+/* ==========================================================
+   CUSTOM SCROLL TO BOTTOM BUTTON
+   ========================================================== */
+
+/* Ensure custom scroll-to-bottom button is clickable */
+button[data-custom-scroll-button="true"],
+.copilot-chat-container button[data-custom-scroll-button="true"] {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+

@@ -34,3 +34,21 @@ export const POLLING_INTERVALS = {
   teamCacheCheck: 500,
 } as const;
 
+export const SESSION_CACHE = {
+  /** Maximum number of sessions to keep mounted (LRU eviction after this limit) */
+  maxCachedSessions: 5,
+} as const;
+
+/**
+ * Shiki syntax highlighting themes for Streamdown code blocks
+ * Format: [lightTheme, darkTheme]
+ * 
+ * Available themes: https://shiki.style/themes
+ * - one-dark-pro: One Dark Pro theme (matches VS Code extension)
+ * - github-light: GitHub's light theme
+ * - github-dark: GitHub's dark theme
+ * - dracula: Popular dark theme
+ * - nord: Arctic blue theme
+ */
+export const SHIKI_THEMES = ['github-light', 'one-dark-pro'] as const;
+

@@ -207,7 +207,7 @@
   border-top-color: #1f2937 !important;
 }
 
-/* Horizontal Rule in CopilotKit markdown */
+/* COMMENTED OUT: Using CopilotKit default styles
 .copilotKitAssistantMessage hr,
 .copilotKitMarkdownElement hr,
 .copilotKitMarkdown hr,
@@ -227,6 +227,7 @@
   color: transparent !important;
   margin: 10px 0 !important;
 }
+*/
 
 /* Lists in markdown */
 .markdown-content ul,
@@ -330,9 +331,9 @@
 
 /* ==========================================================
    CHAT INPUT DISABLED STATE
-   Disable input when agent or model not selected
+   COMMENTED OUT: Using CopilotKit default styles
    ========================================================== */
-/* Disable the chat input when agent or model is not selected */
+/*
 .chat-input-disabled .copilotKitInput,
 .chat-input-disabled .copilotKitInput textarea,
 .chat-input-disabled .copilotKitInput .tiptap-editor,
@@ -360,6 +361,7 @@
   pointer-events: none !important;
   opacity: 0.5 !important;
 }
+*/
 
 /* ==========================================================
    GRAPH STATE CARD MARKDOWN CONTENT

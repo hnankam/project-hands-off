@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
 import type { FC, CSSProperties } from 'react';
-import { useStorage, useSessionStorageDB, sessionStorageDBWrapper, debug } from '@extension/shared';
-import type { SessionMetadata } from '@extension/shared';
+import { useStorage, sessionStorageDBWrapper, debug } from '@extension/shared';
 import { preferencesStorage } from '@extension/storage';
 import { StatusBar } from '../layout/StatusBar';
 import { ChatInner } from './ChatInner';
@@ -20,12 +19,71 @@ import { useEmbeddingWorker } from '../../hooks/useEmbeddingWorker';
 import { usePageContentEmbedding } from '../../hooks/usePageContentEmbedding';
 import { useDOMUpdateEmbedding } from '../../hooks/useDOMUpdateEmbedding';
 import { useAgentSwitching } from '../../hooks/useAgentSwitching';
-import { useAutoSave } from '../../hooks/useAutoSave';
 import { useEnabledFrontendTools } from '../../hooks/useEnabledFrontendTools';
 import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG, ABLY_CONFIG } from '../../constants';
 import { ts } from '../../utils/logging';
 import { useAuth } from '../../context/AuthContext';
-import { SessionRuntimePortal, useSessionRuntimeState } from '../../context/SessionRuntimeContext';
+import { CopilotKitProvider, useCopilotChat } from '../../hooks/copilotkit';
+import { createAllToolRenderers } from '../../actions/copilot/builtinToolActions';
+import { createActivityMessageRenderers } from '../../actions/copilot/activityRenderers';
+
+// Helper for text clipping (used by backend tool renderers)
+const clipText = (text: string, maxLength: number): string => {
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength - 3) + '...';
+};
+
+/**
+ * Helper component that syncs messages signature and streaming state from CopilotKit to parent.
+ * Also handles session switching by resetting CopilotKit state when sessionId changes.
+ * Must be rendered inside CopilotKitProvider.
+ */
+const ChatInnerWithSignatureSync: FC<{
+  sessionId: string;
+  onSignatureChange: (signature: string) => void;
+  onStreamingChange: (isStreaming: boolean) => void;
+  renderChatInner: () => React.ReactNode;
+}> = ({ sessionId, onSignatureChange, onStreamingChange, renderChatInner }) => {
+  const { messages, isLoading, reset } = useCopilotChat();
+  const prevSessionIdRef = useRef(sessionId);
+
+  // Handle session switch - reset CopilotKit messages when session changes
+  // This allows CopilotKitProvider to remain stable (no key change) while still
+  // clearing messages on session switch
+  useEffect(() => {
+    if (prevSessionIdRef.current !== sessionId) {
+      debug.log(`[ChatInnerWithSignatureSync] Session changed: ${prevSessionIdRef.current?.slice(0, 8)} -> ${sessionId.slice(0, 8)}, resetting messages`);
+      prevSessionIdRef.current = sessionId;
+      // Reset CopilotKit's internal message state
+      reset();
+    }
+  }, [sessionId, reset]);
+
+  // Sync streaming state to parent
+  useEffect(() => {
+    onStreamingChange(isLoading);
+  }, [isLoading, onStreamingChange]);
+
+  // Compute and sync messages signature
+  useEffect(() => {
+    try {
+      const signature = JSON.stringify(
+        messages.map(message => ({
+          id: (message as any)?.id ?? null,
+          role: (message as any)?.role ?? null,
+          hash: typeof (message as any)?.content === 'string' 
+            ? (message as any).content.length 
+            : JSON.stringify((message as any)?.content ?? '').length,
+        })),
+      );
+      onSignatureChange(signature);
+    } catch {
+      onSignatureChange(`${messages.length}:${Date.now()}`);
+    }
+  }, [messages, onSignatureChange]);
+
+  return <>{renderChatInner()}</>;
+};
 
 interface ChatSessionContainerProps {
   sessionId: string;
@@ -75,7 +133,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     // Removed: const { sessions } = useSessionStorageDB();
     // This was causing unnecessary re-renders on every session update.
     // Agent/model loading is now handled by useSessionData hook.
-    const { showAgentCursor, showSuggestions, showThoughtBlocks, agentModeChat } = useStorage(preferencesStorage);
+    const { showAgentCursor, showSuggestions, showThoughtBlocks, agentModeChat, chatFontSize } = useStorage(preferencesStorage);
     const { organization, activeTeam } = useAuth();
     const [userMessagesCount, setUserMessagesCount] = useState<number>(0);
     const [assistantMessagesCount, setAssistantMessagesCount] = useState<number>(0);
@@ -90,7 +148,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const hydrationReadyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isUsagePopupOpen, setIsUsagePopupOpen] = useState(false);
-    const runtimeState = useSessionRuntimeState(sessionId);
+    
+    // Track messages signature for hydration (replaces useSessionRuntimeState)
+    const [messagesSignature, setMessagesSignature] = useState<string>('');
+    const messagesSignatureRef = useRef<string>('');
+    
+    // Track streaming state from CopilotKit (synced from ChatInnerWithSignatureSync)
+    const [copilotIsStreaming, setCopilotIsStreaming] = useState<boolean>(false);
 
     // Track previous session ID to detect changes
     const prevSessionIdRef = useRef<string | null>(null);
@@ -167,15 +231,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       [setSelectedModelInternal],
     );
 
-    // Refs for backward compatibility with useAgentSwitching
-    const isLoadingRef = useRef(isLoadingMetadata);
-    const isLoadingFromDBRef = useRef(isLoadingFromDB);
-
-    useEffect(() => {
-      isLoadingRef.current = isLoadingMetadata;
-      isLoadingFromDBRef.current = isLoadingFromDB;
-    }, [isLoadingMetadata, isLoadingFromDB]);
-
     // Log when agent/model selections change
     useEffect(() => {
       debug.log(`[ChatSessionContainer] Agent/Model state for session ${sessionId.slice(0, 8)}:`, {
@@ -194,8 +249,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
     }, [organization?.id, activeTeam, sessionId, setSelectedAgentInternal, setSelectedModelInternal]);
 
-    // Note: Agent switching state (activeAgent, activeModel, isSwitchingAgent, switchingStep)
-    // is now provided by useAgentSwitching hook (see line ~420)
+    // Agent switching is handled by useAgentSwitching hook
 
     // Message data structure returned by saveMessagesRef
     interface MessageData {
@@ -369,6 +423,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       sessionId,
       isActive,
       isPanelVisible,
+      isStreaming: copilotIsStreaming,
       saveMessagesRef,
       restoreMessagesRef,
       resetChatRef,
@@ -393,7 +448,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           `[ChatSessionContainer] Session changed from ${prevSessionId} to ${sessionId}, handling hydration...`,
         );
 
-        const runtimeHasMessages = Boolean(runtimeState?.messagesSignature);
+        const runtimeHasMessages = Boolean(messagesSignatureRef.current);
 
         if (isActive) {
           if (runtimeHasMessages) {
@@ -443,13 +498,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       sessionId,
       isActive,
       // Removed: sessions (no longer needed, reduces re-renders)
-      runtimeState?.messagesSignature,
+      messagesSignature,
       handleLoadMessages,
       saveMessagesToStorage,
     ]);
 
     useEffect(() => {
-      const signature = runtimeState?.messagesSignature;
+      const signature = messagesSignature;
       if (!signature || isCounterReady) {
         return;
       }
@@ -475,14 +530,14 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         sessionId: sessionId.slice(0, 8),
       });
       setIsCounterReady(true);
-    }, [runtimeState?.messagesSignature, isCounterReady, hydrationCompleted, onMessagesCountChange, sessionId]);
+    }, [messagesSignature, isCounterReady, hydrationCompleted, onMessagesCountChange, sessionId]);
 
     useEffect(() => {
       if (!isActive) {
         return;
       }
 
-      const signature = runtimeState?.messagesSignature;
+      const signature = messagesSignature;
       if (!signature) {
         return;
       }
@@ -494,7 +549,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         );
         setIsCounterReady(true);
       }
-    }, [isActive, runtimeState?.messagesSignature, hydrationCompleted, sessionId]);
+    }, [isActive, messagesSignature, hydrationCompleted, sessionId]);
 
     useEffect(() => {
       if (!onReady || !isActive) {
@@ -725,22 +780,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
     }, [currentPageContent?.url]); // Removed selectedPageURLs from deps - we don't want to re-run when selection changes
 
-    // Agent switching hook - replaces agent switching state machine
-    const { activeAgent, activeModel, isSwitchingAgent, switchingStep } = useAgentSwitching({
+    // Agent switching hook - manages agent/model transitions without remounting
+    const { activeAgent, activeModel } = useAgentSwitching({
       selectedAgent,
       selectedModel,
       sessionId,
-      handleSaveMessages,
-      handleLoadMessages,
-      isLoadingFromDBRef, // Pass ref to check if change is from DB load
     });
 
-    // Auto-save hook - replaces auto-save effects
-    useAutoSave({
-      isActive,
-      saveMessagesRef,
-      saveMessagesToStorage,
-    });
 
     // Enabled frontend tools hook - fetches which frontend tools are enabled for this agent
     const { enabledFrontendTools, isLoading: isLoadingFrontendTools } = useEnabledFrontendTools({
@@ -853,10 +899,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       previousIsPanelVisibleRef.current = isPanelVisible;
       previousIsPanelInteractiveRef.current = isPanelInteractive;
     }, [isPanelVisible, isPanelInteractive]);
-
-    // Removed: Session title lookup (was unused in ChatInner)
-    // const currentSession = sessions.find(s => s.id === sessionId);
-    // const sessionTitle = currentSession?.title || 'New Session';
 
     // OPTIMIZATION: Removed unnecessary setIsLoading effect (always false)
     // Loading state is now managed directly during mount
@@ -1016,12 +1058,64 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       [],
     );
 
+    // Callback to update messages signature (for hydration detection)
+    const handleMessagesSignatureChange = useCallback(
+      (signature: string) => {
+        if (messagesSignatureRef.current !== signature) {
+          messagesSignatureRef.current = signature;
+          setMessagesSignature(signature);
+        }
+      },
+      [],
+    );
+
+    // Callback to update streaming state from CopilotKit
+    const handleStreamingChange = useCallback(
+      (isStreaming: boolean) => {
+        setCopilotIsStreaming(isStreaming);
+      },
+      [],
+    );
+
+    // V2 CopilotKitProvider configuration
+    const copilotHeaders = useMemo(() => ({
+      'x-copilot-agent-type': activeAgent || '',
+      'x-copilot-model-type': activeModel || '',
+      'x-copilot-thread-id': sessionId,
+      ...(organization?.id ? { 'x-copilot-organization-id': organization.id } : {}),
+      ...(activeTeam ? { 'x-copilot-team-id': activeTeam } : {}),
+    }), [activeAgent, activeModel, sessionId, organization?.id, activeTeam]);
+
+    // V2: Tool renderers - create once and keep stable
+    // ActionStatus reads theme from storage directly
+    const toolRenderersRef = useRef<ReturnType<typeof createAllToolRenderers> | null>(null);
+    if (!toolRenderersRef.current) {
+      toolRenderersRef.current = createAllToolRenderers({ clipText });
+    }
+
+    // V2: Activity message renderers - recreate when session changes
+    // Components now read theme from storage directly, so no need to recreate on theme change
+    const lastActivitySessionRef = useRef<string | null>(null);
+    const activityRenderersRef = useRef<ReturnType<typeof createActivityMessageRenderers> | null>(null);
+    
+    // Recreate activity renderers only when session changes
+    if (
+      !activityRenderersRef.current || 
+      lastActivitySessionRef.current !== sessionId
+    ) {
+      activityRenderersRef.current = createActivityMessageRenderers({
+        sessionId,
+        setDynamicAgentState: setCurrentAgentStepState,
+      });
+      lastActivitySessionRef.current = sessionId;
+    }
+
     const renderChatInner = useCallback(
       () => (
         <ChatInner
-          key={`chat-inner-${sessionId}-${activeAgent}-${activeModel}-${showSuggestions ? 'on' : 'off'}-${
-            showThoughtBlocks ? 'thought-on' : 'thought-off'
-          }`}
+          // Key only includes session - agent/model changes are handled via props/headers
+          // This prevents remounts when switching agents/models
+          key={`chat-inner-${sessionId}`}
           sessionId={sessionId}
           currentPageContent={currentPageContent}
           pageContentEmbedding={pageContentEmbeddingRef.current}
@@ -1070,7 +1164,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         selectedPageURLs,
         setSelectedPageURLs,
         sessionId,
-        // Removed: sessionTitle (was unused)
         handleSetMessageCounts,
         setIsAgentLoading,
         setThemeColor,
@@ -1117,187 +1210,36 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
 
         {/* Chat container */}
         <div className="relative flex flex-1 flex-col overflow-hidden">
-          {/* Agent switching overlay - positioned above everything including skeletons */}
-          <div
-            className={`fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-sm transition-all duration-500 ${
-              isSwitchingAgent ? 'opacity-100' : 'pointer-events-none opacity-0'
-            } ${isLight ? 'bg-white/70' : 'bg-gray-900/70'}`}>
-            <div
-              className={`flex transform flex-col items-center gap-4 rounded-lg px-8 py-6 transition-transform duration-500 ${
-                isSwitchingAgent ? 'scale-100' : 'scale-95'
-              } ${isLight ? 'border border-gray-200 bg-white shadow-xl' : 'border border-gray-700 bg-gray-800 shadow-xl'}`}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className={`text-sm font-medium ${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
-                  Switching to {selectedAgent} agent
-                </span>
-              </div>
-
-              {/* Step indicators */}
-              <div className="flex w-full flex-col gap-3">
-                {/* Step 1: Saving messages */}
-                <div className="flex items-center gap-3">
-                  {switchingStep === 1 ? (
-                    <svg className="h-4 w-4 flex-shrink-0 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : switchingStep > 1 ? (
-                    <svg className="h-4 w-4 flex-shrink-0 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path
-                        fillRule="evenodd"
-                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  ) : (
-                    <div
-                      className={`h-4 w-4 flex-shrink-0 rounded-full border-2 ${
-                        isLight ? 'border-gray-300' : 'border-gray-600'
-                      }`}
-                    />
-                  )}
-                  <span
-                    className={`text-xs ${
-                      switchingStep === 1
-                        ? isLight
-                          ? 'font-medium text-gray-700'
-                          : 'font-medium text-gray-200'
-                        : switchingStep > 1
-                          ? 'text-green-600'
-                          : isLight
-                            ? 'text-gray-500'
-                            : 'text-gray-400'
-                    }`}>
-                    Saving messages
-                  </span>
-                </div>
-
-                {/* Step 2: Switching agent/model */}
-                <div className="flex items-center gap-3">
-                  {switchingStep === 2 ? (
-                    <svg className="h-4 w-4 flex-shrink-0 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : switchingStep > 2 ? (
-                    <svg className="h-4 w-4 flex-shrink-0 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path
-                        fillRule="evenodd"
-                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  ) : (
-                    <div
-                      className={`h-4 w-4 flex-shrink-0 rounded-full border-2 ${
-                        isLight ? 'border-gray-300' : 'border-gray-600'
-                      }`}
-                    />
-                  )}
-                  <span
-                    className={`text-xs ${
-                      switchingStep === 2
-                        ? isLight
-                          ? 'font-medium text-gray-700'
-                          : 'font-medium text-gray-200'
-                        : switchingStep > 2
-                          ? 'text-green-600'
-                          : isLight
-                            ? 'text-gray-500'
-                            : 'text-gray-400'
-                    }`}>
-                    Switching to {selectedModel}
-                  </span>
-                </div>
-
-                {/* Step 3: Restoring messages */}
-                <div className="flex items-center gap-3">
-                  {switchingStep === 3 ? (
-                    <svg className="h-4 w-4 flex-shrink-0 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : switchingStep > 3 ? (
-                    <svg className="h-4 w-4 flex-shrink-0 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path
-                        fillRule="evenodd"
-                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  ) : (
-                    <div
-                      className={`h-4 w-4 flex-shrink-0 rounded-full border-2 ${
-                        isLight ? 'border-gray-300' : 'border-gray-600'
-                      }`}
-                    />
-                  )}
-                  <span
-                    className={`text-xs ${
-                      switchingStep === 3
-                        ? isLight
-                          ? 'font-medium text-gray-700'
-                          : 'font-medium text-gray-200'
-                        : switchingStep > 3
-                          ? 'text-green-600'
-                          : isLight
-                            ? 'text-gray-500'
-                            : 'text-gray-400'
-                    }`}>
-                    Restoring messages
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* Note: Agent switching modal removed - switching is now instant without remount */}
 
           <div
-            className={`copilot-chat-container flex flex-1 flex-col overflow-hidden ${!isLight ? 'dark' : ''} transition-all duration-500`}
+            className={`copilot-chat-container flex flex-1 flex-col overflow-hidden ${!isLight ? 'dark' : ''} font-size-${chatFontSize} transition-opacity duration-300`}
             style={
               {
                 '--copilot-kit-primary-color': themeColor,
-                opacity: isSwitchingAgent ? 0.3 : isCounterReady ? 1 : 0,
-                filter: isSwitchingAgent ? 'blur(2px)' : 'none',
+                opacity: isCounterReady ? 1 : 0,
                 visibility: isCounterReady ? 'visible' : 'hidden',
               } as CSSProperties
             }>
-            <SessionRuntimePortal
-              sessionId={sessionId}
-              agentType={activeAgent}
-              modelType={activeModel}
-              organizationId={organization?.id || undefined}
-              teamId={activeTeam || undefined}
-              runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
-              publicApiKey={COPIOLITKIT_CONFIG.PUBLIC_API_KEY}
-              renderContent={renderChatInner}
-            />
+            {/* Direct CopilotKitProvider - stable key for performance */}
+            {/* Session switching handled internally via reset() in ChatInnerWithSignatureSync */}
+            {activeAgent && activeModel ? (
+              <CopilotKitProvider
+                key="copilot-provider-stable"
+                runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
+                headers={copilotHeaders}
+                showDevConsole={false}
+                renderToolCalls={toolRenderersRef.current as any}
+                renderActivityMessages={activityRenderersRef.current as any}
+              >
+                <ChatInnerWithSignatureSync
+                  sessionId={sessionId}
+                  onSignatureChange={handleMessagesSignatureChange}
+                  onStreamingChange={handleStreamingChange}
+                  renderChatInner={renderChatInner}
+                />
+              </CopilotKitProvider>
+            ) : null}
           </div>
 
           {/* Agent and Model Selectors with Settings */}

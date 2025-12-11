@@ -59,12 +59,14 @@
 }
 
 /* Input - fixed at natural size */
+/* COMMENTED OUT: Using CopilotKit default styles
 .copilotKitChat > .copilotKitInputContainer,
 .copilotKitChat > .border-t,
 .copilotKitChat > div:has(.copilotKitInput) {
   flex: 0 0 auto !important;
   order: 2 !important;
 }
+*/
 
 /* Wrapper for CopilotChat to ensure proper flex behavior */
 .copilot-chat-wrapper {
@@ -90,11 +92,13 @@
 }
 
 /* Input area - keep it fixed at bottom */
+/* COMMENTED OUT: Using CopilotKit default styles
 .copilot-chat-container .border-t {
-  flex: 0 0 auto !important; /* Don't grow, don't shrink, auto size */
+  flex: 0 0 auto !important;
   flex-shrink: 0;
-  order: 2 !important; /* Ensure input always appears after footer in flex layout */
+  order: 2 !important;
 }
+*/
 
 .copilotKitMessagesContainer {
   padding-left: 0.75rem !important;

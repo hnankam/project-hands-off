@@ -26,9 +26,6 @@ const TRUNCATION_LIMITS = {
   DATA_URL_SAMPLE: 50,  // Sample size for data URLs
 } as const;
 
-/** Maximum number of messages to retain (prevents unbounded growth) */
-const MAX_MESSAGE_RETENTION = 500;
-
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
@@ -342,9 +339,9 @@ export const useMessageSanitization = (
    * This helps prevent Anthropic API rejection for transcripts.
    */
   const normalizeToolUse = (messages: any[]): { messages: any[]; changed: boolean } => {
-    let changed = false;
+    let anyChanged = false;
 
-    const patched = messages.map((message, index) => {
+    const patched = messages.map((message) => {
       if (
         !message ||
         message.role !== 'assistant' ||
@@ -355,6 +352,7 @@ export const useMessageSanitization = (
 
       const newBlocks: any[] = [];
       const blocks = message.content as Array<{ type: string; [key: string]: any }>;
+      let messageChanged = false;
 
       blocks.forEach((block, blockIndex) => {
         newBlocks.push(block);
@@ -374,11 +372,13 @@ export const useMessageSanitization = (
           content: [{ type: 'text', text: 'Completed with no explicit result.' }],
         };
 
-        changed = true;
+        messageChanged = true;
+        anyChanged = true;
         newBlocks.push(toolResult);
       });
 
-      if (!changed) {
+      // Only create new object if this message was changed
+      if (!messageChanged) {
         return message;
       }
 
@@ -388,7 +388,7 @@ export const useMessageSanitization = (
       };
     });
 
-    return { messages: patched, changed };
+    return { messages: patched, changed: anyChanged };
   };
 
   /**
@@ -406,15 +406,11 @@ export const useMessageSanitization = (
   const sanitizeMessages = useCallback((inputMessages: any[]): SanitizationResult => {
     let hasChanges = false;
     
-    // Step 1: Filter out messages with invalid role
+    // Step 1: Filter out null/undefined/non-object messages only
+    // NOTE: We no longer filter by role - CopilotKit v1.50 manages its own message
+    // types and we should preserve all valid messages
     const validMessages = inputMessages.filter(msg => {
       if (!msg || typeof msg !== 'object') {
-        hasChanges = true;
-        return false;
-      }
-      if (!msg.role || typeof msg.role !== 'string' || 
-          !['user', 'assistant', 'tool', 'system'].includes(msg.role)) {
-        debug.warn('[useMessageSanitization] Filtering out message with invalid role:', msg.role);
         hasChanges = true;
         return false;
       }

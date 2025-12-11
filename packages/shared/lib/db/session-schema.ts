@@ -55,10 +55,11 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
       DEFINE INDEX IF NOT EXISTS idx_usage_session ON session_usage FIELDS sessionId;
 
       -- Session Agent State Table (includes plan steps and graph state)
+      -- Note: graph field is intentionally not type-constrained to allow NULL values from legacy records
+      -- The migration below converts NULL to NONE, but we keep it flexible to avoid race conditions
       DEFINE TABLE IF NOT EXISTS session_agent_state SCHEMALESS;
       DEFINE FIELD IF NOT EXISTS sessionId ON session_agent_state TYPE string;
       DEFINE FIELD IF NOT EXISTS steps ON session_agent_state TYPE array;
-      DEFINE FIELD IF NOT EXISTS graph ON session_agent_state TYPE option<object>;
       DEFINE INDEX IF NOT EXISTS idx_agent_state_session ON session_agent_state FIELDS sessionId;
 
       -- Current Session Tracker (single record table)
@@ -66,82 +67,6 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
       DEFINE FIELD IF NOT EXISTS sessionId ON current_session TYPE option<string>;
     `);
 
-    // Clean up any legacy records that may have stored NULL in lastUsage
-    await worker.query(`
-      UPDATE session_usage SET lastUsage = NONE WHERE type::is::null(lastUsage);
-    `);
-
-    // Backfill sessionId for existing records if missing
-    await worker.query(`
-      UPDATE session_metadata SET sessionId = (
-        IF type::is::object(id) THEN id.id ELSE id END
-      ) WHERE sessionId = NONE;
-    `);
-
-    // Backfill createdAt for existing sessions using their current timestamp
-    const sessionsWithoutCreatedAt = await worker.query<any[]>(`
-      SELECT * FROM session_metadata WHERE createdAt = NONE;
-    `);
-    
-    if (sessionsWithoutCreatedAt && sessionsWithoutCreatedAt[0]?.length > 0) {
-      debug.log('[SessionSchema] Backfilling createdAt for', sessionsWithoutCreatedAt[0].length, 'sessions...');
-      for (const session of sessionsWithoutCreatedAt[0]) {
-        const sessionId = typeof session.id === 'object' ? session.id.id : session.id;
-        const createdAt = session.timestamp || Date.now();
-        await worker.query(`
-          UPDATE session_metadata SET createdAt = $createdAt WHERE sessionId = $sessionId;
-        `, { sessionId, createdAt });
-      }
-      debug.log('[SessionSchema] createdAt backfill completed');
-    }
-
-    // Migration: Delete sessions without userId (no backward compatibility)
-    const sessionsWithoutUserId = await worker.query<any[]>(`
-      SELECT * FROM session_metadata WHERE userId = NONE;
-    `);
-    
-    if (sessionsWithoutUserId && sessionsWithoutUserId[0]?.length > 0) {
-      debug.log('[SessionSchema] Found', sessionsWithoutUserId[0].length, 'sessions without userId - deleting them (no backward compatibility)');
-      await worker.query(`
-        DELETE FROM session_metadata WHERE userId = NONE;
-      `);
-      debug.log('[SessionSchema] Deleted sessions without userId');
-    } else {
-      debug.log('[SessionSchema] No sessions without userId found');
-    }
-
-    // Backfill version and lastModified for existing message records
-    // Split into two queries to avoid syntax issues
-    try {
-      const now = Date.now();
-      
-      // First, backfill version
-      const versionResult = await worker.query<any[]>(`
-        UPDATE session_messages 
-        SET version = 1
-        WHERE version = NONE OR version = 0;
-      `);
-      
-      // Then, backfill lastModified
-      const modifiedResult = await worker.query<any[]>(`
-        UPDATE session_messages 
-        SET lastModified = ${now}
-        WHERE lastModified = NONE;
-      `);
-      
-      const versionCount = (versionResult && versionResult[0] && Array.isArray(versionResult[0])) ? versionResult[0].length : 0;
-      const modifiedCount = (modifiedResult && modifiedResult[0] && Array.isArray(modifiedResult[0])) ? modifiedResult[0].length : 0;
-      
-      if (versionCount > 0 || modifiedCount > 0) {
-        debug.log(`[SessionSchema] Backfilled ${versionCount} version records, ${modifiedCount} lastModified records`);
-      } else {
-        debug.log('[SessionSchema] No message records needed backfill');
-      }
-    } catch (backfillError) {
-      debug.error('[SessionSchema] Backfill failed (non-critical):', backfillError);
-      // Non-critical error - the optional field allows NONE values
-    }
- 
     debug.log('[SessionSchema] Session storage schema initialized successfully');
   } catch (error) {
     debug.error('[SessionSchema] Failed to initialize schema:', error);

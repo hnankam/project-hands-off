@@ -1,12 +1,13 @@
 /**
  * Centralized CopilotKit Hooks, Components, and Types
  *
- * This module provides abstraction layers over CopilotKit to:
- * 1. Enable easy migration to CopilotKit v2
- * 2. Provide a single point of change when upgrading
- * 3. Standardize the API across the codebase
+ * V2 Implementation:
+ * This module provides abstraction layers over CopilotKit V2 to:
+ * 1. Provide a stable API regardless of internal changes
+ * 2. Standardize the API across the codebase
+ * 3. Enable future migrations with minimal changes
  *
- * When migrating to v2, only the implementation files in this directory
+ * When upgrading, only the implementation files in this directory
  * need to change - all consuming code remains the same.
  */
 
@@ -30,14 +31,6 @@ export type {
 export { useCopilotAgent } from './useCopilotAgent';
 export type { CopilotAgentOptions, CopilotAgentState } from './useCopilotAgent';
 
-// Agent state rendering
-export { useCopilotAgentStateRender } from './useCopilotAgentStateRender';
-export type {
-  CopilotAgentStateRenderOptions,
-  AgentStateRenderParams,
-  RenderStatus,
-} from './useCopilotAgentStateRender';
-
 // Runtime context
 export { useCopilotRuntimeContext } from './useCopilotRuntimeContext';
 export type { CopilotRuntimeContextValue, CopilotApiConfig } from './useCopilotRuntimeContext';
@@ -50,11 +43,10 @@ export type { CopilotReadableDataConfig } from './useCopilotReadableData';
 export { useCopilotSuggestions } from './useCopilotSuggestions';
 export type { CopilotSuggestionsConfig } from './useCopilotSuggestions';
 
-// Tool hooks (re-exported for centralized imports)
+// Tool hooks (centralized for consistency)
 export {
   useFrontendTool,
   useHumanInTheLoop,
-  useDefaultTool,
   useRenderToolCall,
 } from './useCopilotTools';
 export type {
@@ -69,7 +61,10 @@ export type {
 
 export {
   CopilotKit,
+  CopilotKitProvider,
   CopilotChat,
+  CopilotChatAssistantMessage,
+  CopilotSidebar,
   Markdown,
   ImageRenderer,
 } from './components';
@@ -86,3 +81,18 @@ export type {
   AssistantMessageProps,
 } from './types';
 
+// =============================================================================
+// V2 Direct Exports (for advanced usage)
+// =============================================================================
+
+// Re-export V2 hooks for direct access when needed
+// Note: useSuggestions omitted - causes "Agent default not found" errors
+// when called before CopilotChat mounts. Use useConfigureSuggestions instead.
+export {
+  useAgent,
+  useCopilotKit,
+  useAgentContext,
+  useConfigureSuggestions,
+  useCopilotChatConfiguration,
+  useRenderActivityMessage,
+} from '@copilotkit/react-core/v2';

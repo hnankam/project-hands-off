@@ -3,16 +3,16 @@ import { ChatSessionContainer } from '../components/chat/ChatSessionContainer';
 import { ErrorBoundary } from '../components/utilities/ErrorBoundary';
 import { ChatSkeleton, MessagesOnlySkeleton, StatusBarSkeleton, SelectorsBarSkeleton } from '../components/feedback/LoadingStates';
 import type { SessionMetadata } from '@extension/shared';
-import { sessionStorageDBWrapper, generateSessionName } from '@extension/shared';
+import { sessionStorageDBWrapper, generateSessionName, debug } from '@extension/shared';
 import { useAuth } from '../context/AuthContext';
 import { getCurrentViewMode } from '../utils/windowManager';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { cn, SessionList } from '@extension/ui';
-import { SessionRuntimeProvider } from '../context/SessionRuntimeContext';
-import { SKELETON_TIMINGS } from '../constants/ui';
+import { SKELETON_TIMINGS, SESSION_CACHE } from '../constants/ui';
 import { SessionHeader } from '../components/sessions';
 import { useSessionLoadingState } from '../hooks/useSessionLoadingState';
 import { useSessionActions } from '../hooks/useSessionActions';
+import { useSessionCache } from '../hooks/useSessionCache';
 
 // ============================================================================
 // TYPES
@@ -193,6 +193,24 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     return sessions.find(session => session.id === currentSessionId) || null;
   }, [sessions, currentSessionId]);
 
+  // Session cache with LRU eviction - keeps visited sessions mounted
+  const { mountedSessionIds, getCacheStats } = useSessionCache({
+    sessions,
+    currentSessionId,
+    maxCachedSessions: SESSION_CACHE.maxCachedSessions,
+  });
+
+  // Get sessions that should be rendered (mounted)
+  const sessionsToRender = useMemo(() => {
+    return sessions.filter(s => s.isOpen && mountedSessionIds.has(s.id));
+  }, [sessions, mountedSessionIds]);
+
+  // Log cache stats in debug mode
+  useEffect(() => {
+    const stats = getCacheStats();
+    debug.log('[SessionsPage] Session cache:', stats);
+  }, [getCacheStats, mountedSessionIds]);
+
   const hasSessions = sessions.length > 0;
   const isWaitingForFirstSession = !hasSessions && !hasAttemptedInitialSessionRef.current;
   const shouldShowSkeleton = isEnsuringInitialSession || isWaitingForFirstSession || (!!currentSessionId && !isSessionReady);
@@ -220,7 +238,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const currentSessionTitle = sessions.find(s => s.id === currentSessionId)?.title || 'this session';
 
   return (
-    <SessionRuntimeProvider>
+    <>
       {/* Sessions Page Header */}
       <SessionHeader
         isLight={isLight}
@@ -247,8 +265,18 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
 
       {/* Session Content Area */}
       <div className="relative flex-1 overflow-hidden">
-        {activeSession ? (
-          <div className={cn('absolute inset-0 z-0 flex flex-col overflow-hidden animate-fadeIn')}>
+        {/* Render all cached sessions (hide inactive ones) */}
+        {sessionsToRender.map(session => {
+          const isActive = session.id === currentSessionId;
+          return (
+            <div
+              key={session.id}
+              className={cn(
+                'absolute inset-0 z-0 flex flex-col overflow-hidden',
+                isActive && 'animate-fadeIn'
+              )}
+              style={{ display: isActive ? 'flex' : 'none' }}
+            >
             <ErrorBoundary
               level="component"
               fallback={
@@ -262,11 +290,11 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                 </div>
               }>
                 <ChatSessionContainer
-                  sessionId={activeSession.id}
+                  sessionId={session.id}
                   isLight={isLight}
                   publicApiKey={publicApiKey}
-                  isActive
-                  contextMenuMessage={contextMenuMessage}
+                  isActive={isActive}
+                  contextMenuMessage={isActive ? contextMenuMessage : null}
                   onMessagesCountChange={handleMessagesCountChange}
                   onRegisterResetFunction={handleRegisterResetFunction}
                   onRegisterSaveFunction={handleRegisterSaveFunction}
@@ -276,7 +304,12 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                 />
             </ErrorBoundary>
           </div>
-        ) : shouldShowStandaloneSkeleton ? (
+          );
+        })}
+
+        {/* Empty states when no sessions are mounted */}
+        {sessionsToRender.length === 0 && (
+          shouldShowStandaloneSkeleton ? (
           <ChatSkeleton isLight={isLight} />
         ) : hasSessions ? (
           <div className="flex flex-1 items-center justify-center overflow-hidden">
@@ -292,6 +325,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
               <p className="text-sm">Create a new session to start chatting</p>
             </div>
           </div>
+          )
         )}
 
         {/* Full skeleton overlay when session is loading */}
@@ -373,6 +407,6 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
         mainTextColor={mainTextColor}
       />
 
-    </SessionRuntimeProvider>
+    </>
   );
 };

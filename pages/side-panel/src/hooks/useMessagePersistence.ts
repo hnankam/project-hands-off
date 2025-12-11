@@ -1,59 +1,23 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { debug, sessionStorageDBWrapper, persistenceLock } from '@extension/shared';
 import type { CopilotMessage } from '@extension/storage';
-import { useSessionRuntimeState } from '../context/SessionRuntimeContext';
 
 // ============================================================================
 // UTILITY FUNCTIONS (Pure - no deps)
 // ============================================================================
 
 /**
- * Counts filtered messages (excludes thinking messages starting with **).
+ * Counts displayable messages (excludes empty and null content).
+ * Simple count for UI display purposes.
  */
-function countFilteredMessages(messages: any[]): number {
+function countDisplayableMessages(messages: any[]): number {
   if (!messages || messages.length === 0) return 0;
-
-  return messages.filter(message => {
-    if (typeof message.content === 'string') {
-      return !message.content.startsWith('**') && message.content.trim() !== '';
-    } else if (typeof message.content === 'object' && message.content !== null) {
-      const contentStr = JSON.stringify(message.content);
-      return !contentStr.includes('"**');
-    } else if (message.content === undefined || message.content === null) {
-      return false;
-    }
-    return true;
-  }).length;
-}
-
-/**
- * Sanitizes a single message via JSON round-trip.
- */
-function sanitizeSingleMessage(msg: any): any {
-  try {
-    return JSON.parse(JSON.stringify(msg));
-  } catch (error) {
-    // Fallback: copy only serializable properties
-    return {
-      id: msg.id,
-      role: msg.role,
-      content: typeof msg.content === 'string' ? msg.content : String(msg.content || ''),
-      createdAt: msg.createdAt,
-      ...(msg.toolCalls && { toolCalls: msg.toolCalls }),
-      ...(msg.metadata && { metadata: msg.metadata }),
-    };
-  }
-}
-
-/**
- * Checks if a value is "empty" (for state/content checking).
- */
-function isEmpty(value: any): boolean {
-  if (value === null || value === undefined) return true;
-  if (typeof value === 'string') return value.trim().length === 0;
-  if (Array.isArray(value)) return value.length === 0;
-  if (typeof value === 'object') return Object.keys(value).length === 0;
-  return false;
+  return messages.filter(msg => 
+    msg && 
+    msg.content !== undefined && 
+    msg.content !== null &&
+    (typeof msg.content !== 'string' || msg.content.trim() !== '')
+  ).length;
 }
 
 // ============================================================================
@@ -83,9 +47,6 @@ const AUTO_RESTORE_MAX_RETRY_DELAY = 200; // 200ms
 
 /** Maximum auto-restore attempts before failing */
 const AUTO_RESTORE_MAX_ATTEMPTS = 10;
-
-/** Delay for force restore when messages are missing */
-const FORCE_RESTORE_DELAY = 150; // 150ms
 
 /** Interval for stabilization guard to check for message clearing */
 const STABILIZATION_CHECK_INTERVAL = 100; // 100ms
@@ -119,6 +80,8 @@ export interface UseMessagePersistenceProps {
   sessionId: string;
   isActive: boolean;
   isPanelVisible?: boolean;
+  /** Whether the agent is currently streaming a response */
+  isStreaming?: boolean;
   saveMessagesRef: React.MutableRefObject<(() => MessageData) | null>;
   restoreMessagesRef: React.MutableRefObject<((messages: any[]) => void) | null>;
   resetChatRef?: React.MutableRefObject<(() => void) | null>;
@@ -178,6 +141,7 @@ export const useMessagePersistence = ({
   sessionId,
   isActive,
   isPanelVisible = true,
+  isStreaming = false,
   saveMessagesRef,
   restoreMessagesRef,
   resetChatRef,
@@ -206,9 +170,8 @@ export const useMessagePersistence = ({
   const wasPanelVisibleRef = useRef(isPanelVisible);
   const pendingReloadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Get runtime state to check if streaming is in progress
-  const runtimeState = useSessionRuntimeState(sessionId);
-  const runtimeStateRef = useRef(runtimeState);
+  // Track streaming state passed from parent (inside CopilotKitProvider)
+  const isStreamingRef = useRef(isStreaming);
 
   // ============================================================================
   // HELPER FUNCTIONS
@@ -271,52 +234,40 @@ export const useMessagePersistence = ({
   const updateStoredMessagesState = useCallback(
     (messages: CopilotMessage[]) => {
       setStoredMessages(messages);
-      setStoredFilteredMessagesCount(countFilteredMessages(messages));
+      setStoredFilteredMessagesCount(countDisplayableMessages(messages));
       lastSavedSignatureRef.current = computeMessageSignature(messages);
     },
     [computeMessageSignature],
   );
   /**
-   * Sanitizes and deduplicates normalized messages.
+   * Sanitizes and deduplicates messages.
+   * 
+   * NOTE: We no longer filter by role - CopilotKit v1.50 manages its own message
+   * types and we should save all valid messages. Only removes:
+   * - null/undefined values
+   * - Duplicate messages (by ID)
    */
   const sanitizeNormalizedMessages = useCallback((messages: CopilotMessage[]): CopilotMessage[] => {
     if (!Array.isArray(messages) || messages.length === 0) return [];
 
     const seenIds = new Set<string>();
-    const validRoles = new Set(['user', 'assistant', 'tool', 'system']);
     let removedCount = 0;
     const sanitized: CopilotMessage[] = [];
 
     for (const rawMessage of messages) {
-      const message = rawMessage as CopilotMessage;
-      if (!message || typeof message !== 'object') continue;
-
-      const id = typeof (message as any).id === 'string' ? (message as any).id : undefined;
-      const role = (message as any).role;
-
-      // Skip invalid roles
-      if (!validRoles.has(role)) {
+      // Skip null/undefined/non-objects
+      if (!rawMessage || typeof rawMessage !== 'object') {
         removedCount++;
         continue;
       }
 
-      // Skip duplicates
+      const message = rawMessage as CopilotMessage;
+      const id = typeof (message as any).id === 'string' ? (message as any).id : undefined;
+
+      // Skip duplicates (by ID)
       if (id && seenIds.has(id)) {
         removedCount++;
         continue;
-      }
-
-      // Check for empty assistants
-      if (role === 'assistant') {
-        const hasToolCalls = Array.isArray((message as any).toolCalls) && (message as any).toolCalls.length > 0;
-        const hasContent = !isEmpty((message as any).content);
-        const hasState = !isEmpty((message as any).state);
-
-        // Remove empty assistants unless they have state
-        if (!hasContent && !hasToolCalls && !hasState) {
-          removedCount++;
-          continue;
-        }
       }
 
       if (id) seenIds.add(id);
@@ -343,7 +294,7 @@ export const useMessagePersistence = ({
    * Stores ALL messages (including thinking messages).
    * Skips save if messages haven't changed since last save.
    *
-   * @param messagesToSave - Messages to persist
+   * @param messagesToSave - Messages to persist (should already be sanitized by useMessageSanitization)
    */
   const saveMessagesToStorage = useCallback(
     async (messagesToSave: CopilotMessage[]) => {
@@ -352,18 +303,8 @@ export const useMessagePersistence = ({
       }
 
       try {
-        // Filter out any undefined/null messages before saving
-        const validMessages = messagesToSave.filter(msg => msg !== null && msg !== undefined);
-
-        if (validMessages.length !== messagesToSave.length) {
-          debug.warn(
-            `[useMessagePersistence] Filtered out ${messagesToSave.length - validMessages.length} undefined/null messages`,
-          );
-        }
-
-        // Sanitize messages to remove non-serializable data
-        const sanitizedMessages = validMessages.map(sanitizeSingleMessage);
-        const normalizedMessages = sanitizeNormalizedMessages(sanitizedMessages as CopilotMessage[]);
+        // Deduplicate messages (sanitization already done by useMessageSanitization)
+        const normalizedMessages = sanitizeNormalizedMessages(messagesToSave);
         const newSignature = computeMessageSignature(normalizedMessages);
 
         // Skip save if messages haven't changed
@@ -376,8 +317,7 @@ export const useMessagePersistence = ({
         await sessionStorageDBWrapper.updateAllMessages(sessionId, normalizedMessages);
         updateStoredMessagesState(normalizedMessages);
         debug.log(
-          `[useMessagePersistence] Saved ${normalizedMessages.length} messages ` +
-            `(${countFilteredMessages(normalizedMessages)} filtered) for session ${sessionId.slice(0, 8)}`,
+          `[useMessagePersistence] Saved ${normalizedMessages.length} messages for session ${sessionId.slice(0, 8)}`,
         );
       } catch (error) {
         debug.error('[useMessagePersistence] Failed to save messages to storage:', error);
@@ -399,50 +339,18 @@ export const useMessagePersistence = ({
     }
 
     try {
-      // Get both all messages and filtered messages from ChatInner
+      // Get messages from ChatInner (already sanitized by useMessageSanitization)
       const messageData = saveMessagesRef.current();
       const allMessages = messageData.allMessages || [];
-      const filteredMessages = messageData.filteredMessages || [];
 
       debug.log('[useMessagePersistence] Manual save:', {
         total: allMessages.length,
-        filtered: filteredMessages.length,
         session: sessionId.slice(0, 8),
       });
 
-      // DEBUG: Log raw messages for comparison
-      console.log('=== RAW MESSAGES DEBUG (Save Button Clicked) ===');
-      console.log('Session:', sessionId);
-      console.log('Total messages:', allMessages.length);
-      allMessages.forEach((msg: any, index: number) => {
-        console.log(`\n--- Message ${index} ---`);
-        console.log('Type:', msg?.role || msg?.type || 'unknown');
-        console.log('ID:', msg?.id);
-        console.log('Full message:', msg);
-        if (msg?.content) {
-          console.log(msg.content);
-        }
-        // Log state if present (for coagent state messages)
-        if (msg?.state) {
-          console.log(msg.state);
-        }
-      });
-      console.log('=== END RAW MESSAGES DEBUG ===\n');
-
-      // Filter out any undefined/null messages before saving
-      const validMessages = allMessages.filter((msg: any) => msg !== null && msg !== undefined);
-
-      if (validMessages.length !== allMessages.length) {
-        debug.warn(
-          `[useMessagePersistence] Filtered out ${allMessages.length - validMessages.length} undefined/null messages`,
-        );
-      }
-
-      // Sanitize and normalize messages
-      const sanitizedMessages = validMessages.map(sanitizeSingleMessage);
-      const normalizedMessages = sanitizeNormalizedMessages(sanitizedMessages as CopilotMessage[]);
-
-      await saveMessagesToStorage(normalizedMessages as unknown as CopilotMessage[]);
+      // Deduplicate before saving
+      const normalizedMessages = sanitizeNormalizedMessages(allMessages as CopilotMessage[]);
+      await saveMessagesToStorage(normalizedMessages);
     } catch (error) {
       debug.error('[useMessagePersistence] Failed to manually save messages:', error);
     }
@@ -460,6 +368,14 @@ export const useMessagePersistence = ({
    * @returns Promise that resolves when load completes
    */
   const handleLoadMessages = useCallback(async () => {
+    // TEMPORARY: Disable IndexedDB loading to test CopilotKit server-side message loading
+    // Remove this block to re-enable IndexedDB persistence
+    debug.log('[useMessagePersistence] IndexedDB loading DISABLED - testing server-side persistence');
+    hasAutoRestoredRef.current = true;
+    setHydrationCompleted(true);
+    return;
+    // END TEMPORARY DISABLE
+
     debug.log(
       `[useMessagePersistence] Load messages start for session ${sessionId.slice(0, 8)}, isActive: ${isActive}`,
     );
@@ -470,8 +386,7 @@ export const useMessagePersistence = ({
 
     // CRITICAL: Check if streaming is in progress before loading messages
     // This prevents activity dots from disappearing when reload happens during streaming
-    const isStreaming = runtimeStateRef.current?.isInProgress ?? false;
-    if (isStreaming) {
+    if (isStreamingRef.current) {
       debug.log(`[useMessagePersistence] Streaming in progress, aborting reload to preserve activity dots`);
       return;
     }
@@ -616,10 +531,10 @@ export const useMessagePersistence = ({
     storedMessagesRef.current = storedMessages;
   }, [storedMessages]);
 
-  // Keep runtime state ref updated
+  // Keep streaming state ref updated
   useEffect(() => {
-    runtimeStateRef.current = runtimeState;
-  }, [runtimeState]);
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
 
   // Wrap reset function to track manual resets
   // IMPORTANT: resetChatRef.current is set by ChatInner in a separate effect.
@@ -942,9 +857,7 @@ export const useMessagePersistence = ({
         // Only reload if timestamp changed
         if (!oldTimestamp || newTimestamp !== oldTimestamp) {
           // Don't reload if streaming is in progress
-          const isStreaming = runtimeStateRef.current?.isInProgress ?? false;
-
-          if (isStreaming) {
+          if (isStreamingRef.current) {
             debug.log('[useMessagePersistence] Streaming active, deferring cross-window reload');
 
             // Clear existing pending reload
@@ -954,11 +867,11 @@ export const useMessagePersistence = ({
 
             // Check for streaming completion
             const checkStreamingComplete = () => {
-              const stillStreaming = runtimeStateRef.current?.isInProgress ?? false;
+              const stillStreaming = isStreamingRef.current ?? false;
 
               if (!stillStreaming && isActive) {
                 // Double-check before reload
-                if (!(runtimeStateRef.current?.isInProgress ?? false)) {
+                if (!isStreamingRef.current) {
                   debug.log('[useMessagePersistence] Streaming completed, reloading from cross-window sync');
                   handleLoadMessages();
                   pendingReloadTimeoutRef.current = null;

@@ -2,12 +2,59 @@
  * Search-related CopilotKit Actions
  *
  * Actions for semantic search over page content, forms, DOM updates, and clickable elements.
+ * V2: Uses Zod schemas for parameter definitions.
  */
 
 import React from 'react';
+import { z } from 'zod';
 import type { SemanticSearchManager } from '../../lib/SemanticSearchManager';
 import { ActionStatus } from '../../components/feedback/ActionStatus';
 import { debug } from '@extension/shared';
+
+// ============================================================================
+// ZOD SCHEMAS FOR TOOL PARAMETERS
+// ============================================================================
+
+/** Schema for page content search parameters */
+export const searchPageContentSchema = z.object({
+  query: z.string().describe(
+    "A semantically rich search query with key concepts and entities. Transform the user's natural language request into focused search terms (nouns, adjectives, domain terms). DO NOT use full sentences or action verbs like 'find', 'show', 'get'."
+  ),
+  topK: z.number().optional().describe('Number of results to return (default: 3, max: 10)'),
+  pageURL: z.string().optional().describe('Optional: Search a specific page by URL instead of the current page'),
+  pageURLs: z.array(z.string()).optional().describe('Optional: Search multiple specific pages by their URLs. Overrides pageURL if provided.'),
+  searchSelectedPages: z.boolean().optional().describe('Optional: Set to true to search all pages selected by the user in the pages selector.'),
+});
+
+/** Schema for form data search parameters */
+export const searchFormDataSchema = z.object({
+  query: z.string().describe(
+    "A field-focused search query describing the form field's purpose and type. Focus on: field purpose (email, password, name, etc.), field type (input, select, textarea, checkbox), and context (login, registration, search, etc.). Use descriptive nouns, not action verbs."
+  ),
+  topK: z.number().optional().describe('Number of results to return (default: 5, max: 20)'),
+  pageURL: z.string().optional().describe('Optional: Search a specific page by URL instead of the current page'),
+  pageURLs: z.array(z.string()).optional().describe('Optional: Search multiple specific pages by their URLs'),
+  searchSelectedPages: z.boolean().optional().describe('Optional: Set to true to search all pages selected by the user in the pages selector'),
+});
+
+/** Schema for DOM updates search parameters */
+export const searchDOMUpdatesSchema = z.object({
+  query: z.string().describe(
+    'A search query describing the type of change or element. Focus on: element type, change type (added, removed, modified), or content keywords. Examples: "new buttons", "removed forms", "modified headers".'
+  ),
+  topK: z.number().optional().describe('Number of results to return (default: 5, max: 20)'),
+});
+
+/** Schema for clickable elements search parameters */
+export const searchClickableElementsSchema = z.object({
+  query: z.string().describe(
+    'A search query describing the clickable element. Focus on: button/link text, element purpose, visual appearance. Examples: "submit button", "navigation link", "close icon".'
+  ),
+  topK: z.number().optional().describe('Number of results to return (default: 5, max: 20)'),
+  pageURL: z.string().optional().describe('Optional: Search a specific page by URL instead of the current page'),
+  pageURLs: z.array(z.string()).optional().describe('Optional: Search multiple specific pages by their URLs'),
+  searchSelectedPages: z.boolean().optional().describe('Optional: Set to true to search all pages selected by the user in the pages selector'),
+});
 
 // ============================================================================
 // CONSTANTS
@@ -167,39 +214,7 @@ function SearchClickableIcon({ style }: { style: React.CSSProperties }): React.R
 export const createSearchPageContentAction = ({ searchManager, isLight, clipText, selectedPageURLs }: SearchActionDependencies) => ({
   name: 'searchPageContent',
   description: 'Semantic search over page content. Can search current page (default), specific pages by URL, or all selected pages (from the pages selector). Returns top‑K relevant HTML chunks with page source.',
-  parameters: [
-    {
-      name: 'query',
-      type: 'string',
-      description:
-        "A semantically rich search query with key concepts and entities. Transform the user's natural language request into focused search terms (nouns, adjectives, domain terms). DO NOT use full sentences or action verbs like 'find', 'show', 'get'.",
-      required: true,
-    },
-    {
-      name: 'topK',
-      type: 'number',
-      description: 'Number of results to return (default: 3, max: 10)',
-      required: false,
-    },
-    {
-      name: 'pageURL',
-      type: 'string',
-      description: 'Optional: Search a specific page by URL instead of the current page',
-      required: false,
-    },
-    {
-      name: 'pageURLs',
-      type: 'array',
-      description: 'Optional: Search multiple specific pages by their URLs. Overrides pageURL if provided.',
-      required: false,
-    },
-    {
-      name: 'searchSelectedPages',
-      type: 'boolean',
-      description: 'Optional: Set to true to search all pages selected by the user in the pages selector. This is useful when looking for content across multiple indexed pages.',
-      required: false,
-    },
-  ],
+  parameters: searchPageContentSchema,
   render: ({ status, result, args, error }: ActionRenderProps) => {
     const query = clipText(args?.query ?? '', MAX_QUERY_LENGTH);
     const numChunks = status === 'complete' ? (result?.resultsCount ?? 0) : 0;
@@ -281,39 +296,7 @@ export const createSearchPageContentAction = ({ searchManager, isLight, clipText
 export const createSearchFormDataAction = ({ searchManager, isLight, clipText, selectedPageURLs }: SearchActionDependencies) => ({
   name: 'searchFormData',
   description: 'Search form fields (inputs, textareas, selects, checkboxes/radios). Can search current page (default), specific pages, or all selected pages. Returns fields with selectors.',
-  parameters: [
-    {
-      name: 'query',
-      type: 'string',
-      description:
-        "A field-focused search query describing the form field's purpose and type. Focus on: field purpose (email, password, name, etc.), field type (input, select, textarea, checkbox), and context (login, registration, search, etc.). Use descriptive nouns, not action verbs.",
-      required: true,
-    },
-    {
-      name: 'topK',
-      type: 'number',
-      description: 'Number of results to return (default: 5, max: 20)',
-      required: false,
-    },
-    {
-      name: 'pageURL',
-      type: 'string',
-      description: 'Optional: Search a specific page by URL instead of the current page',
-      required: false,
-    },
-    {
-      name: 'pageURLs',
-      type: 'array',
-      description: 'Optional: Search multiple specific pages by their URLs',
-      required: false,
-    },
-    {
-      name: 'searchSelectedPages',
-      type: 'boolean',
-      description: 'Optional: Set to true to search all pages selected by the user in the pages selector',
-      required: false,
-    },
-  ],
+  parameters: searchFormDataSchema,
   render: ({ status, result, args, error }: ActionRenderProps) => {
     const query = clipText(args?.query ?? '', MAX_QUERY_LENGTH);
     const numFields = status === 'complete' ? (result?.resultsCount ?? 0) : 0;
@@ -392,21 +375,7 @@ export const createSearchFormDataAction = ({ searchManager, isLight, clipText, s
 export const createSearchDOMUpdatesAction = ({ searchManager, isLight, clipText }: SearchActionDependencies) => ({
   name: 'searchDOMUpdates',
   description: 'Search recent DOM changes (added/removed/modified). Returns summaries with timestamps.',
-  parameters: [
-    {
-      name: 'query',
-      type: 'string',
-      description:
-        'A search query describing the type of change or element. Focus on: element type, change type (added, removed, modified), or content keywords. Examples: "new buttons", "removed forms", "modified headers".',
-      required: true,
-    },
-    {
-      name: 'topK',
-      type: 'number',
-      description: 'Number of results to return (default: 5, max: 20)',
-      required: false,
-    },
-  ],
+  parameters: searchDOMUpdatesSchema,
   render: ({ status, result, args, error }: ActionRenderProps) => {
     const query = clipText(args?.query ?? '', MAX_QUERY_LENGTH);
     const numUpdates = status === 'complete' ? (result?.resultsCount ?? 0) : 0;
@@ -442,39 +411,7 @@ export const createSearchDOMUpdatesAction = ({ searchManager, isLight, clipText 
 export const createSearchClickableElementsAction = ({ searchManager, isLight, clipText, selectedPageURLs }: SearchActionDependencies) => ({
   name: 'searchClickableElements',
   description: 'Search clickable elements (buttons/links/etc.). Can search current page (default), specific pages, or all selected pages. Returns items with reliable selectors.',
-  parameters: [
-    {
-      name: 'query',
-      type: 'string',
-      description:
-        'A search query describing the clickable element. Focus on: button/link text, element purpose, visual appearance. Examples: "submit button", "navigation link", "close icon".',
-      required: true,
-    },
-    {
-      name: 'topK',
-      type: 'number',
-      description: 'Number of results to return (default: 5, max: 20)',
-      required: false,
-    },
-    {
-      name: 'pageURL',
-      type: 'string',
-      description: 'Optional: Search a specific page by URL instead of the current page',
-      required: false,
-    },
-    {
-      name: 'pageURLs',
-      type: 'array',
-      description: 'Optional: Search multiple specific pages by their URLs',
-      required: false,
-    },
-    {
-      name: 'searchSelectedPages',
-      type: 'boolean',
-      description: 'Optional: Set to true to search all pages selected by the user in the pages selector',
-      required: false,
-    },
-  ],
+  parameters: searchClickableElementsSchema,
   render: ({ status, result, args, error }: ActionRenderProps) => {
     const query = clipText(args?.query ?? '', MAX_QUERY_LENGTH);
     const numElements = status === 'complete' ? (result?.resultsCount ?? 0) : 0;

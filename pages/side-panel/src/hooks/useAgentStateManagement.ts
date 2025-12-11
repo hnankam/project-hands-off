@@ -78,10 +78,20 @@ export const useAgentStateManagement = ({
    * - Session mismatch (returns empty steps)
    * - Missing sessionId on raw state (adds current sessionId)
    * - Graph steps (have 'node' instead of 'description') - filtered out
+   * - V2: Handle case where state is an array (steps directly) instead of { steps: [...] }
    */
-  const dynamicAgentState = useMemo<AgentStepState>(() => {
+  const dynamicAgentState = useMemo<AgentStepState>(() => {    
     // No raw state available
     if (!rawDynamicAgentState) {
+      return { sessionId, steps: [] };
+    }
+    
+    // V2 FIX: Handle case where backend sends steps array directly instead of { steps: [...] }
+    if (Array.isArray(rawDynamicAgentState)) {
+      const steps = rawDynamicAgentState as unknown as Step[];
+      if (steps.length > 0 && isPlanSteps(steps)) {
+        return { sessionId, steps };
+      }
       return { sessionId, steps: [] };
     }
     
@@ -96,10 +106,10 @@ export const useAgentStateManagement = ({
     }
     
     // Check if steps are plan steps (have 'description') vs graph steps (have 'node')
-    // Graph steps should be rendered by GraphStateCard, not TaskProgressCard
+    // Graph steps are rendered by GraphStateCard via renderActivityMessages
     const steps = rawDynamicAgentState.steps ?? [];
     if (steps.length > 0 && !isPlanSteps(steps)) {
-      // These are graph steps - return empty to let useCopilotAgentStateRender handle them
+      // These are graph steps - return empty, they're handled by activity renderers
       return { sessionId, steps: [] };
     }
     

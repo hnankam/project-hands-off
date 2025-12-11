@@ -1,32 +1,25 @@
 /**
  * CopilotKit Runtime Server
  * 
- * Main entry point for the Express server providing AI copilot functionality
- * with multi-tenant support, dynamic agent routing, and comprehensive admin APIs.
+ * Express + Hono hybrid server providing AI copilot functionality
+ * with multi-tenant support, dynamic agent routing, and admin APIs.
  * 
  * Architecture:
- * - Express.js web server with security middleware
- * - CopilotKit runtime integration for AI chat
- * - Dynamic agent/model selection based on request headers
+ * - Express.js for auth and admin APIs
+ * - Hono for CopilotKit runtime (AG-UI protocol)
+ * - HttpAgent forwards requests to Python backend
+ * - Dynamic agent/model selection via request headers
  * - Multi-tenant configuration (organization/team scoped)
- * - Better Auth for authentication and organization management
- * - PostgreSQL database for configuration and usage tracking
+ * - Better Auth for authentication
+ * - PostgreSQL for configuration and usage tracking
  * 
- * Key Features:
- * - Dynamic LLM provider/model selection per request
- * - Role-based access control (owner, admin, member)
- * - Organization and team management
- * - Real-time usage analytics
- * - MCP (Model Context Protocol) server integration
- * - Invitation system for organization onboarding
- * 
- * API Categories:
- * - /api/copilotkit - Main AI chat endpoint
+ * API Endpoints:
+ * - /api/copilotkit - AI chat endpoint (AG-UI protocol)
  * - /api/auth - Authentication (Better Auth)
  * - /api/invitations - Organization invitations
- * - /api/admin - Configuration management (models, providers, agents, tools)
- * - /api/config - Runtime configuration for clients
- * - /health - Health check endpoint
+ * - /api/admin - Configuration management
+ * - /api/config - Runtime configuration
+ * - /health - Health check
  * 
  * @module server
  */
@@ -36,9 +29,14 @@
 // ============================================================================
 
 import express from 'express';
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
-import { CopilotRuntime } from "@copilotkit/runtime";
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import {
+  CopilotRuntime,
+  createCopilotEndpoint,
+  InMemoryAgentRunner,
+} from '@copilotkit/runtime/v2';
+import { HttpAgent } from '@ag-ui/client';
 
 // ============================================================================
 // Configuration
@@ -52,7 +50,8 @@ import {
   RATE_LIMIT_MAX, 
   REQUEST_TIMEOUT_MS, 
   HEADERS_TIMEOUT_MS, 
-  TRUST_PROXY 
+  TRUST_PROXY,
+  DEBUG
 } from './config/index.js';
 
 // ============================================================================
@@ -62,16 +61,12 @@ import {
 import { log } from './utils/index.js';
 
 // ============================================================================
-// Adapters
+// Database & Auth
 // ============================================================================
 
-import { createDynamicServiceAdapter, captureRequestContext } from './adapters/index.js';
-
-// ============================================================================
-// Agents
-// ============================================================================
-
-import { createDefaultAgent } from './agents/index.js';
+import { auth } from './auth/index.js';
+import { getPool } from './config/database.js';
+import { getDefaultAgent, getDefaultModel } from './config/models.js';
 
 // ============================================================================
 // Middleware
@@ -80,7 +75,6 @@ import { createDefaultAgent } from './agents/index.js';
 import { 
   createCorsMiddleware,
   requestIdMiddleware,
-  createDynamicRoutingMiddleware,
   errorHandlerMiddleware,
   notFoundMiddleware
 } from './middleware/index.js';
@@ -91,7 +85,6 @@ import { teamMembersBypassMiddleware } from './middleware/team-members-bypass.js
 // ============================================================================
 
 import { 
-  createCopilotKitEndpoint,
   healthCheckHandler,
   getAgentsHandler,
   getModelsHandler,
@@ -109,180 +102,616 @@ import {
 } from './routes/index.js';
 
 // ============================================================================
-// Express Application Setup
+// Constants
+// ============================================================================
+
+const DEFAULT_AGENT_ID = 'dynamic_agent';
+
+// ============================================================================
+// Agent Cache (by agentType:modelType:orgId:teamId)
 // ============================================================================
 
 /**
- * Main Express application instance
- * Configured with security, rate limiting, and multi-tenant routing
+ * Cache for HttpAgent instances keyed by "agentType:modelType:orgId:teamId"
+ * Agents are reused for the same org/team/agent/model combination.
+ * Only truly per-request fields (requestId, threadId) are added at request time.
  */
-const app = express();
+const agentCache = new Map();
 
-// ============================================================================
-// Middleware Configuration (Order Matters!)
-// ============================================================================
+// Cache size limit to prevent memory leaks
+const AGENT_CACHE_MAX_SIZE = 100;
 
 /**
- * 1. Proxy Configuration
- * Trust proxy headers when behind a load balancer (e.g., nginx, AWS ELB)
+ * Generate cache key for agent lookup
  */
-if (TRUST_PROXY) {
-  app.set('trust proxy', 1);
+function getAgentCacheKey(agentType, modelType, orgId, teamId) {
+  return `${agentType}:${modelType}:${orgId || 'global'}:${teamId || 'global'}`;
 }
 
 /**
- * 2. CORS Middleware (MUST BE FIRST)
- * Handles preflight OPTIONS requests before any other middleware
+ * Get or create a cached HttpAgent for the given context
+ * @param {Object} context - Request context
+ * @returns {HttpAgent} Cached or new HttpAgent
  */
-app.use(createCorsMiddleware());
+function getCachedAgent(context) {
+  const { agentType, modelType, authContext } = context;
+  const orgId = authContext?.organizationId;
+  const teamId = authContext?.teamId;
+  const cacheKey = getAgentCacheKey(agentType, modelType, orgId, teamId);
+  
+  if (agentCache.has(cacheKey)) {
+    return { agent: agentCache.get(cacheKey), cached: true, cacheKey };
+  }
+  
+  // Evict oldest entries if cache is full
+  if (agentCache.size >= AGENT_CACHE_MAX_SIZE) {
+    const firstKey = agentCache.keys().next().value;
+    agentCache.delete(firstKey);
+    if (DEBUG) {
+      log(`Agent cache evicted: ${firstKey}`);
+    }
+  }
+  
+  const url = `${AGENT_BASE_URL}/agent/${agentType}/${modelType}`;
+  const headers = {
+    'x-copilot-agent-type': agentType,
+    'x-copilot-model-type': modelType,
+    'Content-Type': 'application/json',
+  };
+
+  // Add stable auth context headers (org/team don't change per-request)
+  if (authContext) {
+    const stableAuthHeaders = {
+    userId: 'x-copilot-user-id',
+    userEmail: 'x-copilot-user-email',
+    userName: 'x-copilot-user-name',
+    organizationId: 'x-copilot-organization-id',
+    organizationName: 'x-copilot-organization-name',
+    organizationSlug: 'x-copilot-organization-slug',
+    memberRole: 'x-copilot-member-role',
+    teamId: 'x-copilot-team-id',
+    teamName: 'x-copilot-team-name',
+  };
+
+    Object.entries(stableAuthHeaders).forEach(([contextKey, headerName]) => {
+      if (authContext[contextKey]) {
+        headers[headerName] = authContext[contextKey];
+    }
+  });
+  }
+  
+  const agent = new HttpAgent({ url, headers });
+  agentCache.set(cacheKey, agent);
+  
+  return { agent, cached: false, cacheKey };
+}
 
 /**
- * 3. Better Auth Special Middleware
- * Allows organization owners/admins to view all team members
- * Must intercept before auth routes process the request
+ * Get agent cache statistics
  */
-app.use('/api/auth/organization', teamMembersBypassMiddleware);
+function getAgentCacheStats() {
+  return {
+    size: agentCache.size,
+    maxSize: AGENT_CACHE_MAX_SIZE,
+    keys: Array.from(agentCache.keys()),
+  };
+}
+
+// ============================================================================
+// Per-Request Header Builder
+// ============================================================================
 
 /**
- * 4. Authentication Routes (BEFORE body parsing!)
- * Per Better Auth docs: https://www.better-auth.com/docs/integrations/express
- * Better Auth handles its own body parsing internally
+ * Build per-request headers (requestId, threadId, sessionId)
+ * These vary per request and can't be cached with the agent.
  */
-app.use('/api/auth', authRouter);
+function buildPerRequestHeaders(context) {
+  const headers = {
+    'x-request-id': context.requestId,
+  };
+
+  if (context.threadId) {
+    headers['x-copilot-thread-id'] = context.threadId;
+  }
+  
+  if (context.authContext?.sessionId) {
+    headers['x-copilot-session-id'] = context.authContext.sessionId;
+  }
+
+  return headers;
+}
+
+// ============================================================================
+// CopilotKit Runtime Setup
+// ============================================================================
 
 /**
- * 5. Invitations Routes (with body parsing)
- * Needs JSON body parsing for POST /create endpoint
+ * Create the shared CopilotKit runtime with InMemoryAgentRunner
  */
-app.use('/api/invitations', express.json({ limit: `${BODY_LIMIT_MB}mb` }), invitationsRouter);
+async function createCopilotKitRuntime() {
+  const defaultAgentType = await getDefaultAgent();
+  const defaultModelType = await getDefaultModel();
+  
+  // Create default HttpAgent pointing to Python backend
+  const defaultAgent = new HttpAgent({
+    url: `${AGENT_BASE_URL}/agent/${defaultAgentType}/${defaultModelType}`,
+    headers: {
+      'x-copilot-agent-type': defaultAgentType,
+      'x-copilot-model-type': defaultModelType,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  // Create runtime with InMemoryAgentRunner
+  const runtime = new CopilotRuntime({
+    agents: {
+      [DEFAULT_AGENT_ID]: defaultAgent,
+    },
+    runner: new InMemoryAgentRunner(),
+  });
+
+  return { runtime, defaultAgent, defaultAgentType, defaultModelType };
+}
+
+// ============================================================================
+// Auth Context Resolution
+// ============================================================================
 
 /**
- * 6. Security Headers
- * Applied after auth to avoid interfering with Better Auth's internal processing
- * Allows popups for OAuth flows (same-origin-allow-popups)
+ * Resolve authentication context from request headers
+ * Auto-selects organization and team if not set
  */
-app.use(helmet({
-  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
-}));
+async function resolveAuthContext(headers, requestId) {
+  const authContext = {};
+  const pool = getPool();
 
-/**
- * 7. Request ID Middleware
- * Generates unique ID for each request for correlation and tracing
- * Format: rt_<timestamp>_<random>
- */
-app.use(requestIdMiddleware);
+  try {
+    // Get user session from auth
+    const session = await auth.api.getSession({ headers });
+    
+    if (!session?.user) {
+      return { error: 'Authentication required', status: 401 };
+    }
 
-/**
- * 8. Rate Limiting
- * Protects non-auth API routes from abuse
- * Auth routes are skipped (they have their own protection)
- */
-const apiRateLimiter = rateLimit({
-  windowMs: RATE_LIMIT_WINDOW_MS,
-  max: RATE_LIMIT_MAX,
-  standardHeaders: true,  // Return rate limit info in `RateLimit-*` headers
-  legacyHeaders: false,   // Disable `X-RateLimit-*` headers
-  skip: (req) => req.path.startsWith('/auth'), // Skip auth routes
-});
-app.use('/api', apiRateLimiter);
+    // Extract basic user info
+    authContext.userId = session.user.id;
+    authContext.userEmail = session.user.email;
+    authContext.userName = session.user.name || session.user.email;
+    authContext.sessionId = session.session?.id || null;
+    
+    // Query session metadata with organization and team info
+    let sessionMeta = null;
+    if (session.session?.id) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT 
+             s."activeOrganizationId",
+             s."activeTeamId",
+             o.name AS "organizationName",
+             o.slug AS "organizationSlug",
+             m.role AS "memberRole",
+             t.name AS "teamName"
+           FROM session s
+           LEFT JOIN organization o ON o.id = s."activeOrganizationId"
+           LEFT JOIN member m ON m."organizationId" = s."activeOrganizationId" AND m."userId" = $1
+           LEFT JOIN team t ON t.id = s."activeTeamId"
+           WHERE s.id = $2`,
+          [session.user.id, session.session.id],
+        );
+
+        if (rows.length > 0) {
+          sessionMeta = rows[0];
+        }
+      } catch (err) {
+        if (DEBUG) {
+          log(`[Auth] Error reading session metadata: ${err.message}`, requestId);
+        }
+      }
+    }
+
+    // Populate auth context from session metadata
+    if (sessionMeta?.activeOrganizationId) {
+      authContext.organizationId = sessionMeta.activeOrganizationId;
+      authContext.organizationName = sessionMeta.organizationName;
+      authContext.organizationSlug = sessionMeta.organizationSlug;
+    }
+
+    if (sessionMeta?.activeTeamId) {
+      authContext.teamId = sessionMeta.activeTeamId;
+      authContext.teamName = sessionMeta.teamName;
+    }
+
+    if (sessionMeta?.memberRole) {
+      const roles = Array.isArray(sessionMeta.memberRole) 
+        ? sessionMeta.memberRole 
+        : [sessionMeta.memberRole];
+      authContext.memberRole = roles.filter(Boolean).join(',');
+    }
+    
+    // Auto-select organization if not set
+    if (!authContext.organizationId) {
+      try {
+        const organizations = await auth.api.listOrganizations({ headers });
+        
+        if (organizations?.length > 0) {
+          const firstOrg = organizations[0];
+          authContext.organizationId = firstOrg.id;
+          authContext.organizationName = firstOrg.name;
+          authContext.organizationSlug = firstOrg.slug;
+          
+          if (DEBUG) {
+            log(`[Auth] Auto-selected organization: ${firstOrg.name}`, requestId);
+          }
+          
+          // Persist as active organization
+          try {
+            await pool.query(
+              'UPDATE session SET "activeOrganizationId" = $1 WHERE id = $2',
+              [firstOrg.id, session.session.id]
+            );
+          } catch (err) {
+            if (DEBUG) {
+              log(`[Auth] Could not set active organization: ${err.message}`, requestId);
+            }
+          }
+        }
+      } catch (err) {
+        if (DEBUG) {
+          log(`[Auth] Error listing organizations: ${err.message}`, requestId);
+        }
+      }
+    }
+    
+    // Auto-select team if not set
+    if (authContext.organizationId && !authContext.teamId) {
+      try {
+        const { rows: teamRows } = await pool.query(
+          `SELECT t.id, t.name
+           FROM team t
+           INNER JOIN "teamMember" tm ON t.id = tm."teamId"
+           WHERE t."organizationId" = $1 AND tm."userId" = $2
+           ORDER BY t.name ASC
+           LIMIT 1`,
+          [authContext.organizationId, session.user.id],
+        );
+
+        if (teamRows.length > 0) {
+          const firstTeam = teamRows[0];
+          authContext.teamId = firstTeam.id;
+          authContext.teamName = firstTeam.name;
+
+          if (DEBUG) {
+            log(`[Auth] Auto-selected team: ${firstTeam.name}`, requestId);
+          }
+
+          // Persist as active team
+          try {
+            await pool.query(
+              'UPDATE session SET "activeTeamId" = $1 WHERE id = $2',
+              [firstTeam.id, session.session.id],
+            );
+          } catch (err) {
+            if (DEBUG) {
+              log(`[Auth] Could not set active team: ${err.message}`, requestId);
+            }
+          }
+        }
+      } catch (err) {
+        if (DEBUG) {
+          log(`[Auth] Error querying teams: ${err.message}`, requestId);
+        }
+      }
+    }
+
+    // Validate required auth context
+    if (!authContext.userId || !authContext.sessionId) {
+      return { error: 'Authentication required', status: 401 };
+    }
+
+    if (!authContext.organizationId) {
+      return { error: 'Active organization not set', status: 409 };
+    }
+
+    if (!authContext.teamId) {
+      return { error: 'Active team not set', status: 409 };
+    }
+
+    return { authContext };
+  } catch (err) {
+    if (DEBUG) {
+      log(`[Auth] Authentication error: ${err.message}`, requestId);
+    }
+    return { error: 'Authentication required', status: 401 };
+  }
+}
+
+// ============================================================================
+// Express Application Setup
+// ============================================================================
+
+const app = express();
 
 // ============================================================================
 // Async Server Initialization
 // ============================================================================
 
-/**
- * Initializes the server with async configuration loading
- * 
- * Initialization Steps:
- * 1. Create dynamic service adapter (LLM provider selector)
- * 2. Create default agent (fallback agent)
- * 3. Initialize CopilotKit runtime
- * 4. Mount CopilotKit middleware chain
- * 5. Mount remaining API routes
- * 6. Start HTTP server
- */
 (async () => {
   try {
     // ========================================================================
-    // CopilotKit Initialization
+    // CopilotKit Runtime Initialization
     // ========================================================================
 
-    /**
-     * Dynamic Service Adapter
-     * Selects appropriate LLM provider based on requested model
-     * Supports: OpenAI, Azure OpenAI, Anthropic (Bedrock), Google Gemini
-     */
-    const serviceAdapter = await createDynamicServiceAdapter();
+    const { runtime, defaultAgent, defaultAgentType, defaultModelType } = 
+      await createCopilotKitRuntime();
 
-    /**
-     * Default Agent
-     * Fallback agent when no specific agent is requested
-     * Points to Python backend for processing
-     */
-    const defaultAgent = await createDefaultAgent();
+    log('CopilotKit Runtime initialized');
+    log(`Default agent: ${defaultAgentType}, Default model: ${defaultModelType}`);
 
-    /**
-     * CopilotKit Runtime
-     * Core runtime that manages agents and processes chat requests
-     */
-    const runtime = new CopilotRuntime({
-      agents: {
-        "dynamic_agent": defaultAgent,
+    // ========================================================================
+    // Hono App for CopilotKit Endpoint
+    // ========================================================================
+
+    const honoApp = new Hono();
+
+    // CORS for Hono app - matches Express CORS configuration
+    honoApp.use('*', cors({
+      origin: (origin) => {
+        // Allow requests with no origin (same-origin, Postman, curl)
+        if (!origin) return '*';
+        
+        // Always allow Chrome extensions
+        if (origin.startsWith('chrome-extension://')) return origin;
+        
+        // Allow localhost/127.0.0.1 in development
+        if (origin.startsWith('http://localhost') || 
+            origin.startsWith('https://localhost') ||
+            origin.startsWith('http://127.0.0.1') ||
+            origin.startsWith('https://127.0.0.1')) {
+          return origin;
+        }
+        
+        // In production, return null to reject (or check ALLOWED_ORIGINS)
+        return null;
       },
+      credentials: true,
+      allowHeaders: [
+        'Content-Type',
+        'Authorization',
+        'Cookie',
+        'x-request-id',
+        'x-copilot-agent-type',
+        'x-copilot-model-type',
+        'x-copilot-thread-id',
+        'x-copilot-session-id',
+        'x-copilot-user-id',
+        'x-copilot-user-email',
+        'x-copilot-organization-id',
+        'x-copilot-team-id',
+      ],
+      exposeHeaders: ['set-cookie', 'x-request-id'],
+      maxAge: 86400, // Cache preflight for 24 hours
+    }));
+
+    // Create CopilotKit endpoint
+    const copilotEndpoint = createCopilotEndpoint({
+      runtime,
+      basePath: '/api/copilotkit',
+    });
+
+    // Mount CopilotKit endpoint with dynamic routing
+    honoApp.all('/api/copilotkit/*', async (c) => {
+      const requestId = `rt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      
+      // Convert Hono headers to plain object for auth resolution
+      const headersObj = {};
+      c.req.raw.headers.forEach((value, key) => {
+        headersObj[key] = value;
+      });
+
+      // Extract context from headers
+      const agentType = c.req.header('x-copilot-agent-type') || defaultAgentType;
+      const modelType = c.req.header('x-copilot-model-type') || defaultModelType;
+      const threadId = c.req.header('x-copilot-thread-id');
+
+      // Resolve auth context
+      const authResult = await resolveAuthContext(headersObj, requestId);
+      if (authResult.error) {
+        return c.json({ error: authResult.error }, authResult.status);
+      }
+
+      const context = {
+        agentType,
+        modelType,
+        threadId,
+        requestId,
+        authContext: authResult.authContext,
+      };
+
+      // Log request
+      log('=== CopilotKit Request ===', requestId);
+      log(`Agent: ${agentType} | Model: ${modelType} | Method: ${c.req.method} | Path: ${c.req.path}`, requestId);
+      if (DEBUG) {
+        log(`Auth: org=${context.authContext.organizationId} team=${context.authContext.teamId}`, requestId);
+      }
+      log('=============================', requestId);
+
+      // Get or create cached agent (no mutex needed - uses per-request agent IDs)
+      const { agent: cachedAgent, cached, cacheKey } = getCachedAgent(context);
+      
+      // Use a unique agent ID for this request to avoid conflicts
+      const requestAgentId = `agent_${requestId}`;
+      
+        try {
+        // Register the agent for this request
+        runtime.agents[requestAgentId] = cachedAgent;
+        
+        if (DEBUG) {
+          log(`Agent ${cached ? 'reused' : 'created'}: ${cacheKey} -> ${requestAgentId}`, requestId);
+        }
+
+        // Rewrite the request URL to use our per-request agent ID
+        const originalUrl = new URL(c.req.url);
+        const newPath = originalUrl.pathname.replace(
+          /\/agent\/[^/]+\//,
+          `/agent/${requestAgentId}/`
+        );
+        originalUrl.pathname = newPath;
+
+        // Create modified request with per-request headers
+        const perRequestHeaders = buildPerRequestHeaders(context);
+        const modifiedHeaders = new Headers(c.req.raw.headers);
+        Object.entries(perRequestHeaders).forEach(([key, value]) => {
+          modifiedHeaders.set(key, value);
+        });
+
+        const modifiedRequest = new Request(originalUrl.toString(), {
+          method: c.req.raw.method,
+          headers: modifiedHeaders,
+          body: c.req.raw.body,
+          duplex: 'half',
+        });
+
+        // Forward to CopilotKit handler
+        return await copilotEndpoint.fetch(modifiedRequest);
+        } finally {
+        // Clean up per-request agent registration
+        delete runtime.agents[requestAgentId];
+        }
     });
 
     // ========================================================================
-    // CopilotKit Endpoint Middleware Chain
+    // Express Middleware Configuration
     // ========================================================================
 
-    /**
-     * 1. Dynamic Routing Middleware
-     * - Extracts agent/model from headers
-     * - Validates authentication
-     * - Selects organization/team context
-     * - Updates runtime with correct agent dynamically
-     */
-    const dynamicRoutingMiddleware = createDynamicRoutingMiddleware(runtime);
-    app.use('/api/copilotkit', dynamicRoutingMiddleware);
+    // 1. Proxy Configuration
+    if (TRUST_PROXY) {
+      app.set('trust proxy', 1);
+    }
 
-    /**
-     * 2. Context Capture Middleware
-     * - Captures auth context (org/team/user)
-     * - Makes context available to service adapter
-     * - Enables multi-tenant model/provider selection
-     */
-    app.use('/api/copilotkit', captureRequestContext);
+    // 2. CORS Middleware
+    app.use(createCorsMiddleware());
 
-    /**
-     * 3. CopilotKit Endpoint
-     * - Main chat/completion endpoint
-     * - Handles GraphQL mutations from client
-     * - Streams responses back to client
-     */
-    const copilotKitEndpoint = createCopilotKitEndpoint(serviceAdapter, runtime);
-    app.use('/api/copilotkit', copilotKitEndpoint);
+    // 3. Better Auth Middleware
+    app.use('/api/auth/organization', teamMembersBypassMiddleware);
+
+    // 4. Authentication Routes (BEFORE body parsing!)
+    app.use('/api/auth', authRouter);
+
+    // 5. Invitations Routes
+    app.use('/api/invitations', express.json({ limit: `${BODY_LIMIT_MB}mb` }), invitationsRouter);
+
+    // 6. Request ID Middleware
+    app.use(requestIdMiddleware);
+
+    // ========================================================================
+    // CopilotKit Endpoint (Bridge Express to Hono)
+    // ========================================================================
+
+    app.all('/api/copilotkit/*', async (req, res) => {
+      const requestId = res.locals.reqId || `bridge_${Date.now()}`;
+      
+      try {
+        // Convert Express request to Fetch Request for Hono
+        const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+        const headers = new Headers();
+        Object.entries(req.headers).forEach(([key, value]) => {
+          if (value) headers.set(key, Array.isArray(value) ? value[0] : value);
+        });
+
+        // Get body for POST/PUT/PATCH requests
+        let body = null;
+        if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+          body = await new Promise((resolve, reject) => {
+            const chunks = [];
+            req.on('data', chunk => chunks.push(chunk));
+            req.on('end', () => resolve(Buffer.concat(chunks)));
+            req.on('error', reject);
+          });
+        }
+
+        const fetchRequest = new Request(url, {
+          method: req.method,
+          headers,
+          body: body?.length > 0 ? body : null,
+        });
+
+        // Forward to Hono app
+        const response = await honoApp.fetch(fetchRequest);
+
+        // Convert Hono Response to Express response
+        res.status(response.status);
+        response.headers.forEach((value, key) => {
+          // Skip content-encoding as Express handles this
+          if (key.toLowerCase() !== 'content-encoding') {
+          res.setHeader(key, value);
+          }
+        });
+
+        // Handle streaming response with proper error handling
+        if (response.body) {
+          const reader = response.body.getReader();
+          
+          // Handle client disconnect
+          req.on('close', () => {
+            reader.cancel().catch(() => {});
+          });
+          
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              
+              // Check if client is still connected before writing
+              if (!res.writableEnded) {
+                res.write(value);
+              } else {
+                reader.cancel().catch(() => {});
+                break;
+              }
+            }
+          } catch (streamError) {
+            if (DEBUG) {
+              log(`Stream error: ${streamError.message}`, requestId);
+            }
+          } finally {
+            if (!res.writableEnded) {
+              res.end();
+            }
+          }
+        } else {
+          const text = await response.text();
+          res.send(text);
+        }
+      } catch (error) {
+        log(`CopilotKit Error: ${error.message}`, requestId);
+        if (DEBUG && error.stack) {
+          log(`Stack: ${error.stack}`, requestId);
+        }
+        
+        if (!res.headersSent) {
+          res.status(500).json({ 
+            error: 'Internal server error',
+            requestId 
+          });
+        }
+      }
+    });
 
     // ========================================================================
     // Health Check & Monitoring
     // ========================================================================
 
-    /**
-     * Health check endpoint for load balancers and monitoring
-     * Returns: { status: "ok|degraded", db: boolean }
-     */
     app.get('/health', healthCheckHandler);
 
     // ========================================================================
-    // Body Parsing Middleware
-    // Applied AFTER auth routes per Better Auth requirements
+    // Body Parsing Middleware (AFTER CopilotKit)
     // ========================================================================
 
     app.use(express.json({ limit: `${BODY_LIMIT_MB}mb` }));
     app.use(express.urlencoded({ extended: true, limit: `${BODY_LIMIT_MB}mb` }));
 
     // ========================================================================
-    // Admin API Routes (Configuration Management)
-    // Require authentication and admin/owner role
+    // Admin API Routes
     // ========================================================================
 
     app.use('/api/admin/providers', providersRouter);
@@ -294,7 +723,6 @@ app.use('/api', apiRateLimiter);
 
     // ========================================================================
     // Public Configuration Endpoints
-    // Used by client (Chrome extension, web app) to get available options
     // ========================================================================
 
     app.get('/api/config', getCompleteConfigHandler);
@@ -304,28 +732,16 @@ app.use('/api', apiRateLimiter);
     app.get('/api/config/teams', getTeamsHandler);
 
     // ========================================================================
-    // Error Handlers (Must be last!)
+    // Error Handlers
     // ========================================================================
 
-    /**
-     * 404 handler for unmatched routes
-     * Returns consistent JSON error response
-     */
     app.use(notFoundMiddleware);
-
-    /**
-     * Global error handler
-     * Catches all errors and formats consistent JSON responses
-     */
     app.use(errorHandlerMiddleware);
 
     // ========================================================================
     // HTTP Server Startup
     // ========================================================================
 
-    /**
-     * Start the HTTP server and log available endpoints
-     */
     const server = app.listen(PORT, () => {
       log('═══════════════════════════════════════════════════════════════════');
       log('CopilotKit Runtime Server - Ready');
@@ -334,15 +750,14 @@ app.use('/api', apiRateLimiter);
       log(`Server:        http://0.0.0.0:${PORT}`);
       log(`Health Check:  http://0.0.0.0:${PORT}/health`);
       log('');
+      log('CopilotKit (AG-UI Protocol):');
+      log(`   - POST   ${PORT}/api/copilotkit/*`);
+      log('');
       log('Authentication & Organizations:');
       log(`   - POST   ${PORT}/api/auth/sign-in/email`);
       log(`   - POST   ${PORT}/api/auth/sign-up/email`);
       log(`   - GET    ${PORT}/api/auth/session`);
       log(`   - POST   ${PORT}/api/invitations/create`);
-      log(`   - POST   ${PORT}/api/invitations/:id/accept`);
-      log('');
-      log('AI Chat Endpoint:');
-      log(`   - POST   ${PORT}/api/copilotkit`);
       log('');
       log('Admin APIs (require auth + admin/owner role):');
       log(`   - /api/admin/providers`);
@@ -352,41 +767,15 @@ app.use('/api', apiRateLimiter);
       log(`   - /api/admin/base-instructions`);
       log(`   - /api/admin/usage`);
       log('');
-      log('Public Configuration APIs:');
-      log(`   - GET    ${PORT}/api/config (complete)`);
-      log(`   - GET    ${PORT}/api/config/agents`);
-      log(`   - GET    ${PORT}/api/config/models`);
-      log(`   - GET    ${PORT}/api/config/defaults`);
-      log(`   - GET    ${PORT}/api/config/teams`);
-      log('');
       log(`Python Backend: ${AGENT_BASE_URL}`);
       log('═══════════════════════════════════════════════════════════════════');
     });
 
-    // ========================================================================
-    // Server Timeout Configuration
-    // ========================================================================
-
-    /**
-     * Set request timeout (default: 120 seconds)
-     * Long timeout needed for streaming LLM responses
-     */
+    // Server timeout configuration
     server.setTimeout(REQUEST_TIMEOUT_MS);
-
-    /**
-     * Set headers timeout (must be > setTimeout)
-     * Prevents premature connection closure
-     */
     server.headersTimeout = HEADERS_TIMEOUT_MS;
 
-    // ========================================================================
-    // Graceful Shutdown Handler
-    // ========================================================================
-
-    /**
-     * Handle SIGINT (Ctrl+C) and SIGTERM (kill command)
-     * Allows in-flight requests to complete before shutdown
-     */
+    // Graceful shutdown
     const shutdown = () => {
       log('');
       log('Shutting down gracefully...');
@@ -400,10 +789,6 @@ app.use('/api', apiRateLimiter);
     process.on('SIGTERM', shutdown);
 
   } catch (error) {
-    // ========================================================================
-    // Initialization Error Handler
-    // ========================================================================
-
     console.error('═══════════════════════════════════════════════════════════════════');
     console.error('Failed to initialize server');
     console.error('═══════════════════════════════════════════════════════════════════');

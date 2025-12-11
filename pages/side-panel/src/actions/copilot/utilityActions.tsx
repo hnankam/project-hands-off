@@ -2,12 +2,28 @@
  * Utility CopilotKit Actions
  *
  * General utility actions for the AI agent.
+ * V2: Uses Zod schemas for parameter definitions.
  */
 
 import React from 'react';
+import { z } from 'zod';
 import { debug } from '@extension/shared';
 import { WaitCountdown } from '../../components/feedback/WaitCountdown';
 import { ConfirmationCard } from '../../components/cards/ConfirmationCard';
+
+// ============================================================================
+// ZOD SCHEMAS FOR TOOL PARAMETERS
+// ============================================================================
+
+/** Schema for wait parameters */
+export const waitSchema = z.object({
+  seconds: z.number().describe('Seconds to wait (0-30)'),
+});
+
+/** Schema for confirmAction parameters */
+export const confirmActionSchema = z.object({
+  actionDescription: z.string().describe('Description of the action that needs confirmation'),
+});
 
 // ============================================================================
 // CONSTANTS
@@ -82,6 +98,43 @@ function normalizeWaitSeconds(value: unknown): number {
   return Math.max(MIN_WAIT_SECONDS, Math.min(MAX_WAIT_SECONDS, Math.floor(num)));
 }
 
+/**
+ * Parse confirmation result from various formats
+ */
+function parseConfirmationResult(result: unknown): { confirmed: boolean } | undefined {
+  if (result === undefined) return undefined;
+  
+  // Already in correct format
+  if (typeof result === 'object' && result !== null && 'confirmed' in result) {
+    return { confirmed: Boolean((result as { confirmed: unknown }).confirmed) };
+  }
+  
+  // Boolean value
+  if (typeof result === 'boolean') {
+    return { confirmed: result };
+  }
+  
+  // String value - try JSON parse or text check
+  if (typeof result === 'string') {
+    try {
+      const parsed = JSON.parse(result);
+      if (typeof parsed === 'object' && parsed !== null && 'confirmed' in parsed) {
+        return { confirmed: Boolean(parsed.confirmed) };
+      }
+      if (typeof parsed === 'boolean') {
+        return { confirmed: parsed };
+      }
+    } catch {
+      // Not valid JSON
+    }
+    // Fallback: check for truthy string patterns
+    const lower = result.toLowerCase();
+    return { confirmed: lower.includes('true') || lower.includes('confirmed') };
+  }
+  
+  return undefined;
+}
+
 // ============================================================================
 // ACTION CREATORS
 // ============================================================================
@@ -97,14 +150,7 @@ function normalizeWaitSeconds(value: unknown): number {
 export const createWaitAction = ({ isLight }: UtilityActionDependencies) => ({
   name: 'wait',
   description: 'Pause execution for N seconds (use for page loads/embedding).',
-  parameters: [
-    {
-      name: 'seconds',
-      type: 'number',
-      description: `Seconds to wait (${MIN_WAIT_SECONDS}-${MAX_WAIT_SECONDS})`,
-      required: true,
-    },
-  ],
+  parameters: waitSchema,
   render: (props: RenderProps<WaitArgs>) => {
     const seconds = normalizeWaitSeconds(props.args?.seconds);
     // Status may come as string from framework
@@ -128,30 +174,37 @@ export const createWaitAction = ({ isLight }: UtilityActionDependencies) => ({
  * This provides the interactive UI for users to confirm or cancel actions.
  * Must be used with useHumanInTheLoop hook in the component.
  *
+ * Note: Status may be an enum (ToolCallStatus) and result may be a JSON string.
+ * These are normalized for the ConfirmationCard component.
+ *
  * @returns useHumanInTheLoop configuration object
  */
 export const createConfirmActionHumanInTheLoop = ({ isLight }: UtilityActionDependencies) => ({
   name: 'confirmAction',
   description: 'Ask user to confirm before proceeding with an action',
-  parameters: [
-    {
-      name: 'actionDescription',
-      type: 'string',
-      description: 'Description of the action that needs confirmation',
-      required: true,
-    },
-  ],
+  parameters: confirmActionSchema,
   render: (props: ConfirmActionRenderProps) => {
     const actionDescription = props.args?.actionDescription ?? 'proceed with this action';
-    // Status may come as string from framework
-    const status = (props.status ?? 'executing') as 'executing' | 'complete' | string;
+    
+    // Normalize status - could be enum value or string
+    // ToolCallStatus.Executing = 'executing', ToolCallStatus.Complete = 'complete'
+    const rawStatus = props.status;
+    let status: 'executing' | 'complete' | string = 'executing';
+    if (rawStatus === 'complete' || rawStatus === 'Complete' || (rawStatus as any)?.toString?.() === 'complete') {
+      status = 'complete';
+    } else if (rawStatus === 'executing' || rawStatus === 'Executing' || (rawStatus as any)?.toString?.() === 'executing') {
+      status = 'executing';
+    }
+    
+    // Parse result - may be object, boolean, or JSON string
+    const result = parseConfirmationResult(props.result);
 
     return (
       <ConfirmationCard
         actionDescription={actionDescription}
         status={status}
         respond={props.respond}
-        result={props.result}
+        result={result}
       />
     );
   },

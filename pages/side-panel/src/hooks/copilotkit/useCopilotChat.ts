@@ -1,16 +1,16 @@
 /**
  * Centralized CopilotKit Chat Hook
  *
- * This abstraction layer enables easy migration to CopilotKit v2.
- * When upgrading to v2, only this file needs to change.
- *
- * v1: Uses useCopilotChatHeadless_c
- * v2: Will use useAgent({ agentId: 'dynamic_agent' })
+ * V2 Implementation using useAgent and useCopilotKit from @copilotkit/react-core/v2.
+ * Suggestions are configured separately via useCopilotSuggestions hook.
  */
 
-import { useCopilotChatHeadless_c } from '@copilotkit/react-core';
-import type { Message } from '@copilotkit/shared';
-import type { ReactElement } from 'react';
+import { useAgent, useCopilotKit } from '@copilotkit/react-core/v2';
+import type { Message } from '@ag-ui/core';
+import { useMemo, useCallback } from 'react';
+
+// Re-export Message type for convenience
+export type { Message };
 
 /**
  * Return type for the centralized chat hook.
@@ -32,7 +32,11 @@ export interface CopilotChatState {
   isLoading: boolean;
 
   // Actions
-  /** Send a new message to the chat */
+  /**
+   * Send a new message to the chat.
+   * Note: In V2, this is handled via CopilotChat component's input.
+   * This method runs the agent which processes the last user message.
+   */
   sendMessage: (message: Message) => Promise<void>;
 
   /** Regenerate the response for a specific message */
@@ -43,28 +47,103 @@ export interface CopilotChatState {
 
   /** Stop the current message generation */
   stopGeneration: () => void;
-
-  /** Interrupt content for human-in-the-loop workflows */
-  interrupt: string | ReactElement | null;
-
-  /** Trigger AI-powered suggestion generation */
-  generateSuggestions: () => Promise<void>;
 }
+
+// Default agent ID used throughout the application
+const DEFAULT_AGENT_ID = 'dynamic_agent';
 
 /**
  * Centralized hook for CopilotKit chat functionality.
  *
- * This abstraction layer enables easy migration to CopilotKit v2.
- * When upgrading to v2, only this file needs to change.
- *
  * @example
  * ```tsx
- * const { messages, isLoading, sendMessage } = useCopilotChat();
+ * const { messages, isLoading, reset } = useCopilotChat();
  * ```
  */
-export function useCopilotChat(): CopilotChatState {
-  // v1 implementation using useCopilotChatHeadless_c
-  const {
+export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatState {
+  // V2 implementation using useAgent
+  const { agent } = useAgent({
+    agentId,
+  });
+
+  // CopilotKit core for stopAgent and other utilities
+  const { copilotkit } = useCopilotKit();
+
+  // Memoize messages to prevent unnecessary re-renders
+  const messages = useMemo(() => {
+    return (agent?.messages ?? []) as Message[];
+  }, [agent?.messages]);
+
+  // Set messages - V2 uses agent.setMessages() per CopilotKit v1.50 docs
+  const setMessages = useCallback((newMessages: Message[]) => {
+    if (agent && typeof agent.setMessages === 'function') {
+      agent.setMessages(newMessages);
+    }
+  }, [agent]);
+
+  // Delete message by ID - filter and use agent.setMessages()
+  const deleteMessage = useCallback((messageId: string) => {
+    if (agent && typeof agent.setMessages === 'function') {
+      const filtered = (agent.messages ?? []).filter((m: Message) => m.id !== messageId);
+      agent.setMessages(filtered);
+    }
+  }, [agent]);
+
+  // Send a new message - V2 implementation
+  // In V2, messages are typically sent via CopilotChat's input component.
+  // This method adds the message and triggers the agent run.
+  const sendMessage = useCallback(async (message: Message) => {
+    if (!agent || !copilotkit) {
+      console.warn('[useCopilotChat] sendMessage: agent or copilotkit not available');
+      return;
+    }
+    
+    // Add the message to the current messages
+    if (typeof agent.setMessages === 'function') {
+      const currentMessages = agent.messages ?? [];
+      agent.setMessages([...currentMessages, message]);
+    }
+    
+    // Run the agent to process the new message
+    try {
+      await copilotkit.runAgent({ agent: agentId as any });
+    } catch (error) {
+      console.error('[useCopilotChat] Failed to send message:', error);
+      throw error;
+    }
+  }, [agent, copilotkit, agentId]);
+
+  // Reload/regenerate messages
+  const reloadMessages = useCallback(async (_messageId?: string) => {
+    // In V2, use copilotkit.runAgent to re-run the agent
+    if (copilotkit) {
+      try {
+        await copilotkit.runAgent({ agent: agentId as any });
+      } catch (error) {
+        console.error('[useCopilotChat] Failed to reload messages:', error);
+        throw error;
+      }
+    }
+  }, [copilotkit, agentId]);
+
+  // Reset chat state - V2 implementation using agent.setMessages([])
+  const reset = useCallback(() => {
+    if (agent && typeof agent.setMessages === 'function') {
+      agent.setMessages([]);
+    }
+  }, [agent]);
+
+  // Stop current generation
+  const stopGeneration = useCallback(() => {
+    if (copilotkit) {
+      copilotkit.stopAgent({ agent: agentId as any });
+    }
+  }, [copilotkit, agentId]);
+
+  // Loading state - derive from agent state
+  const isLoading = agent?.isRunning ?? false;
+
+  return {
     messages,
     setMessages,
     deleteMessage,
@@ -73,43 +152,5 @@ export function useCopilotChat(): CopilotChatState {
     reloadMessages,
     reset,
     stopGeneration,
-    interrupt,
-    generateSuggestions,
-  } = useCopilotChatHeadless_c();
-
-  return {
-    messages,
-    setMessages: setMessages as (messages: Message[]) => void,
-    deleteMessage,
-    isLoading,
-    sendMessage,
-    reloadMessages,
-    reset,
-    stopGeneration,
-    interrupt,
-    generateSuggestions,
   };
 }
-
-// === V2 MIGRATION ===
-// When migrating to v2, replace the implementation with:
-//
-// import { useAgent } from '@copilotkit/react-core/v2';
-//
-// export function useCopilotChat(): CopilotChatState {
-//   const agent = useAgent({ agentId: 'dynamic_agent' });
-//
-//   return {
-//     messages: agent.messages,
-//     setMessages: agent.setMessages, // verify v2 API
-//     deleteMessage: agent.deleteMessage, // verify v2 API
-//     isLoading: agent.isLoading,
-//     sendMessage: agent.sendMessage, // verify v2 API
-//     reloadMessages: agent.reload, // verify v2 API
-//     reset: agent.reset, // verify v2 API
-//     stopGeneration: agent.stop, // verify v2 API
-//     interrupt: agent.interrupt, // verify v2 API
-//     generateSuggestions: agent.generateSuggestions, // verify v2 API
-//   };
-// }
-

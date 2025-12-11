@@ -1,79 +1,57 @@
 /**
- * Centralized CopilotKit Type Re-exports
+ * Centralized CopilotKit Type Definitions
  *
- * This module re-exports CopilotKit types to:
- * 1. Provide a single import location for all CopilotKit types
- * 2. Enable easy migration to CopilotKit v2
- * 3. Allow for type augmentation if needed
- *
- * v1: Types from @copilotkit/react-ui and @copilotkit/shared
- * v2: Types may come from @copilotkit/react-core/v2 or remain in react-ui
+ * V2 Implementation:
+ * - Message type from @ag-ui/core (AG-UI protocol)
+ * - Component props defined locally for V2 compatibility
  */
 
-// =============================================================================
-// Message Types (from @copilotkit/shared)
-// =============================================================================
-
-export type { Message } from '@copilotkit/shared';
+import type { ReactNode } from 'react';
 
 // =============================================================================
-// Component Props Types (from @copilotkit/react-ui)
+// Message Types (from @ag-ui/core in V2)
 // =============================================================================
 
-// Input component props
-export type { InputProps } from '@copilotkit/react-ui';
-
-// Messages component props
-export type { MessagesProps } from '@copilotkit/react-ui';
-
-// User message component props
-export type { UserMessageProps } from '@copilotkit/react-ui';
-
-// Assistant message component props
-export type { AssistantMessageProps } from '@copilotkit/react-ui';
+export type { Message } from '@ag-ui/core';
 
 // =============================================================================
-// Additional Types (if needed)
+// Component Props Types
+// Defined locally for V2 compatibility since react-ui exports may differ
 // =============================================================================
 
-// Re-export any additional types that may be used across the codebase
-// Add more type exports here as needed
+/** Props for custom input component */
+export interface InputProps {
+  inProgress?: boolean;
+  onSend?: (message: string) => void;
+  isVisible?: boolean;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+  children?: ReactNode;
+}
 
-// =============================================================================
-// V2 MIGRATION NOTES
-// =============================================================================
-//
-// Type Location Changes:
-// - Message type: Verify if still from @copilotkit/shared or moved
-// - InputProps: Verify availability in v2
-// - MessagesProps: Verify availability in v2
-// - UserMessageProps: Verify availability in v2
-// - AssistantMessageProps: Verify availability in v2
-//
-// New Types in v2:
-// - ReactToolCallRenderer<T>
-// - ReactActivityMessageRenderer<T>
-// - ReactCustomMessageRenderer
-// - ReactFrontendTool
-// - ReactHumanInTheLoop
-// - CopilotChatLabels
-// - CopilotKitProviderProps
-//
-// Example v2 imports:
-//
-// import type {
-//   ReactToolCallRenderer,
-//   ReactActivityMessageRenderer,
-//   CopilotKitProviderProps,
-// } from '@copilotkit/react-core/v2';
-//
-// // Component props may still be from react-ui
-// import type {
-//   InputProps,
-//   MessagesProps,
-//   UserMessageProps,
-//   AssistantMessageProps,
-// } from '@copilotkit/react-ui';
-//
-// // Or may be available from react-core/v2
-// // Verify during migration
+/** Props for custom messages container component */
+export interface MessagesProps {
+  messages?: any[];
+  inProgress?: boolean;
+  children?: ReactNode;
+  className?: string;
+}
+
+/** Props for custom user message component */
+export interface UserMessageProps {
+  message?: any;
+  children?: ReactNode;
+  className?: string;
+  ImageRenderer?: React.ComponentType<{ imageUrl: string }>;
+}
+
+/** Props for custom assistant message component */
+export interface AssistantMessageProps {
+  message?: any;
+  isLoading?: boolean;
+  isStreaming?: boolean;
+  children?: ReactNode;
+  className?: string;
+  subComponent?: ReactNode;
+}

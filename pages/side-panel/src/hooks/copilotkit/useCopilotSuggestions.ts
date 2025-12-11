@@ -1,68 +1,55 @@
 /**
  * Centralized CopilotKit Suggestions Hook
  *
- * This abstraction layer enables easy migration to CopilotKit v2.
- * When upgrading to v2, only this file needs to change.
- *
- * v1: Uses useCopilotChatSuggestions
- * v2: Will use useConfigureSuggestions
+ * V2 Implementation using useConfigureSuggestions from @copilotkit/react-core/v2.
+ * Uses DynamicSuggestionsConfig with providerAgentId set to 'dynamic_agent'.
  */
 
-import { useCopilotChatSuggestions } from '@copilotkit/react-ui';
+import { useConfigureSuggestions } from '@copilotkit/react-core/v2';
+
+// Must match the agentId used in CopilotChat component
+const DEFAULT_AGENT_ID = 'dynamic_agent';
+
+// SuggestionAvailability: "before-first-message" | "after-first-message" | "always" | "disabled"
+type SuggestionAvailability = 'before-first-message' | 'after-first-message' | 'always' | 'disabled';
 
 export interface CopilotSuggestionsConfig {
   /** Whether suggestions are enabled */
   enabled: boolean;
   /** Instructions for generating suggestions */
   instructions: string;
-  /** Minimum number of suggestions to generate */
-  minSuggestions?: number;
-  /** Maximum number of suggestions to generate */
-  maxSuggestions?: number;
+  /** Agent ID that provides suggestions (defaults to 'dynamic_agent') */
+  providerAgentId?: string;
+  /** When suggestions are available (defaults to 'after-first-message' to prevent errors on load) */
+  available?: SuggestionAvailability;
 }
 
 /**
- * Centralized hook for CopilotKit chat suggestions.
+ * Configure chat suggestions.
  *
- * Configures AI-powered suggestion generation for the chat interface.
+ * When enabled=false, suggestions are completely disabled (not just hidden).
+ * This prevents SuggestionEngine from running and causing errors.
  *
  * @example
  * ```tsx
  * useCopilotSuggestions({
  *   enabled: true,
- *   instructions: 'Suggest follow-up questions based on the conversation',
- *   minSuggestions: 2,
- *   maxSuggestions: 5,
+ *   instructions: 'Suggest follow-up questions',
  * });
  * ```
  */
 export function useCopilotSuggestions({
   enabled,
   instructions,
-  minSuggestions = 2,
-  maxSuggestions = 5,
+  providerAgentId = DEFAULT_AGENT_ID,
+  available = 'after-first-message',
 }: CopilotSuggestionsConfig): void {
-  // v1 implementation using useCopilotChatSuggestions
-  // Note: Hook must be called unconditionally per React rules
-  useCopilotChatSuggestions({
-    instructions: enabled ? instructions : '',
-    minSuggestions: enabled ? minSuggestions : 0,
-    maxSuggestions: enabled ? maxSuggestions : 0,
+  // V2 DynamicSuggestionsConfig:
+  // - When disabled, set available='disabled' to stop SuggestionEngine entirely
+  // - When enabled, use 'after-first-message' to prevent errors during initial load
+  useConfigureSuggestions({
+    instructions,
+    providerAgentId,
+    available: enabled ? available : 'disabled',
   });
 }
-
-// === V2 MIGRATION ===
-// When migrating to v2, replace the implementation with:
-//
-// import { useConfigureSuggestions } from '@copilotkit/react-core/v2';
-//
-// export function useCopilotSuggestions(config: CopilotSuggestionsConfig): void {
-//   useConfigureSuggestions({
-//     enabled: config.enabled,
-//     instructions: config.instructions,
-//     minCount: config.minSuggestions,
-//     maxCount: config.maxSuggestions,
-//     // API structure may differ - verify v2 docs
-//   });
-// }
-

@@ -16,13 +16,14 @@
 
 /**
  * Valid message roles
+ * V1.50: Added 'activity' for agent state/progress messages
  */
-export type MessageRole = 'user' | 'assistant' | 'tool' | 'system';
+export type MessageRole = 'user' | 'assistant' | 'tool' | 'system' | 'activity';
 
 /**
  * Valid message roles as a readonly array for type guards
  */
-const VALID_ROLES: readonly MessageRole[] = ['user', 'assistant', 'tool', 'system'] as const;
+const VALID_ROLES: readonly MessageRole[] = ['user', 'assistant', 'tool', 'system', 'activity'] as const;
 
 /**
  * Message interface with common fields
@@ -209,7 +210,7 @@ export const applySanitizationIfChanged = <T = unknown>(
  * @example
  * ```typescript
  * const validMessages = filterValidMessages(allMessages);
- * // Only messages with 'user', 'assistant', 'tool', or 'system' roles
+ * // Only messages with valid roles: 'user', 'assistant', 'tool', 'system', 'activity'
  * ```
  */
 export const filterValidMessages = (messages: unknown[]): unknown[] => {

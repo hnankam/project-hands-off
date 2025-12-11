@@ -228,6 +228,7 @@
   margin-top: 0.5rem !important;
 }
 
+/* COMMENTED OUT: Using CopilotKit default styles
 .copilotKitInput {
   border-radius: 10px !important;
   border-bottom-left-radius: 0.75rem;
@@ -239,6 +240,7 @@
   padding: 8px 10px !important;
   line-height: 1 !important;
 }
+*/
 
 /* ==========================================================
    TYPOGRAPHY & FONT SIZES

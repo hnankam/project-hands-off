@@ -35,10 +35,24 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, BinaryImage, ToolReturn
 from pydantic_ai.ag_ui import StateDeps
-from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, CustomEvent, RunAgentInput, UserMessage
+from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, CustomEvent, RunAgentInput, UserMessage, BaseEvent
+
+# ActivitySnapshotEvent is not in the Python ag_ui.core package (only in TypeScript SDK)
+# We create a custom BaseEvent subclass that will serialize to the correct AG-UI format
+class ActivitySnapshotEvent(BaseEvent):
+    """Activity snapshot event for inline rendering in V2.
+    
+    This mimics the AG-UI ACTIVITY_SNAPSHOT event type which is available
+    in the TypeScript SDK but not the Python SDK.
+    """
+    type: str = Field(default="ACTIVITY_SNAPSHOT")  # Override the type field
+    messageId: str
+    activityType: str
+    content: dict
+    replace: bool = True
 
 from core.models import AgentState, Step, StepStatus
 
@@ -68,17 +82,40 @@ async def create_plan(ctx: RunContext[StateDeps[AgentState]], steps: list[str]) 
         steps: List of step descriptions to create
         
     Returns:
-        StateSnapshotEvent with updated state
+        StateSnapshotEvent and ActivitySnapshotEvent with updated state
     """
     ctx.deps.state.steps = [Step(description=step) for step in steps]
+    
+    # Generate a new plan ID for this plan (allows multiple plans per session)
+    plan_id = f"{uuid.uuid4().hex[:12]}"
+    ctx.deps.state.current_plan_id = plan_id
+    
     state_dict = ctx.deps.state.model_dump()
+    session_id = state_dict.get("sessionId", "default")
+    
+    # Use plan_id for stable messageId so updates to THIS plan replace the same activity
+    activity_message_id = f"plan-{plan_id}"
+    
+    # Build activity content for inline rendering
+    activity_content = {
+        "steps": [{"description": s.description, "status": s.status.value if hasattr(s.status, 'value') else s.status} for s in ctx.deps.state.steps],
+        "sessionId": session_id,
+        "planId": plan_id,
+    }
 
     return ToolReturn(
         return_value='Plan Created',
         metadata=[
+            # StateSnapshotEvent for agent state persistence
             StateSnapshotEvent(
                 type=EventType.STATE_SNAPSHOT,
                 snapshot=state_dict,
+            ),
+            # ActivitySnapshotEvent for inline V2 rendering (type defaults to "ACTIVITY_SNAPSHOT")
+            ActivitySnapshotEvent(
+                messageId=activity_message_id,
+                activityType="task_progress",
+                content=activity_content,
             ),
         ],
     )
@@ -99,7 +136,7 @@ async def update_plan_step(
         status: New status for the step (optional)
         
     Returns:
-        StateSnapshotEvent with updated state
+        StateSnapshotEvent and ActivitySnapshotEvent with updated state
         
     Raises:
         ValueError: If step index doesn't exist
@@ -115,13 +152,32 @@ async def update_plan_step(
         ctx.deps.state.steps[index].status = status
 
     state_dict = ctx.deps.state.model_dump()
+    session_id = state_dict.get("sessionId", "default")
+    
+    # Use existing plan_id for stable messageId (updates same activity as create_plan)
+    plan_id = ctx.deps.state.current_plan_id or f"fallback-{session_id}"
+    activity_message_id = f"plan-{plan_id}"
+    
+    # Build activity content for inline rendering
+    activity_content = {
+        "steps": [{"description": s.description, "status": s.status.value if hasattr(s.status, 'value') else s.status} for s in ctx.deps.state.steps],
+        "sessionId": session_id,
+        "planId": plan_id,
+    }
 
     return ToolReturn(
         return_value='Plan Step Updated',
         metadata=[
+            # StateSnapshotEvent for agent state persistence
             StateSnapshotEvent(
                 type=EventType.STATE_SNAPSHOT,
                 snapshot=state_dict,
+            ),
+            # ActivitySnapshotEvent for inline V2 rendering (type defaults to "ACTIVITY_SNAPSHOT")
+            ActivitySnapshotEvent(
+                messageId=activity_message_id,
+                activityType="task_progress",
+                content=activity_content,
             ),
         ],
     )

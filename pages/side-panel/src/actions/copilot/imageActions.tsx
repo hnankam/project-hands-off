@@ -2,10 +2,22 @@
  * Image Generation CopilotKit Actions
  *
  * Actions for generating and displaying images (Generative UI example)
+ * V2: Uses Zod schemas for parameter definitions.
  */
 
 import React from 'react';
+import { z } from 'zod';
 import { ImageGalleryCard } from '../../components/cards/ImageGalleryCard';
+
+// ============================================================================
+// ZOD SCHEMAS FOR TOOL PARAMETERS
+// ============================================================================
+
+/** Schema for generate_images parameters */
+export const generateImagesSchema = z.object({
+  prompt: z.string().describe('Text description of the images to generate'),
+  num_images: z.number().optional().describe('Number of images to generate (default: 1)'),
+});
 
 // ============================================================================
 // TYPES
@@ -49,20 +61,7 @@ export const createGenerateImagesAction = ({ themeColor }: ImageActionDependenci
     'Generate images based on a text prompt and display them in a gallery. DO NOT list the images to the user once generated.',
   available: 'disabled' as const,
   followUp: false,
-  parameters: [
-    {
-      name: 'prompt',
-      type: 'string',
-      required: true,
-      description: 'Text description of the images to generate',
-    },
-    {
-      name: 'num_images',
-      type: 'number',
-      required: false,
-      description: 'Number of images to generate (default: 1)',
-    },
-  ],
+  parameters: generateImagesSchema,
   render: ({ args, status, result }: ActionRenderProps) => {
     // Extract image URLs from backend result (expects string array)
     const imageUrls = Array.isArray(result) ? (result as string[]) : [];

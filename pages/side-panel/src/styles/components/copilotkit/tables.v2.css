@@ -1,0 +1,233 @@
+/* =============================================================================
+   COPILOTKIT V2 STREAMDOWN TABLES
+   Table styling for V2 Streamdown markdown tables
+   =============================================================================
+   
+   Matches the design of tables rendered in:
+   - Graph card (MarkdownRenderer) - markdown-content table styles
+   - content.css styles
+   
+   Streamdown table structure uses standard HTML table elements
+   
+   ============================================================================= */
+
+/* ==========================================================
+   TABLE WRAPPER (Container)
+   Matches: .markdown-content .markdown-table-wrapper
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="table-wrapper"],
+[data-streamdown="table-wrapper"] {
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+  max-height: 400px !important;
+  margin: 0.8em 0 !important;
+  border-radius: 6px !important;
+  -webkit-overflow-scrolling: touch !important;
+  background-color: #ffffff !important;
+}
+
+.copilot-chat-container.dark [data-streamdown="table-wrapper"],
+.dark [data-streamdown="table-wrapper"],
+.copilot-chat-container .dark [data-streamdown="table-wrapper"] {
+  background-color: #151C24 !important;
+}
+
+/* Table scrollbar styling */
+.copilot-chat-container [data-streamdown="table-wrapper"]::-webkit-scrollbar,
+[data-streamdown="table-wrapper"]::-webkit-scrollbar {
+  width: 4px !important;
+  height: 4px !important;
+}
+
+.copilot-chat-container [data-streamdown="table-wrapper"]::-webkit-scrollbar-track,
+[data-streamdown="table-wrapper"]::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.copilot-chat-container [data-streamdown="table-wrapper"]::-webkit-scrollbar-thumb,
+[data-streamdown="table-wrapper"]::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3) !important;
+  border-radius: 2px !important;
+}
+
+.copilot-chat-container [data-streamdown="table-wrapper"]::-webkit-scrollbar-thumb:hover,
+[data-streamdown="table-wrapper"]::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5) !important;
+}
+
+.copilot-chat-container.dark [data-streamdown="table-wrapper"]::-webkit-scrollbar-thumb,
+.dark [data-streamdown="table-wrapper"]::-webkit-scrollbar-thumb,
+.copilot-chat-container .dark [data-streamdown="table-wrapper"]::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.4) !important;
+}
+
+.copilot-chat-container.dark [data-streamdown="table-wrapper"]::-webkit-scrollbar-thumb:hover,
+.dark [data-streamdown="table-wrapper"]::-webkit-scrollbar-thumb:hover,
+.copilot-chat-container .dark [data-streamdown="table-wrapper"]::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.6) !important;
+}
+
+.copilot-chat-container [data-streamdown="table-wrapper"]::-webkit-scrollbar-corner,
+[data-streamdown="table-wrapper"]::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+/* ==========================================================
+   BASE TABLE STYLES
+   Matches: .markdown-content table
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="table-wrapper"] table,
+[data-streamdown="table-wrapper"] table {
+  min-width: 100% !important;
+  width: max-content !important;
+  border-collapse: collapse !important;
+  font-size: 11px !important;
+  line-height: 1.4 !important;
+  display: table !important;
+  margin: 0 !important;
+  color: #374151 !important;
+}
+
+.copilot-chat-container.dark [data-streamdown="table-wrapper"] table,
+.dark [data-streamdown="table-wrapper"] table,
+.copilot-chat-container .dark [data-streamdown="table-wrapper"] table {
+  color: #d1d5db !important;
+}
+
+/* ==========================================================
+   TABLE STRUCTURE
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="table-wrapper"] thead,
+[data-streamdown="table-wrapper"] thead {
+  display: table-header-group !important;
+}
+
+.copilot-chat-container [data-streamdown="table-wrapper"] tbody,
+[data-streamdown="table-wrapper"] tbody {
+  display: table-row-group !important;
+}
+
+.copilot-chat-container [data-streamdown="table-wrapper"] tr,
+[data-streamdown="table-wrapper"] tr {
+  display: table-row !important;
+}
+
+/* ==========================================================
+   ROW DIVIDERS (divide-y style)
+   Matches: .markdown-content tbody tr border
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="table-wrapper"] tbody tr,
+[data-streamdown="table-wrapper"] tbody tr {
+  border-top: 1px solid #e5e7eb !important;
+}
+
+.copilot-chat-container.dark [data-streamdown="table-wrapper"] tbody tr,
+.dark [data-streamdown="table-wrapper"] tbody tr,
+.copilot-chat-container .dark [data-streamdown="table-wrapper"] tbody tr {
+  border-top-color: #374151 !important;
+}
+
+/* Header row bottom border */
+.copilot-chat-container [data-streamdown="table-wrapper"] thead tr,
+[data-streamdown="table-wrapper"] thead tr {
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+.copilot-chat-container.dark [data-streamdown="table-wrapper"] thead tr,
+.dark [data-streamdown="table-wrapper"] thead tr,
+.copilot-chat-container .dark [data-streamdown="table-wrapper"] thead tr {
+  border-bottom-color: #374151 !important;
+}
+
+/* ==========================================================
+   HEADER CELLS (th)
+   Matches: .markdown-content th
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="table-wrapper"] th,
+[data-streamdown="table-wrapper"] th {
+  display: table-cell !important;
+  padding: 8px 12px !important;
+  text-align: left !important;
+  vertical-align: middle !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+  white-space: nowrap !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 10 !important;
+  background-color: #f9fafb !important;
+  color: #4b5563 !important;
+}
+
+.copilot-chat-container.dark [data-streamdown="table-wrapper"] th,
+.dark [data-streamdown="table-wrapper"] th,
+.copilot-chat-container .dark [data-streamdown="table-wrapper"] th {
+  background-color: #151C24 !important;
+  color: #9ca3af !important;
+}
+
+/* ==========================================================
+   DATA CELLS (td)
+   Matches: .markdown-content td
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="table-wrapper"] td,
+[data-streamdown="table-wrapper"] td {
+  display: table-cell !important;
+  padding: 8px 12px !important;
+  text-align: left !important;
+  vertical-align: middle !important;
+  white-space: nowrap !important;
+  background-color: #ffffff !important;
+  color: #374151 !important;
+}
+
+.copilot-chat-container.dark [data-streamdown="table-wrapper"] td,
+.dark [data-streamdown="table-wrapper"] td,
+.copilot-chat-container .dark [data-streamdown="table-wrapper"] td {
+  background-color: transparent !important;
+  color: #d1d5db !important;
+}
+
+/* ==========================================================
+   HOVER EFFECT FOR ROWS
+   Matches: .markdown-content tbody tr:hover td
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="table-wrapper"] tbody tr:hover td,
+[data-streamdown="table-wrapper"] tbody tr:hover td {
+  background-color: #f3f4f6 !important;
+}
+
+.copilot-chat-container.dark [data-streamdown="table-wrapper"] tbody tr:hover td,
+.dark [data-streamdown="table-wrapper"] tbody tr:hover td,
+.copilot-chat-container .dark [data-streamdown="table-wrapper"] tbody tr:hover td {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* ==========================================================
+   CRITICAL: Override conflicting line-height
+   Matches: .markdown-content table line-height override
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="table-wrapper"] table,
+.copilot-chat-container [data-streamdown="table-wrapper"] table *,
+.copilot-chat-container [data-streamdown="table-wrapper"] thead,
+.copilot-chat-container [data-streamdown="table-wrapper"] tbody,
+.copilot-chat-container [data-streamdown="table-wrapper"] tr,
+.copilot-chat-container [data-streamdown="table-wrapper"] th,
+.copilot-chat-container [data-streamdown="table-wrapper"] td,
+[data-streamdown="table-wrapper"] table,
+[data-streamdown="table-wrapper"] table *,
+[data-streamdown="table-wrapper"] thead,
+[data-streamdown="table-wrapper"] tbody,
+[data-streamdown="table-wrapper"] tr,
+[data-streamdown="table-wrapper"] th,
+[data-streamdown="table-wrapper"] td {
+  line-height: 1.4 !important;
+}

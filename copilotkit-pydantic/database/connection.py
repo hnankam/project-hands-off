@@ -1,4 +1,15 @@
-"""Database connection utilities for PostgreSQL (Neon)."""
+"""Database connection utilities for PostgreSQL.
+
+Connection Pool Configuration:
+- DB_HOST: PostgreSQL host
+- DB_PORT: PostgreSQL port (default: 5432)
+- DB_DATABASE: Database name
+- DB_USERNAME: Database user
+- DB_PASSWORD: Database password
+- DB_OTHER_PARAMS: Additional connection params (default: sslmode=require)
+- DB_POOL_MIN_SIZE: Minimum connections (default: 1)
+- DB_POOL_MAX_SIZE: Maximum connections (default: 10)
+"""
 
 import os
 import psycopg
@@ -11,6 +22,11 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from config import logger
+
+# Connection pool configuration from environment
+DB_POOL_MIN_SIZE = int(os.getenv("DB_POOL_MIN_SIZE", "1"))
+DB_POOL_MAX_SIZE = int(os.getenv("DB_POOL_MAX_SIZE", "10"))
+
 _pool: AsyncConnectionPool | None = None
 _pool_lock = asyncio.Lock()
 
@@ -65,12 +81,24 @@ async def get_db_connection():
         raise
 
 
-async def init_connection_pool(min_size: int = 1, max_size: int = 10) -> None:
-    """Initialize the global async connection pool (idempotent)."""
+async def init_connection_pool(
+    min_size: int | None = None, 
+    max_size: int | None = None
+) -> None:
+    """Initialize the global async connection pool (idempotent).
+    
+    Args:
+        min_size: Minimum pool size (default: DB_POOL_MIN_SIZE env var or 1)
+        max_size: Maximum pool size (default: DB_POOL_MAX_SIZE env var or 10)
+    """
     global _pool
     async with _pool_lock:
         if _pool is not None:
             return
+        
+        min_size = min_size if min_size is not None else DB_POOL_MIN_SIZE
+        max_size = max_size if max_size is not None else DB_POOL_MAX_SIZE
+        
         conn_string = get_connection_string()
         _pool = AsyncConnectionPool(
             conninfo=conn_string,
@@ -83,7 +111,10 @@ async def init_connection_pool(min_size: int = 1, max_size: int = 10) -> None:
         await _pool.open()
         # Give the pool a moment to stabilize after opening
         await asyncio.sleep(0.1)
-        logger.info("Initialized PostgreSQL async connection pool")
+        logger.info(
+            "PostgreSQL pool initialized (min=%d, max=%d)",
+            min_size, max_size
+        )
 
 
 async def reset_connection_pool(force: bool = False) -> None:

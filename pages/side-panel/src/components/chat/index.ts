@@ -14,3 +14,6 @@ export { CustomInput } from './CustomInput';
 export { ThinkingBlock } from './ThinkingBlock';
 export { MermaidBlock } from './MermaidBlock';
 
+// Slot components for CopilotKit V2
+export * from './slots';
+

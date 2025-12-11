@@ -2,9 +2,11 @@
  * DOM Manipulation CopilotKit Actions
  *
  * Actions for interacting with page DOM elements (cursor movement, clicks, verification, etc.)
+ * V2: Uses Zod schemas for parameter definitions.
  */
 
 import React from 'react';
+import { z } from 'zod';
 import { debug } from '@extension/shared';
 import { ActionStatus } from '../../components/feedback/ActionStatus';
 import {
@@ -17,6 +19,62 @@ import {
   handleGetSelectorsAtPoints,
   handleKeystrokeSequence,
 } from '../index';
+
+// ============================================================================
+// ZOD SCHEMAS FOR TOOL PARAMETERS
+// ============================================================================
+
+/** Schema for moveCursorToElement parameters */
+export const moveCursorToElementSchema = z.object({
+  cssSelector: z.string().describe(
+    "A CSS selector to identify the element (e.g., '#create-account-btn', 'document > x-app >> #input'). Use searchPageContent() to find appropriate selectors."
+  ),
+});
+
+/** Schema for clickElement parameters */
+export const clickElementSchema = z.object({
+  cssSelector: z.string().describe(
+    "A CSS selector to identify the element (e.g., '#create-account-btn', 'document > x-app >> #input'). Use searchPageContent() to find appropriate selectors."
+  ),
+  autoMoveCursor: z.boolean().optional().describe('Whether to automatically move the cursor to the element before clicking (default: true).'),
+});
+
+/** Schema for verifySelector parameters */
+export const verifySelectorSchema = z.object({
+  cssSelector: z.string().describe(
+    "The CSS selector to verify (e.g., '#submit-btn', 'document > x-app >> #input'). Use >> to traverse shadow DOM."
+  ),
+});
+
+/** Schema for getSelectorAtPoint parameters */
+export const getSelectorAtPointSchema = z.object({
+  x: z.number().describe('Viewport X coordinate in CSS px'),
+  y: z.number().describe('Viewport Y coordinate in CSS px'),
+});
+
+/** Schema for getSelectorsAtPoints parameters */
+export const getSelectorsAtPointsSchema = z.object({
+  points: z.array(z.object({ x: z.number(), y: z.number() })).describe('Array of points {x:number,y:number}'),
+});
+
+/** Schema for keystroke */
+const keystrokeSchema = z.object({
+  key: z.string(),
+  ctrl: z.boolean().optional(),
+  meta: z.boolean().optional(),
+  alt: z.boolean().optional(),
+  shift: z.boolean().optional(),
+  repeat: z.number().optional(),
+});
+
+/** Schema for sendKeystrokes parameters */
+export const sendKeystrokesSchema = z.object({
+  sequence: z.array(keystrokeSchema).describe(
+    "Array of keystrokes. Each item: { key: string, ctrl?: boolean, meta?: boolean, alt?: boolean, shift?: boolean, repeat?: number }. Example: [{ key: 'k', meta: true }] for Cmd+K."
+  ),
+  targetSelector: z.string().optional().describe('Optional CSS selector to focus before typing. Supports Shadow DOM with >> notation.'),
+  delayMs: z.number().optional().describe('Optional delay between keystrokes in milliseconds (default 20ms, max 250ms).'),
+});
 
 // ============================================================================
 // CONSTANTS
@@ -246,15 +304,7 @@ export const createMoveCursorToElementAction = ({ isLight, clipText }: ClipTextD
   name: 'moveCursorToElement',
   description:
     'Show/move cursor to the element matching the selector. Supports Shadow DOM with >> notation. Auto-hides after 5 minutes.',
-  parameters: [
-    {
-      name: 'cssSelector',
-      type: 'string',
-      description:
-        "A CSS selector to identify the element (e.g., '#create-account-btn', 'document > x-app >> #input'). Use searchPageContent() to find appropriate selectors.",
-      required: true,
-    },
-  ],
+  parameters: moveCursorToElementSchema,
   render: ({ status, args, result, error }: ActionRenderProps<{ cssSelector?: string }>) => {
     const selector = args?.cssSelector ?? '';
     return (
@@ -284,7 +334,7 @@ export const createMoveCursorToElementAction = ({ isLight, clipText }: ClipTextD
 export const createRefreshPageContentAction = ({ isLight, pageDataRef, triggerManualRefresh }: RefreshDependencies) => ({
   name: 'refreshPageContent',
   description: 'Refresh current page HTML (for latest content/embeddings).',
-  parameters: [],
+  parameters: z.object({}),
   render: ({ status, args, result, error }: ActionRenderProps) => (
     <ActionStatus
       toolName="Refresh page content"
@@ -316,7 +366,7 @@ export const createRefreshPageContentAction = ({ isLight, pageDataRef, triggerMa
 export const createCleanupExtensionUIAction = ({ isLight }: SimpleDependencies) => ({
   name: 'cleanupExtensionUI',
   description: 'Remove all extension UI elements and styles from the page.',
-  parameters: [],
+  parameters: z.object({}),
   render: ({ status, args, result, error }: ActionRenderProps) => (
     <ActionStatus
       toolName="Clean up UI"
@@ -344,21 +394,7 @@ export const createClickElementAction = ({ isLight, clipText }: ClipTextDependen
   name: 'clickElement',
   description:
     'Click the element matching the provided CSS selector. Supports Shadow DOM with >> notation (e.g., "shadowPath >> #element").',
-  parameters: [
-    {
-      name: 'cssSelector',
-      type: 'string',
-      description:
-        "A CSS selector to identify the element (e.g., '#create-account-btn', 'document > x-app >> #input'). Use searchPageContent() to find appropriate selectors.",
-      required: true,
-    },
-    {
-      name: 'autoMoveCursor',
-      type: 'boolean',
-      description: 'Whether to automatically move the cursor to the element before clicking (default: true).',
-      required: false,
-    },
-  ],
+  parameters: clickElementSchema,
   render: ({ status, args, result, error }: ActionRenderProps<{ cssSelector?: string; autoMoveCursor?: boolean }>) => {
     const selector = args?.cssSelector ?? '';
     return (
@@ -395,15 +431,7 @@ export const createVerifySelectorAction = ({ isLight, clipText }: ClipTextDepend
   name: 'verifySelector',
   description:
     'Validate a CSS selector (syntax, match count, shadow DOM info, element details). Supports Shadow DOM with >> notation.',
-  parameters: [
-    {
-      name: 'cssSelector',
-      type: 'string',
-      description:
-        "The CSS selector to verify (e.g., '#submit-btn', 'document > x-app >> #input'). Use >> to traverse shadow DOM.",
-      required: true,
-    },
-  ],
+  parameters: verifySelectorSchema,
   render: ({ status, args, result, error }: ActionRenderProps<{ cssSelector?: string }>) => {
     const selector = args?.cssSelector ?? '';
     return (
@@ -438,10 +466,7 @@ export const createGetSelectorAtPointAction = ({ isLight }: SimpleDependencies) 
   name: 'getSelectorAtPoint',
   description:
     'Return a unique CSS selector for the element at the given viewport coordinates (x, y). Coordinates are in CSS pixels relative to the viewport (0,0 is top-left).',
-  parameters: [
-    { name: 'x', type: 'number', description: 'Viewport X coordinate in CSS px', required: true },
-    { name: 'y', type: 'number', description: 'Viewport Y coordinate in CSS px', required: true },
-  ],
+  parameters: getSelectorAtPointSchema,
   render: ({ status, args, result, error }: ActionRenderProps<{ x?: number; y?: number }>) => {
     const x = safeNumber(args?.x);
     const y = safeNumber(args?.y);
@@ -477,9 +502,7 @@ export const createGetSelectorsAtPointsAction = ({ isLight }: SimpleDependencies
   name: 'getSelectorsAtPoints',
   description:
     'Return unique CSS selectors for elements at the provided list of viewport coordinates. Each item is { x, y } in CSS pixels relative to the viewport.',
-  parameters: [
-    { name: 'points', type: 'object[]', description: 'Array of points {x:number,y:number}', required: true },
-  ],
+  parameters: getSelectorsAtPointsSchema,
   render: ({ status, args, result, error }: ActionRenderProps<{ points?: unknown[] }>) => {
     const pointCount = Array.isArray(args?.points) ? args.points.length : 0;
     return (
@@ -511,27 +534,7 @@ export const createSendKeystrokesAction = ({ isLight, clipText }: ClipTextDepend
   name: 'sendKeystrokes',
   description:
     'Send keyboard shortcuts or sequences to the page. Supports modifiers (ctrl/meta/alt/shift), repeats, optional target focus via selector (supports shadow >>), and per-key delay.',
-  parameters: [
-    {
-      name: 'sequence',
-      type: 'object[]',
-      description:
-        "Array of keystrokes. Each item: { key: string, ctrl?: boolean, meta?: boolean, alt?: boolean, shift?: boolean, repeat?: number }. Example: [{ key: 'k', meta: true }] for Cmd+K.",
-      required: true,
-    },
-    {
-      name: 'targetSelector',
-      type: 'string',
-      description: 'Optional CSS selector to focus before typing. Supports Shadow DOM with >> notation.',
-      required: false,
-    },
-    {
-      name: 'delayMs',
-      type: 'number',
-      description: 'Optional delay between keystrokes in milliseconds (default 20ms, max 250ms).',
-      required: false,
-    },
-  ],
+  parameters: sendKeystrokesSchema,
   render: ({
     status,
     args,

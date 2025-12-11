@@ -33,8 +33,7 @@
   },
   "postcss": {
     "plugins": {
-      "tailwindcss": {},
-      "autoprefixer": {}
+      "@tailwindcss/postcss": {}
     }
   }
 }

@@ -1,14 +1,13 @@
 /**
  * Centralized CopilotKit Chat Context Hook
  *
- * This abstraction layer enables easy migration to CopilotKit v2.
- * When upgrading to v2, only this file needs to change.
+ * This abstraction layer provides access to chat context (labels, icons, modal state).
  *
- * v1: Uses useChatContext from @copilotkit/react-ui
- * v2: Uses useCopilotChatConfiguration from @copilotkit/react-core/v2
+ * V2 Implementation:
+ * Uses useCopilotChatConfiguration from @copilotkit/react-core/v2
  */
 
-import { useChatContext } from '@copilotkit/react-ui';
+import { useCopilotChatConfiguration } from '@copilotkit/react-core/v2';
 
 /**
  * Chat context labels configuration
@@ -23,11 +22,15 @@ export interface CopilotChatLabels {
   copyToClipboard?: string;
   thumbsUp?: string;
   thumbsDown?: string;
+  // V2 specific labels
+  chatInputPlaceholder?: string;
+  modalHeaderTitle?: string;
   [key: string]: string | undefined; // Allow additional labels
 }
 
 /**
  * Chat context icons configuration
+ * Note: In V2, icons are handled internally by the CopilotChat component
  */
 export interface CopilotChatIcons {
   sendIcon?: React.ReactNode;
@@ -47,72 +50,59 @@ export interface CopilotChatIcons {
 export interface CopilotChatContextValue {
   /** Chat labels configuration */
   labels: CopilotChatLabels;
-  /** Chat icons configuration */
+  /** Chat icons configuration (empty in V2 - handled internally) */
   icons: CopilotChatIcons;
   /** Whether the chat is open (modal state) */
   isOpen: boolean;
   /** Function to set the open state */
   setOpen: (open: boolean) => void;
-  /** Raw context for advanced usage */
-  _rawContext: ReturnType<typeof useChatContext>;
+  /** Current agent ID (V2 only) */
+  agentId?: string;
+  /** Current thread ID (V2 only) */
+  threadId?: string;
+  /** Whether context is available */
+  available: boolean;
 }
 
 /**
  * Centralized hook for accessing CopilotKit chat context.
  *
- * Provides access to chat labels, icons, and modal state.
+ * V2 implementation using useCopilotChatConfiguration.
+ * Note: Returns null-safe values - check `available` before using.
  *
  * @example
  * ```tsx
- * const { labels, icons, isOpen, setOpen } = useCopilotChatContext();
+ * const { labels, isOpen, setOpen, available } = useCopilotChatContext();
+ * if (available) {
+ *   // Use context
+ * }
  * ```
  */
 export function useCopilotChatContext(): CopilotChatContextValue {
-  // v1 implementation using useChatContext
-  const context = useChatContext();
+  // V2 implementation using useCopilotChatConfiguration
+  // Note: Returns null if called outside CopilotChat context
+  const config = useCopilotChatConfiguration();
+
+  if (!config) {
+    // Return default values when outside chat context
+    return {
+      labels: {},
+      icons: {},
+      isOpen: false,
+      setOpen: () => {
+        console.warn('[useCopilotChatContext] Called outside of CopilotChat context');
+      },
+      available: false,
+    };
+  }
 
   return {
-    labels: context.labels as CopilotChatLabels,
-    icons: context.icons as CopilotChatIcons,
-    isOpen: context.open,
-    setOpen: context.setOpen,
-    _rawContext: context,
+    labels: config.labels as CopilotChatLabels,
+    icons: {}, // V2 handles icons internally
+    isOpen: config.isModalOpen ?? false,
+    setOpen: config.setModalOpen ?? (() => {}),
+    agentId: config.agentId,
+    threadId: config.threadId,
+    available: true,
   };
 }
-
-// === V2 MIGRATION ===
-// The v2 equivalent is `useCopilotChatConfiguration` from '@copilotkit/react-core/v2'
-//
-// V2 Interface:
-// interface CopilotChatConfigurationValue {
-//   labels: CopilotChatLabels;
-//   agentId: string;
-//   threadId: string;
-//   isModalOpen: boolean;           // replaces 'open'
-//   setModalOpen: (open: boolean) => void;  // replaces 'setOpen'
-//   isModalDefaultOpen: boolean;
-// }
-//
-// import { useCopilotChatConfiguration } from '@copilotkit/react-core/v2';
-//
-// export function useCopilotChatContext(): CopilotChatContextValue | null {
-//   const config = useCopilotChatConfiguration();
-//
-//   if (!config) return null;
-//
-//   return {
-//     labels: config.labels as CopilotChatLabels,
-//     icons: {}, // Icons not available in v2 - handled internally
-//     isOpen: config.isModalOpen,
-//     setOpen: config.setModalOpen,
-//     _rawContext: config,
-//   };
-// }
-//
-// Key Differences:
-// - No `icons` in v2 (handled internally)
-// - `open` → `isModalOpen`
-// - `setOpen` → `setModalOpen`
-// - New fields: `agentId`, `threadId`, `isModalDefaultOpen`
-// - Returns `null` if used outside chat context
-

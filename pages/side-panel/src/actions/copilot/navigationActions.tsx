@@ -2,12 +2,58 @@
  * Navigation CopilotKit Actions
  *
  * Actions for page navigation (opening tabs, scrolling, drag and drop)
+ * V2: Uses Zod schemas for parameter definitions.
  */
 
 import React from 'react';
+import { z } from 'zod';
 import { debug } from '@extension/shared';
 import { ActionStatus } from '../../components/feedback/ActionStatus';
 import { handleOpenNewTab, handleScroll, handleDragAndDrop } from '../index';
+
+// ============================================================================
+// ZOD SCHEMAS FOR TOOL PARAMETERS
+// ============================================================================
+
+/** Schema for openNewTab parameters */
+export const openNewTabSchema = z.object({
+  url: z.string().describe(
+    "The URL to open in the new tab (e.g., 'https://google.com', 'github.com', 'https://example.com/page')."
+  ),
+  active: z.boolean().optional().describe('Whether to make the new tab active (default: true). Set to false to open in background.'),
+});
+
+/** Schema for scroll parameters */
+export const scrollSchema = z.object({
+  cssSelector: z.string().optional().describe(
+    'Optional CSS selector for the element to scroll within or scroll to. Leave empty to scroll the page.'
+  ),
+  direction: z.enum(['up', 'down', 'left', 'right', 'top', 'bottom', 'to']).optional().describe(
+    "Direction to scroll: 'up', 'down', 'left', 'right', 'top', 'bottom', or 'to'. Default: 'down'."
+  ),
+  amount: z.number().optional().describe(
+    "Amount to scroll in pixels (for up/down/left/right). Default: 300. Ignored for 'top', 'bottom', and 'to'."
+  ),
+  scrollTo: z.boolean().optional().describe(
+    'If true, scrolls TO the element (brings it into view). If false, scrolls WITHIN the element. Default: false.'
+  ),
+});
+
+/** Schema for dragAndDrop parameters */
+export const dragAndDropSchema = z.object({
+  sourceCssSelector: z.string().describe(
+    "CSS selector for the element to drag (e.g., '#draggable-item', 'document > x-app >> .card')."
+  ),
+  targetCssSelector: z.string().describe(
+    "CSS selector for the drop target element (e.g., '.drop-zone', 'document > x-app >> #container')."
+  ),
+  offsetX: z.number().optional().describe(
+    'Optional horizontal offset in pixels from target center (default: 0). Positive = right, negative = left.'
+  ),
+  offsetY: z.number().optional().describe(
+    'Optional vertical offset in pixels from target center (default: 0). Positive = down, negative = up.'
+  ),
+});
 
 // ============================================================================
 // CONSTANTS
@@ -95,21 +141,7 @@ type BasicNavigationDependencies = Omit<NavigationActionDependencies, 'yesNo'>;
 export const createOpenNewTabAction = ({ isLight, clipText }: BasicNavigationDependencies) => ({
   name: 'openNewTab',
   description: 'Open a new tab with the given URL (validated and normalized).',
-  parameters: [
-    {
-      name: 'url',
-      type: 'string',
-      description:
-        "The URL to open in the new tab (e.g., 'https://google.com', 'github.com', 'https://example.com/page').",
-      required: true,
-    },
-    {
-      name: 'active',
-      type: 'boolean',
-      description: 'Whether to make the new tab active (default: true). Set to false to open in background.',
-      required: false,
-    },
-  ],
+  parameters: openNewTabSchema,
   render: ({ status, args, result, error }: ActionRenderProps<OpenNewTabArgs>) => {
     const url = clipText(args?.url ?? '', MAX_URL_LENGTH);
     const isActive = args?.active ?? true;
@@ -146,35 +178,7 @@ export const createOpenNewTabAction = ({ isLight, clipText }: BasicNavigationDep
 export const createScrollAction = ({ isLight, clipText, yesNo }: NavigationActionDependencies) => ({
   name: 'scroll',
   description: 'Scroll the page or an element, or scroll the page to an element.',
-  parameters: [
-    {
-      name: 'cssSelector',
-      type: 'string',
-      description:
-        'Optional CSS selector for the element to scroll within or scroll to. Leave empty to scroll the page.',
-      required: false,
-    },
-    {
-      name: 'direction',
-      type: 'string',
-      description: "Direction to scroll: 'up', 'down', 'left', 'right', 'top', 'bottom', or 'to'. Default: 'down'.",
-      required: false,
-    },
-    {
-      name: 'amount',
-      type: 'number',
-      description:
-        "Amount to scroll in pixels (for up/down/left/right). Default: 300. Ignored for 'top', 'bottom', and 'to'.",
-      required: false,
-    },
-    {
-      name: 'scrollTo',
-      type: 'boolean',
-      description:
-        'If true, scrolls TO the element (brings it into view). If false, scrolls WITHIN the element. Default: false.',
-      required: false,
-    },
-  ],
+  parameters: scrollSchema,
   render: ({ status, args, result, error }: ActionRenderProps<ScrollArgs>) => {
     const selector = args?.cssSelector ?? 'page';
     const direction = args?.direction ?? 'down';
@@ -225,35 +229,7 @@ export const createDragAndDropAction = ({ isLight, clipText }: BasicNavigationDe
   name: 'dragAndDrop',
   description:
     'Drag from source selector and drop on target selector (supports offsets and canvas cases). Supports Shadow DOM with >> notation.',
-  parameters: [
-    {
-      name: 'sourceCssSelector',
-      type: 'string',
-      description: "CSS selector for the element to drag (e.g., '#draggable-item', 'document > x-app >> .card').",
-      required: true,
-    },
-    {
-      name: 'targetCssSelector',
-      type: 'string',
-      description:
-        "CSS selector for the drop target element (e.g., '.drop-zone', 'document > x-app >> #container').",
-      required: true,
-    },
-    {
-      name: 'offsetX',
-      type: 'number',
-      description:
-        'Optional horizontal offset in pixels from target center (default: 0). Positive = right, negative = left.',
-      required: false,
-    },
-    {
-      name: 'offsetY',
-      type: 'number',
-      description:
-        'Optional vertical offset in pixels from target center (default: 0). Positive = down, negative = up.',
-      required: false,
-    },
-  ],
+  parameters: dragAndDropSchema,
   render: ({ status, args, result, error }: ActionRenderProps<DragAndDropArgs>) => {
     const source = clipText(args?.sourceCssSelector ?? '', MAX_DRAG_SELECTOR_LENGTH);
     const target = clipText(args?.targetCssSelector ?? '', MAX_DRAG_SELECTOR_LENGTH);

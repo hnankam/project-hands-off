@@ -1,13 +1,32 @@
 import { resolve } from 'node:path';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { makeEntryPointPlugin } from '@extension/hmr';
 import { getContentScriptEntries, withPageConfig } from '@extension/vite-config';
 import { IS_DEV } from '@extension/env';
 import { build } from 'vite';
-import { build as buildTW } from 'tailwindcss/lib/cli/build';
+import postcss from 'postcss';
+import tailwindcss from '@tailwindcss/postcss';
 
 const rootDir = resolve(import.meta.dirname);
 const srcDir = resolve(rootDir, 'src');
 const matchesDir = resolve(srcDir, 'matches');
+
+// Helper to build Tailwind CSS using postcss API (v4 compatible)
+async function buildTailwind(input: string, output: string): Promise<void> {
+  const css = await readFile(input, 'utf-8');
+  const result = await postcss([tailwindcss()]).process(css, {
+    from: input,
+    to: output,
+  });
+  
+  // Ensure output directory exists
+  await mkdir(dirname(output), { recursive: true });
+  await writeFile(output, result.css);
+  if (result.map) {
+    await writeFile(`${output}.map`, result.map.toString());
+  }
+}
 
 const configs = Object.entries(getContentScriptEntries(matchesDir)).map(([name, entry]) => ({
   name,
@@ -36,13 +55,10 @@ const configs = Object.entries(getContentScriptEntries(matchesDir)).map(([name, 
 // Build in parallel (faster)
 const builds = configs.map(async ({ name, config }) => {
   const folder = resolve(matchesDir, name);
-  const args = {
-    ['--input']: resolve(folder, 'index.css'),
-    ['--output']: resolve(rootDir, 'dist', name, 'index.css'),
-    ['--config']: resolve(rootDir, 'tailwind.config.ts'),
-    ['--watch']: IS_DEV,
-  };
-  await buildTW(args);
+  await buildTailwind(
+    resolve(folder, 'index.css'),
+    resolve(rootDir, 'dist', name, 'index.css'),
+  );
   //@ts-expect-error This is hidden property into vite's resolveConfig()
   config.configFile = false;
   await build(config);

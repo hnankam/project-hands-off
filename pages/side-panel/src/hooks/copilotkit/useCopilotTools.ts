@@ -1,68 +1,57 @@
 /**
  * Centralized CopilotKit Tool Hooks
  *
- * This module re-exports tool-related hooks from CopilotKit to:
- * 1. Provide a single import location for all tool hooks
- * 2. Enable easy migration to v2 by changing imports in one place
+ * V2 Implementation using @copilotkit/react-core/v2:
+ * - useFrontendTool: Register frontend tools with Zod schemas
+ * - useHumanInTheLoop: Human confirmation workflows
+ * - useRenderToolCall: Returns render function for tool calls
  *
- * v1: Imports from '@copilotkit/react-core'
- * v2: Will import from '@copilotkit/react-core/v2'
- *
- * Note: useRenderToolCall in v2 will be replaced by the
- * defineToolCallRenderer prop on CopilotKitProvider
+ * Tool renderers should be configured via:
+ * 1. The `render` property on useFrontendTool configs (frontend tools)
+ * 2. The `renderToolCalls` prop on CopilotKitProvider (backend tools)
  */
 
-// Re-export tool hooks from CopilotKit v1
-export {
-  useFrontendTool,
-  useHumanInTheLoop,
-  useDefaultTool,
-  useRenderToolCall,
-} from '@copilotkit/react-core';
+import {
+  useFrontendTool as useFrontendToolV2,
+  useHumanInTheLoop as useHumanInTheLoopV2,
+  useRenderToolCall as useRenderToolCallV2,
+} from '@copilotkit/react-core/v2';
 
-// Re-export types for convenience
-export type {
-  FrontendAction,
-  ActionRenderProps,
-  RenderFunctionStatus,
-} from '@copilotkit/react-core';
+/** Register a frontend tool with Zod schema parameters */
+export function useFrontendTool(config: any, deps?: any[]): void {
+  useFrontendToolV2(config as any, deps);
+}
 
-// === V2 MIGRATION ===
-//
-// When migrating to v2:
-//
-// 1. Change imports to v2:
-//    export {
-//      useFrontendTool,
-//      useHumanInTheLoop,
-//      useDefaultTool,
-//    } from '@copilotkit/react-core/v2';
-//
-// 2. useRenderToolCall is NOT available in v2!
-//    It is replaced by the defineToolCallRenderer prop on CopilotKitProvider.
-//    You'll need to:
-//    - Remove useRenderToolCall from exports
-//    - Move render logic to CopilotKitProvider's defineToolCallRenderer prop
-//    - Create a centralized tool renderer configuration
-//
-// Example v2 CopilotKitProvider setup:
-//
-//    const toolRenderers = {
-//      'generate_images': GenerateImagesRenderer,
-//      'web_search': WebSearchRenderer,
-//      'code_execution': CodeExecutionRenderer,
-//      'url_context': UrlContextRenderer,
-//    };
-//
-//    <CopilotKitProvider
-//      defineToolCallRenderer={(toolCall) => {
-//        const Renderer = toolRenderers[toolCall.name];
-//        if (Renderer) {
-//          return <Renderer {...toolCall} />;
-//        }
-//        return null;
-//      }}
-//    >
-//      {children}
-//    </CopilotKitProvider>
+/** Register a human-in-the-loop confirmation tool */
+export function useHumanInTheLoop(config: any, deps?: any[]): void {
+  useHumanInTheLoopV2(config as any, deps);
+}
 
+/** Get render function for tool calls */
+export function useRenderToolCall() {
+  return useRenderToolCallV2();
+}
+
+// =============================================================================
+// Types
+// =============================================================================
+
+/** Frontend action configuration */
+export interface FrontendAction<T = unknown> {
+  name: string;
+  description: string;
+  parameters?: unknown;
+  handler: (args: T) => Promise<unknown>;
+  render?: (props: ActionRenderProps<T>) => React.ReactNode;
+}
+
+/** Props passed to action render functions */
+export interface ActionRenderProps<T = unknown> {
+  args: T;
+  result?: unknown;
+  status: RenderFunctionStatus;
+  handler?: (args: T) => Promise<unknown>;
+}
+
+/** Status of a render function */
+export type RenderFunctionStatus = 'inProgress' | 'complete' | 'executing';

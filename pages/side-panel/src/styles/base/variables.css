@@ -1,11 +1,10 @@
 /* ==========================================================
    COPILOTKIT CSS VARIABLES
-   Important: Do not reorder below dark overrides
+   COMMENTED OUT: Using CopilotKit default styles only
    ========================================================== */
-/* CopilotKit Dark Mode Support */
+/*
 :root {
-  /* Light mode CopilotKit variables */
-  --copilot-kit-primary-color: #374151 !important; /* gray-700 - darker for better visibility */
+  --copilot-kit-primary-color: #374151 !important;
   --copilot-kit-background-color: #ffffff;
   --copilot-kit-secondary-color: #f9fafb;
   --copilot-kit-muted-color: #f3f4f6;
@@ -15,25 +14,25 @@
   --copilot-kit-response-background-color: #f9fafb;
   --copilot-kit-response-border-color: #e5e7eb;
   --copilot-kit-separator-color: #e5e7eb;
-  --copilot-kit-text-color: #374151; /* gray-700 - dark grey instead of black */
+  --copilot-kit-text-color: #374151;
   --copilot-kit-text-muted-color: #6b7280;
-  --copilot-kit-contrast-color: #374151 !important; /* gray-700 - dark grey instead of black */
+  --copilot-kit-contrast-color: #374151 !important;
 } 
 
 .dark {
-  /* Dark mode CopilotKit variables - matches status bar bg-gray-800 */
   --copilot-kit-primary-color: #151B23 !important;
-  --copilot-kit-background-color: #0C1117 !important; /* gray-800 - match status bar */
-  --copilot-kit-secondary-color: #151C24 !important; /* gray-800 - match status bar */
-  --copilot-kit-muted-color: #374151 !important; /* gray-800 */
-  --copilot-kit-accent-color: #151C24 !important; /* gray-700 */
-  --copilot-kit-border-color: #374151 !important; /* gray-700 to match border */
-  --copilot-kit-input-background-color: #151C24 !important; /* gray-800 */
-  --copilot-kit-response-background-color: #151C24 !important; /* gray-800 - match status bar */
-  --copilot-kit-response-border-color: #bcc1c7 !important; /* gray-350 - softer border */
-  --copilot-kit-separator-color: #374151 !important; /* gray-700 to match border */
-  --copilot-kit-text-color: #bcc1c7 !important; /* gray-350 - slightly greyer */
+  --copilot-kit-background-color: #0C1117 !important;
+  --copilot-kit-secondary-color: #151C24 !important;
+  --copilot-kit-muted-color: #374151 !important;
+  --copilot-kit-accent-color: #151C24 !important;
+  --copilot-kit-border-color: #374151 !important;
+  --copilot-kit-input-background-color: #151C24 !important;
+  --copilot-kit-response-background-color: #151C24 !important;
+  --copilot-kit-response-border-color: #bcc1c7 !important;
+  --copilot-kit-separator-color: #374151 !important;
+  --copilot-kit-text-color: #bcc1c7 !important;
   --copilot-kit-text-muted-color: #9ca3af !important;
-  --copilot-kit-contrast-color: #bcc1c7 !important; /* gray-350 - slightly greyer */
-  --copilot-kit-secondary-contrast-color: #bcc1c7 !important; /* gray-350 - slightly greyer */
+  --copilot-kit-contrast-color: #bcc1c7 !important;
+  --copilot-kit-secondary-contrast-color: #bcc1c7 !important;
 }
+*/

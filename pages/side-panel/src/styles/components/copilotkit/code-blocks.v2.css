@@ -1,0 +1,321 @@
+/* =============================================================================
+   COPILOTKIT V2 CODE BLOCKS
+   Code block styling for V2 Streamdown
+   =============================================================================
+   
+   Syntax highlighting is handled by Shiki themes configured in CopilotChat:
+   - Light mode: github-light
+   - Dark mode: one-dark-pro
+   
+   This file only provides structural styling (layout, scrollbars, etc.)
+   
+   ============================================================================= */
+
+/* ==========================================================
+   V1 LEGACY CODE BLOCKS (copilotKitCodeBlock)
+   Kept for backward compatibility
+   ========================================================== */
+
+.copilot-chat-container .copilotKitCodeBlock {
+  position: relative !important;
+  width: 100% !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--copilot-kit-border-color) !important;
+  background: var(--copilot-kit-response-background-color, var(--copilot-kit-secondary-color)) !important;
+  overflow: hidden !important;
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlock {
+  background: var(--copilot-kit-secondary-color, #151C24) !important;
+  border-color: var(--copilot-kit-border-color, #374151) !important;
+}
+
+.copilot-chat-container .copilotKitCodeBlockToolbar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  height: 28px !important;
+  padding: 0 8px !important;
+  background: rgba(0, 0, 0, 0.03) !important;
+  border-bottom: 1px solid var(--copilot-kit-separator-color) !important;
+  color: var(--copilot-kit-text-muted-color) !important;
+  font-size: 11px !important;
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlockToolbar {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+.copilot-chat-container .copilotKitCodeBlockToolbar button,
+.copilot-chat-container .copilotKitCodeBlockToolbar a {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 20px !important;
+  width: 20px !important;
+  padding: 0 !important;
+  border-radius: 4px !important;
+  color: inherit !important;
+  background: transparent !important;
+}
+
+.copilot-chat-container .copilotKitCodeBlockToolbar button:hover,
+.copilot-chat-container .copilotKitCodeBlockToolbar a:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlockToolbar button:hover,
+.copilot-chat-container.dark .copilotKitCodeBlockToolbar a:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.copilot-chat-container .copilotKitCodeBlockToolbar svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+.copilot-chat-container .copilotKitCodeBlock pre,
+.copilot-chat-container .copilotKitCodeBlock code {
+  background: transparent !important;
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  -webkit-font-smoothing: antialiased !important;
+  text-rendering: optimizeLegibility !important;
+}
+
+.copilot-chat-container .copilotKitCodeBlock pre {
+  margin: 0 !important;
+  padding: 12px 14px !important;
+  overflow: auto !important;
+  scrollbar-width: thin !important;
+}
+
+/* ==========================================================
+   V2 STREAMDOWN CODE BLOCKS (data-streamdown="code-block")
+   ========================================================== */
+
+/* Main code block container */
+.copilot-chat-container [data-streamdown="code-block"],
+[data-streamdown="code-block"] {
+  position: relative !important;
+  width: 100% !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--copilot-kit-border-color, #e5e7eb) !important;
+  overflow: hidden !important;
+  margin: 0.75rem 0 !important;
+}
+
+.dark .copilot-chat-container [data-streamdown="code-block"],
+.dark [data-streamdown="code-block"],
+.copilot-chat-container.dark [data-streamdown="code-block"] {
+  border-color: #3e4451 !important;
+}
+
+/* Code block header (language label + buttons) */
+.copilot-chat-container [data-streamdown="code-block-header"],
+[data-streamdown="code-block-header"] {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  height: 32px !important;
+  padding: 0 12px !important;
+  background: rgba(0, 0, 0, 0.03) !important;
+  border-bottom: 1px solid var(--copilot-kit-separator-color, #e5e7eb) !important;
+  color: var(--copilot-kit-text-muted-color, #6b7280) !important;
+  font-size: 12px !important;
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
+}
+
+.dark .copilot-chat-container [data-streamdown="code-block-header"],
+.dark [data-streamdown="code-block-header"],
+.copilot-chat-container.dark [data-streamdown="code-block-header"] {
+  background: #21252b !important;
+  border-bottom-color: #3e4451 !important;
+  color: #abb2bf !important;
+}
+
+/* Header buttons container */
+.copilot-chat-container [data-streamdown="code-block-header"] > div:last-child,
+[data-streamdown="code-block-header"] > div:last-child {
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
+
+/* Header buttons */
+.copilot-chat-container [data-streamdown="code-block-header"] button,
+[data-streamdown="code-block-header"] button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 24px !important;
+  width: 24px !important;
+  padding: 0 !important;
+  border-radius: 4px !important;
+  color: inherit !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: background-color 0.15s ease !important;
+}
+
+.copilot-chat-container [data-streamdown="code-block-header"] button:hover,
+[data-streamdown="code-block-header"] button:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+
+.dark .copilot-chat-container [data-streamdown="code-block-header"] button:hover,
+.dark [data-streamdown="code-block-header"] button:hover,
+.copilot-chat-container.dark [data-streamdown="code-block-header"] button:hover {
+  background: #3e4451 !important;
+}
+
+.dark .copilot-chat-container [data-streamdown="code-block-header"] button,
+.dark [data-streamdown="code-block-header"] button,
+.copilot-chat-container.dark [data-streamdown="code-block-header"] button {
+  color: #6b7280 !important;
+}
+
+.dark .copilot-chat-container [data-streamdown="code-block-header"] button:hover,
+.dark [data-streamdown="code-block-header"] button:hover,
+.copilot-chat-container.dark [data-streamdown="code-block-header"] button:hover {
+  color: #abb2bf !important;
+}
+
+.copilot-chat-container [data-streamdown="code-block-header"] button svg,
+[data-streamdown="code-block-header"] button svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* Code block body (pre container) */
+.copilot-chat-container [data-streamdown="code-block-body"],
+[data-streamdown="code-block-body"] {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: auto !important;
+}
+
+/* Pre element inside code block */
+.copilot-chat-container [data-streamdown="code-block"] pre,
+[data-streamdown="code-block"] pre {
+  margin: 0 !important;
+  padding: 12px 14px !important;
+  overflow: auto !important;
+  scrollbar-width: thin !important;
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  -webkit-font-smoothing: antialiased !important;
+  text-rendering: optimizeLegibility !important;
+}
+
+/* Code element inside pre */
+.copilot-chat-container [data-streamdown="code-block"] code,
+[data-streamdown="code-block"] code {
+  font-family: Menlo, Monaco, Consolas, 'Courier New', monospace !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  -webkit-font-smoothing: antialiased !important;
+  text-rendering: optimizeLegibility !important;
+}
+
+/* ==========================================================
+   SHIKI THEME INTEGRATION
+   Ensure Shiki-generated backgrounds are transparent
+   so our container backgrounds show through
+   ========================================================== */
+
+[data-streamdown="code-block"] .shiki,
+[data-streamdown="code-block"] [class*="shiki"],
+[data-streamdown="code-block"] .shiki pre,
+[data-streamdown="code-block"] [class*="shiki"] pre,
+[data-streamdown="code-block"] pre {
+  background: transparent !important;
+}
+
+/* ==========================================================
+   SCROLLBAR STYLING
+   ========================================================== */
+
+.copilot-chat-container .copilotKitCodeBlock pre::-webkit-scrollbar,
+.copilot-chat-container [data-streamdown="code-block"] pre::-webkit-scrollbar,
+[data-streamdown="code-block"] pre::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+
+.copilot-chat-container .copilotKitCodeBlock pre::-webkit-scrollbar-track,
+.copilot-chat-container [data-streamdown="code-block"] pre::-webkit-scrollbar-track,
+[data-streamdown="code-block"] pre::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.copilot-chat-container .copilotKitCodeBlock pre::-webkit-scrollbar-thumb,
+.copilot-chat-container [data-streamdown="code-block"] pre::-webkit-scrollbar-thumb,
+[data-streamdown="code-block"] pre::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.35) !important;
+  border-radius: 3px !important;
+}
+
+.copilot-chat-container .copilotKitCodeBlock pre::-webkit-scrollbar-thumb:hover,
+.copilot-chat-container [data-streamdown="code-block"] pre::-webkit-scrollbar-thumb:hover,
+[data-streamdown="code-block"] pre::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5) !important;
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlock pre::-webkit-scrollbar-thumb,
+.dark .copilot-chat-container [data-streamdown="code-block"] pre::-webkit-scrollbar-thumb,
+.dark [data-streamdown="code-block"] pre::-webkit-scrollbar-thumb,
+.copilot-chat-container.dark [data-streamdown="code-block"] pre::-webkit-scrollbar-thumb {
+  background: #3e4451 !important;
+}
+
+.copilot-chat-container.dark .copilotKitCodeBlock pre::-webkit-scrollbar-thumb:hover,
+.dark .copilot-chat-container [data-streamdown="code-block"] pre::-webkit-scrollbar-thumb:hover,
+.dark [data-streamdown="code-block"] pre::-webkit-scrollbar-thumb:hover,
+.copilot-chat-container.dark [data-streamdown="code-block"] pre::-webkit-scrollbar-thumb:hover {
+  background: #4b5263 !important;
+}
+
+/* ==========================================================
+   INLINE CODE
+   ========================================================== */
+
+.copilot-chat-container .copilotKitAssistantMessage .copilotKitInlineCode {
+  font-size: 13px !important;
+  border-width: 0px !important;
+  border-radius: 4px !important;
+}
+
+.copilot-chat-container:not(.dark) .copilotKitAssistantMessage .copilotKitInlineCode {
+  background: #f3f4f6 !important;
+}
+
+.copilot-chat-container.dark .copilotKitAssistantMessage .copilotKitInlineCode {
+  background: rgba(55, 65, 81, 0.5) !important;
+}
+
+/* ==========================================================
+   REMOVE BACKTICK PSEUDO-ELEMENTS
+   CopilotKit/Streamdown adds ::before/::after with backticks
+   ========================================================== */
+
+/* Remove backticks from code blocks */
+.copilot-chat-container pre code::before,
+.copilot-chat-container pre code::after,
+pre code::before,
+pre code::after,
+[data-streamdown] code::before,
+[data-streamdown] code::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* Also target any code element that might have these */
+.copilot-chat-container code::before,
+.copilot-chat-container code::after {
+  content: none !important;
+  display: none !important;
+}

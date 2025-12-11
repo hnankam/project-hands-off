@@ -1,14 +1,13 @@
 /**
  * Centralized CopilotKit Runtime Context Hook
  *
- * This abstraction layer enables easy migration to CopilotKit v2.
- * When upgrading to v2, only this file needs to change.
+ * This abstraction layer provides access to CopilotKit runtime context.
  *
- * v1: Uses useCopilotContext
- * v2: Will use useCopilotKit
+ * V2 Implementation:
+ * Uses useCopilotKit from @copilotkit/react-core/v2
  */
 
-import { useCopilotContext } from '@copilotkit/react-core';
+import { useCopilotKit } from '@copilotkit/react-core/v2';
 
 export interface CopilotApiConfig {
   transcribeAudioUrl?: string;
@@ -20,44 +19,36 @@ export interface CopilotApiConfig {
 export interface CopilotRuntimeContextValue {
   /** API configuration for the CopilotKit runtime */
   copilotApiConfig: CopilotApiConfig | undefined;
-  /** The full context object (for advanced usage) */
-  _rawContext: ReturnType<typeof useCopilotContext>;
+  /** The copilotkit instance for low-level operations */
+  copilotkit: ReturnType<typeof useCopilotKit>['copilotkit'];
+  /** Stop a running agent */
+  stopAgent: (options: { agentId: string }) => void;
+  /** Run an agent */
+  runAgent: (options: { agentId: string }) => Promise<void>;
 }
 
 /**
  * Centralized hook for accessing CopilotKit runtime context.
  *
- * Provides access to API configuration and other runtime settings.
+ * V2 implementation using useCopilotKit.
  *
  * @example
  * ```tsx
- * const { copilotApiConfig } = useCopilotRuntimeContext();
- * if (copilotApiConfig?.transcribeAudioUrl) {
- *   // Use audio transcription
- * }
+ * const { copilotkit, stopAgent } = useCopilotRuntimeContext();
  * ```
  */
 export function useCopilotRuntimeContext(): CopilotRuntimeContextValue {
-  // v1 implementation using useCopilotContext
-  const context = useCopilotContext();
+  // V2 implementation using useCopilotKit
+  const { copilotkit } = useCopilotKit();
 
   return {
-    copilotApiConfig: context.copilotApiConfig as CopilotApiConfig | undefined,
-    _rawContext: context,
+    copilotApiConfig: undefined, // V2 doesn't expose this directly
+    copilotkit,
+    // Map agentId to agent for V2 API compatibility
+    // Note: V2 beta types expect AbstractAgent, but runtime accepts string
+    stopAgent: (options) => copilotkit?.stopAgent({ agent: options.agentId as any }),
+    runAgent: async (options) => {
+      await copilotkit?.runAgent({ agent: options.agentId as any });
+    },
   };
 }
-
-// === V2 MIGRATION ===
-// When migrating to v2, replace the implementation with:
-//
-// import { useCopilotKit } from '@copilotkit/react-core/v2';
-//
-// export function useCopilotRuntimeContext(): CopilotRuntimeContextValue {
-//   const copilotKit = useCopilotKit();
-//
-//   return {
-//     copilotApiConfig: copilotKit.apiConfig, // verify v2 API
-//     _rawContext: copilotKit,
-//   };
-// }
-

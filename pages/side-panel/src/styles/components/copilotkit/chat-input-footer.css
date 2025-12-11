@@ -5,25 +5,29 @@
 
 /* ==========================================================
    LEGACY ICON SIZE OVERRIDE (Kept for compatibility)
+   COMMENTED OUT: Using CopilotKit default styles
    ========================================================== */
-/* Make only the SVG icon smaller, keep button size */
+/* 
 .copilot-chat-container .copilotKitInputControls svg {
   width: 14px !important;
   height: 14px !important;
 }
+*/
 
-/* Ensure input container always appears after footer - multiple selectors for robustness */
+/* 
+   COMMENTED OUT: Using CopilotKit default input container styles
 .copilotKitInputContainer,
 div.copilotKitInputContainer,
 .copilotKitChat > div:last-child,
 [class*="InputContainer"] {
-  flex: 0 0 auto !important; /* Don't grow, don't shrink, natural size */
+  flex: 0 0 auto !important;
   order: 2 !important;
-  max-width: 56rem !important; /* Match home page max-w-4xl */
+  max-width: 56rem !important;
   margin-left: auto !important;
   margin-right: auto !important;
   width: 100% !important;
 }
+*/
 
 /* ==========================================================
    FADE TEXT EFFECTS
@@ -219,14 +223,14 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 
 /* ==========================================================
    CUSTOM INPUT BUTTON STYLES
+   COMMENTED OUT: Using CopilotKit default styles
    ========================================================== */
-/* Override the default SVG size */
+/*
 .copilot-chat-container .copilotKitInputControls svg {
   width: auto !important;
   height: auto !important;
 }
 
-/* Base button styles */
 .copilotKitInputControlButton {
   display: flex !important;
   align-items: center !important;
@@ -238,7 +242,6 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   padding: 0 !important;
 }
 
-/* Ensure dropdown wrappers don't add extra spacing */
 .copilotKitInputControls > div {
   display: inline-flex !important;
   align-items: flex-start !important;
@@ -254,7 +257,6 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   padding: 0 !important;
 }
 
-/* Secondary buttons (upload, microphone) */
 .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child),
 .copilotKitInputControls > * > .copilotKitInputControlButton,
 .copilotKitInputControls > div button.copilotKitInputControlButton,
@@ -286,7 +288,6 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   flex-shrink: 0 !important;
 }
 
-/* Primary button (send/stop - last button) */
 .copilotKitInputControls > .copilotKitInputControlButton:last-child {
   width: 25px !important;
   height: 25px !important;
@@ -300,7 +301,6 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   height: 24px !important;
 }
 
-/* Light mode colors for secondary buttons */
 .copilotKitInputControlButton {
   background-color: transparent !important;
 }
@@ -309,21 +309,18 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   background-color: rgba(0, 0, 0, 0.05) !important;
 }
 
-/* Override CopilotKit's default primary color for secondary buttons */
 .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child):not([disabled]),
 .copilotKitInputControls > * > .copilotKitInputControlButton:not([disabled]),
 .copilotKitInputControls .copilotKitInputControlButton:not(:last-child):not([disabled]) {
-  color: #374151 !important; /* gray-700 - darker for better visibility in light mode */
+  color: #374151 !important;
 }
 
-/* Light mode - secondary button icon colors */
 .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) svg,
 .copilotKitInputControls > * > .copilotKitInputControlButton svg,
 .copilotKitInputControls .copilotKitInputControlButton:not(:last-child) svg {
-  color: #374151 !important; /* gray-700 - darker for better visibility in light mode */
+  color: #374151 !important;
 }
 
-/* Light mode - primary button (send/stop) colors */
 .copilotKitInputControls > .copilotKitInputControlButton:last-child svg {
   color: #2563eb !important;
 }
@@ -332,31 +329,26 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   color: #9ca3af !important;
 }
 
-/* Dark mode colors */
 .dark .copilotKitInputControlButton:hover:not(:disabled) {
   background-color: rgba(255, 255, 255, 0.1) !important;
 }
 
-/* Override CopilotKit's default primary color for secondary buttons in dark mode */
 .dark .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child):not([disabled]),
 .dark .copilotKitInputControls > * > .copilotKitInputControlButton:not([disabled]),
 .dark .copilotKitInputControls .copilotKitInputControlButton:not(:last-child):not([disabled]) {
-  color: #9ca3af !important; /* gray-400 - better visibility in dark mode */
+  color: #9ca3af !important;
 }
 
-/* Dark mode - secondary button icon colors */
 .dark .copilotKitInputControls > .copilotKitInputControlButton:not(:last-child) svg,
 .dark .copilotKitInputControls > * > .copilotKitInputControlButton svg,
 .dark .copilotKitInputControls .copilotKitInputControlButton svg {
-  color: #9ca3af !important; /* gray-400 - better visibility in dark mode */
+  color: #9ca3af !important;
 }
 
-/* Dark mode - primary button (send/stop) colors */
 .dark .copilotKitInputControls > .copilotKitInputControlButton:last-child svg {
   color: #60a5fa !important;
 }
 
-/* Dark mode - send/stop button arrow/square color matches message panel background */
 .dark .copilotKitInputControls > .copilotKitInputControlButton:last-child svg path,
 .dark .copilotKitInputControls > .copilotKitInputControlButton:last-child svg rect {
   stroke: #151C24 !important;
@@ -367,7 +359,6 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   color: #4b5563 !important;
 }
 
-/* Hover effects for primary button */
 .copilotKitInputControls > .copilotKitInputControlButton:last-child:not(:disabled):hover {
   background-color: rgba(37, 99, 235, 0.1) !important;
 }
@@ -376,12 +367,10 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   background-color: rgba(96, 165, 250, 0.15) !important;
 }
 
-/* Active/pressed state */
 .copilotKitInputControlButton:active:not(:disabled) {
   transform: scale(0.95) !important;
 }
 
-/* Recording state for microphone */
 .copilotKitPushToTalkRecording {
   background-color: rgba(239, 68, 68, 0.1) !important;
 }
@@ -398,23 +387,22 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   color: #f87171 !important;
 }
 
-/* Input placeholder colors - matches main text colors */
-/* Ensure textarea has minimum height of 2 lines */
 .copilotKitInputTextarea,
 .copilotKitInput textarea {
-  min-height: 2.8em !important; /* Approximately 2 lines */
+  min-height: 2.8em !important;
   line-height: 1.4 !important;
 }
 
 .copilotKitInputTextarea::placeholder,
 .copilotKitInput textarea::placeholder {
-  color: #4b5563 !important; /* gray-600 for light mode */
+  color: #4b5563 !important;
   opacity: 0.6 !important;
 }
 
 .dark .copilotKitInputTextarea::placeholder,
 .dark .copilotKitInput textarea::placeholder {
-  color: #6b7280 !important; /* gray-500 for dark mode */
+  color: #6b7280 !important;
   opacity: 0.6 !important;
 }
+*/
 

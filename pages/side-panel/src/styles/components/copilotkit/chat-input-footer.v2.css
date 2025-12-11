@@ -1,0 +1,223 @@
+/* =============================================================================
+   COPILOTKIT V2 CHAT INPUT & FOOTER
+   Input controls, suggestions footer, fade effects for V2
+   =============================================================================
+   
+   V2 Changes:
+   - Suggestions configured via useConfigureSuggestions hook
+   - available: 'before-first-message' | 'after-first-message' | 'always' | 'disabled'
+   - Input controls may have different class names
+   
+   ============================================================================= */
+
+/* ==========================================================
+   FADE TEXT EFFECTS
+   ========================================================== */
+
+.fade-text {
+  position: relative;
+}
+
+.fade-text::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: max(10%, 60px);
+  background-color: var(--fade-bg-color, #f9fafb);
+  mask: linear-gradient(to right, transparent 0%, transparent 10%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.8) 80%, rgba(0,0,0,1) 100%);
+  -webkit-mask: linear-gradient(to right, transparent 0%, transparent 10%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.8) 80%, rgba(0,0,0,1) 100%);
+  pointer-events: none;
+}
+
+/* Tab fade text effect */
+.tab-fade-text {
+  position: relative;
+}
+
+.tab-fade-text::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: max(15%, 30px);
+  background-color: var(--fade-bg-color, #ffffff);
+  mask: linear-gradient(to right, transparent 0%, transparent 10%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.8) 80%, rgba(0,0,0,1) 100%);
+  -webkit-mask: linear-gradient(to right, transparent 0%, transparent 10%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.8) 80%, rgba(0,0,0,1) 100%);
+  pointer-events: none;
+  transition: background-color 0.2s ease;
+}
+
+.group:hover .tab-fade-text::after {
+  background-color: var(--fade-hover-bg-color, var(--fade-bg-color, #ffffff));
+}
+
+/* ==========================================================
+   MISC UTILITIES
+   ========================================================== */
+
+/* Hide CopilotKit branding */
+p.poweredBy {
+  display: none !important;
+}
+
+/* Content status indicator transitions */
+.content-status-indicator {
+  transition: all 0.3s ease-in-out;
+}
+
+.content-status-indicator svg {
+  transition: transform 0.2s ease-in-out;
+}
+
+.content-status-indicator:hover svg {
+  transform: scale(1.1);
+}
+
+/* ==========================================================
+   SUGGESTIONS FOOTER (V2)
+   ========================================================== */
+
+.copilotKitMessagesFooter,
+footer.copilotKitMessagesFooter,
+.copilotKitChat > footer,
+[class*="MessagesFooter"] {
+  position: relative !important;
+  overflow: hidden !important;
+  flex: 0 0 auto !important;
+  order: 1 !important;
+  contain: layout style !important;
+  max-width: 56rem !important;
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  box-sizing: border-box !important;
+}
+
+/* Hide scrollbar on footer */
+.copilotKitMessagesFooter::-webkit-scrollbar,
+footer.copilotKitMessagesFooter::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.copilotKitMessagesFooter,
+footer.copilotKitMessagesFooter {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+/* Suggestions single-line scrollable layout */
+.copilotKitMessagesFooter > div[class="suggestions"] {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: thin !important;
+  gap: 8px !important;
+  padding: 0 !important;
+  font-size: 10px !important;
+  line-height: 1.2 !important;
+}
+
+/* Fade effect at end of suggestions */
+.copilotKitMessagesFooter::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 60px;
+  background: linear-gradient(to right, transparent 0%, var(--suggestions-fade-bg) 80%);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Light mode fade background */
+.copilotKitMessagesFooter {
+  --suggestions-fade-bg: var(--copilot-kit-background-color, #ffffff);
+}
+
+/* Dark mode fade background */
+.dark .copilotKitMessagesFooter,
+.copilot-chat-container.dark .copilotKitMessagesFooter {
+  --suggestions-fade-bg: var(--copilot-kit-background-color, #1f2937);
+}
+
+/* Suggestions scrollbar styling */
+.copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar {
+  width: 0px !important;
+  height: 0px !important;
+}
+
+.copilotKitMessagesFooter > div[class="suggestions"]:hover::-webkit-scrollbar {
+  width: 1px !important;
+  height: 1px !important;
+}
+
+.copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3) !important;
+  border-radius: 1px !important;
+}
+
+.copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5) !important;
+}
+
+/* Dark mode scrollbar */
+.dark .copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.3) !important;
+}
+
+.dark .copilotKitMessagesFooter > div[class="suggestions"]::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.5) !important;
+}
+
+/* ==========================================================
+   SUGGESTION BUTTONS
+   ========================================================== */
+
+footer div[class*="suggestions"] button {
+  padding: 3px 9px !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  flex-grow: 0 !important;
+  flex-basis: auto !important;
+  border-radius: 9999px !important;
+  min-width: max-content !important;
+  max-width: none !important;
+  width: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+}
+
+/* Ensure suggestion buttons are visible */
+.copilot-chat-container button[class*="suggestion"],
+.copilot-chat-container button[class*="Suggestion"] {
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* ==========================================================
+   HIDE SUGGESTIONS TOGGLE
+   ========================================================== */
+
+body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+}
+

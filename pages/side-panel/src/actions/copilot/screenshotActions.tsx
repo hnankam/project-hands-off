@@ -2,12 +2,31 @@
  * Screenshot CopilotKit Actions
  *
  * Actions for capturing screenshots of the current tab
+ * V2: Uses Zod schemas for parameter definitions.
  */
 
 import React from 'react';
+import { z } from 'zod';
 import { debug } from '@extension/shared';
 import { ActionStatus } from '../../components/feedback/ActionStatus';
 import { handleTakeScreenshot } from '../index';
+
+// ============================================================================
+// ZOD SCHEMAS FOR TOOL PARAMETERS
+// ============================================================================
+
+/** Schema for takeScreenshot parameters */
+export const takeScreenshotSchema = z.object({
+  captureFullPage: z.boolean().optional().describe(
+    'If true, captures entire scrollable page. If false, captures only visible viewport (default: true). Note: Full page capture is experimental.'
+  ),
+  format: z.enum(['png', 'jpeg']).optional().describe(
+    "Image format: 'png' for lossless quality or 'jpeg' for smaller file size (default: 'jpeg' for optimal compression)."
+  ),
+  quality: z.number().optional().describe(
+    "JPEG quality from 0-100, only applies when format is 'jpeg' (default: 20 for optimal compression). Higher = better quality but larger file. Typical values: 10 (high compression), 20 (balanced), 35 (higher quality)."
+  ),
+});
 
 // ============================================================================
 // CONSTANTS
@@ -147,29 +166,7 @@ function CameraIcon({ style }: { style: React.CSSProperties }): React.ReactEleme
 export const createTakeScreenshotAction = ({ isLight }: ScreenshotActionDependencies) => ({
   name: 'takeScreenshot',
   description: 'Capture screenshot of the current tab (viewport by default; JPEG/PNG).',
-  parameters: [
-    {
-      name: 'captureFullPage',
-      type: 'boolean',
-      description:
-        'If true, captures entire scrollable page. If false, captures only visible viewport (default: true). Note: Full page capture is experimental.',
-      required: false,
-    },
-    {
-      name: 'format',
-      type: 'string',
-      description:
-        "Image format: 'png' for lossless quality or 'jpeg' for smaller file size (default: 'jpeg' for optimal compression).",
-      required: false,
-    },
-    {
-      name: 'quality',
-      type: 'number',
-      description:
-        "JPEG quality from 0-100, only applies when format is 'jpeg' (default: 20 for optimal compression). Higher = better quality but larger file. Typical values: 10 (high compression), 20 (balanced), 35 (higher quality).",
-      required: false,
-    },
-  ],
+  parameters: takeScreenshotSchema,
   render: ({ status, args, result, error }: ActionRenderProps) => {
     const isFullPage = args?.captureFullPage ?? false;
     const format = args?.format ?? 'jpeg';

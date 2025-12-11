@@ -8,7 +8,7 @@ from collections import defaultdict
 
 from tools.mcp_loader import load_mcp_toolsets
 from tools.backend_tools import get_backend_tool
-from config import logger
+from config import logger, DEBUG
 
 
 async def get_agent_tools(
@@ -32,8 +32,14 @@ async def get_agent_tools(
     allowed_backend_tools = set(allowed_backend_tools or set())
     allowed_mcp_tools = set(allowed_mcp_tools or set())
     
-    logger.info("Input: allowed_backend_tools=%d, allowed_mcp_tools=%d", len(allowed_backend_tools), len(allowed_mcp_tools))
-    logger.info("Input: mcp_servers=%d, tool_definitions=%d", len(mcp_servers) if mcp_servers else 0, len(tool_definitions))
+    if DEBUG:
+        logger.debug(
+            "get_agent_tools: backend=%d, mcp=%d, servers=%d, definitions=%d",
+            len(allowed_backend_tools),
+            len(allowed_mcp_tools),
+            len(mcp_servers) if mcp_servers else 0,
+            len(tool_definitions)
+        )
 
     # Track all registered tools for logging
     registered_tools = {

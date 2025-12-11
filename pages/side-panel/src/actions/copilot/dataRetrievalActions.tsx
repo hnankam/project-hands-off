@@ -2,11 +2,23 @@
  * Data Retrieval CopilotKit Actions
  *
  * Actions for fetching HTML, form, and clickable element chunks by index range.
+ * V2: Uses Zod schemas for parameter definitions.
  */
 
 import React from 'react';
+import { z } from 'zod';
 import { debug, embeddingsStorage } from '@extension/shared';
 import { ActionStatus } from '../../components/feedback/ActionStatus';
+
+// ============================================================================
+// ZOD SCHEMAS FOR TOOL PARAMETERS
+// ============================================================================
+
+/** Schema for chunk range parameters */
+export const chunkRangeSchema = z.object({
+  start: z.number().describe('Start index (>=0)'),
+  end: z.number().describe('End index (>=start)'),
+});
 
 // ============================================================================
 // CONSTANTS
@@ -195,10 +207,7 @@ function createChunkRangeAction(
   return {
     name,
     description,
-    parameters: [
-      { name: 'start', type: 'number', description: 'Start index (>=0)', required: true },
-      { name: 'end', type: 'number', description: 'End index (>=start)', required: true },
-    ],
+    parameters: chunkRangeSchema,
 
     render: ({ status, result, args, error }: ActionRenderProps) => {
       const start = Number(args?.start ?? 0);
