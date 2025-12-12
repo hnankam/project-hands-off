@@ -218,6 +218,18 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const shouldShowSkeletonOverlay = Boolean(activeSession) && (isEnsuringInitialSession || isWaitingForFirstSession);
   const shouldShowStandaloneSkeleton = !activeSession && shouldShowSkeleton;
 
+  // Add/remove skeleton-loading class on body to hide disclaimer during loading
+  useEffect(() => {
+    if (shouldShowSkeleton) {
+      document.body.classList.add('skeleton-loading');
+    } else {
+      document.body.classList.remove('skeleton-loading');
+    }
+    return () => {
+      document.body.classList.remove('skeleton-loading');
+    };
+  }, [shouldShowSkeleton]);
+
   // Close confirmation modal on escape key
   useEffect(() => {
     if (!clearMessagesConfirmOpen && !clearSessionsConfirmOpen && !resetSessionConfirmOpen) return;

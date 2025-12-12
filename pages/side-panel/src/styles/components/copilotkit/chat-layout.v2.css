@@ -38,7 +38,7 @@
 
 .copilot-chat-container.font-size-small,
 .copilot-chat-container.font-size-small p,
-.copilot-chat-container.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]),
 .copilot-chat-container.font-size-small span:not([role=group] span):not([class*=gallery]) {
   font-size: 13px !important;
   line-height: 1.4 !important;
@@ -46,7 +46,7 @@
 
 .copilot-chat-container.font-size-medium,
 .copilot-chat-container.font-size-medium p,
-.copilot-chat-container.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]),
 .copilot-chat-container.font-size-medium span:not([role=group] span):not([class*=gallery]) {
   font-size: 16px !important;
   line-height: 1.5 !important;
@@ -54,7 +54,7 @@
 
 .copilot-chat-container.font-size-large,
 .copilot-chat-container.font-size-large p,
-.copilot-chat-container.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]),
 .copilot-chat-container.font-size-large span:not([role=group] span):not([class*=gallery]) {
   font-size: 19px !important;
   line-height: 1.55 !important;
@@ -217,5 +217,39 @@ button[data-custom-scroll-button="true"],
 .copilot-chat-container button[data-custom-scroll-button="true"] {
   pointer-events: auto !important;
   cursor: pointer !important;
+}
+
+/* ==========================================================
+   ACTION STATUS FONT SIZE PROTECTION
+   Must come last to override global font-size rules
+   ========================================================== */
+
+/* Exclude ActionStatus component and all its descendants from global font-size rules */
+/* Use higher specificity to override the copilot-chat-container rules */
+/* Match the exact specificity of the global rules but target action-status */
+/* Higher specificity rule that comes after global rules - allows inline styles to work */
+.copilot-chat-container.font-size-small .action-status,
+.copilot-chat-container.font-size-small .action-status *,
+.copilot-chat-container.font-size-small .action-status p,
+.copilot-chat-container.font-size-small .action-status div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.font-size-small .action-status span:not([role=group] span):not([class*=gallery]),
+.copilot-chat-container.font-size-medium .action-status,
+.copilot-chat-container.font-size-medium .action-status *,
+.copilot-chat-container.font-size-medium .action-status p,
+.copilot-chat-container.font-size-medium .action-status div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.font-size-medium .action-status span:not([role=group] span):not([class*=gallery]),
+.copilot-chat-container.font-size-large .action-status,
+.copilot-chat-container.font-size-large .action-status *,
+.copilot-chat-container.font-size-large .action-status p,
+.copilot-chat-container.font-size-large .action-status div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.font-size-large .action-status span:not([role=group] span):not([class*=gallery]),
+.copilot-chat-container .action-status,
+.copilot-chat-container .action-status *,
+.copilot-chat-container .action-status p,
+.copilot-chat-container .action-status div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container .action-status span:not([role=group] span):not([class*=gallery]) {
+  /* Reset to initial value to allow inline styles (which have highest specificity) to work */
+  font-size: 12px !important;
+  /* line-height: initial !important; */
 }
 

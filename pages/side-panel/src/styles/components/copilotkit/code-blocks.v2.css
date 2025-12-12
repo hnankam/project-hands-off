@@ -84,6 +84,16 @@
   text-rendering: optimizeLegibility !important;
 }
 
+/* Light mode - muted appearance to match normal text while preserving syntax colors */
+.copilot-chat-container:not(.dark) .copilotKitCodeBlock code {
+  filter: brightness(0.7) saturate(2.08) contrast(1.5) !important;
+}
+
+/* Dark mode - no filter needed, syntax colors are already muted */
+.copilot-chat-container.dark .copilotKitCodeBlock code {
+  filter: none !important;
+}
+
 .copilot-chat-container .copilotKitCodeBlock pre {
   margin: 0 !important;
   padding: 12px 14px !important;
@@ -209,6 +219,72 @@
   line-height: 1.55 !important;
   -webkit-font-smoothing: antialiased !important;
   text-rendering: optimizeLegibility !important;
+}
+
+/* ==========================================================
+   LIGHT MODE MUTED SYNTAX COLORS
+   Apply filter to code element to mute syntax highlighting
+   while preserving color relationships
+   ========================================================== */
+
+/* Light mode - muted appearance to match normal text while preserving syntax colors */
+/* Target code elements inside code blocks (both Streamdown and react-syntax-highlighter) */
+/* Only apply in light mode (when .dark class is NOT present) */
+
+/* Target code inside div containers (react-syntax-highlighter with PreTag="div") - light mode only */
+/* This will catch code blocks rendered by CustomCodeBlockWrapper */
+.copilot-chat-container:not(.dark) div code {
+  filter: brightness(1.0) saturate(0.8) contrast(1.0) !important;
+  font-weight: 300 !important;
+}
+
+/* Exclude inline code - these rules must come AFTER the general rules to override */
+.copilot-chat-container p code,
+.copilot-chat-container li code,
+.copilot-chat-container [data-streamdown="inline-code"],
+.copilot-chat-container p code *,
+.copilot-chat-container li code * {
+  filter: none !important;
+}
+
+/* Dark mode - apply lighter filter to mute bright syntax colors */
+/* Apply filter to code element and also to parent containers to ensure it cascades */
+.dark .copilot-chat-container pre code,
+.copilot-chat-container.dark pre code,
+body.dark .copilot-chat-container pre code,
+html.dark .copilot-chat-container pre code,
+.dark .copilot-chat-container div code,
+.copilot-chat-container.dark div code,
+body.dark .copilot-chat-container div code,
+html.dark .copilot-chat-container div code,
+.dark [data-streamdown="code-block"] code,
+.dark [data-streamdown="code-block-body"] code,
+.copilot-chat-container.dark [data-streamdown="code-block"] code,
+.copilot-chat-container.dark [data-streamdown="code-block-body"] code,
+body.dark [data-streamdown="code-block"] code,
+html.dark [data-streamdown="code-block"] code {
+  /* Apply filter with all three values - brightness, saturate, and contrast */
+  filter: brightness(0.85) saturate(1.2) contrast(1.1) !important;
+  -webkit-filter: brightness(0.85) saturate(1.2) contrast(1.1) !important;
+  font-weight: 300 !important;
+}
+
+/* Also apply filter to parent div containers (react-syntax-highlighter PreTag="div") */
+/* This ensures the filter affects all inline-styled span children */
+.dark .copilot-chat-container div[style*="white-space: pre"],
+.copilot-chat-container.dark div[style*="white-space: pre"],
+body.dark .copilot-chat-container div[style*="white-space: pre"],
+html.dark .copilot-chat-container div[style*="white-space: pre"] {
+  filter: brightness(0.85) saturate(1.2) contrast(1.1) !important;
+  -webkit-filter: brightness(0.85) saturate(1.2) contrast(1.1) !important;
+}
+
+/* But still exclude inline code in dark mode */
+.dark .copilot-chat-container p code,
+.copilot-chat-container.dark p code,
+.dark .copilot-chat-container li code,
+.copilot-chat-container.dark li code {
+  filter: none !important;
 }
 
 /* Code element inside pre */

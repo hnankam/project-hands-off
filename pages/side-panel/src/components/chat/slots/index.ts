@@ -6,6 +6,9 @@
  * 
  * Available slots in CopilotChat:
  * - scrollToBottomButton: Button to scroll to latest messages
+ * - feather: Gradient fade at bottom of scroll area
+ * - disclaimer: Disclaimer text below input
+ * - suggestionView: Suggestion pills container
  * - (more slots can be added as needed)
  */
 
@@ -14,4 +17,26 @@ export type { CustomScrollToBottomButtonProps } from './CustomScrollToBottomButt
 
 export { CodeBlock, CustomCodeBlockWrapper } from './CustomCodeBlock';
 export type { CodeBlockProps } from './CustomCodeBlock';
+
+export { Table, CustomTableWrapper } from './CustomTable';
+export type { TableProps } from './CustomTable';
+
+export { CustomFeather } from './CustomFeather';
+export type { CustomFeatherProps } from './CustomFeather';
+
+export { CustomDisclaimer } from './CustomDisclaimer';
+export type { CustomDisclaimerProps } from './CustomDisclaimer';
+
+export { 
+  CustomSuggestionView, 
+  CustomSuggestionPill,
+} from './CustomSuggestionView';
+export type { 
+  CustomSuggestionViewProps, 
+  CustomSuggestionPillProps,
+  Suggestion 
+} from './CustomSuggestionView';
+
+export { CustomUserMessageRenderer } from './CustomUserMessageRenderer';
+export type { CustomUserMessageRendererProps } from './CustomUserMessageRenderer';
 

@@ -1,11 +1,13 @@
 /**
  * Custom Markdown Renderer for CopilotKit V2
  * 
- * Wraps Streamdown with custom code block rendering using react-syntax-highlighter.
+ * Wraps Streamdown with custom code block, table, and thinking block rendering.
  */
 import React from 'react';
 import { Streamdown } from 'streamdown';
 import { CustomCodeBlockWrapper } from './slots/CustomCodeBlock';
+import { CustomTableWrapper } from './slots/CustomTable';
+import { ThinkingBlockWrapper } from './ThinkingBlockWrapper';
 
 interface CustomMarkdownRendererProps {
   content: string;
@@ -15,8 +17,10 @@ interface CustomMarkdownRendererProps {
 /**
  * CustomMarkdownRenderer - Replacement for CopilotChatAssistantMessage.MarkdownRenderer
  * 
- * Uses Streamdown with a custom `pre` component that renders code blocks
- * with react-syntax-highlighter and One Dark Pro theme.
+ * Uses Streamdown with custom components:
+ * - `pre` for code blocks with react-syntax-highlighter
+ * - `table` for styled tables matching graph card design
+ * - `think` and `thinking` for collapsible thinking blocks (with auto-detection of completion state)
  */
 export const CustomMarkdownRenderer: React.FC<CustomMarkdownRendererProps> = ({
   content,
@@ -28,7 +32,12 @@ export const CustomMarkdownRenderer: React.FC<CustomMarkdownRendererProps> = ({
       className={className}
       components={{
         pre: CustomCodeBlockWrapper,
-      }}
+        table: CustomTableWrapper,
+        // Custom HTML tags for thinking blocks
+        think: ThinkingBlockWrapper,
+        thinking: ThinkingBlockWrapper,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any}
       {...props}
     >
       {content ?? ''}

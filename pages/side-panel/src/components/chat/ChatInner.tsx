@@ -64,7 +64,13 @@ import { ThinkingBlock } from './ThinkingBlock';
 import { MermaidBlock } from './MermaidBlock';
 import { ChatErrorDisplay } from './ChatErrorDisplay';
 import { CustomAssistantMessageV2 } from './CustomAssistantMessageV2';
-import { CustomScrollToBottomButton } from './slots';
+import { CustomUserMessageV2 } from './CustomUserMessageV2';
+import { 
+  CustomScrollToBottomButton,
+  CustomFeather,
+  CustomDisclaimer,
+  CustomSuggestionView,
+} from './slots';
 
 // Custom Hooks
 import { useMessageSanitization, MessageData } from '../../hooks/useMessageSanitization';
@@ -825,9 +831,14 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
             threadId={sessionId}
             messageView={{
               assistantMessage: CustomAssistantMessageV2,
+              userMessage: CustomUserMessageV2,
             }}
             chatView={{
               scrollToBottomButton: CustomScrollToBottomButton,
+              feather: CustomFeather,
+              disclaimer: CustomDisclaimer,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              suggestionView: CustomSuggestionView as any,
             }}
           />
         </div>

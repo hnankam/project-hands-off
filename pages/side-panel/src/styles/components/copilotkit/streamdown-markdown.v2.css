@@ -1,0 +1,392 @@
+/* =============================================================================
+   STREAMDOWN MARKDOWN STYLES
+   Styles for markdown elements rendered by Streamdown in CopilotKit V2
+   =============================================================================
+   
+   Aligns Streamdown's markdown rendering with the graph card's markdown-content
+   styles for consistent typography across the application.
+   
+   Base font size: 12.5px (matching .markdown-content)
+   ============================================================================= */
+
+/* ==========================================================
+   BASE PROSE STYLES
+   Override default Tailwind prose sizing
+   ========================================================== */
+
+.copilot-chat-container .prose,
+.copilot-chat-container [class*="prose"] {
+  font-size: 12.5px !important;
+  /* line-height: 1.5 !important; */
+}
+
+/* ==========================================================
+   HEADINGS
+   Matches: .markdown-content h1-h6
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="heading-1"],
+.copilot-chat-container .prose h1,
+.copilot-chat-container [class*="prose"] h1 {
+  font-size: 1.5em !important;
+  font-weight: 700 !important;
+  /* margin: 0.8em 0 0.4em 0 !important; */
+  color: inherit !important;
+}
+
+.copilot-chat-container [data-streamdown="heading-2"],
+.copilot-chat-container .prose h2,
+.copilot-chat-container [class*="prose"] h2 {
+  font-size: 1.3em !important;
+  font-weight: 700 !important;
+  /* margin: 0.8em 0 0.4em 0 !important; */
+  color: inherit !important;
+}
+
+.copilot-chat-container [data-streamdown="heading-3"],
+.copilot-chat-container .prose h3,
+.copilot-chat-container [class*="prose"] h3 {
+  font-size: 1.15em !important;
+  font-weight: 700 !important;
+  /* margin: 0.8em 0 0.4em 0 !important; */
+  color: inherit !important;
+}
+
+.copilot-chat-container [data-streamdown="heading-4"],
+.copilot-chat-container [data-streamdown="heading-5"],
+.copilot-chat-container [data-streamdown="heading-6"],
+.copilot-chat-container .prose h4,
+.copilot-chat-container .prose h5,
+.copilot-chat-container .prose h6,
+.copilot-chat-container [class*="prose"] h4,
+.copilot-chat-container [class*="prose"] h5,
+.copilot-chat-container [class*="prose"] h6 {
+  font-size: 1em !important;
+  font-weight: 700 !important;
+  /* margin: 0.8em 0 0.4em 0 !important; */
+  color: inherit !important;
+}
+
+/* First heading - no top margin */
+/* .copilot-chat-container [data-streamdown="heading-1"]:first-child,
+.copilot-chat-container [data-streamdown="heading-2"]:first-child,
+.copilot-chat-container [data-streamdown="heading-3"]:first-child,
+.copilot-chat-container .prose h1:first-child,
+.copilot-chat-container .prose h2:first-child,
+.copilot-chat-container .prose h3:first-child {
+  margin-top: 0 !important;
+} */
+
+/* ==========================================================
+   PARAGRAPHS
+   Matches: .markdown-content .markdown-paragraph
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="paragraph"],
+.copilot-chat-container .prose p,
+.copilot-chat-container [class*="prose"] p {
+  margin: 0.5em 0 !important;
+  line-height: 1.5 !important;
+}
+
+.copilot-chat-container [data-streamdown="paragraph"]:first-child,
+.copilot-chat-container .prose p:first-child {
+  margin-top: 0 !important;
+}
+
+.copilot-chat-container [data-streamdown="paragraph"]:last-child,
+.copilot-chat-container .prose p:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* ==========================================================
+   LISTS
+   Matches: .markdown-content ul, ol, li
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="unordered-list"],
+.copilot-chat-container [data-streamdown="ordered-list"],
+.copilot-chat-container .prose ul,
+.copilot-chat-container .prose ol,
+.copilot-chat-container [class*="prose"] ul,
+.copilot-chat-container [class*="prose"] ol {
+  margin: 0.5em 0 !important;
+  padding-left: 24px !important;
+  line-height: 1.3 !important;
+}
+
+.copilot-chat-container [data-streamdown="list-item"],
+.copilot-chat-container .prose li,
+.copilot-chat-container [class*="prose"] li {
+  margin: 0.3em 0 !important;
+  padding-left: 4px !important;
+  line-height: 1.3 !important;
+}
+
+/* Unordered list markers */
+.copilot-chat-container [data-streamdown="unordered-list"] > [data-streamdown="list-item"],
+.copilot-chat-container .prose ul > li {
+  list-style-type: disc !important;
+}
+
+/* Ordered list markers */
+.copilot-chat-container [data-streamdown="ordered-list"] > [data-streamdown="list-item"],
+.copilot-chat-container .prose ol > li {
+  list-style-type: decimal !important;
+}
+
+/* Nested lists */
+.copilot-chat-container [data-streamdown="unordered-list"] [data-streamdown="unordered-list"] > [data-streamdown="list-item"],
+.copilot-chat-container .prose ul ul > li,
+.copilot-chat-container .prose ol ul > li {
+  list-style-type: circle !important;
+}
+
+.copilot-chat-container [data-streamdown="unordered-list"] [data-streamdown="unordered-list"] [data-streamdown="unordered-list"] > [data-streamdown="list-item"],
+.copilot-chat-container .prose ul ul ul > li {
+  list-style-type: square !important;
+}
+
+/* ==========================================================
+   BLOCKQUOTES
+   Matches: .markdown-content blockquote
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="blockquote"],
+.copilot-chat-container .prose > blockquote,
+.copilot-chat-container [class*="prose"] > blockquote {
+  border-left: 3px solid #d1d5db !important;
+  padding-left: 12px !important;
+  margin: 0.8em 0 !important;
+  color: #6b7280 !important;
+  font-style: italic !important;
+  background: none !important;
+  background-color: transparent !important;
+}
+
+.dark .copilot-chat-container [data-streamdown="blockquote"],
+.dark .copilot-chat-container .prose > blockquote,
+.copilot-chat-container.dark [data-streamdown="blockquote"],
+.copilot-chat-container.dark .prose > blockquote {
+  border-left-color: #4b5563 !important;
+  color: #9ca3af !important;
+  background: none !important;
+  background-color: transparent !important;
+}
+
+/* Ensure code blocks inside blockquotes retain their styling */
+.copilot-chat-container [data-streamdown="blockquote"] pre,
+.copilot-chat-container .prose blockquote pre {
+  color: inherit !important;
+  font-style: normal !important;
+}
+
+/* ==========================================================
+   INLINE CODE
+   Matches: .markdown-content code (inline)
+   Only applies to inline code, NOT code inside pre/code blocks
+   ========================================================== */
+
+/* Inline code only - excludes code inside pre elements */
+/* Only target code that is NOT inside pre or code-block containers */
+.copilot-chat-container [data-streamdown="inline-code"],
+.copilot-chat-container p code,
+.copilot-chat-container p code.rounded,
+.copilot-chat-container p code[class*="bg-muted"],
+.copilot-chat-container p code.bg-muted,
+.copilot-chat-container li code,
+.copilot-chat-container li code.rounded,
+.copilot-chat-container li code[class*="bg-muted"],
+.copilot-chat-container li code.bg-muted,
+.copilot-chat-container .prose p code,
+.copilot-chat-container .prose p code.rounded,
+.copilot-chat-container .prose p code[class*="bg-muted"],
+.copilot-chat-container .prose p code.bg-muted,
+.copilot-chat-container .prose li code,
+.copilot-chat-container .prose li code.rounded,
+.copilot-chat-container .prose li code[class*="bg-muted"],
+.copilot-chat-container .prose li code.bg-muted {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+  border-radius: 3px !important;
+  padding: 1px 4px !important;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace !important;
+  font-size: 1.0em !important;
+  /* Use same text color as surrounding content, not full black */
+  color: #374151 !important;
+}
+
+/* Dark mode inline code */
+.dark .copilot-chat-container [data-streamdown="inline-code"],
+.copilot-chat-container.dark [data-streamdown="inline-code"],
+.dark .copilot-chat-container p code,
+.dark .copilot-chat-container p code.rounded,
+.dark .copilot-chat-container p code[class*="bg-muted"],
+.dark .copilot-chat-container p code.bg-muted,
+.dark .copilot-chat-container li code,
+.dark .copilot-chat-container li code.rounded,
+.dark .copilot-chat-container li code[class*="bg-muted"],
+.dark .copilot-chat-container li code.bg-muted,
+.copilot-chat-container.dark p code,
+.copilot-chat-container.dark p code.rounded,
+.copilot-chat-container.dark p code[class*="bg-muted"],
+.copilot-chat-container.dark p code.bg-muted,
+.copilot-chat-container.dark li code,
+.copilot-chat-container.dark li code.rounded,
+.copilot-chat-container.dark li code[class*="bg-muted"],
+.copilot-chat-container.dark li code.bg-muted,
+.dark .copilot-chat-container .prose p code,
+.dark .copilot-chat-container .prose p code.rounded,
+.dark .copilot-chat-container .prose p code[class*="bg-muted"],
+.dark .copilot-chat-container .prose p code.bg-muted,
+.dark .copilot-chat-container .prose li code,
+.dark .copilot-chat-container .prose li code.rounded,
+.dark .copilot-chat-container .prose li code[class*="bg-muted"],
+.dark .copilot-chat-container .prose li code.bg-muted,
+.copilot-chat-container.dark .prose p code,
+.copilot-chat-container.dark .prose p code.rounded,
+.copilot-chat-container.dark .prose p code[class*="bg-muted"],
+.copilot-chat-container.dark .prose p code.bg-muted,
+.copilot-chat-container.dark .prose li code,
+.copilot-chat-container.dark .prose li code.rounded,
+.copilot-chat-container.dark .prose li code[class*="bg-muted"],
+.copilot-chat-container.dark .prose li code.bg-muted {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  /* Use same text color as surrounding content in dark mode, not full white */
+  color: #d1d5db !important;
+}
+
+/* Reset styles for code inside code blocks (pre elements) - higher specificity */
+.copilot-chat-container pre code,
+.copilot-chat-container pre code.rounded,
+.copilot-chat-container pre code[class*="bg-muted"],
+.copilot-chat-container pre code.bg-muted,
+.copilot-chat-container [data-streamdown="code-block"] code,
+.copilot-chat-container [data-streamdown="code-block"] code.rounded,
+.copilot-chat-container [data-streamdown="code-block"] code[class*="bg-muted"],
+.copilot-chat-container [data-streamdown="code-block"] code.bg-muted,
+.copilot-chat-container .prose pre code,
+.copilot-chat-container .prose pre code.rounded,
+.copilot-chat-container .prose pre code[class*="bg-muted"],
+.copilot-chat-container .prose pre code.bg-muted,
+.copilot-chat-container [class*="prose"] pre code,
+.copilot-chat-container [class*="prose"] pre code.rounded,
+.copilot-chat-container [class*="prose"] pre code[class*="bg-muted"],
+.copilot-chat-container [class*="prose"] pre code.bg-muted,
+.dark .copilot-chat-container pre code,
+.dark .copilot-chat-container pre code.rounded,
+.dark .copilot-chat-container pre code[class*="bg-muted"],
+.dark .copilot-chat-container pre code.bg-muted,
+.dark .copilot-chat-container [data-streamdown="code-block"] code,
+.dark .copilot-chat-container [data-streamdown="code-block"] code.rounded,
+.dark .copilot-chat-container [data-streamdown="code-block"] code[class*="bg-muted"],
+.dark .copilot-chat-container [data-streamdown="code-block"] code.bg-muted,
+.copilot-chat-container.dark pre code,
+.copilot-chat-container.dark pre code.rounded,
+.copilot-chat-container.dark pre code[class*="bg-muted"],
+.copilot-chat-container.dark pre code.bg-muted,
+.copilot-chat-container.dark [data-streamdown="code-block"] code,
+.copilot-chat-container.dark [data-streamdown="code-block"] code.rounded,
+.copilot-chat-container.dark [data-streamdown="code-block"] code[class*="bg-muted"],
+.copilot-chat-container.dark [data-streamdown="code-block"] code.bg-muted {
+  background-color: transparent !important;
+  background: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  font-size: inherit !important;
+  color: inherit !important;
+}
+
+/* ==========================================================
+   HORIZONTAL RULES
+   Matches: .markdown-content hr
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="thematic-break"],
+.copilot-chat-container .prose hr,
+.copilot-chat-container [class*="prose"] hr {
+  border: none !important;
+  border-top: 1px solid #e5e7eb !important;
+  margin: 1.2em 0 !important;
+}
+
+.dark .copilot-chat-container [data-streamdown="thematic-break"],
+.dark .copilot-chat-container .prose hr,
+.copilot-chat-container.dark [data-streamdown="thematic-break"],
+.copilot-chat-container.dark .prose hr {
+  border-top-color: #1f2937 !important;
+}
+
+/* ==========================================================
+   LINKS
+   Matches: .markdown-content .markdown-link
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="link"],
+.copilot-chat-container .prose a,
+.copilot-chat-container [class*="prose"] a {
+  color: #3b82f6 !important;
+  text-decoration: none !important;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.3) !important;
+  transition: all 150ms !important;
+}
+
+.copilot-chat-container [data-streamdown="link"]:hover,
+.copilot-chat-container .prose a:hover {
+  border-bottom-color: #3b82f6 !important;
+}
+
+.dark .copilot-chat-container [data-streamdown="link"],
+.dark .copilot-chat-container .prose a,
+.copilot-chat-container.dark [data-streamdown="link"],
+.copilot-chat-container.dark .prose a {
+  color: #60a5fa !important;
+  border-bottom-color: rgba(96, 165, 250, 0.3) !important;
+}
+
+.dark .copilot-chat-container [data-streamdown="link"]:hover,
+.dark .copilot-chat-container .prose a:hover,
+.copilot-chat-container.dark [data-streamdown="link"]:hover,
+.copilot-chat-container.dark .prose a:hover {
+  border-bottom-color: #60a5fa !important;
+}
+
+/* ==========================================================
+   STRONG/BOLD & EMPHASIS/ITALIC
+   ========================================================== */
+
+.copilot-chat-container [data-streamdown="strong"],
+.copilot-chat-container .prose strong,
+.copilot-chat-container [class*="prose"] strong {
+  font-weight: 700 !important;
+}
+
+.copilot-chat-container [data-streamdown="emphasis"],
+.copilot-chat-container .prose em,
+.copilot-chat-container [class*="prose"] em {
+  font-style: italic !important;
+}
+
+/* ==========================================================
+   TEXT SIZE OVERRIDES
+   Override Tailwind's text-2xl, text-xl etc on headings
+   ========================================================== */
+
+.copilot-chat-container h1.text-2xl,
+.copilot-chat-container h2.text-2xl,
+.copilot-chat-container h3.text-xl,
+.copilot-chat-container [data-streamdown*="heading"].text-2xl,
+.copilot-chat-container [data-streamdown*="heading"].text-xl {
+  font-size: inherit !important;
+}
+
+/* Heading text size classes are overridden by specific selectors above */
+
+/* Specific override for Streamdown's default heading classes */
+.copilot-chat-container [data-streamdown="heading-2"].text-2xl {
+  font-size: 1.3em !important;
+}
+
+.copilot-chat-container [data-streamdown="heading-3"].text-xl {
+  font-size: 1.15em !important;
+}
+

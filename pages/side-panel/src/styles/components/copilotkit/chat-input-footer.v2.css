@@ -221,3 +221,48 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   pointer-events: none !important;
 }
 
+/* ==========================================================
+   CHAT DISCLAIMER
+   Higher specificity to override container font-size rules
+   Must match/exceed: .copilot-chat-container.font-size-small div:not(...)
+   ========================================================== */
+
+.chat-disclaimer,
+.copilot-chat-container .chat-disclaimer,
+.copilot-chat-container.font-size-small div.chat-disclaimer,
+.copilot-chat-container.font-size-small div.chat-disclaimer:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.font-size-medium div.chat-disclaimer,
+.copilot-chat-container.font-size-medium div.chat-disclaimer:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.font-size-large div.chat-disclaimer,
+.copilot-chat-container.font-size-large div.chat-disclaimer:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]) {
+  text-align: center !important;
+  font-size: 10px !important;
+  line-height: 1.4 !important;
+  /* Text color matches model/agent selector text color (gray-600) */
+  color: #4b5563 !important;
+  padding: 4px 16px !important;
+  max-width: 48rem !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.dark .chat-disclaimer,
+.copilot-chat-container.dark .chat-disclaimer,
+.copilot-chat-container.dark.font-size-small div.chat-disclaimer,
+.copilot-chat-container.dark.font-size-small div.chat-disclaimer:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.dark.font-size-medium div.chat-disclaimer,
+.copilot-chat-container.dark.font-size-medium div.chat-disclaimer:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]),
+.copilot-chat-container.dark.font-size-large div.chat-disclaimer,
+.copilot-chat-container.dark.font-size-large div.chat-disclaimer:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]) {
+  /* Text color matches model/agent selector text color in dark mode (gray-500) */
+  color: #6b7280 !important;
+}
+
+/* Hide disclaimer when skeleton is loading */
+body.skeleton-loading .chat-disclaimer,
+.skeleton-loading .chat-disclaimer {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+

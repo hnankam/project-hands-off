@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
+import { MarkdownRenderer } from '../tiptap/MarkdownRenderer';
+import { CodeBlock } from '../chat/slots/CustomCodeBlock';
 
 /**
  * V2 API Status Values:
@@ -66,6 +68,39 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
   }, [cacheKey, isExpanded]);
   const [isHovered, setIsHovered] = useState(false);
   const isWorking = status === 'inProgress' || status === 'executing';
+  
+  // Track if user manually closed the dropdown
+  const userClosedRef = useRef(false);
+  
+  // Refs for auto-scrolling content sections (using HTMLElement to work with both div and pre)
+  const inputScrollRef = useRef<HTMLElement>(null);
+  const outputScrollRef = useRef<HTMLElement>(null);
+  const errorScrollRef = useRef<HTMLElement>(null);
+  
+  // Auto-expand when in progress or executing (unless user manually closed it)
+  useEffect(() => {
+    if (isWorking && !userClosedRef.current) {
+      setIsExpanded(true);
+    } else if (status === 'complete' && !userClosedRef.current) {
+      // Auto-collapse when complete
+      setIsExpanded(false);
+    }
+  }, [status, isWorking]);
+  
+  // Auto-scroll to bottom when content changes during active work
+  useEffect(() => {
+    if (!isWorking || !isExpanded) return;
+    
+    // Scroll all content sections to bottom
+    [inputScrollRef, outputScrollRef, errorScrollRef].forEach(ref => {
+      if (ref.current) {
+        ref.current.scrollTo({
+          top: ref.current.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
+    });
+  }, [args, result, error, isWorking, isExpanded]);
 
   const defaultMessages: Required<ActionStatusMessages> = {
     pending: `Starting ${toolName}…`,
@@ -98,8 +133,22 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
   // Add contextual tool name so short phrases like "Search complete" read with meaning
   const text = `${baseText}`;
 
-  // Icon color based on current theme (read from storage, not from props)
-  const iconColor = isLight ? '#4b5563' : '#6b7280'; // gray-600 for light, gray-500 for dark
+  // Icon color based on status and current theme
+  // Blue for success (complete without error), red for failure (error), gray for in-progress/pending
+  const getIconColor = (): string => {
+    if (error) {
+      // Subtle red for errors/failures
+      return isLight ? '#f87171' : '#fca5a5'; // red-400 for light, red-300 for dark
+    }
+    if (status === 'complete' && !error) {
+      // Subtle blue for successful completion
+      return isLight ? '#60a5fa' : '#93c5fd'; // blue-400 for light, blue-300 for dark
+    }
+    // Default gray for in-progress/pending
+    return isLight ? '#4b5563' : '#6b7280'; // gray-600 for light, gray-500 for dark
+  };
+  
+  const iconColor = getIconColor();
 
   // Default icon: use a playful sparkle/magic wand icon for agent actions
   const defaultIcon = (
@@ -132,6 +181,17 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
 
   // Check if we have data to show in expanded view
   const hasExpandableData = args || result || error;
+  
+  // Toggle handler that tracks user manual close
+  const handleToggle = useCallback(() => {
+    if (!hasExpandableData) return;
+    const newState = !isExpanded;
+    setIsExpanded(newState);
+    // Track if user manually closed during active work
+    if (!newState && isWorking) {
+      userClosedRef.current = true;
+    }
+  }, [hasExpandableData, isExpanded, isWorking]);
 
   // Chevron icon for expand/collapse (points right, rotates down when expanded)
   const chevronIcon = (
@@ -156,29 +216,60 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
   );
 
   // Format data for display
-  const formatData = (data: any, maxDepth = 3): string => {
-    if (data === null || data === undefined) return 'null';
-    if (typeof data === 'string') return data.length > 200 ? data.slice(0, 200) + '...' : data;
-    if (typeof data === 'number' || typeof data === 'boolean') return String(data);
+  const formatData = (data: any): { content: string; isMarkdown: boolean; language?: string } => {
+    if (data === null || data === undefined) return { content: 'null', isMarkdown: false, language: 'text' };
+    
+    // If data is a string, check if it's JSON or markdown
+    if (typeof data === 'string') {
+      // Check if string is valid JSON (starts with { or [ and can be parsed)
+      const trimmed = data.trim();
+      if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && trimmed.length > 0) {
+        try {
+          JSON.parse(trimmed);
+          // Valid JSON - format it nicely and render as code block
+          return { content: JSON.stringify(JSON.parse(trimmed), null, 2), isMarkdown: false, language: 'json' };
+        } catch {
+          // Not valid JSON, treat as markdown
+        }
+      }
+      // Not JSON, treat as markdown
+      return { content: data, isMarkdown: true };
+    }
+    
+    if (typeof data === 'number' || typeof data === 'boolean') return { content: String(data), isMarkdown: false, language: 'text' };
+    
+    // If data is an object, check for common markdown content fields
+    if (typeof data === 'object' && data !== null) {
+      // Check for common field names that contain markdown content
+      const markdownFields = ['prompt', 'input', 'message', 'content', 'text', 'query', 'code', 'description'];
+      
+      for (const field of markdownFields) {
+        if (field in data && typeof data[field] === 'string') {
+          // Found a markdown field - render it as markdown
+          return { content: data[field], isMarkdown: true };
+        }
+      }
+    }
     
     try {
-      return JSON.stringify(data, null, 2);
+      // Object/array - render as JSON code block
+      return { content: JSON.stringify(data, null, 2), isMarkdown: false, language: 'json' };
     } catch (e) {
-      return String(data);
+      return { content: String(data), isMarkdown: false, language: 'text' };
     }
   };
 
   return (
     <div 
-      className={isLight ? 'text-gray-600' : 'text-gray-500'} 
+      className={`action-status ${isLight ? 'text-gray-600' : 'text-gray-500'}`}
       style={{ 
         fontSize: 12,
         maxWidth: '56rem',
         width: '100%',
         marginLeft: 'auto',
         marginRight: 'auto',
-        paddingLeft: 12,
-        paddingRight: 12,
+        // paddingLeft: 12,
+        // paddingRight: 12,
       }}
     >
       {/* Header (always visible) */}
@@ -190,7 +281,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
           alignItems: 'center',
           cursor: hasExpandableData ? 'pointer' : 'default',
         }}
-        onClick={() => hasExpandableData && setIsExpanded(!isExpanded)}
+        onClick={handleToggle}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
@@ -213,7 +304,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
       >
         <div
           style={{
-            paddingLeft: 20,
+            paddingLeft: 8,
             paddingRight: 6,
             paddingBottom: 6,
             // borderLeft: `2px solid ${isLight ? '#e5e7eb' : '#374151'}`,
@@ -222,101 +313,119 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
           }}
         >
           {/* Input Arguments */}
-          {args && (
-            <div style={{ marginBottom: 8 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: isLight ? '#6b7280' : '#9ca3af',
-                  marginBottom: 4,
-                }}
-              >
-                Input:
+          {args && (() => {
+            const { content, isMarkdown, language } = formatData(args);
+            return (
+              <div style={{ marginBottom: 8 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: isLight ? '#6b7280' : '#9ca3af',
+                    marginBottom: 4,
+                  }}
+                >
+                  Input:
+                </div>
+                {isMarkdown ? (
+                  <div
+                    ref={inputScrollRef as any}
+                    style={{
+                      fontSize: 11,
+                      padding: 8,
+                      backgroundColor: isLight ? '#f9fafb' : '#1f2937',
+                      borderRadius: 4,
+                      overflow: 'auto',
+                      maxHeight: 200,
+                    }}
+                  >
+                    <MarkdownRenderer content={content} isLight={isLight} />
+                  </div>
+                ) : (
+                  <div ref={inputScrollRef as any} style={{ maxHeight: 200, overflow: 'auto' }}>
+                    <CodeBlock language={language || 'text'} code={content} isLight={isLight} />
+                  </div>
+                )}
               </div>
-              <pre
-                style={{
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                  padding: 8,
-                  backgroundColor: isLight ? '#f9fafb' : '#1f2937',
-                  borderRadius: 4,
-                  overflow: 'auto',
-                  maxHeight: 200,
-                  margin: 0,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {formatData(args)}
-              </pre>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Output Result */}
-          {result && (
-            <div style={{ marginBottom: 8 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: isLight ? '#6b7280' : '#9ca3af',
-                  marginBottom: 4,
-                }}
-              >
-                Output:
+          {result && (() => {
+            const { content, isMarkdown, language } = formatData(result);
+            return (
+              <div style={{ marginBottom: 8 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: isLight ? '#6b7280' : '#9ca3af',
+                    marginBottom: 4,
+                  }}
+                >
+                  Output:
+                </div>
+                {isMarkdown ? (
+                  <div
+                    ref={outputScrollRef as any}
+                    style={{
+                      fontSize: 11,
+                      padding: 8,
+                      backgroundColor: isLight ? '#f9fafb' : '#1f2937',
+                      borderRadius: 4,
+                      overflow: 'auto',
+                      maxHeight: 200,
+                    }}
+                  >
+                    <MarkdownRenderer content={content} isLight={isLight} />
+                  </div>
+                ) : (
+                  <div ref={outputScrollRef as any} style={{ maxHeight: 200, overflow: 'auto' }}>
+                    <CodeBlock language={language || 'text'} code={content} isLight={isLight} />
+                  </div>
+                )}
               </div>
-              <pre
-                style={{
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                  padding: 8,
-                  backgroundColor: isLight ? '#f9fafb' : '#1f2937',
-                  borderRadius: 4,
-                  overflow: 'auto',
-                  maxHeight: 200,
-                  margin: 0,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {formatData(result)}
-              </pre>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Error */}
-          {error && (
-            <div>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: '#ef4444',
-                  marginBottom: 4,
-                }}
-              >
-                Error:
+          {error && (() => {
+            const { content, isMarkdown, language } = formatData(error);
+            return (
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: '#ef4444',
+                    marginBottom: 4,
+                  }}
+                >
+                  Error:
+                </div>
+                {isMarkdown ? (
+                  <div
+                    ref={errorScrollRef as any}
+                    style={{
+                      fontSize: 11,
+                      padding: 8,
+                      backgroundColor: isLight ? '#fef2f2' : '#7f1d1d',
+                      borderRadius: 4,
+                      overflow: 'auto',
+                      maxHeight: 200,
+                      color: isLight ? '#991b1b' : '#fca5a5',
+                    }}
+                  >
+                    <MarkdownRenderer content={content} isLight={isLight} />
+                  </div>
+                ) : (
+                  <div ref={errorScrollRef as any} style={{ maxHeight: 200, overflow: 'auto' }}>
+                    <CodeBlock language={language || 'text'} code={content} isLight={isLight} />
+                  </div>
+                )}
               </div>
-              <pre
-                style={{
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                  padding: 8,
-                  backgroundColor: isLight ? '#fef2f2' : '#7f1d1d',
-                  borderRadius: 4,
-                  overflow: 'auto',
-                  maxHeight: 200,
-                  margin: 0,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  color: isLight ? '#991b1b' : '#fca5a5',
-                }}
-              >
-                {formatData(error)}
-              </pre>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     </div>

@@ -144,8 +144,12 @@ const TaskProgressSkeleton: FC<{ seed?: string; isLight?: boolean }> = ({ seed =
 const ComposerSkeleton: FC<{ isLight?: boolean }> = ({ isLight = true }) => {
   return (
     <div className={cn('border-t', isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#0C1117]')}>
-      <div className="px-3 pt-3 pt-2 mb-5">
+      <div className="px-3 pt-3 pt-2 mb-2">
         <Skeleton height={85} className="rounded-xl" isLight={isLight} />
+      </div>
+      {/* Disclaimer skeleton */}
+      <div className="flex justify-center pb-4">
+        <Skeleton height={10} width={280} className="opacity-50" isLight={isLight} />
       </div>
     </div>
   );

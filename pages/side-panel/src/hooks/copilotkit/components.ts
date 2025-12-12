@@ -29,7 +29,7 @@ export { CopilotKitProvider } from '@copilotkit/react-core/v2';
 // =============================================================================
 
 // V2: CopilotChat moves to @copilotkit/react-core/v2
-export { CopilotChat, CopilotChatAssistantMessage } from '@copilotkit/react-core/v2';
+export { CopilotChat, CopilotChatAssistantMessage, CopilotChatUserMessage } from '@copilotkit/react-core/v2';
 
 // V2: CopilotSidebar is also available as alternative
 export { CopilotSidebar } from '@copilotkit/react-core/v2';

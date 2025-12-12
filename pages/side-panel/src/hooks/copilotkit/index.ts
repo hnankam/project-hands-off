@@ -64,6 +64,7 @@ export {
   CopilotKitProvider,
   CopilotChat,
   CopilotChatAssistantMessage,
+  CopilotChatUserMessage,
   CopilotSidebar,
   Markdown,
   ImageRenderer,

@@ -486,6 +486,12 @@ export function createDefaultToolRenderer(deps: BuiltinToolDependencies) {
     name: '*',  // Wildcard - matches any tool without a specific renderer
     args: wildcardToolSchema,
     render: (props: V2RenderProps<unknown>) => {
+      // Exclude plan-related tools from default rendering (they have custom renderers)
+      const excludedTools = ['create_plan', 'update_plan_step'];
+      if (excludedTools.includes(props.name)) {
+        return null;
+      }
+      
       const displayName = formatToolName(props.name);
       const status = mapV2Status(props.status);
       

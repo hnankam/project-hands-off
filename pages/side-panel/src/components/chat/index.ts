@@ -1,19 +1,20 @@
 /**
- * Chat Components
+ * Chat Components Exports
  * 
- * Components related to the chat/messaging functionality
+ * Central export file for chat-related components
  */
 
-export { ChatSessionContainer } from './ChatSessionContainer';
+// Message Components
+export { CustomAssistantMessageV2 } from './CustomAssistantMessageV2';
+export { CustomUserMessageV2 } from './CustomUserMessageV2';
+
+// Custom Slot Components
+export {
+  CustomScrollToBottomButton,
+  CustomFeather,
+  CustomDisclaimer,
+  CustomSuggestionView,
+} from './slots';
+
+// Other Chat Components (if needed for external use)
 export { ChatInner } from './ChatInner';
-export { ChatErrorDisplay } from './ChatErrorDisplay';
-export { CustomAssistantMessage } from './CustomAssistantMessage';
-export { CustomUserMessage } from './CustomUserMessage';
-export { CustomMessages } from './CustomMessages';
-export { CustomInput } from './CustomInput';
-export { ThinkingBlock } from './ThinkingBlock';
-export { MermaidBlock } from './MermaidBlock';
-
-// Slot components for CopilotKit V2
-export * from './slots';
-
