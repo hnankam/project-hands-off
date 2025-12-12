@@ -65,11 +65,13 @@ import { MermaidBlock } from './MermaidBlock';
 import { ChatErrorDisplay } from './ChatErrorDisplay';
 import { CustomAssistantMessageV2 } from './CustomAssistantMessageV2';
 import { CustomUserMessageV2 } from './CustomUserMessageV2';
+import { CustomInputV2 } from './CustomInputV2';
 import { 
   CustomScrollToBottomButton,
   CustomFeather,
   CustomDisclaimer,
   CustomSuggestionView,
+  CustomCursor,
 } from './slots';
 
 // Custom Hooks
@@ -829,16 +831,18 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           <CopilotChat
             agentId="dynamic_agent"
             threadId={sessionId}
-            messageView={{
-              assistantMessage: CustomAssistantMessageV2,
-              userMessage: CustomUserMessageV2,
-            }}
             chatView={{
               scrollToBottomButton: CustomScrollToBottomButton,
               feather: CustomFeather,
               disclaimer: CustomDisclaimer,
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               suggestionView: CustomSuggestionView as any,
+              input: CustomInputV2,
+              messageView: {
+                assistantMessage: CustomAssistantMessageV2,
+                userMessage: CustomUserMessageV2,
+                cursor: CustomCursor,
+              },
             }}
           />
         </div>

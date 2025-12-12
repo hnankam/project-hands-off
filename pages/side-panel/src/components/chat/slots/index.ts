@@ -24,6 +24,9 @@ export type { TableProps } from './CustomTable';
 export { CustomFeather } from './CustomFeather';
 export type { CustomFeatherProps } from './CustomFeather';
 
+export { CustomCursor } from './CustomCursor';
+export type { CustomCursorProps } from './CustomCursor';
+
 export { CustomDisclaimer } from './CustomDisclaimer';
 export type { CustomDisclaimerProps } from './CustomDisclaimer';
 
@@ -40,6 +43,7 @@ export type {
 export { CustomUserMessageRenderer } from './CustomUserMessageRenderer';
 export type { CustomUserMessageRendererProps } from './CustomUserMessageRenderer';
 
+// User message buttons
 export { 
   CustomCopyButton, 
   CustomEditButton,
@@ -54,4 +58,20 @@ export type {
   CustomUndoButtonProps,
   CustomDeleteButtonProps,
 } from './CustomUserMessageButtons';
+
+// Assistant message buttons
+export {
+  CustomCopyButton as CustomAssistantCopyButton,
+  CustomRegenerateButton,
+  CustomThumbsUpButton,
+  CustomThumbsDownButton,
+  CustomReadAloudButton,
+} from './CustomAssistantMessageButtons';
+export type {
+  CustomCopyButtonProps as CustomAssistantCopyButtonProps,
+  CustomRegenerateButtonProps,
+  CustomThumbsUpButtonProps,
+  CustomThumbsDownButtonProps,
+  CustomReadAloudButtonProps,
+} from './CustomAssistantMessageButtons';
 

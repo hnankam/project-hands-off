@@ -8,6 +8,9 @@
 export { CustomAssistantMessageV2 } from './CustomAssistantMessageV2';
 export { CustomUserMessageV2 } from './CustomUserMessageV2';
 
+// Input Component
+export { CustomInputV2 } from './CustomInputV2';
+
 // Custom Slot Components
 export {
   CustomScrollToBottomButton,

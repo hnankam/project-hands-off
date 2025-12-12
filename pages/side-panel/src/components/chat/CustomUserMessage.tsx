@@ -171,7 +171,16 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
   };
 
   const handleSaveEdit = () => {
-    if (!messages) return;
+    if (!messages || index === -1) return;
+
+    // Only update user messages - activity messages have content as Record<string, any>
+    const currentMessage = messages[index];
+    const messageRole = (currentMessage as any)?.role;
+    if (messageRole !== 'user') {
+      // Don't update non-user messages (e.g., activity messages)
+      setIsEditing(false);
+      return;
+    }
 
     // Save current content to edit history before editing
     setEditHistory(prev => [...prev, content]);
@@ -181,10 +190,11 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
     const finalContent = `${editedContent}${manifestBlock}`;
 
     const updatedMessages = [...messages];
+    // Type assertion: we've already verified this is a user message
     updatedMessages[index] = {
       ...updatedMessages[index],
       content: finalContent,
-    };
+    } as typeof messages[number];
     setMessages(updatedMessages);
     setIsEditing(false);
   };
@@ -196,14 +206,23 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
 
   // Handle undo last edit
   const handleUndoEdit = () => {
-    if (!messages || editHistory.length === 0) return;
+    if (!messages || editHistory.length === 0 || index === -1) return;
+
+    // Only update user messages - activity messages have content as Record<string, any>
+    const currentMessage = messages[index];
+    const messageRole = (currentMessage as any)?.role;
+    if (messageRole !== 'user') {
+      // Don't update non-user messages (e.g., activity messages)
+      return;
+    }
 
     const previousContent = editHistory[editHistory.length - 1];
     const updatedMessages = [...messages];
+    // Type assertion: we've already verified this is a user message
     updatedMessages[index] = {
       ...updatedMessages[index],
       content: previousContent,
-    };
+    } as typeof messages[number];
     setMessages(updatedMessages);
 
     // Remove the last item from history
@@ -469,7 +488,12 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
       ) : (
         <div>
           {/* Render image if present */}
-          {isImageMessage && <ImageRendererComponent image={message.image!} content={message.content} />}
+          {isImageMessage && message.image && (
+            <ImageRendererComponent 
+              image={message.image} 
+              imageUrl={typeof message.image === 'string' ? message.image : (message.image as any)?.url || (message.image as any)?.imageUrl || ''} 
+            />
+          )}
 
           {/* Attachment chips rendered from hidden manifest */}
           {attachments.length > 0 && (
