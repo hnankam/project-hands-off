@@ -264,20 +264,20 @@ html.dark .copilot-chat-container div code,
 body.dark [data-streamdown="code-block"] code,
 html.dark [data-streamdown="code-block"] code {
   /* Apply filter with all three values - brightness, saturate, and contrast */
-  filter: brightness(0.85) saturate(1.2) contrast(1.1) !important;
-  -webkit-filter: brightness(0.85) saturate(1.2) contrast(1.1) !important;
+  /* filter: brightness(0.85) saturate(1.2) contrast(1.1) !important; */
+  /* -webkit-filter: brightness(0.85) saturate(1.2) contrast(1.1) !important; */
   font-weight: 300 !important;
 }
 
 /* Also apply filter to parent div containers (react-syntax-highlighter PreTag="div") */
 /* This ensures the filter affects all inline-styled span children */
-.dark .copilot-chat-container div[style*="white-space: pre"],
+/* .dark .copilot-chat-container div[style*="white-space: pre"],
 .copilot-chat-container.dark div[style*="white-space: pre"],
 body.dark .copilot-chat-container div[style*="white-space: pre"],
 html.dark .copilot-chat-container div[style*="white-space: pre"] {
   filter: brightness(0.85) saturate(1.2) contrast(1.1) !important;
-  -webkit-filter: brightness(0.85) saturate(1.2) contrast(1.1) !important;
-}
+   -webkit-filter: brightness(0.85) saturate(1.2) contrast(1.1) !important;
+} */
 
 /* But still exclude inline code in dark mode */
 .dark .copilot-chat-container p code,

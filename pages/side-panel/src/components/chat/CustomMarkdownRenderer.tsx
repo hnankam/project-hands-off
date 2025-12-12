@@ -1,7 +1,7 @@
 /**
  * Custom Markdown Renderer for CopilotKit V2
  * 
- * Wraps Streamdown with custom code block, table, and thinking block rendering.
+ * Wraps Streamdown with custom code block, mermaid diagram, table, and thinking block rendering.
  */
 import React from 'react';
 import { Streamdown } from 'streamdown';
@@ -18,7 +18,7 @@ interface CustomMarkdownRendererProps {
  * CustomMarkdownRenderer - Replacement for CopilotChatAssistantMessage.MarkdownRenderer
  * 
  * Uses Streamdown with custom components:
- * - `pre` for code blocks with react-syntax-highlighter
+ * - `pre` for code blocks with react-syntax-highlighter and mermaid diagram rendering
  * - `table` for styled tables matching graph card design
  * - `think` and `thinking` for collapsible thinking blocks (with auto-detection of completion state)
  */

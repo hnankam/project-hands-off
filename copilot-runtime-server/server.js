@@ -34,7 +34,7 @@ import { cors } from 'hono/cors';
 import {
   CopilotRuntime,
   createCopilotEndpoint,
-  InMemoryAgentRunner,
+  InMemoryAgentRunner
 } from '@copilotkit/runtime/v2';
 import { HttpAgent } from '@ag-ui/client';
 

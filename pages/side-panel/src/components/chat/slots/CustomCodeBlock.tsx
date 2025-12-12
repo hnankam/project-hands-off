@@ -3,11 +3,12 @@
  * 
  * Provides:
  * - CodeBlock: Shared code block with syntax highlighting (used by graph card, markdown, etc.)
- * - CustomCodeBlockWrapper: Wrapper for CopilotKit that extracts code from children
+ * - CustomCodeBlockWrapper: Wrapper for CopilotKit that extracts code from children and handles mermaid diagrams
  */
 import React, { useState, useCallback, Children, isValidElement } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
+import { MermaidBlock } from '../MermaidBlock';
 // @ts-ignore - Types package not installed, but functionality works fine
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 // @ts-ignore
@@ -276,7 +277,10 @@ function extractCodeInfo(children: React.ReactNode): { code: string; language: s
 /**
  * CustomCodeBlockWrapper - Custom pre element renderer
  * 
- * Extracts code and language from children and renders using shared CodeBlock.
+ * Extracts code and language from children and renders using:
+ * - MermaidBlock for mermaid diagrams
+ * - CodeBlock for all other code languages
+ * 
  * Used as the `pre` component override in markdown renderers.
  */
 export const CustomCodeBlockWrapper: React.FC<CustomCodeBlockWrapperProps> = ({
@@ -294,6 +298,12 @@ export const CustomCodeBlockWrapper: React.FC<CustomCodeBlockWrapperProps> = ({
     return <pre className={className} {...props}>{children}</pre>;
   }
 
+  // Handle mermaid diagrams with MermaidBlock
+  if (language === 'mermaid') {
+    return <MermaidBlock>{code}</MermaidBlock>;
+  }
+
+  // Handle all other code with syntax highlighting
   return <CodeBlock language={language} code={code} isLight={isLight} />;
 };
 

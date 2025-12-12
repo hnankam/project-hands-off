@@ -8,10 +8,18 @@
 import React from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
+import { MarkdownRenderer } from '../../tiptap/MarkdownRenderer';
 
 export interface CustomUserMessageRendererProps {
   content: string;
   className?: string;
+  isEditing?: boolean;
+  editedContent?: string;
+  onContentChange?: (content: string) => void;
+  onSave?: () => void;
+  onCancel?: () => void;
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }
 
 /**
@@ -21,51 +29,190 @@ export interface CustomUserMessageRendererProps {
  * - Full width content (100% width, max-width 100%)
  * - Word wrapping for long content
  * - V1 border and background colors (theme-aware)
+ * - Position relative container (for absolute positioned buttons in parent)
  * - Matches copilotKitUserMessage styling from V1
  */
 export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps> = ({
   content,
   className = '',
+  isEditing = false,
+  editedContent = '',
+  onContentChange,
+  onSave,
+  onCancel,
+  textareaRef,
+  onKeyDown,
 }) => {
   const { isLight } = useStorage(themeStorage);
   
   // V1 styling colors
-  const styles = React.useMemo(() => {
+  const containerStyles = React.useMemo(() => {
+    const baseStyles = {
+      position: 'relative' as const,
+      width: '100%',
+      maxWidth: '100%',
+      wordBreak: 'break-word' as const,
+      overflowWrap: 'break-word' as const,
+      borderRadius: '10px',
+      padding: '0.6rem',
+      overflow: 'visible' as const,
+      transition: 'all 0.2s ease-in-out' as const,
+      marginTop: '1.2rem',
+      marginBottom: '1rem'
+    };
+    
     if (isLight) {
       // Light mode: matches V1 copilotKitUserMessage
       return {
-        width: '100%',
-        maxWidth: '100%',
-        wordBreak: 'break-word' as const,
-        overflowWrap: 'break-word' as const,
+        ...baseStyles,
         backgroundColor: '#f9fafb', // Light mode background
         border: '1px solid #e5e7eb', // Light mode border
-        borderRadius: '10px',
-        padding: '0.5rem',
         color: '#374151', // Light mode text color
       };
     } else {
       // Dark mode: matches V1 copilotKitUserMessage
       return {
-        width: '100%',
-        maxWidth: '100%',
-        wordBreak: 'break-word' as const,
-        overflowWrap: 'break-word' as const,
-        backgroundColor: '#151C24', // Dark mode background (copilot-kit-secondary-color equivalent)
+        ...baseStyles,
+        backgroundColor: '#151C24', // Dark mode background
         border: '1px solid #374151', // Dark mode border
-        borderRadius: '10px',
-        padding: '0.5rem',
         color: '#d1d5db', // Dark mode text color
       };
     }
   }, [isLight]);
   
+  // Edit mode view
+  if (isEditing) {
+    return (
+      <div 
+        className={className}
+        style={containerStyles}
+      >
+        <textarea
+          ref={textareaRef}
+          value={editedContent}
+          onChange={(e) => onContentChange?.(e.target.value)}
+          onKeyDown={onKeyDown}
+          style={{
+            width: '100%',
+            minHeight: '80px',
+            padding: '0.5rem',
+            borderRadius: '6px',
+            border: 'none',
+            backgroundColor: isLight ? '#ffffff' : '#0C1117',
+            color: isLight ? '#0C1117' : '#f9fafb',
+            fontSize: '13px',
+            lineHeight: '1.4',
+            fontFamily: 'inherit',
+            resize: 'none',
+            outline: 'none',
+            marginBottom: '0.5rem',
+          }}
+        />
+        <div
+          style={{
+            display: 'flex',
+            gap: '0.25rem',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <button
+            onClick={onCancel}
+            title="Cancel (Esc)"
+            style={{
+              width: '28px',
+              height: '28px',
+              padding: '0.5rem',
+              borderRadius: '6px',
+              border: 'none',
+              backgroundColor: 'transparent',
+              color: isLight ? '#374151' : '#d1d5db',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.15)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              width="16"
+              height="16"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+          <button
+            onClick={onSave}
+            title="Save (⌘↵)"
+            style={{
+              width: '28px',
+              height: '28px',
+              padding: '0.5rem',
+              borderRadius: '6px',
+              border: 'none',
+              backgroundColor: 'transparent',
+              color: '#22c55e',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.15)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              width="16"
+              height="16"
+            >
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    );
+  }
+  
+  // View mode (default) - render markdown
   return (
     <div 
       className={className}
-      style={styles}
+      style={containerStyles}
     >
-      {content}
+      <div
+        style={{
+          fontSize: '13px',
+          lineHeight: '1.4',
+          color: isLight ? '#0C1117' : '#f9fafb',
+          maxHeight: '150px',
+          overflowY: 'auto' as const,
+          overflowX: 'visible' as const,
+        }}
+      >
+        <MarkdownRenderer content={content} isLight={isLight} />
+      </div>
     </div>
   );
 };

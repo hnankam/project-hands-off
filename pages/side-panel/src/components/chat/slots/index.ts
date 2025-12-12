@@ -40,3 +40,18 @@ export type {
 export { CustomUserMessageRenderer } from './CustomUserMessageRenderer';
 export type { CustomUserMessageRendererProps } from './CustomUserMessageRenderer';
 
+export { 
+  CustomCopyButton, 
+  CustomEditButton,
+  CustomRerunButton,
+  CustomUndoButton,
+  CustomDeleteButton,
+} from './CustomUserMessageButtons';
+export type { 
+  CustomCopyButtonProps, 
+  CustomEditButtonProps,
+  CustomRerunButtonProps,
+  CustomUndoButtonProps,
+  CustomDeleteButtonProps,
+} from './CustomUserMessageButtons';
+
