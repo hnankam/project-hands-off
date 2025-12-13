@@ -34,8 +34,8 @@ export const CustomMarkdownRenderer: React.FC<CustomMarkdownRendererProps> = ({
         pre: CustomCodeBlockWrapper,
         table: CustomTableWrapper,
         // Custom HTML tags for thinking blocks
-        think: ThinkingBlockWrapper,
-        thinking: ThinkingBlockWrapper,
+        // think: ThinkingBlockWrapper,
+        // thinking: ThinkingBlockWrapper,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any}
       {...props}

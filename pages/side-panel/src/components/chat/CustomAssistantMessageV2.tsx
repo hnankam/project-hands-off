@@ -299,7 +299,7 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         if (effectiveIsRunning || message?.role !== 'assistant' || !hasContent || !isLastInSeries) {
           console.log('[CustomAssistantMessageV2] Hiding toolbar for message:', message?.id);
           return (
-            <div style={{ color: isLight ? '#374151' : '#d1d5db' }}>
+            <div style={{ color: isLight ? '#374151' : '#d1d5db', paddingLeft: '12px', paddingRight: '12px', paddingTop: '12px' }}>
               {markdownRenderer}
               {toolCallsView}
             </div>
@@ -343,7 +343,7 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         );
         
         return (
-          <div style={{ color: isLight ? '#374151' : '#d1d5db' }}>
+          <div style={{ color: isLight ? '#374151' : '#d1d5db', paddingLeft: '12px', paddingRight: '12px', paddingTop: '12px' }}>
             {markdownRenderer}
             {toolCallsView}
             {reorderedToolbar}

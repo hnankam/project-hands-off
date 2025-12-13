@@ -39,7 +39,7 @@ export function CustomCursor({
   // Adaptive margin: larger when no messages (initial state), smaller when continuing conversation
   // Consider 0-1 messages as "initial state" since the cursor itself represents the first streaming message
   const hasMessages = messages.length > 1;
-  const marginTop = hasMessages ? '0.25rem' : '1rem';
+  const marginTop = '0.5rem'; //hasMessages ? '0.25rem' : '1rem';
   
   return (
     <div

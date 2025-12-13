@@ -501,20 +501,36 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         // CSS will handle hover styles
         const enabledAddMenuButton = addMenuButton;
         
-        // Clone sendButton with custom styles - matching hover colors of other buttons
+        // Check button state for conditional styling
+        const isButtonDisabled = React.isValidElement(sendButton) 
+          ? (sendButton as any).props?.disabled === true 
+          : false;
+        const isRunning = props.isRunning === true;
+        const isEnabled = !isButtonDisabled || isRunning;
+        
+        // Clone sendButton with custom styles - different colors for disabled vs enabled
         const styledSendButton = React.isValidElement(sendButton)
           ? React.cloneElement(sendButton as React.ReactElement<any>, {
               style: {
                 ...((sendButton as any).props?.style || {}),
-                // Background matches hover color of other buttons
-                backgroundColor: isLight 
-                  ? 'rgba(229, 231, 235, 0.8)'  // gray-200/80 - matches hover
-                  : 'rgba(55, 65, 81, 0.6)', // gray-700/60 - matches hover
-                // Text/icon color matches other buttons
-                color: isLight ? '#374151' : '#d1d5db', // gray-700 / gray-300 - matches button text
+                // Different background colors based on state
+                backgroundColor: isEnabled
+                  ? (isLight 
+                      ? 'rgba(229, 231, 235, 0.8)'  // gray-200/80 - enabled state
+                      : 'rgba(55, 65, 81, 0.6)')    // gray-700/60 - enabled state
+                  : (isLight 
+                      ? 'rgba(229, 231, 235, 0.4)'  // gray-200/40 - disabled state (more muted)
+                      : 'rgba(55, 65, 81, 0.3)'),   // gray-700/30 - disabled state (more muted)
+                // Different text/icon colors based on state
+                color: isEnabled
+                  ? (isLight ? '#374151' : '#d1d5db')  // gray-700 / gray-300 - enabled (full opacity)
+                  : (isLight ? '#9ca3af' : '#6b7280'), // gray-400 / gray-500 - disabled (muted)
+                opacity: isEnabled ? 1 : 0.6, // Additional visual feedback for disabled state
               },
               onMouseEnter: (e: React.MouseEvent<HTMLButtonElement>) => {
-                e.currentTarget.style.transform = 'scale(1.05)';
+                if (isEnabled) {
+                  e.currentTarget.style.transform = 'scale(1.05)';
+                }
               },
               onMouseLeave: (e: React.MouseEvent<HTMLButtonElement>) => {
                 e.currentTarget.style.transform = 'scale(1)';

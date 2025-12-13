@@ -97,19 +97,19 @@ export const CustomScrollToBottomButton: React.FC<CustomScrollToBottomButtonProp
         strokeLinejoin="round"
         style={{
           pointerEvents: 'none',
-          animation: isHovered ? 'none' : 'customScrollBounce 1.5s ease-in-out infinite',
+          // animation: isHovered ? 'none' : 'customScrollBounce 1.5s ease-in-out infinite',
           transform: isHovered ? 'translateY(3px)' : 'translateY(0)',
           transition: 'transform 0.15s ease-out',
         }}
       >
         <polyline points="6 9 12 15 18 9" />
       </svg>
-      <style>{`
+      {/* <style>{`
         @keyframes customScrollBounce {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(4px); }
         }
-      `}</style>
+      `}</style> */}
     </button>
   );
 };
