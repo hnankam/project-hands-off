@@ -237,7 +237,7 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 .copilot-chat-container.font-size-large div.chat-disclaimer:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]) {
   text-align: center !important;
   font-size: 10px !important;
-  line-height: 1.4 !important;
+  /* line-height: 1.4 !important; */
   /* Text color matches model/agent selector text color (gray-600) */
   color: #4b5563 !important;
   padding: 4px 16px !important;

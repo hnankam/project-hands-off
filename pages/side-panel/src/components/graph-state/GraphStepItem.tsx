@@ -41,6 +41,7 @@ interface AutoScrollDivProps {
   content: string;
   isStreaming: boolean;
   className?: string;
+  style?: React.CSSProperties;
   children: React.ReactNode;
   threshold?: number;
 }
@@ -49,6 +50,7 @@ const AutoScrollDiv: FC<AutoScrollDivProps> = memo(({
   content, 
   isStreaming, 
   className = '', 
+  style,
   children,
   threshold = 50 
 }) => {
@@ -139,6 +141,7 @@ const AutoScrollDiv: FC<AutoScrollDivProps> = memo(({
       ref={scrollRef} 
       onScroll={handleScroll} 
       className={className}
+      style={style}
     >
       {children}
     </div>
@@ -549,8 +552,8 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
     }
   }, [step.status, isLight]);
 
-  // Node text is always gray - only the check icon shows status color
-  const textColor = isLight ? 'text-gray-700' : 'text-gray-300';
+  // Node text matches assistant message colors
+  const textColor = isLight ? '#374151' : '#d1d5db'; // gray-700 / gray-300
 
   const bgColor = useMemo(() => {
     if (step.status === 'in_progress') {
@@ -590,7 +593,7 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
           <span className="flex-shrink-0" style={{ color: isLight ? '#6b7280' : '#9ca3af' }}>
             {getNodeIcon(step.node, 'h-4 w-4')}
           </span>
-          <span className={`font-medium ${textColor}`}>{isConfirmationStep ? 'Confirmation' : step.node}</span>
+          <span className="font-medium" style={{ color: textColor }}>{isConfirmationStep ? 'Confirmation' : step.node}</span>
           {step.status === 'in_progress' && !isConfirmationStep && (
             <span className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Processing...</span>
           )}
@@ -638,8 +641,8 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
           {/* Prompt sent to sub-agent */}
           {hasPrompt && (
             <div className={`mt-2 p-2.5 rounded-md ${isLight ? 'bg-slate-50' : 'bg-slate-800/50'}`}>
-              <p className={`text-xs font-medium mb-1.5 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Prompt</p>
-              <div className={`max-h-32 overflow-y-auto text-sm ${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
+              <p style={{ color: isLight ? '#374151' : '#d1d5db' }} className="text-xs font-medium mb-1.5 opacity-75">Prompt</p>
+              <div style={{ color: isLight ? '#374151' : '#d1d5db' }} className="max-h-32 overflow-y-auto text-sm">
                 <MarkdownRenderer content={step.prompt || ''} isLight={isLight} />
               </div>
             </div>
@@ -744,7 +747,8 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
                             <AutoScrollDiv 
                               content={tc.args}
                               isStreaming={tc.status === 'in_progress'}
-                              className={`mt-2 text-xs ${isLight ? 'text-slate-600' : 'text-slate-300'} max-h-48 overflow-y-auto`}
+                              style={{ color: isLight ? '#374151' : '#d1d5db' }}
+                              className="mt-2 text-xs max-h-48 overflow-y-auto"
                             >
                               <MarkdownRenderer 
                                 content={formatToolArgsAsMarkdown(tc.tool_name, tc.args)} 
@@ -761,7 +765,8 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
                               <AutoScrollDiv 
                                 content={tc.result}
                                 isStreaming={tc.status === 'in_progress'}
-                                className={`text-xs ${isLight ? 'text-slate-600' : 'text-slate-300'} max-h-60 overflow-y-auto`}
+                                style={{ color: isLight ? '#374151' : '#d1d5db' }}
+                                className="text-xs max-h-60 overflow-y-auto"
                               >
                                 <MarkdownRenderer content={formatToolResultAsMarkdown(tc.tool_name, tc.result)} isLight={isLight} />
                               </AutoScrollDiv>
@@ -962,7 +967,8 @@ const ResultContent: FC<{ step: GraphStep; isLight: boolean; hasProcessContent: 
               key={`content-${idx}`}
               content={formattedContent}
               isStreaming={step.status === 'in_progress'}
-              className={`max-h-64 overflow-y-auto text-sm ${isLight ? 'text-gray-600' : 'text-gray-300'} ${idx > 0 ? 'mt-2' : ''}`}
+              style={{ color: isLight ? '#374151' : '#d1d5db' }}
+              className={`max-h-64 overflow-y-auto text-sm ${idx > 0 ? 'mt-2' : ''}`}
             >
               <MarkdownRenderer content={formattedContent} isLight={isLight} />
             </AutoScrollDiv>

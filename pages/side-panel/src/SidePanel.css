@@ -32,6 +32,7 @@
 @import './styles/components/copilotkit/chat.v2.css';
 @import './styles/components/copilotkit/code-blocks.v2.css';
 @import './styles/components/copilotkit/thinking-block.v2.css';
+@import './styles/components/sessions/session-tabs.css';
 @import './styles/components/editors/tiptap.css';
 @import './styles/components/editors/codemirror.css';
 @import './styles/components/markdown/content.css';

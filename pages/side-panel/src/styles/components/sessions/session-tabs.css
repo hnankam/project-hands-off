@@ -1,0 +1,71 @@
+/* =============================================================================
+   SESSION TABS
+   Styles for session tabs in the side panel header
+   ============================================================================= */
+
+/* Session tabs container - ensure proper scroll behavior */
+.session-tabs-scroll {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+/* First tab rounded corner - only when Tailwind class is applied (sidepanel view) */
+/* Support the Tailwind rounded-tl-xl class with proper specificity */
+.session-tabs-scroll .rounded-tl-xl[data-session-id],
+.session-tabs-scroll .rounded-tl-xl[data-session-id] {
+  border-top-left-radius: 0.75rem !important; /* rounded-tl-xl = 12px/0.75rem */
+}
+
+/* Close button within session tabs */
+.session-tabs-scroll [data-session-id] button {
+  /* Base styles */
+  opacity: 0;
+  padding: 0.125rem; /* p-0.5 */
+  border-radius: 0.25rem; /* rounded */
+  transition: all 0.15s ease;
+  background-color: transparent;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  min-height: 16px;
+}
+
+/* Show close button on group hover */
+.session-tabs-scroll [data-session-id].group:hover button,
+.session-tabs-scroll [data-session-id]:hover button {
+  opacity: 1;
+}
+
+/* Close button hover - Light mode */
+.session-tabs-scroll [data-session-id] button:hover {
+  background-color: rgba(209, 213, 219, 0.8) !important; /* hover:bg-gray-300/80 */
+  color: rgb(55, 65, 81); /* hover:text-gray-700 */
+}
+
+/* Close button hover - Dark mode */
+.dark .session-tabs-scroll [data-session-id] button:hover,
+:root.dark .session-tabs-scroll [data-session-id] button:hover {
+  background-color: rgba(75, 85, 99, 0.8) !important; /* hover:bg-gray-600/80 */
+  color: rgb(229, 231, 235); /* hover:text-gray-200 */
+}
+
+/* Close button default text color - Light mode */
+.session-tabs-scroll [data-session-id] button {
+  color: rgb(156, 163, 175); /* text-gray-400 */
+}
+
+/* Close button default text color - Dark mode */
+.dark .session-tabs-scroll [data-session-id] button,
+:root.dark .session-tabs-scroll [data-session-id] button {
+  color: rgb(107, 114, 128); /* text-gray-500 */
+}
+
+/* Ensure close button icon is properly sized */
+.session-tabs-scroll [data-session-id] button svg {
+  width: 10px;
+  height: 8px;
+  stroke: currentColor;
+  fill: none;
+}

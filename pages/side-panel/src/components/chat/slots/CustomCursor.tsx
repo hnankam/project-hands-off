@@ -18,9 +18,9 @@ export type CustomCursorProps = React.HTMLAttributes<HTMLDivElement>;
  * Features:
  * - 11px x 11px circular dot
  * - Pulse animation (scale 1x to 1.5x, opacity 1 to 0.8)
- * - Theme-aware colors - pronounced blue accent
- * - Light mode: Blue (#3b82f6) - visible against light background
- * - Dark mode: Light Blue (#60a5fa) - visible against dark background
+ * - Theme-aware colors - matches assistant message text color
+ * - Light mode: Gray (#374151) - matches assistant message text
+ * - Dark mode: Light Gray (#d1d5db) - matches assistant message text
  * - Adaptive margin: larger top margin when no messages exist (initial state)
  * 
  * This cursor appears automatically when isRunning is true in CopilotKit.
@@ -33,8 +33,8 @@ export function CustomCursor({
   const { isLight } = useStorage(themeStorage);
   const { messages } = useCopilotChat();
   
-  // More pronounced cursor colors - blue accent that fits the UI theme
-  const cursorColor = isLight ? '#3b82f6' : '#60a5fa';
+  // Cursor color matches assistant message text color
+  const cursorColor = isLight ? '#374151' : '#d1d5db'; // gray-700 / gray-300
   
   // Adaptive margin: larger when no messages (initial state), smaller when continuing conversation
   // Consider 0-1 messages as "initial state" since the cursor itself represents the first streaming message

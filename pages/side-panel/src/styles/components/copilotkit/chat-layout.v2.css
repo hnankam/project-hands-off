@@ -41,7 +41,7 @@
 .copilot-chat-container.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]),
 .copilot-chat-container.font-size-small span:not([role=group] span):not([class*=gallery]) {
   font-size: 13px !important;
-  line-height: 1.4 !important;
+  /* line-height: 1.4 !important; */
 }
 
 .copilot-chat-container.font-size-medium,
@@ -49,7 +49,7 @@
 .copilot-chat-container.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]),
 .copilot-chat-container.font-size-medium span:not([role=group] span):not([class*=gallery]) {
   font-size: 16px !important;
-  line-height: 1.5 !important;
+  /* line-height: 1.5 !important; */
 }
 
 .copilot-chat-container.font-size-large,
@@ -57,7 +57,7 @@
 .copilot-chat-container.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]),
 .copilot-chat-container.font-size-large span:not([role=group] span):not([class*=gallery]) {
   font-size: 19px !important;
-  line-height: 1.55 !important;
+  /* line-height: 1.55 !important; */
 }
 
 /* Target CopilotKit V2 DOM structure */
@@ -136,14 +136,8 @@
   overflow-y: auto !important;
   overflow-x: hidden !important;
   order: 0 !important;
-  background-color: #ffffff;
 }
 
-/* Dark mode scrollable area */
-.copilot-chat-container.dark .overflow-y-auto,
-.dark .copilot-chat-container .overflow-y-auto {
-  background-color: #0D1117;
-}
 
 /* Messages container padding and sizing */
 .copilotKitMessagesContainer {

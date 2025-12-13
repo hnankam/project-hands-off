@@ -167,8 +167,8 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
         <div className="flex items-center gap-3">
           <GraphIcon className="h-5 w-5" color={isLight ? '#6b7280' : '#9ca3af'} />
           <div className="text-left">
-            <h3 className={`font-medium ${isLight ? 'text-gray-900' : 'text-white'}`}>Multi-Agent Graph</h3>
-            <p className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+            <h3 style={{ color: isLight ? '#374151' : '#d1d5db' }} className="font-medium">Multi-Agent Graph</h3>
+            <p style={{ color: isLight ? '#374151' : '#d1d5db' }} className="text-xs opacity-75">
               Iteration {state.iteration}/{state.max_iterations} • {completedSteps}/{totalSteps} steps
             </p>
           </div>
@@ -228,8 +228,8 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
           {/* Query */}
           {state.original_query && (
             <div className={`mb-3 p-3 rounded ${isLight ? 'bg-gray-50' : 'bg-[#1a2332]'}`}>
-              <p className={`text-xs font-medium mb-1 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Query</p>
-              <div className={`${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
+              <p style={{ color: isLight ? '#374151' : '#d1d5db' }} className="text-xs font-medium mb-1 opacity-75">Query</p>
+              <div style={{ color: isLight ? '#374151' : '#d1d5db' }}>
                 <MarkdownRenderer content={state.original_query} isLight={isLight} />
               </div>
             </div>
@@ -320,7 +320,8 @@ const FinalResult: FC<{ result: string; isLight: boolean }> = memo(({ result, is
           return (
             <div 
               key={`final-content-${idx}`}
-              className={`max-h-96 overflow-y-auto ${isLight ? 'text-gray-700' : 'text-gray-200'} ${idx > 0 ? 'mt-2' : ''}`}
+              style={{ color: isLight ? '#374151' : '#d1d5db' }}
+              className={`max-h-96 overflow-y-auto ${idx > 0 ? 'mt-2' : ''}`}
             >
               <MarkdownRenderer content={formattedContent} isLight={isLight} />
             </div>

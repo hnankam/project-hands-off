@@ -60,7 +60,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
       overflow: 'visible' as const,
       transition: 'all 0.2s ease-in-out' as const,
       marginTop: '1.2rem',
-      marginBottom: '1rem'
+      // marginBottom: '1rem'
     };
     
     if (isLight) {
@@ -69,7 +69,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
         ...baseStyles,
         backgroundColor: '#f9fafb', // Light mode background
         border: '1px solid #e5e7eb', // Light mode border
-        color: '#374151', // Light mode text color
+        color: '#374151', // Light mode text color - matches custom buttons (gray-700)
       };
     } else {
       // Dark mode: matches V1 copilotKitUserMessage
@@ -77,7 +77,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
         ...baseStyles,
         backgroundColor: '#151C24', // Dark mode background
         border: '1px solid #374151', // Dark mode border
-        color: '#d1d5db', // Dark mode text color
+        color: '#d1d5db', // Dark mode text color - matches custom buttons (gray-300)
       };
     }
   }, [isLight]);
@@ -101,7 +101,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
             borderRadius: '6px',
             border: 'none',
             backgroundColor: isLight ? '#ffffff' : '#0C1117',
-            color: isLight ? '#0C1117' : '#f9fafb',
+            color: isLight ? '#374151' : '#d1d5db', // Matches message text and buttons
             fontSize: '13px',
             lineHeight: '1.4',
             fontFamily: 'inherit',
@@ -127,7 +127,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
               borderRadius: '6px',
               border: 'none',
               backgroundColor: 'transparent',
-              color: isLight ? '#374151' : '#d1d5db',
+              color: isLight ? '#374151' : '#d1d5db', // Matches custom buttons
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -226,7 +226,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
                 borderRadius: '6px',
                 background: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.07)',
                 fontSize: 9,
-                color: isLight ? '#0C1117' : '#e5e7eb',
+                color: isLight ? '#374151' : '#d1d5db', // Matches message text and buttons
                 fontWeight: isLight ? 500 : 400,
                 maxWidth: '100%',
                 whiteSpace: 'nowrap',
@@ -264,7 +264,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
         style={{
           fontSize: '13px',
           lineHeight: '1.4',
-          color: isLight ? '#0C1117' : '#f9fafb',
+          color: 'inherit', // Inherit muted color from container
           maxHeight: '150px',
           overflowY: 'auto' as const,
           overflowX: 'visible' as const,

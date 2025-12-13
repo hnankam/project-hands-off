@@ -35,7 +35,7 @@
 :not(.dark) .copilotKitUserMessage {
   background-color: #f9fafb !important;
   border-color: #e5e7eb !important;
-  color: #374151 !important;
+  color: #374151 !important; /* gray-700 - matches custom buttons */
 }
 
 /* Dark mode user message */
@@ -43,7 +43,7 @@
 .copilot-chat-container.dark .copilotKitUserMessage {
   background-color: var(--copilot-kit-secondary-color) !important;
   border-color: var(--copilot-kit-border-color) !important;
-  color: #bcc1c7 !important;
+  color: #d1d5db !important; /* gray-300 - matches custom buttons */
 }
 
 /* ==========================================================
@@ -61,6 +61,18 @@
   overflow: visible !important;
   margin-bottom: 1.5rem !important;
   padding-bottom: 0 !important;
+}
+
+/* Light mode assistant message - muted text color (gray-700) */
+.copilot-chat-container:not(.dark) .copilotKitAssistantMessage,
+:not(.dark) .copilotKitAssistantMessage {
+  color: #374151 !important;
+}
+
+/* Dark mode assistant message - muted text color (gray-300) */
+.dark .copilotKitAssistantMessage,
+.copilot-chat-container.dark .copilotKitAssistantMessage {
+  color: #d1d5db !important;
 }
 
 /* Remove margin-bottom from assistant messages without controls */
@@ -98,7 +110,7 @@
 }
 
 .copilotKitMessageControlButton {
-  color: #4b5563 !important;
+  color: #374151 !important; /* gray-700 - matches user message buttons */
   margin-bottom: 0.75rem !important;
   transition: all 0.2s ease !important;
 }
@@ -121,7 +133,7 @@
 }
 
 .dark .copilotKitMessageControlButton {
-  color: #6b7280 !important;
+  color: #d1d5db !important; /* gray-300 - matches user message buttons */
   margin-bottom: 0.75rem !important;
 }
 
@@ -130,12 +142,12 @@
    ========================================================== */
 
 .copilotKitActivityDot {
-  background-color: #4b5563 !important;
+  background-color: #374151 !important; /* gray-700 - matches message text */
   margin-top: 0.5rem !important;
 }
 
 .dark .copilotKitActivityDot {
-  background-color: #6b7280 !important;
+  background-color: #d1d5db !important; /* gray-300 - matches message text */
   margin-top: 0.5rem !important;
 }
 

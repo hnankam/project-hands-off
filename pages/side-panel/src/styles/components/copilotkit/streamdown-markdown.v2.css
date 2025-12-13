@@ -18,6 +18,7 @@
 .copilot-chat-container [class*="prose"] {
   font-size: 12.5px !important;
   /* line-height: 1.5 !important; */
+  color: inherit !important; /* Inherit muted color from parent (assistant message) */
 }
 
 /* ==========================================================
@@ -87,6 +88,7 @@
 .copilot-chat-container [class*="prose"] p {
   margin: 0.5em 0 !important;
   line-height: 1.5 !important;
+  color: inherit !important; /* Inherit muted color from parent */
 }
 
 .copilot-chat-container [data-streamdown="paragraph"]:first-child,
@@ -113,6 +115,7 @@
   margin: 0.5em 0 !important;
   padding-left: 24px !important;
   line-height: 1.3 !important;
+  color: inherit !important; /* Inherit muted color from parent */
 }
 
 .copilot-chat-container [data-streamdown="list-item"],
@@ -121,6 +124,7 @@
   margin: 0.3em 0 !important;
   padding-left: 4px !important;
   line-height: 1.3 !important;
+  color: inherit !important; /* Inherit muted color from parent */
 }
 
 /* Unordered list markers */

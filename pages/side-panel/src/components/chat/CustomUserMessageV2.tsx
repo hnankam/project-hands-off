@@ -220,10 +220,10 @@ const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
     // Extract text content (handles both string and multimodal array)
     const currentText = textContent || '';
     
-    // Save current content to edit history before editing
+      // Save current content to edit history before editing
     setEditHistory(prev => [...prev, currentText]);
     setEditedContent(currentText);
-    setIsEditing(true);
+      setIsEditing(true);
   }, [textContent]);
   
   // Handle save edit
@@ -325,7 +325,7 @@ const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
       overflow: 'visible',
       borderRadius: '0 10px 10px 0',
       marginRight: '5px',
-      marginBottom: '1.3rem',
+      marginBottom: '0.33rem',
       paddingLeft: '35px',
     };
     

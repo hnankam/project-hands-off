@@ -497,25 +497,21 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         finishTranscribeButton,
         audioRecorder,
       }) => {
-        // Wrap addMenuButton to handle clicks without cloning (avoids ref errors)
-        // DropdownMenu's wrapper div handles clicks, so this wrapper just ensures
-        // clicks work even if button is disabled
-        const enabledAddMenuButton = (
-          <div className="add-menu-button-wrapper" style={{ display: 'inline-block', cursor: 'pointer' }}>
-            {addMenuButton}
-          </div>
-        );
+        // Pass addMenuButton directly to DropdownMenu - no cloning to avoid ref errors
+        // CSS will handle hover styles
+        const enabledAddMenuButton = addMenuButton;
         
-        // Clone sendButton with custom styles based on running state
+        // Clone sendButton with custom styles - matching hover colors of other buttons
         const styledSendButton = React.isValidElement(sendButton)
           ? React.cloneElement(sendButton as React.ReactElement<any>, {
               style: {
                 ...((sendButton as any).props?.style || {}),
-                // Subtle colors that fit the UI theme
-                backgroundColor: props.isRunning 
-                  ? (isLight ? '#f97316' : '#fb923c')  // Subtle orange when running (stop)
-                  : (isLight ? '#60a5fa' : '#3b82f6'), // Subtle blue when not running (send)
-                color: backgroundColor, // Arrow color matches input container background
+                // Background matches hover color of other buttons
+                backgroundColor: isLight 
+                  ? 'rgba(229, 231, 235, 0.8)'  // gray-200/80 - matches hover
+                  : 'rgba(55, 65, 81, 0.6)', // gray-700/60 - matches hover
+                // Text/icon color matches other buttons
+                color: isLight ? '#374151' : '#d1d5db', // gray-700 / gray-300 - matches button text
               },
               onMouseEnter: (e: React.MouseEvent<HTMLButtonElement>) => {
                 e.currentTarget.style.transform = 'scale(1.05)';
@@ -556,10 +552,10 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                 backgroundColor,
                 border: `1px solid ${borderColor}`,
                 borderRadius: '14px',
-                padding: '0.5rem 0.5rem',
+                padding: '0.25rem 0rem 0.1rem 0rem',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '0.5rem',
+                gap: '0rem',
                 boxShadow: 'none',
                 WebkitBoxShadow: 'none',
                 position: 'relative',
@@ -581,7 +577,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                     zIndex: 5,
                   }}
                 >
-                  <span style={{ fontSize: '12px', opacity: 0.8 }}>
+                  <span style={{ fontSize: '12px', opacity: 0.8, color: isLight ? '#374151' : '#d1d5db' }}>
                     Drop files to attach
                   </span>
                 </div>
@@ -617,7 +613,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                       borderRadius: '6px',
                       background: bgCol,
                       fontSize: '11px',
-                      color: isLight ? '#0C1117' : '#e5e7eb',
+                      color: isLight ? '#374151' : '#d1d5db', // Matches message text and buttons
                       maxWidth: '100%',
                       whiteSpace: 'nowrap',
                     };
@@ -683,12 +679,13 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.5rem',
+                  gap: '0rem',
+                  paddingBottom: '2.5px',
                   justifyContent: 'space-between',
                 }}
               >
                   {/* Left side buttons */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.05rem', marginLeft: '6px' }}>
                     {/* Upload dropdown menu - using CopilotKit's addMenuButton as trigger */}
                     <DropdownMenu
                       trigger={enabledAddMenuButton}
@@ -762,11 +759,11 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                   </div>
                 
                 {/* Right side: Send button */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                   {audioRecorder}
-                  {cancelTranscribeButton}
-                  {finishTranscribeButton}
-                  {startTranscribeButton}
+                  <div className="custom-input-hover-button">{cancelTranscribeButton}</div>
+                  <div className="custom-input-hover-button">{finishTranscribeButton}</div>
+                  <div className="custom-input-hover-button">{startTranscribeButton}</div>
                   {styledSendButton}
                 </div>
               </div>

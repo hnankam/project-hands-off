@@ -111,10 +111,10 @@ export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatS
       // Fallback to setMessages if addMessage doesn't exist
       const currentMessages = agent.messages ?? [];
       agent.setMessages([...currentMessages, message]);
-      
+    
       // Try to trigger run via copilotkit.runAgent
       if (copilotkit && typeof copilotkit.runAgent === 'function') {
-        await copilotkit.runAgent({ agent: agentId as any });
+      await copilotkit.runAgent({ agent: agentId as any });
       } else {
         console.warn('[useCopilotChat] copilotkit.runAgent() not available, agent may not run');
       }

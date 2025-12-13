@@ -11,7 +11,7 @@ export interface CustomDisclaimerProps extends React.HTMLAttributes<HTMLDivEleme
 }
 
 /** Default disclaimer text */
-const DEFAULT_DISCLAIMER_TEXT = "AI can make mistakes. Please verify important information";
+const DEFAULT_DISCLAIMER_TEXT = "AI can make mistakes. Please verify important information.";
 
 /**
  * CustomDisclaimer - Disclaimer text below chat input

@@ -235,13 +235,13 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
                     logger.debug(f"  - {att['name']} ({att['type']})")
             
             return text, attachments
-            
+        
     except (json.JSONDecodeError, TypeError, AttributeError):
         # Not structured JSON format - treat as plain text with no attachments
         pass
     
     # No attachments found, return content as-is
-    return content, []
+        return content, []
 
 
 async def keep_recent_messages(

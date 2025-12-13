@@ -270,7 +270,8 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
             if (!isInputEnabledRef.current) {
               return 'Please select an agent and model to start chatting';
             }
-            return placeholder || context.labels?.chatInputPlaceholder || 'Type a message... (/ for commands, @ for context)';
+            // return placeholder || context.labels?.chatInputPlaceholder || 'Type a message... (/ for commands, @ for context)';
+            return 'Type a message... (/ for commands, @ for context)';
           },
         }),
         EnterToSend.configure({
@@ -438,14 +439,14 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
     }, [editor]);
 
     if (!editor) {
-      return <div ref={containerRef} style={{ minHeight: '24px' }} />;
+      return <div ref={containerRef} style={{ minHeight: '32px' }} />;
     }
 
     return (
       <div 
         ref={containerRef}
         style={{ 
-          minHeight: '24px',
+          minHeight: '32px', /* 2 lines default with padding */
           width: '100%',
         }}
       >

@@ -14,6 +14,8 @@ import {
   CustomThumbsDownButton,
   CustomReadAloudButton,
 } from './slots/CustomAssistantMessageButtons';
+import { useStorage } from '@extension/shared';
+import { themeStorage } from '@extension/storage';
 
 type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMessage>;
 
@@ -80,6 +82,7 @@ type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMes
 const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (props) => {
   const [copied, setCopied] = useState(false);
   const { message, messages, isRunning } = props;
+  const { isLight } = useStorage(themeStorage);
   
   // Helper function to extract text from message content
   // Excludes <think> and <thinking> tags and their content
@@ -296,10 +299,10 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         if (effectiveIsRunning || message?.role !== 'assistant' || !hasContent || !isLastInSeries) {
           console.log('[CustomAssistantMessageV2] Hiding toolbar for message:', message?.id);
           return (
-            <>
+            <div style={{ color: isLight ? '#374151' : '#d1d5db' }}>
               {markdownRenderer}
               {toolCallsView}
-            </>
+            </div>
           );
         }
 
@@ -340,11 +343,11 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         );
         
         return (
-          <>
+          <div style={{ color: isLight ? '#374151' : '#d1d5db' }}>
             {markdownRenderer}
             {toolCallsView}
             {reorderedToolbar}
-          </>
+          </div>
         );
       }}
     </CopilotChatAssistantMessage>
