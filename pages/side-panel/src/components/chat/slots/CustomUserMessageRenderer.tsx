@@ -60,6 +60,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
       overflow: 'visible' as const,
       transition: 'all 0.2s ease-in-out' as const,
       marginTop: '1.2rem',
+      // marginLeft: '10px',
       // marginBottom: '1rem'
     };
     

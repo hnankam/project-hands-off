@@ -22,10 +22,31 @@
   overflow: hidden;
   font-size: 14px;
   line-height: 1.4;
+  /* max-width: 56rem !important; */
   transition: opacity 0.2s ease-in-out;
   background-color: #ffffff;
 }
 
+.copilot-chat-container div[style*="overflow: auto"] > :first-child {
+  max-width: 56rem !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.copilot-chat-container div[style*="overflow: auto"] div.max-w-3xl.mx-auto {
+  max-width: 100% !important;
+  padding-left: 10px !important;
+}
+
+.copilot-chat-wrapper div[keyboardheight] {
+  padding: 0px 10px !important;
+}
+
+.copilot-chat-wrapper div[keyboardheight] > :first-child {
+  max-width: 56rem !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
 /* Dark mode background - matches home/admin pages */
 .copilot-chat-container.dark {
   background-color: #0D1117;
