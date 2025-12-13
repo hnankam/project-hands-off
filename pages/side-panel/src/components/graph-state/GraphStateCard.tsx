@@ -13,7 +13,7 @@ import type { FC } from 'react';
 import React, { useState, useMemo, useEffect, useRef, memo } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
-import { MarkdownRenderer } from '../tiptap/MarkdownRenderer';
+import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { 
   SpinningLoader, 
   CheckIcon, 
@@ -230,7 +230,7 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
             <div className={`mb-3 p-3 rounded ${isLight ? 'bg-gray-50' : 'bg-[#1a2332]'}`}>
               <p style={{ color: isLight ? '#374151' : '#d1d5db' }} className="text-xs font-medium mb-1 opacity-75">Query</p>
               <div style={{ color: isLight ? '#374151' : '#d1d5db' }}>
-                <MarkdownRenderer content={state.original_query} isLight={isLight} />
+                <CustomMarkdownRenderer content={state.original_query} isLight={isLight} />
               </div>
             </div>
           )}
@@ -323,7 +323,7 @@ const FinalResult: FC<{ result: string; isLight: boolean }> = memo(({ result, is
               style={{ color: isLight ? '#374151' : '#d1d5db' }}
               className={`max-h-96 overflow-y-auto ${idx > 0 ? 'mt-2' : ''}`}
             >
-              <MarkdownRenderer content={formattedContent} isLight={isLight} />
+              <CustomMarkdownRenderer content={formattedContent} isLight={isLight} />
             </div>
           );
         }

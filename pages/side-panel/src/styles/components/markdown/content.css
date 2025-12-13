@@ -237,7 +237,8 @@
 }
 
 .markdown-content li {
-  margin: 0.2em 0;
+  margin: 0.4em 0;
+  line-height: 1.5;
 }
 
 .markdown-content ul > li {
@@ -400,6 +401,32 @@
 [data-graph-state] .markdown-content ul ul ul > li,
 [data-graph-state] .markdown-content ol ul ul > li {
   list-style-type: square !important;
+}
+
+/* ==========================================================
+   ACTION STATUS OUTPUT SECTIONS
+   Ensure proper list item spacing in ActionStatus components
+   ========================================================== */
+.action-status .markdown-content ul,
+.action-status .markdown-content ol {
+  margin: 0.5em 0 !important;
+  padding-left: 20px !important;
+}
+
+.action-status .markdown-content li {
+  margin: 0.4em 0 !important;
+  line-height: 1.5 !important;
+  padding-left: 4px !important;
+}
+
+.action-status .markdown-content ul > li {
+  list-style-type: disc !important;
+  list-style-position: outside !important;
+}
+
+.action-status .markdown-content ol > li {
+  list-style-type: decimal !important;
+  list-style-position: outside !important;
 }
 
 /* ==========================================================

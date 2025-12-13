@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
-import { MarkdownRenderer } from '../tiptap/MarkdownRenderer';
+import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { CodeBlock } from '../chat/slots/CustomCodeBlock';
 
 /**
@@ -339,7 +339,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
                       maxHeight: 200,
                     }}
                   >
-                    <MarkdownRenderer content={content} isLight={isLight} />
+                    <CustomMarkdownRenderer content={content} isLight={isLight} />
                   </div>
                 ) : (
                   <div ref={inputScrollRef as any} style={{ maxHeight: 200, overflow: 'auto' }}>
@@ -377,7 +377,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
                       maxHeight: 200,
                     }}
                   >
-                    <MarkdownRenderer content={content} isLight={isLight} />
+                    <CustomMarkdownRenderer content={content} isLight={isLight} />
                   </div>
                 ) : (
                   <div ref={outputScrollRef as any} style={{ maxHeight: 200, overflow: 'auto' }}>
@@ -416,7 +416,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
                       color: isLight ? '#991b1b' : '#fca5a5',
                     }}
                   >
-                    <MarkdownRenderer content={content} isLight={isLight} />
+                    <CustomMarkdownRenderer content={content} isLight={isLight} />
                   </div>
                 ) : (
                   <div ref={errorScrollRef as any} style={{ maxHeight: 200, overflow: 'auto' }}>

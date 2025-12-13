@@ -7,7 +7,7 @@
 
 import type { FC } from 'react';
 import React, { useState, useMemo, useEffect, memo, useRef, useCallback } from 'react';
-import { MarkdownRenderer } from '../tiptap/MarkdownRenderer';
+import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { 
   SpinningLoader, 
   CheckIcon, 
@@ -643,7 +643,7 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
             <div className={`mt-2 p-2.5 rounded-md ${isLight ? 'bg-slate-50' : 'bg-slate-800/50'}`}>
               <p style={{ color: isLight ? '#374151' : '#d1d5db' }} className="text-xs font-medium mb-1.5 opacity-75">Prompt</p>
               <div style={{ color: isLight ? '#374151' : '#d1d5db' }} className="max-h-32 overflow-y-auto text-sm">
-                <MarkdownRenderer content={step.prompt || ''} isLight={isLight} />
+                <CustomMarkdownRenderer content={step.prompt || ''} isLight={isLight} />
               </div>
             </div>
           )}
@@ -750,7 +750,7 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
                               style={{ color: isLight ? '#374151' : '#d1d5db' }}
                               className="mt-2 text-xs max-h-48 overflow-y-auto"
                             >
-                              <MarkdownRenderer 
+                              <CustomMarkdownRenderer 
                                 content={formatToolArgsAsMarkdown(tc.tool_name, tc.args)} 
                                 isLight={isLight} 
                               />
@@ -768,7 +768,7 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
                                 style={{ color: isLight ? '#374151' : '#d1d5db' }}
                                 className="text-xs max-h-60 overflow-y-auto"
                               >
-                                <MarkdownRenderer content={formatToolResultAsMarkdown(tc.tool_name, tc.result)} isLight={isLight} />
+                                <CustomMarkdownRenderer content={formatToolResultAsMarkdown(tc.tool_name, tc.result)} isLight={isLight} />
                               </AutoScrollDiv>
                             </div>
                           )}
@@ -970,7 +970,7 @@ const ResultContent: FC<{ step: GraphStep; isLight: boolean; hasProcessContent: 
               style={{ color: isLight ? '#374151' : '#d1d5db' }}
               className={`max-h-64 overflow-y-auto text-sm ${idx > 0 ? 'mt-2' : ''}`}
             >
-              <MarkdownRenderer content={formattedContent} isLight={isLight} />
+              <CustomMarkdownRenderer content={formattedContent} isLight={isLight} />
             </AutoScrollDiv>
           );
         }

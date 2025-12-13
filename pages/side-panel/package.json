@@ -42,6 +42,7 @@
     "firebase": "^11.1.0",
     "html2canvas": "1.4.1",
     "mermaid": "^10.9.1",
+    "rehype-raw": "^7.0.0",
     "streamdown": "^1.6.10",
     "tiptap-markdown": "^0.9.0",
     "virtua": "^0.47.0",

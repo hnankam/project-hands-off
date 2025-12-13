@@ -2,7 +2,7 @@ import type { FC } from 'react';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
-import { MarkdownRenderer } from '../tiptap/MarkdownRenderer';
+import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
 
 // Persist open state across remounts (for Virtua virtualization)
 const openStateCache: Map<string, boolean> = new Map();
@@ -217,7 +217,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
   const renderedContent = useMemo(() => {
     // If children is a string, render it as markdown using MarkdownRenderer for better formatting
     if (typeof sanitizeContent === 'string') {
-      return <MarkdownRenderer content={sanitizeContent} isLight={isLight} />;
+      return <CustomMarkdownRenderer content={sanitizeContent} isLight={isLight} />;
     }
     // Otherwise, render React nodes as-is
     return sanitizeContent;

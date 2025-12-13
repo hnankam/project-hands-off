@@ -7,7 +7,7 @@ import {
   ImageRenderer,
   type UserMessageProps,
 } from '../../hooks/copilotkit';
-import { MarkdownRenderer } from '../tiptap/MarkdownRenderer';
+import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
 
 /**
@@ -556,7 +556,7 @@ export const CustomUserMessage: React.FC<UserMessageProps> = ({
                 lineHeight: '1.4',
                 color: isLight ? '#0C1117' : '#f9fafb',
               }}>
-              <MarkdownRenderer content={cleanedContent} isLight={isLight} />
+              <CustomMarkdownRenderer content={cleanedContent} isLight={isLight} />
             </div>
           )}
         </div>

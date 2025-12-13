@@ -7,7 +7,7 @@
 
 import type { FC } from 'react';
 import React, { useState, useRef, memo } from 'react';
-import { MarkdownRenderer } from '../tiptap/MarkdownRenderer';
+import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 
 interface InlineThinkingBlockProps {
   content: string;
@@ -124,7 +124,7 @@ export const InlineThinkingBlock: FC<InlineThinkingBlockProps> = memo(({
             }`}
           >
             <div className="thinking-block-content">
-              <MarkdownRenderer content={content} isLight={isLight} />
+              <CustomMarkdownRenderer content={content} isLight={isLight} />
             </div>
           </div>
         </div>

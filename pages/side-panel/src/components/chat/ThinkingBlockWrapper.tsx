@@ -14,28 +14,51 @@ import { ThinkingBlock } from './ThinkingBlock';
 interface ThinkingBlockWrapperProps {
   children?: React.ReactNode;
   instanceId?: string;
+  /** Explicit completion state - if provided, uses this instead of content-change detection */
+  isComplete?: boolean;
 }
 
 /**
  * Wrapper component that detects when content stops changing
  * and passes isComplete prop to ThinkingBlock
+ * 
+ * If isComplete prop is provided, uses that directly (e.g., when closing tag is encountered).
+ * Otherwise, falls back to content-change detection for streaming scenarios.
  */
 export const ThinkingBlockWrapper: React.FC<ThinkingBlockWrapperProps> = ({
   children,
   instanceId,
+  isComplete: propIsComplete,
 }) => {
-  const [isComplete, setIsComplete] = useState(false);
+  const [isComplete, setIsComplete] = useState(propIsComplete ?? false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const prevChildrenRef = useRef<React.ReactNode>(children);
   const initialCheckDoneRef = useRef(false);
+
+  // If isComplete prop is provided, use it directly (closing tag encountered)
+  useEffect(() => {
+    if (propIsComplete !== undefined) {
+      setIsComplete(propIsComplete);
+      // Clear any pending timers when prop indicates completion
+      if (propIsComplete && timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    }
+  }, [propIsComplete]);
 
   // Convert children to string for comparison
   const childrenString = typeof children === 'string' 
     ? children 
     : JSON.stringify(children);
 
+  // Only use content-change detection if isComplete prop is not provided
   // Initial check on mount - if content doesn't change within 200ms, consider it complete (not streaming)
   useEffect(() => {
+    if (propIsComplete !== undefined) {
+      return; // Skip if prop is provided - no cleanup needed
+    }
+    
     if (!initialCheckDoneRef.current) {
       const initialTimer = setTimeout(() => {
         // If we reach here and content hasn't triggered any changes, it's static/complete
@@ -49,10 +72,15 @@ export const ThinkingBlockWrapper: React.FC<ThinkingBlockWrapperProps> = ({
         clearTimeout(initialTimer);
       };
     }
-  }, []); // Only run on mount
+    
+    return; // Explicit return for code path where initialCheckDoneRef.current is true
+  }, [propIsComplete, isComplete]); // Only run on mount or when prop changes
 
   // Detect when content stops changing (for streaming content)
+  // Only use this if isComplete prop is not provided
   useEffect(() => {
+    if (propIsComplete !== undefined) return; // Skip if prop is provided
+    
     const prevString = typeof prevChildrenRef.current === 'string'
       ? prevChildrenRef.current
       : JSON.stringify(prevChildrenRef.current);
@@ -80,7 +108,7 @@ export const ThinkingBlockWrapper: React.FC<ThinkingBlockWrapperProps> = ({
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [childrenString, children]);
+  }, [childrenString, children, propIsComplete]);
 
   // Generate a unique instance ID if not provided
   const finalInstanceId = instanceId || `thinking-wrapper-${Date.now()}`;

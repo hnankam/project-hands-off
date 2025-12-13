@@ -45,5 +45,5 @@ export * from './tiptap/EnterToSendExtension';
 export * from './tiptap/SlashCommandExtension';
 export * from './tiptap/MentionExtension';
 export * from './tiptap/markdownSerializer';
-export { MarkdownRenderer } from './tiptap/MarkdownRenderer';
+export { CustomMarkdownRenderer as MarkdownRenderer } from './chat/CustomMarkdownRenderer';
 

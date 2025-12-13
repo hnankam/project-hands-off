@@ -4,7 +4,7 @@ import { authClient } from '../../lib/auth-client';
 import { OrganizationSelector, TeamSelector, TeamMultiSelector, ModelMultiSelector, ToolMultiSelector, AuxiliaryAgentSelector } from './selectors';
 import { Radio, Checkbox } from './form-controls';
 import { RichTextEditor, CodeMirrorJsonEditor } from './editors';
-import { MarkdownRenderer } from '../tiptap/MarkdownRenderer';
+import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { AdminConfirmDialog, SaveTemplateDialog } from './modals';
 import type { TemplateFormData } from './modals';
 import type { AuxiliaryAgentType } from './types';
@@ -2547,7 +2547,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                             <div 
                               className={cn('text-xs p-2 rounded max-h-32 overflow-auto agents-tab-scrollbar', isLight ? 'bg-gray-50 text-gray-800' : 'bg-gray-900/40 text-gray-200')}
                             >
-                              <MarkdownRenderer 
+                              <CustomMarkdownRenderer 
                                 content={agent.promptTemplate} 
                                 isLight={isLight}
                                 className="agent-instructions-markdown"

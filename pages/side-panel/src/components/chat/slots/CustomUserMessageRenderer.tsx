@@ -8,7 +8,7 @@
 import React from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
-import { MarkdownRenderer } from '../../tiptap/MarkdownRenderer';
+import { CustomMarkdownRenderer } from '../../chat/CustomMarkdownRenderer';
 
 export interface CustomUserMessageRendererProps {
   content: string;
@@ -271,7 +271,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
           overflowX: 'visible' as const,
         }}
       >
-        <MarkdownRenderer content={content} isLight={isLight} />
+        <CustomMarkdownRenderer content={content} isLight={isLight} />
       </div>
     </div>
   );
