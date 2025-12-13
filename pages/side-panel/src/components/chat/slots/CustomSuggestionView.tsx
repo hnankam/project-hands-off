@@ -58,7 +58,7 @@ export const CustomSuggestionPill: React.FC<CustomSuggestionPillProps> = ({
         bg: '#151C24',        // Matches status bar/session header
         hoverBg: '#2d333b',
         text: '#d1d5db',
-        border: '#30363d',
+        border: '#374151',    // Matches user message border
       };
 
   return (

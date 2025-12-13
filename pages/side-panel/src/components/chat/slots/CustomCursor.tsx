@@ -8,6 +8,7 @@
 import React from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
+import { useCopilotChat } from '../../../hooks/copilotkit';
 
 export type CustomCursorProps = React.HTMLAttributes<HTMLDivElement>;
 
@@ -17,9 +18,10 @@ export type CustomCursorProps = React.HTMLAttributes<HTMLDivElement>;
  * Features:
  * - 11px x 11px circular dot
  * - Pulse animation (scale 1x to 1.5x, opacity 1 to 0.8)
- * - Theme-aware colors matching V1 activity dots
- * - Light mode: Blue (#3b82f6) - matches loading/activity indicators
- * - Dark mode: Blue (#60a5fa) - lighter shade for visibility
+ * - Theme-aware colors - pronounced blue accent
+ * - Light mode: Blue (#3b82f6) - visible against light background
+ * - Dark mode: Light Blue (#60a5fa) - visible against dark background
+ * - Adaptive margin: larger top margin when no messages exist (initial state)
  * 
  * This cursor appears automatically when isRunning is true in CopilotKit.
  */
@@ -29,9 +31,15 @@ export function CustomCursor({
   ...props 
 }: CustomCursorProps): React.JSX.Element {
   const { isLight } = useStorage(themeStorage);
+  const { messages } = useCopilotChat();
   
-  // Activity dot colors matching V1
-  const cursorColor = isLight ? '#3b82f6' : '#60a5fa'; // Blue-500 / Blue-400
+  // More pronounced cursor colors - blue accent that fits the UI theme
+  const cursorColor = isLight ? '#3b82f6' : '#60a5fa';
+  
+  // Adaptive margin: larger when no messages (initial state), smaller when continuing conversation
+  // Consider 0-1 messages as "initial state" since the cursor itself represents the first streaming message
+  const hasMessages = messages.length > 1;
+  const marginTop = hasMessages ? '0.25rem' : '1rem';
   
   return (
     <div
@@ -42,6 +50,7 @@ export function CustomCursor({
         borderRadius: '50%',
         backgroundColor: cursorColor,
         marginLeft: '4px',
+        marginTop,
         animation: 'pulse-cursor 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite',
         ...style,
       }}

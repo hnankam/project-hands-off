@@ -1,10 +1,11 @@
 """API route handlers for agent endpoints."""
 
-from typing import Any
+from typing import Any, Dict
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import asyncio
+import json
 
 from config import DEBUG, logger
 from config.db_loaders import _sync_cache as _context_cache  # for readiness check
@@ -91,6 +92,81 @@ def _trigger_prewarm(organization_id: str, background_tasks: BackgroundTasks) ->
     if organization_id not in _prewarmed_orgs:
         _prewarmed_orgs.add(organization_id)
         background_tasks.add_task(prewarm_user_context, organization_id, None)
+
+
+def _preprocess_multimodal_content(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Preprocess multimodal content arrays to structured JSON format.
+    
+    TEMPORARY WORKAROUND: The AG-UI protocol supports content as an array of InputContent objects,
+    but the Python ag_ui library's Pydantic models only support string content.
+    
+    This function converts AG-UI multimodal format:
+    - content: [{ type: 'text', text: '...' }, { type: 'binary', url: '...', ... }]
+    
+    To structured JSON string that message_processor.py can parse:
+    - content: '{"text": "...", "attachments": [{"url": "...", "filename": "...", "mimeType": "..."}]}'
+    
+    This format is:
+    - Cleaner than HTML comment manifests (no regex parsing)
+    - Easy to validate and parse (direct JSON)
+    - Simple to remove when pydantic-ai adds native multimodal support
+    
+    Args:
+        data: The incoming request JSON
+        
+    Returns:
+        Preprocessed data with content arrays converted to JSON strings
+    """
+    if not isinstance(data, dict):
+        return data
+    
+    # Process messages array
+    messages = data.get('messages', [])
+    if not isinstance(messages, list):
+        return data
+    
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+            
+        # Only process user messages with array content
+        if message.get('role') != 'user':
+            continue
+            
+        content = message.get('content')
+        if not isinstance(content, list):
+            continue
+        
+        # Extract text and binary parts
+        text_parts = []
+        binary_parts = []
+        
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+                
+            part_type = part.get('type')
+            if part_type == 'text':
+                text = part.get('text', '')
+                if text:
+                    text_parts.append(text)
+            elif part_type == 'binary':
+                binary_parts.append({
+                    'url': part.get('url'),
+                    'filename': part.get('filename'),
+                    'mimeType': part.get('mimeType'),
+                })
+        
+        # Build structured JSON content
+        structured_content = {
+            'text': '\n'.join(text_parts),
+            'attachments': binary_parts if binary_parts else []
+        }
+        
+        # Serialize to JSON string (message_processor.py will parse this)
+        message['content'] = json.dumps(structured_content, ensure_ascii=False)
+    
+    return data
 
 
 async def _resolve_tracking_ids(
@@ -276,7 +352,10 @@ def register_agent_routes(app: FastAPI) -> None:
 
             accept = request.headers.get('accept', SSE_CONTENT_TYPE)
             try:
-                run_input = RunAgentInput.model_validate(await request.json())
+                request_data = await request.json()
+                # Preprocess multimodal content arrays to manifest format
+                request_data = _preprocess_multimodal_content(request_data)
+                run_input = RunAgentInput.model_validate(request_data)
             except ValidationError as e:  
                 return JSONResponse(
                     content=e.errors(),

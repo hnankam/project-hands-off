@@ -35,6 +35,43 @@ import {
 // Type for the component props - derived from CopilotChatUserMessage
 type UserMessageProps = React.ComponentProps<typeof CopilotChatUserMessage>;
 
+// Attachment type for display
+type AttachmentInfo = {
+  filename: string;
+  mimeType: string;
+  url: string;
+};
+
+/**
+ * Helper: Extract attachments from multimodal content array
+ */
+const extractAttachments = (content: any): AttachmentInfo[] => {
+  if (!Array.isArray(content)) return [];
+  
+  return content
+    .filter((item: any) => item?.type === 'binary')
+    .map((item: any) => ({
+      filename: item.filename || 'file',
+      mimeType: item.mimeType || 'application/octet-stream',
+      url: item.url || '',
+    }))
+    .filter((att: AttachmentInfo) => att.url); // Only include items with valid URLs
+};
+
+/**
+ * Helper: Extract text content from multimodal content array
+ */
+const extractTextContent = (content: any): string => {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  
+  return content
+    .filter((item: any) => item?.type === 'text')
+    .map((item: any) => item.text || '')
+    .join('\n')
+    .trim();
+};
+
 /**
  * CustomUserMessageV2Component - Wrapper with theme support and full width message renderer
  * 
@@ -89,6 +126,15 @@ const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const { messages, setMessages, reloadMessages } = useCopilotChat();
   const sessionId = useChatSessionIdSafe();
+  
+  // Extract attachments and text from message content
+  const attachments = useMemo(() => {
+    return extractAttachments(message?.content);
+  }, [message?.content]);
+  
+  const textContent = useMemo(() => {
+    return extractTextContent(message?.content);
+  }, [message?.content]);
   
   // Find the index of the current message
   const messageIndex = useMemo(() => {
@@ -171,23 +217,47 @@ const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
   
   // Handle edit button click - enter edit mode
   const handleEditClick = useCallback(() => {
-    const currentContent = (message as any)?.content || '';
-    if (typeof currentContent === 'string') {
-      // Save current content to edit history before editing
-      setEditHistory(prev => [...prev, currentContent]);
-      setEditedContent(currentContent);
-      setIsEditing(true);
-    }
-  }, [message]);
+    // Extract text content (handles both string and multimodal array)
+    const currentText = textContent || '';
+    
+    // Save current content to edit history before editing
+    setEditHistory(prev => [...prev, currentText]);
+    setEditedContent(currentText);
+    setIsEditing(true);
+  }, [textContent]);
   
   // Handle save edit
   const handleSaveEdit = useCallback(() => {
     if (!messages || messageIndex === -1) return;
     
+    const currentMessage = messages[messageIndex];
+    const currentContent = (currentMessage as any)?.content;
+    
+    // Preserve attachments if they exist in the original message
+    let newContent: any;
+    if (Array.isArray(currentContent)) {
+      // Message has multimodal content - preserve binary parts, update text
+      newContent = currentContent.map(part => {
+        if (part?.type === 'text') {
+          return { type: 'text', text: editedContent };
+        }
+        return part; // Keep binary parts as-is
+      });
+      
+      // If there was no text part originally, add it
+      const hasTextPart = currentContent.some(p => p?.type === 'text');
+      if (!hasTextPart && editedContent.trim()) {
+        newContent = [{ type: 'text', text: editedContent }, ...newContent];
+      }
+    } else {
+      // Simple string content
+      newContent = editedContent;
+    }
+    
     const updatedMessages = [...messages];
     updatedMessages[messageIndex] = {
       ...updatedMessages[messageIndex],
-      content: editedContent as any,
+      content: newContent,
     };
     setMessages(updatedMessages);
     setIsEditing(false);
@@ -283,7 +353,7 @@ const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
   // This prevents duplicate buttons since we're manually reordering
   const additionalToolbarItems = null;
   
-  // Custom message renderer that handles edit mode
+  // Custom message renderer that handles edit mode and attachments
   const MessageRendererWithEdit = useCallback((rendererProps: { content: string; className?: string }) => {
     if (isEditing) {
       return (
@@ -296,11 +366,12 @@ const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
           onCancel={handleCancelEdit}
           textareaRef={textareaRef}
           onKeyDown={handleKeyDown}
+          attachments={attachments}
         />
       );
     }
-    return <CustomUserMessageRenderer {...rendererProps} />;
-  }, [isEditing, editedContent, handleSaveEdit, handleCancelEdit, handleKeyDown]);
+    return <CustomUserMessageRenderer {...rendererProps} attachments={attachments} />;
+  }, [isEditing, editedContent, handleSaveEdit, handleCancelEdit, handleKeyDown, attachments]);
   
   // Custom edit button that triggers edit mode
   const CustomEditButtonWithHandler = useCallback((buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>) => {

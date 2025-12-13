@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Debug mode configuration (default: true in development, false in production)
-DEBUG = os.getenv("DEBUG", "false").lower() in {"1", "true", "yes"}
+DEBUG = True #os.getenv("DEBUG", "false").lower() in {"1", "true", "yes"}
 
 def setup_logging() -> logging.Logger:
     """Configure and return the application logger."""

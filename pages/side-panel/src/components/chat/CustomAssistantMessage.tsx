@@ -596,16 +596,17 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
     const customOpenTags = openTags.filter(tag => customTagNames.has(tag.name));
     
     if (customOpenTags.length > 0) {
-      // Find the last custom tag (most recent during streaming)
-      const lastCustomTag = customOpenTags[customOpenTags.length - 1];
+      // Find the FIRST custom tag (structural tags like <think> appear at the start)
+      // This prevents processing tags mentioned in code examples within the content
+      const firstCustomTag = customOpenTags[0];
       
       // Find matching closing tag
       const matchingClose = closeTags.find(
-        close => close.name === lastCustomTag.name && close.index > lastCustomTag.index
+        close => close.name === firstCustomTag.name && close.index > firstCustomTag.index
       );
       
-      const openIndex = lastCustomTag.index;
-      const openTagLength = lastCustomTag.fullMatch.length;
+      const openIndex = firstCustomTag.index;
+      const openTagLength = firstCustomTag.fullMatch.length;
       const contentStart = openIndex + openTagLength;
       
       if (matchingClose) {
@@ -617,7 +618,7 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
         return {
           before: content.slice(0, openIndex),
           incompleteTag: {
-            name: lastCustomTag.name,
+            name: firstCustomTag.name,
             content: tagContent,
             isComplete: true,
           },
@@ -631,7 +632,7 @@ export const CustomAssistantMessage = (props: AssistantMessageProps) => {
         return {
           before: content.slice(0, openIndex),
           incompleteTag: {
-            name: lastCustomTag.name,
+            name: firstCustomTag.name,
             content: incompleteContent,
             isComplete: false,
           },

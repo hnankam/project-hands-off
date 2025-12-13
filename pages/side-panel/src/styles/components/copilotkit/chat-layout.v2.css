@@ -136,6 +136,13 @@
   overflow-y: auto !important;
   overflow-x: hidden !important;
   order: 0 !important;
+  background-color: #ffffff;
+}
+
+/* Dark mode scrollable area */
+.copilot-chat-container.dark .overflow-y-auto,
+.dark .copilot-chat-container .overflow-y-auto {
+  background-color: #0D1117;
 }
 
 /* Messages container padding and sizing */

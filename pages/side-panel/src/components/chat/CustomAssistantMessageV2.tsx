@@ -4,7 +4,7 @@
  * Wraps CopilotChatAssistantMessage with custom MarkdownRenderer
  * and styled toolbar buttons matching user message design (right-aligned, no gradient).
  */
-import React from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import { CopilotChatAssistantMessage } from '../../hooks/copilotkit';
 import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
 import { 
@@ -78,6 +78,177 @@ type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMes
  * - ... (all other standard HTML div attributes)
  */
 const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (props) => {
+  const [copied, setCopied] = useState(false);
+  const { message, messages, isRunning } = props;
+  
+  // Helper function to extract text from message content
+  // Excludes <think> and <thinking> tags and their content
+  const extractTextFromMessage = useCallback((msg: any): string => {
+    if (!msg) return '';
+    const content = msg.content;
+    
+    let textContent = '';
+    if (typeof content === 'string') {
+      textContent = content;
+    } else if (Array.isArray(content)) {
+      textContent = content
+        .map((item: any) => {
+          if (typeof item === 'string') return item;
+          if (item?.type === 'text' && typeof item.text === 'string') return item.text;
+          return '';
+        })
+        .filter((text: string) => text.trim().length > 0)
+        .join('\n');
+    } else {
+      return '';
+    }
+
+    // Remove <think>...</think> and <thinking>...</thinking> tags and their content
+    // Using regex with dotall flag to match across newlines
+    textContent = textContent
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+    
+    return textContent.trim();
+  }, []);
+
+  // Determine if this is the last assistant message before the next user message
+  const { isLastInSeries, assistantSeries } = useMemo(() => {
+    console.log('[CustomAssistantMessageV2] Computing isLastInSeries for message:', {
+      messageId: message?.id,
+      messageRole: message?.role,
+      messagesLength: messages?.length,
+      messageContent: typeof message?.content === 'string' ? message.content.substring(0, 50) : 'non-string',
+    });
+
+    if (!message || !messages || messages.length === 0) {
+      console.log('[CustomAssistantMessageV2] Early return: no message or messages');
+      return { isLastInSeries: true, assistantSeries: [message] };
+    }
+
+    const currentIndex = messages.findIndex((msg: any) => {
+      if (!msg) return false;
+      if (message?.id && msg?.id) {
+        return msg.id === message.id;
+      }
+      return msg === message;
+    });
+
+    console.log('[CustomAssistantMessageV2] Found currentIndex:', currentIndex);
+
+    if (currentIndex === -1) {
+      console.log('[CustomAssistantMessageV2] Current message not found in messages array');
+      return { isLastInSeries: true, assistantSeries: [message] };
+    }
+
+    // Find previous user message
+    let prevUserIndex = -1;
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      const role = (messages[i] as any)?.role;
+      if (role === 'user') {
+        prevUserIndex = i;
+        break;
+      }
+    }
+
+    // Find next user message
+    let nextUserIndex = messages.length;
+    for (let i = currentIndex + 1; i < messages.length; i++) {
+      const role = (messages[i] as any)?.role;
+      if (role === 'user') {
+        nextUserIndex = i;
+        break;
+      }
+    }
+
+    console.log('[CustomAssistantMessageV2] Indices:', {
+      prevUserIndex,
+      currentIndex,
+      nextUserIndex,
+      messagesLength: messages.length,
+    });
+
+    // Collect all assistant messages between the two user messages
+    const assistantGroup: any[] = [];
+    for (let i = prevUserIndex + 1; i < nextUserIndex; i++) {
+      const candidate = messages[i];
+      const role = (candidate as any)?.role;
+      console.log(`[CustomAssistantMessageV2] Checking index ${i}:`, {
+        role,
+        candidateId: candidate?.id,
+        isAssistant: role === 'assistant',
+      });
+      if (role === 'assistant') {
+        assistantGroup.push(candidate);
+      }
+    }
+
+    console.log('[CustomAssistantMessageV2] Assistant group:', {
+      groupLength: assistantGroup.length,
+      groupIds: assistantGroup.map((m: any) => m?.id),
+      currentMessageId: message?.id,
+    });
+
+    if (assistantGroup.length === 0) {
+      console.log('[CustomAssistantMessageV2] No assistant group found, returning true');
+      return { isLastInSeries: true, assistantSeries: [message] };
+    }
+
+    const lastAssistant = assistantGroup[assistantGroup.length - 1];
+    const isLast = lastAssistant?.id === message.id || lastAssistant === message;
+    
+    console.log('[CustomAssistantMessageV2] Final check:', {
+      lastAssistantId: lastAssistant?.id,
+      currentMessageId: message?.id,
+      idsMatch: lastAssistant?.id === message.id,
+      objectsMatch: lastAssistant === message,
+      isLastInSeries: isLast,
+    });
+
+    return {
+      isLastInSeries: isLast,
+      assistantSeries: assistantGroup,
+    };
+  }, [message, messages, isRunning]);
+
+  // Aggregate content from all assistant messages in the series
+  const aggregatedSeriesContent = useMemo(() => {
+    if (!assistantSeries || assistantSeries.length === 0) {
+      return '';
+    }
+
+    const parts = assistantSeries
+      .map((msg: any) => extractTextFromMessage(msg))
+      .filter((value: string) => typeof value === 'string' && value.trim().length > 0);
+
+    if (parts.length === 0) {
+      return '';
+    }
+
+    return parts.join('\n\n').trim();
+  }, [assistantSeries, extractTextFromMessage]);
+
+  // Custom copy handler that copies aggregated content from all assistant messages in series
+  const handleCopy = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const textToCopy = aggregatedSeriesContent || extractTextFromMessage(message);
+    const safeText = textToCopy?.trim();
+
+    if (!safeText) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(safeText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy assistant response:', error);
+    }
+  }, [aggregatedSeriesContent, message, extractTextFromMessage]);
+  
   return (
     <CopilotChatAssistantMessage
       {...props}
@@ -97,10 +268,33 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         thumbsDownButton,
         readAloudButton,
         copyButton,
-        isRunning,
+        isRunning: renderIsRunning,
+        message: renderMessage,
+        messages: renderMessages,
+        onThumbsUp,
+        onThumbsDown,
+        onReadAloud,
+        onRegenerate,
       }) => {
-        // Hide toolbar when running
-        if (isRunning) {
+        // Use isRunning from either props or render context (whichever is true)
+        const effectiveIsRunning = isRunning || renderIsRunning;
+        
+        // Hide toolbar when running, if message role is not assistant, if message has no content, or if not last in series
+        const hasContent = message?.content && (typeof message.content === 'string' ? message.content.trim() !== '' : true);
+        
+        console.log('[CustomAssistantMessageV2] Toolbar visibility check:', {
+          messageId: message?.id,
+          propsIsRunning: isRunning,
+          renderIsRunning,
+          effectiveIsRunning,
+          role: message?.role,
+          hasContent,
+          isLastInSeries,
+          shouldHide: effectiveIsRunning || message?.role !== 'assistant' || !hasContent || !isLastInSeries,
+        });
+
+        if (effectiveIsRunning || message?.role !== 'assistant' || !hasContent || !isLastInSeries) {
+          console.log('[CustomAssistantMessageV2] Hiding toolbar for message:', message?.id);
           return (
             <>
               {markdownRenderer}
@@ -108,6 +302,17 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
             </>
           );
         }
+
+        console.log('[CustomAssistantMessageV2] Showing toolbar for message:', message?.id);
+
+        // Clone copy button with custom onClick handler and copied state
+        // This ensures we copy aggregated content from all assistant messages in the series
+        const customCopyButton = React.isValidElement(copyButton)
+          ? React.cloneElement(copyButton as React.ReactElement<any>, {
+              onClick: handleCopy,
+              copied: copied,
+            })
+          : copyButton;
         
         // Reorder buttons: Regenerate, ThumbsUp, ThumbsDown, ReadAloud, Copy (rightmost)
         const reorderedToolbar = (
@@ -129,8 +334,8 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
             {/* Read Aloud Button */}
             {readAloudButton}
             
-            {/* Copy Button (rightmost) */}
-            {copyButton}
+            {/* Copy Button (rightmost) - with aggregated content */}
+            {customCopyButton}
           </div>
         );
         

@@ -30,6 +30,9 @@ export type { CustomCursorProps } from './CustomCursor';
 export { CustomDisclaimer } from './CustomDisclaimer';
 export type { CustomDisclaimerProps } from './CustomDisclaimer';
 
+export { CustomInputContainer } from './CustomInputContainer';
+export type { CustomInputContainerProps } from './CustomInputContainer';
+
 export { 
   CustomSuggestionView, 
   CustomSuggestionPill,

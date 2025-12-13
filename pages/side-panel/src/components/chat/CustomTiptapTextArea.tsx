@@ -48,9 +48,9 @@ export interface CustomTiptapTextAreaHandle {
 interface CustomTiptapTextAreaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   isInputEnabled?: boolean;
   isRunning?: boolean;
-  onSubmitMessage?: (value: string) => void;
   onFilesPicked?: (files: FileList | null) => void;
   placeholder?: string;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }
 
 /**
@@ -64,11 +64,11 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
     {
       isInputEnabled = true,
       isRunning = false,
-      onSubmitMessage,
       onFilesPicked,
       placeholder,
       value,
       onChange,
+      onKeyDown,
       className,
       ...restProps
     },
@@ -204,6 +204,24 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
       []
     );
 
+    // Use refs to store latest values for extension callbacks
+    const onKeyDownRef = useRef(onKeyDown);
+    const isRunningRef = useRef(isRunning);
+    const isInputEnabledRef = useRef(isInputEnabled);
+    
+    // Update refs when values change
+    useEffect(() => {
+      onKeyDownRef.current = onKeyDown;
+    }, [onKeyDown]);
+    
+    useEffect(() => {
+      isRunningRef.current = isRunning;
+    }, [isRunning]);
+    
+    useEffect(() => {
+      isInputEnabledRef.current = isInputEnabled;
+    }, [isInputEnabled]);
+
     // Tiptap Editor Setup - create editor first before using it in callbacks
     const editor = useEditor({
       extensions: [
@@ -249,7 +267,7 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
         }),
         Placeholder.configure({
           placeholder: () => {
-            if (!isInputEnabled) {
+            if (!isInputEnabledRef.current) {
               return 'Please select an agent and model to start chatting';
             }
             return placeholder || context.labels?.chatInputPlaceholder || 'Type a message... (/ for commands, @ for context)';
@@ -257,31 +275,55 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
         }),
         EnterToSend.configure({
           onSend: () => {
-            // Inline send logic - will reference editor from useEditor return value
-            // This avoids circular dependency issues
-            if (!onSubmitMessage) return;
-            if (isRunning || !isInputEnabled) return;
+            if (isRunningRef.current || !isInputEnabledRef.current) {
+              return;
+            }
 
-            // Get markdown from editor (matches V1: editorToMarkdown(editor))
+            // Get markdown content
             const markdown = editorToMarkdown(editor!);
-            if (!markdown.trim()) return;
+            
+            if (!markdown.trim()) {
+              return;
+            }
 
-            // Call onSubmitMessage with markdown (matches V1: onSend(finalText))
-            onSubmitMessage(markdown);
-            
-            // Clear editor after sending (matches V1: editor.commands.clearContent())
-            editor!.commands.clearContent();
-            
-            // Re-focus editor (matches V1: editor.commands.focus())
-            editor!.commands.focus();
+            // Sync the markdown to parent's value state
+            if (onChange) {
+              const syntheticChangeEvent = {
+                target: { value: markdown },
+              } as React.ChangeEvent<HTMLTextAreaElement>;
+              onChange(syntheticChangeEvent);
+            }
+
+            // Wait for React to flush the state update, then trigger parent's handler
+            setTimeout(() => {
+              if (!onKeyDownRef.current) {
+                return;
+              }
+
+              // Create a proper React synthetic event
+              const syntheticEvent = {
+                key: 'Enter',
+                code: 'Enter',
+                shiftKey: false,
+                ctrlKey: false,
+                metaKey: false,
+                altKey: false,
+                preventDefault: () => {},
+                stopPropagation: () => {},
+                currentTarget: containerRef.current,
+                target: containerRef.current,
+              } as unknown as React.KeyboardEvent<HTMLTextAreaElement>;
+
+              onKeyDownRef.current(syntheticEvent);
+            }, 0);
           },
           canSend: (): boolean => {
-            if (!editor || !isInputEnabled) return false;
+            if (!editor || !isInputEnabledRef.current) return false;
             const interruptEvent = copilotContext.langGraphInterruptAction?.event;
             const interruptInProgress =
               interruptEvent?.name === 'LangGraphInterruptEvent' && !interruptEvent?.response;
             const hasContent = !editor.isEmpty;
-            return !isRunning && hasContent && !interruptInProgress;
+            return !isRunningRef.current && hasContent && !interruptInProgress;
           },
         }),
         createSlashCommandExtension(slashCommands),

@@ -21,9 +21,9 @@ const THEME_COLORS = {
     iconColor: '#6b7280',
   },
   dark: {
-    background: '#0D1117',
+    background: '#151C24',
     border: '#374151',
-    hoverBackground: '#151C24',
+    hoverBackground: '#0D1117',
     iconColor: '#9ca3af',
   },
 } as const;

@@ -192,87 +192,56 @@ async def process_message_attachments(
 
 
 def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[str, list[dict[str, Any]]]:
-    """Parse attachment manifest from user message content.
+    """Parse attachments from user message content.
     
-    Extracts the <!--ATTACHMENTS: [...] --> block from message content,
-    parses the JSON manifest, and returns the clean text and attachments list.
+    TEMPORARY WORKAROUND: Until pydantic-ai adds native multimodal support.
+    This will be removed once native support is available.
     
-    Handles both plain text and JSON-escaped content (from tool returns).
+    Expected format (from request preprocessing):
+    '{"text": "Review this", "attachments": [{"url": "...", "filename": "...", "mimeType": "..."}]}'
     
     Args:
-        content: The raw user message content (may include manifest)
+        content: The raw user message content (structured JSON with attachments)
         log_parse: Whether to log the parsing (only for new attachments, not historical)
         
     Returns:
         Tuple of (clean_text, attachments_list)
-        - clean_text: Message content with manifest removed
-        - attachments_list: List of attachment dicts with name, type, size, url
-        
-    Example manifest format:
-        <!--ATTACHMENTS:
-        [
-            {
-                "name": "document.pdf",
-                "type": "application/pdf",
-                "size": 1024000,
-                "url": "https://firebase.storage.url/..."
-            }
-        ]
-        -->
+        - clean_text: Message text content
+        - attachments_list: List of attachment dicts with url, name, type
     """
     
-    # If content looks like a JSON string (from tool return), try to decode it first
-    decoded_content = content
-    if content.startswith('{'):
-        try:
-            # Try to parse as JSON object (tool returns are JSON strings)
-            json_obj = json.loads(content)
-            # If it's a JSON object with a 'message' field, extract it
-            if isinstance(json_obj, dict) and 'message' in json_obj:
-                decoded_content = json_obj['message']
-            else:
-                decoded_content = content
-        except (json.JSONDecodeError, ValueError):
-            # Not JSON, use original
-            decoded_content = content
-    
-    # Pattern to match the attachment manifest block
-    manifest_pattern = r'<!--ATTACHMENTS:\s*(\[.*?\])\s*-->'
-    
-    match = re.search(manifest_pattern, decoded_content, re.DOTALL)
-    if not match:
-        return content, []
-    
+    # Parse structured JSON format from request preprocessing
     try:
-        # Parse the JSON manifest
-        manifest_json = match.group(1)
-        attachments = json.loads(manifest_json)
-        
-        # Remove the manifest block from decoded content
-        clean_decoded = re.sub(manifest_pattern, '', decoded_content, flags=re.DOTALL).strip()
-        
-        # If original content was JSON, reconstruct it with cleaned message
-        if content.startswith('{') and decoded_content != content:
-            try:
-                json_obj = json.loads(content)
-                if isinstance(json_obj, dict) and 'message' in json_obj:
-                    json_obj['message'] = clean_decoded
-                    clean_text = json.dumps(json_obj)
-                else:
-                    clean_text = clean_decoded
-            except (json.JSONDecodeError, ValueError):
-                clean_text = clean_decoded
-        else:
-            clean_text = clean_decoded
-        
-        if log_parse:
-            logger.info(f"Parsed attachment manifest: {len(attachments)} attachments")
-        return clean_text, attachments
-        
-    except json.JSONDecodeError as e:
-        logger.warning(f"Failed to parse attachment manifest: {e}")
-        # Return original content if parsing fails
-        return content, []
+        data = json.loads(content)
+        if isinstance(data, dict) and 'text' in data and 'attachments' in data:
+            text = data.get('text', '')
+            attachments_raw = data.get('attachments', [])
+            
+            # Normalize attachment keys (filename/mimeType from frontend)
+            attachments = []
+            for att in attachments_raw:
+                if isinstance(att, dict):
+                    normalized = {
+                        'url': att.get('url'),
+                        'name': att.get('filename') or att.get('name', 'unknown'),
+                        'type': att.get('mimeType') or att.get('type', 'application/octet-stream'),
+                        'size': att.get('size'),
+                    }
+                    attachments.append(normalized)
+            
+            if log_parse and attachments:
+                logger.info(f"Parsed {len(attachments)} attachments from structured JSON")
+                for att in attachments:
+                    logger.debug(f"  - {att['name']} ({att['type']})")
+            
+            return text, attachments
+            
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        # Not structured JSON format - treat as plain text with no attachments
+        pass
+    
+    # No attachments found, return content as-is
+    return content, []
 
 
 async def keep_recent_messages(

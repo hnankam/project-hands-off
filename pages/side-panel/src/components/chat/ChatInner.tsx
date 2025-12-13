@@ -72,6 +72,7 @@ import {
   CustomDisclaimer,
   CustomSuggestionView,
   CustomCursor,
+  CustomInputContainer,
 } from './slots';
 
 // Custom Hooks
@@ -838,6 +839,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               suggestionView: CustomSuggestionView as any,
               input: CustomInputV2,
+              inputContainer: CustomInputContainer,
               messageView: {
                 assistantMessage: CustomAssistantMessageV2,
                 userMessage: CustomUserMessageV2,

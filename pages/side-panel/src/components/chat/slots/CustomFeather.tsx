@@ -19,7 +19,7 @@ export interface CustomFeatherProps extends React.HTMLAttributes<HTMLDivElement>
  * - Gradient from solid to transparent (going upward)
  * - pointer-events-none so it doesn't block clicks
  * - z-10 for layering
- * - Background matches chat container: #ffffff (light) / #0D1117 (dark)
+ * - Background matches message container: #ffffff (light) / #0D1117 (dark)
  */
 export const CustomFeather: React.FC<CustomFeatherProps> = ({ 
   className = '', 
@@ -29,7 +29,7 @@ export const CustomFeather: React.FC<CustomFeatherProps> = ({
   const themeState = useStorage(themeStorage);
   const isLight = themeState.isLight;
 
-  // Chat container background colors
+  // Message container background colors - matches messages area for seamless transition
   const bgColor = isLight ? '#ffffff' : '#0D1117';
 
   return (

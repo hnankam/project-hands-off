@@ -20,6 +20,7 @@ export interface CustomUserMessageRendererProps {
   onCancel?: () => void;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  attachments?: Array<{ filename: string; mimeType: string; url: string; }>;
 }
 
 /**
@@ -42,6 +43,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
   onCancel,
   textareaRef,
   onKeyDown,
+  attachments = [],
 }) => {
   const { isLight } = useStorage(themeStorage);
   
@@ -195,12 +197,69 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
     );
   }
   
-  // View mode (default) - render markdown
+  // View mode (default) - render markdown with attachments
   return (
     <div 
       className={className}
       style={containerStyles}
     >
+      {/* Attachment chips - displayed above message content */}
+      {attachments && attachments.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '2px',
+            marginBottom: '6px',
+            position: 'relative',
+            zIndex: 10001,
+          }}>
+          {attachments.map((att, idx) => (
+            <div
+              key={`${att.url}-${idx}`}
+              title={att.filename}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                padding: '1px 4px',
+                borderRadius: '6px',
+                background: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.07)',
+                fontSize: 9,
+                color: isLight ? '#0C1117' : '#e5e7eb',
+                fontWeight: isLight ? 500 : 400,
+                maxWidth: '100%',
+                whiteSpace: 'nowrap',
+              }}>
+              <svg
+                width="9"
+                height="9"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6" />
+              </svg>
+              <a
+                href={att.url}
+                target="_blank"
+                rel="noreferrer"
+                style={{ 
+                  textDecoration: 'none', 
+                  color: 'inherit', 
+                  overflow: 'hidden', 
+                  textOverflow: 'ellipsis' 
+                }}>
+                {att.filename}
+              </a>
+            </div>
+          ))}
+        </div>
+      )}
+      
       <div
         style={{
           fontSize: '13px',

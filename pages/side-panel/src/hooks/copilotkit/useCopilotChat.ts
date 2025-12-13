@@ -90,41 +90,50 @@ export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatS
   }, [agent]);
 
   // Send a new message - V2 implementation
-  // In V2, messages are typically sent via CopilotChat's input component.
-  // This method adds the message and triggers the agent run.
+  // Uses agent.addMessage() + agent.runAgent() (confirmed available in v1.50)
   const sendMessage = useCallback(async (message: Message) => {
-    if (!agent || !copilotkit) {
-      console.warn('[useCopilotChat] sendMessage: agent or copilotkit not available');
+    if (!agent) {
+      console.warn('[useCopilotChat] sendMessage: agent not available');
       return;
     }
     
-    // Add the message to the current messages
-    if (typeof agent.setMessages === 'function') {
+    // V2 API: addMessage + runAgent
+    if (typeof (agent as any).addMessage === 'function') {
+      (agent as any).addMessage(message);
+      
+      // Explicitly run the agent
+      if (typeof (agent as any).runAgent === 'function') {
+        await (agent as any).runAgent();
+      } else {
+        console.warn('[useCopilotChat] runAgent() not available');
+      }
+    } else if (typeof agent.setMessages === 'function') {
+      // Fallback to setMessages if addMessage doesn't exist
       const currentMessages = agent.messages ?? [];
       agent.setMessages([...currentMessages, message]);
-    }
-    
-    // Run the agent to process the new message
-    try {
-      await copilotkit.runAgent({ agent: agentId as any });
-    } catch (error) {
-      console.error('[useCopilotChat] Failed to send message:', error);
-      throw error;
+      
+      // Try to trigger run via copilotkit.runAgent
+      if (copilotkit && typeof copilotkit.runAgent === 'function') {
+        await copilotkit.runAgent({ agent: agentId as any });
+      } else {
+        console.warn('[useCopilotChat] copilotkit.runAgent() not available, agent may not run');
+      }
     }
   }, [agent, copilotkit, agentId]);
 
   // Reload/regenerate messages
   const reloadMessages = useCallback(async (_messageId?: string) => {
-    // In V2, use copilotkit.runAgent to re-run the agent
-    if (copilotkit) {
-      try {
-        await copilotkit.runAgent({ agent: agentId as any });
-      } catch (error) {
-        console.error('[useCopilotChat] Failed to reload messages:', error);
-        throw error;
-      }
+    // In V2, explicitly call runAgent to re-run
+    if (agent && typeof (agent as any).runAgent === 'function') {
+      await (agent as any).runAgent();
+      console.log('[useCopilotChat] Agent re-run triggered');
+    } else if (agent && typeof agent.setMessages === 'function') {
+      // Fallback: refresh messages array
+      const currentMessages = agent.messages ?? [];
+      agent.setMessages([...currentMessages]);
+      console.log('[useCopilotChat] Messages refreshed (fallback)');
     }
-  }, [copilotkit, agentId]);
+  }, [agent]);
 
   // Reset chat state - V2 implementation using agent.setMessages([])
   const reset = useCallback(() => {
