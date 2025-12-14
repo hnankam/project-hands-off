@@ -332,9 +332,6 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
                     ref={inputScrollRef as any}
                     style={{
                       fontSize: 11,
-                      padding: 8,
-                      backgroundColor: isLight ? '#f9fafb' : '#1f2937',
-                      borderRadius: 4,
                       overflow: 'auto',
                       maxHeight: 200,
                     }}
@@ -370,9 +367,6 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
                     ref={outputScrollRef as any}
                     style={{
                       fontSize: 11,
-                      padding: 8,
-                      backgroundColor: isLight ? '#f9fafb' : '#1f2937',
-                      borderRadius: 4,
                       overflow: 'auto',
                       maxHeight: 200,
                     }}
@@ -408,18 +402,24 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
                     ref={errorScrollRef as any}
                     style={{
                       fontSize: 11,
-                      padding: 8,
-                      backgroundColor: isLight ? '#fef2f2' : '#7f1d1d',
-                      borderRadius: 4,
                       overflow: 'auto',
                       maxHeight: 200,
-                      color: isLight ? '#991b1b' : '#fca5a5',
+                      borderLeft: '3px solid #ef4444',
+                      paddingLeft: 8,
                     }}
                   >
                     <CustomMarkdownRenderer content={content} isLight={isLight} />
                   </div>
                 ) : (
-                  <div ref={errorScrollRef as any} style={{ maxHeight: 200, overflow: 'auto' }}>
+                  <div 
+                    ref={errorScrollRef as any} 
+                    style={{ 
+                      maxHeight: 200, 
+                      overflow: 'auto',
+                      borderLeft: '3px solid #ef4444',
+                      paddingLeft: 8,
+                    }}
+                  >
                     <CodeBlock language={language || 'text'} code={content} isLight={isLight} />
                   </div>
                 )}

@@ -117,11 +117,11 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
   }, []);
 
   // Determine toolbar visibility: 
-  // - Always visible for assistant messages after the last user message
-  // - Visible on hover for assistant messages before the last user message
-  const { isLastInSeries, assistantSeries, isAfterLastUserMessage } = useMemo(() => {
+  // - Always visible for the last assistant series in the conversation
+  // - Visible on hover for assistant series that have more assistant messages after them
+  const { isLastInSeries, assistantSeries, hasAssistantMessagesAfter } = useMemo(() => {
     if (!message || !messages || messages.length === 0) {
-      return { isLastInSeries: true, assistantSeries: [message], isAfterLastUserMessage: true };
+      return { isLastInSeries: true, assistantSeries: [message], hasAssistantMessagesAfter: false };
     }
 
     const currentIndex = messages.findIndex((msg: any) => {
@@ -133,21 +133,8 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
     });
 
     if (currentIndex === -1) {
-      return { isLastInSeries: true, assistantSeries: [message], isAfterLastUserMessage: true };
+      return { isLastInSeries: true, assistantSeries: [message], hasAssistantMessagesAfter: false };
     }
-
-    // Find the last user message in the entire conversation
-    let lastUserMessageIndex = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const role = (messages[i] as any)?.role;
-      if (role === 'user') {
-        lastUserMessageIndex = i;
-        break;
-      }
-    }
-
-    // Check if current assistant message is after the last user message
-    const afterLastUser = currentIndex > lastUserMessageIndex;
 
     // Find previous user message relative to current message
     let prevUserIndex = -1;
@@ -180,16 +167,26 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
     }
 
     if (assistantGroup.length === 0) {
-      return { isLastInSeries: true, assistantSeries: [message], isAfterLastUserMessage: afterLastUser };
+      return { isLastInSeries: true, assistantSeries: [message], hasAssistantMessagesAfter: false };
     }
 
     const lastAssistant = assistantGroup[assistantGroup.length - 1];
     const isLast = lastAssistant?.id === message.id || lastAssistant === message;
 
+    // Check if there are any assistant messages after this series
+    let hasMoreAssistants = false;
+    for (let i = nextUserIndex; i < messages.length; i++) {
+      const role = (messages[i] as any)?.role;
+      if (role === 'assistant') {
+        hasMoreAssistants = true;
+        break;
+      }
+    }
+
     return {
       isLastInSeries: isLast,
       assistantSeries: assistantGroup,
-      isAfterLastUserMessage: afterLastUser,
+      hasAssistantMessagesAfter: hasMoreAssistants,
     };
   }, [message, messages, isRunning]);
 
@@ -261,15 +258,32 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         // Use isRunning from either props or render context (whichever is true)
         const effectiveIsRunning = isRunning || renderIsRunning;
         
-        // Determine toolbar visibility
-        const hasContent = message?.content && (typeof message.content === 'string' ? message.content.trim() !== '' : true);
+        // Use renderMessage from render context for accurate role checking
+        const currentMessage = renderMessage || message;
+        
+        // Check if we should render toolbar at all (only for pure assistant messages with content)
+        // Explicitly exclude:
+        // - Non-assistant messages (user, tool, system, etc.)
+        // - Tool result messages (messages with toolCallId)
+        // - Assistant messages initiating tool calls (messages with toolCalls array)
+        // - Messages with empty content
+        const hasContent = currentMessage?.content && (typeof currentMessage.content === 'string' ? currentMessage.content.trim() !== '' : true);
+        const isPureAssistantMessage = currentMessage?.role === 'assistant' && 
+                                       !(currentMessage as any)?.toolCallId && 
+                                       (!(currentMessage as any)?.toolCalls || (currentMessage as any)?.toolCalls?.length === 0);
+        
+        const shouldRenderToolbar = isPureAssistantMessage && 
+                                   hasContent && 
+                                   isLastInSeries;
+        
+        // Determine toolbar visibility (for opacity control)
+        // - Always visible if this is the final assistant series (no more assistants after)
+        // - Only visible on hover if there are more assistant messages after this series
         const shouldShowToolbar = !effectiveIsRunning && 
-                                  message?.role === 'assistant' && 
-                                  hasContent && 
-                                  isLastInSeries &&
-                                  (isAfterLastUserMessage || isHovered);
+                                  shouldRenderToolbar &&
+                                  (!hasAssistantMessagesAfter || isHovered);
 
-        // Always render toolbar but control visibility with opacity
+        // Control toolbar visibility with opacity (only when toolbar should be rendered)
         const toolbarOpacity = shouldShowToolbar ? 1 : 0;
         const toolbarPointerEvents = shouldShowToolbar ? 'auto' : 'none';
 
@@ -283,7 +297,8 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
           : copyButton;
         
         // Reorder buttons: Regenerate, ThumbsUp, ThumbsDown, ReadAloud, Copy (rightmost)
-        const reorderedToolbar = (
+        // Only render toolbar for assistant messages with content
+        const reorderedToolbar = shouldRenderToolbar ? (
           <div style={{ 
             display: 'flex', 
             justifyContent: 'flex-end', 
@@ -308,11 +323,11 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
             {/* Copy Button (rightmost) - with aggregated content */}
             {customCopyButton}
           </div>
-        );
+        ) : null;
         
         return (
           <div 
-            style={{ color: isLight ? '#374151' : '#d1d5db', paddingLeft: '12px', paddingRight: '12px', paddingTop: '12px' }}
+            style={{ color: isLight ? '#374151' : '#d1d5db', paddingLeft: '12px', paddingRight: '12px' }} // , paddingTop: '12px'
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
           >

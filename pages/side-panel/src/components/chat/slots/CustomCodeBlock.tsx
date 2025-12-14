@@ -202,10 +202,20 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, isLight })
           borderRadius: 0,
           backgroundColor: isLight ? '#ffffff' : '#0d1117',
           fontSize: '13px',
+          fontWeight: 'normal',
+          lineHeight: '1.5',
         }}
         codeTagProps={{
           style: {
             backgroundColor: 'transparent',
+            fontSize: '13px',
+            fontWeight: 'normal',
+            fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+          }
+        }}
+        lineProps={{
+          style: {
+            backgroundColor: isLight ? '#ffffff' : '#0d1117',
           }
         }}
       >

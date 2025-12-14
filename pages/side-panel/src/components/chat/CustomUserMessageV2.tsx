@@ -407,7 +407,7 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
   const buttonContainerStyles = useMemo(() => {
     const baseStyles: React.CSSProperties = {
       position: 'absolute',
-      bottom: '0',
+      bottom: '12px',
       right: '0',
       display: 'flex',
       maxHeight: '30px',
@@ -449,6 +449,7 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
   
   // Custom message renderer that handles edit mode and attachments
   const MessageRendererWithEdit = useCallback((rendererProps: { content: string; className?: string }) => {
+    const isFirst = messageIndex === 0;
     if (isEditing) {
       return (
         <CustomUserMessageRenderer 
@@ -461,11 +462,12 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
           textareaRef={textareaRef}
           onKeyDown={handleKeyDown}
           attachments={attachments}
+          isFirstMessage={isFirst}
         />
       );
     }
-    return <CustomUserMessageRenderer {...rendererProps} attachments={attachments} />;
-  }, [isEditing, editedContent, handleSaveEdit, handleCancelEdit, handleKeyDown, attachments]);
+    return <CustomUserMessageRenderer {...rendererProps} attachments={attachments} isFirstMessage={isFirst} />;
+  }, [isEditing, editedContent, handleSaveEdit, handleCancelEdit, handleKeyDown, attachments, messageIndex]);
   
   // Custom edit button that triggers edit mode
   const CustomEditButtonWithHandler = useCallback((buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>) => {

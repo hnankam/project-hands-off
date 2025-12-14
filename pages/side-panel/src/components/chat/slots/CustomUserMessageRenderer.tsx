@@ -21,6 +21,7 @@ export interface CustomUserMessageRendererProps {
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   attachments?: Array<{ filename: string; mimeType: string; url: string; }>;
+  isFirstMessage?: boolean;
 }
 
 /**
@@ -44,6 +45,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
   textareaRef,
   onKeyDown,
   attachments = [],
+  isFirstMessage = false,
 }) => {
   const { isLight } = useStorage(themeStorage);
   
@@ -59,9 +61,9 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
       padding: '0.6rem',
       overflow: 'visible' as const,
       transition: 'all 0.2s ease-in-out' as const,
-      marginTop: '1.2rem',
+      marginTop: isFirstMessage ? '1rem' : 0,
       // marginLeft: '10px',
-      // marginBottom: '1rem'
+      marginBottom: '12px'
     };
     
     if (isLight) {
@@ -81,7 +83,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
         color: '#d1d5db', // Dark mode text color - matches custom buttons (gray-300)
       };
     }
-  }, [isLight]);
+  }, [isLight, isFirstMessage]);
   
   // Edit mode view
   if (isEditing) {
