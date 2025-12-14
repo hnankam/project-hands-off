@@ -53,6 +53,7 @@ export {
   CustomRerunButton,
   CustomUndoButton,
   CustomDeleteButton,
+  CustomMoreOptionsButton,
 } from './CustomUserMessageButtons';
 export type { 
   CustomCopyButtonProps, 
@@ -60,6 +61,7 @@ export type {
   CustomRerunButtonProps,
   CustomUndoButtonProps,
   CustomDeleteButtonProps,
+  CustomMoreOptionsButtonProps,
 } from './CustomUserMessageButtons';
 
 // Assistant message buttons

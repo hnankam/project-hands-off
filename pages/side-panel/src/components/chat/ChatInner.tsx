@@ -821,6 +821,22 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // RENDER
   // ================================================================================
 
+  // Stabilize chatView to prevent unnecessary rerenders
+  const chatView = useMemo(() => ({
+    scrollToBottomButton: CustomScrollToBottomButton,
+    feather: CustomFeather,
+    disclaimer: CustomDisclaimer,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    suggestionView: CustomSuggestionView as any,
+    input: CustomInputV2,
+    inputContainer: CustomInputContainer,
+    messageView: {
+      assistantMessage: CustomAssistantMessageV2,
+      userMessage: CustomUserMessageV2,
+      cursor: CustomCursor,
+    },
+  }), []);
+
   return (
     <ChatSessionIdProvider sessionId={sessionId}>
       <div className="flex h-full flex-col overflow-hidden">
@@ -832,20 +848,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           <CopilotChat
             agentId="dynamic_agent"
             threadId={sessionId}
-            chatView={{
-              scrollToBottomButton: CustomScrollToBottomButton,
-              feather: CustomFeather,
-              disclaimer: CustomDisclaimer,
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              suggestionView: CustomSuggestionView as any,
-              input: CustomInputV2,
-              inputContainer: CustomInputContainer,
-              messageView: {
-                assistantMessage: CustomAssistantMessageV2,
-                userMessage: CustomUserMessageV2,
-                cursor: CustomCursor,
-              },
-            }}
+            chatView={chatView}
           />
         </div>
       </div>

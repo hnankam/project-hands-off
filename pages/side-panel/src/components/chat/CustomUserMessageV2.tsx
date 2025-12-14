@@ -27,9 +27,8 @@ import { CustomUserMessageRenderer } from './slots/CustomUserMessageRenderer';
 import { 
   CustomCopyButton, 
   CustomEditButton,
-  CustomRerunButton,
   CustomUndoButton,
-  CustomDeleteButton,
+  CustomMoreOptionsButton,
 } from './slots/CustomUserMessageButtons';
 
 // Type for the component props - derived from CopilotChatUserMessage
@@ -116,8 +115,9 @@ const extractTextContent = (content: any): string => {
  * 
  * @param props - All CopilotChatUserMessage props
  */
-const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
+const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) => {
   const { message, ...restProps } = props;
+  
   const { isLight } = useStorage(themeStorage);
   const [isHovered, setIsHovered] = useState(false);
   const [editHistory, setEditHistory] = useState<string[]>([]);
@@ -136,101 +136,195 @@ const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
     return extractTextContent(message?.content);
   }, [message?.content]);
   
-  // Find the index of the current message
-  const messageIndex = useMemo(() => {
-    if (!messages || !message) return -1;
-    return messages.findIndex(m => m.id === message.id);
-  }, [messages, message]);
+  // Find the index of the current message - stabilize to prevent rerenders during streaming
+  // Use refs to track values and only update when structure changes (not content)
+  const messageIdRef = React.useRef(message?.id);
+  const messageIndexRef = React.useRef(-1);
+  const isLastRef = React.useRef(false);
+  const messagesLengthRef = React.useRef(0);
+  const messagesRefSignature = React.useRef<string>('');
   
-  const isLast = useMemo(() => {
-    if (!messages || messageIndex === -1) return false;
-    return messageIndex === messages.length - 1;
-  }, [messages, messageIndex]);
+  // Stabilize messages length - only update when it actually changes
+  const stableMessagesLength = React.useMemo(() => messages?.length ?? 0, [messages?.length]);
+  
+  // Create a signature for messages array to detect if it's actually different
+  const messagesSignature = React.useMemo(() => {
+    if (!messages) return '';
+    return messages.map(m => m.id).join(',');
+  }, [messages]);
+  
+  // Update message index/isLast only when necessary
+  // This runs synchronously during render to ensure refs are up-to-date
+  const currentMessageId = message?.id;
+  const currentMessagesLength = stableMessagesLength;
+  
+  // Check if we need to update the refs
+  if (currentMessageId !== messageIdRef.current) {
+    // Message ID changed - recalculate everything
+    messageIdRef.current = currentMessageId;
+    if (messages && currentMessageId) {
+      messageIndexRef.current = messages.findIndex(m => m.id === currentMessageId);
+      isLastRef.current = messageIndexRef.current >= 0 && messageIndexRef.current === messages.length - 1;
+    } else {
+      messageIndexRef.current = -1;
+      isLastRef.current = false;
+    }
+    messagesLengthRef.current = currentMessagesLength;
+    messagesRefSignature.current = messagesSignature;
+  } else if (currentMessagesLength !== messagesLengthRef.current || messagesSignature !== messagesRefSignature.current) {
+    // Messages length or order changed - recalculate index and isLast
+    messagesLengthRef.current = currentMessagesLength;
+    messagesRefSignature.current = messagesSignature;
+    
+    // Recalculate index since message order may have changed
+    if (messages && currentMessageId) {
+      messageIndexRef.current = messages.findIndex(m => m.id === currentMessageId);
+      isLastRef.current = messageIndexRef.current >= 0 && messageIndexRef.current === messages.length - 1;
+    } else {
+      messageIndexRef.current = -1;
+      isLastRef.current = false;
+    }
+  }
+  
+  // Use ref values directly to avoid recalculation on every render
+  const messageIndex = messageIndexRef.current;
+  const isLast = isLastRef.current;
   
   // Handle rerun - regenerate assistant response
+  // Use refs to access latest messages without causing rerenders
+  const messagesRef = React.useRef(messages);
+  React.useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  
+  // Stabilize message using ref to prevent recreations
+  const messageRef = React.useRef(message);
+  
+  React.useEffect(() => {
+    messageRef.current = message;
+  }, [message]);
+  
   const handleRerun = useCallback(() => {
-    if (!messages || !message || messageIndex === -1) return;
+    const currentMessages = messagesRef.current;
+    const currentMessageIndex = messageIndexRef.current;
+    const currentMessage = messageRef.current;
+    if (!currentMessages || !currentMessage || currentMessageIndex === -1) return;
     
     // Find the next assistant message after this user message
-    const following = messages.slice(messageIndex + 1).find(m => {
+    const following = currentMessages.slice(currentMessageIndex + 1).find(m => {
       const role = (m as any)?.role;
       return role === 'assistant' && typeof role === 'string';
     });
     
     if (following?.id) {
       // Refresh state before reloading
-      const refreshedMessages = messages.map(m => ({ ...m }));
+      const refreshedMessages = currentMessages.map(m => ({ ...m }));
       setMessages(refreshedMessages);
       
       setTimeout(() => {
         reloadMessages(following.id);
       }, 50);
-    } else if (message.id) {
+    } else if (currentMessage.id) {
       // Fallback: reload from this user message
-      const refreshedMessages = messages.map(m => ({ ...m }));
+      const refreshedMessages = currentMessages.map(m => ({ ...m }));
       setMessages(refreshedMessages);
       
       setTimeout(() => {
-        reloadMessages(message.id);
+        reloadMessages(currentMessage.id);
       }, 50);
     }
-  }, [messages, message, messageIndex, setMessages, reloadMessages]);
+  }, [setMessages, reloadMessages]); // Include setMessages and reloadMessages to use latest versions
   
   // Handle undo - restore previous edit
+  const editHistoryRef = React.useRef(editHistory);
+  React.useEffect(() => {
+    editHistoryRef.current = editHistory;
+  }, [editHistory]);
+  
   const handleUndo = useCallback(() => {
-    if (!messages || editHistory.length === 0 || messageIndex === -1) return;
+    const currentMessages = messagesRef.current;
+    const currentMessageIndex = messageIndexRef.current;
+    const currentEditHistory = editHistoryRef.current;
+    if (!currentMessages || currentEditHistory.length === 0 || currentMessageIndex === -1) return;
     
-    const previousContent = editHistory[editHistory.length - 1];
-    const updatedMessages = [...messages];
-    updatedMessages[messageIndex] = {
-      ...updatedMessages[messageIndex],
+    const previousContent = currentEditHistory[currentEditHistory.length - 1];
+    const updatedMessages = [...currentMessages];
+    updatedMessages[currentMessageIndex] = {
+      ...updatedMessages[currentMessageIndex],
       content: previousContent as any, // Content can be string or other types
     };
     setMessages(updatedMessages);
     setEditHistory(prev => prev.slice(0, -1));
-  }, [messages, editHistory, messageIndex, setMessages]);
+  }, [setMessages, setEditHistory]); // Include setMessages to use latest version
   
   // Handle delete operations
+  const sessionIdRef = React.useRef(sessionId);
+  React.useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+  
   const handleDelete = useCallback((type: 'this' | 'above' | 'below') => {
-    if (!messages || messageIndex === -1) return;
+    const currentMessages = messagesRef.current;
+    const currentMessageIndex = messageIndexRef.current;
+    const currentSessionId = sessionIdRef.current;
     
-    let updatedMessages: typeof messages;
+    if (!currentMessages || currentMessageIndex === -1) return;
+    
+    let updatedMessages: typeof currentMessages;
     switch (type) {
       case 'this':
-        updatedMessages = messages.filter((_, i) => i !== messageIndex);
+        updatedMessages = currentMessages.filter((_, i) => i !== currentMessageIndex);
         break;
       case 'above':
-        updatedMessages = messages.filter((_, i) => i > messageIndex);
+        updatedMessages = currentMessages.filter((_, i) => i > currentMessageIndex);
         break;
       case 'below':
-        updatedMessages = messages.filter((_, i) => i < messageIndex);
+        updatedMessages = currentMessages.filter((_, i) => i < currentMessageIndex);
         break;
     }
     
     // Signal intentional delete if empty
-    if (sessionId && updatedMessages.length === 0) {
-      persistenceLock.setManualReset(sessionId, true);
+    if (currentSessionId && updatedMessages.length === 0) {
+      persistenceLock.setManualReset(currentSessionId, true);
     }
     
+    // Call setMessages directly (not through ref) to ensure we use the latest agent reference
     setMessages(updatedMessages);
-  }, [messages, messageIndex, sessionId, setMessages]);
+  }, [setMessages]);
   
   // Handle edit button click - enter edit mode
-  const handleEditClick = useCallback(() => {
-    // Extract text content (handles both string and multimodal array)
-    const currentText = textContent || '';
-    
-      // Save current content to edit history before editing
-    setEditHistory(prev => [...prev, currentText]);
-    setEditedContent(currentText);
-      setIsEditing(true);
+  const textContentRef = React.useRef(textContent);
+  React.useEffect(() => {
+    textContentRef.current = textContent;
   }, [textContent]);
   
-  // Handle save edit
-  const handleSaveEdit = useCallback(() => {
-    if (!messages || messageIndex === -1) return;
+  const handleEditClick = useCallback(() => {
+    // Extract text content (handles both string and multimodal array)
+    const currentText = textContentRef.current || '';
     
-    const currentMessage = messages[messageIndex];
+    // Save current content to edit history before editing
+    setEditHistory(prev => [...prev, currentText]);
+    setEditedContent(currentText);
+    setIsEditing(true);
+  }, [setEditHistory, setEditedContent, setIsEditing]);
+  
+  // Handle save edit
+  const editedContentRef = React.useRef(editedContent);
+  const restPropsRef = React.useRef(restProps);
+  React.useEffect(() => {
+    editedContentRef.current = editedContent;
+    restPropsRef.current = restProps;
+  }, [editedContent, restProps]);
+  
+  const handleSaveEdit = useCallback(() => {
+    const currentMessages = messagesRef.current;
+    const currentMessageIndex = messageIndexRef.current;
+    const currentEditedContent = editedContentRef.current;
+    const currentRestProps = restPropsRef.current;
+    
+    if (!currentMessages || currentMessageIndex === -1) return;
+    
+    const currentMessage = currentMessages[currentMessageIndex];
     const currentContent = (currentMessage as any)?.content;
     
     // Preserve attachments if they exist in the original message
@@ -239,34 +333,34 @@ const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
       // Message has multimodal content - preserve binary parts, update text
       newContent = currentContent.map(part => {
         if (part?.type === 'text') {
-          return { type: 'text', text: editedContent };
+          return { type: 'text', text: currentEditedContent };
         }
         return part; // Keep binary parts as-is
       });
       
       // If there was no text part originally, add it
       const hasTextPart = currentContent.some(p => p?.type === 'text');
-      if (!hasTextPart && editedContent.trim()) {
-        newContent = [{ type: 'text', text: editedContent }, ...newContent];
+      if (!hasTextPart && currentEditedContent.trim()) {
+        newContent = [{ type: 'text', text: currentEditedContent }, ...newContent];
       }
     } else {
       // Simple string content
-      newContent = editedContent;
+      newContent = currentEditedContent;
     }
     
-    const updatedMessages = [...messages];
-    updatedMessages[messageIndex] = {
-      ...updatedMessages[messageIndex],
+    const updatedMessages = [...currentMessages];
+    updatedMessages[currentMessageIndex] = {
+      ...updatedMessages[currentMessageIndex],
       content: newContent,
     };
     setMessages(updatedMessages);
     setIsEditing(false);
     
     // Call onEditMessage callback if provided
-    if (restProps.onEditMessage) {
-      restProps.onEditMessage({ message: updatedMessages[messageIndex] as UserMessage });
+    if (currentRestProps.onEditMessage) {
+      currentRestProps.onEditMessage({ message: updatedMessages[currentMessageIndex] as UserMessage });
     }
-  }, [messages, messageIndex, editedContent, setMessages, restProps]);
+  }, [setMessages, setIsEditing]); // Include setMessages to use latest version
   
   // Handle cancel edit
   const handleCancelEdit = useCallback(() => {
@@ -389,8 +483,12 @@ const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
       additionalToolbarItems={additionalToolbarItems}
     >
       {({ messageRenderer, toolbar, copyButton, editButton, branchNavigation, ...slotProps }) => {
-        // Reorder toolbar buttons: Refresh, Undo, Edit, Copy, Delete (rightmost)
+        // Reorder toolbar buttons: Undo, Edit, Copy, More Options (rightmost)
         // Hide toolbar when in edit mode
+        // Note: editButton and copyButton are INTENTIONALLY excluded from deps
+        // They are React elements from CopilotKit that change references frequently
+        // Including them causes 40+ re-renders. We accept potential stale closures here
+        // since these buttons don't rely on our local state
         const reorderedToolbar = useMemo(() => {
           if (isEditing) return null;
           
@@ -399,9 +497,6 @@ const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
               className=""
               style={buttonContainerStyles}
             >
-              {/* Refresh Button */}
-              <CustomRerunButton onRerun={handleRerun} />
-              
               {/* Undo Button - Only show if there's edit history */}
               {editHistory.length > 0 && (
                 <CustomUndoButton onUndo={handleUndo} />
@@ -413,15 +508,18 @@ const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
               {/* Copy Button */}
               {copyButton}
               
-              {/* Delete Button (rightmost) */}
-              <CustomDeleteButton
+              {/* More Options Button (rightmost) - Contains Refresh and Delete */}
+              <CustomMoreOptionsButton
+                onRerun={handleRerun}
                 onDelete={handleDelete}
                 messageIndex={messageIndex}
                 isLast={isLast}
               />
             </div>
           );
-        }, [isEditing, handleRerun, handleUndo, handleDelete, editHistory.length, messageIndex, isLast, editButton, copyButton, buttonContainerStyles]);
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [isEditing, editHistory.length, messageIndex, isLast, buttonContainerStyles, handleUndo, handleRerun, handleDelete]);
+        // editButton and copyButton intentionally excluded - they change every render
         
         return (
           <CopilotChatUserMessage.Container 
@@ -446,9 +544,12 @@ const CustomUserMessageV2Component: React.FC<UserMessageProps> = (props) => {
  * 
  * The component must have the same shape as CopilotChatUserMessage
  * including all its sub-components (Container, MessageRenderer, etc.)
+ * 
+ * Note: Matching CustomAssistantMessageV2 structure exactly for CopilotKit compatibility.
+ * Memoization will be applied internally using useMemo/useCallback instead.
  */
 export const CustomUserMessageV2 = Object.assign(
-  CustomUserMessageV2Component,
+  CustomUserMessageV2ComponentInner,
   {
     Container: CopilotChatUserMessage.Container,
     MessageRenderer: CopilotChatUserMessage.MessageRenderer,
