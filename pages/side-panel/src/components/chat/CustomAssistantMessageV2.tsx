@@ -81,6 +81,7 @@ type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMes
  */
 const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (props) => {
   const [copied, setCopied] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const { message, messages, isRunning } = props;
   const { isLight } = useStorage(themeStorage);
   
@@ -115,18 +116,12 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
     return textContent.trim();
   }, []);
 
-  // Determine if this is the last assistant message before the next user message
-  const { isLastInSeries, assistantSeries } = useMemo(() => {
-    console.log('[CustomAssistantMessageV2] Computing isLastInSeries for message:', {
-      messageId: message?.id,
-      messageRole: message?.role,
-      messagesLength: messages?.length,
-      messageContent: typeof message?.content === 'string' ? message.content.substring(0, 50) : 'non-string',
-    });
-
+  // Determine toolbar visibility: 
+  // - Always visible for assistant messages after the last user message
+  // - Visible on hover for assistant messages before the last user message
+  const { isLastInSeries, assistantSeries, isAfterLastUserMessage } = useMemo(() => {
     if (!message || !messages || messages.length === 0) {
-      console.log('[CustomAssistantMessageV2] Early return: no message or messages');
-      return { isLastInSeries: true, assistantSeries: [message] };
+      return { isLastInSeries: true, assistantSeries: [message], isAfterLastUserMessage: true };
     }
 
     const currentIndex = messages.findIndex((msg: any) => {
@@ -137,14 +132,24 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
       return msg === message;
     });
 
-    console.log('[CustomAssistantMessageV2] Found currentIndex:', currentIndex);
-
     if (currentIndex === -1) {
-      console.log('[CustomAssistantMessageV2] Current message not found in messages array');
-      return { isLastInSeries: true, assistantSeries: [message] };
+      return { isLastInSeries: true, assistantSeries: [message], isAfterLastUserMessage: true };
     }
 
-    // Find previous user message
+    // Find the last user message in the entire conversation
+    let lastUserMessageIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const role = (messages[i] as any)?.role;
+      if (role === 'user') {
+        lastUserMessageIndex = i;
+        break;
+      }
+    }
+
+    // Check if current assistant message is after the last user message
+    const afterLastUser = currentIndex > lastUserMessageIndex;
+
+    // Find previous user message relative to current message
     let prevUserIndex = -1;
     for (let i = currentIndex - 1; i >= 0; i--) {
       const role = (messages[i] as any)?.role;
@@ -164,53 +169,27 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
       }
     }
 
-    console.log('[CustomAssistantMessageV2] Indices:', {
-      prevUserIndex,
-      currentIndex,
-      nextUserIndex,
-      messagesLength: messages.length,
-    });
-
     // Collect all assistant messages between the two user messages
     const assistantGroup: any[] = [];
     for (let i = prevUserIndex + 1; i < nextUserIndex; i++) {
       const candidate = messages[i];
       const role = (candidate as any)?.role;
-      console.log(`[CustomAssistantMessageV2] Checking index ${i}:`, {
-        role,
-        candidateId: candidate?.id,
-        isAssistant: role === 'assistant',
-      });
       if (role === 'assistant') {
         assistantGroup.push(candidate);
       }
     }
 
-    console.log('[CustomAssistantMessageV2] Assistant group:', {
-      groupLength: assistantGroup.length,
-      groupIds: assistantGroup.map((m: any) => m?.id),
-      currentMessageId: message?.id,
-    });
-
     if (assistantGroup.length === 0) {
-      console.log('[CustomAssistantMessageV2] No assistant group found, returning true');
-      return { isLastInSeries: true, assistantSeries: [message] };
+      return { isLastInSeries: true, assistantSeries: [message], isAfterLastUserMessage: afterLastUser };
     }
 
     const lastAssistant = assistantGroup[assistantGroup.length - 1];
     const isLast = lastAssistant?.id === message.id || lastAssistant === message;
-    
-    console.log('[CustomAssistantMessageV2] Final check:', {
-      lastAssistantId: lastAssistant?.id,
-      currentMessageId: message?.id,
-      idsMatch: lastAssistant?.id === message.id,
-      objectsMatch: lastAssistant === message,
-      isLastInSeries: isLast,
-    });
 
     return {
       isLastInSeries: isLast,
       assistantSeries: assistantGroup,
+      isAfterLastUserMessage: afterLastUser,
     };
   }, [message, messages, isRunning]);
 
@@ -282,31 +261,17 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         // Use isRunning from either props or render context (whichever is true)
         const effectiveIsRunning = isRunning || renderIsRunning;
         
-        // Hide toolbar when running, if message role is not assistant, if message has no content, or if not last in series
+        // Determine toolbar visibility
         const hasContent = message?.content && (typeof message.content === 'string' ? message.content.trim() !== '' : true);
-        
-        console.log('[CustomAssistantMessageV2] Toolbar visibility check:', {
-          messageId: message?.id,
-          propsIsRunning: isRunning,
-          renderIsRunning,
-          effectiveIsRunning,
-          role: message?.role,
-          hasContent,
-          isLastInSeries,
-          shouldHide: effectiveIsRunning || message?.role !== 'assistant' || !hasContent || !isLastInSeries,
-        });
+        const shouldShowToolbar = !effectiveIsRunning && 
+                                  message?.role === 'assistant' && 
+                                  hasContent && 
+                                  isLastInSeries &&
+                                  (isAfterLastUserMessage || isHovered);
 
-        if (effectiveIsRunning || message?.role !== 'assistant' || !hasContent || !isLastInSeries) {
-          console.log('[CustomAssistantMessageV2] Hiding toolbar for message:', message?.id);
-          return (
-            <div style={{ color: isLight ? '#374151' : '#d1d5db', paddingLeft: '12px', paddingRight: '12px', paddingTop: '12px' }}>
-              {markdownRenderer}
-              {toolCallsView}
-            </div>
-          );
-        }
-
-        console.log('[CustomAssistantMessageV2] Showing toolbar for message:', message?.id);
+        // Always render toolbar but control visibility with opacity
+        const toolbarOpacity = shouldShowToolbar ? 1 : 0;
+        const toolbarPointerEvents = shouldShowToolbar ? 'auto' : 'none';
 
         // Clone copy button with custom onClick handler and copied state
         // This ensures we copy aggregated content from all assistant messages in the series
@@ -324,6 +289,9 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
             justifyContent: 'flex-end', 
             width: '100%',
             gap: '0.25rem',
+            opacity: toolbarOpacity,
+            pointerEvents: toolbarPointerEvents,
+            transition: 'opacity 0.2s ease-in-out',
           }}>
             {/* Regenerate Button */}
             {regenerateButton}
@@ -343,7 +311,11 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         );
         
         return (
-          <div style={{ color: isLight ? '#374151' : '#d1d5db', paddingLeft: '12px', paddingRight: '12px', paddingTop: '12px' }}>
+          <div 
+            style={{ color: isLight ? '#374151' : '#d1d5db', paddingLeft: '12px', paddingRight: '12px', paddingTop: '12px' }}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+          >
             {markdownRenderer}
             {toolCallsView}
             {reorderedToolbar}
