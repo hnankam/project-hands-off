@@ -998,8 +998,12 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
             : 'cursor-pointer',
           isCompact
             ? isLight
-              ? 'text-gray-500 bg-gray-200/60 hover:bg-gray-200/80'
-              : 'text-gray-500 bg-gray-700/40 hover:bg-gray-700/60'
+              ? selectedPageURLs.length > 0
+                ? 'text-gray-700 bg-gray-200/60 hover:bg-gray-200/80' // Same color as addMenuButton when pages selected
+                : 'text-gray-500 bg-gray-200/60 hover:bg-gray-200/80' // Dull when no pages selected
+              : selectedPageURLs.length > 0
+              ? 'text-gray-300 bg-gray-700/40 hover:bg-gray-700/60' // Same color as addMenuButton when pages selected
+              : 'text-gray-500 bg-gray-700/40 hover:bg-gray-700/60' // Dull when no pages selected
             : isLight
             ? 'border-gray-300 bg-gray-100 text-gray-600 hover:border-gray-400 hover:bg-gray-200'
             : 'border-gray-600 bg-gray-800 text-gray-400 hover:border-gray-500 hover:bg-gray-700',
@@ -1097,8 +1101,8 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
               className={cn(
                   'w-full pl-7 pr-2 py-1.5 text-xs rounded-md outline-none transition-colors',
                 isLight
-                  ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-50 focus:ring-1 focus:ring-gray-300'
-                  : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800 focus:ring-1 focus:ring-gray-600'
+                  ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-100'
+                  : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800'
               )}
             />
             </div>

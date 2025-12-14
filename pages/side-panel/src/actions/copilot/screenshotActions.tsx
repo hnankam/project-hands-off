@@ -189,7 +189,6 @@ export const createTakeScreenshotAction = ({ isLight }: ScreenshotActionDependen
       <ActionStatus
         toolName={`Screenshot (${captureType}, ${details})`}
         status={status}
-        isLight={isLight}
         icon={<CameraIcon style={getIconStyle(isLight)} />}
         messages={{
           pending: `Taking ${captureType} screenshot (${details})`,

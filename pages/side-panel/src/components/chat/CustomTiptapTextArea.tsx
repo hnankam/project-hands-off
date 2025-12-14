@@ -96,18 +96,9 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
       }
     }, [ref]);
 
-    // Sample mention suggestions
+    // Mention suggestions - only pages (fetched dynamically in MentionExtension)
     const mentionSuggestions: MentionSuggestion[] = useMemo(
-      () => [
-        { id: '1', label: 'AI Assistant', type: 'agent' },
-        { id: '2', label: 'Code Agent', type: 'agent' },
-        { id: '3', label: 'Data Analyst', type: 'agent' },
-        { id: '4', label: 'project-spec.md', type: 'file' },
-        { id: '5', label: 'database-schema.sql', type: 'file' },
-        { id: '6', label: 'api-docs.json', type: 'file' },
-        { id: '7', label: 'USER_ID', type: 'variable' },
-        { id: '8', label: 'API_KEY', type: 'variable' },
-      ],
+      () => [],
       []
     );
 
@@ -259,9 +250,84 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
             class: 'code-block',
           },
         }),
-        Mention.configure({
+        Mention.extend({
+          addAttributes() {
+            // Get parent attributes and merge with custom ones
+            const parentAttrs = this.parent?.() || {};
+            return {
+              ...parentAttrs,
+              id: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-id'),
+                renderHTML: attributes => {
+                  if (!attributes.id) {
+                    return {};
+                  }
+                  return {
+                    'data-id': attributes.id,
+                  };
+                },
+              },
+              label: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-label'),
+                renderHTML: attributes => {
+                  if (!attributes.label) {
+                    return {};
+                  }
+                  return {
+                    'data-label': attributes.label,
+                  };
+                },
+              },
+              pageURL: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-page-url'),
+                renderHTML: attributes => {
+                  if (!attributes.pageURL) {
+                    return {};
+                  }
+                  return {
+                    'data-page-url': attributes.pageURL,
+                  };
+                },
+              },
+              type: {
+                default: null,
+                parseHTML: element => element.getAttribute('data-type'),
+                renderHTML: attributes => {
+                  if (!attributes.type) {
+                    return {};
+                  }
+                  return {
+                    'data-type': attributes.type,
+                  };
+                },
+              },
+            };
+          },
+          addNodeView() {
+            return ({ node }) => {
+              console.log('[Mention NodeView] Rendering mention node:', {
+                attrs: node.attrs,
+              });
+              const span = document.createElement('span');
+              span.className = 'mention';
+              span.textContent = `@${node.attrs.label || node.attrs.id || '[mention]'}`;
+              return {
+                dom: span,
+              };
+            };
+          },
+        }).configure({
           HTMLAttributes: {
             class: 'mention',
+          },
+          renderLabel({ node }) {
+            console.log('[Mention renderLabel] Called with node:', {
+              attrs: node.attrs,
+            });
+            return `@${node.attrs.label || node.attrs.id || 'unknown'}`;
           },
           suggestion: createMentionSuggestion(mentionSuggestions),
         }),
@@ -281,7 +347,11 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
             }
 
             // Get markdown content
+            const json = editor!.getJSON();
+            console.log('[CustomTiptapTextArea] Editor JSON before serialization:', JSON.stringify(json, null, 2));
+            
             const markdown = editorToMarkdown(editor!);
+            console.log('[CustomTiptapTextArea] Serialized markdown:', markdown);
             
             if (!markdown.trim()) {
               return;

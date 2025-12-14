@@ -15,6 +15,7 @@ import React, { useMemo, useRef, useCallback } from 'react';
 import { Streamdown } from 'streamdown';
 import { CustomCodeBlockWrapper } from './slots/CustomCodeBlock';
 import { CustomTableWrapper } from './slots/CustomTable';
+import { CustomLinkWrapper } from './slots/CustomLink';
 import { ThinkingBlockWrapper } from './ThinkingBlockWrapper';
 import rehypeRaw from 'rehype-raw';
 
@@ -45,24 +46,17 @@ interface CustomMarkdownRendererProps {
  */
 /**
  * Preprocess markdown content to ensure proper spacing around code blocks
- * and convert @mentions to HTML spans for styling
  */
 const preprocessMarkdown = (content: string): string => {
   if (!content) return content;
   
-  let processed = content;
-  
-  // Only fix: ensure newline before ``` if text is directly adjacent
+  // Ensure newline before ``` if text is directly adjacent
   // This handles "text```python" -> "text\n```python"
-  processed = processed.replace(/([^\n\s])```/g, '$1\n```');
-  
-  // Convert @mentions to HTML spans (but avoid converting in code blocks)
-  // This regex matches @mentions that aren't inside code blocks
-  // Simple approach: convert mentions that aren't preceded by backticks
-  processed = processed.replace(/@([a-zA-Z0-9_.-]+)/g, '<span class="mention">@$1</span>');
+  const processed = content.replace(/([^\n\s])```/g, '$1\n```');
   
   return processed.trim();
 };
+
 
 export const CustomMarkdownRenderer: React.FC<CustomMarkdownRendererProps> = ({
   content,
@@ -89,6 +83,7 @@ export const CustomMarkdownRenderer: React.FC<CustomMarkdownRendererProps> = ({
   const streamdownComponents = useMemo(() => ({
     pre: CustomCodeBlockWrapper,
     table: CustomTableWrapper,
+    a: CustomLinkWrapper,  // Custom link component with chip styling
   }), []);
   
   // Track instance IDs for stable keys (prevents remounting during streaming)
@@ -239,7 +234,7 @@ export const CustomMarkdownRenderer: React.FC<CustomMarkdownRendererProps> = ({
       // No custom tags - render normally through Streamdown (fast path)
   return (
     <Streamdown
-      className={className}
+      className={className ? `${className} markdown-content` : 'markdown-content'}
           rehypePlugins={[rehypeRaw]}
           components={streamdownComponents}
           {...props}
@@ -257,7 +252,7 @@ export const CustomMarkdownRenderer: React.FC<CustomMarkdownRendererProps> = ({
       parts.push(
         <Streamdown
           key="before"
-          className={className}
+          className={className ? `${className} markdown-content` : 'markdown-content'}
           rehypePlugins={[rehypeRaw]}
           components={streamdownComponents}
       {...props}

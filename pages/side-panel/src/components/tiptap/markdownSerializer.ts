@@ -7,18 +7,9 @@ import { Editor } from '@tiptap/react';
  *           hard breaks, blockquotes, horizontal rules, lists (ordered and unordered), links
  */
 export function editorToMarkdown(editor: Editor): string {
-  // Use tiptap-markdown extension's getMarkdown() if available (more robust)
-  try {
-    const storage = editor.storage as Record<string, any>;
-    const markdown = storage.markdown?.getMarkdown?.();
-    if (typeof markdown === 'string') {
-      return markdown.trim();
-    }
-  } catch {
-    // Fall through to custom serializer
-  }
-  
-  // Fallback to custom serializer
+  // ALWAYS use custom serializer to handle mentions properly
+  // tiptap-markdown doesn't support mention nodes in non-html mode
+  console.log('[editorToMarkdown] Using custom JSON serializer for mentions support');
   const json = editor.getJSON();
   return jsonToMarkdown(json);
 }
@@ -74,7 +65,15 @@ function jsonToMarkdown(node: any, depth = 0, listContext?: { type: 'bullet' | '
 
   // Handle mention nodes
   if (node.type === 'mention') {
-    return `@${node.attrs?.label || node.attrs?.id || 'unknown'}`;
+    console.log('[markdownSerializer] Mention node:', {
+      type: node.type,
+      attrs: node.attrs,
+      hasLabel: !!node.attrs?.label,
+      hasId: !!node.attrs?.id,
+    });
+    const result = `@${node.attrs?.label || node.attrs?.id || 'unknown'}`;
+    console.log('[markdownSerializer] Serialized mention to:', result);
+    return result;
   }
 
   // Handle hard break

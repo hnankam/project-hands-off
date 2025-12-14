@@ -257,19 +257,21 @@
 }
 
 .slash-command-list {
-  background: var(--copilot-kit-input-background-color, #ffffff); /* Match editor background exactly */
+  background: #f9fafb; /* bg-gray-50 - matches agent selector */
   border: 1px solid #e5e7eb; /* border-gray-200 */
   border-radius: 6px; /* rounded-md */
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-lg */
-  max-height: 300px;
+  max-height: 400px;
   overflow: hidden;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   min-width: 200px;
   z-index: 10001;
   animation: dropdownSlideUp 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dark .slash-command-list {
+  background: #151C24; /* matches agent selector dark mode */
   border-color: #374151; /* border-gray-700 */
 }
 
@@ -302,14 +304,20 @@
   min-height: 28px; /* Reduced from 32px to 28px */
 }
 
-.slash-command-item:hover,
-.slash-command-item.selected {
-  background: #f3f4f6; /* hover:bg-gray-100 */
+.slash-command-item:hover {
+  background: #f3f4f6; /* hover:bg-gray-100 - matches agent selector */
 }
 
-.dark .slash-command-item:hover,
+.dark .slash-command-item:hover {
+  background: #374151; /* hover:bg-gray-700 - matches agent selector */
+}
+
+.slash-command-item.selected {
+  background: #dbeafe; /* bg-blue-50 - matches agent selector selected */
+}
+
 .dark .slash-command-item.selected {
-  background: rgba(55, 65, 81, 0.5); /* hover:bg-gray-700/50 */
+  background: rgba(30, 58, 138, 0.3); /* bg-blue-900/30 - matches agent selector selected */
 }
 
 .slash-command-icon {
@@ -343,12 +351,20 @@
 .slash-command-title {
   font-size: 12px; /* text-xs */
   font-weight: 500; /* font-medium */
-  color: #374151 !important; /* matches dropdown item color */
+  color: #4b5563 !important; /* text-gray-600 - matches agent selector */
   line-height: 1.5;
 }
 
 .dark .slash-command-title {
-  color: #e5e7eb !important; /* gray-200 - brighter for dark mode */
+  color: #6b7280 !important; /* text-gray-500 - matches agent selector */
+}
+
+.slash-command-item.selected .slash-command-title {
+  color: #1e40af !important; /* text-blue-700 - matches agent selector selected */
+}
+
+.dark .slash-command-item.selected .slash-command-title {
+  color: #93c5fd !important; /* text-blue-300 - matches agent selector selected */
 }
 
 .slash-command-description {
@@ -391,19 +407,21 @@
 }
 
 .mention-list {
-  background: var(--copilot-kit-input-background-color, #ffffff); /* Match editor background exactly */
+  background: #f9fafb; /* bg-gray-50 - matches agent selector */
   border: 1px solid #e5e7eb; /* border-gray-200 */
   border-radius: 6px; /* rounded-md */
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-lg */
-  max-height: 300px;
+  max-height: 400px;
   overflow: hidden;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   min-width: 200px;
   z-index: 10001;
   animation: dropdownSlideUp 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dark .mention-list {
+  background: #151C24; /* matches agent selector dark mode */
   border-color: #374151; /* border-gray-700 */
 }
 
@@ -411,11 +429,20 @@
   padding: 0; /* Remove padding for flush appearance */
 }
 
+/* Search bar in mention list */
+.mention-list input[type="text"] {
+  font-family: inherit;
+}
+
+.mention-list input[type="text"]:focus {
+  outline: none;
+}
+
 .mention-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px; /* Reduced from 8px to 6px */
+  padding: 3px 12px; /* Reduced vertical padding for more compact items */
   border: none;
   background: transparent;
   cursor: pointer;
@@ -423,17 +450,23 @@
   width: 100%;
   transition: background-color 150ms ease;
   border-radius: 0;
-  min-height: 28px; /* Reduced from 32px to 28px */
+  min-height: 24px; /* Reduced from 28px to 24px for more compact items */
 }
 
-.mention-item:hover,
+.mention-item:hover {
+  background: #f3f4f6; /* hover:bg-gray-100 - matches agent selector */
+}
+
+.dark .mention-item:hover {
+  background: #374151; /* hover:bg-gray-700 - matches agent selector */
+}
+
 .mention-item.selected {
-  background: #f3f4f6; /* hover:bg-gray-100 */
+  background: #dbeafe; /* bg-blue-50 - matches agent selector selected */
 }
 
-.dark .mention-item:hover,
 .dark .mention-item.selected {
-  background: rgba(55, 65, 81, 0.5); /* hover:bg-gray-700/50 */
+  background: rgba(30, 58, 138, 0.3); /* bg-blue-900/30 - matches agent selector selected */
 }
 
 .mention-icon {
@@ -460,12 +493,20 @@
 .mention-label {
   font-size: 12px; /* text-xs */
   font-weight: 500; /* font-medium */
-  color: #374151 !important; /* matches dropdown item color */
+  color: #4b5563 !important; /* text-gray-600 - matches agent selector */
   line-height: 1.5;
 }
 
 .dark .mention-label {
-  color: #e5e7eb !important; /* gray-200 - brighter for dark mode */
+  color: #6b7280 !important; /* text-gray-500 - matches agent selector */
+}
+
+.mention-item.selected .mention-label {
+  color: #1e40af !important; /* text-blue-700 - matches agent selector selected */
+}
+
+.dark .mention-item.selected .mention-label {
+  color: #93c5fd !important; /* text-blue-300 - matches agent selector selected */
 }
 
 .mention-empty {
@@ -626,19 +667,21 @@
 }
 
 .slash-command-list {
-  background: var(--copilot-kit-input-background-color, #ffffff); /* Match editor background exactly */
+  background: #f9fafb; /* bg-gray-50 - matches agent selector */
   border: 1px solid #e5e7eb; /* border-gray-200 */
   border-radius: 6px; /* rounded-md */
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-lg */
-  max-height: 300px;
+  max-height: 400px;
   overflow: hidden;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   min-width: 200px;
   z-index: 10001;
   animation: dropdownSlideUp 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dark .slash-command-list {
+  background: #151C24; /* matches agent selector dark mode */
   border-color: #374151; /* border-gray-700 */
 }
 
@@ -671,14 +714,20 @@
   min-height: 28px; /* Reduced from 32px to 28px */
 }
 
-.slash-command-item:hover,
-.slash-command-item.selected {
-  background: #f3f4f6; /* hover:bg-gray-100 */
+.slash-command-item:hover {
+  background: #f3f4f6; /* hover:bg-gray-100 - matches agent selector */
 }
 
-.dark .slash-command-item:hover,
+.dark .slash-command-item:hover {
+  background: #374151; /* hover:bg-gray-700 - matches agent selector */
+}
+
+.slash-command-item.selected {
+  background: #dbeafe; /* bg-blue-50 - matches agent selector selected */
+}
+
 .dark .slash-command-item.selected {
-  background: rgba(55, 65, 81, 0.5); /* hover:bg-gray-700/50 */
+  background: rgba(30, 58, 138, 0.3); /* bg-blue-900/30 - matches agent selector selected */
 }
 
 .slash-command-icon {
@@ -712,12 +761,20 @@
 .slash-command-title {
   font-size: 12px; /* text-xs */
   font-weight: 500; /* font-medium */
-  color: #374151 !important; /* matches dropdown item color */
+  color: #4b5563 !important; /* text-gray-600 - matches agent selector */
   line-height: 1.5;
 }
 
 .dark .slash-command-title {
-  color: #e5e7eb !important; /* gray-200 - brighter for dark mode */
+  color: #6b7280 !important; /* text-gray-500 - matches agent selector */
+}
+
+.slash-command-item.selected .slash-command-title {
+  color: #1e40af !important; /* text-blue-700 - matches agent selector selected */
+}
+
+.dark .slash-command-item.selected .slash-command-title {
+  color: #93c5fd !important; /* text-blue-300 - matches agent selector selected */
 }
 
 .slash-command-description {
@@ -762,19 +819,21 @@
 }
 
 .mention-list {
-  background: var(--copilot-kit-input-background-color, #ffffff); /* Match editor background exactly */
+  background: #f9fafb; /* bg-gray-50 - matches agent selector */
   border: 1px solid #e5e7eb; /* border-gray-200 */
   border-radius: 6px; /* rounded-md */
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-lg */
-  max-height: 300px;
+  max-height: 400px;
   overflow: hidden;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   min-width: 200px;
   z-index: 10001;
   animation: dropdownSlideUp 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dark .mention-list {
+  background: #151C24; /* matches agent selector dark mode */
   border-color: #374151; /* border-gray-700 */
 }
 
@@ -782,11 +841,20 @@
   padding: 0; /* Remove padding for flush appearance */
 }
 
+/* Search bar in mention list */
+.mention-list input[type="text"] {
+  font-family: inherit;
+}
+
+.mention-list input[type="text"]:focus {
+  outline: none;
+}
+
 .mention-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px; /* Reduced from 8px to 6px */
+  padding: 3px 12px; /* Reduced vertical padding for more compact items */
   border: none;
   background: transparent;
   cursor: pointer;
@@ -794,17 +862,23 @@
   width: 100%;
   transition: background-color 150ms ease;
   border-radius: 0;
-  min-height: 28px; /* Reduced from 32px to 28px */
+  min-height: 24px; /* Reduced from 28px to 24px for more compact items */
 }
 
-.mention-item:hover,
+.mention-item:hover {
+  background: #f3f4f6; /* hover:bg-gray-100 - matches agent selector */
+}
+
+.dark .mention-item:hover {
+  background: #374151; /* hover:bg-gray-700 - matches agent selector */
+}
+
 .mention-item.selected {
-  background: #f3f4f6; /* hover:bg-gray-100 */
+  background: #dbeafe; /* bg-blue-50 - matches agent selector selected */
 }
 
-.dark .mention-item:hover,
 .dark .mention-item.selected {
-  background: rgba(55, 65, 81, 0.5); /* hover:bg-gray-700/50 */
+  background: rgba(30, 58, 138, 0.3); /* bg-blue-900/30 - matches agent selector selected */
 }
 
 .mention-icon {
@@ -831,12 +905,20 @@
 .mention-label {
   font-size: 12px; /* text-xs */
   font-weight: 500; /* font-medium */
-  color: #374151 !important; /* matches dropdown item color */
+  color: #4b5563 !important; /* text-gray-600 - matches agent selector */
   line-height: 1.5;
 }
 
 .dark .mention-label {
-  color: #e5e7eb !important; /* gray-200 - brighter for dark mode */
+  color: #6b7280 !important; /* text-gray-500 - matches agent selector */
+}
+
+.mention-item.selected .mention-label {
+  color: #1e40af !important; /* text-blue-700 - matches agent selector selected */
+}
+
+.dark .mention-item.selected .mention-label {
+  color: #93c5fd !important; /* text-blue-300 - matches agent selector selected */
 }
 
 .mention-empty {

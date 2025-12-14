@@ -622,9 +622,84 @@ export const CustomInput: React.FC<CustomInputProps> = ({
           class: 'code-block',
         },
       }),
-      Mention.configure({
+      Mention.extend({
+        addAttributes() {
+          // Get parent attributes and merge with custom ones
+          const parentAttrs = this.parent?.() || {};
+          return {
+            ...parentAttrs,
+            id: {
+              default: null,
+              parseHTML: element => element.getAttribute('data-id'),
+              renderHTML: attributes => {
+                if (!attributes.id) {
+                  return {};
+                }
+                return {
+                  'data-id': attributes.id,
+                };
+              },
+            },
+            label: {
+              default: null,
+              parseHTML: element => element.getAttribute('data-label'),
+              renderHTML: attributes => {
+                if (!attributes.label) {
+                  return {};
+                }
+                return {
+                  'data-label': attributes.label,
+                };
+              },
+            },
+            pageURL: {
+              default: null,
+              parseHTML: element => element.getAttribute('data-page-url'),
+              renderHTML: attributes => {
+                if (!attributes.pageURL) {
+                  return {};
+                }
+                return {
+                  'data-page-url': attributes.pageURL,
+                };
+              },
+            },
+            type: {
+              default: null,
+              parseHTML: element => element.getAttribute('data-type'),
+              renderHTML: attributes => {
+                if (!attributes.type) {
+                  return {};
+                }
+                return {
+                  'data-type': attributes.type,
+                };
+              },
+            },
+          };
+        },
+        addNodeView() {
+          return ({ node }) => {
+            console.log('[Mention NodeView] Rendering mention node:', {
+              attrs: node.attrs,
+            });
+            const span = document.createElement('span');
+            span.className = 'mention';
+            span.textContent = `@${node.attrs.label || node.attrs.id || '[mention]'}`;
+            return {
+              dom: span,
+            };
+          };
+        },
+      }).configure({
         HTMLAttributes: {
           class: 'mention',
+        },
+        renderLabel({ node }) {
+          console.log('[Mention renderLabel] Called with node:', {
+            attrs: node.attrs,
+          });
+          return `@${node.attrs.label || node.attrs.id || 'unknown'}`;
         },
         suggestion: createMentionSuggestion(mentionSuggestions),
       }),

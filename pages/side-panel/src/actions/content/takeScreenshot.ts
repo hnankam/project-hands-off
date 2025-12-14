@@ -210,11 +210,11 @@ async function optimizeDataUrl(
 }
 
 /**
- * Upload screenshot to Firebase and build attachment manifest
+ * Upload screenshot to Firebase and build attachment JSON
  */
 async function uploadAndBuildManifest(
   optimized: OptimizeResult
-): Promise<{ hostedUrl?: string; attachmentManifest: string }> {
+): Promise<{ hostedUrl?: string; attachmentJson: string }> {
   let hostedUrl: string | undefined;
   
   try {
@@ -239,9 +239,10 @@ async function uploadAndBuildManifest(
     debug.warn('[Screenshot] Firebase upload failed, using dataUrl fallback:', errorMessage);
   }
 
-  // Build attachment manifest if Firebase URL is available
-  const attachmentManifest = hostedUrl
-    ? buildAttachmentManifest([{
+  // Build attachment JSON in new format expected by backend
+  // Format: {"text": "message", "attachments": [...]}
+  const attachmentJson = hostedUrl
+    ? buildAttachmentJson([{
         name: `screenshot.${optimized.outputFormat === 'jpeg' ? 'jpg' : 'png'}`,
         type: optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png',
         size: Math.round(optimized.sizeKB * 1024),
@@ -249,14 +250,24 @@ async function uploadAndBuildManifest(
       }])
     : '';
 
-  return { hostedUrl, attachmentManifest };
+  return { hostedUrl, attachmentJson };
 }
 
 /**
- * Build attachment manifest HTML comment
+ * Build attachment JSON in backend-expected format
+ * Format: {"text": "message", "attachments": [{"url": "...", "filename": "...", "mimeType": "..."}]}
  */
-function buildAttachmentManifest(items: AttachmentManifestItem[]): string {
-  return `\n\n<!--ATTACHMENTS:\n${JSON.stringify(items)}\n-->`;
+function buildAttachmentJson(items: AttachmentManifestItem[]): string {
+  // Note: Backend normalizes both 'filename' and 'name', 'mimeType' and 'type'
+  return JSON.stringify({
+    text: '',  // Empty text, the base message is separate
+    attachments: items.map(item => ({
+      url: item.url,
+      filename: item.name,  // Backend normalizes to 'name'
+      mimeType: item.type,  // Backend normalizes to 'type'
+      size: item.size,
+    }))
+  });
 }
 
 /**
@@ -345,17 +356,28 @@ export async function handleTakeScreenshot(
     // Get viewport dimensions
     const viewportDims = await getViewportDimensions(tabId);
 
-    // Upload to Firebase and build manifest
-    const { hostedUrl, attachmentManifest } = await uploadAndBuildManifest(optimized);
+    // Upload to Firebase and build attachment JSON
+    const { hostedUrl, attachmentJson } = await uploadAndBuildManifest(optimized);
 
     // Build success message
     const baseMessage = captureFullPage
       ? 'Screenshot captured (visible area). Note: Full page screenshots are not yet supported. Current implementation captures the visible viewport.'
-      : 'Screenshot captured successfully. The screenshot has been captured and is available for analysis or comparison purposes.';
+      : 'Screenshot captured successfully.';
+
+    // If we have attachment JSON, wrap the base message in the JSON format
+    // Otherwise return base message as plain text
+    let message: string;
+    if (attachmentJson) {
+      const jsonData = JSON.parse(attachmentJson);
+      jsonData.text = baseMessage;  // Add the base message to the JSON
+      message = JSON.stringify(jsonData);
+    } else {
+      message = baseMessage;
+    }
 
     return {
       status: 'success',
-      message: `${baseMessage}${attachmentManifest}`,
+      message: message,
       screenshotInfo: {
         format: optimized.outputFormat,
         dimensions: {

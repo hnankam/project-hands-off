@@ -213,6 +213,16 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
     # Parse structured JSON format from request preprocessing
     try:
         data = json.loads(content)
+        
+        # Handle wrapped result format from screenshot tool: {"status": "success", "message": "{...}", "screenshotInfo": {...}}
+        if isinstance(data, dict) and 'message' in data and isinstance(data.get('message'), str):
+            try:
+                # Extract and re-parse the message field
+                message_content = data['message']
+                data = json.loads(message_content)
+            except (json.JSONDecodeError, TypeError):
+                return content, []
+        
         if isinstance(data, dict) and 'text' in data and 'attachments' in data:
             text = data.get('text', '')
             attachments_raw = data.get('attachments', [])
@@ -241,7 +251,7 @@ def parse_attachment_manifest(content: str, log_parse: bool = False) -> tuple[st
         pass
     
     # No attachments found, return content as-is
-        return content, []
+    return content, []
 
 
 async def keep_recent_messages(

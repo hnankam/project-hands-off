@@ -48,6 +48,7 @@
     line-height: 1.5 !important;
   }
 
+/* Regular markdown links (blue with underline) - not used for auto-detected URLs */
 .markdown-content .markdown-link {
   color: #3b82f6;
   text-decoration: none;
@@ -68,37 +69,42 @@
   border-bottom-color: #60a5fa;
 }
 
-/* Markdown links styled like editor links */
+/* Markdown links styled like editor links (chip style) */
 .markdown-content a.editor-link-style {
   color: #6b7280; /* gray-500 */
   background-color: rgba(107, 114, 128, 0.1);
   border-radius: 3px;
-  padding: 1px 4px;
-  text-decoration: none;
+  padding: 1px 4px 1px 2px;
+  text-decoration: none !important;
   cursor: pointer;
   transition: background-color 150ms;
   display: inline-block;
-  border-bottom: none;
+  border: none !important;
+  border-bottom: none !important;
   max-width: 300px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: middle;
+  font-weight: 500;
 }
 
 .markdown-content a.editor-link-style > * {
   vertical-align: middle;
 }
 
+
 .markdown-content a.editor-link-style::before {
   content: '';
   display: inline-block;
   width: 12px;
   height: 12px;
+  margin-right: 4px;
   background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%236b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>');
   background-size: contain;
   background-repeat: no-repeat;
-  flex-shrink: 0;
+  background-position: center;
+  vertical-align: middle;
 }
 
 .markdown-content a.editor-link-style:hover {
@@ -118,30 +124,6 @@
   background-color: rgba(156, 163, 175, 0.25);
 }
 
-/* Markdown mentions styled like editor mentions */
-.markdown-content .mention {
-  color: #3b82f6; /* blue-500 */
-  background-color: rgba(59, 130, 246, 0.1);
-  border-radius: 3px;
-  padding: 1px 4px;
-  font-weight: 500;
-  cursor: default;
-  text-decoration: none;
-  transition: background-color 150ms;
-}
-
-.markdown-content .mention:hover {
-  background-color: rgba(59, 130, 246, 0.2);
-}
-
-.dark .markdown-content .mention {
-  color: #60a5fa; /* blue-400 */
-  background-color: rgba(96, 165, 250, 0.15);
-}
-
-.dark .markdown-content .mention:hover {
-  background-color: rgba(96, 165, 250, 0.25);
-}
 
 .markdown-content .markdown-bold {
   font-weight: 700;
