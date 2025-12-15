@@ -7,7 +7,7 @@ import { ChatInner } from './ChatInner';
 import { SelectorsBar } from '../selectors/SelectorsBar';
 import { SettingsModal } from '../modals/SettingsModal';
 import { UsagePopup } from '../menus/UsagePopup';
-import type { AgentStepState } from '../cards/TaskProgressCard';
+import type { AgentStepState } from '../cards';
 import { useContentManager, type ContentState } from '../layout/ContentManager';
 import { useTabManager } from '../layout/TabManager';
 import { useMessagePersistence } from '../../hooks/useMessagePersistence';
@@ -180,7 +180,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           hasReportedInitialCountRef.current = false;
           setCurrentAgentStepState({
             sessionId,
-            steps: [],
+            plan: { steps: [] },
           });
         });
 
@@ -680,12 +680,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       if (isUsageHydrating) {
         return;
       }
+      // Save plan and graph state to storage
       sessionStorageDBWrapper.updateAgentStepState(sessionId, {
         sessionId,
-        steps: currentAgentStepState.steps ?? [],
+        plan: currentAgentStepState.plan,
         graph: currentAgentStepState.graph,
-        graphSteps: currentAgentStepState.graphSteps,
-      });
+        deferred_tool_requests: currentAgentStepState.deferred_tool_requests,
+      } as any);
     }, [sessionId, currentAgentStepState, isUsageHydrating]);
 
     // Log usage errors if any

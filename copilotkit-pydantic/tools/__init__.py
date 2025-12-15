@@ -1,7 +1,8 @@
 """Agent tools and tool registration."""
 
 from .agent_tools import get_agent_tools
-from .backend_tools import get_backend_tool, list_backend_tools, BACKEND_TOOLS, run_graph
+from .backend_tools import get_backend_tool, list_backend_tools, BACKEND_TOOLS
+from .graph_tools import run_graph
 from .auxiliary_agents import (
     get_auxiliary_agent,
     clear_auxiliary_agent_cache,
@@ -12,7 +13,6 @@ from .auxiliary_agents import (
 from .multi_agent_graph import (
     run_multi_agent_graph,
     create_multi_agent_graph,
-    GraphDeps,
     QueryState,
     RoutingDecision,
     GraphStep,
@@ -36,7 +36,6 @@ __all__ = [
     'run_graph',
     'run_multi_agent_graph',
     'create_multi_agent_graph',
-    'GraphDeps',
     'QueryState',
     'RoutingDecision',
     'GraphStep',

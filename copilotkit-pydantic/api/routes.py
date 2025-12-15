@@ -33,30 +33,10 @@ from anyio.streams.memory import MemoryObjectSendStream
 from pydantic import ValidationError
 
 from services.deployment_manager import DeploymentError
-from pydantic_ai.ag_ui import AGUIAdapter, StateDeps, run_ag_ui
+from pydantic_ai.ag_ui import AGUIAdapter, run_ag_ui
 from pydantic_ai.ui import SSE_CONTENT_TYPE
 from ag_ui.core import CustomEvent, RunAgentInput
-from dataclasses import dataclass
-
-@dataclass
-class ExtendedDeps:
-    """Extended dependencies including state, send_stream, adapter, and agent context."""
-    state: AgentState
-    send_stream: MemoryObjectSendStream[str] | None = None
-    adapter: AGUIAdapter | None = None
-    # Agent context for auxiliary agents
-    organization_id: str | None = None
-    team_id: str | None = None
-    agent_type: str | None = None
-    agent_info: dict | None = None
-    # Usage tracking context (for sub-agents in multi-agent graphs)
-    session_id: str | None = None
-    user_id: str | None = None
-    auth_session_id: str | None = None
-    broadcast_func: Any | None = None  # Async function to broadcast usage
-    # Database IDs for usage tracking (resolved UUIDs)
-    agent_id: str | None = None  # DB UUID of the parent agent
-    model_id: str | None = None  # DB UUID of the model
+from core.models import UnifiedDeps
 
 class DeploymentRequest(BaseModel):
     organization_id: str
@@ -342,14 +322,6 @@ def register_agent_routes(app: FastAPI) -> None:
         )
 
         try:
-
-            # response = await AGUIAdapter.dispatch_request(
-            #     request=request,
-            #     agent=await get_agent(agent_type, model, organization_id, team_id),
-            #     deps=StateDeps[AgentState](state=AgentState(steps=[])),
-            #     on_complete=usage_callback,
-            # )
-
             accept = request.headers.get('accept', SSE_CONTENT_TYPE)
             try:
                 request_data = await request.json()
@@ -379,9 +351,16 @@ def register_agent_routes(app: FastAPI) -> None:
                     from config.prompts import get_agent_info_for_context
                     agent_info = get_agent_info_for_context(agent_type, organization_id, team_id) or {}
                     
-                    # Create extended deps with state, send_stream, adapter, and agent context
-                    extended_deps = ExtendedDeps(
-                        state=AgentState(steps=[]),
+                    # Extract AGUI context from run_input (from frontend's useCopilotReadableData)
+                    # Context items are Pydantic models, convert to dicts for easier handling
+                    agui_context_raw = run_input.context or []
+                    agui_context = [
+                        item.model_dump() if hasattr(item, 'model_dump') else item
+                        for item in agui_context_raw
+                    ]
+                    
+                    deps = UnifiedDeps(
+                        state=AgentState(),
                         send_stream=send_stream,
                         adapter=adapter,
                         organization_id=organization_id,
@@ -396,11 +375,14 @@ def register_agent_routes(app: FastAPI) -> None:
                         # Database IDs for usage tracking (passed to sub-agents)
                         agent_id=agent_db_id,
                         model_id=model_db_id,
+                        # AGUI context from frontend (useCopilotReadableData / useAgentContext)
+                        agui_context=agui_context,
                     )
+                    
                     event_stream = run_ag_ui(
                         agent=agent_instance,
                         run_input=run_input,
-                        deps=extended_deps,
+                        deps=deps,
                         on_complete=usage_callback
                     )
                     async for event in event_stream:

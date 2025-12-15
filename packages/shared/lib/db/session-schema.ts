@@ -119,7 +119,7 @@ export interface SessionUsageStats {
 export interface GraphToolCall {
   tool_name: string;
   args: string;
-  result?: string;
+  result: string;
   status: 'in_progress' | 'completed' | 'error';
   tool_call_id?: string;
 }
@@ -135,8 +135,12 @@ export interface GraphStep {
   timestamp: string;
 }
 
-/** Full graph state from backend */
-export interface GraphState {
+/** Single graph execution instance - fully self-contained */
+export interface GraphInstance {
+  graph_id: string;
+  name: string;
+  status: 'active' | 'paused' | 'completed' | 'cancelled' | 'waiting';
+  steps: GraphStep[];
   query: string;
   original_query: string;
   result: string;
@@ -154,10 +158,11 @@ export interface GraphState {
   max_iterations: number;
   should_continue: boolean;
   next_action: string;
-  planned_steps?: string[];
-  mermaid_diagram?: string;
-  status: 'pending' | 'running' | 'completed' | 'error' | 'waiting';
+  planned_steps: string[];
+  mermaid_diagram: string;
   deferred_tool_requests?: unknown;
+  created_at: string;
+  updated_at: string;
 }
 
 /** Plan step for task progress tracking */
@@ -166,14 +171,31 @@ export interface PlanStep {
   status: 'pending' | 'running' | 'completed' | 'failed' | 'deleted';
 }
 
-/** Full agent state including plan steps, graph steps, and graph state */
+/** Single plan instance - fully self-contained */
+export interface PlanInstance {
+  plan_id: string;
+  name: string;
+  status: 'active' | 'paused' | 'completed' | 'cancelled';
+  steps: PlanStep[];
+  created_at: string;
+  updated_at: string;
+  metadata?: Record<string, any>;
+}
+
+/**
+ * Unified agent state - flat structure with multi-instance support.
+ * Matches backend AgentState model exactly.
+ * 
+ * Multiple plans and graphs can be active simultaneously.
+ * Each instance is self-contained with its own name, status, and metadata.
+ */
 export interface SessionAgentState {
   sessionId: string;
-  /** Plan steps (task progress) - steps with 'description' field */
-  steps: PlanStep[];
-  /** Graph execution state from multi-agent graph */
-  graph?: GraphState;
-  /** Graph steps for rendering - steps with 'node' field (derived from graph state) */
-  graphSteps?: GraphStep[];
+  /** All plan instances, keyed by plan_id */
+  plans?: Record<string, PlanInstance>;
+  /** All graph instances, keyed by graph_id */
+  graphs?: Record<string, GraphInstance>;
+  /** Session-level deferred tool requests */
+  deferred_tool_requests?: unknown;
 }
 

@@ -473,13 +473,12 @@ export const sessionStorageDBWrapper = {
   },
 
   /**
-   * Update agent state (includes plan steps, graph state, and graph steps)
+   * Update agent state (includes plans and graphs)
    */
   async updateAgentStepState(sessionId: string, state: SessionAgentState): Promise<void> {
     await sessionStorageDB.updateAgentState(sessionId, { 
-      steps: state.steps,
-      graph: state.graph,
-      graphSteps: state.graphSteps,
+      plans: state.plans,
+      graphs: state.graphs,
     });
   },
 

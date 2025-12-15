@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Dict, Tuple, TYPE_CHECKING
+from typing import Dict, Tuple, TYPE_CHECKING, Any
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunContext
 from pydantic_ai.builtin_tools import (
     CodeExecutionTool,
     ImageGenerationTool,
@@ -12,13 +12,12 @@ from pydantic_ai.builtin_tools import (
     UrlContextTool,
     WebSearchTool,
 )
-from pydantic_ai.ag_ui import StateDeps
 
 from config.models import get_models_for_context
 from config.prompts import get_agent_prompts_for_context, get_agent_info_for_context
 from config.tools import get_tools_for_context, get_mcp_servers_for_context
 from config import logger
-from core.models import AgentState
+from core.models import AgentState, UnifiedDeps, StepStatus
 from utils.context import context_tuple
 
 if TYPE_CHECKING:
@@ -26,6 +25,49 @@ if TYPE_CHECKING:
 
 # Agent cache for reusing agent instances scoped by organization/team
 _agent_cache: Dict[Tuple[str, str, str, str], Agent] = {}
+
+
+def format_agui_context(context_items: list[dict | Any]) -> str:
+    """Format AGUI context items for inclusion in agent instructions.
+    
+    Converts context items from frontend (useCopilotReadableData / useAgentContext)
+    into a formatted string for agent instructions.
+    
+    Args:
+        context_items: List of context items (dicts or Pydantic models) with 'description' and 'value'
+        
+    Returns:
+        Formatted context string, or empty string if no context items
+    """
+    if not context_items:
+        return ""
+    
+    parts = ["\n\n=== User Session Context ===\n"]
+    for item in context_items:
+        # Handle both dict and Pydantic model formats
+        if hasattr(item, 'model_dump'):
+            # Pydantic model
+            item_dict = item.model_dump()
+        elif isinstance(item, dict):
+            # Already a dict
+            item_dict = item
+        else:
+            # Try to access as attributes
+            try:
+                item_dict = {'description': getattr(item, 'description', 'Context'), 'value': getattr(item, 'value', '')}
+            except AttributeError:
+                continue
+        
+        description = item_dict.get('description', 'Context')
+        value = item_dict.get('value', '')
+        
+        if not value:
+            continue
+        
+        # Format: Description followed by value in code block
+        parts.append(f"\n**{description}**:\n```\n{value}\n```\n")
+    
+    return "".join(parts)
 
 BUILTIN_TOOL_REGISTRY = {
     'builtin_web_search': WebSearchTool,
@@ -183,7 +225,7 @@ async def create_agent(
     agent = Agent(
         model,
         instructions=instructions,
-        deps_type=StateDeps[AgentState],
+        deps_type=UnifiedDeps,
         model_settings=model_settings,
         history_processors=[process_message_attachments, keep_recent_messages],
         builtin_tools=builtin_tool_instances,
@@ -191,6 +233,138 @@ async def create_agent(
         toolsets=mcp_toolsets,  # MCP toolsets loaded from static config (TESTING)
         retries=3,
     )
+
+    # Add dynamic instructions to inject AGUI context at runtime
+    @agent.instructions
+    def inject_agui_context(ctx: RunContext[Any]) -> str:
+        """Dynamically inject AGUI context from frontend into agent instructions.
+        
+        This function is called for each agent run and adds context provided by
+        the frontend through useCopilotReadableData / useAgentContext hooks.
+        
+        Context can be stored in either:
+        - ctx.deps.agui_context (preferred - extracted from run_input)
+        - ctx.deps.adapter.run_input.context (fallback - via AGUIAdapter)
+        
+        Args:
+            ctx: The run context with access to dependencies
+            
+        Returns:
+            Formatted context string to append to instructions, or empty string
+        """
+        context_items = None
+        context_source = None
+        
+        # Try to get context from deps.agui_context (preferred path)
+        if hasattr(ctx.deps, 'agui_context'):
+            context_items = ctx.deps.agui_context
+            if context_items:
+                context_source = "deps.agui_context"
+        
+        # Fallback: try to get from adapter.run_input.context
+        if not context_items and hasattr(ctx.deps, 'adapter'):
+            adapter = ctx.deps.adapter
+            if adapter and hasattr(adapter, 'run_input'):
+                context_items = adapter.run_input.context
+                if context_items:
+                    context_source = "adapter.run_input.context"
+        
+        # Format and return context
+        if context_items:
+            return format_agui_context(context_items)
+        
+        return ""
+    
+    # Add multi-instance context instructions
+    @agent.instructions
+    def inject_multi_instance_context(ctx: RunContext[UnifiedDeps]) -> str:
+        """Inject multi-instance plan/graph management context.
+        
+        Provides the agent with:
+        - Current active/paused plans and graphs
+        - Usage examples with names
+        - Best practices for multi-instance management
+        - Tool reference
+        
+        Args:
+            ctx: The run context with agent state
+            
+        Returns:
+            Multi-instance management instructions
+        """
+        # Safety check for state
+        if not hasattr(ctx.deps, 'state') or ctx.deps.state is None:
+            return ""
+        
+        state = ctx.deps.state
+        
+        # Extract current state
+        active_plans = [p for p in state.plans.values() if p.status == "active"]
+        paused_plans = [p for p in state.plans.values() if p.status == "paused"]
+        active_graphs = [g for g in state.graphs.values() if g.status == "active"]
+        
+        # Build context string
+        context = "\n\n=== Multi-Instance Workflow System ===\n\n"
+        context += "You can manage multiple plans and graphs simultaneously. Each has:\n"
+        context += "- **Unique ID**: Auto-generated (e.g., 'abc123def456')\n"
+        context += "- **Human Name**: Descriptive, user-friendly (e.g., 'Build Dream House')\n"
+        context += "- **Status**: Plans (active, paused, completed, cancelled) | Graphs (active, running, paused, completed, cancelled, waiting)\n\n"
+        
+        context += "## Targeting Plans & Graphs\n\n"
+        context += "Reference by **NAME** or **ID**:\n"
+        context += "- update_plan_step('Build House Plan', 0, status='completed')\n"
+        context += "- update_plan_step('abc123def456', 0, status='completed')\n\n"
+        context += "Names are case-insensitive and support partial matching.\n\n"
+        
+        # Add current active plans
+        if active_plans:
+            context += f"## Currently Active Plans ({len(active_plans)}):\n\n"
+            for plan in active_plans:
+                completed = sum(1 for s in plan.steps if s.status == 'completed')
+                total = len(plan.steps)
+                context += f'**"{plan.name}"** (ID: `{plan.plan_id}`)\n'
+                context += f'  - Progress: {completed}/{total} steps completed\n\n'
+        
+        # Add paused plans
+        if paused_plans:
+            context += f"## Paused Plans ({len(paused_plans)}):\n\n"
+            for plan in paused_plans:
+                context += f'**"{plan.name}"** (ID: `{plan.plan_id}`)\n'
+                context += f'  - Steps: {len(plan.steps)}\n\n'
+            context += "Use `update_plan_status(name, 'active')` to resume\n\n"
+        
+        # Add active graphs
+        if active_graphs:
+            context += f"## Active Graph Executions ({len(active_graphs)}):\n\n"
+            for graph in active_graphs:
+                query_preview = graph.query[:60] + "..." if len(graph.query) > 60 else graph.query
+                context += f'**"{graph.name}"** (ID: `{graph.graph_id}`)\n'
+                context += f'  - Query: {query_preview}\n'
+                context += f'  - Status: {graph.status}\n\n'
+        
+        # Add instructions if no active work
+        if not active_plans and not paused_plans and not active_graphs:
+            context += "## No Active Work\n\n"
+            context += "Create a new plan: `create_plan(name='...', steps=[...])`\n\n"
+        
+        # Add best practices
+        context += "## Best Practices\n\n"
+        context += "1. **Use descriptive names** when creating plans/graphs\n"
+        context += "   'Research Machine Learning Papers'\n"
+        context += "   'Plan 1'\n\n"
+        context += "2. **Use names when user mentions them**\n"
+        context += "   User: 'Update @Build House Plan'\n"
+        context += "   You: update_plan_step('Build House Plan', ...)\n\n"
+        context += "3. **Use list_plans() if unsure** which plan to update\n\n"
+        context += "4. **Multiple active plans are normal** - don't force single active\n\n"
+        
+        # Add quick tool reference
+        context += "## Tools Available\n\n"
+        context += "**Plans**: create_plan, update_plan_step, update_plan_status, "
+        context += "rename_plan, list_plans, delete_plan\n"
+        context += "**Graphs**: run_graph (multi-agent execution)\n"
+        
+        return context
 
     # agent.sequential_tool_calls()
 

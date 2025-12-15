@@ -261,49 +261,112 @@ def build_graph_agent_state(
     }
 
 
-def sync_to_shared_state(state: QueryState, shared_state: Any, current_node: str = "") -> None:
-    """Sync internal QueryState to the shared AgentState.graph.
+def sync_to_shared_state(
+    state: QueryState,
+    shared_state: Any,
+    current_node: str = "",
+    graph_id: str | None = None,
+    graph_name: str | None = None
+) -> str:
+    """Sync internal QueryState to shared AgentState.graphs[graph_id].
+    
+    Creates or updates a GraphInstance in the flat graphs dictionary.
     
     Args:
         state: The internal QueryState
         shared_state: The shared AgentState from session
         current_node: Currently executing node
+        graph_id: Unique ID for this graph (will be generated if not provided)
+        graph_name: Human-readable name for this graph (will be generated from query if not provided)
+        
+    Returns:
+        The graph_id (generated if not provided)
     """
-    if not shared_state or not hasattr(shared_state, 'graph'):
-        return
+    from core.models import GraphInstance
+    from datetime import datetime
     
-    shared_state.graph.query = state.query
-    shared_state.graph.original_query = state.original_query
-    shared_state.graph.result = state.result
-    shared_state.graph.query_type = state.query_type
-    shared_state.graph.execution_history = list(state.execution_history)
-    shared_state.graph.intermediate_results = dict(state.intermediate_results)
-    shared_state.graph.streaming_text = dict(state.streaming_text)
-    shared_state.graph.prompts = dict(state.prompts)
-    # Convert ToolCallInfo dataclass instances to dicts for serialization
-    # Handle both ToolCallInfo objects and already-serialized dicts (from resumed state)
-    shared_state.graph.tool_calls = {
+    if not shared_state or not hasattr(shared_state, 'graphs'):
+        return graph_id or uuid.uuid4().hex[:12]
+    
+    # Generate graph_id if not provided
+    if not graph_id:
+        graph_id = uuid.uuid4().hex[:12]
+    
+    # Generate graph_name from query if not provided
+    if not graph_name:
+        # Create a name from the first 50 chars of the query
+        query_text = state.query or state.original_query or "Graph Execution"
+        graph_name = query_text[:50] + ("..." if len(query_text) > 50 else "")
+    
+    # Create or update GraphInstance
+    if graph_id not in shared_state.graphs:
+        # Create new GraphInstance
+        shared_state.graphs[graph_id] = GraphInstance(
+            graph_id=graph_id,
+            name=graph_name,
+            status='running',
+            steps=[],
+            query=state.query,
+            original_query=state.original_query or state.query,
+            result="",
+            query_type=state.query_type,
+            execution_history=[],
+            intermediate_results={},
+            streaming_text={},
+            prompts={},
+            tool_calls={},
+            errors=[],
+            last_error_node="",
+            retry_count=0,
+            max_retries=state.max_retries,
+            iteration_count=0,
+            max_iterations=state.max_iterations,
+            should_continue=True,
+            next_action="",
+            planned_steps=[],
+            mermaid_diagram="",
+            deferred_tool_requests=None,
+            created_at=datetime.now().isoformat(),
+            updated_at=datetime.now().isoformat(),
+        )
+    
+    # Get the graph instance
+    graph = shared_state.graphs[graph_id]
+    
+    # Update all fields
+    graph.query = state.query
+    graph.original_query = state.original_query or state.query
+    graph.result = state.result
+    graph.query_type = state.query_type
+    graph.execution_history = list(state.execution_history)
+    graph.intermediate_results = dict(state.intermediate_results)
+    graph.streaming_text = dict(state.streaming_text)
+    graph.prompts = dict(state.prompts)
+    graph.tool_calls = {
         node: _serialize_tool_calls(calls)
         for node, calls in state.tool_calls.items()
     }
-    shared_state.graph.errors = list(state.errors)
-    shared_state.graph.last_error_node = state.last_error_node
-    shared_state.graph.retry_count = state.retry_count
-    shared_state.graph.iteration_count = state.iteration_count
-    shared_state.graph.should_continue = state.should_continue
-    shared_state.graph.next_action = current_node or state.next_action
-    shared_state.graph.planned_steps = list(state.planned_steps) if state.planned_steps else []
+    graph.errors = list(state.errors)
+    graph.last_error_node = state.last_error_node
+    graph.retry_count = state.retry_count
+    graph.iteration_count = state.iteration_count
+    graph.should_continue = state.should_continue
+    graph.next_action = current_node or state.next_action
+    graph.planned_steps = list(state.planned_steps) if state.planned_steps else []
+    graph.updated_at = datetime.now().isoformat()
     
-    # Sync deferred tool requests if present
+    # Update status based on state
     if hasattr(state, 'deferred_tool_requests') and state.deferred_tool_requests:
-        shared_state.graph.deferred_tool_requests = state.deferred_tool_requests
-        shared_state.graph.status = 'waiting'
+        graph.deferred_tool_requests = state.deferred_tool_requests
+        graph.status = 'waiting'
     elif state.result:
-        shared_state.graph.status = 'completed'
+        graph.status = 'completed'
     elif state.errors:
-        shared_state.graph.status = 'error'
+        graph.status = 'error'
     else:
-        shared_state.graph.status = 'running'
+        graph.status = 'active'  # Changed from 'running' to match status types
+    
+    return graph_id
 
 
 async def send_graph_state_snapshot(
@@ -334,23 +397,35 @@ async def send_graph_state_snapshot(
     try:
         encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
         
+        # Get or generate graph_id
+        graph_id = None
+        graph_name = None
+        if shared_state and hasattr(shared_state, 'graphs'):
+            # Try to find existing graph for this query
+            for gid, graph in shared_state.graphs.items():
+                if graph.original_query == (state.original_query or state.query):
+                    graph_id = gid
+                    graph_name = graph.name
+                    break
+        
         # Sync to shared state if available (for persistence)
-        if shared_state and hasattr(shared_state, 'graph'):
-            sync_to_shared_state(state, shared_state, current_node)
+        if shared_state and hasattr(shared_state, 'graphs'):
+            graph_id = sync_to_shared_state(state, shared_state, current_node, graph_id, graph_name)
         
         # Build GraphAgentState format for frontend rendering
         graph_agent_state = build_graph_agent_state(state, current_node, step_status)
         
-        # Include mermaid_diagram from shared_state if available
-        if shared_state and hasattr(shared_state, 'graph') and hasattr(shared_state.graph, 'mermaid_diagram'):
-            graph_agent_state["mermaid_diagram"] = shared_state.graph.mermaid_diagram
+        # Include mermaid_diagram from graph instance if available
+        if shared_state and hasattr(shared_state, 'graphs') and graph_id and graph_id in shared_state.graphs:
+            graph_agent_state["mermaid_diagram"] = shared_state.graphs[graph_id].mermaid_diagram
         
-        # Build nested AgentState format for CopilotKit state persistence
-        # This ensures the state sent back from frontend has the 'graph' field
-        nested_snapshot = {
-            "steps": graph_agent_state.get("steps", []),  # GraphStep[] for rendering
-            "graph": {
-                # GraphState fields for resumption
+        # Build flat AgentState format for CopilotKit state persistence
+        # Uses flat graphs dictionary structure
+        graph_instance_data = {
+            "graph_id": graph_id,
+            "name": graph_name or state.query[:50],
+            "status": graph_agent_state.get("status", "active"),
+            "steps": graph_agent_state.get("steps", []),
                 "query": state.query,
                 "original_query": state.original_query or state.query,
                 "result": state.result,
@@ -372,11 +447,22 @@ async def send_graph_state_snapshot(
                 "should_continue": state.should_continue,
                 "next_action": current_node or state.next_action,
                 "planned_steps": list(state.planned_steps) if state.planned_steps else [],
-                "status": graph_agent_state.get("status", "running"),
                 "mermaid_diagram": graph_agent_state.get("mermaid_diagram", ""),
+            "deferred_tool_requests": getattr(state, 'deferred_tool_requests', None),
+            "created_at": shared_state.graphs[graph_id].created_at if (shared_state and hasattr(shared_state, 'graphs') and graph_id in shared_state.graphs) else "",
+            "updated_at": shared_state.graphs[graph_id].updated_at if (shared_state and hasattr(shared_state, 'graphs') and graph_id in shared_state.graphs) else "",
+        }
+        
+        nested_snapshot = {
+            # Flat structure: graphs dictionary matching AgentState schema
+            "graphs": {
+                graph_id: graph_instance_data
             },
-            # Also include flat fields for frontend rendering compatibility
-            **graph_agent_state,
+            # Include existing plans from shared state to preserve them
+            "plans": {k: v.model_dump() for k, v in shared_state.plans.items()} if (shared_state and hasattr(shared_state, 'plans')) else {},
+            # Session metadata
+            "sessionId": shared_state.sessionId if (shared_state and hasattr(shared_state, 'sessionId')) else None,
+            "deferred_tool_requests": getattr(shared_state, 'deferred_tool_requests', None) if shared_state else None,
         }
         
         logger.info(f"   [StateSnapshot] Sending for {current_node} ({step_status})")
@@ -391,32 +477,17 @@ async def send_graph_state_snapshot(
             )
         )
         
-        # Also send ActivitySnapshotEvent for inline V2 rendering
-        # Use stable graph_id from shared_state, or generate one and store it
-        graph_id = None
-        if shared_state and hasattr(shared_state, 'graph') and hasattr(shared_state.graph, 'current_graph_id'):
-            graph_id = shared_state.graph.current_graph_id
-        
+        # Use graph_id from sync (already generated if needed)
         if not graph_id:
-            # Generate new graph_id and persist it
             graph_id = uuid.uuid4().hex[:12]
-            if shared_state and hasattr(shared_state, 'graph'):
-                shared_state.graph.current_graph_id = graph_id
         
         activity_message_id = f"graph-{graph_id}"
         activity_content = {
-            "steps": graph_agent_state.get("steps", []),
-            "graph": nested_snapshot.get("graph", {}),
-            "query": graph_agent_state.get("query", ""),
-            "original_query": graph_agent_state.get("original_query", ""),
-            "current_node": graph_agent_state.get("current_node", ""),
-            "iteration": graph_agent_state.get("iteration", 0),
-            "max_iterations": graph_agent_state.get("max_iterations", 5),
-            "planned_steps": graph_agent_state.get("planned_steps", []),
-            "mermaid_diagram": graph_agent_state.get("mermaid_diagram", ""),
-            "final_result": graph_agent_state.get("final_result", ""),
-            "status": graph_agent_state.get("status", "running"),
-            "graphId": graph_id,
+            # Use flat structure
+            "graphs": {
+                graph_id: graph_instance_data
+            },
+            "sessionId": shared_state.sessionId if (shared_state and hasattr(shared_state, 'sessionId')) else None,
         }
         
         await send_stream.send(

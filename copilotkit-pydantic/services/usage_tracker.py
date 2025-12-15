@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import uuid as uuid_module
 from typing import Any, Callable, Awaitable, Optional, Union
 
 from pydantic_ai.run import AgentRunResult
@@ -34,6 +35,24 @@ async def _persist_usage_event(
 
     metadata_json = json.dumps(metadata or {}, default=str)
     usage_details_json = json.dumps(usage_details or {}, default=str) if usage_details else None
+
+    # Validate that agent_id and model_id are valid UUIDs
+    # If they're not (e.g., fallback to agent_type string), skip database persistence
+    def is_valid_uuid(value: Optional[str]) -> bool:
+        if not value:
+            return False
+        try:
+            uuid_module.UUID(str(value))
+            return True
+        except (ValueError, AttributeError, TypeError):
+            return False
+    
+    if not is_valid_uuid(agent_id) or not is_valid_uuid(model_id):
+        logger.debug(
+            f"Skipping usage persistence: invalid UUID format "
+            f"(agent_id={agent_id!r}, model_id={model_id!r})"
+        )
+        return
 
     try:
         async with get_db_connection() as conn:

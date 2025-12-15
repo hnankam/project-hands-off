@@ -22,7 +22,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { sessionStorageDBWrapper, debug } from '@extension/shared';
-import type { AgentStepState } from '../components/cards/TaskProgressCard';
+import type { AgentStepState } from '../components/cards';
 
 // ============================================================================
 // TYPES
@@ -133,10 +133,11 @@ export const useSessionData = (
   const [lastUsageCache, setLastUsageCache] = useState<Record<string, UsageData | null>>({});
   const [isUsageHydrating, setIsUsageHydrating] = useState(false);
   
-  // Agent step state
+  // Agent step state (flat structure with multi-instance support)
   const [currentAgentStepState, setCurrentAgentStepState] = useState<AgentStepState>({
     sessionId,
-    steps: [],
+    plans: {},
+    graphs: {},
   });
   
   // Loading flags
@@ -336,25 +337,23 @@ export const useSessionData = (
         
         debug.log(`[useSessionData] DB query result for session ${sessionId.slice(0, 8)}:`, {
           found: !!storedState,
-          stepsCount: storedState?.steps?.length ?? 0,
+          planStepsCount: storedState?.plan?.steps?.length ?? 0,
         });
         
         if (!isCancelled) {
           // Always set the state - either from DB or empty for new sessions
-          const loadedSteps = storedState?.steps ?? [];
-          const loadedGraph = storedState?.graph;
-          const loadedGraphSteps = storedState?.graphSteps;
           setCurrentAgentStepState({
             sessionId,
-            steps: loadedSteps,
-            graph: loadedGraph,
-            graphSteps: loadedGraphSteps,
+            plans: storedState?.plans ?? {},
+            graphs: storedState?.graphs ?? {},
+            deferred_tool_requests: storedState?.deferred_tool_requests,
           });
           
+          const numPlans = Object.keys(storedState?.plans ?? {}).length;
+          const numGraphs = Object.keys(storedState?.graphs ?? {}).length;
           debug.log(`[useSessionData] Set currentAgentStepState for session ${sessionId.slice(0, 8)}:`, {
-            steps: loadedSteps.length,
-            hasGraph: !!loadedGraph,
-            graphSteps: loadedGraphSteps?.length ?? 0,
+            numPlans,
+            numGraphs,
           });
         }
         
@@ -362,7 +361,7 @@ export const useSessionData = (
         debug.error(`[useSessionData] Failed to load stored data for session ${sessionId.slice(0, 8)}:`, error);
         // On error, set empty state to prevent stale data
         if (!isCancelled) {
-          setCurrentAgentStepState({ sessionId, steps: [], graph: undefined, graphSteps: undefined });
+          setCurrentAgentStepState({ sessionId, plans: {}, graphs: {} });
         }
       } finally {
         if (!isCancelled) {

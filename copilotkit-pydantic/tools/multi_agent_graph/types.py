@@ -52,26 +52,6 @@ class CodeExecutionOutput(BaseModel):
     error_message: str = ""  # Error message if execution failed
 
 
-# ========== Graph Dependencies ==========
-
-@dataclass
-class GraphDeps:
-    """Dependencies passed to all graph nodes."""
-    send_stream: MemoryObjectSendStream[str] | None = None
-    ag_ui_adapter: AGUIAdapter | None = None
-    shared_state: Any = None  # Optional AgentState for syncing with session
-    # Usage tracking context (from parent agent context)
-    session_id: str | None = None
-    user_id: str | None = None
-    organization_id: str | None = None
-    team_id: str | None = None
-    auth_session_id: str | None = None
-    broadcast_func: Any = None  # Async function to broadcast usage
-    # Database IDs for usage tracking (use parent agent's IDs for sub-agents)
-    agent_id: str | None = None  # DB UUID of the parent agent
-    model_id: str | None = None  # DB UUID of the model
-
-
 # ========== Tool Call Tracking ==========
 
 @dataclass

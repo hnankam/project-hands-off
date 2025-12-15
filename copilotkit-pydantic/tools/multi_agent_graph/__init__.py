@@ -26,7 +26,7 @@ result = await run_multi_agent_graph(
 - `create_multi_agent_graph`: Create a graph instance for custom execution
 
 ### Types
-- `GraphDeps`: Dependencies passed to all graph nodes
+- `UnifiedDeps` (from `core.models`): Dependencies passed to all graph nodes and regular agents
 - `QueryState`: State maintained throughout graph execution
 - `GraphStep`: A step in the graph execution (for frontend)
 - `GraphToolCall`: A tool call made by a sub-agent (for frontend)
@@ -51,8 +51,7 @@ from .types import (
     RoutingDecision,
     ErrorRecoveryDecision,
     CodeExecutionOutput,
-    # Graph dependencies and state
-    GraphDeps,
+    # Graph state
     QueryState,
     ToolCallInfo,
     # Frontend rendering types
@@ -101,7 +100,6 @@ __all__ = [
     'RoutingDecision',
     'ErrorRecoveryDecision',
     'CodeExecutionOutput',
-    'GraphDeps',
     'QueryState',
     'ToolCallInfo',
     'GraphToolCall',

@@ -22,12 +22,12 @@ from pydantic_ai.messages import BinaryImage
 from ag_ui.core import RunAgentInput, UserMessage
 
 from config import logger
+from core.models import UnifiedDeps
 from utils.firebase_storage import upload_binary_image_to_storage
 from services.usage_tracker import create_usage_tracking_callback
 
 from .types import (
     QueryState,
-    GraphDeps,
     ActionType,
     WorkerResult,
     CodeExecutionOutput,
@@ -46,8 +46,11 @@ def create_sub_agent_run_input(parent_run_input: RunAgentInput, query: str) -> R
     Worker sub-agents use their own built-in tools (WebSearchTool, ImageGenerationTool, etc.),
     so we create a clean run_input without any parent tools.
     
+    IMPORTANT: Inherits context from parent to provide AGUI context (useCopilotReadableData)
+    to sub-agents for consistent context across the multi-agent graph.
+    
     Args:
-        parent_run_input: The parent's RunAgentInput (for thread_id only)
+        parent_run_input: The parent's RunAgentInput (for thread_id and context)
         query: The query/prompt for the sub-agent
         
     Returns:
@@ -63,7 +66,7 @@ def create_sub_agent_run_input(parent_run_input: RunAgentInput, query: str) -> R
             )
         ],
         state={},
-        context=[],
+        context=parent_run_input.context or [],  # Inherit AGUI context from parent
         tools=[],
         forwarded_props=None,
     )
@@ -98,14 +101,14 @@ def create_orchestrator_run_input(parent_run_input: RunAgentInput, query: str) -
 
 
 def create_sub_agent_usage_callback(
-    deps: GraphDeps,
+    deps: UnifiedDeps,
     agent_label: str,
     model_label: str = "gemini-2.5-flash",
 ):
     """Create a usage tracking callback for a sub-agent.
     
     Args:
-        deps: GraphDeps containing usage tracking context
+        deps: UnifiedDeps containing usage tracking context
         agent_label: Human-readable label for the sub-agent (e.g., "ImageGeneration")
         model_label: Model identifier (default: gemini-2.5-flash)
     
@@ -161,7 +164,7 @@ def calculate_run_index(execution_history: list[str], node_name: str) -> int:
 
 async def run_worker_step(
     state: QueryState,
-    deps: GraphDeps,
+    deps: UnifiedDeps,
     node_name: str,
     agent: Agent,
     model_label: str,
@@ -184,7 +187,7 @@ async def run_worker_step(
     
     Args:
         state: Current QueryState
-        deps: GraphDeps with streams and shared state
+        deps: UnifiedDeps with streams and shared state
         node_name: Name of the node (e.g., "WebSearch")
         agent: The agent to run
         model_label: Model label for usage tracking
@@ -207,7 +210,7 @@ async def run_worker_step(
     state.execution_history.append(indexed_key)
     
     send_stream = deps.send_stream
-    shared_state = deps.shared_state
+    shared_state = deps.state
     
     # Send state snapshot - step started
     await send_graph_state_snapshot(send_stream, state, node_name, "in_progress", shared_state)
@@ -224,7 +227,7 @@ async def run_worker_step(
         
         # Create a new RunAgentInput for the sub-agent
         sub_run_input = create_sub_agent_run_input(
-            deps.ag_ui_adapter.run_input,
+            deps.adapter.run_input,
             context_with_results
         )
         

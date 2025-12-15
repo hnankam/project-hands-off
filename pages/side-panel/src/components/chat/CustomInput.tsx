@@ -10,7 +10,7 @@ import { ensureFirebase, ensureFirebaseAuth } from '../../utils/firebaseStorage'
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { debug, useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
-import { TaskProgressCard, AgentStepState } from '../cards/TaskProgressCard';
+import { TaskProgressCard, type AgentStepState } from '../cards';
 import { cn } from '@extension/ui';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator } from '@extension/ui';
 import { useEditor, EditorContent } from '@tiptap/react';

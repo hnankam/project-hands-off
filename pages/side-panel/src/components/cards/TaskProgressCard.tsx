@@ -37,78 +37,12 @@ const RedFailIcon: FC<{ color?: string }> = ({ color = '#ef4444' }) => (
   </svg>
 );
 
-/** Plan step for task progress tracking */
-export interface PlanStep {
-  description: string;
-  status: "pending" | "running" | "completed" | "failed" | "deleted";
-}
-
-/** Graph tool call info */
-export interface GraphToolCall {
-  tool_name: string;
-  args: string;
-  result?: string;
-  status: 'in_progress' | 'completed' | 'error';
-  tool_call_id?: string;
-}
-
-/** Graph step for multi-agent graph execution */
-export interface GraphStep {
-  node: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'error' | 'cancelled' | 'waiting';
-  result: string;
-  prompt?: string;
-  streaming_text?: string;
-  tool_calls?: GraphToolCall[];
-  timestamp: string;
-}
-
-/** Full graph state from backend */
-export interface GraphState {
-  query: string;
-  original_query: string;
-  result: string;
-  query_type: string;
-  execution_history: string[];
-  intermediate_results: Record<string, string>;
-  streaming_text: Record<string, string>;
-  prompts: Record<string, string>;
-  tool_calls: Record<string, GraphToolCall[]>;
-  errors: Array<{ node?: string; error?: string; timestamp?: string }>;
-  last_error_node: string;
-  retry_count: number;
-  max_retries: number;
-  iteration_count: number;
-  max_iterations: number;
-  should_continue: boolean;
-  next_action: string;
-  planned_steps?: string[];
-  mermaid_diagram?: string;
-  status: 'pending' | 'running' | 'completed' | 'error' | 'waiting';
-  deferred_tool_requests?: unknown;
-  current_graph_id?: string;  // Unique ID for this graph execution
-}
-
-export interface AgentStepState {
-  /**
-   * Session identifier that owns this task progress. Used to scope progress
-   * cards and prevent cross-session bleed when multiple chats share the same
-   * Copilot agent name.
-   */
-  sessionId?: string;
-  /** Unique ID for this plan (for activity message updates) */
-  planId?: string;
-  /** Plan steps for task progress tracking */
-  steps: PlanStep[];
-  /** Full graph state from multi-agent graph execution */
-  graph?: GraphState;
-  /** Graph steps for rendering (derived from graph.execution_history) */
-  graphSteps?: GraphStep[];
-}
+// Import unified types from centralized location
+import type { UnifiedAgentState, PlanStep } from '../graph-state/types';
 
 interface TaskProgressCardProps {
-  state: AgentStepState;
-  setState?: (state: AgentStepState) => void;
+  state: UnifiedAgentState;
+  setState?: (state: UnifiedAgentState) => void;
   theme?: string; // Optional now since we'll read it directly
   isCollapsed?: boolean;
   isHistorical?: boolean;
@@ -169,18 +103,32 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   // Chat hook for triggering runs
   const { sendMessage, isLoading: isChatLoading } = useCopilotChat();
 
+  // Extract the first/active plan from state.plans
+  const activePlan = React.useMemo(() => {
+    if (!state.plans) return null;
+    const plans = Object.values(state.plans);
+    // Prefer active plans, otherwise take the first one
+    const activePlans = plans.filter(p => p.status === 'active');
+    return activePlans.length > 0 ? activePlans[0] : plans[0];
+  }, [state.plans]);
+
+  // Extract steps from the active plan (for backward compatibility)
+  const steps = activePlan?.steps || [];
+  const planId = activePlan?.plan_id;
+  const planName = activePlan?.name;
+
   // Debug logging
   React.useEffect(() => {
     // console.log('[TaskProgressCard] Component rendered');
     // console.log('[TaskProgressCard] State:', state);
     // console.log('[TaskProgressCard] setState available:', !!setState);
-    // console.log('[TaskProgressCard] Steps:', state.steps);
-    if (state.steps) {
-      state.steps.forEach((step, idx) => {
+    // console.log('[TaskProgressCard] Steps:', steps);
+    if (steps) {
+      steps.forEach((step, idx) => {
         //console.log(`[TaskProgressCard] Step ${idx}:`, step.description, 'status:', step.status);
       });
     }
-  }, [state, setState]);
+  }, [state, setState, steps]);
 
   // Detect wrapping in edit mode and optionally auto-grow textarea height
   React.useEffect(() => {
@@ -282,13 +230,13 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   const handleEditSubmit = () => {
     if (editingStepIndex !== null && editValue.trim() && setState) {
       console.log('[TaskProgressCard] Submitting edit for step', editingStepIndex, 'with value:', editValue.trim());
-      const newSteps = [...state.steps];
+      const newSteps = [...steps];
       newSteps[editingStepIndex] = {
         ...newSteps[editingStepIndex],
         description: editValue.trim()
       };
       console.log('[TASKCARD_SETSTATE] ✏️ EDIT step', editingStepIndex, '- calling setState with', newSteps.length, 'steps');
-      setState({ ...state, steps: newSteps });
+      updatePlanSteps(newSteps);
     }
     setEditingStepIndex(null);
     setEditValue('');
@@ -318,9 +266,9 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
 
   const handleAddSubmit = () => {
     if (setState && addValue.trim()) {
-      const newSteps = [...state.steps, { description: addValue.trim(), status: 'pending' as const }];
+      const newSteps = [...steps, { description: addValue.trim(), status: 'pending' as const }];
       console.log('[TASKCARD_SETSTATE] ➕ ADD step - calling setState with', newSteps.length, 'steps:', addValue.trim().substring(0, 30));
-      setState({ ...state, steps: newSteps });
+      updatePlanSteps(newSteps);
     }
     setIsAdding(false);
     setAddValue('');
@@ -342,13 +290,13 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   // Handlers for reordering steps
   const handleMoveStepUp = (index: number) => {
     if (!setState) return;
-    if (index <= 0 || index >= state.steps.length) return;
-    const newSteps = [...state.steps];
+    if (index <= 0 || index >= steps.length) return;
+    const newSteps = [...steps];
     const temp = newSteps[index - 1];
     newSteps[index - 1] = newSteps[index];
     newSteps[index] = temp;
     console.log('[TASKCARD_SETSTATE] ⬆️ MOVE step', index, 'UP - calling setState');
-    setState({ ...state, steps: newSteps });
+    updatePlanSteps(newSteps);
   };
 
   // Drag & drop handlers
@@ -381,13 +329,13 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
       setDragOverIndex(null);
       return;
     }
-    const newSteps = [...state.steps];
+    const newSteps = [...steps];
     const [moved] = newSteps.splice(sourceIndex, 1);
     let targetIndex = index;
     if (sourceIndex < index) targetIndex = index - 1;
     newSteps.splice(targetIndex, 0, moved);
     console.log('[TASKCARD_SETSTATE] 🔄 DRAG-DROP step from', sourceIndex, 'to', targetIndex, '- calling setState');
-    setState({ ...state, steps: newSteps });
+    updatePlanSteps(newSteps);
     setDraggingIndex(null);
     setDragOverIndex(null);
   };
@@ -422,7 +370,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     setEditValue('');
     setDeletePlanOpen(false);
     console.log('[TASKCARD_SETSTATE] 🗑️ DELETE PLAN - calling setState with empty steps');
-    setState({ ...state, steps: [] });
+    updatePlanSteps([]);
   };
 
   // Cancel delete plan
@@ -442,21 +390,37 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
 
   const handleMoveStepDown = (index: number) => {
     if (!setState) return;
-    if (index < 0 || index >= state.steps.length - 1) return;
-    const newSteps = [...state.steps];
+    if (index < 0 || index >= steps.length - 1) return;
+    const newSteps = [...steps];
     const temp = newSteps[index + 1];
     newSteps[index + 1] = newSteps[index];
     newSteps[index] = temp;
     console.log('[TASKCARD_SETSTATE] ⬇️ MOVE step', index, 'DOWN - calling setState');
-    setState({ ...state, steps: newSteps });
+    updatePlanSteps(newSteps);
   };
 
-  if (!state.steps || state.steps.length === 0) {
+  if (!steps || steps.length === 0 || !activePlan) {
     return null;
   }
 
+  // Helper function to update plan steps and call setState
+  const updatePlanSteps = (newSteps: typeof steps) => {
+    if (!setState || !planId) return;
+    setState({
+      ...state,
+      plans: {
+        ...state.plans,
+        [planId]: {
+          ...activePlan,
+          steps: newSteps,
+          updated_at: new Date().toISOString(),
+        },
+      },
+    });
+  };
+
   // Filter out deleted steps from counts
-  const activeSteps = state.steps.filter((step) => step.status !== "deleted");
+  const activeSteps = steps.filter((step) => step.status !== "deleted");
   const completedCount = activeSteps.filter((step) => step.status === "completed").length;
   const progressPercentage = activeSteps.length > 0 ? (completedCount / activeSteps.length) * 100 : 0;
   const isLight = theme === 'light';
@@ -528,7 +492,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                     <p className={`${isLight ? 'text-gray-600' : 'text-gray-400'} text-xs mt-1`}>
                       This will remove the plan and its steps from the chat UI and cannot be recovered.
                     </p>
-                    {state.steps.some((s) => s.status !== 'completed' && s.status !== 'deleted') && (
+                    {steps.some((s) => s.status !== 'completed' && s.status !== 'deleted') && (
                       <p className={`${isLight ? 'text-red-600' : 'text-red-400'} text-xs mt-2`}>
                         Some steps are not completed or deleted. This action cannot be undone.
                       </p>
@@ -561,9 +525,9 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
 
   // Collapsed view - compact single line
   if (!isExpanded) {
-    const hasRunning = !isHistorical && state.steps.some(s => s.status === 'running');
-    const hasFailed = state.steps.some(s => s.status === 'failed');
-    const failedCount = state.steps.filter(s => s.status === 'failed').length;
+    const hasRunning = !isHistorical && steps.some(s => s.status === 'running');
+    const hasFailed = steps.some(s => s.status === 'failed');
+    const failedCount = steps.filter(s => s.status === 'failed').length;
     
     return (
       <>
@@ -709,7 +673,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
             </svg>
             </button>
-            <span className={`text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Plan</span>
+            <span className={`text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>{planName || 'Plan'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className={`text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
@@ -781,7 +745,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
 
        {/* Steps */}
        <div className="space-y-1">
-         {state.steps.map((step, index) => {
+         {steps.map((step, index) => {
            const isCompleted = step.status === "completed";
            // Historical cards should never show running state - treat as pending
            const isRunning = !isHistorical && step.status === "running";
@@ -921,7 +885,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
 
                   {/* Move down */}
                   <button
-                    disabled={index === state.steps.length - 1}
+                    disabled={index === steps.length - 1}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleMoveStepDown(index);
@@ -943,13 +907,13 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        const newSteps = [...state.steps];
+                        const newSteps = [...steps];
                         newSteps[index] = {
                           ...newSteps[index],
                           status: 'pending' as const
                         };
                         console.log('[TASKCARD_SETSTATE] 🔁 RERUN step', index, '- calling setState');
-                        setState({ ...state, steps: newSteps });
+                        updatePlanSteps(newSteps);
                       }}
                       className={`p-0.5 rounded transition-colors ${
                         isLight 
@@ -991,13 +955,13 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      const newSteps = [...state.steps];
+                      const newSteps = [...steps];
                       newSteps[index] = {
                         ...newSteps[index],
                         status: 'deleted' as const
                       };
                       console.log('[TASKCARD_SETSTATE] ❌ DELETE step', index, '- calling setState');
-                      setState({ ...state, steps: newSteps });
+                      updatePlanSteps(newSteps);
                     }}
                     className={`p-0.5 rounded transition-colors ${
                       isLight 
@@ -1022,13 +986,13 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      const newSteps = [...state.steps];
+                      const newSteps = [...steps];
                       newSteps[index] = {
                         ...newSteps[index],
                         status: 'pending' as const
                       };
                       console.log('[TASKCARD_SETSTATE] ↩️ RESTORE step', index, '- calling setState');
-                      setState({ ...state, steps: newSteps });
+                      updatePlanSteps(newSteps);
                     }}
                     className={`p-0.5 rounded transition-colors ${
                       isLight 

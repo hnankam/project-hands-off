@@ -14,9 +14,9 @@ from pydantic_graph.beta import GraphBuilder, StepContext, TypeExpression
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
 
 from config import logger
+from core.models import UnifiedDeps
 from .types import (
     QueryState,
-    GraphDeps,
     ActionType,
     WorkerResult,
     RoutingDecision,
@@ -56,7 +56,7 @@ def create_multi_agent_graph(
         state_type=QueryState,
         input_type=str,
         output_type=str,
-        deps_type=GraphDeps,
+        deps_type=UnifiedDeps,
     )
     
     # ==================== ORCHESTRATOR STEP ====================
@@ -76,7 +76,7 @@ def create_multi_agent_graph(
             logger.info(f"History: {' → '.join(ctx.state.execution_history)}")
         
         send_stream = ctx.deps.send_stream if ctx.deps else None
-        shared_state = ctx.deps.shared_state if ctx.deps else None
+        shared_state = ctx.deps.state if ctx.deps else None
         await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
         
         # Check iteration limit
@@ -102,7 +102,7 @@ def create_multi_agent_graph(
         # Get decision - run through AGUIAdapter to access frontend tools
         try:
             orchestrator_run_input = create_orchestrator_run_input(
-                ctx.deps.ag_ui_adapter.run_input,
+                ctx.deps.adapter.run_input,
                 context
             )
             
@@ -362,7 +362,7 @@ def create_multi_agent_graph(
         ctx.state.execution_history.append(indexed_key)
         
         send_stream = ctx.deps.send_stream if ctx.deps else None
-        shared_state = ctx.deps.shared_state if ctx.deps else None
+        shared_state = ctx.deps.state if ctx.deps else None
         
         # Initialize tool call tracking for this step
         ctx.state.tool_calls[indexed_key] = []
@@ -499,7 +499,7 @@ def create_multi_agent_graph(
         logger.info("✅ Finalizing result")
         
         send_stream = ctx.deps.send_stream if ctx.deps else None
-        shared_state = ctx.deps.shared_state if ctx.deps else None
+        shared_state = ctx.deps.state if ctx.deps else None
         
         final_result = ctx.state.result if ctx.state.result else "Task completed."
         

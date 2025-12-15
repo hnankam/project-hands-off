@@ -167,7 +167,7 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
         <div className="flex items-center gap-3">
           <GraphIcon className="h-5 w-5" color={isLight ? '#6b7280' : '#9ca3af'} />
           <div className="text-left">
-            <h3 style={{ color: isLight ? '#374151' : '#d1d5db' }} className="font-medium">Multi-Agent Graph</h3>
+            <h3 style={{ color: isLight ? '#374151' : '#d1d5db' }} className="font-medium">{state.name || 'Multi-Agent Graph'}</h3>
             <p style={{ color: isLight ? '#374151' : '#d1d5db' }} className="text-xs opacity-75">
               Iteration {state.iteration}/{state.max_iterations} • {completedSteps}/{totalSteps} steps
             </p>

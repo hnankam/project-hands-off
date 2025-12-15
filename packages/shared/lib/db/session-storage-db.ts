@@ -1201,29 +1201,22 @@ export class SessionStorageDB {
       { id: sessionId }
     );
 
-    // Build update payload with all fields
+    // Build update payload with flat structure (multi-instance support)
     const payload: Record<string, any> = {
-      steps: state.steps || [],
+      plans: state.plans || {},
+      graphs: state.graphs || {},
     };
     
-    // Include graph state if present
-    if (state.graph !== undefined) {
-      payload.graph = state.graph;
-    }
-    
-    // Include graph steps if present
-    if (state.graphSteps !== undefined) {
-      payload.graphSteps = state.graphSteps;
+    // Include deferred tool requests if present
+    if (state.deferred_tool_requests !== undefined) {
+      payload.deferred_tool_requests = state.deferred_tool_requests;
     }
 
     if (existing[0]?.length > 0) {
-      // Build dynamic SET clause based on what fields are present
-      const setClauses: string[] = ['steps = $steps'];
-      if (state.graph !== undefined) {
-        setClauses.push('graph = $graph');
-      }
-      if (state.graphSteps !== undefined) {
-        setClauses.push('graphSteps = $graphSteps');
+      // Update existing record with flat structure
+      const setClauses: string[] = ['plans = $plans', 'graphs = $graphs'];
+      if (state.deferred_tool_requests !== undefined) {
+        setClauses.push('deferred_tool_requests = $deferred_tool_requests');
       }
       
       await worker.query(
@@ -1231,9 +1224,15 @@ export class SessionStorageDB {
         { id: sessionId, ...payload }
       );
     } else {
+      // Create new record with flat structure
       await worker.query(
-        'CREATE session_agent_state CONTENT { sessionId: $id, steps: $steps, graph: $graph, graphSteps: $graphSteps };',
-        { id: sessionId, steps: payload.steps, graph: payload.graph || null, graphSteps: payload.graphSteps || null }
+        'CREATE session_agent_state CONTENT { sessionId: $id, plans: $plans, graphs: $graphs, deferred_tool_requests: $deferred_tool_requests };',
+        { 
+          id: sessionId, 
+          plans: payload.plans, 
+          graphs: payload.graphs,
+          deferred_tool_requests: payload.deferred_tool_requests || null
+        }
       );
     }
   }

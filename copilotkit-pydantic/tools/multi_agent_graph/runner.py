@@ -17,10 +17,11 @@ from ag_ui.encoder import EventEncoder
 from config import logger
 from config.environment import GOOGLE_API_KEY
 
-from .types import QueryState, GraphDeps
+from .types import QueryState
 from .graph import create_multi_agent_graph
 from .agents import create_agents
 from .state import sync_to_shared_state
+from core.models import UnifiedDeps
 
 if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectSendStream
@@ -34,6 +35,9 @@ async def run_multi_agent_graph(
     api_key: str | None = None,
     max_iterations: int = 5,
     shared_state: Any = None,
+    # Graph instance metadata
+    graph_name: str | None = None,
+    graph_id: str | None = None,
     # Usage tracking context
     session_id: str | None = None,
     user_id: str | None = None,
@@ -44,6 +48,8 @@ async def run_multi_agent_graph(
     # Database IDs for usage tracking
     agent_id: str | None = None,
     model_id: str | None = None,
+    # AGUI context from frontend
+    agui_context: list[dict] | None = None,
 ) -> str:
     """Run the multi-agent graph with AG UI event streaming.
     
@@ -63,6 +69,7 @@ async def run_multi_agent_graph(
         broadcast_func: Async function to broadcast usage stats
         agent_id: DB UUID of the parent agent (for sub-agent usage tracking)
         model_id: DB UUID of the model (for sub-agent usage tracking)
+        agui_context: AGUI context from frontend (useCopilotReadableData / useAgentContext)
     
     Returns:
         Final result from the graph execution
@@ -82,8 +89,8 @@ async def run_multi_agent_graph(
         mermaid_diagram = ""
     
     # Store mermaid diagram in shared state if available
-    if shared_state and hasattr(shared_state, 'graph'):
-        shared_state.graph.mermaid_diagram = mermaid_diagram
+    if shared_state and graph_id and graph_id in shared_state.graphs:
+        shared_state.graphs[graph_id].mermaid_diagram = mermaid_diagram
     
     # Create default run_input if not provided
     if run_input is None:
@@ -96,8 +103,8 @@ async def run_multi_agent_graph(
                     content=query,
                 )
             ],
-            state={},
-            context=[],
+            state=shared_state.model_dump() if shared_state else {},
+            context=agui_context or [],  # Include AGUI context from frontend
             tools=[],
             forwarded_props=None,
         )
@@ -123,19 +130,21 @@ async def run_multi_agent_graph(
     )
     
     # Check if we're resuming from a waiting state
+    graph_instance = None
+    if shared_state and graph_id and graph_id in shared_state.graphs:
+        graph_instance = shared_state.graphs[graph_id]
+    
     is_resuming = (
-        shared_state and 
-        hasattr(shared_state, 'graph') and 
-        hasattr(shared_state.graph, 'status') and
-        shared_state.graph.status == 'running' and  # Changed from waiting to running by backend_tools
-        shared_state.graph.execution_history and
-        len(shared_state.graph.execution_history) > 0
+        graph_instance and 
+        graph_instance.status == 'active' and
+        graph_instance.execution_history and
+        len(graph_instance.execution_history) > 0
     )
     
     if is_resuming:
-        logger.info(f"🔄 RESUMING graph from previous state")
-        logger.info(f"   Execution history: {shared_state.graph.execution_history}")
-        logger.info(f"   Planned steps: {getattr(shared_state.graph, 'planned_steps', [])}")
+        logger.info(f"🔄 RESUMING graph {graph_id} from previous state")
+        logger.info(f"   Execution history: {graph_instance.execution_history}")
+        logger.info(f"   Planned steps: {graph_instance.planned_steps}")
         
         # Check if user confirmed or cancelled by looking at tool result in messages
         user_confirmed = True  # Default to confirmed
@@ -169,21 +178,21 @@ async def run_multi_agent_graph(
                     user_confirmed = result_content['confirmed']
                     logger.info(f"   Found confirmAction result: confirmed={user_confirmed}")
         
-        # Create QueryState from existing shared_state
+        # Create QueryState from existing graph_instance
         state = QueryState(
-            query=shared_state.graph.query or query,
-            original_query=shared_state.graph.original_query or query,
-            max_iterations=shared_state.graph.max_iterations or max_iterations,
-            iteration_count=shared_state.graph.iteration_count or 0,
-            execution_history=list(shared_state.graph.execution_history or []),
-            intermediate_results=dict(shared_state.graph.intermediate_results or {}),
-            streaming_text=dict(shared_state.graph.streaming_text or {}),
-            prompts=dict(shared_state.graph.prompts or {}),
-            tool_calls=dict(shared_state.graph.tool_calls or {}),
-            errors=list(shared_state.graph.errors or []),
-            result=shared_state.graph.result or "",
+            query=graph_instance.query or query,
+            original_query=graph_instance.original_query or query,
+            max_iterations=graph_instance.max_iterations or max_iterations,
+            iteration_count=graph_instance.iteration_count or 0,
+            execution_history=list(graph_instance.execution_history or []),
+            intermediate_results=dict(graph_instance.intermediate_results or {}),
+            streaming_text=dict(graph_instance.streaming_text or {}),
+            prompts=dict(graph_instance.prompts or {}),
+            tool_calls=dict(graph_instance.tool_calls or {}),
+            errors=list(graph_instance.errors or []),
+            result=graph_instance.result or "",
             should_continue=user_confirmed,  # Only continue if user confirmed
-            planned_steps=list(getattr(shared_state.graph, 'planned_steps', []) or []),
+            planned_steps=list(graph_instance.planned_steps or []),
         )
         
         # Set result based on user's choice
@@ -232,17 +241,17 @@ async def run_multi_agent_graph(
         
         # Sync updated state to shared_state and send snapshot to show Confirmation completed
         if shared_state:
-            sync_to_shared_state(state, shared_state, "")
+            sync_to_shared_state(state, shared_state, "", graph_id, graph_name)
             if send_stream and encoder:
                 from .state import build_graph_agent_state
                 graph_state = build_graph_agent_state(state, "", "completed")
-                if hasattr(shared_state.graph, 'mermaid_diagram'):
-                    graph_state["mermaid_diagram"] = shared_state.graph.mermaid_diagram
+                if graph_id in shared_state.graphs and shared_state.graphs[graph_id].mermaid_diagram:
+                    graph_state["mermaid_diagram"] = shared_state.graphs[graph_id].mermaid_diagram
                 await send_stream.send(
                     encoder.encode(
                         StateSnapshotEvent(
                             type=EventType.STATE_SNAPSHOT,
-                            snapshot={"steps": graph_state.get("steps", []), "graph": shared_state.graph.__dict__ if hasattr(shared_state.graph, '__dict__') else {}, **graph_state},
+                            snapshot={"steps": graph_state.get("steps", []), "graphs": {graph_id: shared_state.graphs[graph_id].model_dump()}, **graph_state},
                         )
                     )
                 )
@@ -252,11 +261,19 @@ async def run_multi_agent_graph(
         # Initialize internal graph state (only for NEW executions)
         state = QueryState(query=query, max_iterations=max_iterations)
     
-    # Create GraphDeps with all required context
-    deps = GraphDeps(
+        # Generate graph_id if not provided
+        if not graph_id:
+            graph_id = uuid.uuid4().hex[:12]
+        
+        # Generate graph_name from query if not provided
+        if not graph_name:
+            graph_name = query[:50] + ("..." if len(query) > 50 else "")
+    
+    # Create UnifiedDeps with all required context
+    deps = UnifiedDeps(
         send_stream=send_stream,
-        ag_ui_adapter=ag_ui_adapter,
-        shared_state=shared_state,
+        adapter=ag_ui_adapter,
+        state=shared_state,
         session_id=session_id,
         user_id=user_id,
         organization_id=organization_id,
@@ -265,6 +282,7 @@ async def run_multi_agent_graph(
         broadcast_func=broadcast_func,
         agent_id=agent_id,
         model_id=model_id,
+        agui_context=agui_context,
     )
     
     # Send initial state snapshot if we have shared state
@@ -279,12 +297,12 @@ async def run_multi_agent_graph(
         )
     
     try:
-        # Run the graph with GraphDeps
+        # Run the graph with UnifiedDeps
         result = await multi_agent_graph.run(state=state, inputs=query, deps=deps)
         
         # Sync final result to shared state (for persistence)
         if shared_state:
-            sync_to_shared_state(state, shared_state)
+            graph_id = sync_to_shared_state(state, shared_state, "", graph_id, graph_name)
         
         logger.info(f"✅ FINAL RESULT: {result[:200]}..." if len(result) > 200 else f"✅ FINAL RESULT: {result}")
         
@@ -295,14 +313,14 @@ async def run_multi_agent_graph(
         logger.exception(error_msg)
         
         # Sync error to shared state
-        if shared_state:
+        if shared_state and graph_id and graph_id in shared_state.graphs:
             from datetime import datetime
-            shared_state.graph.errors.append({
+            shared_state.graphs[graph_id].errors.append({
                 "node": "graph_execution",
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             })
-            sync_to_shared_state(state, shared_state)
+            sync_to_shared_state(state, shared_state, "", graph_id, graph_name)
         
         raise
 

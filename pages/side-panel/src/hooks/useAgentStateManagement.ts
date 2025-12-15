@@ -1,10 +1,13 @@
 import { useRef, useMemo, useCallback, useEffect } from 'react';
 import { useCopilotAgent } from './copilotkit';
 import { debug } from '@extension/shared';
-import type { AgentStepState } from '../components/cards/TaskProgressCard';
+import type { UnifiedAgentState, PlanStep, PlanInstance } from '../components/graph-state/types';
 
-// Step type from AgentStepState
-type Step = AgentStepState['steps'][number];
+// Type alias for backward compatibility
+type AgentStepState = UnifiedAgentState;
+
+// Step type from UnifiedAgentState (plan steps only)
+type Step = PlanStep;
 
 /**
  * Check if steps are plan steps (have 'description' field) vs graph steps (have 'node' field).
@@ -16,6 +19,7 @@ function isPlanSteps(steps: unknown[]): steps is Step[] {
   // Plan steps have 'description', graph steps have 'node'
   return 'description' in first && !('node' in first);
 }
+
 
 export interface UseAgentStateManagementProps {
   sessionId: string;
@@ -62,110 +66,108 @@ export const useAgentStateManagement = ({
   const {
     state: rawDynamicAgentState,
     setState: setRawDynamicAgentState,
-  } = useCopilotAgent<AgentStepState>({
+  } = useCopilotAgent<UnifiedAgentState>({
     agentId: 'dynamic_agent',
     initialState:
       initialAgentStepState && initialAgentStepState.sessionId === sessionId
         ? initialAgentStepState
-        : { sessionId, steps: [] },
+        : { sessionId, plans: {}, graphs: {} },
   });
   
   /**
    * Compute session-scoped agent state with proper validation.
+   * 
+   * IMPORTANT: Uses flat structure with multi-instance support!
+   * - Plans live in state.plans dictionary (keyed by plan_id)
+   * - Graphs live in state.graphs dictionary (keyed by graph_id)
+   * - Multiple plans/graphs can be active simultaneously
+   * 
    * Handles various edge cases:
    * - Missing raw state
-   * - Plan deleted (returns empty steps)
-   * - Session mismatch (returns empty steps)
+   * - Plan deleted (removes from dictionary)
+   * - Session mismatch (returns empty)
    * - Missing sessionId on raw state (adds current sessionId)
-   * - Graph steps (have 'node' instead of 'description') - filtered out
-   * - V2: Handle case where state is an array (steps directly) instead of { steps: [...] }
    */
-  const dynamicAgentState = useMemo<AgentStepState>(() => {    
+  const dynamicAgentState = useMemo<UnifiedAgentState>(() => {    
     // No raw state available
     if (!rawDynamicAgentState) {
-      return { sessionId, steps: [] };
+      return { sessionId, plans: {}, graphs: {} };
     }
     
-    // V2 FIX: Handle case where backend sends steps array directly instead of { steps: [...] }
-    if (Array.isArray(rawDynamicAgentState)) {
-      const steps = rawDynamicAgentState as unknown as Step[];
-      if (steps.length > 0 && isPlanSteps(steps)) {
-        return { sessionId, steps };
-      }
-      return { sessionId, steps: [] };
-    }
-    
-    // Plan was deleted - return empty regardless of raw state
-    if (planDeletionInfoRef.current.deleted && (rawDynamicAgentState.steps?.length ?? 0) > 0) {
-      return { sessionId, steps: [] };
+    // Plan was deleted - remove from plans dictionary
+    if (planDeletionInfoRef.current.deleted) {
+      const { [planDeletionInfoRef.current.lastAssistantId || '']: _, ...remainingPlans } = rawDynamicAgentState.plans || {};
+      return { ...rawDynamicAgentState, plans: remainingPlans };
     }
     
     // Session mismatch - return empty to prevent cross-session contamination
     if (rawDynamicAgentState.sessionId && rawDynamicAgentState.sessionId !== sessionId) {
-      return { sessionId, steps: [] };
+      return { sessionId, plans: {}, graphs: {} };
     }
     
-    // Check if steps are plan steps (have 'description') vs graph steps (have 'node')
-    // Graph steps are rendered by GraphStateCard via renderActivityMessages
-    const steps = rawDynamicAgentState.steps ?? [];
-    if (steps.length > 0 && !isPlanSteps(steps)) {
-      // These are graph steps - return empty, they're handled by activity renderers
-      return { sessionId, steps: [] };
-    }
-    
-    // Session matches - return raw state as-is (with valid plan steps)
+    // Session matches - return state as-is
     if (rawDynamicAgentState.sessionId === sessionId) {
       return rawDynamicAgentState;
     }
     
     // No sessionId on raw state - attach current sessionId
-    return { sessionId, steps: steps as Step[] };
+    return { 
+      sessionId,
+      plans: rawDynamicAgentState.plans || {},
+      graphs: rawDynamicAgentState.graphs || {},
+    };
   }, [rawDynamicAgentState, sessionId]);
   
   /**
    * Set agent state with session scoping and plan deletion tracking.
    * Handles:
-   * - Clearing all steps (plan deletion)
+   * - Clearing plans (plan deletion)
    * - Normal state updates with sessionId attachment
+   * - Flat structure updates
    */
   const setDynamicAgentState = useCallback(
-    (nextState: AgentStepState) => {
-      const nextSteps = nextState?.steps ?? [];
+    (nextState: UnifiedAgentState) => {
+      const nextPlans = nextState?.plans ?? {};
+      const numPlans = Object.keys(nextPlans).length;
       
-      // Handle plan deletion (empty steps)
-      if (nextSteps.length === 0) {
-        debug.log('[AgentStepState] Clearing all steps (plan deleted)');
+      // Handle all plans deleted (empty plans dictionary)
+      if (numPlans === 0) {
+        debug.log('[AgentStepState] Clearing all plans (all deleted)');
         planDeletionInfoRef.current = {
           deleted: true,
           lastAssistantId: latestAssistantMessageIdRef.current,
         };
-        setRawDynamicAgentState({ sessionId, steps: [] });
+        setRawDynamicAgentState({ sessionId, plans: {}, graphs: nextState?.graphs || {} });
         return;
       }
       
-      // Normal state update with steps
+      // Normal state update
       planDeletionInfoRef.current = {
         deleted: false,
         lastAssistantId: latestAssistantMessageIdRef.current,
       };
+      
       setRawDynamicAgentState({ ...nextState, sessionId });
     },
     [sessionId, setRawDynamicAgentState],
   );
   
   /**
-   * Fix raw state that arrives without sessionId but has steps.
+   * Fix raw state that arrives without sessionId but has plans/graphs.
    * Proactively adds sessionId to prevent cross-session issues.
    */
   useEffect(() => {
     if (
       rawDynamicAgentState &&
       !rawDynamicAgentState.sessionId &&
-      Array.isArray(rawDynamicAgentState.steps) &&
-      rawDynamicAgentState.steps.length > 0 &&
       !planDeletionInfoRef.current.deleted
     ) {
+      const hasPlans = rawDynamicAgentState.plans && Object.keys(rawDynamicAgentState.plans).length > 0;
+      const hasGraphs = rawDynamicAgentState.graphs && Object.keys(rawDynamicAgentState.graphs).length > 0;
+      
+      if (hasPlans || hasGraphs) {
       setRawDynamicAgentState({ ...rawDynamicAgentState, sessionId });
+      }
     }
   }, [rawDynamicAgentState, sessionId, setRawDynamicAgentState]);
   
@@ -205,12 +207,12 @@ export const useAgentStateManagement = ({
    * 
    * This handles the case where DB load completes after component mount.
    */
-  const initialScopedSteps = useMemo(() => {
-    if (!initialAgentStepState) return null;
+  const initialScopedPlans = useMemo(() => {
+    if (!initialAgentStepState) return {};
     if (initialAgentStepState.sessionId && initialAgentStepState.sessionId !== sessionId) {
-      return null;
+      return {};
     }
-    return initialAgentStepState.steps ?? [];
+    return initialAgentStepState.plans ?? {};
   }, [initialAgentStepState, sessionId]);
 
   // Track if we've successfully restored from initial state for the current session
@@ -222,8 +224,9 @@ export const useAgentStateManagement = ({
   }, [sessionId]);
 
   useEffect(() => {
-    // Skip if no initial steps to restore
-    if (!initialScopedSteps || initialScopedSteps.length === 0) {
+    // Skip if no initial plans to restore
+    const numPlans = Object.keys(initialScopedPlans).length;
+    if (numPlans === 0) {
       return;
     }
     
@@ -232,19 +235,19 @@ export const useAgentStateManagement = ({
       return;
     }
     
-    // Skip if current state already has steps for this session
-    // (user may have added steps after initial load)
-    const currentStepsCount = dynamicAgentState.steps?.length ?? 0;
-    if (dynamicAgentState.sessionId === sessionId && currentStepsCount > 0) {
+    // Skip if current state already has plans for this session
+    // (user may have added plans after initial load)
+    const currentPlansCount = Object.keys(dynamicAgentState.plans || {}).length;
+    if (dynamicAgentState.sessionId === sessionId && currentPlansCount > 0) {
       hasRestoredFromInitialRef.current = true; // Mark as "restored" since we have data
       return;
     }
     
-    // Restore initial steps from DB
-    debug.log(`[AgentStepState] Restoring ${initialScopedSteps.length} steps from DB for session ${sessionId.slice(0, 8)}`);
+    // Restore initial plans from DB
+    debug.log(`[AgentStepState] Restoring ${numPlans} plans from DB for session ${sessionId.slice(0, 8)}`);
     hasRestoredFromInitialRef.current = true;
-    setRawDynamicAgentState({ sessionId, steps: initialScopedSteps });
-  }, [initialScopedSteps, dynamicAgentState, sessionId, setRawDynamicAgentState]);
+    setRawDynamicAgentState({ sessionId, plans: initialScopedPlans, graphs: {} });
+  }, [initialScopedPlans, dynamicAgentState, sessionId, setRawDynamicAgentState]);
   
   /**
    * Notify parent component when agent step state changes.

@@ -7,7 +7,7 @@ Python functions that run on the server and have access to the agent's state.
 
 1. Define your tool function in this file:
    - Function can be sync or async
-   - First parameter must be `ctx: RunContext[StateDeps[AgentState]]`
+   - First parameter must be `ctx: RunContext[UnifiedDeps]`
    - Add clear docstring with Args and Returns
    - Add type hints for all parameters
 
@@ -37,7 +37,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, BinaryImage, ToolReturn
-from pydantic_ai.ag_ui import StateDeps
+from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
 from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, CustomEvent, RunAgentInput, UserMessage, BaseEvent
 
 # ActivitySnapshotEvent is not in the Python ag_ui.core package (only in TypeScript SDK)
@@ -54,7 +54,7 @@ class ActivitySnapshotEvent(BaseEvent):
     content: dict
     replace: bool = True
 
-from core.models import AgentState, Step, StepStatus
+from core.models import AgentState, Step, StepStatus, UnifiedDeps, PlanInstance, GraphInstance
 
 from pydantic_ai import ModelSettings
 from core.models import JSONPatchOp
@@ -66,52 +66,235 @@ from utils.firebase_storage import upload_binary_image_to_storage
 # Import auxiliary agent factory
 from tools.auxiliary_agents import get_auxiliary_agent
 
-# Import multi-agent graph
-from tools.multi_agent_graph import run_multi_agent_graph, GraphDeps, QueryState
+# Multi-agent graph tools moved to graph_tools.py
 
 import os
 import uuid
+from datetime import datetime
 
-# ========== State Management Tools ==========
+# ========== Name Resolution Helpers ==========
 
-async def create_plan(ctx: RunContext[StateDeps[AgentState]], steps: list[str]) -> ToolReturn:
-    """Create a plan with multiple steps.
+def resolve_plan_identifier(state: AgentState, identifier: str) -> str | None:
+    """Resolve a plan by name or ID.
+    
+    Resolution order:
+    1. Exact plan_id match
+    2. Exact name match (case-sensitive)
+    3. Case-insensitive name match
+    4. Partial name match (starts with)
+    
+    Args:
+        state: Current agent state
+        identifier: Either plan_id or plan name
+        
+    Returns:
+        plan_id if found, None otherwise
+    """
+    # 1. Direct ID match
+    if identifier in state.plans:
+        return identifier
+    
+    # 2. Exact name match (case-sensitive)
+    for plan_id, plan in state.plans.items():
+        if plan.name == identifier:
+            return plan_id
+    
+    # 3. Case-insensitive name match
+    identifier_lower = identifier.lower()
+    for plan_id, plan in state.plans.items():
+        if plan.name.lower() == identifier_lower:
+            return plan_id
+    
+    # 4. Partial match (starts with)
+    for plan_id, plan in state.plans.items():
+        if plan.name.lower().startswith(identifier_lower):
+            return plan_id
+    
+    return None
+
+
+def resolve_graph_identifier(state: AgentState, identifier: str) -> str | None:
+    """Resolve a graph by name or ID (same logic as resolve_plan_identifier)."""
+    # 1. Direct ID match
+    if identifier in state.graphs:
+        return identifier
+    
+    # 2. Exact name match (case-sensitive)
+    for graph_id, graph in state.graphs.items():
+        if graph.name == identifier:
+            return graph_id
+    
+    # 3. Case-insensitive name match
+    identifier_lower = identifier.lower()
+    for graph_id, graph in state.graphs.items():
+        if graph.name.lower() == identifier_lower:
+            return graph_id
+    
+    # 4. Partial match (starts with)
+    for graph_id, graph in state.graphs.items():
+        if graph.name.lower().startswith(identifier_lower):
+            return graph_id
+    
+    return None
+
+
+# ========== Plan Management Tools ==========
+
+async def create_plan(
+    ctx: RunContext[UnifiedDeps],
+    name: str,
+    steps: list[str],
+    status: str = "active"
+) -> ToolReturn:
+    """Create a new plan with a descriptive name.
+    
+    Multiple plans can be active simultaneously. Each plan has a unique ID and
+    a human-readable name. Users can reference plans by name (e.g., @"Build House Plan").
     
     Args:
         ctx: The run context with agent state
-        steps: List of step descriptions to create
+        name: Human-readable name for this plan (e.g., "Build Dream House", "Research ML")
+        steps: List of step descriptions
+        status: Initial status, default "active" (can be "active", "paused")
         
     Returns:
-        StateSnapshotEvent and ActivitySnapshotEvent with updated state
+        Confirmation message with plan name and ID
+        
+    Example:
+        create_plan(
+            name="Research Machine Learning",
+            steps=["Read papers", "Summarize findings", "Draft report"]
+        )
     """
-    ctx.deps.state.steps = [Step(description=step) for step in steps]
-    
-    # Generate a new plan ID for this plan (allows multiple plans per session)
+    # Generate unique plan ID
     plan_id = f"{uuid.uuid4().hex[:12]}"
-    ctx.deps.state.current_plan_id = plan_id
     
+    # Create plan instance
+    plan_instance = PlanInstance(
+        plan_id=plan_id,
+        name=name,
+        steps=[Step(description=step) for step in steps],
+        status=status,  # type: ignore
+        created_at=datetime.now().isoformat(),
+        updated_at=datetime.now().isoformat(),
+    )
+    
+    # Add to state
+    ctx.deps.state.plans[plan_id] = plan_instance
+    
+    # Build state snapshot
     state_dict = ctx.deps.state.model_dump()
-    session_id = state_dict.get("sessionId", "default")
+    # Get sessionId, handle None case
+    session_id = state_dict.get("sessionId") or ctx.deps.session_id or "default"
     
-    # Use plan_id for stable messageId so updates to THIS plan replace the same activity
+    # Update state with session_id if it was None
+    if not ctx.deps.state.sessionId:
+        ctx.deps.state.sessionId = session_id
+        state_dict = ctx.deps.state.model_dump()
+    
+    # Activity message for this specific plan (using flat structure for frontend)
     activity_message_id = f"plan-{plan_id}"
-    
-    # Build activity content for inline rendering
     activity_content = {
-        "steps": [{"description": s.description, "status": s.status.value if hasattr(s.status, 'value') else s.status} for s in ctx.deps.state.steps],
+        "plans": {plan_id: plan_instance.model_dump()},
         "sessionId": session_id,
-        "planId": plan_id,
     }
 
-    return ToolReturn(
-        return_value='Plan Created',
+    result = ToolReturn(
+        return_value=f'Plan "{name}" (ID: {plan_id}) created with {len(steps)} steps',
         metadata=[
-            # StateSnapshotEvent for agent state persistence
             StateSnapshotEvent(
                 type=EventType.STATE_SNAPSHOT,
                 snapshot=state_dict,
             ),
-            # ActivitySnapshotEvent for inline V2 rendering (type defaults to "ACTIVITY_SNAPSHOT")
+            ActivitySnapshotEvent(
+                messageId=activity_message_id,
+                activityType="task_progress",
+                content=activity_content,
+            ),
+        ],
+    )
+    return result
+
+async def update_plan_step(
+    ctx: RunContext[UnifiedDeps],
+    plan_identifier: str,
+    step_index: int,
+    description: str | None = None,
+    status: StepStatus | None = None
+) -> ToolReturn:
+    """Update a specific plan's step.
+    
+    Args:
+        ctx: The run context with agent state
+        plan_identifier: Plan name OR plan_id (e.g., "Build House Plan" or "abc123")
+        step_index: Index of step to update (0-based)
+        description: New description (optional)
+        status: New status (optional)
+        
+    Returns:
+        Confirmation message
+        
+    Raises:
+        ValueError: If plan or step not found
+        
+    Example:
+        update_plan_step("Build Dream House", 0, status="completed")
+        # or
+        update_plan_step("abc123def456", 0, status="completed")
+    """
+    # Resolve name/ID to actual plan_id
+    plan_id = resolve_plan_identifier(ctx.deps.state, plan_identifier)
+    
+    if not plan_id:
+        available = [f'"{p.name}" ({pid})' for pid, p in ctx.deps.state.plans.items()]
+        error_msg = (
+            f'Plan "{plan_identifier}" not found. Available plans:\n' +
+            ('\n'.join(available) if available else 'No plans available')
+        )
+        return ToolReturn(return_value=error_msg)
+    
+    plan = ctx.deps.state.plans[plan_id]
+    
+    # Validate step index
+    if not plan.steps or step_index >= len(plan.steps):
+        error_msg = (
+            f"Step {step_index} doesn't exist in plan '{plan.name}'. "
+            f"Current steps count: {len(plan.steps)}"
+        )
+        return ToolReturn(return_value=error_msg)
+
+    # Update step
+    if description is not None:
+        plan.steps[step_index].description = description
+    if status is not None:
+        plan.steps[step_index].status = status
+    
+    plan.updated_at = datetime.now().isoformat()
+    
+    # Build state snapshot
+    state_dict = ctx.deps.state.model_dump()
+    # Get sessionId, handle None case
+    session_id = state_dict.get("sessionId") or ctx.deps.session_id or "default"
+    
+    # Update state with session_id if it was None
+    if not ctx.deps.state.sessionId:
+        ctx.deps.state.sessionId = session_id
+        state_dict = ctx.deps.state.model_dump()
+    
+    # Activity message for this specific plan
+    activity_message_id = f"plan-{plan_id}"
+    activity_content = {
+        "plans": {plan_id: plan.model_dump()},
+        "sessionId": session_id,
+    }
+    
+    return ToolReturn(
+        return_value=f'Updated step {step_index} in plan "{plan.name}"',
+        metadata=[
+            StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=state_dict,
+            ),
             ActivitySnapshotEvent(
                 messageId=activity_message_id,
                 activityType="task_progress",
@@ -121,63 +304,161 @@ async def create_plan(ctx: RunContext[StateDeps[AgentState]], steps: list[str]) 
     )
 
 
-async def update_plan_step(
-    ctx: RunContext[StateDeps[AgentState]],
-    index: int,
-    description: str | None = None,
-    status: StepStatus | None = None
+async def update_plan_status(
+    ctx: RunContext[UnifiedDeps],
+    plan_identifier: str,
+    status: str
 ) -> ToolReturn:
-    """Update a specific step in the plan.
+    """Change a plan's status (pause, resume, complete, cancel).
     
     Args:
         ctx: The run context with agent state
-        index: Index of the step to update
-        description: New description for the step (optional)
-        status: New status for the step (optional)
+        plan_identifier: Plan name OR plan_id
+        status: New status ("active", "paused", "completed", "cancelled")
         
     Returns:
-        StateSnapshotEvent and ActivitySnapshotEvent with updated state
+        Confirmation message
         
-    Raises:
-        ValueError: If step index doesn't exist
+    Example:
+        update_plan_status("Build Dream House", "paused")
     """
-
-    if not ctx.deps.state.steps or index >= len(ctx.deps.state.steps):
-        error_msg = f"Step at index {index} does not exist. Current steps count: {len(ctx.deps.state.steps)}"
-        raise ValueError(error_msg)
-
-    if description is not None:
-        ctx.deps.state.steps[index].description = description
-    if status is not None:
-        ctx.deps.state.steps[index].status = status
-
+    # Resolve to plan_id
+    plan_id = resolve_plan_identifier(ctx.deps.state, plan_identifier)
+    if not plan_id:
+        return ToolReturn(return_value=f'Plan "{plan_identifier}" not found')
+    
+    plan = ctx.deps.state.plans[plan_id]
+    old_status = plan.status
+    plan.status = status  # type: ignore
+    plan.updated_at = datetime.now().isoformat()
+    
+    # Build state snapshot
     state_dict = ctx.deps.state.model_dump()
     session_id = state_dict.get("sessionId", "default")
     
-    # Use existing plan_id for stable messageId (updates same activity as create_plan)
-    plan_id = ctx.deps.state.current_plan_id or f"fallback-{session_id}"
     activity_message_id = f"plan-{plan_id}"
-    
-    # Build activity content for inline rendering
     activity_content = {
-        "steps": [{"description": s.description, "status": s.status.value if hasattr(s.status, 'value') else s.status} for s in ctx.deps.state.steps],
+        "plans": {plan_id: plan.model_dump()},
         "sessionId": session_id,
-        "planId": plan_id,
     }
-
+    
     return ToolReturn(
-        return_value='Plan Step Updated',
+        return_value=f'Plan "{plan.name}" status: {old_status} → {status}',
         metadata=[
-            # StateSnapshotEvent for agent state persistence
             StateSnapshotEvent(
                 type=EventType.STATE_SNAPSHOT,
                 snapshot=state_dict,
             ),
-            # ActivitySnapshotEvent for inline V2 rendering (type defaults to "ACTIVITY_SNAPSHOT")
             ActivitySnapshotEvent(
                 messageId=activity_message_id,
                 activityType="task_progress",
                 content=activity_content,
+            ),
+        ],
+    )
+
+
+async def rename_plan(
+    ctx: RunContext[UnifiedDeps],
+    plan_identifier: str,
+    new_name: str
+) -> ToolReturn:
+    """Rename a plan.
+    
+    Args:
+        ctx: The run context with agent state
+        plan_identifier: Current name or ID
+        new_name: New human-readable name
+        
+    Example:
+        rename_plan("Build House", "Build Eco-Friendly House")
+    """
+    plan_id = resolve_plan_identifier(ctx.deps.state, plan_identifier)
+    if not plan_id:
+        return ToolReturn(return_value=f'Plan "{plan_identifier}" not found')
+    
+    plan = ctx.deps.state.plans[plan_id]
+    old_name = plan.name
+    plan.name = new_name
+    plan.updated_at = datetime.now().isoformat()
+
+    state_dict = ctx.deps.state.model_dump()
+    session_id = state_dict.get("sessionId", "default")
+    
+    activity_message_id = f"plan-{plan_id}"
+    activity_content = {
+        "plans": {plan_id: plan.model_dump()},
+        "sessionId": session_id,
+    }
+
+    return ToolReturn(
+        return_value=f'Plan renamed: "{old_name}" → "{new_name}"',
+        metadata=[
+            StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=state_dict,
+            ),
+            ActivitySnapshotEvent(
+                messageId=activity_message_id,
+                activityType="task_progress",
+                content=activity_content,
+            ),
+        ],
+    )
+
+
+async def list_plans(ctx: RunContext[UnifiedDeps]) -> str:
+    """List all plans in the session with their names, IDs, and status.
+    
+    Returns:
+        Formatted string with plan details
+    """
+    if not ctx.deps.state.plans:
+        return "No plans in this session."
+    
+    result = "Plans in this session:\n\n"
+    
+    for plan_id, plan in ctx.deps.state.plans.items():
+        completed = sum(1 for s in plan.steps if s.status == 'completed')
+        total = len(plan.steps)
+        
+        result += f'**{plan.name}**\n'
+        result += f'   ID: {plan_id}\n'
+        result += f'   Status: {plan.status}\n'
+        result += f'   Progress: {completed}/{total} steps\n'
+        result += f'   Created: {plan.created_at}\n\n'
+    
+    return result
+
+
+async def delete_plan(
+    ctx: RunContext[UnifiedDeps],
+    plan_identifier: str
+) -> ToolReturn:
+    """Remove a plan from the session.
+    
+    Args:
+        ctx: The run context with agent state
+        plan_identifier: Plan name OR plan_id
+        
+    Returns:
+        Confirmation message
+    """
+    plan_id = resolve_plan_identifier(ctx.deps.state, plan_identifier)
+    if not plan_id:
+        return ToolReturn(return_value=f'Plan "{plan_identifier}" not found')
+    
+    plan_name = ctx.deps.state.plans[plan_id].name
+    del ctx.deps.state.plans[plan_id]
+    
+    state_dict = ctx.deps.state.model_dump()
+    
+    return ToolReturn(
+        return_value=f'Plan "{plan_name}" deleted',
+        metadata=[
+            StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=state_dict,
             ),
         ],
     )
@@ -206,7 +487,7 @@ def _get_agent_context(ctx: RunContext[Any]) -> tuple[str | None, str | None, st
 # ========== Image Generation Tools ==========
 
 async def generate_images(
-    ctx: RunContext[StateDeps[AgentState]], 
+    ctx: RunContext[UnifiedDeps], 
     prompt: str, 
     num_images: int = 1
 ) -> list[str]:
@@ -251,7 +532,7 @@ async def generate_images(
             '{"auxiliary_agents": {"image_generation": {"agent_type": "your-image-agent"}}}'
         )
         logger.error(error_msg)
-        raise ValueError(error_msg)
+        return [error_msg]  # Return list since this function returns list[str]
     
     try:
         # Use the auxiliary agent to generate images
@@ -327,11 +608,12 @@ async def generate_images(
         return uploaded_urls
         
     except Exception as e:
+        error_msg = f"Image generation failed: {str(e)}"
         logger.exception("Image generation failed: %s", e)
-        raise
+        return [error_msg]  # Return list since this function returns list[str]
 
 
-async def web_search(ctx: RunContext[StateDeps[AgentState]], prompt: str) -> str:
+async def web_search(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
     """Search the web for information using a configured auxiliary agent.
     
     The auxiliary agent must be configured in the main agent's metadata:
@@ -371,17 +653,18 @@ async def web_search(ctx: RunContext[StateDeps[AgentState]], prompt: str) -> str
             '{"auxiliary_agents": {"web_search": {"agent_type": "your-search-agent"}}}'
         )
         logger.error(error_msg)
-        raise ValueError(error_msg)
+        return error_msg  # Return string since this function returns str
     
     try:
         result = await aux_agent.run(prompt)
         return result.response.text
     except Exception as e:
+        error_msg = f"Web search failed: {str(e)}"
         logger.exception("Web search failed: %s", e)
-        raise
+        return error_msg  # Return string since this function returns str
 
 
-async def code_execution(ctx: RunContext[StateDeps[AgentState]], prompt: str) -> str:
+async def code_execution(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
     """Execute code using a configured auxiliary agent.
     
     The auxiliary agent must be configured in the main agent's metadata:
@@ -421,17 +704,18 @@ async def code_execution(ctx: RunContext[StateDeps[AgentState]], prompt: str) ->
             '{"auxiliary_agents": {"code_execution": {"agent_type": "your-code-agent"}}}'
         )
         logger.error(error_msg)
-        raise ValueError(error_msg)
+        return error_msg  # Return string since this function returns str
     
     try:
         result = await aux_agent.run(f"Execute this code and return the result: {prompt}")
         return result.response.text
     except Exception as e:
+        error_msg = f"Code execution failed: {str(e)}"
         logger.exception("Code execution failed: %s", e)
-        raise
+        return error_msg  # Return string since this function returns str
 
 
-async def url_context(ctx: RunContext[StateDeps[AgentState]], urls: list[str]) -> str:
+async def url_context(ctx: RunContext[UnifiedDeps], urls: list[str]) -> str:
     """Load content from URLs using a configured auxiliary agent.
     
     The auxiliary agent must be configured in the main agent's metadata:
@@ -471,7 +755,7 @@ async def url_context(ctx: RunContext[StateDeps[AgentState]], urls: list[str]) -
             '{"auxiliary_agents": {"url_context": {"agent_type": "your-url-agent"}}}'
         )
         logger.error(error_msg)
-        raise ValueError(error_msg)
+        return error_msg  # Return string since this function returns str
     
     try:
         # Format URLs as a prompt
@@ -479,204 +763,34 @@ async def url_context(ctx: RunContext[StateDeps[AgentState]], urls: list[str]) -
         result = await aux_agent.run(f"Load content from these URLs:\n{urls_text}")
         return result.response.text
     except Exception as e:
+        error_msg = f"URL context failed: {str(e)}"
         logger.exception("URL context failed: %s", e)
-        raise
+        return error_msg  # Return string since this function returns str
 
 
-# ========== Multi-Agent Graph Tools ==========
-
-async def run_graph(
-    ctx: RunContext[StateDeps[AgentState]], 
-    query: str,
-    max_iterations: int = 5
-) -> ToolReturn:
-    """Run a multi-agent graph to process complex queries.
-    
-    This tool orchestrates multiple specialized agents (image generation, web search,
-    code execution) to handle complex, multi-step queries. The graph uses an orchestrator
-    agent to analyze the query and route it to the appropriate worker agents.
-    
-    State updates are sent via StateSnapshotEvent, using the shared AgentState.graph field.
-    This allows the frontend to render graph progress alongside task progress.
-    
-    Use cases:
-    - Complex queries requiring multiple steps (e.g., "Search for X and create an image of it")
-    - Queries that need specialized processing (calculations, image generation, web search)
-    - Multi-modal tasks that combine different capabilities
-    
-    Args:
-        ctx: The run context with agent state and context
-        query: The user query to process through the multi-agent graph
-        max_iterations: Maximum number of orchestrator iterations (default: 5)
-        
-    Returns:
-        ToolReturn with the final result and StateSnapshotEvent for state sync
-        
-    Example:
-        run_graph(ctx, "Search for the latest SpaceX launch and create an image visualizing it")
-    """
-    logger.info(f"🚀 run_graph tool invoked with query: {query[:100]}...")
-    
-    # Get context from deps
-    deps = ctx.deps
-    send_stream = getattr(deps, 'send_stream', None)
-    adapter = getattr(deps, 'adapter', None)
-    
-    # Debug logging
-    logger.info(f"   [run_graph] deps type: {type(deps).__name__}")
-    logger.info(f"   [run_graph] send_stream available: {send_stream is not None}")
-    logger.info(f"   [run_graph] adapter available: {adapter is not None}")
-    
-    # Check if there's existing graph state in "waiting" status (e.g., after confirmation)
-    existing_graph = ctx.deps.state.graph
-    
-    # Debug logging to understand graph state
-    logger.info(f"   [run_graph] Checking existing graph state:")
-    logger.info(f"   [run_graph]   - graph exists: {existing_graph is not None}")
-    if existing_graph:
-        logger.info(f"   [run_graph]   - status: {getattr(existing_graph, 'status', 'NO STATUS')}")
-        logger.info(f"   [run_graph]   - execution_history: {getattr(existing_graph, 'execution_history', [])}")
-        logger.info(f"   [run_graph]   - planned_steps: {getattr(existing_graph, 'planned_steps', [])}")
-    
-    is_resuming = (
-        existing_graph and 
-        hasattr(existing_graph, 'status') and 
-        existing_graph.status == 'waiting' and
-        existing_graph.execution_history and
-        len(existing_graph.execution_history) > 0
-    )
-    
-    if is_resuming:
-        logger.info(f"   [run_graph] RESUMING from waiting state")
-        logger.info(f"   [run_graph] Execution history: {existing_graph.execution_history}")
-        logger.info(f"   [run_graph] Planned steps: {existing_graph.planned_steps}")
-        
-        # Update only what's needed to continue
-        ctx.deps.state.graph.should_continue = True
-        ctx.deps.state.graph.status = 'running'
-        
-        # Clear the deferred_tool_requests since we're resuming
-        if hasattr(ctx.deps.state.graph, 'deferred_tool_requests'):
-            ctx.deps.state.graph.deferred_tool_requests = None
-    else:
-        logger.info(f"   [run_graph] Starting NEW graph execution")
-        
-        # Initialize the graph state in the shared AgentState (only for NEW executions)
-        ctx.deps.state.graph.query = query
-        ctx.deps.state.graph.original_query = query
-        ctx.deps.state.graph.max_iterations = max_iterations
-        ctx.deps.state.graph.iteration_count = 0
-        ctx.deps.state.graph.execution_history = []
-        ctx.deps.state.graph.intermediate_results = {}
-        ctx.deps.state.graph.streaming_text = {}  # Track streaming text per node
-        ctx.deps.state.graph.prompts = {}  # Track prompts sent to each node
-        ctx.deps.state.graph.tool_calls = {}  # Track tool calls per node
-        ctx.deps.state.graph.errors = []
-        ctx.deps.state.graph.result = ""
-        ctx.deps.state.graph.should_continue = True
-        ctx.deps.state.graph.mermaid_diagram = ""  # Will be populated by run_multi_agent_graph
-        ctx.deps.state.graph.planned_steps = []
-        ctx.deps.state.graph.status = 'running'
-    
-    # Create RunAgentInput from adapter or create a new one
-    if adapter and hasattr(adapter, 'run_input'):
-        run_input = adapter.run_input
-    else:
-        # Create a minimal RunAgentInput
-        run_input = RunAgentInput(
-            thread_id=uuid.uuid4().hex,
-            run_id=uuid.uuid4().hex,
-            messages=[
-                UserMessage(
-                    id=f'msg_{uuid.uuid4().hex[:8]}',
-                    content=query,
-                )
-            ],
-            state={},
-            context=[],
-            tools=[],
-            forwarded_props=None,
-        )
-    
-    try:
-        # Extract usage tracking context from deps if available
-        session_id = getattr(deps, 'session_id', None)
-        user_id = getattr(deps, 'user_id', None)
-        organization_id = getattr(deps, 'organization_id', None)
-        team_id = getattr(deps, 'team_id', None)
-        auth_session_id = getattr(deps, 'auth_session_id', None)
-        broadcast_func = getattr(deps, 'broadcast_func', None)
-        # Database UUIDs for usage tracking
-        agent_id = getattr(deps, 'agent_id', None)
-        model_id = getattr(deps, 'model_id', None)
-        
-        # Run the multi-agent graph, passing the model from context (REQUIRED)
-        # Note: The orchestrator uses its built-in sub-agents (web_search_step, code_execution_step,
-        # image_generation_step, result_aggregator_step) instead of external tools.
-        result = await run_multi_agent_graph(
-            query=query,
-            orchestrator_model=ctx.model,  # Use model from RunContext (never create new)
-            run_input=run_input,
-            send_stream=send_stream,
-            max_iterations=max_iterations,
-            shared_state=ctx.deps.state,  # Pass shared state for updates
-            # Usage tracking context
-            session_id=session_id,
-            user_id=user_id,
-            organization_id=organization_id,
-            team_id=team_id,
-            auth_session_id=auth_session_id,
-            broadcast_func=broadcast_func,
-            # Database IDs for sub-agent usage tracking (use parent agent's IDs)
-            agent_id=agent_id,
-            model_id=model_id,
-        )
-        
-        # Update the shared state with the result
-        ctx.deps.state.graph.result = result
-        
-        logger.info(f"✅ run_graph completed successfully")
-        
-        # NOTE: Do NOT send StateSnapshotEvent here!
-        # The graph already sends GraphAgentState format during execution.
-        # Sending AgentState format here would overwrite the graph progress
-        # with { steps: [], graph: {...} } which causes the UI to hide progress.
-        # The final GraphAgentState is sent by the finalize_result step.
-        
-        return ToolReturn(
-            return_value=result,
-        )
-        
-    except Exception as e:
-        error_msg = f"Multi-agent graph execution failed: {str(e)}"
-        logger.exception(error_msg)
-        
-        # Update state with error
-        ctx.deps.state.graph.errors.append({
-            "node": "run_graph",
-            "error": str(e),
-            "timestamp": ""
-        })
-        
-        # On error, we also don't send StateSnapshotEvent to avoid format conflicts
-        # The graph's error state is already sent during execution
-        
-        return ToolReturn(
-            return_value=error_msg,
-        )
+# Multi-agent graph tools moved to graph_tools.py
 
 
 # ========== Tool Registry ==========
 # Maps tool keys to their function implementations
 
+from .graph_tools import GRAPH_TOOLS
+
 BACKEND_TOOLS = {
+    # Plan management (multi-instance with names)
     'create_plan': create_plan,
     'update_plan_step': update_plan_step,
+    'update_plan_status': update_plan_status,
+    'rename_plan': rename_plan,
+    'list_plans': list_plans,
+    'delete_plan': delete_plan,
+    # Graph management (multi-instance with names)
+    **GRAPH_TOOLS,
+    # Auxiliary agents
     'generate_images': generate_images,
     'web_search': web_search,
     'code_execution': code_execution,
     'url_context': url_context,
-    'run_graph': run_graph,
 }
 
 

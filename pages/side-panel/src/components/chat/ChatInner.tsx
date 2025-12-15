@@ -53,7 +53,7 @@ import { themeStorage } from '@extension/storage';
 import { cn } from '@extension/ui';
 
 // UI Components
-import type { AgentStepState } from '../cards/TaskProgressCard';
+import type { AgentStepState } from '../cards';
 // Note: Graph state rendering is handled by renderActivityMessages at Provider level
 // Custom components available for future use after V2 styles import:
 // import { CustomUserMessage } from './CustomUserMessage';
@@ -65,7 +65,7 @@ import { MermaidBlock } from './MermaidBlock';
 import { ChatErrorDisplay } from './ChatErrorDisplay';
 import { CustomAssistantMessageV2 } from './CustomAssistantMessageV2';
 import { CustomUserMessageV2 } from './CustomUserMessageV2';
-import { CustomInputV2 } from './CustomInputV2';
+import { CustomInputV2, PageSelectorProvider } from './CustomInputV2';
 import { 
   CustomScrollToBottomButton,
   CustomFeather,
@@ -394,7 +394,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     currentPageContent,
     pageContentEmbedding,
     currentPageTotals: totals,
-    enableLogging: false,
+    enableLogging: true,
   });
 
   // Share multi-page metadata with agent (includes current page + selected pages)
@@ -604,7 +604,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // PROGRESS BAR STATE
   // ================================================================================
 
-  const hasProgressBar = dynamicAgentState.steps && dynamicAgentState.steps.length > 0;
+  const hasProgressBar = !!(dynamicAgentState.plans && Object.values(dynamicAgentState.plans).some(p => p.steps?.length > 0));
   const { showProgressBar, toggleProgressBar: toggleProgressBarFn } = useProgressBarState(
     hasProgressBar,
     onProgressBarStateChange,
@@ -839,19 +839,25 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
 
   return (
     <ChatSessionIdProvider sessionId={sessionId}>
-      <div className="flex h-full flex-col overflow-hidden">
-        <div
-          className={cn(
-            'copilot-chat-wrapper relative min-h-0 flex-1 overflow-hidden',
-            !isAgentAndModelSelected && 'chat-input-disabled',
-          )}>
-          <CopilotChat
-            agentId="dynamic_agent"
-            threadId={sessionId}
-            chatView={chatView}
-          />
+      <PageSelectorProvider value={{
+        selectedPageURLs,
+        onPagesChange,
+        currentPageURL,
+      }}>
+        <div className="flex h-full flex-col overflow-hidden">
+          <div
+            className={cn(
+              'copilot-chat-wrapper relative min-h-0 flex-1 overflow-hidden',
+              !isAgentAndModelSelected && 'chat-input-disabled',
+            )}>
+            <CopilotChat
+              agentId="dynamic_agent"
+              threadId={sessionId}
+              chatView={chatView}
+            />
+          </div>
         </div>
-      </div>
+      </PageSelectorProvider>
     </ChatSessionIdProvider>
   );
 };

@@ -16,7 +16,7 @@
  * but React forwardRef components have `typeof === "object"`. To work around this,
  * we wrap the forwardRef component in a regular function component.
  */
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react';
 import { CopilotChatInput, type CopilotChatInputProps } from '@copilotkitnext/react';
 import { CustomTiptapTextArea } from './CustomTiptapTextArea';
 import { useCopilotChatContext } from '../../hooks/copilotkit';
@@ -29,6 +29,28 @@ import { COPIOLITKIT_CONFIG } from '../../constants';
 import { ensureFirebase, ensureFirebaseAuth } from '../../utils/firebaseStorage';
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { useCopilotChat, type Message } from '../../hooks/copilotkit';
+
+// Context for sharing page selector state between ChatInner and CustomInputV2
+interface PageSelectorContextValue {
+  selectedPageURLs: string[];
+  onPagesChange: (urls: string[]) => void;
+  currentPageURL: string | null;
+}
+
+const PageSelectorContext = createContext<PageSelectorContextValue | null>(null);
+
+export const PageSelectorProvider: React.FC<{ value: PageSelectorContextValue; children: React.ReactNode }> = ({ value, children }) => (
+  <PageSelectorContext.Provider value={value}>{children}</PageSelectorContext.Provider>
+);
+
+const usePageSelectorContext = () => {
+  const ctx = useContext(PageSelectorContext);
+  if (!ctx) {
+    // Fallback to local state if context not provided
+    return null;
+  }
+  return ctx;
+};
 
 /**
  * Custom Icons for dropdown menu items
@@ -171,8 +193,14 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   const context = useCopilotChatContext();
   const { sendMessage } = useCopilotChat();
   
-  // Pages selector state (temporary - will be managed by parent context later)
-  const [selectedPageURLs, setSelectedPageURLs] = useState<string[]>([]);
+  // Get page selector context from parent (ChatInner)
+  const pageSelectorCtx = usePageSelectorContext();
+  
+  // Pages selector state - use context if available, otherwise local state
+  const [localSelectedPageURLs, setLocalSelectedPageURLs] = useState<string[]>([]);
+  const selectedPageURLs = pageSelectorCtx?.selectedPageURLs ?? localSelectedPageURLs;
+  const setSelectedPageURLs = pageSelectorCtx?.onPagesChange ?? setLocalSelectedPageURLs;
+  const currentPageURL = pageSelectorCtx?.currentPageURL ?? null;
   
   // File input refs for upload functionality
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -766,7 +794,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                     <PagesSelector
                       isLight={isLight}
                       selectedPageURLs={selectedPageURLs}
-                      currentPageURL={null}
+                      currentPageURL={currentPageURL}
                       sessionId={sessionId || undefined}
                       onPagesChange={setSelectedPageURLs}
                       variant="compact"

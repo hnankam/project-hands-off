@@ -9,5 +9,6 @@ export { TaskProgressCard } from './TaskProgressCard';
 export { ImageGalleryCard } from './ImageGalleryCard';
 
 // Re-export types
-export type { AgentStepState } from './TaskProgressCard';
+// Re-export UnifiedAgentState for backward compatibility
+export type { UnifiedAgentState as AgentStepState } from '../graph-state/types';
 

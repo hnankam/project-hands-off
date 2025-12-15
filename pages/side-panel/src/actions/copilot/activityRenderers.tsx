@@ -14,7 +14,8 @@ import { z } from 'zod';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { GraphStateCard, convertToGraphAgentState, isGraphSteps, isPlanSteps } from '../../components/graph-state';
-import { TaskProgressCard, type AgentStepState } from '../../components/cards/TaskProgressCard';
+import { TaskProgressCard } from '../../components/cards/TaskProgressCard';
+import type { UnifiedAgentState } from '../../components/graph-state/types';
 
 // ============================================================================
 // ZOD SCHEMAS FOR ACTIVITY CONTENT
@@ -24,7 +25,7 @@ import { TaskProgressCard, type AgentStepState } from '../../components/cards/Ta
 const graphToolCallSchema = z.object({
   tool_name: z.string(),
   args: z.string(),
-  result: z.string().optional(),
+  result: z.string(), // Required, matching GraphToolCall interface
   status: z.enum(['in_progress', 'completed', 'error']),
   tool_call_id: z.string().optional(),
 });
@@ -46,56 +47,60 @@ const planStepSchema = z.object({
   status: z.enum(['pending', 'running', 'completed', 'failed', 'deleted']),
 });
 
-/** Schema for backend graph state (nested format) */
-const backendGraphStateSchema = z.object({
-  query: z.string().optional(),
-  original_query: z.string().optional(),
-  result: z.string().optional(),
-  query_type: z.string().optional(),
-  execution_history: z.array(z.string()).optional(),
-  intermediate_results: z.record(z.string()).optional(),
-  streaming_text: z.record(z.string()).optional(),
-  prompts: z.record(z.string()).optional(),
-  tool_calls: z.record(z.array(graphToolCallSchema)).optional(),
+/** Schema for plan instance */
+const planInstanceSchema = z.object({
+  plan_id: z.string(),
+  name: z.string(),
+  status: z.enum(['active', 'paused', 'completed', 'cancelled']),
+  steps: z.array(planStepSchema),
+  created_at: z.string(),
+  updated_at: z.string(),
+  metadata: z.record(z.any()).optional(),
+});
+
+/** Schema for graph instance */
+const graphInstanceSchema = z.object({
+  graph_id: z.string(),
+  name: z.string(),
+  status: z.enum(['active', 'running', 'paused', 'completed', 'cancelled', 'waiting']),
+  steps: z.array(graphStepSchema),
+  query: z.string(),
+  original_query: z.string(),
+  result: z.string(),
+  query_type: z.string(),
+  execution_history: z.array(z.string()),
+  intermediate_results: z.record(z.string()),
+  streaming_text: z.record(z.string()),
+  prompts: z.record(z.string()),
+  tool_calls: z.record(z.array(graphToolCallSchema)),
   errors: z.array(z.object({
     node: z.string().optional(),
     error: z.string().optional(),
     timestamp: z.string().optional(),
-  })).optional(),
-  last_error_node: z.string().optional(),
-  retry_count: z.number().optional(),
-  max_retries: z.number().optional(),
-  iteration_count: z.number().optional(),
-  max_iterations: z.number().optional(),
-  should_continue: z.boolean().optional(),
-  next_action: z.string().optional(),
-  planned_steps: z.array(z.string()).optional(),
-  mermaid_diagram: z.string().optional(),
-  status: z.enum(['pending', 'running', 'completed', 'error', 'waiting']).optional(),
+  })),
+  last_error_node: z.string(),
+  retry_count: z.number(),
+  max_retries: z.number(),
+  iteration_count: z.number(),
+  max_iterations: z.number(),
+  should_continue: z.boolean(),
+  next_action: z.string(),
+  planned_steps: z.array(z.string()),
+  mermaid_diagram: z.string(),
   deferred_tool_requests: z.unknown().optional(),
-  current_graph_id: z.string().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
 });
 
-/** Schema for unified agent state */
+/** Schema for unified agent state - flat structure with multi-instance support */
 export const unifiedAgentStateSchema = z.object({
-  // Plan steps or graph steps
-  steps: z.array(z.union([planStepSchema, graphStepSchema])).optional(),
-  // Nested graph state
-  graph: backendGraphStateSchema.optional(),
-  // Flat graph fields
-  query: z.string().optional(),
-  original_query: z.string().optional(),
-  current_node: z.string().optional(),
-  iteration: z.number().optional(),
-  max_iterations: z.number().optional(),
-  planned_steps: z.array(z.string()).optional(),
-  mermaid_diagram: z.string().optional(),
-  final_result: z.string().optional(),
-  status: z.enum(['pending', 'running', 'completed', 'error', 'waiting']).optional(),
+  // All plan instances, keyed by plan_id
+  plans: z.record(planInstanceSchema).optional(),
+  // All graph instances, keyed by graph_id
+  graphs: z.record(graphInstanceSchema).optional(),
+  // Session tracking
   sessionId: z.string().optional(),
-  // Unique IDs for activity message updates
-  planId: z.string().optional(),
-  graphId: z.string().optional(),
+  // Deferred tool requests
   deferred_tool_requests: z.unknown().optional(),
 });
 
@@ -129,29 +134,65 @@ export const AgentStateActivityRenderer: React.FC<AgentStateActivityProps> = ({
   // Use sessionId from props or from content
   const sessionId = propSessionId || unifiedState?.sessionId || 'unknown';
 
-  // Check if we have any meaningful state to render
-  const hasSteps = unifiedState?.steps && unifiedState.steps.length > 0;
-  const hasGraph = unifiedState?.graph && (
-    (unifiedState.graph.execution_history?.length ?? 0) > 0 || 
-    unifiedState.graph.next_action ||
-    unifiedState.graph.result
+  // Extract all plan and graph instances
+  const allPlans = Object.values(unifiedState?.plans || {});
+  const allGraphs = Object.values(unifiedState?.graphs || {});
+  
+  // Filter by status - show active, running, and completed
+  const activePlans = allPlans.filter(p => 
+    p.status === 'active' || p.status === 'completed'
+  );
+  const activeGraphs = allGraphs.filter(g => 
+    g.status === 'active' || g.status === 'running' || g.status === 'completed'
   );
   
-  if (!hasSteps && !hasGraph) {
+  if (activePlans.length === 0 && activeGraphs.length === 0) {
     return null;
   }
 
   const elements: React.ReactNode[] = [];
-  const steps = unifiedState?.steps || [];
   
-  // Case 1: Graph execution state
-  if ((hasSteps && isGraphSteps(steps)) || hasGraph) {
-    const graphState = convertToGraphAgentState(unifiedState as any);
-    if (graphState && graphState.steps.length > 0) {
+  // Render active plans
+  activePlans.forEach(plan => {
+    elements.push(
+      <div
+        key={`plan-${plan.plan_id}`}
+        data-task-progress="true"
+        data-plan-id={plan.plan_id}
+        data-session-id={sessionId}
+        data-timestamp={Date.now()}
+        className="w-full pt-2"
+        style={{
+          maxWidth: '56rem',
+          marginLeft: 'auto',
+          marginRight: 'auto',
+          paddingLeft: 12,
+          paddingRight: 12,
+          ['--copilot-kit-input-background-color' as string]: 'transparent',
+          ['--copilot-kit-separator-color' as string]: isLight ? '#e5e7eb' : '#374151',
+          ['--copilot-kit-border-color' as string]: isLight ? '#e5e7eb' : '#374151',
+          ['--task-progress-rendered-border-color' as string]: isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151',
+        }}>
+        <TaskProgressCard
+          state={{ plans: { [plan.plan_id]: plan }, sessionId }}
+          setState={setDynamicAgentState}
+          isCollapsed={false}
+          isHistorical={true}
+          showControls={false}
+        />
+      </div>
+    );
+  });
+  
+  // Render active graphs
+  activeGraphs.forEach(graph => {
+    const graphState = convertToGraphAgentState({ graphs: { [graph.graph_id]: graph } });
+    if (graphState && graphState.steps && graphState.steps.length > 0) {
       elements.push(
         <div
-          key="graph-progress"
+          key={`graph-${graph.graph_id}`}
           data-graph-progress="true"
+          data-graph-id={graph.graph_id}
           data-session-id={sessionId}
           data-timestamp={Date.now()}
           className="w-full pt-2"
@@ -170,45 +211,7 @@ export const AgentStateActivityRenderer: React.FC<AgentStateActivityProps> = ({
         </div>
       );
     }
-  }
-  
-  // Case 2: Plan steps (have 'description' field)
-  if (hasSteps && isPlanSteps(steps)) {
-    const planState: AgentStepState = {
-      steps: steps,
-      sessionId: unifiedState.sessionId || sessionId,
-    };
-    
-    if (planState.sessionId === sessionId) {
-      elements.push(
-        <div
-          key="task-progress"
-          data-task-progress="true"
-          data-session-id={sessionId}
-          data-timestamp={Date.now()}
-          className="w-full pt-2"
-          style={{
-            maxWidth: '56rem',
-            marginLeft: 'auto',
-            marginRight: 'auto',
-            paddingLeft: 12,
-            paddingRight: 12,
-            ['--copilot-kit-input-background-color' as string]: 'transparent',
-            ['--copilot-kit-separator-color' as string]: isLight ? '#e5e7eb' : '#374151',
-            ['--copilot-kit-border-color' as string]: isLight ? '#e5e7eb' : '#374151',
-            ['--task-progress-rendered-border-color' as string]: isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151',
-          }}>
-          <TaskProgressCard
-            state={planState}
-            setState={setDynamicAgentState}
-            isCollapsed={true}
-            isHistorical={true}
-            showControls={false}
-          />
-        </div>
-      );
-    }
-  }
+  });
   
   if (elements.length === 0) {
     return null;
@@ -228,13 +231,11 @@ interface ActivityRendererDependencies {
 
 /**
  * Schema for task_progress activity content from backend
- * Backend sends: { steps: [{description, status}], sessionId }
+ * Backend sends: { plans: {[id]: PlanInstance}, sessionId }
+ * Using the unified structure with plans dictionary
  */
 const taskProgressContentSchema = z.object({
-  steps: z.array(z.object({
-    description: z.string(),
-    status: z.string(), // 'pending', 'running', 'completed', 'failed', 'deleted'
-  })),
+  plans: z.record(planInstanceSchema),
   sessionId: z.string().optional(),
 });
 
@@ -245,6 +246,8 @@ type TaskProgressContent = z.infer<typeof taskProgressContentSchema>;
  * 
  * Matches the 'task_progress' activityType sent by the backend when
  * create_plan or update_plan_step is called.
+ * 
+ * Uses the unified structure with plans dictionary for multi-instance support.
  */
 export function createTaskProgressActivityRenderer(deps: ActivityRendererDependencies = {}) {
   return {
@@ -257,18 +260,18 @@ export function createTaskProgressActivityRenderer(deps: ActivityRendererDepende
       message: unknown;
       agent: unknown;
     }) => {
-      const planState: AgentStepState = {
-        steps: props.content.steps.map(s => ({
-          description: s.description,
-          status: s.status as 'pending' | 'running' | 'completed' | 'failed' | 'deleted',
-        })),
-        sessionId: props.content.sessionId || deps.sessionId || 'unknown',
+      // Use the unified structure with plans dictionary directly
+      const sessionId = props.content.sessionId || deps.sessionId || 'unknown';
+      
+      const planState: UnifiedAgentState = {
+        plans: props.content.plans,
+        sessionId,
       };
       
       return (
         <div
           data-task-progress="true"
-          data-session-id={planState.sessionId}
+          data-session-id={sessionId}
           className="w-full pt-2"
           style={{
             maxWidth: '56rem',

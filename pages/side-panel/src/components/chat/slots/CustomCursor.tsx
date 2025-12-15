@@ -37,9 +37,8 @@ export function CustomCursor({
   const cursorColor = isLight ? '#374151' : '#d1d5db'; // gray-700 / gray-300
   
   // Adaptive margin: larger when no messages (initial state), smaller when continuing conversation
-  // Consider 0-1 messages as "initial state" since the cursor itself represents the first streaming message
-  const hasMessages = messages.length > 1;
-  const marginTop = '0.5rem'; //hasMessages ? '0.25rem' : '1rem';
+  const hasMessages = messages.length > 0;
+  const marginTop = hasMessages ? '0' : '0.75rem';
   
   return (
     <div

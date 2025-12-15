@@ -116,12 +116,10 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
     return textContent.trim();
   }, []);
 
-  // Determine toolbar visibility: 
-  // - Always visible for the last assistant series in the conversation
-  // - Visible on hover for assistant series that have more assistant messages after them
-  const { isLastInSeries, assistantSeries, hasAssistantMessagesAfter } = useMemo(() => {
+  // Determine if this message is the last in its assistant series
+  const { isLastInSeries, assistantSeries } = useMemo(() => {
     if (!message || !messages || messages.length === 0) {
-      return { isLastInSeries: true, assistantSeries: [message], hasAssistantMessagesAfter: false };
+      return { isLastInSeries: true, assistantSeries: [message] };
     }
 
     const currentIndex = messages.findIndex((msg: any) => {
@@ -133,7 +131,7 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
     });
 
     if (currentIndex === -1) {
-      return { isLastInSeries: true, assistantSeries: [message], hasAssistantMessagesAfter: false };
+      return { isLastInSeries: true, assistantSeries: [message] };
     }
 
     // Find previous user message relative to current message
@@ -167,26 +165,15 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
     }
 
     if (assistantGroup.length === 0) {
-      return { isLastInSeries: true, assistantSeries: [message], hasAssistantMessagesAfter: false };
+      return { isLastInSeries: true, assistantSeries: [message] };
     }
 
     const lastAssistant = assistantGroup[assistantGroup.length - 1];
     const isLast = lastAssistant?.id === message.id || lastAssistant === message;
 
-    // Check if there are any assistant messages after this series
-    let hasMoreAssistants = false;
-    for (let i = nextUserIndex; i < messages.length; i++) {
-      const role = (messages[i] as any)?.role;
-      if (role === 'assistant') {
-        hasMoreAssistants = true;
-        break;
-      }
-    }
-
     return {
       isLastInSeries: isLast,
       assistantSeries: assistantGroup,
-      hasAssistantMessagesAfter: hasMoreAssistants,
     };
   }, [message, messages, isRunning]);
 
@@ -276,12 +263,10 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
                                    hasContent && 
                                    isLastInSeries;
         
-        // Determine toolbar visibility (for opacity control)
-        // - Always visible if this is the final assistant series (no more assistants after)
-        // - Only visible on hover if there are more assistant messages after this series
+        // Determine toolbar visibility - always show on hover only (simplified logic)
         const shouldShowToolbar = !effectiveIsRunning && 
                                   shouldRenderToolbar &&
-                                  (!hasAssistantMessagesAfter || isHovered);
+                                  isHovered;
 
         // Control toolbar visibility with opacity (only when toolbar should be rendered)
         const toolbarOpacity = shouldShowToolbar ? 1 : 0;
