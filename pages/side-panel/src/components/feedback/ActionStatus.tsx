@@ -72,6 +72,9 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
   // Track if user manually closed the dropdown
   const userClosedRef = useRef(false);
   
+  // Timer ref for delayed auto-collapse
+  const autoCollapseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
   // Refs for auto-scrolling content sections (using HTMLElement to work with both div and pre)
   const inputScrollRef = useRef<HTMLElement>(null);
   const outputScrollRef = useRef<HTMLElement>(null);
@@ -79,12 +82,29 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
   
   // Auto-expand when in progress or executing (unless user manually closed it)
   useEffect(() => {
-    if (isWorking && !userClosedRef.current) {
+    // Clear any pending auto-collapse timer when status changes
+    if (autoCollapseTimerRef.current) {
+      clearTimeout(autoCollapseTimerRef.current);
+      autoCollapseTimerRef.current = null;
+    }
+    
+    if (isWorking) {
+      // Reset user control when a new action starts
+      userClosedRef.current = false;
       setIsExpanded(true);
     } else if (status === 'complete' && !userClosedRef.current) {
-      // Auto-collapse when complete
-      setIsExpanded(false);
+      // Auto-collapse after 5 seconds when complete (unless user manually interacted)
+      autoCollapseTimerRef.current = setTimeout(() => {
+        setIsExpanded(false);
+      }, 5000);
     }
+    
+    // Cleanup timer on unmount
+    return () => {
+      if (autoCollapseTimerRef.current) {
+        clearTimeout(autoCollapseTimerRef.current);
+      }
+    };
   }, [status, isWorking]);
   
   // Auto-scroll to bottom when content changes during active work
@@ -134,18 +154,14 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
   const text = `${baseText}`;
 
   // Icon color based on status and current theme
-  // Blue for success (complete without error), red for failure (error), gray for in-progress/pending
+  // Disabled state (muted) when not complete, enabled state when complete
   const getIconColor = (): string => {
-    if (error) {
-      // Subtle red for errors/failures
-      return isLight ? '#f87171' : '#fca5a5'; // red-400 for light, red-300 for dark
+    if (status === 'complete') {
+      // Enabled state - normal text color
+      return isLight ? '#374151' : '#d1d5db'; // gray-700 for light, gray-300 for dark
     }
-    if (status === 'complete' && !error) {
-      // Subtle blue for successful completion
-      return isLight ? '#60a5fa' : '#93c5fd'; // blue-400 for light, blue-300 for dark
-    }
-    // Default gray for in-progress/pending
-    return isLight ? '#4b5563' : '#6b7280'; // gray-600 for light, gray-500 for dark
+    // Disabled state - muted color for in-progress/pending
+    return isLight ? '#9ca3af' : '#6b7280'; // gray-400 for light, gray-500 for dark
   };
   
   const iconColor = getIconColor();
@@ -187,11 +203,14 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
     if (!hasExpandableData) return;
     const newState = !isExpanded;
     setIsExpanded(newState);
-    // Track if user manually closed during active work
-    if (!newState && isWorking) {
-      userClosedRef.current = true;
+    // Mark as user-controlled after any manual interaction
+    userClosedRef.current = true;
+    // Clear auto-collapse timer on manual interaction
+    if (autoCollapseTimerRef.current) {
+      clearTimeout(autoCollapseTimerRef.current);
+      autoCollapseTimerRef.current = null;
     }
-  }, [hasExpandableData, isExpanded, isWorking]);
+  }, [hasExpandableData, isExpanded]);
 
   // Chevron icon for expand/collapse (points right, rotates down when expanded)
   const chevronIcon = (
@@ -216,7 +235,8 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
   );
 
   // Format data for display
-  const formatData = (data: any): { content: string; isMarkdown: boolean; language?: string } => {
+  // isInput flag indicates this is input args (always show full JSON for args)
+  const formatData = (data: any, isInput: boolean = false): { content: string; isMarkdown: boolean; language?: string } => {
     if (data === null || data === undefined) return { content: 'null', isMarkdown: false, language: 'text' };
     
     // If data is a string, check if it's JSON or markdown
@@ -238,8 +258,8 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
     
     if (typeof data === 'number' || typeof data === 'boolean') return { content: String(data), isMarkdown: false, language: 'text' };
     
-    // If data is an object, check for common markdown content fields
-    if (typeof data === 'object' && data !== null) {
+    // If data is an object, check for common markdown content fields (SKIP for input args)
+    if (typeof data === 'object' && data !== null && !isInput) {
       // Check for common field names that contain markdown content
       const markdownFields = ['prompt', 'input', 'message', 'content', 'text', 'query', 'code', 'description'];
       
@@ -275,8 +295,8 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
       {/* Header (always visible) */}
       <div
         style={{
-          paddingTop: 6,
-          paddingBottom: 0,
+          paddingTop: 0,
+          paddingBottom: 6,
           display: 'flex',
           alignItems: 'center',
           cursor: hasExpandableData ? 'pointer' : 'default',
@@ -314,7 +334,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
         >
           {/* Input Arguments */}
           {args && (() => {
-            const { content, isMarkdown, language } = formatData(args);
+            const { content, isMarkdown, language } = formatData(args, true);
             return (
               <div style={{ marginBottom: 8 }}>
                 <div
@@ -349,7 +369,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
 
           {/* Output Result */}
           {result && (() => {
-            const { content, isMarkdown, language } = formatData(result);
+            const { content, isMarkdown, language } = formatData(result, false);
             return (
               <div style={{ marginBottom: 8 }}>
                 <div
@@ -384,7 +404,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
 
           {/* Error */}
           {error && (() => {
-            const { content, isMarkdown, language } = formatData(error);
+            const { content, isMarkdown, language } = formatData(error, false);
             return (
               <div>
                 <div

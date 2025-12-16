@@ -9,7 +9,7 @@ import { Editor } from '@tiptap/react';
 export function editorToMarkdown(editor: Editor): string {
   // ALWAYS use custom serializer to handle mentions properly
   // tiptap-markdown doesn't support mention nodes in non-html mode
-  console.log('[editorToMarkdown] Using custom JSON serializer for mentions support');
+  // console.log('[editorToMarkdown] Using custom JSON serializer for mentions support');
   const json = editor.getJSON();
   return jsonToMarkdown(json);
 }
@@ -63,7 +63,7 @@ function jsonToMarkdown(node: any, depth = 0, listContext?: { type: 'bullet' | '
     return text;
   }
 
-  // Handle mention nodes
+  // Handle mention nodes - serialize as inline HTML spans
   if (node.type === 'mention') {
     console.log('[markdownSerializer] Mention node:', {
       type: node.type,
@@ -71,7 +71,8 @@ function jsonToMarkdown(node: any, depth = 0, listContext?: { type: 'bullet' | '
       hasLabel: !!node.attrs?.label,
       hasId: !!node.attrs?.id,
     });
-    const result = `@${node.attrs?.label || node.attrs?.id || 'unknown'}`;
+    const mentionText = node.attrs?.label || node.attrs?.id || 'unknown';
+    const result = `<span class="mention-chip" data-mention="${mentionText}">@${mentionText}</span>`;
     console.log('[markdownSerializer] Serialized mention to:', result);
     return result;
   }

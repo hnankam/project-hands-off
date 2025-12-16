@@ -122,12 +122,12 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
       return;
     }
 
-    // When tag becomes complete (closing tag received), auto-close and enter manual-only mode
+    // When tag becomes complete (closing tag received), auto-close after 5s and enter manual-only mode
     if (isComplete && !prev && !manualOnlyRef.current) {
       autoCloseTimerRef.current = setTimeout(() => {
         setIsOpen(false);
         manualOnlyRef.current = true; // From now on, only manual open/close
-      }, 800);
+      }, 5000);
     }
   }, [isComplete]);
 
@@ -231,7 +231,7 @@ export const ThinkingBlock: FC<{ children?: React.ReactNode; isComplete?: boolea
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         style={{
-          padding: 4,
+          padding: 6,
           paddingLeft: 0,
           paddingRight: 0,
           paddingTop: 0,

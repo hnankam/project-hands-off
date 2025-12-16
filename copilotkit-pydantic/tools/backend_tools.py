@@ -153,7 +153,7 @@ async def create_plan(
     
     Args:
         ctx: The run context with agent state
-        name: Human-readable name for this plan (e.g., "Build Dream House", "Research ML")
+        name: Human-readable name for this plan (max 50 chars, e.g., "Build Dream House", "Research ML")
         steps: List of step descriptions
         status: Initial status, default "active" (can be "active", "paused")
         
@@ -427,6 +427,52 @@ async def list_plans(ctx: RunContext[UnifiedDeps]) -> str:
         result += f'   Status: {plan.status}\n'
         result += f'   Progress: {completed}/{total} steps\n'
         result += f'   Created: {plan.created_at}\n\n'
+    
+    return result
+
+
+async def get_plan_details(
+    ctx: RunContext[UnifiedDeps],
+    plan_identifier: str
+) -> str:
+    """Get detailed information about a plan including all steps.
+    
+    Returns the plan's complete step list with descriptions and statuses,
+    useful for reviewing progress or debugging.
+    
+    Args:
+        plan_identifier: Plan name or ID
+        
+    Returns:
+        Detailed plan information with all steps
+        
+    Example:
+        get_plan_details("Build House Plan")
+    """
+    plan_id = resolve_plan_identifier(ctx.deps.state, plan_identifier)
+    if not plan_id:
+        available = [f'"{p.name}" ({pid})' for pid, p in ctx.deps.state.plans.items()]
+        error_msg = (
+            f'Plan "{plan_identifier}" not found. Available plans:\n' +
+            ('\n'.join(available) if available else 'No plans available')
+        )
+        return error_msg
+    
+    plan = ctx.deps.state.plans[plan_id]
+    
+    # Build detailed output
+    result = f'**{plan.name}**\n'
+    result += f'ID: {plan_id}\n'
+    result += f'Status: {plan.status}\n'
+    result += f'Created: {plan.created_at}\n'
+    result += f'Updated: {plan.updated_at}\n'
+    result += f'\nSteps ({len(plan.steps)}):\n\n'
+    
+    for i, step in enumerate(plan.steps):
+        result += f'{i}. [{step.status}] {step.description}\n'
+    
+    if plan.metadata:
+        result += f'\nMetadata: {plan.metadata}\n'
     
     return result
 
@@ -783,6 +829,7 @@ BACKEND_TOOLS = {
     'update_plan_status': update_plan_status,
     'rename_plan': rename_plan,
     'list_plans': list_plans,
+    'get_plan_details': get_plan_details,
     'delete_plan': delete_plan,
     # Graph management (multi-instance with names)
     **GRAPH_TOOLS,

@@ -153,7 +153,7 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
     <div
       className={`rounded-lg border ${
         isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]'
-      } overflow-hidden shadow-sm`}
+      } overflow-hidden mb-1.5`}
       data-graph-state="true"
       data-session-id={sessionId}
     >

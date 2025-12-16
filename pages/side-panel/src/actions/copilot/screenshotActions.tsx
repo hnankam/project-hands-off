@@ -41,10 +41,16 @@ const ICON_SIZE = 14;
 /** Icon margin right in pixels */
 const ICON_MARGIN_RIGHT = 6;
 
-/** Icon colors by theme */
+/** Icon colors by theme and state */
 const ICON_COLORS = {
-  light: '#4b5563',
-  dark: '#6b7280',
+  enabled: {
+    light: '#374151', // gray-700
+    dark: '#d1d5db',  // gray-300
+  },
+  disabled: {
+    light: '#9ca3af', // gray-400
+    dark: '#6b7280',  // gray-500
+  },
 } as const;
 
 /** Log prefix for agent actions */
@@ -115,13 +121,15 @@ interface ScreenshotActionDependencies {
 // ============================================================================
 
 /**
- * Get icon style based on theme
+ * Get icon style based on theme and status
+ * Icons are disabled (muted) when not complete, enabled when complete
  */
-function getIconStyle(isLight: boolean): React.CSSProperties {
+function getIconStyle(isLight: boolean, status: ActionPhase): React.CSSProperties {
+  const colorSet = status === 'complete' ? ICON_COLORS.enabled : ICON_COLORS.disabled;
   return {
     flexShrink: 0,
     marginRight: ICON_MARGIN_RIGHT,
-    color: isLight ? ICON_COLORS.light : ICON_COLORS.dark,
+    color: isLight ? colorSet.light : colorSet.dark,
   };
 }
 
@@ -174,22 +182,28 @@ export const createTakeScreenshotAction = ({ isLight }: ScreenshotActionDependen
     const captureType = isFullPage ? 'full page' : 'viewport';
     const details = format === 'jpeg' ? `${format.toUpperCase()}, Q${quality}` : format.toUpperCase();
 
-    // Extract screenshot info from result
-    const screenshotInfo = status === 'complete' ? result?.screenshotInfo : undefined;
-    const dimensions = screenshotInfo?.dimensions;
+    // Parse result if it's a JSON string
+    const parsedResult = typeof result === 'string' ? (() => {
+      try { return JSON.parse(result); } catch { return result; }
+    })() : result;
+
+    // Extract screenshot info from result (nested under screenshotInfo)
+    const screenshotInfo = status === 'complete' ? parsedResult?.screenshotInfo : undefined;
+    const width = screenshotInfo?.dimensions?.width;
+    const height = screenshotInfo?.dimensions?.height;
     const sizeKB = screenshotInfo?.sizeKB;
 
     // Build complete message with dimensions and size
     let completeMessage = `Screenshot captured: ${captureType}, ${details}`;
-    if (dimensions && sizeKB) {
-      completeMessage += ` • ${dimensions.width}×${dimensions.height}px, ${sizeKB}KB`;
+    if (width && height && sizeKB) {
+      completeMessage += ` • ${width}×${height}px, ${sizeKB}KB`;
     }
 
     return (
       <ActionStatus
         toolName={`Screenshot (${captureType}, ${details})`}
         status={status}
-        icon={<CameraIcon style={getIconStyle(isLight)} />}
+        icon={<CameraIcon style={getIconStyle(isLight, status)} />}
         messages={{
           pending: `Taking ${captureType} screenshot (${details})`,
           inProgress: `Capturing ${captureType} screenshot (${details})`,

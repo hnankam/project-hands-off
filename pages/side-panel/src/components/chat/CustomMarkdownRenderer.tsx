@@ -67,7 +67,8 @@ export const CustomMarkdownRenderer: React.FC<CustomMarkdownRendererProps> = ({
 }) => {
   // Preprocess content to ensure proper markdown formatting
   const processedContent = preprocessMarkdown(content);
-  // Default custom tag renderers (thinking blocks)
+  // Default custom tag renderers (thinking blocks only)
+  // Note: mentions are handled as inline HTML by Streamdown's rehype-raw plugin
   const defaultTagRenderers: Record<string, React.ComponentType<{ children?: React.ReactNode; isComplete?: boolean; instanceId?: string }>> = {
     think: ThinkingBlockWrapper,
     thinking: ThinkingBlockWrapper,

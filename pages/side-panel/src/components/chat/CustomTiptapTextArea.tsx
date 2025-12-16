@@ -11,7 +11,7 @@
  * - Enter to send
  * - File paste handling
  */
-import React, { useMemo, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useMemo, useRef, useEffect, useImperativeHandle, forwardRef, useContext } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -27,6 +27,7 @@ import { EnterToSend } from '../tiptap/EnterToSendExtension';
 import { createSlashCommandExtension, type SlashCommand } from '../tiptap/SlashCommandExtension';
 import { createMentionSuggestion, type MentionSuggestion } from '../tiptap/MentionExtension';
 import { editorToMarkdown } from '../tiptap/markdownSerializer';
+import { PageSelectorContext } from './CustomInputV2';
 
 // Create lowlight instance for code highlighting
 const lowlight = createLowlight(common);
@@ -81,6 +82,11 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
     
     // Access raw context for langGraphInterruptAction (not in typed interface)
     const copilotContext = (copilotRuntimeContext as any)._rawContext || copilotRuntimeContext;
+    
+    // Get selected pages and agent state from PageSelectorContext
+    const pageSelectorCtx = useContext(PageSelectorContext);
+    const selectedPageURLs = pageSelectorCtx?.selectedPageURLs ?? [];
+    const agentState = pageSelectorCtx?.agentState;
     
     // Internal ref for the container div - this is what ResizeObserver will observe
     const containerRef = useRef<HTMLDivElement>(null);
@@ -199,6 +205,8 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
     const onKeyDownRef = useRef(onKeyDown);
     const isRunningRef = useRef(isRunning);
     const isInputEnabledRef = useRef(isInputEnabled);
+    const selectedPageURLsRef = useRef(selectedPageURLs);
+    const agentStateRef = useRef(agentState);
     
     // Update refs when values change
     useEffect(() => {
@@ -212,6 +220,20 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
     useEffect(() => {
       isInputEnabledRef.current = isInputEnabled;
     }, [isInputEnabled]);
+    
+    useEffect(() => {
+      selectedPageURLsRef.current = selectedPageURLs;
+    }, [selectedPageURLs]);
+    
+    useEffect(() => {
+      console.log('[CustomTiptapTextArea] agentState updated:', {
+        plans: Object.keys(agentState?.plans || {}).length,
+        graphs: Object.keys(agentState?.graphs || {}).length,
+        graphIds: Object.keys(agentState?.graphs || {}),
+        graphNames: Object.values(agentState?.graphs || {}).map((g: any) => g.name)
+      });
+      agentStateRef.current = agentState;
+    }, [agentState]);
 
     // Tiptap Editor Setup - create editor first before using it in callbacks
     const editor = useEditor({
@@ -329,7 +351,7 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
             });
             return `@${node.attrs.label || node.attrs.id || 'unknown'}`;
           },
-          suggestion: createMentionSuggestion(mentionSuggestions),
+          suggestion: createMentionSuggestion(mentionSuggestions, selectedPageURLsRef, agentStateRef),
         }),
         Placeholder.configure({
           placeholder: () => {

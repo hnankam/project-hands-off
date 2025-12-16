@@ -205,6 +205,87 @@ async def list_graphs(ctx: RunContext[UnifiedDeps]) -> ToolReturn:
     return ToolReturn(return_value="\n".join(result))
 
 
+async def get_graph_details(
+    ctx: RunContext[UnifiedDeps],
+    graph_identifier: str
+) -> str:
+    """Get detailed information about a graph execution including all steps.
+    
+    Returns the graph's complete step list with node names, statuses, and results,
+    useful for reviewing execution flow or debugging.
+    
+    Args:
+        graph_identifier: Graph name or ID
+        
+    Returns:
+        Detailed graph information with all steps
+        
+    Example:
+        get_graph_details("Image Generation Task")
+    """
+    graph_id = resolve_graph_identifier(ctx.deps.state, graph_identifier)
+    if not graph_id:
+        available = [f'"{g.name}" ({gid})' for gid, g in ctx.deps.state.graphs.items()]
+        error_msg = (
+            f'Graph "{graph_identifier}" not found. Available graphs:\n' +
+            ('\n'.join(available) if available else 'No graphs available')
+        )
+        return error_msg
+    
+    graph = ctx.deps.state.graphs[graph_id]
+    
+    # Build detailed output
+    result = f'**{graph.name}**\n'
+    result += f'ID: {graph_id}\n'
+    result += f'Status: {graph.status}\n'
+    result += f'Query Type: {graph.query_type}\n'
+    result += f'Original Query: {graph.original_query}\n'
+    result += f'Iterations: {graph.iteration_count}/{graph.max_iterations}\n'
+    result += f'Created: {graph.created_at}\n'
+    result += f'Updated: {graph.updated_at}\n'
+    
+    if graph.result:
+        result += f'\nFinal Result:\n{graph.result[:200]}{"..." if len(graph.result) > 200 else ""}\n'
+    
+    # Show execution history
+    if graph.execution_history:
+        result += f'\nExecution History:\n'
+        result += ' → '.join(graph.execution_history)
+        result += '\n'
+    
+    # Show steps with details
+    if graph.steps:
+        result += f'\nSteps ({len(graph.steps)}):\n\n'
+        
+        for i, step in enumerate(graph.steps):
+            result += f'{i}. [{step.status}] Node: {step.node}\n'
+            
+            if step.prompt:
+                result += f'   Prompt: {step.prompt[:100]}{"..." if len(step.prompt) > 100 else ""}\n'
+            
+            if step.result:
+                result += f'   Result: {step.result[:150]}{"..." if len(step.result) > 150 else ""}\n'
+            
+            if step.tool_calls:
+                result += f'   Tools used: {len(step.tool_calls)} call(s)\n'
+            
+            if step.timestamp:
+                result += f'   Time: {step.timestamp}\n'
+            
+            result += '\n'
+    
+    # Show errors if any
+    if graph.errors:
+        result += f'Errors ({len(graph.errors)}):\n'
+        for err in graph.errors[-3:]:  # Show last 3 errors
+            result += f'  - Node: {err.get("node", "unknown")}\n'
+            result += f'    Error: {err.get("error", "")[:100]}\n'
+            if err.get("timestamp"):
+                result += f'    Time: {err.get("timestamp")}\n'
+    
+    return result
+
+
 async def delete_graph(
     ctx: RunContext[UnifiedDeps],
     graph_identifier: str
@@ -266,7 +347,7 @@ async def run_graph(
     Args:
         ctx: The run context with agent state and context
         query: The user query to process through the multi-agent graph
-        name: Human-readable name for this graph execution (auto-generated from query if not provided)
+        name: Human-readable name for this graph execution (max 50 chars, auto-generated from query if not provided)
         max_iterations: Maximum number of orchestrator iterations (default: 5)
         
     Returns:
@@ -454,6 +535,7 @@ GRAPH_TOOLS = {
     'update_graph_status': update_graph_status,
     'rename_graph': rename_graph,
     'list_graphs': list_graphs,
+    'get_graph_details': get_graph_details,
     'delete_graph': delete_graph,
     # Graph execution
     'run_graph': run_graph,

@@ -30,14 +30,18 @@ import { ensureFirebase, ensureFirebaseAuth } from '../../utils/firebaseStorage'
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { useCopilotChat, type Message } from '../../hooks/copilotkit';
 
-// Context for sharing page selector state between ChatInner and CustomInputV2
+// Context for sharing page selector state and agent state between ChatInner and CustomInputV2
 interface PageSelectorContextValue {
   selectedPageURLs: string[];
   onPagesChange: (urls: string[]) => void;
   currentPageURL: string | null;
+  agentState?: {
+    plans?: Record<string, any>;
+    graphs?: Record<string, any>;
+  };
 }
 
-const PageSelectorContext = createContext<PageSelectorContextValue | null>(null);
+export const PageSelectorContext = createContext<PageSelectorContextValue | null>(null);
 
 export const PageSelectorProvider: React.FC<{ value: PageSelectorContextValue; children: React.ReactNode }> = ({ value, children }) => (
   <PageSelectorContext.Provider value={value}>{children}</PageSelectorContext.Provider>

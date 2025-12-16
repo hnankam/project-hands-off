@@ -57,10 +57,10 @@ export const WaitCountdown: React.FC<WaitCountdownProps> = ({ seconds, status, i
     <div
       className={isLight ? 'text-gray-600' : 'text-gray-500'}
       style={{ 
-        paddingTop: 6,
+        paddingTop: 0,
         paddingBottom: 6,
-        paddingLeft: 12,
-        paddingRight: 12,
+        paddingLeft: 0,
+        paddingRight: 0,
         fontSize: 12, 
         display: 'flex', 
         alignItems: 'center',

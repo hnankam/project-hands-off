@@ -170,6 +170,8 @@ export interface ChatInnerProps {
   onProgressBarStateChange?: (hasProgressBar: boolean, showProgressBar: boolean, onToggle: () => void) => void;
   initialAgentStepState?: AgentStepState;
   onAgentStepStateChange?: (state: AgentStepState) => void;
+  /** Ref to expose setDynamicAgentState for activity renderers */
+  setDynamicAgentStateRef?: React.MutableRefObject<((state: AgentStepState) => void) | null>;
   contextMenuMessage?: string | null;
   triggerManualRefresh?: () => void;
   isAgentAndModelSelected?: boolean;
@@ -208,6 +210,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   onProgressBarStateChange,
   initialAgentStepState,
   onAgentStepStateChange,
+  setDynamicAgentStateRef,
   contextMenuMessage,
   dbTotals,
   triggerManualRefresh,
@@ -277,6 +280,13 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     initialAgentStepState,
     onAgentStepStateChange,
   });
+
+  // Expose setDynamicAgentState via ref for activity renderers
+  useEffect(() => {
+    if (setDynamicAgentStateRef) {
+      setDynamicAgentStateRef.current = setDynamicAgentState;
+    }
+  }, [setDynamicAgentState, setDynamicAgentStateRef]);
 
   // Totals for DB-backed counts (HTML, form, clickable element chunks)
   const [totals, setTotals] = useState<{ html: number; form: number; click: number }>({ html: 0, form: 0, click: 0 });
@@ -843,6 +853,10 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         selectedPageURLs,
         onPagesChange,
         currentPageURL,
+        agentState: {
+          plans: dynamicAgentState.plans,
+          graphs: dynamicAgentState.graphs,
+        },
       }}>
         <div className="flex h-full flex-col overflow-hidden">
           <div

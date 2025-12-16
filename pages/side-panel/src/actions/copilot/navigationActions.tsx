@@ -151,7 +151,6 @@ export const createOpenNewTabAction = ({ isLight, clipText }: BasicNavigationDep
       <ActionStatus
         toolName={`Open ${url}`}
         status={status}
-        isLight={isLight}
         messages={{
           pending: `Opening ${url} on a new tab`,
           inProgress: `Opening ${url} on a new tab`,
@@ -195,7 +194,6 @@ export const createScrollAction = ({ isLight, clipText, yesNo }: NavigationActio
       <ActionStatus
         toolName={toolName}
         status={status}
-        isLight={isLight}
         messages={{ pending: 'Scrolling…', inProgress: 'Scrolling…', complete: 'Scroll complete' }}
         args={args}
         result={result}
@@ -238,7 +236,6 @@ export const createDragAndDropAction = ({ isLight, clipText }: BasicNavigationDe
       <ActionStatus
         toolName={`Drag ${source} → ${target}`}
         status={status}
-        isLight={isLight}
         messages={{
           pending: 'Dragging and dropping…',
           inProgress: 'Dragging and dropping…',

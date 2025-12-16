@@ -14,8 +14,9 @@ import { z } from 'zod';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { GraphStateCard, convertToGraphAgentState, isGraphSteps, isPlanSteps } from '../../components/graph-state';
-import { TaskProgressCard } from '../../components/cards/TaskProgressCard';
+import { PlanStateCard } from '../../components/cards';
 import type { UnifiedAgentState } from '../../components/graph-state/types';
+import { useCopilotAgent } from '../../hooks/copilotkit';
 
 // ============================================================================
 // ZOD SCHEMAS FOR ACTIVITY CONTENT
@@ -110,116 +111,6 @@ export type UnifiedAgentStateContent = z.infer<typeof unifiedAgentStateSchema>;
 // ACTIVITY MESSAGE RENDERER COMPONENT
 // ============================================================================
 
-interface AgentStateActivityProps {
-  activityType: string;
-  content: UnifiedAgentStateContent;
-  message: unknown; // ActivityMessage from V2
-  agent: unknown; // AbstractAgent from V2
-  // Additional context passed through
-  sessionId?: string;
-  setDynamicAgentState?: (state: any) => void;
-}
-
-/**
- * Component that renders agent state (graph steps or plan steps)
- */
-export const AgentStateActivityRenderer: React.FC<AgentStateActivityProps> = ({
-  content: unifiedState,
-  sessionId: propSessionId,
-  setDynamicAgentState,
-}) => {
-  // Read theme directly from storage for live updates
-  const { isLight } = useStorage(themeStorage);
-  
-  // Use sessionId from props or from content
-  const sessionId = propSessionId || unifiedState?.sessionId || 'unknown';
-
-  // Extract all plan and graph instances
-  const allPlans = Object.values(unifiedState?.plans || {});
-  const allGraphs = Object.values(unifiedState?.graphs || {});
-  
-  // Filter by status - show active, running, and completed
-  const activePlans = allPlans.filter(p => 
-    p.status === 'active' || p.status === 'completed'
-  );
-  const activeGraphs = allGraphs.filter(g => 
-    g.status === 'active' || g.status === 'running' || g.status === 'completed'
-  );
-  
-  if (activePlans.length === 0 && activeGraphs.length === 0) {
-    return null;
-  }
-
-  const elements: React.ReactNode[] = [];
-  
-  // Render active plans
-  activePlans.forEach(plan => {
-    elements.push(
-      <div
-        key={`plan-${plan.plan_id}`}
-        data-task-progress="true"
-        data-plan-id={plan.plan_id}
-        data-session-id={sessionId}
-        data-timestamp={Date.now()}
-        className="w-full pt-2"
-        style={{
-          maxWidth: '56rem',
-          marginLeft: 'auto',
-          marginRight: 'auto',
-          paddingLeft: 12,
-          paddingRight: 12,
-          ['--copilot-kit-input-background-color' as string]: 'transparent',
-          ['--copilot-kit-separator-color' as string]: isLight ? '#e5e7eb' : '#374151',
-          ['--copilot-kit-border-color' as string]: isLight ? '#e5e7eb' : '#374151',
-          ['--task-progress-rendered-border-color' as string]: isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151',
-        }}>
-        <TaskProgressCard
-          state={{ plans: { [plan.plan_id]: plan }, sessionId }}
-          setState={setDynamicAgentState}
-          isCollapsed={false}
-          isHistorical={true}
-          showControls={false}
-        />
-      </div>
-    );
-  });
-  
-  // Render active graphs
-  activeGraphs.forEach(graph => {
-    const graphState = convertToGraphAgentState({ graphs: { [graph.graph_id]: graph } });
-    if (graphState && graphState.steps && graphState.steps.length > 0) {
-      elements.push(
-        <div
-          key={`graph-${graph.graph_id}`}
-          data-graph-progress="true"
-          data-graph-id={graph.graph_id}
-          data-session-id={sessionId}
-          data-timestamp={Date.now()}
-          className="w-full pt-2"
-          style={{
-            maxWidth: '56rem',
-            marginLeft: 'auto',
-            marginRight: 'auto',
-            paddingLeft: 12,
-            paddingRight: 12,
-          }}>
-          <GraphStateCard
-            state={graphState}
-            isCollapsed={false}
-            sessionId={sessionId}
-          />
-        </div>
-      );
-    }
-  });
-  
-  if (elements.length === 0) {
-    return null;
-  }
-  
-  return <>{elements}</>;
-};
-
 // ============================================================================
 // V2 ACTIVITY MESSAGE RENDERER FACTORY
 // ============================================================================
@@ -242,12 +133,129 @@ const taskProgressContentSchema = z.object({
 type TaskProgressContent = z.infer<typeof taskProgressContentSchema>;
 
 /**
+ * Component that renders live plan state from CopilotKit agent
+ * This ensures the plan always shows the latest state, not stale activity message content
+ * 
+ * IMPORTANT: Only renders the SPECIFIC plan for this activity message
+ * Each activity message is tied to a single plan via its plan_id
+ */
+const LivePlanStateCard: React.FC<{
+  planId: string; // The specific plan this activity message represents
+  sessionId: string;
+  setDynamicAgentState?: (state: UnifiedAgentState) => void;
+}> = ({ planId, sessionId, setDynamicAgentState }) => {
+  // Read live state from CopilotKit agent
+  const { state: liveAgentState } = useCopilotAgent<UnifiedAgentState>({
+    agentId: 'dynamic_agent',
+    initialState: { sessionId, plans: {}, graphs: {} },
+  });
+
+  // Extract ONLY the specific plan for this activity message
+  const plan = liveAgentState?.plans?.[planId];
+
+  // Don't render if this specific plan doesn't exist
+  if (!plan) {
+    return null;
+  }
+
+  // Create state with only this specific plan
+  const planState: UnifiedAgentState = {
+    sessionId,
+    plans: { [planId]: plan },
+    graphs: {},
+  };
+
+  return (
+    <div
+      data-task-progress="true"
+      data-plan-id={planId}
+      data-session-id={sessionId}
+      className="w-full pt-2"
+      style={{
+        maxWidth: '56rem',
+        marginLeft: 'auto',
+        marginRight: 'auto',
+        paddingLeft: 12,
+        paddingRight: 12,
+      }}
+    >
+      <PlanStateCard
+        state={planState}
+        setState={setDynamicAgentState}
+        isCollapsed={false}
+        isHistorical={false}
+        showControls={true}
+      />
+    </div>
+  );
+};
+
+/**
+ * Component that renders live graph state from CopilotKit agent
+ * This ensures the graph always shows the latest state, not stale activity message content
+ * 
+ * IMPORTANT: Only renders the SPECIFIC graph for this activity message
+ * Each activity message is tied to a single graph via its graph_id
+ */
+const LiveGraphStateCard: React.FC<{
+  graphId: string; // The specific graph this activity message represents
+  sessionId: string;
+  setDynamicAgentState?: (state: UnifiedAgentState) => void;
+}> = ({ graphId, sessionId, setDynamicAgentState }) => {
+  const { isLight } = useStorage(themeStorage);
+  
+  // Read live state from CopilotKit agent
+  const { state: liveAgentState } = useCopilotAgent<UnifiedAgentState>({
+    agentId: 'dynamic_agent',
+    initialState: { sessionId, plans: {}, graphs: {} },
+  });
+
+  // Extract ONLY the specific graph for this activity message
+  const graph = liveAgentState?.graphs?.[graphId];
+
+  // Don't render if this specific graph doesn't exist
+  if (!graph) {
+    return null;
+  }
+
+  // Convert to GraphAgentState for rendering
+  const graphState = convertToGraphAgentState({ graphs: { [graphId]: graph } });
+  
+  if (!graphState || !graphState.steps || graphState.steps.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      data-graph-progress="true"
+      data-graph-id={graphId}
+      data-session-id={sessionId}
+      className="w-full pt-2"
+      style={{
+        maxWidth: '56rem',
+        marginLeft: 'auto',
+        marginRight: 'auto',
+        paddingLeft: 12,
+        paddingRight: 12,
+      }}
+    >
+      <GraphStateCard
+        state={graphState}
+        isCollapsed={false}
+        sessionId={sessionId}
+      />
+    </div>
+  );
+};
+
+/**
  * Creates V2-compatible ReactActivityMessageRenderer for task progress
  * 
  * Matches the 'task_progress' activityType sent by the backend when
  * create_plan or update_plan_step is called.
  * 
  * Uses the unified structure with plans dictionary for multi-instance support.
+ * Each activity message contains exactly ONE plan (backend uses messageId=`plan-{plan_id}`)
  */
 export function createTaskProgressActivityRenderer(deps: ActivityRendererDependencies = {}) {
   return {
@@ -260,35 +268,22 @@ export function createTaskProgressActivityRenderer(deps: ActivityRendererDepende
       message: unknown;
       agent: unknown;
     }) => {
-      // Use the unified structure with plans dictionary directly
+      // Extract the plan_id from the content
+      // Backend sends exactly one plan per activity message
+      const planIds = Object.keys(props.content.plans || {});
+      if (planIds.length === 0) {
+        return null; // No plan in this activity message
+      }
+      
+      const planId = planIds[0]; // Get the first (and only) plan_id
       const sessionId = props.content.sessionId || deps.sessionId || 'unknown';
       
-      const planState: UnifiedAgentState = {
-        plans: props.content.plans,
-        sessionId,
-      };
-      
       return (
-        <div
-          data-task-progress="true"
-          data-session-id={sessionId}
-          className="w-full pt-2"
-          style={{
-            maxWidth: '56rem',
-            marginLeft: 'auto',
-            marginRight: 'auto',
-            paddingLeft: 12,
-            paddingRight: 12,
-          }}
-        >
-          <TaskProgressCard
-            state={planState}
-            setState={deps.setDynamicAgentState}
-            isCollapsed={false}
-            isHistorical={false}
-            showControls={true}
+        <LivePlanStateCard
+          planId={planId}
+          sessionId={sessionId}
+          setDynamicAgentState={deps.setDynamicAgentState}
           />
-        </div>
       );
     },
   };
@@ -297,9 +292,8 @@ export function createTaskProgressActivityRenderer(deps: ActivityRendererDepende
 /**
  * Creates V2-compatible ReactActivityMessageRenderer for agent state (graph)
  * 
- * Note: Since activity renderers are set at the provider level and
- * session-specific props aren't available there, this creates a basic
- * renderer that works without session context.
+ * Uses live state from CopilotKit agent to ensure graphs always show current state.
+ * Each activity message contains exactly ONE graph (backend uses messageId=`graph-{graph_id}`)
  */
 export function createAgentStateActivityRenderer(deps: ActivityRendererDependencies = {}) {
   return {
@@ -312,16 +306,25 @@ export function createAgentStateActivityRenderer(deps: ActivityRendererDependenc
       content: UnifiedAgentStateContent;
       message: unknown;
       agent: unknown;
-    }) => (
-      <AgentStateActivityRenderer
-        activityType={props.activityType}
-        content={props.content}
-        message={props.message}
-        agent={props.agent}
-        sessionId={deps.sessionId}
+    }) => {
+      // Extract the graph_id from the content
+      // Backend sends exactly one graph per activity message
+      const graphIds = Object.keys(props.content.graphs || {});
+      if (graphIds.length === 0) {
+        return null; // No graph in this activity message
+      }
+      
+      const graphId = graphIds[0]; // Get the first (and only) graph_id
+      const sessionId = props.content.sessionId || deps.sessionId || 'unknown';
+      
+      return (
+        <LiveGraphStateCard
+          graphId={graphId}
+          sessionId={sessionId}
         setDynamicAgentState={deps.setDynamicAgentState}
       />
-    ),
+      );
+    },
   };
 }
 

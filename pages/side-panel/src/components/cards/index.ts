@@ -5,7 +5,9 @@
  */
 
 export { ConfirmationCard } from './ConfirmationCard';
-export { TaskProgressCard } from './TaskProgressCard';
+export { PlanStateCard } from './PlanStateCard';
+// Backward compatibility export
+export { PlanStateCard as TaskProgressCard } from './PlanStateCard';
 export { ImageGalleryCard } from './ImageGalleryCard';
 
 // Re-export types

@@ -352,11 +352,14 @@ async def create_agent(
         context += "1. **Use descriptive names** when creating plans/graphs\n"
         context += "   'Research Machine Learning Papers'\n"
         context += "   'Plan 1'\n\n"
-        context += "2. **Use names when user mentions them**\n"
+        context += "2. **Keep names concise** - limit to 50 characters or less\n"
+        context += "   'Build React Dashboard'\n"
+        context += "   'Build a comprehensive full-stack React dashboard with authentication and real-time updates'\n\n"
+        context += "3. **Use names when user mentions them**\n"
         context += "   User: 'Update @Build House Plan'\n"
         context += "   You: update_plan_step('Build House Plan', ...)\n\n"
-        context += "3. **Use list_plans() if unsure** which plan to update\n\n"
-        context += "4. **Multiple active plans are normal** - don't force single active\n\n"
+        context += "4. **Use list_plans() if unsure** which plan to update\n\n"
+        context += "5. **Multiple active plans are normal** - don't force single active\n\n"
         
         # Add quick tool reference
         context += "## Tools Available\n\n"

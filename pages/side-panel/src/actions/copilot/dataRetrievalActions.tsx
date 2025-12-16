@@ -30,10 +30,16 @@ const ICON_SIZE = 14;
 /** Icon margin right in pixels */
 const ICON_MARGIN_RIGHT = 6;
 
-/** Icon colors by theme */
+/** Icon colors by theme and state */
 const ICON_COLORS = {
-  light: '#4b5563',
-  dark: '#6b7280',
+  enabled: {
+    light: '#374151', // gray-700
+    dark: '#d1d5db',  // gray-300
+  },
+  disabled: {
+    light: '#9ca3af', // gray-400
+    dark: '#6b7280',  // gray-500
+  },
 } as const;
 
 /** Maximum URL length for logging */
@@ -88,7 +94,7 @@ interface ChunkRangeActionConfig {
   description: string;
   toolNamePrefix: string;
   chunkType: string;
-  icon: (isLight: boolean) => React.ReactElement;
+  icon: (isLight: boolean, status: ActionPhase) => React.ReactElement;
   fetchFn: (url: string, start: number, end: number) => Promise<unknown[]>;
 }
 
@@ -100,13 +106,15 @@ interface ChunkRangeActionConfig {
 const ts = () => `[${new Date().toISOString().split('T')[1].slice(0, -1)}]`;
 
 /**
- * Get icon style based on theme
+ * Get icon style based on theme and status
+ * Icons are disabled (muted) when not complete, enabled when complete
  */
-function getIconStyle(isLight: boolean): React.CSSProperties {
+function getIconStyle(isLight: boolean, status: ActionPhase): React.CSSProperties {
+  const colorSet = status === 'complete' ? ICON_COLORS.enabled : ICON_COLORS.disabled;
   return {
     flexShrink: 0,
     marginRight: ICON_MARGIN_RIGHT,
-    color: isLight ? ICON_COLORS.light : ICON_COLORS.dark,
+    color: isLight ? colorSet.light : colorSet.dark,
   };
 }
 
@@ -212,14 +220,17 @@ function createChunkRangeAction(
     render: ({ status, result, args, error }: ActionRenderProps) => {
       const start = Number(args?.start ?? 0);
       const end = Number(args?.end ?? 0);
-      const numChunks = status === 'complete' && result?.chunks ? result.chunks.length : 0;
+      // Parse result if it's a JSON string
+      const parsedResult = typeof result === 'string' ? (() => {
+        try { return JSON.parse(result); } catch { return result; }
+      })() : result;
+      const numChunks = status === 'complete' && parsedResult?.chunks ? parsedResult.chunks.length : 0;
 
       return (
         <ActionStatus
           toolName={`${toolNamePrefix} ${start}–${end}`}
           status={status}
-          isLight={isLight}
-          icon={icon(isLight)}
+          icon={icon(isLight, status)}
           messages={{
             pending: `Fetching ${chunkType} chunks ${start}–${end}`,
             inProgress: `Fetching ${chunkType} chunks ${start}–${end}`,
@@ -280,7 +291,7 @@ export const createGetHtmlChunksByRangeAction = (deps: DataRetrievalDependencies
       description: 'Fetch HTML chunks by chunk index range (inclusive).',
       toolNamePrefix: 'HTML chunks',
       chunkType: 'HTML',
-      icon: (isLight) => <DocumentIcon style={getIconStyle(isLight)} />,
+      icon: (isLight, status) => <DocumentIcon style={getIconStyle(isLight, status)} />,
       // Wrap in arrow function to preserve `this` binding
       fetchFn: (url, start, end) => embeddingsStorage.fetchHTMLChunksByRange(url, start, end),
     },
@@ -298,7 +309,7 @@ export const createGetFormChunksByRangeAction = (deps: DataRetrievalDependencies
       description: 'Fetch form chunks (groups) by group index range (inclusive).',
       toolNamePrefix: 'Form chunks',
       chunkType: 'form',
-      icon: (isLight) => <ClipboardIcon style={getIconStyle(isLight)} />,
+      icon: (isLight, status) => <ClipboardIcon style={getIconStyle(isLight, status)} />,
       // Wrap in arrow function to preserve `this` binding
       fetchFn: (url, start, end) => embeddingsStorage.fetchFormChunksByRange(url, start, end),
     },
@@ -316,7 +327,7 @@ export const createGetClickableChunksByRangeAction = (deps: DataRetrievalDepende
       description: 'Fetch clickable chunks (groups) by group index range (inclusive).',
       toolNamePrefix: 'Clickable chunks',
       chunkType: 'clickable',
-      icon: (isLight) => <LinkIcon style={getIconStyle(isLight)} />,
+      icon: (isLight, status) => <LinkIcon style={getIconStyle(isLight, status)} />,
       // Wrap in arrow function to preserve `this` binding
       fetchFn: (url, start, end) => embeddingsStorage.fetchClickableChunksByRange(url, start, end),
     },

@@ -40,7 +40,7 @@ const RedFailIcon: FC<{ color?: string }> = ({ color = '#ef4444' }) => (
 // Import unified types from centralized location
 import type { UnifiedAgentState, PlanStep } from '../graph-state/types';
 
-interface TaskProgressCardProps {
+interface PlanStateCardProps {
   state: UnifiedAgentState;
   setState?: (state: UnifiedAgentState) => void;
   theme?: string; // Optional now since we'll read it directly
@@ -50,13 +50,13 @@ interface TaskProgressCardProps {
 }
 
 /**
- * TaskProgressCard Component
+ * PlanStateCard Component
  * 
- * Displays a visual progress tracker for agent tasks with animated steps.
+ * Displays a visual progress tracker for agent plan tasks with animated steps.
  * Shows completed, in-progress, and pending steps with appropriate styling.
  * Historical cards (older versions) show collapsed without spinners.
  */
-export const TaskProgressCard: FC<TaskProgressCardProps> = ({ 
+export const PlanStateCard: FC<PlanStateCardProps> = ({ 
   state, 
   setState,
   theme: themeProp, 
@@ -117,18 +117,53 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   const planId = activePlan?.plan_id;
   const planName = activePlan?.name;
 
+  // Helper function to update plan steps and call setState
+  // MOVED BEFORE HANDLERS SO IT'S IN SCOPE
+  // NOT using useCallback - recreate on every render to always use latest state
+  const updatePlanSteps = (newSteps: PlanStep[]) => {
+    if (!setState || !planId || !activePlan) {
+      console.warn('[PlanStateCard] Cannot update steps - missing dependencies:', { 
+        setState: !!setState, 
+        planId, 
+        activePlan: !!activePlan 
+      });
+      return;
+    }
+    
+    console.log('[PlanStateCard] Updating steps for plan', planId, 'with', newSteps.length, 'steps');
+    console.log('[PlanStateCard] Current state.plans keys:', Object.keys(state.plans || {}));
+    console.log('[PlanStateCard] Current plan steps:', activePlan.steps.map(s => s.description));
+    console.log('[PlanStateCard] New steps:', newSteps.map(s => s.description));
+    
+    const updatedPlan = {
+      ...activePlan,
+      steps: newSteps,
+      updated_at: new Date().toISOString(),
+    };
+    
+    const newState = {
+      ...state,
+      plans: {
+        ...state.plans,
+        [planId]: updatedPlan,
+      },
+    };
+    
+    console.log('[PlanStateCard] Updated plan in new state:', updatedPlan.steps.map(s => s.description));
+    console.log('[PlanStateCard] Calling setState with new state');
+    setState(newState);
+  };
+
   // Debug logging
   React.useEffect(() => {
-    // console.log('[TaskProgressCard] Component rendered');
-    // console.log('[TaskProgressCard] State:', state);
-    // console.log('[TaskProgressCard] setState available:', !!setState);
-    // console.log('[TaskProgressCard] Steps:', steps);
-    if (steps) {
-      steps.forEach((step, idx) => {
-        //console.log(`[TaskProgressCard] Step ${idx}:`, step.description, 'status:', step.status);
-      });
-    }
-  }, [state, setState, steps]);
+    console.log('[PlanStateCard] Component rendered with state:', {
+      planId,
+      planName,
+      numSteps: steps.length,
+      steps: steps.map(s => s.description),
+      plansKeys: Object.keys(state.plans || {})
+    });
+  }, [state, planId, planName, steps]);
 
   // Detect wrapping in edit mode and optionally auto-grow textarea height
   React.useEffect(() => {
@@ -165,7 +200,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
           setIsExpanded(savedExpanded);
         }
       } catch (e) {
-        console.warn('[TaskProgressCard] Failed to load expanded state:', e);
+        console.warn('[PlanStateCard] Failed to load expanded state:', e);
       }
     };
     
@@ -229,13 +264,13 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
 
   const handleEditSubmit = () => {
     if (editingStepIndex !== null && editValue.trim() && setState) {
-      console.log('[TaskProgressCard] Submitting edit for step', editingStepIndex, 'with value:', editValue.trim());
+      console.log('[PlanStateCard] Submitting edit for step', editingStepIndex, 'with value:', editValue.trim());
       const newSteps = [...steps];
       newSteps[editingStepIndex] = {
         ...newSteps[editingStepIndex],
         description: editValue.trim()
       };
-      console.log('[TASKCARD_SETSTATE] ✏️ EDIT step', editingStepIndex, '- calling setState with', newSteps.length, 'steps');
+      console.log('[PLANCARD_SETSTATE] ✏️ EDIT step', editingStepIndex, '- calling setState with', newSteps.length, 'steps');
       updatePlanSteps(newSteps);
     }
     setEditingStepIndex(null);
@@ -267,7 +302,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   const handleAddSubmit = () => {
     if (setState && addValue.trim()) {
       const newSteps = [...steps, { description: addValue.trim(), status: 'pending' as const }];
-      console.log('[TASKCARD_SETSTATE] ➕ ADD step - calling setState with', newSteps.length, 'steps:', addValue.trim().substring(0, 30));
+      console.log('[PLANCARD_SETSTATE] ➕ ADD step - calling setState with', newSteps.length, 'steps:', addValue.trim().substring(0, 30));
       updatePlanSteps(newSteps);
     }
     setIsAdding(false);
@@ -295,7 +330,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     const temp = newSteps[index - 1];
     newSteps[index - 1] = newSteps[index];
     newSteps[index] = temp;
-    console.log('[TASKCARD_SETSTATE] ⬆️ MOVE step', index, 'UP - calling setState');
+    console.log('[PLANCARD_SETSTATE] ⬆️ MOVE step', index, 'UP - calling setState');
     updatePlanSteps(newSteps);
   };
 
@@ -334,7 +369,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     let targetIndex = index;
     if (sourceIndex < index) targetIndex = index - 1;
     newSteps.splice(targetIndex, 0, moved);
-    console.log('[TASKCARD_SETSTATE] 🔄 DRAG-DROP step from', sourceIndex, 'to', targetIndex, '- calling setState');
+    console.log('[PLANCARD_SETSTATE] 🔄 DRAG-DROP step from', sourceIndex, 'to', targetIndex, '- calling setState');
     updatePlanSteps(newSteps);
     setDraggingIndex(null);
     setDragOverIndex(null);
@@ -351,7 +386,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
       await sendMessage({ role: 'user', content: 'Continue to the next step in the plan' } as any);
     } catch (e) {
       // eslint-disable-next-line no-console
-      console.warn('[TaskProgressCard] Failed to send run/continue message:', e);
+      console.warn('[PlanStateCard] Failed to send run/continue message:', e);
     }
   };
 
@@ -369,7 +404,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     setEditingStepIndex(null);
     setEditValue('');
     setDeletePlanOpen(false);
-    console.log('[TASKCARD_SETSTATE] 🗑️ DELETE PLAN - calling setState with empty steps');
+    console.log('[PLANCARD_SETSTATE] 🗑️ DELETE PLAN - calling setState with empty steps');
     updatePlanSteps([]);
   };
 
@@ -395,29 +430,13 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
     const temp = newSteps[index + 1];
     newSteps[index + 1] = newSteps[index];
     newSteps[index] = temp;
-    console.log('[TASKCARD_SETSTATE] ⬇️ MOVE step', index, 'DOWN - calling setState');
+    console.log('[PLANCARD_SETSTATE] ⬇️ MOVE step', index, 'DOWN - calling setState');
     updatePlanSteps(newSteps);
   };
 
   if (!steps || steps.length === 0 || !activePlan) {
     return null;
   }
-
-  // Helper function to update plan steps and call setState
-  const updatePlanSteps = (newSteps: typeof steps) => {
-    if (!setState || !planId) return;
-    setState({
-      ...state,
-      plans: {
-        ...state.plans,
-        [planId]: {
-          ...activePlan,
-          steps: newSteps,
-          updated_at: new Date().toISOString(),
-        },
-      },
-    });
-  };
 
   // Filter out deleted steps from counts
   const activeSteps = steps.filter((step) => step.status !== "deleted");
@@ -430,7 +449,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
   const cardBorderVar = `var(--copilot-kit-separator-color, ${cardBorderColor})`;
   // Custom border colors for rendered (historical) cards. Use CSS var so parent theme updates propagate.
   const renderedBorderVar = `var(--task-progress-rendered-border-color, ${
-    isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151'
+    isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151'    
   })`;
   const effectiveBorderColor =
     isHistorical && !showControls ? renderedBorderVar : cardBorderVar;
@@ -541,6 +560,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
           backgroundColor: cardBackgroundVar,
           borderColor: effectiveBorderColor,
           boxSizing: 'border-box',
+          marginBottom: '6px',
         }}
       >
         <button type="button"
@@ -654,6 +674,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
         backgroundColor: cardBackgroundVar,
         borderColor: effectiveBorderColor,
         boxSizing: 'border-box',
+        marginBottom: '6px',
       }}
     >
       {/* Header */}
@@ -912,7 +933,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                           ...newSteps[index],
                           status: 'pending' as const
                         };
-                        console.log('[TASKCARD_SETSTATE] 🔁 RERUN step', index, '- calling setState');
+                        console.log('[PLANCARD_SETSTATE] 🔁 RERUN step', index, '- calling setState');
                         updatePlanSteps(newSteps);
                       }}
                       className={`p-0.5 rounded transition-colors ${
@@ -960,7 +981,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                         ...newSteps[index],
                         status: 'deleted' as const
                       };
-                      console.log('[TASKCARD_SETSTATE] ❌ DELETE step', index, '- calling setState');
+                      console.log('[PLANCARD_SETSTATE] ❌ DELETE step', index, '- calling setState');
                       updatePlanSteps(newSteps);
                     }}
                     className={`p-0.5 rounded transition-colors ${
@@ -991,7 +1012,7 @@ export const TaskProgressCard: FC<TaskProgressCardProps> = ({
                         ...newSteps[index],
                         status: 'pending' as const
                       };
-                      console.log('[TASKCARD_SETSTATE] ↩️ RESTORE step', index, '- calling setState');
+                      console.log('[PLANCARD_SETSTATE] ↩️ RESTORE step', index, '- calling setState');
                       updatePlanSteps(newSteps);
                     }}
                     className={`p-0.5 rounded transition-colors ${

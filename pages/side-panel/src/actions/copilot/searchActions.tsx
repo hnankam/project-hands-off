@@ -69,10 +69,16 @@ const ICON_SIZE = 14;
 /** Icon margin right in pixels */
 const ICON_MARGIN_RIGHT = 6;
 
-/** Icon colors by theme */
+/** Icon colors by theme and state */
 const ICON_COLORS = {
-  light: '#4b5563',
-  dark: '#6b7280',
+  enabled: {
+    light: '#374151', // gray-700
+    dark: '#d1d5db',  // gray-300
+  },
+  disabled: {
+    light: '#9ca3af', // gray-400
+    dark: '#6b7280',  // gray-500
+  },
 } as const;
 
 /** Log prefix for agent actions */
@@ -129,13 +135,15 @@ interface SearchActionDependencies {
 // ============================================================================
 
 /**
- * Get icon style based on theme
+ * Get icon style based on theme and status
+ * Icons are disabled (muted) when not complete, enabled when complete
  */
-function getIconStyle(isLight: boolean): React.CSSProperties {
+function getIconStyle(isLight: boolean, status: ActionPhase): React.CSSProperties {
+  const colorSet = status === 'complete' ? ICON_COLORS.enabled : ICON_COLORS.disabled;
   return {
     flexShrink: 0,
     marginRight: ICON_MARGIN_RIGHT,
-    color: isLight ? ICON_COLORS.light : ICON_COLORS.dark,
+    color: isLight ? colorSet.light : colorSet.dark,
   };
 }
 
@@ -217,13 +225,19 @@ export const createSearchPageContentAction = ({ searchManager, isLight, clipText
   parameters: searchPageContentSchema,
   render: ({ status, result, args, error }: ActionRenderProps) => {
     const query = clipText(args?.query ?? '', MAX_QUERY_LENGTH);
-    const numChunks = status === 'complete' ? (result?.resultsCount ?? 0) : 0;
+    
+    // Parse result if it's a JSON string
+    const parsedResult = typeof result === 'string' ? (() => {
+      try { return JSON.parse(result); } catch { return result; }
+    })() : result;
+    
+    const numChunks = status === 'complete' ? (parsedResult?.resultsCount ?? 0) : 0;
     
     // Use actual pages searched from result when complete, otherwise show pending scope
-    const pageScope = status === 'complete' && result?.pagesSearched !== undefined
-      ? result.pagesSearched === 1 
+    const pageScope = status === 'complete' && parsedResult?.pagesSearched !== undefined
+      ? parsedResult.pagesSearched === 1 
         ? '1 page' 
-        : `${result.pagesSearched} pages`
+        : `${parsedResult.pagesSearched} pages`
       : args?.searchSelectedPages 
         ? 'selected pages' 
         : args?.pageURLs?.length 
@@ -236,8 +250,7 @@ export const createSearchPageContentAction = ({ searchManager, isLight, clipText
       <ActionStatus
         toolName={`Search ${pageScope} for "${query}"`}
         status={status}
-        isLight={isLight}
-        icon={<SearchContentIcon style={getIconStyle(isLight)} />}
+        icon={<SearchContentIcon style={getIconStyle(isLight, status)} />}
         messages={{
           pending: `Searching ${pageScope} for "${query}"`,
           inProgress: `Searching ${pageScope} for "${query}"`,
@@ -299,13 +312,19 @@ export const createSearchFormDataAction = ({ searchManager, isLight, clipText, s
   parameters: searchFormDataSchema,
   render: ({ status, result, args, error }: ActionRenderProps) => {
     const query = clipText(args?.query ?? '', MAX_QUERY_LENGTH);
-    const numFields = status === 'complete' ? (result?.resultsCount ?? 0) : 0;
+    
+    // Parse result if it's a JSON string
+    const parsedResult = typeof result === 'string' ? (() => {
+      try { return JSON.parse(result); } catch { return result; }
+    })() : result;
+    
+    const numFields = status === 'complete' ? (parsedResult?.resultsCount ?? 0) : 0;
     
     // Use actual pages searched from result when complete
-    const pageScope = status === 'complete' && result?.pagesSearched !== undefined
-      ? result.pagesSearched === 1 
+    const pageScope = status === 'complete' && parsedResult?.pagesSearched !== undefined
+      ? parsedResult.pagesSearched === 1 
         ? '1 page' 
-        : `${result.pagesSearched} pages`
+        : `${parsedResult.pagesSearched} pages`
       : args?.searchSelectedPages 
         ? 'selected pages' 
         : args?.pageURLs?.length 
@@ -318,8 +337,7 @@ export const createSearchFormDataAction = ({ searchManager, isLight, clipText, s
       <ActionStatus
         toolName={`Form fields for "${query}"`}
         status={status}
-        isLight={isLight}
-        icon={<SearchFormIcon style={getIconStyle(isLight)} />}
+        icon={<SearchFormIcon style={getIconStyle(isLight, status)} />}
         messages={{
           pending: `Searching form fields in ${pageScope} for "${query}"`,
           inProgress: `Searching form fields in ${pageScope} for "${query}"`,
@@ -378,13 +396,16 @@ export const createSearchDOMUpdatesAction = ({ searchManager, isLight, clipText 
   parameters: searchDOMUpdatesSchema,
   render: ({ status, result, args, error }: ActionRenderProps) => {
     const query = clipText(args?.query ?? '', MAX_QUERY_LENGTH);
-    const numUpdates = status === 'complete' ? (result?.resultsCount ?? 0) : 0;
+    // Parse result if it's a JSON string
+    const parsedResult = typeof result === 'string' ? (() => {
+      try { return JSON.parse(result); } catch { return result; }
+    })() : result;
+    const numUpdates = status === 'complete' ? (parsedResult?.resultsCount ?? 0) : 0;
 
     return (
       <ActionStatus
         toolName={`DOM updates for "${query}"`}
         status={status}
-        isLight={isLight}
         messages={{
           pending: `Searching DOM updates for "${query}"`,
           inProgress: `Searching DOM updates for "${query}"`,
@@ -414,13 +435,19 @@ export const createSearchClickableElementsAction = ({ searchManager, isLight, cl
   parameters: searchClickableElementsSchema,
   render: ({ status, result, args, error }: ActionRenderProps) => {
     const query = clipText(args?.query ?? '', MAX_QUERY_LENGTH);
-    const numElements = status === 'complete' ? (result?.resultsCount ?? 0) : 0;
+    
+    // Parse result if it's a JSON string
+    const parsedResult = typeof result === 'string' ? (() => {
+      try { return JSON.parse(result); } catch { return result; }
+    })() : result;
+    
+    const numElements = status === 'complete' ? (parsedResult?.resultsCount ?? 0) : 0;
     
     // Use actual pages searched from result when complete
-    const pageScope = status === 'complete' && result?.pagesSearched !== undefined
-      ? result.pagesSearched === 1 
+    const pageScope = status === 'complete' && parsedResult?.pagesSearched !== undefined
+      ? parsedResult.pagesSearched === 1 
         ? '1 page' 
-        : `${result.pagesSearched} pages`
+        : `${parsedResult.pagesSearched} pages`
       : args?.searchSelectedPages 
         ? 'selected pages' 
         : args?.pageURLs?.length 
@@ -433,8 +460,7 @@ export const createSearchClickableElementsAction = ({ searchManager, isLight, cl
       <ActionStatus
         toolName={`Clickable elements for "${query}"`}
         status={status}
-        isLight={isLight}
-        icon={<SearchClickableIcon style={getIconStyle(isLight)} />}
+        icon={<SearchClickableIcon style={getIconStyle(isLight, status)} />}
         messages={{
           pending: `Searching clickable elements in ${pageScope} for "${query}"`,
           inProgress: `Searching clickable elements in ${pageScope} for "${query}"`,

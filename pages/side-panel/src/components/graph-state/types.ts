@@ -174,9 +174,9 @@ export function convertToGraphAgentState(state: UnifiedAgentState): GraphAgentSt
   // Check if we have graphs to convert
   if (!state.graphs) return null;
   
-  // Get the first/most recent active, running, or completed graph
+  // Get the first/most recent active, running, waiting, or completed graph
   const graphs = Object.values(state.graphs);
-  const activeGraphs = graphs.filter(g => g.status === 'active' || g.status === 'running' || g.status === 'completed');
+  const activeGraphs = graphs.filter(g => g.status === 'active' || g.status === 'running' || g.status === 'waiting' || g.status === 'completed');
   const g = activeGraphs.length > 0 ? activeGraphs[0] : graphs[0];
       
   if (!g || !g.steps || g.steps.length === 0) {

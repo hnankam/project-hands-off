@@ -453,17 +453,26 @@ async def send_graph_state_snapshot(
             "updated_at": shared_state.graphs[graph_id].updated_at if (shared_state and hasattr(shared_state, 'graphs') and graph_id in shared_state.graphs) else "",
         }
         
+        # Build graphs dictionary - include ALL graphs from shared state to preserve them
+        all_graphs = {}
+        if shared_state and hasattr(shared_state, 'graphs'):
+            # First, add all existing graphs
+            all_graphs = {k: v.model_dump() for k, v in shared_state.graphs.items()}
+        # Then update with current graph (overwrites if already exists)
+        all_graphs[graph_id] = graph_instance_data
+        
         nested_snapshot = {
             # Flat structure: graphs dictionary matching AgentState schema
-            "graphs": {
-                graph_id: graph_instance_data
-            },
+            "graphs": all_graphs,
             # Include existing plans from shared state to preserve them
             "plans": {k: v.model_dump() for k, v in shared_state.plans.items()} if (shared_state and hasattr(shared_state, 'plans')) else {},
-            # Session metadata
-            "sessionId": shared_state.sessionId if (shared_state and hasattr(shared_state, 'sessionId')) else None,
+            # Session metadata (sessionId is optional in schema, so can be undefined)
             "deferred_tool_requests": getattr(shared_state, 'deferred_tool_requests', None) if shared_state else None,
         }
+        
+        # Only include sessionId if it exists (Zod schema makes it optional)
+        if shared_state and hasattr(shared_state, 'sessionId') and shared_state.sessionId:
+            nested_snapshot["sessionId"] = shared_state.sessionId
         
         logger.info(f"   [StateSnapshot] Sending for {current_node} ({step_status})")
         

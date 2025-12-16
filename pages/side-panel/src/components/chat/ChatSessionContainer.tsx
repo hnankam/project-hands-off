@@ -180,7 +180,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           hasReportedInitialCountRef.current = false;
           setCurrentAgentStepState({
             sessionId,
-            plan: { steps: [] },
+            plans: {},
+            graphs: {},
           });
         });
 
@@ -208,11 +209,42 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       initialLastUsage,
       isUsageHydrating,
       currentAgentStepState,
-      setCurrentAgentStepState,
+      setCurrentAgentStepState: setCurrentAgentStepStateInternal,
       isLoadingMetadata,
       isLoadingFromDB,
       persistUsageStats,
     } = useSessionData(sessionId, isActive);
+
+    // Ref to hold the setDynamicAgentState from ChatInner (via useAgentStateManagement)
+    // This allows activity renderers to update the CopilotKit agent state directly
+    const setDynamicAgentStateRef = useRef<((state: AgentStepState) => void) | null>(null);
+
+    // Handler for when ChatInner's agent state changes (via onAgentStepStateChange)
+    // This only updates the container's local state for persistence - it does NOT call setDynamicAgentState
+    const handleAgentStepStateChange = useCallback(
+      (state: AgentStepState) => {
+        debug.log('[ChatSessionContainer] Agent state changed, updating container state for persistence');
+        setCurrentAgentStepStateInternal(state);
+      },
+      [setCurrentAgentStepStateInternal],
+    );
+
+    // Handler for when activity renderers (PlanStateCard) want to update state
+    // This calls setDynamicAgentState directly to update CopilotKit state
+    const setCurrentAgentStepState = useCallback(
+      (state: AgentStepState) => {
+        if (setDynamicAgentStateRef.current) {
+          // Use the CopilotKit agent state setter from ChatInner
+          debug.log('[ChatSessionContainer] Activity renderer updating state via setDynamicAgentState');
+          setDynamicAgentStateRef.current(state);
+        } else {
+          // Fallback to container state (used during initial hydration)
+          debug.log('[ChatSessionContainer] Fallback to setCurrentAgentStepStateInternal (ref not ready)');
+          setCurrentAgentStepStateInternal(state);
+        }
+      },
+      [setCurrentAgentStepStateInternal],
+    );
 
     // Wrap setters to maintain existing API
     const setSelectedAgent = useCallback(
@@ -683,8 +715,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       // Save plan and graph state to storage
       sessionStorageDBWrapper.updateAgentStepState(sessionId, {
         sessionId,
-        plan: currentAgentStepState.plan,
-        graph: currentAgentStepState.graph,
+        plans: currentAgentStepState.plans || {},
+        graphs: currentAgentStepState.graphs || {},
         deferred_tool_requests: currentAgentStepState.deferred_tool_requests,
       } as any);
     }, [sessionId, currentAgentStepState, isUsageHydrating]);
@@ -1137,7 +1169,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           showThoughtBlocks={showThoughtBlocks}
           agentModeChat={agentModeChat}
           initialAgentStepState={currentAgentStepState}
-          onAgentStepStateChange={setCurrentAgentStepState}
+          onAgentStepStateChange={handleAgentStepStateChange}
+          setDynamicAgentStateRef={setDynamicAgentStateRef}
           contextMenuMessage={contextMenuMessage}
           triggerManualRefresh={triggerManualRefreshWithEmbeddingWait}
           isAgentAndModelSelected={selectedAgent !== '' && selectedModel !== ''}
@@ -1154,6 +1187,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         activeTeam,
         contextMenuMessage,
         currentAgentStepState,
+        handleAgentStepStateChange,
         currentPageContent,
         dbTotals,
         enabledFrontendTools,

@@ -86,9 +86,9 @@ export const useMultiPageMetadata = ({
       try {
         const summary = await embeddingsStorage.getPagesSummary(selectedPageURLs);
         setPagesSummary(summary);
-        if (enableLogging) {
-          debug.log('[useMultiPageMetadata] Fetched summaries for', selectedPageURLs.length, 'pages');
-        }
+        // if (enableLogging) {
+        //   debug.log('[useMultiPageMetadata] Fetched summaries for', selectedPageURLs.length, 'pages');
+        // }
       } catch (error) {
         debug.error('[useMultiPageMetadata] Failed to fetch page summaries:', error);
         setPagesSummary(null);
@@ -177,12 +177,12 @@ export const useMultiPageMetadata = ({
     if (!enableLogging) return;
 
     if (multiPageMetadata) {
-      debug.log('[useMultiPageMetadata] Multi-page metadata prepared:', {
-        currentPageTitle: multiPageMetadata.currentPage.pageTitle,
-        currentPageURL: multiPageMetadata.currentPage.pageURL,
-        selectedPagesCount: multiPageMetadata.selectedPages.count,
-        totalChunksAcrossPages: multiPageMetadata.selectedPages.totalChunks,
-      });
+      // debug.log('[useMultiPageMetadata] Multi-page metadata prepared:', {
+      //   currentPageTitle: multiPageMetadata.currentPage.pageTitle,
+      //   currentPageURL: multiPageMetadata.currentPage.pageURL,
+      //   selectedPagesCount: multiPageMetadata.selectedPages.count,
+      //   totalChunksAcrossPages: multiPageMetadata.selectedPages.totalChunks,
+      // });
     }
   }, [multiPageMetadata, enableLogging]);
 

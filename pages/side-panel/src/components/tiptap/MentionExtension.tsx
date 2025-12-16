@@ -11,14 +11,21 @@ export interface MentionSuggestion {
   id: string;
   label: string;
   avatar?: string;
-  type?: 'user' | 'agent' | 'file' | 'variable' | 'page';
+  type?: 'user' | 'agent' | 'file' | 'variable' | 'page' | 'plan' | 'graph';
   pageURL?: string; // For page mentions
+  planId?: string; // For plan mentions
+  graphId?: string; // For graph mentions
 }
 
 interface MentionListProps {
   items: MentionSuggestion[];
   command: (item: MentionSuggestion) => void;
   query?: string; // The current query string from the editor
+  selectedPageURLs?: string[]; // Filter to only show these pages
+  agentState?: { // Plans and graphs from agent state
+    plans?: Record<string, any>;
+    graphs?: Record<string, any>;
+  };
 }
 
 interface MentionListRef {
@@ -51,49 +58,116 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
     fetchPages();
   }, []);
 
-  // Convert pages to mention suggestions
+  // Convert pages to mention suggestions, filtered by selectedPageURLs if provided
   const pageSuggestions: MentionSuggestion[] = useMemo(() => {
-    return pages.map(page => ({
+    const allPages = pages.map(page => ({
       id: `page-${page.pageURL}`,
       label: page.pageTitle,
       type: 'page' as const,
       pageURL: page.pageURL,
     }));
-  }, [pages]);
+    
+    // If selectedPageURLs is provided (even if empty), only show selected pages
+    if (props.selectedPageURLs !== undefined) {
+      // If empty array, show no pages (user hasn't selected any)
+      if (props.selectedPageURLs.length === 0) {
+        return [];
+      }
+      // Otherwise filter to only show selected pages
+      return allPages.filter(page => 
+        page.pageURL && props.selectedPageURLs!.includes(page.pageURL)
+      );
+    }
+    
+    // Fallback: if selectedPageURLs not provided at all, show all pages
+    return allPages;
+  }, [pages, props.selectedPageURLs]);
 
-  // Only use pages (no static suggestions)
+  // Convert plans to mention suggestions
+  const planSuggestions: MentionSuggestion[] = useMemo(() => {
+    if (!props.agentState?.plans) return [];
+    
+    return Object.entries(props.agentState.plans).map(([planId, plan]) => ({
+      id: `plan-${planId}`,
+      label: plan.name || `Plan ${planId.slice(0, 8)}`,
+      type: 'plan' as const,
+      planId,
+    }));
+  }, [props.agentState?.plans]);
+
+  // Convert graphs to mention suggestions
+  const graphSuggestions: MentionSuggestion[] = useMemo(() => {
+    console.log('[MentionExtension] Raw agentState.graphs:', props.agentState?.graphs);
+    
+    if (!props.agentState?.graphs) {
+      console.log('[MentionExtension] No graphs in agentState');
+      return [];
+    }
+    
+    const suggestions = Object.entries(props.agentState.graphs).map(([graphId, graph]) => {
+      console.log('[MentionExtension] Processing graph:', { graphId, name: graph.name, status: graph.status });
+      return {
+      id: `graph-${graphId}`,
+      label: graph.name || `Graph ${graphId.slice(0, 8)}`,
+      type: 'graph' as const,
+      graphId,
+      };
+    });
+    
+    console.log('[MentionExtension] Graph suggestions:', {
+      totalGraphs: Object.keys(props.agentState.graphs).length,
+      graphIds: Object.keys(props.agentState.graphs),
+      suggestions: suggestions.map(s => ({ id: s.id, label: s.label }))
+    });
+    
+    return suggestions;
+  }, [props.agentState?.graphs]);
+
+  // Combine all suggestions: pages, plans, and graphs
   const allSuggestions = useMemo(() => {
-    return pageSuggestions;
-  }, [pageSuggestions]);
+    console.log('[MentionExtension] Combining suggestions:', {
+      pages: pageSuggestions.length,
+      plans: planSuggestions.length,
+      graphs: graphSuggestions.length,
+      total: pageSuggestions.length + planSuggestions.length + graphSuggestions.length
+    });
+    return [...pageSuggestions, ...planSuggestions, ...graphSuggestions];
+  }, [pageSuggestions, planSuggestions, graphSuggestions]);
 
   // Filter suggestions based on search query
   const filteredSuggestions = useMemo(() => {
     if (!searchQuery.trim()) {
-      return allSuggestions.slice(0, 20); // Show first 20 when no search
+      const filtered = allSuggestions.slice(0, 20);
+      console.log('[MentionExtension] No search query - showing first 20:', {
+        total: allSuggestions.length,
+        shown: filtered.length,
+        types: filtered.map(s => s.type)
+      });
+      return filtered;
     }
     const query = searchQuery.toLowerCase().trim();
-    return allSuggestions.filter(item => 
+    const filtered = allSuggestions.filter(item => 
       item.label.toLowerCase().includes(query) ||
       (item.pageURL && item.pageURL.toLowerCase().includes(query))
     ).slice(0, 20);
+    console.log('[MentionExtension] Search query applied:', {
+      query,
+      total: allSuggestions.length,
+      matched: filtered.length
+    });
+    return filtered;
   }, [allSuggestions, searchQuery]);
 
-  // Update search query when props.query changes
+  // Update search query when props.query changes (from editor typing)
   useEffect(() => {
     if (props.query !== undefined) {
       setSearchQuery(props.query);
     }
   }, [props.query]);
 
-  // Focus search input when dropdown opens
-  useEffect(() => {
-    if (searchInputRef.current) {
-      // Small delay to ensure dropdown is rendered
-      setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 50);
-    }
-  }, []);
+  // Note: We don't auto-focus the search input to keep focus in the editor
+  // This allows users to continue typing after @ without losing focus
+  // Users can still manually click the search input if they want to type there
 
   const selectItem = (index: number) => {
     const item = filteredSuggestions[index];
@@ -146,6 +220,24 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
 
   const getTypeIcon = (type?: string) => {
     switch (type) {
+      case 'plan':
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+            <path d="M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            <path d="M9 14l2 2 4-4" />
+          </svg>
+        );
+      case 'graph':
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+          </svg>
+        );
       case 'agent':
         return (
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -239,7 +331,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
                 enterHandler();
               }
             }}
-            placeholder="Search pages..."
+            placeholder="Search pages, plans, graphs..."
             className={cn(
               'w-full pl-8 pr-3 py-1.5 text-xs rounded-md outline-none transition-colors',
               isLight
@@ -283,12 +375,28 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
                     {getDomain(item.pageURL)}
                   </span>
                 )}
+                {item.type === 'plan' && item.planId && props.agentState?.plans?.[item.planId] && (
+                  <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    {props.agentState.plans[item.planId].steps?.length || 0} steps
+                  </span>
+                )}
+                {item.type === 'graph' && item.graphId && props.agentState?.graphs?.[item.graphId] && (
+                  <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    Status: {props.agentState.graphs[item.graphId].status || 'unknown'}
+                  </span>
+                )}
               </div>
             </button>
           ))
         ) : (
           <div className={cn('mention-empty text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
-            {searchQuery.trim() ? 'No pages found' : 'No pages available'}
+            {searchQuery.trim() 
+              ? 'No matches found' 
+              : (props.selectedPageURLs !== undefined && props.selectedPageURLs.length === 0 && 
+                 (!props.agentState?.plans || Object.keys(props.agentState.plans).length === 0) &&
+                 (!props.agentState?.graphs || Object.keys(props.agentState.graphs).length === 0)
+                  ? 'No pages selected and no active plans/graphs. Select pages using the pages button below.'
+                  : 'No items available')}
           </div>
         )}
       </div>
@@ -299,7 +407,9 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
 MentionList.displayName = 'MentionList';
 
 export const createMentionSuggestion = (
-  suggestions: MentionSuggestion[]
+  suggestions: MentionSuggestion[],
+  selectedPageURLsRef?: React.MutableRefObject<string[]>,
+  agentStateRef?: React.MutableRefObject<{ plans?: Record<string, any>; graphs?: Record<string, any> } | undefined>
 ): Omit<SuggestionOptions, 'editor'> => {
   return {
     char: '@',
@@ -319,6 +429,8 @@ export const createMentionSuggestion = (
             props: {
               ...props,
               query: props.query || '',
+              selectedPageURLs: selectedPageURLsRef?.current,
+              agentState: agentStateRef?.current,
             },
             editor: props.editor,
           });
@@ -343,6 +455,8 @@ export const createMentionSuggestion = (
           component.updateProps({
             ...props,
             query: props.query || '',
+            selectedPageURLs: selectedPageURLsRef?.current,
+            agentState: agentStateRef?.current,
           });
 
           if (!props.clientRect) {

@@ -104,7 +104,6 @@ export const createInputDataAction = ({ isLight, clipText }: FormActionDependenc
       <ActionStatus
         toolName={`Input into ${clipText(selector, MAX_SELECTOR_LENGTH)}: "${clipText(value, MAX_VALUE_LENGTH)}"`}
         status={status}
-        isLight={isLight}
         messages={{ pending: 'Filling field…', inProgress: 'Filling field…', complete: 'Field filled' }}
         args={args}
         result={result}

@@ -95,10 +95,16 @@ const ICON_SIZE = 14;
 /** Icon margin right in pixels */
 const ICON_MARGIN_RIGHT = 6;
 
-/** Icon colors by theme */
+/** Icon colors by theme and state */
 const ICON_COLORS = {
-  light: '#4b5563',
-  dark: '#6b7280',
+  enabled: {
+    light: '#374151', // gray-700
+    dark: '#d1d5db',  // gray-300
+  },
+  disabled: {
+    light: '#9ca3af', // gray-400
+    dark: '#6b7280',  // gray-500
+  },
 } as const;
 
 /** Log prefix for agent actions */
@@ -186,13 +192,15 @@ type RefreshDependencies = Pick<DOMActionDependencies, 'isLight' | 'pageDataRef'
 // ============================================================================
 
 /**
- * Get icon style based on theme
+ * Get icon style based on theme and status
+ * Icons are disabled (muted) when not complete, enabled when complete
  */
-function getIconStyle(isLight: boolean): React.CSSProperties {
+function getIconStyle(isLight: boolean, status: ActionPhase): React.CSSProperties {
+  const colorSet = status === 'complete' ? ICON_COLORS.enabled : ICON_COLORS.disabled;
   return {
     flexShrink: 0,
     marginRight: ICON_MARGIN_RIGHT,
-    color: isLight ? ICON_COLORS.light : ICON_COLORS.dark,
+    color: isLight ? colorSet.light : colorSet.dark,
   };
 }
 
@@ -311,7 +319,6 @@ export const createMoveCursorToElementAction = ({ isLight, clipText }: ClipTextD
       <ActionStatus
         toolName={`Move cursor to ${clipText(selector, MAX_SELECTOR_LENGTH)}`}
         status={status}
-        isLight={isLight}
         messages={{ pending: 'Moving cursor…', inProgress: 'Moving cursor…', complete: 'Cursor moved' }}
         args={args}
         result={result}
@@ -339,7 +346,6 @@ export const createRefreshPageContentAction = ({ isLight, pageDataRef, triggerMa
     <ActionStatus
       toolName="Refresh page content"
       status={status}
-      isLight={isLight}
       messages={{
         pending: 'Refreshing page content…',
         inProgress: 'Refreshing page content…',
@@ -371,7 +377,6 @@ export const createCleanupExtensionUIAction = ({ isLight }: SimpleDependencies) 
     <ActionStatus
       toolName="Clean up UI"
       status={status}
-      isLight={isLight}
       messages={{ pending: 'Cleaning up UI…', inProgress: 'Cleaning up UI…', complete: 'UI cleaned' }}
       args={args}
       result={result}
@@ -401,7 +406,6 @@ export const createClickElementAction = ({ isLight, clipText }: ClipTextDependen
       <ActionStatus
         toolName={`Click ${clipText(selector, MAX_SELECTOR_LENGTH)}`}
         status={status}
-        isLight={isLight}
         messages={{ pending: 'Clicking…', inProgress: 'Clicking…', complete: 'Click done' }}
         args={args}
         result={result}
@@ -438,7 +442,6 @@ export const createVerifySelectorAction = ({ isLight, clipText }: ClipTextDepend
       <ActionStatus
         toolName={`Verify ${clipText(selector, MAX_SELECTOR_LENGTH)}`}
         status={status}
-        isLight={isLight}
         messages={{
           pending: 'Verifying selector…',
           inProgress: 'Verifying selector…',
@@ -474,7 +477,6 @@ export const createGetSelectorAtPointAction = ({ isLight }: SimpleDependencies) 
       <ActionStatus
         toolName={`Selector at (${x}, ${y})`}
         status={status}
-        isLight={isLight}
         messages={{
           pending: 'Finding selector at point…',
           inProgress: 'Finding selector at point…',
@@ -509,7 +511,6 @@ export const createGetSelectorsAtPointsAction = ({ isLight }: SimpleDependencies
       <ActionStatus
         toolName={`Selectors at ${pointCount} point(s)`}
         status={status}
-        isLight={isLight}
         messages={{ pending: 'Finding selectors…', inProgress: 'Finding selectors…', complete: 'Selectors found' }}
         args={args}
         result={result}
@@ -557,8 +558,7 @@ export const createSendKeystrokesAction = ({ isLight, clipText }: ClipTextDepend
       <ActionStatus
         toolName={toolName}
         status={status}
-        isLight={isLight}
-        icon={<KeyboardIcon style={getIconStyle(isLight)} />}
+        icon={<KeyboardIcon style={getIconStyle(isLight, status)} />}
         messages={{
           pending: `Sending keystrokes${keysMsg}…`,
           inProgress: `Sending keystrokes${keysMsg}…`,
