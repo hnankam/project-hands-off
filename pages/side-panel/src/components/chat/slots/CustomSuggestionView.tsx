@@ -180,12 +180,7 @@ export const CustomSuggestionView: React.FC<CustomSuggestionViewProps> = ({
       );
     });
 
-  const baseClasses = "flex items-center gap-1.5 sm:gap-2 pl-0 pr-4 sm:px-0 overflow-x-auto suggestions-scroll";
-
-  console.log('[CustomSuggestionView] Rendering container:', {
-    pillCount: suggestionElements.filter(Boolean).length,
-    className: `${baseClasses} ${className || ''}`.trim(),
-  });
+  const baseClasses = "flex items-center gap-1.5 sm:gap-2 pl-0 sm:px-0 overflow-x-auto suggestions-scroll";
 
     return (
     <div className={`${baseClasses} ${className || ''}`.trim()} {...restProps}>
