@@ -315,6 +315,7 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
             style={{ color: isLight ? '#374151' : '#d1d5db', paddingLeft: '12px', paddingRight: '12px' }} // , paddingTop: '12px'
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
+            data-message-role="assistant"
           >
             {markdownRenderer}
             {toolCallsView}
