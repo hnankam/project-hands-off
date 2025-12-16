@@ -69,6 +69,8 @@ export const CustomSuggestionPill: React.FC<CustomSuggestionPillProps> = ({
         backgroundColor: colors.bg,
         color: colors.text,
         border: `1px solid ${colors.border}`,
+        flexShrink: 0,
+        whiteSpace: 'nowrap',
         ...style,
       }}
       onMouseEnter={(e) => {
@@ -135,20 +137,6 @@ export const CustomSuggestionView: React.FC<CustomSuggestionViewProps> = ({
     children,
     ...restProps
 }) => {
-  // Debug logging
-  console.log('[CustomSuggestionView] Rendered with props:', {
-    suggestions,
-    suggestionsType: typeof suggestions,
-    suggestionsIsArray: Array.isArray(suggestions),
-    suggestionsLength: Array.isArray(suggestions) ? suggestions.length : 'N/A',
-    onSelectSuggestion: typeof onSelectSuggestion,
-    loadingIndexes,
-    hasContainer: !!_container,
-    hasSuggestion: !!_suggestion,
-    className,
-    hasChildren: !!children,
-    restPropsKeys: Object.keys(restProps),
-  });
 
   // Suppress unused variable warnings
   void _container;
@@ -168,26 +156,13 @@ export const CustomSuggestionView: React.FC<CustomSuggestionViewProps> = ({
   // Ensure suggestions is an array
   const suggestionsArray = Array.isArray(suggestions) ? suggestions : [];
 
-  console.log('[CustomSuggestionView] Processing:', {
-    suggestionsArrayLength: suggestionsArray.length,
-    isLight,
-    loadingSetSize: loadingSet.size,
-  });
-
     // Map suggestions to pill elements
   const suggestionElements = suggestionsArray.map((suggestion, index) => {
     if (!suggestion || !suggestion.title) {
-      console.warn('[CustomSuggestionView] Invalid suggestion at index', index, suggestion);
       return null;
     }
     
       const isLoading = loadingSet.has(index) || suggestion.isLoading === true;
-    
-    console.log('[CustomSuggestionView] Creating pill:', {
-      index,
-      title: suggestion.title,
-      isLoading,
-    });
       
       return (
         <CustomSuggestionPill
@@ -205,7 +180,7 @@ export const CustomSuggestionView: React.FC<CustomSuggestionViewProps> = ({
       );
     });
 
-  const baseClasses = "flex flex-wrap items-center gap-1.5 sm:gap-2 pl-0 pr-4 sm:px-0";
+  const baseClasses = "flex items-center gap-1.5 sm:gap-2 pl-0 pr-4 sm:px-0 overflow-x-auto suggestions-scroll";
 
   console.log('[CustomSuggestionView] Rendering container:', {
     pillCount: suggestionElements.filter(Boolean).length,

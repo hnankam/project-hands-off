@@ -91,6 +91,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
       <div 
         className={className}
         style={containerStyles}
+        data-message-role="user"
       >
         <textarea
           ref={textareaRef}
@@ -205,6 +206,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
     <div 
       className={className}
       style={containerStyles}
+      data-message-role="user"
     >
       {/* Attachment chips - displayed above message content */}
       {attachments && attachments.length > 0 && (

@@ -658,7 +658,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
               className={cn(
                       'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-3 text-xs font-semibold transition-colors',
                 canAccessSessions
-                        ? isLight ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-blue-600 text-white hover:bg-blue-500'
+                        ? isLight ? 'bg-blue-500/90 text-white hover:bg-blue-500' : 'bg-blue-600/90 text-white hover:bg-blue-600'
                         : isLight ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-gray-800 text-gray-500 cursor-not-allowed'
                     )}
                   >
@@ -676,7 +676,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         ? isLight ? 'bg-gray-200 text-gray-400 cursor-wait border-gray-300' : 'bg-gray-700 text-gray-400 cursor-wait border-gray-600'
                         : !canAccessSessions
                         ? isLight ? 'bg-gray-200 text-gray-500 cursor-not-allowed border-gray-300' : 'bg-gray-800 text-gray-500 cursor-not-allowed border-gray-700'
-                        : isLight ? 'bg-white text-gray-600 hover:bg-gray-50 border-blue-300' : 'bg-[#151C24] text-gray-300 hover:bg-[#1a2330] border-blue-700'
+                        : isLight ? 'bg-white text-gray-600 hover:bg-gray-50 border-blue-300/70' : 'bg-[#151C24] text-gray-300 hover:bg-[#1a2330] border-blue-700/70'
                     )}
                   >
                     {creatingSession ? (
@@ -1008,9 +1008,8 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                       )}
                         title="Refresh usage metrics"
                       >
-                        <svg className={cn('w-4 h-4', usageLoading ? 'animate-spin' : '')} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2}>
-                          <path d="M4 4v4h4M16 16v-4h-4" />
-                          <path d="M5.636 5.636A7 7 0 0117 10M14.364 14.364A7 7 0 013 10" />
+                        <svg className={cn('w-4 h-4', usageLoading ? 'animate-spin' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
                     </button>
                     </div>

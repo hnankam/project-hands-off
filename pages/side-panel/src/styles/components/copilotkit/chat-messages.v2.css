@@ -156,7 +156,7 @@
    ========================================================== */
 
 .copilot-chat-container p,
-.copilot-chat-container div:not([role="group"]):not([class*="controls"]):not([class*="actions"]):not([class*="suggestions"]):not([class*="gallery"]),
+.copilot-chat-container div:not([role="group"]):not([class*="controls"]):not([class*="actions"]):not([class*="suggestions"]):not([class*="gallery"]):not(.attachment-file-name):not(.attachment-file-type-size),
 .copilot-chat-container span:not([role="group"] span):not([class*="gallery"]) {
   font-size: 12.5px !important;
 }

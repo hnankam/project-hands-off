@@ -183,8 +183,6 @@ const LivePlanStateCard: React.FC<{
         state={planState}
         setState={setDynamicAgentState}
         isCollapsed={false}
-        isHistorical={false}
-        showControls={true}
       />
     </div>
   );

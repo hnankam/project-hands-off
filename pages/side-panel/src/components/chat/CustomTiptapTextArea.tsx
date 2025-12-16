@@ -226,12 +226,6 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
     }, [selectedPageURLs]);
     
     useEffect(() => {
-      console.log('[CustomTiptapTextArea] agentState updated:', {
-        plans: Object.keys(agentState?.plans || {}).length,
-        graphs: Object.keys(agentState?.graphs || {}).length,
-        graphIds: Object.keys(agentState?.graphs || {}),
-        graphNames: Object.values(agentState?.graphs || {}).map((g: any) => g.name)
-      });
       agentStateRef.current = agentState;
     }, [agentState]);
 

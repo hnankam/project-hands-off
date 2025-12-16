@@ -45,8 +45,6 @@ interface PlanStateCardProps {
   setState?: (state: UnifiedAgentState) => void;
   theme?: string; // Optional now since we'll read it directly
   isCollapsed?: boolean;
-  isHistorical?: boolean;
-  showControls?: boolean; // Whether to show edit/delete/rerun buttons
 }
 
 /**
@@ -54,15 +52,12 @@ interface PlanStateCardProps {
  * 
  * Displays a visual progress tracker for agent plan tasks with animated steps.
  * Shows completed, in-progress, and pending steps with appropriate styling.
- * Historical cards (older versions) show collapsed without spinners.
  */
 export const PlanStateCard: FC<PlanStateCardProps> = ({ 
   state, 
   setState,
   theme: themeProp, 
-  isCollapsed = false, 
-  isHistorical: initialHistorical = false,
-  showControls = true
+  isCollapsed = false
 }) => {
   // Always read theme directly from storage for reactivity to theme changes
   const { isLight: isLightFromStorage } = useStorage(themeStorage);
@@ -76,7 +71,6 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
     }
     return !isCollapsed;
   });
-  const [isHistorical, setIsHistorical] = useState(initialHistorical);
   const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
   const cardRef = React.useRef<HTMLElement>(null);
@@ -122,18 +116,8 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
   // NOT using useCallback - recreate on every render to always use latest state
   const updatePlanSteps = (newSteps: PlanStep[]) => {
     if (!setState || !planId || !activePlan) {
-      console.warn('[PlanStateCard] Cannot update steps - missing dependencies:', { 
-        setState: !!setState, 
-        planId, 
-        activePlan: !!activePlan 
-      });
       return;
     }
-    
-    console.log('[PlanStateCard] Updating steps for plan', planId, 'with', newSteps.length, 'steps');
-    console.log('[PlanStateCard] Current state.plans keys:', Object.keys(state.plans || {}));
-    console.log('[PlanStateCard] Current plan steps:', activePlan.steps.map(s => s.description));
-    console.log('[PlanStateCard] New steps:', newSteps.map(s => s.description));
     
     const updatedPlan = {
       ...activePlan,
@@ -149,21 +133,9 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
       },
     };
     
-    console.log('[PlanStateCard] Updated plan in new state:', updatedPlan.steps.map(s => s.description));
-    console.log('[PlanStateCard] Calling setState with new state');
     setState(newState);
   };
 
-  // Debug logging
-  React.useEffect(() => {
-    console.log('[PlanStateCard] Component rendered with state:', {
-      planId,
-      planName,
-      numSteps: steps.length,
-      steps: steps.map(s => s.description),
-      plansKeys: Object.keys(state.plans || {})
-    });
-  }, [state, planId, planName, steps]);
 
   // Detect wrapping in edit mode and optionally auto-grow textarea height
   React.useEffect(() => {
@@ -180,10 +152,8 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
     setIsEditWrapped(wrapped);
   }, [editValue, editingStepIndex]);
 
-  // Load expanded state from database on mount (only for fixed card, not historical)
+  // Load expanded state from database on mount
   React.useEffect(() => {
-    if (!showControls || isHistorical) return; // Only for fixed card
-    
     // Check in-memory cache first to avoid DB query
     const cachedExpanded = expandedStateBySession.get(sessionKey);
     if (cachedExpanded !== undefined) {
@@ -200,17 +170,15 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
           setIsExpanded(savedExpanded);
         }
       } catch (e) {
-        console.warn('[PlanStateCard] Failed to load expanded state:', e);
+        // Silently fail - not critical
       }
     };
     
     loadExpandedState();
-  }, [sessionKey, showControls, isHistorical]);
+  }, [sessionKey]);
 
   // Persist expanded state per session (in memory and database)
   React.useEffect(() => {
-    if (!showControls || isHistorical) return; // Only for fixed card
-    
     expandedStateBySession.set(sessionKey, isExpanded);
     
     // Debounce database save
@@ -219,24 +187,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
     }, 300);
     
     return () => clearTimeout(timeoutId);
-  }, [sessionKey, isExpanded, showControls, isHistorical]);
-  
-  // Check if this card is marked as historical via data attribute
-  React.useEffect(() => {
-    const checkHistorical = () => {
-      if (cardRef.current) {
-        const container = cardRef.current.closest('[data-task-progress="true"]');
-        if (container) {
-          const historical = container.getAttribute('data-historical') === 'true';
-          setIsHistorical(historical);
-        }
-      }
-    };
-    
-    checkHistorical();
-    const interval = setInterval(checkHistorical, 100);
-    return () => clearInterval(interval);
-  }, []);
+  }, [sessionKey, isExpanded]);
 
   // Focus input when editing starts
   React.useEffect(() => {
@@ -256,21 +207,17 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
 
   // Handlers for inline editing
   const handleStartEdit = (stepIndex: number, currentDescription: string) => {
-    if (!isHistorical) {
       setEditingStepIndex(stepIndex);
       setEditValue(currentDescription);
-    }
   };
 
   const handleEditSubmit = () => {
     if (editingStepIndex !== null && editValue.trim() && setState) {
-      console.log('[PlanStateCard] Submitting edit for step', editingStepIndex, 'with value:', editValue.trim());
       const newSteps = [...steps];
       newSteps[editingStepIndex] = {
         ...newSteps[editingStepIndex],
         description: editValue.trim()
       };
-      console.log('[PLANCARD_SETSTATE] ✏️ EDIT step', editingStepIndex, '- calling setState with', newSteps.length, 'steps');
       updatePlanSteps(newSteps);
     }
     setEditingStepIndex(null);
@@ -292,17 +239,14 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
 
   // Handlers for adding a new step
   const handleStartAdd = () => {
-    if (!isHistorical) {
       setIsExpanded(true);
       setIsAdding(true);
       setAddValue('');
-    }
   };
 
   const handleAddSubmit = () => {
     if (setState && addValue.trim()) {
       const newSteps = [...steps, { description: addValue.trim(), status: 'pending' as const }];
-      console.log('[PLANCARD_SETSTATE] ➕ ADD step - calling setState with', newSteps.length, 'steps:', addValue.trim().substring(0, 30));
       updatePlanSteps(newSteps);
     }
     setIsAdding(false);
@@ -330,7 +274,6 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
     const temp = newSteps[index - 1];
     newSteps[index - 1] = newSteps[index];
     newSteps[index] = temp;
-    console.log('[PLANCARD_SETSTATE] ⬆️ MOVE step', index, 'UP - calling setState');
     updatePlanSteps(newSteps);
   };
 
@@ -369,7 +312,6 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
     let targetIndex = index;
     if (sourceIndex < index) targetIndex = index - 1;
     newSteps.splice(targetIndex, 0, moved);
-    console.log('[PLANCARD_SETSTATE] 🔄 DRAG-DROP step from', sourceIndex, 'to', targetIndex, '- calling setState');
     updatePlanSteps(newSteps);
     setDraggingIndex(null);
     setDragOverIndex(null);
@@ -385,8 +327,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
     try {
       await sendMessage({ role: 'user', content: 'Continue to the next step in the plan' } as any);
     } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn('[PlanStateCard] Failed to send run/continue message:', e);
+      // Silently fail
     }
   };
 
@@ -404,7 +345,6 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
     setEditingStepIndex(null);
     setEditValue('');
     setDeletePlanOpen(false);
-    console.log('[PLANCARD_SETSTATE] 🗑️ DELETE PLAN - calling setState with empty steps');
     updatePlanSteps([]);
   };
 
@@ -430,7 +370,6 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
     const temp = newSteps[index + 1];
     newSteps[index + 1] = newSteps[index];
     newSteps[index] = temp;
-    console.log('[PLANCARD_SETSTATE] ⬇️ MOVE step', index, 'DOWN - calling setState');
     updatePlanSteps(newSteps);
   };
 
@@ -447,12 +386,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
   const cardBorderColor = isLight ? '#e5e7eb' : '#374151';
   const cardBackgroundVar = `var(--copilot-kit-input-background-color, ${cardBackground})`;
   const cardBorderVar = `var(--copilot-kit-separator-color, ${cardBorderColor})`;
-  // Custom border colors for rendered (historical) cards. Use CSS var so parent theme updates propagate.
-  const renderedBorderVar = `var(--task-progress-rendered-border-color, ${
-    isLight ? 'rgba(229, 231, 235, 0.7)' : '#374151'    
-  })`;
-  const effectiveBorderColor =
-    isHistorical && !showControls ? renderedBorderVar : cardBorderVar;
+  const effectiveBorderColor = cardBorderVar;
   const mutedBackgroundVar = `var(--copilot-kit-muted-color, ${isLight ? '#f3f4f6' : '#1f2937'})`;
   const secondaryBackgroundVar = `var(--copilot-kit-secondary-color, ${isLight ? '#f9fafb' : '#111827'})`;
   const hasPendingActive = activeSteps.some((step) => step.status === 'pending');
@@ -544,7 +478,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
 
   // Collapsed view - compact single line
   if (!isExpanded) {
-    const hasRunning = !isHistorical && steps.some(s => s.status === 'running');
+    const hasRunning = steps.some(s => s.status === 'running');
     const hasFailed = steps.some(s => s.status === 'failed');
     const failedCount = steps.filter(s => s.status === 'failed').length;
     
@@ -553,7 +487,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
       <div
         ref={cardRef as any}
         data-session-id={state.sessionId ?? ''}
-        className={`w-full flex items-center gap-1.5 px-2 py-1.5 ${showControls ? 'rounded-t-lg border-b-0' : 'rounded-lg'} border text-[11px] transition-all duration-500 ease-in-out ${
+        className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg border-b-0 border text-[11px] transition-all duration-500 ease-in-out ${
           isLight ? 'text-gray-700' : 'text-gray-200'
         }`}
         style={{
@@ -605,7 +539,6 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
           />
         </div>
         {/* Task controls in collapsed view */}
-        {showControls && !isHistorical && (
           <div className="flex items-center gap-1">
             {setState && (
               <button type="button"
@@ -656,7 +589,6 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
         </button>
             )}
       </div>
-        )}
       </div>
       {deleteModal}
       </>
@@ -669,7 +601,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
       ref={cardRef as any}
       data-testid="task-progress"
       data-session-id={state.sessionId ?? ''}
-      className={`w-full ${showControls ? 'rounded-t-lg border-b-0' : 'rounded-lg'} p-2 text-[11px] border transition-all duration-500 ease-in-out ${isLight ? 'text-gray-800' : 'text-white'}`}
+      className={`w-full rounded-lg border-b-0 p-2 text-[11px] border transition-all duration-500 ease-in-out ${isLight ? 'text-gray-800' : 'text-white'}`}
       style={{
         backgroundColor: cardBackgroundVar,
         borderColor: effectiveBorderColor,
@@ -700,7 +632,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
             <span className={`text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>
               {completedCount}/{activeSteps.length}
             </span>
-            {showControls && !isHistorical && setState && (
+            {setState && (
               <button
                 onClick={handleStartAdd}
                 className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
@@ -716,7 +648,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
                 </svg>
               </button>
             )}
-            {showControls && !isHistorical && canRunPlan && (
+            {canRunPlan && (
               <button
                 onClick={handleRunPlan}
                 className={`p-1 rounded transition-colors inline-flex items-center justify-center ${
@@ -732,7 +664,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
                 </svg>
               </button>
             )}
-            {showControls && !isHistorical && setState && (
+            {setState && (
               <button
                 type="button"
                 onClick={handleOpenDeletePlan}
@@ -768,25 +700,21 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
        <div className="space-y-1">
          {steps.map((step, index) => {
            const isCompleted = step.status === "completed";
-           // Historical cards should never show running state - treat as pending
-           const isRunning = !isHistorical && step.status === "running";
+           const isRunning = step.status === "running";
            const isFailed = step.status === "failed";
            const isDeleted = step.status === "deleted";
-           const isPending = step.status === "pending" || (isHistorical && step.status === "running");
-           const draggableEnabled = showControls && !isHistorical && !!setState && editingStepIndex !== index;
+           const isPending = step.status === "pending";
+           const draggableEnabled = !!setState && editingStepIndex !== index;
            const isDragSource = draggingIndex === index;
            const isDragOver = dragOverIndex === index && draggingIndex !== index;
 
-          const stateOpacityClass = isDeleted ? 'opacity-60' : isHistorical ? 'opacity-80' : '';
+          const stateOpacityClass = isDeleted ? 'opacity-60' : '';
           const containerStyle: React.CSSProperties = {
             backgroundColor: cardBackgroundVar,
             borderColor: effectiveBorderColor,
           };
             if (isDeleted) {
             containerStyle.backgroundColor = mutedBackgroundVar;
-          } else if (isHistorical) {
-            // Historical (rendered) cards should blend into chat background
-            containerStyle.backgroundColor = 'transparent';
           }
 
           return (
@@ -827,7 +755,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
                   }}
                   onBlur={handleEditSubmit}
                   onKeyDown={handleEditKeyDown}
-                  onMouseEnter={showControls && !isHistorical ? (e) => {
+                  onMouseEnter={(e) => {
                     setHoveredStepIndex(index);
                     setHoverText(editValue);
                     setIsHoverEditing(true);
@@ -835,11 +763,11 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
                       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                       setHoverRect({ left: r.left + r.width / 2, top: r.bottom });
                     } catch {}
-                  } : undefined}
-                  onMouseLeave={showControls && !isHistorical ? () => {
+                  }}
+                  onMouseLeave={() => {
                     setHoveredStepIndex(null);
                     setHoverRect(null);
-                  } : undefined}
+                  }}
                   rows={2}
                   className={`flex-1 min-w-0 text-[10px] bg-transparent border-none outline-none px-1 whitespace-pre-wrap leading-snug ${
                     isLight ? 'text-gray-900' : 'text-gray-100'
@@ -849,9 +777,9 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
               ) : (
                 <div
                   data-testid="task-step-text"
-                  className={`flex-1 min-w-0 text-[10px] ${(!showControls || isHistorical) ? 'whitespace-pre-wrap break-words' : 'truncate'} ${isDeleted ? 'line-through' : ''} ${isLight ? 'text-gray-700' : 'text-gray-200'}`}
-                  aria-label={isHistorical ? undefined : step.description}
-                  onMouseEnter={showControls && !isHistorical ? (e) => {
+                  className={`flex-1 min-w-0 text-[10px] truncate ${isDeleted ? 'line-through' : ''} ${isLight ? 'text-gray-700' : 'text-gray-200'}`}
+                  aria-label={step.description}
+                  onMouseEnter={(e) => {
                     const el = e.currentTarget as HTMLElement;
                     // Only show tooltip if actually truncated
                     try {
@@ -865,11 +793,11 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
                     } catch {
                       // noop
                     }
-                  } : undefined}
-                  onMouseLeave={showControls && !isHistorical ? () => {
+                  }}
+                  onMouseLeave={() => {
                     setHoveredStepIndex(null);
                     setHoverRect(null);
-                  } : undefined}
+                  }}
                 >
                   {step.description}
                 </div>
@@ -878,7 +806,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
               {/* Per-step hover region handled above; tooltip rendered via portal below */}
 
               {/* Action Buttons - non-deleted steps (overlay with fade) */}
-              {showControls && !isHistorical && !isDeleted && editingStepIndex !== index && setState && (
+              {!isDeleted && editingStepIndex !== index && setState && (
                 <div
                   className="absolute inset-y-0 right-1 flex items-center pl-16 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
                   style={{ background: controlFadeGradient }}
@@ -933,7 +861,6 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
                           ...newSteps[index],
                           status: 'pending' as const
                         };
-                        console.log('[PLANCARD_SETSTATE] 🔁 RERUN step', index, '- calling setState');
                         updatePlanSteps(newSteps);
                       }}
                       className={`p-0.5 rounded transition-colors ${
@@ -981,7 +908,6 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
                         ...newSteps[index],
                         status: 'deleted' as const
                       };
-                      console.log('[PLANCARD_SETSTATE] ❌ DELETE step', index, '- calling setState');
                       updatePlanSteps(newSteps);
                     }}
                     className={`p-0.5 rounded transition-colors ${
@@ -1002,7 +928,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
               )}
 
               {/* Restore button - for deleted steps */}
-              {showControls && !isHistorical && isDeleted && setState && (
+              {isDeleted && setState && (
                 <div className="flex items-center gap-0.5 ml-1">
                   <button
                     onClick={(e) => {
@@ -1012,7 +938,6 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
                         ...newSteps[index],
                         status: 'pending' as const
                       };
-                      console.log('[PLANCARD_SETSTATE] ↩️ RESTORE step', index, '- calling setState');
                       updatePlanSteps(newSteps);
                     }}
                     className={`p-0.5 rounded transition-colors ${
@@ -1033,7 +958,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
           );
         })}
         {/* Global tooltip via portal to avoid clipping and native title */}
-        {showControls && !isHistorical && hoveredStepIndex !== null && hoverRect && (!isHoverEditing || (isHoverEditing && isEditWrapped)) &&
+        {hoveredStepIndex !== null && hoverRect && (!isHoverEditing || (isHoverEditing && isEditWrapped)) &&
           createPortal(
             <div
               style={{
@@ -1057,7 +982,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
             document.body
           )
         }
-        {showControls && !isHistorical && isAdding && (
+        {isAdding && (
           <div
             className={`group flex items-center gap-1.5 px-1.5 py-1 rounded transition-all ${
               isLight

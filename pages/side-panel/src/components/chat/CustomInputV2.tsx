@@ -239,6 +239,37 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     }
     return `${Math.max(1, Math.round(kb))} KB`;
   };
+
+  // Get 3-letter file extension
+  const getFileType = (fileName: string, mimeType: string): string => {
+    // Try to get extension from filename first
+    const extension = fileName.split('.').pop()?.toUpperCase();
+    if (extension && extension.length <= 3) {
+      return extension.slice(0, 3);
+    }
+    // Fallback to mime type
+    const mimePart = mimeType.split('/')[1];
+    if (mimePart) {
+      // Handle common types
+      if (mimePart.includes('pdf')) return 'PDF';
+      if (mimePart.includes('image')) {
+        if (mimePart.includes('png')) return 'PNG';
+        if (mimePart.includes('jpeg') || mimePart.includes('jpg')) return 'JPG';
+        if (mimePart.includes('gif')) return 'GIF';
+        return 'IMG';
+      }
+      if (mimePart.includes('csv')) return 'CSV';
+      if (mimePart.includes('excel') || mimePart.includes('spreadsheet')) return 'XLS';
+      if (mimePart.includes('word') || mimePart.includes('document')) return 'DOC';
+      if (mimePart.includes('text')) return 'TXT';
+      if (mimePart.includes('json')) return 'JSON';
+      if (mimePart.includes('javascript')) return 'JS';
+      if (mimePart.includes('python')) return 'PY';
+      // Take first 3 chars of mime part
+      return mimePart.slice(0, 3).toUpperCase();
+    }
+    return 'FILE';
+  };
   
   // Upload attachment to Firebase
   const uploadAttachment = async (item: AttachmentItem, uploadSessionId: string) => {
@@ -480,6 +511,12 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       content: contentParts as any, // Array of content parts
     };
     
+    // Clear UI immediately for better UX (before async send completes)
+    if (props.onChange) {
+      props.onChange('');
+    }
+    setAttachments([]);
+    
     // Send via useCopilotChat hook (bypasses onSubmitMessage)
     // This allows us to send Message objects with content arrays
     try {
@@ -487,24 +524,12 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       
       debug.log('[CustomInputV2] Multimodal message sent successfully');
       
-      // Clear UI after successful send (textarea + pills)
-      if (props.onChange) {
-        props.onChange('');
-      }
-      setAttachments([]);
-      
       // Cleanup object URLs after successful send
       currentAttachments.forEach(a => URL.revokeObjectURL(a.previewUrl));
     } catch (error) {
       console.error('[CustomInputV2] Failed to send multimodal message:', error);
       
       debug.log('[CustomInputV2] Message was already added, skipping fallback to prevent duplicate');
-      
-      // Clear UI even on error (message was already added)
-      if (props.onChange) {
-        props.onChange('');
-      }
-      setAttachments([]);
       
       // Cleanup object URLs even on error
       currentAttachments.forEach(a => URL.revokeObjectURL(a.previewUrl));
@@ -639,81 +664,190 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
               {/* Attachments preview */}
               {attachments.length > 0 && (
                 <div
-                  className="mt-1 px-1"
+                  className="mt-1 px-2 pb-1 attachment-cards-scroll"
                   style={{
                     display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: '4px',
-                    maxHeight: '120px',
-                    overflowY: 'auto',
+                    flexDirection: 'row',
+                    gap: '6px',
+                    overflowX: 'auto',
+                    overflowY: 'hidden',
+                    justifyContent: 'flex-start',
+                    // alignItems: 'stretch',
+                    alignItems: 'flex-start',
+                    textAlign: 'left',
+                    width: '100%',
                   }}
                 >
                   {attachments.map(att => {
                     const isError = att.status === 'error';
-                    const bgCol = isError
-                      ? (isLight ? 'rgba(239,68,68,0.08)' : 'rgba(248,113,113,0.12)')
-                      : (isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.07)');
-                    const pillStyle: React.CSSProperties = {
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      padding: '2px 6px',
-                      borderRadius: '6px',
-                      background: bgCol,
-                      fontSize: '11px',
-                      color: isLight ? '#374151' : '#d1d5db', // Matches message text and buttons
-                      maxWidth: '100%',
-                      whiteSpace: 'nowrap',
-                    };
-                    const dotColor = att.status === 'uploaded' ? '#10b981' : att.status === 'error' ? '#ef4444' : '#3b82f6';
+                    const isImage = att.file.type.startsWith('image/');
+                    
                     return (
-                      <div key={att.id} style={pillStyle} title={att.name}>
-                        {/* File icon */}
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <path d="M14 2v6h6" />
-                        </svg>
-                        {/* Content wrapper */}
+                      <div
+                        key={att.id}
+                        style={{
+                          position: 'relative',
+                          flexShrink: 0,
+                          width: '60px',
+                          height: '80px',
+                          borderRadius: '6px',
+                          // border: `1px solid ${isLight ? '#e5e7eb' : '#374151'}`,
+                          background: isLight ? '#ffffff' : '#1a1f2e',
+                          overflow: 'hidden',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                        }}
+                      >
+                        {/* Thumbnail / Icon Area */}
                         <div
                           style={{
-                            display: 'inline-flex',
+                            width: '100%',
+                            height: '40px',
+                            background: isImage
+                              ? `url(${att.previewUrl}) center/cover no-repeat`
+                              : (isLight ? '#f3f4f6' : '#0f1419'),
+                            display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
-                            maxWidth: '240px',
-                            overflow: 'hidden',
+                            justifyContent: 'center',
+                            position: 'relative',
                           }}
                         >
-                          {/* Name and size */}
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>{att.name}</span>
-                            <span style={{ opacity: 0.85 }}>({formatSize(att.size)})</span>
-                          </div>
-                          {/* Status */}
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>
-                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: dotColor, display: 'inline-block' }} />
-                            {att.status === 'uploading' && <span style={{ opacity: 0.85 }}>{Math.max(0, Math.min(att.progress, 100))}%</span>}
-                          </span>
+                          {!isImage && (
+                            <div
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                color: isLight ? '#6b7280' : '#9ca3af',
+                                letterSpacing: '0.5px',
+                              }}
+                            >
+                              {getFileType(att.name, att.file.type)}
+                            </div>
+                          )}
+                          {/* Status overlay */}
+                          {att.status === 'uploading' && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                inset: 0,
+                                background: 'rgba(0, 0, 0, 0.5)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#ffffff',
+                                fontSize: '9px',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {Math.max(0, Math.min(att.progress, 100))}%
+                            </div>
+                          )}
+                          {isError && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                inset: 0,
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="#ef4444"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <circle cx="12" cy="12" r="10" />
+                                <line x1="12" y1="8" x2="12" y2="12" />
+                                <line x1="12" y1="16" x2="12.01" y2="16" />
+                              </svg>
+                            </div>
+                          )}
                         </div>
+                        
+                        {/* File Info */}
+                        <div
+                          style={{
+                            padding: '3px 4px 2px 4px',
+                            background: isLight ? 'rgba(229, 231, 235, 0.8)' : 'rgba(55, 65, 81, 0.6)',
+                            height: '40px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                          }}
+                        >
+                          <div
+                            className="attachment-file-name"
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 500,
+                              color: isLight ? '#374151' : '#d1d5db',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              lineHeight: '1.2',
+                            }}
+                            title={att.name}
+                          >
+                            {att.name}
+                          </div>
+                          <div
+                            className="attachment-file-type-size"
+                            style={{
+                              fontSize: '10px',
+                              color: isLight ? '#374151' : '#d1d5db',
+                              lineHeight: '1',
+                              opacity: 0.6,
+                              marginTop: 'auto',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {getFileType(att.name, att.file.type)} - {formatSize(att.size)}
+                          </div>
+                        </div>
+                        
                         {/* Remove button */}
                         <button
-                          onClick={() => removeAttachment(att.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeAttachment(att.id);
+                          }}
                           title="Remove attachment"
                           style={{
-                            marginLeft: '3px',
-                            display: 'inline-flex',
+                            position: 'absolute',
+                            top: '2px',
+                            right: '2px',
+                            display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             width: '16px',
                             height: '16px',
                             borderRadius: '50%',
                             border: 'none',
-                            background: 'transparent',
+                            background: 'rgba(0, 0, 0, 0.6)',
                             cursor: 'pointer',
-                            color: 'inherit',
+                            color: '#ffffff',
+                            backdropFilter: 'blur(4px)',
                           }}
                         >
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M6 18L18 6M6 6l12 12" />
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M18 6L6 18M6 6l12 12" />
                           </svg>
                         </button>
                       </div>
@@ -740,6 +874,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                       align="left"
                       direction="up"
                       isLight={isLight}
+                      className="cursor-pointer"
                     >
                       <DropdownMenuItem
                         onClick={(e) => {

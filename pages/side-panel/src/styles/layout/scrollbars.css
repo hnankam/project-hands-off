@@ -63,6 +63,27 @@
 }
 
 /* ==========================================================
+   SUGGESTIONS SCROLLBAR (HORIZONTAL)
+   Hidden scrollbar like session tabs
+   ========================================================== */
+.suggestions-scroll {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.suggestions-scroll::-webkit-scrollbar,
+.suggestions-scroll::-webkit-scrollbar-track,
+.suggestions-scroll::-webkit-scrollbar-track-piece,
+.suggestions-scroll::-webkit-scrollbar-thumb,
+.suggestions-scroll::-webkit-scrollbar-button,
+.suggestions-scroll::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+/* ==========================================================
    HOME PAGE SCROLLBAR
    Thin scrollbar with transparent track
    ========================================================== */

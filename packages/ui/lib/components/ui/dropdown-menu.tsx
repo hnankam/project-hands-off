@@ -101,7 +101,7 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', dir
   }
 
   return (
-    <div className={cn("relative", className)} ref={triggerRef}>
+    <div className={cn("relative", className)} ref={triggerRef} style={{ cursor: 'pointer' }}>
       <div onClick={handleToggle}>
         {trigger}
       </div>
@@ -116,6 +116,7 @@ export const DropdownMenu = ({ children, trigger, className, align = 'left', dir
           )}
           style={{
             position: 'absolute',
+            cursor: 'pointer',
             ...(openUpward ? { bottom: `${position.bottom}px` } : { top: `${position.top}px` }),
             [align === 'right' ? 'right' : 'left']: align === 'right' ? `${position.right}px` : `${position.left}px`,
             pointerEvents: 'auto',
@@ -229,7 +230,7 @@ export const DropdownSubmenu = ({ label, children, align = 'right', isLight = tr
   }
 
   return (
-    <div ref={itemRef} className="relative">
+    <div ref={itemRef} className="relative cursor-pointer">
       <button
         className={cn(
           "flex w-full items-center justify-between px-4 py-1.5 text-xs font-medium transition-colors text-left",

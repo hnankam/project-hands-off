@@ -97,65 +97,31 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
 
   // Convert graphs to mention suggestions
   const graphSuggestions: MentionSuggestion[] = useMemo(() => {
-    console.log('[MentionExtension] Raw agentState.graphs:', props.agentState?.graphs);
+    if (!props.agentState?.graphs) return [];
     
-    if (!props.agentState?.graphs) {
-      console.log('[MentionExtension] No graphs in agentState');
-      return [];
-    }
-    
-    const suggestions = Object.entries(props.agentState.graphs).map(([graphId, graph]) => {
-      console.log('[MentionExtension] Processing graph:', { graphId, name: graph.name, status: graph.status });
-      return {
+    return Object.entries(props.agentState.graphs).map(([graphId, graph]) => ({
       id: `graph-${graphId}`,
       label: graph.name || `Graph ${graphId.slice(0, 8)}`,
       type: 'graph' as const,
       graphId,
-      };
-    });
-    
-    console.log('[MentionExtension] Graph suggestions:', {
-      totalGraphs: Object.keys(props.agentState.graphs).length,
-      graphIds: Object.keys(props.agentState.graphs),
-      suggestions: suggestions.map(s => ({ id: s.id, label: s.label }))
-    });
-    
-    return suggestions;
+    }));
   }, [props.agentState?.graphs]);
 
   // Combine all suggestions: pages, plans, and graphs
   const allSuggestions = useMemo(() => {
-    console.log('[MentionExtension] Combining suggestions:', {
-      pages: pageSuggestions.length,
-      plans: planSuggestions.length,
-      graphs: graphSuggestions.length,
-      total: pageSuggestions.length + planSuggestions.length + graphSuggestions.length
-    });
     return [...pageSuggestions, ...planSuggestions, ...graphSuggestions];
   }, [pageSuggestions, planSuggestions, graphSuggestions]);
 
   // Filter suggestions based on search query
   const filteredSuggestions = useMemo(() => {
     if (!searchQuery.trim()) {
-      const filtered = allSuggestions.slice(0, 20);
-      console.log('[MentionExtension] No search query - showing first 20:', {
-        total: allSuggestions.length,
-        shown: filtered.length,
-        types: filtered.map(s => s.type)
-      });
-      return filtered;
+      return allSuggestions.slice(0, 20); // Show first 20 when no search
     }
     const query = searchQuery.toLowerCase().trim();
-    const filtered = allSuggestions.filter(item => 
+    return allSuggestions.filter(item => 
       item.label.toLowerCase().includes(query) ||
       (item.pageURL && item.pageURL.toLowerCase().includes(query))
     ).slice(0, 20);
-    console.log('[MentionExtension] Search query applied:', {
-      query,
-      total: allSuggestions.length,
-      matched: filtered.length
-    });
-    return filtered;
   }, [allSuggestions, searchQuery]);
 
   // Update search query when props.query changes (from editor typing)

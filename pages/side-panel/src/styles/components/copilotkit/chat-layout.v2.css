@@ -27,10 +27,18 @@
   background-color: #ffffff;
 }
 
-.copilot-chat-container div[style*="overflow: auto"] > :first-child {
+.copilot-chat-container div[style*="overflow: auto"]:not(.attachment-cards-scroll) > :first-child:not(.attachment-cards-scroll) {
   max-width: 56rem !important;
   margin-left: auto !important;
   margin-right: auto !important;
+}
+
+/* Ensure attachment cards are not affected */
+.attachment-cards-scroll,
+.attachment-cards-scroll > * {
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
 }
 
 .copilot-chat-container div[style*="overflow: auto"] div.max-w-3xl.mx-auto {
@@ -59,7 +67,7 @@
 
 .copilot-chat-container.font-size-small,
 .copilot-chat-container.font-size-small p,
-.copilot-chat-container.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]),
+.copilot-chat-container.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size),
 .copilot-chat-container.font-size-small span:not([role=group] span):not([class*=gallery]) {
   font-size: 13px !important;
   /* line-height: 1.4 !important; */
@@ -67,7 +75,7 @@
 
 .copilot-chat-container.font-size-medium,
 .copilot-chat-container.font-size-medium p,
-.copilot-chat-container.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]),
+.copilot-chat-container.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size),
 .copilot-chat-container.font-size-medium span:not([role=group] span):not([class*=gallery]) {
   font-size: 16px !important;
   /* line-height: 1.5 !important; */
@@ -75,7 +83,7 @@
 
 .copilot-chat-container.font-size-large,
 .copilot-chat-container.font-size-large p,
-.copilot-chat-container.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]),
+.copilot-chat-container.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size),
 .copilot-chat-container.font-size-large span:not([role=group] span):not([class*=gallery]) {
   font-size: 19px !important;
   /* line-height: 1.55 !important; */

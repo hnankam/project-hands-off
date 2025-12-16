@@ -240,3 +240,37 @@ div.custom-input-v2-container {
 .custom-input-v2-container > div.mr-\[10px\] {
   margin-right: 5px !important;
 }
+
+/* ============================================================================
+   ATTACHMENT CARDS HORIZONTAL SCROLL
+   Invisible scrollbar like session tabs
+   ============================================================================ */
+
+.attachment-cards-scroll {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+  justify-content: flex-start !important;
+  align-items: flex-start !important;
+  text-align: left !important;
+}
+
+.attachment-cards-scroll::-webkit-scrollbar,
+.attachment-cards-scroll::-webkit-scrollbar-track,
+.attachment-cards-scroll::-webkit-scrollbar-track-piece,
+.attachment-cards-scroll::-webkit-scrollbar-thumb,
+.attachment-cards-scroll::-webkit-scrollbar-button,
+.attachment-cards-scroll::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+/* Attachment card text sizing */
+.attachment-file-name {
+  font-size: 11px !important;
+}
+
+.attachment-file-type-size {
+  font-size: 9.5px !important;
+}
