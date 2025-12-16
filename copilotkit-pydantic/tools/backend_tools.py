@@ -304,6 +304,124 @@ async def update_plan_step(
     )
 
 
+async def update_plan_steps(
+    ctx: RunContext[UnifiedDeps],
+    plan_identifier: str,
+    updates: list[dict[str, Any]]
+) -> ToolReturn:
+    """Update multiple plan steps in a single operation.
+    
+    More efficient than calling update_plan_step multiple times. Useful for
+    updating step sequences (e.g., mark step 1 completed and step 2 running).
+    
+    Args:
+        ctx: The run context with agent state
+        plan_identifier: Plan name OR plan_id (e.g., "Build House Plan" or "abc123")
+        updates: List of step updates, each with:
+            - step_index (int, required): Index of step to update
+            - description (str, optional): New description
+            - status (str, optional): New status
+            
+    Returns:
+        Confirmation message with count of updated steps
+        
+    Example:
+        update_plan_steps("Build Dream House", [
+            {"step_index": 0, "status": "completed"},
+            {"step_index": 1, "status": "running"},
+            {"step_index": 2, "description": "Updated task description"}
+        ])
+    """
+    # Resolve name/ID to actual plan_id
+    plan_id = resolve_plan_identifier(ctx.deps.state, plan_identifier)
+    
+    if not plan_id:
+        available = [f'"{p.name}" ({pid})' for pid, p in ctx.deps.state.plans.items()]
+        error_msg = (
+            f'Plan "{plan_identifier}" not found. Available plans:\n' +
+            ('\n'.join(available) if available else 'No plans available')
+        )
+        return ToolReturn(return_value=error_msg)
+    
+    plan = ctx.deps.state.plans[plan_id]
+    
+    # Validate and apply all updates
+    updated_indices = []
+    errors = []
+    
+    for i, update in enumerate(updates):
+        step_index = update.get('step_index')
+        
+        if step_index is None:
+            errors.append(f"Update {i}: Missing step_index")
+            continue
+        
+        # Validate step index
+        if not plan.steps or step_index >= len(plan.steps) or step_index < 0:
+            errors.append(
+                f"Update {i}: Step {step_index} doesn't exist (plan has {len(plan.steps)} steps)"
+            )
+            continue
+        
+        # Apply updates
+        description = update.get('description')
+        status = update.get('status')
+        
+        if description is not None:
+            plan.steps[step_index].description = description
+        if status is not None:
+            plan.steps[step_index].status = status
+        
+        updated_indices.append(step_index)
+    
+    # If no updates succeeded, return error
+    if not updated_indices:
+        error_msg = f'No steps were updated in plan "{plan.name}"'
+        if errors:
+            error_msg += f'\nErrors:\n' + '\n'.join(f'  - {e}' for e in errors)
+        return ToolReturn(return_value=error_msg)
+    
+    # Update plan timestamp
+    plan.updated_at = datetime.now().isoformat()
+    
+    # Build state snapshot
+    state_dict = ctx.deps.state.model_dump()
+    # Get sessionId, handle None case
+    session_id = state_dict.get("sessionId") or ctx.deps.session_id or "default"
+    
+    # Update state with session_id if it was None
+    if not ctx.deps.state.sessionId:
+        ctx.deps.state.sessionId = session_id
+        state_dict = ctx.deps.state.model_dump()
+    
+    # Activity message for this specific plan
+    activity_message_id = f"plan-{plan_id}"
+    activity_content = {
+        "plans": {plan_id: plan.model_dump()},
+        "sessionId": session_id,
+    }
+    
+    # Build result message
+    result_msg = f'Updated {len(updated_indices)} step(s) in plan "{plan.name}": {sorted(updated_indices)}'
+    if errors:
+        result_msg += f'\n{len(errors)} error(s) occurred:\n' + '\n'.join(f'  - {e}' for e in errors)
+    
+    return ToolReturn(
+        return_value=result_msg,
+        metadata=[
+            StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=state_dict,
+            ),
+            ActivitySnapshotEvent(
+                messageId=activity_message_id,
+                activityType="task_progress",
+                content=activity_content,
+            ),
+        ],
+    )
+
+
 async def update_plan_status(
     ctx: RunContext[UnifiedDeps],
     plan_identifier: str,
@@ -826,6 +944,7 @@ BACKEND_TOOLS = {
     # Plan management (multi-instance with names)
     'create_plan': create_plan,
     'update_plan_step': update_plan_step,
+    'update_plan_steps': update_plan_steps,
     'update_plan_status': update_plan_status,
     'rename_plan': rename_plan,
     'list_plans': list_plans,
