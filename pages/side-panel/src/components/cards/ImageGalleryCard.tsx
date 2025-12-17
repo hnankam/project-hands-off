@@ -82,11 +82,12 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
         style={{
           backgroundColor: cardBackground,
           borderColor: borderColor,
-          marginTop: '12px',
-          marginLeft: 'auto',
-          marginRight: 'auto',
-          maxWidth: 'calc(56rem - 24px)',
-          width: 'calc(100% - 24px)',
+          marginTop: '0px',
+          marginLeft: '0px',
+          marginRight: '0px',
+          marginBottom: '6px',
+          // maxWidth: 'calc(56rem - 24px)', // Match assistant message max-width minus padding
+          // width: 'calc(100% - 24px)', // Full width minus padding
         }}
       >
         {/* Skeleton Header */}
@@ -244,11 +245,12 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
       style={{
         backgroundColor: cardBackground,
         borderColor: borderColor,
-        marginTop: '12px',
-        marginLeft: 'auto',
-        marginRight: 'auto',
-        maxWidth: 'calc(56rem - 24px)',
-        width: 'calc(100% - 24px)',
+        marginTop: '0px',
+        marginLeft: '0px',
+        marginRight: '0px',
+        marginBottom: '6px',
+        // maxWidth: 'calc(56rem - 24px)', // Match assistant message max-width minus padding
+        // width: 'calc(100% - 24px)', // Full width minus padding
       }}
     >
       {/* Header - Accordion Toggle */}

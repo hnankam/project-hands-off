@@ -323,6 +323,13 @@ async def extract_image_result(final_result: Any, state: QueryState) -> str:
             images_list = list(images) if hasattr(images, '__iter__') and not isinstance(images, (str, bytes)) else [images]
             logger.info(f"   [ImageGeneration] Found {len(images_list)} images to upload")
             
+            # Get user_id from state for workspace integration
+            user_id = getattr(state, 'user_id', None)
+            
+            if not user_id:
+                logger.error("   [ImageGeneration] Cannot upload images: user_id is required for workspace storage")
+                return "Error: User authentication required for image generation"
+            
             for idx, image in enumerate(images_list):
                 if isinstance(image, BinaryImage):
                     logger.info(f"   [ImageGeneration] Uploading image {idx + 1}/{len(images_list)}...")
@@ -330,15 +337,47 @@ async def extract_image_result(final_result: Any, state: QueryState) -> str:
                     image_data = image.data
                     content_type = image.media_type or "image/png"
                     
+                    # Always store in user's workspace/generations folder
+                    folder = f"workspace/{user_id}/generations"
+                    
                     url = await upload_binary_image_to_storage(
                         image_data,
-                        folder="graph-generations",
+                        folder=folder,
                         content_type=content_type
                     )
                     
                     if url:
                         uploaded_urls.append(url)
                         logger.info(f"   [ImageGeneration] ✓ Uploaded: {url[:80]}...")
+                        
+                        # Register in workspace if user_id is available
+                        if user_id:
+                            try:
+                                from services.workspace_manager import register_workspace_file
+                                
+                                # Extract file extension from content type
+                                extension = content_type.split('/')[-1] if '/' in content_type else 'png'
+                                file_name = f"generated-{idx + 1}.{extension}"
+                                file_size = len(image_data)
+                                
+                                # Get the prompt from state if available
+                                prompt = state.original_query or state.query or "Graph execution"
+                                
+                                await register_workspace_file(
+                                    user_id=user_id,
+                                    file_name=file_name,
+                                    file_type=content_type,
+                                    file_size=file_size,
+                                    storage_url=url,
+                                    folder='generated',
+                                    tags=['ai-generated', 'image', 'graph'],
+                                    description=f"Generated from: {prompt[:100]}"
+                                )
+                                
+                                logger.info(f"   [ImageGeneration] ✓ Registered in workspace for user {user_id}")
+                            except Exception as workspace_error:
+                                logger.warning(f"   [ImageGeneration] Failed to register in workspace: {workspace_error}")
+                                # Don't fail the whole operation if workspace registration fails
                     else:
                         logger.warning(f"   [ImageGeneration] Failed to upload image {idx + 1}")
                 else:

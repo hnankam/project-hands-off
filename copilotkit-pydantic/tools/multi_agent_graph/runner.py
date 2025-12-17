@@ -193,6 +193,7 @@ async def run_multi_agent_graph(
             result=graph_instance.result or "",
             should_continue=user_confirmed,  # Only continue if user confirmed
             planned_steps=list(graph_instance.planned_steps or []),
+            user_id=user_id,  # For workspace integration
         )
         
         # Set result based on user's choice
@@ -259,7 +260,7 @@ async def run_multi_agent_graph(
     else:
         logger.info(f"🆕 Starting NEW graph execution")
         # Initialize internal graph state (only for NEW executions)
-        state = QueryState(query=query, max_iterations=max_iterations)
+        state = QueryState(query=query, max_iterations=max_iterations, user_id=user_id)
     
         # Generate graph_id if not provided
         if not graph_id:

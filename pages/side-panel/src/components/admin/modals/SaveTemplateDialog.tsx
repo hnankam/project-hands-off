@@ -205,7 +205,7 @@ export const SaveTemplateDialog: React.FC<SaveTemplateDialogProps> = ({
             <button
               onClick={onSave}
               disabled={isLoading || !formData.key.trim()}
-              className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-blue-600/90 text-white hover:bg-blue-600 disabled:opacity-50"
             >
               {isLoading ? 'Saving...' : 'Save Template'}
             </button>

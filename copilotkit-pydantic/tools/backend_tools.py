@@ -741,6 +741,14 @@ async def generate_images(
         
         logger.info("Received %d images from auxiliary agent", len(images_list))
         
+        # Get user_id from deps for workspace integration
+        deps = ctx.deps
+        user_id = getattr(deps, 'user_id', None) if deps else None
+        
+        if not user_id:
+            logger.error("Cannot generate images: user_id is required for workspace storage")
+            return ["Error: User authentication required for image generation"]
+        
         for idx, image in enumerate(images_list):
             if isinstance(image, BinaryImage):
                 logger.info("Uploading image %d/%d to Firebase Storage...", idx + 1, len(images_list))
@@ -751,16 +759,45 @@ async def generate_images(
                 # Determine content type from media type
                 content_type = image.media_type or "image/png"
                 
-                # Upload to Firebase Storage in 'generations' folder
+                # Always store in user's workspace/generations folder
+                folder = f"workspace/{user_id}/generations"
+                
+                # Upload to Firebase Storage
                 url = await upload_binary_image_to_storage(
                     image_data,
-                    folder="generations",
+                    folder=folder,
                     content_type=content_type
                 )
                 
                 if url:
                     uploaded_urls.append(url)
                     logger.info("Uploaded: %s", url)
+                    
+                    # Register in workspace if user_id is available
+                    if user_id:
+                        try:
+                            from services.workspace_manager import register_workspace_file
+                            
+                            # Extract file extension from content type
+                            extension = content_type.split('/')[-1] if '/' in content_type else 'png'
+                            file_name = f"generated-{idx + 1}.{extension}"
+                            file_size = len(image_data)
+                            
+                            await register_workspace_file(
+                                user_id=user_id,
+                                file_name=file_name,
+                                file_type=content_type,
+                                file_size=file_size,
+                                storage_url=url,
+                                folder='generated',
+                                tags=['ai-generated', 'image'],
+                                description=f"Generated from prompt: {prompt[:100]}"
+                            )
+                            
+                            logger.info("Registered generated image in workspace for user %s", user_id)
+                        except Exception as workspace_error:
+                            logger.warning("Failed to register image in workspace: %s", workspace_error)
+                            # Don't fail the whole operation if workspace registration fails
                 else:
                     logger.warning("Failed to upload image %d", idx + 1)
             else:
@@ -957,6 +994,13 @@ BACKEND_TOOLS = {
     'web_search': web_search,
     'code_execution': code_execution,
     'url_context': url_context,
+    # Workspace tools (personal resources)
+    'search_workspace_files': None,  # Lazy loaded
+    'get_file_content': None,
+    'search_workspace_notes': None,
+    'get_note_content': None,
+    'search_user_emails': None,
+    'search_user_slack': None,
 }
 
 
@@ -969,6 +1013,25 @@ def get_backend_tool(tool_key: str):
     Returns:
         The tool function, or None if not found
     """
+    # Lazy load workspace tools
+    if tool_key in ('search_workspace_files', 'get_file_content', 'search_workspace_notes', 
+                     'get_note_content', 'search_user_emails', 'search_user_slack'):
+        if BACKEND_TOOLS[tool_key] is None:
+            from tools.workspace_tools import (
+                search_workspace_files_tool,
+                get_file_content_tool,
+                search_workspace_notes_tool,
+                get_note_content_tool,
+                search_user_emails_tool,
+                search_user_slack_tool
+            )
+            BACKEND_TOOLS['search_workspace_files'] = search_workspace_files_tool
+            BACKEND_TOOLS['get_file_content'] = get_file_content_tool
+            BACKEND_TOOLS['search_workspace_notes'] = search_workspace_notes_tool
+            BACKEND_TOOLS['get_note_content'] = get_note_content_tool
+            BACKEND_TOOLS['search_user_emails'] = search_user_emails_tool
+            BACKEND_TOOLS['search_user_slack'] = search_user_slack_tool
+    
     return BACKEND_TOOLS.get(tool_key)
 
 

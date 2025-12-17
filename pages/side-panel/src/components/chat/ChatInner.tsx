@@ -82,6 +82,7 @@ import { useProgressBarState } from '../../hooks/useProgressBarState';
 import type { PageContent } from '../../hooks/usePageMetadata';
 import { useMultiPageMetadata } from '../../hooks/useMultiPageMetadata';
 import { useProgressCardCollapse } from '../../hooks/useProgressCardCollapse';
+import { useWorkspaceContext } from '../../hooks/useWorkspaceContext';
 
 // Context
 import { ChatSessionIdProvider } from '../../context/ChatSessionIdContext';
@@ -412,6 +413,49 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     description:
       'Multi-page context including current page (full metadata) and selected indexed pages (lightweight summaries). Current page: pageTitle, pageURL, hasContent, hasEmbeddings, totalHtmlChunks, totalFormChunks, totalClickableChunks, documentInfo, windowInfo. Selected pages: array of page summaries with URL, title, chunk counts, lastIndexed. Use searchPageContent to query current page content. Additional pages provide context awareness.',
     value: multiPageMetadata,
+  });
+
+  // ================================================================================
+  // WORKSPACE CONTEXT
+  // ================================================================================
+
+  const { context: workspaceContext } = useWorkspaceContext();
+
+  useCopilotReadableData({
+    description:
+      'User personal workspace with uploaded files and notes. Use workspace tools (search_workspace_files, get_file_content, search_workspace_notes, get_note_content) when user references their files or notes. Files can be PDFs, documents, images. Notes are personal text notes created by the user.',
+    value: workspaceContext
+      ? {
+          files: {
+            count: workspaceContext.file_count,
+            recent: workspaceContext.recent_files.map(f => ({
+              id: f.id,
+              name: f.file_name,
+              type: f.file_type,
+              uploaded: f.created_at,
+            })),
+          },
+          notes: {
+            count: workspaceContext.note_count,
+            recent: workspaceContext.recent_notes.map(n => ({
+              id: n.id,
+              title: n.title,
+              created: n.created_at,
+              updated: n.updated_at,
+            })),
+          },
+          connections: {
+            count: workspaceContext.connection_count,
+            active: workspaceContext.active_connections.map(c => ({
+              id: c.id,
+              name: c.connection_name,
+              service: c.service_name,
+              status: c.status,
+            })),
+          },
+          storage_used: workspaceContext.total_size,
+        }
+      : null,
   });
 
   // ================================================================================

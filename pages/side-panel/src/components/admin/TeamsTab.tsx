@@ -458,7 +458,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                   disabled={loading}
                   className={cn(
                     'px-4 py-1.5 text-xs rounded transition-colors font-medium',
-                    isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-500 text-white hover:bg-blue-600',
+                    isLight ? 'bg-blue-500/90 text-white hover:bg-blue-500' : 'bg-blue-600/90 text-white hover:bg-blue-600',
                     loading && 'opacity-50 cursor-not-allowed',
                   )}>
                   {loading ? 'Creating...' : 'Create'}
@@ -514,7 +514,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                         disabled={loading}
                         className={cn(
                           'px-4 py-1.5 text-xs rounded transition-colors font-medium',
-                          isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-500 text-white hover:bg-blue-600',
+                          isLight ? 'bg-blue-500/90 text-white hover:bg-blue-500' : 'bg-blue-600/90 text-white hover:bg-blue-600',
                           loading && 'opacity-50 cursor-not-allowed',
                         )}>
                         {loading ? 'Saving...' : 'Save'}

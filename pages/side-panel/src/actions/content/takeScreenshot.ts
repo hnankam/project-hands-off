@@ -1,6 +1,7 @@
 import { debug as baseDebug } from '@extension/shared';
 import { COPIOLITKIT_CONFIG } from '../../constants';
 import { ensureFirebase, uploadDataUrlToStorage, type FirebaseConfig } from '../../utils/firebaseStorage';
+import { authClient } from '../../lib/auth-client';
 
 // ============================================================================
 // DEBUG UTILITIES
@@ -213,7 +214,8 @@ async function optimizeDataUrl(
  * Upload screenshot to Firebase and build attachment JSON
  */
 async function uploadAndBuildManifest(
-  optimized: OptimizeResult
+  optimized: OptimizeResult,
+  userId?: string
 ): Promise<{ hostedUrl?: string; attachmentJson: string }> {
   let hostedUrl: string | undefined;
   
@@ -221,9 +223,20 @@ async function uploadAndBuildManifest(
     const firebaseConfig = COPIOLITKIT_CONFIG.FIREBASE;
     
     if (COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS && firebaseConfig?.storageBucket) {
+      // Require authentication for screenshot uploads
+      if (!userId) {
+        debug.warn('[Screenshot] User not authenticated, skipping upload');
+        return { hostedUrl, attachmentJson: '' };
+      }
+      
       const storage = ensureFirebase(firebaseConfig as FirebaseConfig);
       const ext = optimized.outputFormat === 'jpeg' ? 'jpg' : 'png';
-      const path = `screenshots/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const timestamp = Date.now();
+      const filename = `${timestamp}-${Math.random().toString(36).slice(2)}.${ext}`;
+      
+      // Always store in user's workspace/screenshots folder
+      const path = `workspace/${userId}/screenshots/${filename}`;
+      
       const contentType = optimized.outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png';
       
       hostedUrl = await uploadDataUrlToStorage(
@@ -233,6 +246,38 @@ async function uploadAndBuildManifest(
         contentType,
         firebaseConfig as FirebaseConfig
       );
+      
+      // Register screenshot in workspace if userId is available and upload succeeded
+      if (hostedUrl && userId) {
+        try {
+          const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+          const response = await fetch(`${baseURL}/api/workspace/files/register`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              file_name: `screenshot.${ext}`,
+              file_type: contentType,
+              file_size: Math.round(optimized.sizeKB * 1024),
+              storage_url: hostedUrl,
+              folder: 'screenshots',
+              tags: ['screenshot', 'browser'],
+              description: `Screenshot captured at ${new Date(timestamp).toLocaleString()}`,
+            }),
+          });
+
+          if (response.ok) {
+            debug.log('[Screenshot] Registered in workspace');
+          } else {
+            debug.warn('[Screenshot] Failed to register in workspace:', await response.text());
+          }
+        } catch (workspaceError) {
+          debug.warn('[Screenshot] Workspace registration failed:', workspaceError);
+          // Don't fail the whole operation if workspace registration fails
+        }
+      }
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -330,6 +375,18 @@ export async function handleTakeScreenshot(
   try {
     debug.log('[Screenshot] Taking screenshot:', { captureFullPage, format, quality });
 
+    // Get the current user session for workspace integration
+    let userId: string | undefined;
+    try {
+      const session = await authClient.getSession();
+      userId = session?.data?.user?.id;
+      if (userId) {
+        debug.log('[Screenshot] User authenticated, will store in workspace');
+      }
+    } catch (authError) {
+      debug.warn('[Screenshot] Failed to get user session:', authError);
+    }
+
     // Get the current active tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     const tab = tabs[0];
@@ -357,7 +414,7 @@ export async function handleTakeScreenshot(
     const viewportDims = await getViewportDimensions(tabId);
 
     // Upload to Firebase and build attachment JSON
-    const { hostedUrl, attachmentJson } = await uploadAndBuildManifest(optimized);
+    const { hostedUrl, attachmentJson } = await uploadAndBuildManifest(optimized, userId);
 
     // Build success message
     const baseMessage = captureFullPage

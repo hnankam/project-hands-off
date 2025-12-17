@@ -1210,7 +1210,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                     type="submit"
                     className={cn(
                       'px-4 py-1.5 text-xs rounded font-medium transition-colors',
-                      isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-500 text-white hover:bg-blue-600',
+                      isLight ? 'bg-blue-500/90 text-white hover:bg-blue-500' : 'bg-blue-600/90 text-white hover:bg-blue-600',
                     )}
                   >
                     Create Provider
@@ -1520,7 +1520,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                                 onClick={() => handleUpdateProvider(provider.id)}
                                 className={cn(
                                   'px-4 py-1.5 text-xs rounded font-medium transition-colors',
-                                  isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-500 text-white hover:bg-blue-600',
+                                  isLight ? 'bg-blue-500/90 text-white hover:bg-blue-500' : 'bg-blue-600/90 text-white hover:bg-blue-600',
                                 )}
                               >
                                 Save Changes

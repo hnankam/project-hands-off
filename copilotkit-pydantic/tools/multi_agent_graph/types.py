@@ -88,6 +88,7 @@ class QueryState:
     next_action: str = ""  # Next action to take
     planned_steps: list[str] = field(default_factory=list)  # Planned execution sequence from orchestrator
     deferred_tool_requests: Any = None  # DeferredToolRequests when waiting for user interaction
+    user_id: str | None = None  # User ID for workspace integration
 
 
 # ========== Frontend State Types ==========

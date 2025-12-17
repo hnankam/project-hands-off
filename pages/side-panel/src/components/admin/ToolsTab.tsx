@@ -1651,7 +1651,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                       disabled={!canSubmitServer || loadingServers}
                       className={cn(
                         'px-4 py-1.5 text-xs rounded font-medium transition-colors',
-                        isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-500 text-white hover:bg-blue-600',
+                        isLight ? 'bg-blue-500/90 text-white hover:bg-blue-500' : 'bg-blue-600/90 text-white hover:bg-blue-600',
                       )}
                     >
                       Create Server
@@ -2014,7 +2014,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                                 disabled={!canSubmitEditServer}
                                 className={cn(
                                   'px-4 py-1.5 text-xs rounded font-medium transition-colors',
-                                  isLight ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-blue-500 text-white hover:bg-blue-600',
+                                  isLight ? 'bg-blue-500/90 text-white hover:bg-blue-500' : 'bg-blue-600/90 text-white hover:bg-blue-600',
                                 )}
                               >
                                 Save Changes

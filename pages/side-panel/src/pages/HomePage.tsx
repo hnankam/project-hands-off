@@ -7,6 +7,7 @@ import InfoMenu from '../components/menus/InfoMenu';
 import { ViewOptionsMenu } from '../components/layout/ViewOptionsMenu';
 import { InstallAppHelper } from '../components/menus/InstallAppHelper';
 import { SettingsButton } from '../components/menus/SettingsButton';
+import { WorkspaceTab } from '../components/workspace/WorkspaceTab';
 import { useAuth } from '../context/AuthContext';
 import { UsageDisplay } from '../components/menus/UsageDisplay';
 import type { CumulativeUsage } from '../hooks/useUsageStream';
@@ -184,16 +185,16 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const [sessionsPage, setSessionsPage] = useState(1);
   
   // Initialize activeHomeTab from localStorage
-  const [activeHomeTab, setActiveHomeTab] = useState<'sessions' | 'usage' | 'insights'>(() => {
+  const [activeHomeTab, setActiveHomeTab] = useState<'workspace' | 'sessions' | 'usage' | 'insights'>(() => {
     try {
       const stored = localStorage.getItem('homePageActiveTab');
-      if (stored === 'sessions' || stored === 'usage' || stored === 'insights') {
+      if (stored === 'workspace' || stored === 'sessions' || stored === 'usage' || stored === 'insights') {
         return stored;
       }
     } catch (error) {
       console.error('[HomePage] Failed to read tab from localStorage:', error);
     }
-    return 'sessions';
+    return 'workspace';
   });
 
   // Persist activeHomeTab to localStorage whenever it changes
@@ -729,7 +730,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                 isLight ? 'bg-gray-50' : 'bg-[#151C24]',
                 )}>
               <div className="flex items-center gap-1">
-                {(['sessions', 'usage', 'insights'] as const).map(tab => (
+                {(['workspace', 'sessions', 'usage', 'insights'] as const).map(tab => (
                   <button
                     key={tab}
                     onClick={() => setActiveHomeTab(tab)}
@@ -750,6 +751,13 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
             </div>
 
             {/* Tab Content */}
+            {/* Workspace Tab */}
+            {activeHomeTab === 'workspace' && (
+              <div className="animate-fadeIn">
+                <WorkspaceTab isLight={isLight} />
+              </div>
+            )}
+
             {activeHomeTab === 'sessions' && (
               <div className="space-y-4 animate-fadeIn max-w-4xl mx-auto">
                 {/* Stat Grid */}

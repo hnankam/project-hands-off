@@ -58,3 +58,10 @@ export { default as toolsRouter } from './tools.js';
 // ============================================================================
 
 export { default as usageRouter } from './usage.js';
+
+// ============================================================================
+// Workspace Routes (Personal Resources)
+// ============================================================================
+
+export { default as workspaceRouter } from './workspace.js';
+export { default as oauthRouter } from './oauth.js';

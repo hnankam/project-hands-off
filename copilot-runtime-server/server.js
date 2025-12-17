@@ -99,6 +99,8 @@ import {
   baseInstructionsRouter,
   usageRouter,
   toolsRouter,
+  workspaceRouter,
+  oauthRouter,
 } from './routes/index.js';
 
 // ============================================================================
@@ -720,6 +722,18 @@ const app = express();
     app.use('/api/admin/base-instructions', baseInstructionsRouter);
     app.use('/api/admin/tools', toolsRouter);
     app.use('/api/admin/usage', usageRouter);
+
+    // ========================================================================
+    // Workspace Endpoints (Personal Resources)
+    // ========================================================================
+    
+    app.use('/api/workspace', express.json({ limit: `${BODY_LIMIT_MB}mb` }), workspaceRouter);
+    
+    // ========================================================================
+    // OAuth Endpoints (Personal Connections)
+    // ========================================================================
+    
+    app.use('/api/oauth', oauthRouter);
 
     // ========================================================================
     // Public Configuration Endpoints

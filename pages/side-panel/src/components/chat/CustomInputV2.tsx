@@ -24,6 +24,7 @@ import { useStorage, debug } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { PagesSelector } from '../selectors/PagesSelector';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
+import { useAuth } from '../../context/AuthContext';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator } from '@extension/ui';
 import { COPIOLITKIT_CONFIG } from '../../constants';
 import { ensureFirebase, ensureFirebaseAuth } from '../../utils/firebaseStorage';
@@ -194,6 +195,7 @@ type AttachmentItem = {
 function CustomInputV2Component(props: CopilotChatInputProps) {
   const { isLight } = useStorage(themeStorage);
   const sessionId = useChatSessionIdSafe();
+  const { user } = useAuth();
   const context = useCopilotChatContext();
   const { sendMessage } = useCopilotChat();
   
@@ -293,7 +295,9 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
       const ts = Date.now();
       const safeName = item.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const path = `attachments/${uploadSessionId || 'default'}/${ts}-${safeName}`;
+      // Use consistent workspace path structure: workspace/{userId}/{timestamp}-{filename}
+      const userId = user?.id || 'anonymous';
+      const path = `workspace/${userId}/${ts}-${safeName}`;
       const storageRef = fbRef(storage as any, path);
       
       return await new Promise<AttachmentItem>((resolve, reject) => {
@@ -330,6 +334,43 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                 uploadedUrl: url 
               };
               setAttachments(prev => prev.map(a => a.id === item.id ? updated : a));
+              
+              // Save to workspace files for unified experience
+              try {
+                const payload: any = {
+                  file_name: item.name,
+                  file_type: item.file.type,
+                  file_size: item.file.size,
+                  storage_url: url,
+                  folder: 'chat-uploads',
+                  description: 'Uploaded via chat',
+                };
+                
+                // If file is text, extract content
+                if (item.file.type.startsWith('text/')) {
+                  try {
+                    const text = await item.file.text();
+                    payload.extracted_text = text;
+                  } catch (textError) {
+                    console.warn('[FileUpload] Failed to extract text:', textError);
+                  }
+                }
+                
+                await fetch('http://localhost:3111/api/workspace/files/register', {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify(payload),
+                });
+                
+                console.debug('[FileUpload] Registered file in workspace:', item.name);
+              } catch (workspaceError) {
+                console.warn('[FileUpload] Failed to register file in workspace:', workspaceError);
+                // Don't fail the upload if workspace registration fails
+              }
+              
               resolve(updated);
             } catch (urlError: any) {
               console.error('[FileUpload] Failed to get download URL:', urlError);
@@ -639,7 +680,10 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                 <div
                   style={{
                     position: 'absolute',
-                    inset: 0,
+                    top: '-0.35rem',
+                    left: 0,
+                    right: 0,
+                    bottom: '-0.1rem',
                     border: isLight ? '2px dashed rgba(59,130,246,0.5)' : '2px dashed rgba(255,255,255,0.25)',
                     background: isLight ? 'rgba(59,130,246,0.06)' : 'rgba(255,255,255,0.06)',
                     display: 'flex',

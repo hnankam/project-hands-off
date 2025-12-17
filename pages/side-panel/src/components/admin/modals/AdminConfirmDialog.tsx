@@ -66,7 +66,7 @@ export const AdminConfirmDialog: React.FC<AdminConfirmDialogProps> = ({
         return cn(base, 'bg-amber-600 text-white hover:bg-amber-700 disabled:hover:bg-amber-600');
       case 'info':
       default:
-        return cn(base, 'bg-blue-600 text-white hover:bg-blue-700 disabled:hover:bg-blue-600');
+        return cn(base, 'bg-blue-600/90 text-white hover:bg-blue-600 disabled:hover:bg-blue-600');
     }
   };
 
