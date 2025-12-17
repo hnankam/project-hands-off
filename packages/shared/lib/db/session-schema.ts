@@ -55,11 +55,10 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
       DEFINE INDEX IF NOT EXISTS idx_usage_session ON session_usage FIELDS sessionId;
 
       -- Session Agent State Table (includes plan steps and graph state)
-      -- Note: graph field is intentionally not type-constrained to allow NULL values from legacy records
-      -- The migration below converts NULL to NONE, but we keep it flexible to avoid race conditions
+      -- Note: Uses nested structure with plans and graphs objects
+      -- Each plan/graph instance is self-contained with its own steps array
       DEFINE TABLE IF NOT EXISTS session_agent_state SCHEMALESS;
       DEFINE FIELD IF NOT EXISTS sessionId ON session_agent_state TYPE string;
-      DEFINE FIELD IF NOT EXISTS steps ON session_agent_state TYPE array;
       DEFINE INDEX IF NOT EXISTS idx_agent_state_session ON session_agent_state FIELDS sessionId;
 
       -- Current Session Tracker (single record table)

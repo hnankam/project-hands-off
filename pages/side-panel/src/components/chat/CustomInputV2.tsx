@@ -22,7 +22,7 @@ import { CustomTiptapTextArea } from './CustomTiptapTextArea';
 import { useCopilotChatContext } from '../../hooks/copilotkit';
 import { useStorage, debug } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
-import { PagesSelector } from '../selectors/PagesSelector';
+import { ContextSelector } from '../selectors/ContextSelector';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
 import { useAuth } from '../../context/AuthContext';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator } from '@extension/ui';
@@ -40,6 +40,11 @@ interface PageSelectorContextValue {
     plans?: Record<string, any>;
     graphs?: Record<string, any>;
   };
+  // Workspace context items
+  selectedNotes?: any[];
+  selectedCredentials?: any[];
+  onNotesChange?: (notes: any[]) => void;
+  onCredentialsChange?: (credentials: any[]) => void;
 }
 
 export const PageSelectorContext = createContext<PageSelectorContextValue | null>(null);
@@ -208,6 +213,19 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   const setSelectedPageURLs = pageSelectorCtx?.onPagesChange ?? setLocalSelectedPageURLs;
   const currentPageURL = pageSelectorCtx?.currentPageURL ?? null;
   
+  // Workspace context state - use context if available, otherwise local state
+  const [localNotesWithContent, setLocalNotesWithContent] = useState<any[]>([]);
+  const [localCredentialsWithSecrets, setLocalCredentialsWithSecrets] = useState<any[]>([]);
+  
+  const selectedNotes = pageSelectorCtx?.selectedNotes ?? localNotesWithContent;
+  const setSelectedNotes = pageSelectorCtx?.onNotesChange ?? setLocalNotesWithContent;
+  const selectedCredentials = pageSelectorCtx?.selectedCredentials ?? localCredentialsWithSecrets;
+  const setSelectedCredentials = pageSelectorCtx?.onCredentialsChange ?? setLocalCredentialsWithSecrets;
+  
+  // Track selected IDs locally for the selector UI
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
+  const [selectedCredentialIds, setSelectedCredentialIds] = useState<string[]>([]);
+  
   // File input refs for upload functionality
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -356,7 +374,8 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                   }
                 }
                 
-                await fetch('http://localhost:3111/api/workspace/files/register', {
+                const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+                await fetch(`${baseURL}/api/workspace/files/register`, {
                   method: 'POST',
                   credentials: 'include',
                   headers: {
@@ -974,7 +993,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                       </DropdownMenuItem>
                     </DropdownMenu>
                     
-                    <PagesSelector
+                    <ContextSelector
                       isLight={isLight}
                       selectedPageURLs={selectedPageURLs}
                       currentPageURL={currentPageURL}
@@ -982,6 +1001,12 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                       onPagesChange={setSelectedPageURLs}
                       variant="compact"
                       showBrowserTabs={true}
+                      selectedNoteIds={selectedNoteIds}
+                      selectedCredentialIds={selectedCredentialIds}
+                      onNotesChange={setSelectedNoteIds}
+                      onCredentialsChange={setSelectedCredentialIds}
+                      onNotesWithContentChange={setSelectedNotes}
+                      onCredentialsWithSecretsChange={setSelectedCredentials}
                     />
                   </div>
                 

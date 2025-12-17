@@ -77,7 +77,7 @@ div.custom-input-v2-container {
 .custom-input-v2-container div[class*="relative"] button:not([data-pages-selector-trigger]),
 .custom-input-v2-container div[class*="relative"] button[disabled]:not([data-pages-selector-trigger]),
 .custom-input-v2-container div[class*="relative"] button:disabled:not([data-pages-selector-trigger]) {
-  height: 22px !important; /* Match PagesSelector compact button height */
+  height: 22px !important; /* Match ContextSelector compact button height */
   min-height: 22px !important;
   max-height: 22px !important;
   width: 22px !important; /* Square button to match height */
@@ -220,7 +220,7 @@ div.custom-input-v2-container {
 :not(.dark) .custom-input-v2-container .custom-input-hover-button > button:hover,
 .copilot-chat-container:not(.dark) .custom-input-v2-container .custom-input-hover-button:hover button,
 :not(.dark) .custom-input-v2-container .custom-input-hover-button:hover > button {
-  background-color: rgba(229, 231, 235, 0.8) !important; /* gray-200/80 - matches compact PagesSelector */
+  background-color: rgba(229, 231, 235, 0.8) !important; /* gray-200/80 - matches compact ContextSelector */
 }
 
 /* Dark mode hover backgrounds for input control buttons */
@@ -228,7 +228,7 @@ div.custom-input-v2-container {
 .copilot-chat-container.dark .custom-input-v2-container .custom-input-hover-button > button:hover,
 .dark .custom-input-v2-container .custom-input-hover-button:hover button,
 .copilot-chat-container.dark .custom-input-v2-container .custom-input-hover-button:hover > button {
-  background-color: rgba(55, 65, 81, 0.6) !important; /* gray-700/60 - matches compact PagesSelector */
+  background-color: rgba(55, 65, 81, 0.6) !important; /* gray-700/60 - matches compact ContextSelector */
 }
 
 

@@ -438,6 +438,44 @@ router.delete('/notes/:noteId', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * Fetch multiple notes with full content (bulk)
+ * POST /api/workspace/notes/bulk
+ * Body: { ids: string[] }
+ */
+router.post('/notes/bulk', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { ids } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.json({ notes: [] });
+    }
+    
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT 
+        id, 
+        title, 
+        content, 
+        LEFT(content, 200) as preview,
+        folder, 
+        tags, 
+        created_at, 
+        updated_at
+       FROM workspace_notes
+       WHERE user_id = $1 AND id = ANY($2::uuid[])
+       ORDER BY updated_at DESC`,
+      [userId, ids]
+    );
+    
+    res.json({ notes: rows });
+  } catch (error) {
+    console.error('[Workspace] Error fetching notes bulk:', error);
+    res.status(500).json({ error: 'Failed to fetch notes' });
+  }
+});
+
 // ============================================================================
 // CONNECTIONS ENDPOINTS (OAuth & API Keys)
 // ============================================================================
@@ -598,14 +636,18 @@ router.post('/credentials', requireAuth, async (req, res) => {
     }
     
     // Encrypt the password/secret
-    const encryptedData = password ? encryptCredential(password) : null;
+    let encryptedDataHex = null;
+    if (password) {
+      const { encrypted } = encryptCredential(password, userId);
+      encryptedDataHex = encrypted.toString('hex');
+    }
     
     const pool = getPool();
     const { rows } = await pool.query(
       `INSERT INTO workspace_credentials (user_id, name, type, key, encrypted_data)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, name, type, key, created_at, updated_at`,
-      [userId, name, type, key || null, encryptedData]
+      [userId, name, type, key || null, encryptedDataHex]
     );
     
     res.status(201).json({ credential: rows[0] });
@@ -647,9 +689,10 @@ router.put('/credentials/:id', requireAuth, async (req, res) => {
     
     // Only update password if provided
     if (password) {
-      const encryptedData = encryptCredential(password);
+      const { encrypted } = encryptCredential(password, userId);
+      const encryptedDataHex = encrypted.toString('hex');
       query += `, encrypted_data = $${params.length + 1}`;
-      params.push(encryptedData);
+      params.push(encryptedDataHex);
     }
     
     query += ` WHERE id = $${params.length + 1} AND user_id = $${params.length + 2}
@@ -692,6 +735,139 @@ router.delete('/credentials/:id', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('[Workspace] Error deleting credential:', error);
     res.status(500).json({ error: 'Failed to delete credential' });
+  }
+});
+
+/**
+ * Fetch multiple credentials with secrets (bulk)
+ * POST /api/workspace/credentials/bulk
+ * Body: { ids: string[] }
+ */
+router.post('/credentials/bulk', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { ids } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.json({ credentials: [] });
+    }
+    
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT id, name, type, key, encrypted_data, created_at, updated_at
+       FROM workspace_credentials
+       WHERE user_id = $1 AND id = ANY($2::uuid[])
+       ORDER BY updated_at DESC`,
+      [userId, ids]
+    );
+    
+    // Decrypt the encrypted_data field for each credential
+    const credentials = rows.map(row => {
+      const { encrypted_data, ...rest } = row;
+      let password = null;
+      
+      if (encrypted_data) {
+        try {
+          // Convert hex string back to Buffer
+          const encryptedBuffer = Buffer.from(encrypted_data, 'hex');
+          password = decryptCredential(encryptedBuffer, userId);
+        } catch (decryptError) {
+          console.error('[Workspace] Failed to decrypt credential:', rest.id, decryptError.message);
+          // Continue with null password rather than failing the entire request
+        }
+      }
+      
+      return {
+        ...rest,
+        password,
+      };
+    });
+    
+    res.json({ credentials });
+  } catch (error) {
+    console.error('[Workspace] Error fetching credentials bulk:', error);
+    res.status(500).json({ error: 'Failed to fetch credentials' });
+  }
+});
+
+/**
+ * Debug endpoint to list all credentials with decryption attempts
+ * GET /api/workspace/credentials/debug/all
+ * Note: Unauthenticated for debugging purposes only - remove in production
+ */
+router.get('/credentials/debug/all', async (req, res) => {
+  try {
+    // Get userId from query param for debugging
+    const userId = req.query.userId;
+    
+    if (!userId) {
+      return res.status(400).json({ 
+        error: 'userId query parameter required', 
+        example: '/api/workspace/credentials/debug/all?userId=your-user-id' 
+      });
+    }
+    
+    const pool = getPool();
+    
+    const { rows } = await pool.query(
+      `SELECT id, name, type, key, encrypted_data, 
+              LENGTH(encrypted_data) as encrypted_length,
+              created_at, updated_at
+       FROM workspace_credentials
+       WHERE user_id = $1
+       ORDER BY updated_at DESC`,
+      [userId]
+    );
+    
+    const debugResults = rows.map(row => {
+      const debugInfo = {
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        key: row.key,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        encryption_debug: {
+          has_encrypted_data: !!row.encrypted_data,
+          encrypted_data_type: typeof row.encrypted_data,
+          encrypted_data_length: row.encrypted_length,
+          encrypted_data_preview: row.encrypted_data 
+            ? String(row.encrypted_data).substring(0, 100) 
+            : null,
+          is_valid_hex: row.encrypted_data ? /^[0-9a-fA-F]+$/.test(row.encrypted_data) : false,
+        },
+        decryption_attempt: null,
+        decrypted_password: null,
+        decryption_error: null,
+      };
+      
+      // Attempt to decrypt
+      if (row.encrypted_data) {
+        try {
+          const encryptedBuffer = Buffer.from(row.encrypted_data, 'hex');
+          const decrypted = decryptCredential(encryptedBuffer, userId);
+          
+          debugInfo.decryption_attempt = 'success';
+          debugInfo.decrypted_password = decrypted;
+        } catch (error) {
+          debugInfo.decryption_attempt = 'failed';
+          debugInfo.decryption_error = error.message;
+        }
+      } else {
+        debugInfo.decryption_attempt = 'no_data';
+      }
+      
+      return debugInfo;
+    });
+    
+    res.json({
+      user_id: userId,
+      total_credentials: rows.length,
+      credentials: debugResults,
+    });
+  } catch (error) {
+    console.error('[Workspace] Error in debug endpoint:', error);
+    res.status(500).json({ error: 'Failed to debug credentials', details: error.message });
   }
 });
 

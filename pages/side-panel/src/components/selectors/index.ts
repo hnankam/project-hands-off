@@ -6,8 +6,8 @@
 
 export { AgentSelector } from './AgentSelector';
 export { ModelSelector } from './ModelSelector';
-export { OrganizationSelector } from './OrganizationSelector';
-export { TeamSelectorDropdown, teamsCache } from './TeamSelectorDropdown';
-export { PagesSelector } from './PagesSelector';
+export { default as OrganizationSelector } from './OrganizationSelector';
+export { default as TeamSelectorDropdown, teamsCache } from './TeamSelectorDropdown';
+export { ContextSelector } from './ContextSelector';
 export { SelectorsBar } from './SelectorsBar';
 

@@ -311,6 +311,10 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     // Multi-page context: Selected pages for agent context
     const [selectedPageURLs, setSelectedPageURLs] = useState<string[]>([]);
 
+    // Workspace context: Selected notes and credentials for agent context
+    const [selectedNotes, setSelectedNotes] = useState<any[]>([]);
+    const [selectedCredentials, setSelectedCredentials] = useState<any[]>([]);
+
     // Tab management
     const [currentTabId, setCurrentTabId] = useState<number | null>(null);
     const [currentTabTitle, setCurrentTabTitle] = useState<string>('');
@@ -1179,6 +1183,10 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           organizationId={organization?.id || undefined}
           teamId={activeTeam || undefined}
           enabledFrontendTools={enabledFrontendTools}
+          selectedNotes={selectedNotes}
+          selectedCredentials={selectedCredentials}
+          onNotesChange={setSelectedNotes}
+          onCredentialsChange={setSelectedCredentials}
         />
       ),
       [

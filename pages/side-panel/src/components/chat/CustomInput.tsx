@@ -25,7 +25,7 @@ import { EnterToSend } from '../tiptap/EnterToSendExtension';
 import { createSlashCommandExtension, type SlashCommand } from '../tiptap/SlashCommandExtension';
 import { createMentionSuggestion, type MentionSuggestion } from '../tiptap/MentionExtension';
 import { editorToMarkdown } from '../tiptap/markdownSerializer';
-import { PagesSelector } from '../selectors/PagesSelector';
+import { ContextSelector } from '../selectors/ContextSelector';
 
 const MAX_NEWLINES = 6;
 
@@ -1479,7 +1479,7 @@ export const CustomInput: React.FC<CustomInputProps> = ({
 
           {/* Pages selector */}
           {onSelectedPageURLsChange && (
-              <PagesSelector
+              <ContextSelector
                 selectedPageURLs={selectedPageURLs}
                 onPagesChange={onSelectedPageURLsChange}
                 currentPageURL={currentPageURL}

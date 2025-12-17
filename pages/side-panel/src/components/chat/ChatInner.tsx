@@ -87,6 +87,7 @@ import { useWorkspaceContext } from '../../hooks/useWorkspaceContext';
 // Context
 import { ChatSessionIdProvider } from '../../context/ChatSessionIdContext';
 import { useAgentStateManagement } from '../../hooks/useAgentStateManagement';
+import { useAuth } from '../../context/AuthContext';
 
 // Utilities
 import {
@@ -139,6 +140,42 @@ import { SemanticSearchManager } from '../../lib/SemanticSearchManager';
 // Empty component for hiding thinking blocks
 const EmptyThinkingBlock: React.FC<{ children?: React.ReactNode }> = () => null;
 
+// Conditional readable data components
+const SelectedNotesContext: React.FC<{ notes: any[] }> = ({ notes }) => {
+  useCopilotReadableData({
+    description:
+      'User-selected workspace notes with full content. These are the notes the user explicitly selected to add as context. Use this information directly when answering questions.',
+    value: {
+      selectedNotes: notes.map(note => ({
+        id: note.id,
+        title: note.title,
+        content: note.content,
+        folder: note.folder,
+        tags: note.tags,
+        updated: note.updated_at,
+      })),
+    },
+  });
+  return null;
+};
+
+const SelectedCredentialsContext: React.FC<{ credentials: any[] }> = ({ credentials }) => {
+  useCopilotReadableData({
+    description:
+      'User-selected credentials (API keys, passwords, tokens). These are sensitive credentials the user explicitly selected to add as context for API calls or authentication. Handle with care.',
+    value: {
+      selectedCredentials: credentials.map(cred => ({
+        id: cred.id,
+        name: cred.name,
+        type: cred.type,
+        key: cred.key,
+        password: cred.password,
+      })),
+    },
+  });
+  return null;
+};
+
 // ================================================================================
 // TYPES & INTERFACES
 // ================================================================================
@@ -182,6 +219,11 @@ export interface ChatInnerProps {
   teamId?: string;
   /** Set of enabled frontend tool names. If undefined, all tools are enabled. */
   enabledFrontendTools?: Set<string>;
+  // Workspace context items
+  selectedNotes?: any[];
+  selectedCredentials?: any[];
+  onNotesChange?: (notes: any[]) => void;
+  onCredentialsChange?: (credentials: any[]) => void;
 }
 
 // ================================================================================
@@ -217,11 +259,20 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   triggerManualRefresh,
   isAgentAndModelSelected = true,
   enabledFrontendTools,
+  selectedNotes = [],
+  selectedCredentials = [],
+  onNotesChange,
+  onCredentialsChange,
 }) => {
   // ================================================================================
   // THEME & STORAGE
   // ================================================================================
   const { isLight } = useStorage(themeStorage);
+
+  // ================================================================================
+  // AUTH CONTEXT
+  // ================================================================================
+  const { user, organization, member } = useAuth();
 
   // ================================================================================
   // REFS FOR STABLE COMPONENT IDENTITY
@@ -420,6 +471,38 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ================================================================================
 
   const { context: workspaceContext } = useWorkspaceContext();
+
+  // Add user details to context
+  useCopilotReadableData({
+    description:
+      'Current authenticated user information including personal details, organization, and team membership. Use this when the user asks about themselves, their organization, their role, or their team.',
+    value: user
+      ? {
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            createdAt: user.createdAt,
+          },
+          organization: organization
+            ? {
+                id: organization.id,
+                name: organization.name,
+                slug: organization.slug,
+                logo: organization.logo,
+                createdAt: organization.createdAt,
+              }
+            : null,
+          member: member
+            ? {
+                role: member.role,
+                createdAt: member.createdAt,
+              }
+            : null,
+        }
+      : null,
+  });
+
 
   useCopilotReadableData({
     description:
@@ -901,7 +984,17 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           plans: dynamicAgentState.plans,
           graphs: dynamicAgentState.graphs,
         },
+        selectedNotes,
+        selectedCredentials,
+        onNotesChange,
+        onCredentialsChange,
       }}>
+        {/* Conditionally add selected notes to context */}
+        {selectedNotes.length > 0 && <SelectedNotesContext notes={selectedNotes} />}
+        
+        {/* Conditionally add selected credentials to context */}
+        {selectedCredentials.length > 0 && <SelectedCredentialsContext credentials={selectedCredentials} />}
+        
         <div className="flex h-full flex-col overflow-hidden">
           <div
             className={cn(

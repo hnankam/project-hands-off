@@ -1,5 +1,5 @@
 /**
- * PagesSelector Component
+ * ContextSelector Component
  * 
  * Unified multi-select dropdown for:
  * 1. Selecting indexed pages for agent context (via useCopilotReadable)
@@ -56,7 +56,31 @@ interface BrowserWindow {
   type: string;
 }
 
-type ViewMode = 'all' | 'indexed' | 'tabs';
+interface WorkspaceNote {
+  id: string;
+  title: string;
+  preview?: string; // First 200 characters of content (generated)
+  content: string; // Full note content
+  folder: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+interface Credential {
+  id: string;
+  name: string;
+  type: string;
+  key?: string; // API key identifier (not the secret)
+  created_at: string;
+  updated_at: string;
+}
+
+interface CredentialWithSecret extends Credential {
+  password?: string | null; // The decrypted secret/password from encrypted_data column
+}
+
+type ViewMode = 'all' | 'indexed' | 'tabs' | 'workspace';
 type SortOption = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc';
 
 // Tab group colors from Chrome API
@@ -72,7 +96,7 @@ const TAB_GROUP_COLORS: Record<string, string> = {
   orange: '#e8710a',
 };
 
-interface PagesSelectorProps {
+interface ContextSelectorProps {
   isLight: boolean;
   selectedPageURLs: string[];
   currentPageURL: string | null;
@@ -81,9 +105,16 @@ interface PagesSelectorProps {
   isLoadingSession?: boolean;
   variant?: 'compact' | 'default'; // compact = input controls, default = selector bar
   showBrowserTabs?: boolean; // Enable browser tabs integration (default: true)
+  // Workspace context
+  selectedNoteIds?: string[];
+  selectedCredentialIds?: string[];
+  onNotesChange?: (noteIds: string[]) => void;
+  onCredentialsChange?: (credentialIds: string[]) => void;
+  onNotesWithContentChange?: (notes: WorkspaceNote[]) => void; // Callback with full note content
+  onCredentialsWithSecretsChange?: (credentials: CredentialWithSecret[]) => void; // Callback with full credential data including secrets
 }
 
-export const PagesSelector: React.FC<PagesSelectorProps> = ({
+export const ContextSelector: React.FC<ContextSelectorProps> = ({
   isLight,
   selectedPageURLs,
   currentPageURL,
@@ -92,6 +123,12 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
   isLoadingSession = false,
   variant = 'default',
   showBrowserTabs = true,
+  selectedNoteIds = [],
+  selectedCredentialIds = [],
+  onNotesChange,
+  onCredentialsChange,
+  onNotesWithContentChange,
+  onCredentialsWithSecretsChange,
 }) => {
   // ============================================================================
   // STATE - Existing
@@ -132,6 +169,12 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
   // Track newly embedded URLs for immediate UI feedback (before pages refresh)
   const [newlyEmbeddedURLs, setNewlyEmbeddedURLs] = useState<Set<string>>(new Set());
   
+  // ============================================================================
+  // STATE - Workspace Items
+  // ============================================================================
+  const [notes, setNotes] = useState<WorkspaceNote[]>([]);
+  const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [loadingWorkspace, setLoadingWorkspace] = useState(false);
 
   // Protected URL patterns that can't be embedded
   const PROTECTED_PATTERNS = ['chrome://', 'chrome-extension://', 'devtools://', 'about:', 'edge://', 'brave://'];
@@ -195,9 +238,9 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       setPages(result);
       // Clear newly embedded URLs since they're now in the pages list
       setNewlyEmbeddedURLs(new Set());
-      debug.log(`[PagesSelector] Fetched ${result.length} indexed pages`);
+      debug.log(`[ContextSelector] Fetched ${result.length} indexed pages`);
     } catch (error) {
-      debug.error('[PagesSelector] Failed to load indexed pages:', error);
+      debug.error('[ContextSelector] Failed to load indexed pages:', error);
     } finally {
         setLoading(false);
     }
@@ -218,7 +261,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
         const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
         currentTabId = activeTab?.id ?? null;
       } catch (e) {
-        debug.warn('[PagesSelector] Could not get current tab:', e);
+        debug.warn('[ContextSelector] Could not get current tab:', e);
       }
 
       // Get all windows
@@ -260,7 +303,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
             }));
           }
         } catch (e) {
-          debug.warn('[PagesSelector] Tab groups API error:', e);
+          debug.warn('[ContextSelector] Tab groups API error:', e);
         }
       }
       
@@ -298,14 +341,61 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       setBrowserTabs(mappedTabs);
       
       const discardedCount = mappedTabs.filter(t => t.discarded).length;
-      debug.log(`[PagesSelector] Fetched ${accessibleTabs.length} browser tabs (${discardedCount} discarded)`, 
+      debug.log(`[ContextSelector] Fetched ${accessibleTabs.length} browser tabs (${discardedCount} discarded)`, 
         accessibleTabs.slice(0, 3).map(t => ({ id: t.id, status: t.status, discarded: t.discarded, active: t.active })));
     } catch (error) {
-      debug.error('[PagesSelector] Failed to fetch browser tabs:', error);
+      debug.error('[ContextSelector] Failed to fetch browser tabs:', error);
     } finally {
       setLoadingTabs(false);
     }
   }, [showBrowserTabs]);
+
+  // ============================================================================
+  // DATA FETCHING - Workspace Items
+  // ============================================================================
+  
+  const fetchWorkspaceItems = useCallback(async () => {
+    if (!onNotesChange && !onCredentialsChange) return; // Only fetch if handlers are provided
+    
+    setLoadingWorkspace(true);
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      
+      // Fetch notes
+      if (onNotesChange) {
+        try {
+          const notesResponse = await fetch(`${baseURL}/api/workspace/notes`, {
+            credentials: 'include',
+          });
+          if (notesResponse.ok) {
+            const notesData = await notesResponse.json();
+            setNotes(notesData.notes || []);
+            debug.log(`[ContextSelector] Fetched ${notesData.notes?.length || 0} workspace notes`);
+          }
+        } catch (error) {
+          debug.error('[ContextSelector] Failed to fetch notes:', error);
+        }
+      }
+      
+      // Fetch credentials
+      if (onCredentialsChange) {
+        try {
+          const credsResponse = await fetch(`${baseURL}/api/workspace/credentials`, {
+            credentials: 'include',
+          });
+          if (credsResponse.ok) {
+            const credsData = await credsResponse.json();
+            setCredentials(credsData.credentials || []);
+            debug.log(`[ContextSelector] Fetched ${credsData.credentials?.length || 0} credentials`);
+          }
+        } catch (error) {
+          debug.error('[ContextSelector] Failed to fetch credentials:', error);
+        }
+      }
+    } finally {
+      setLoadingWorkspace(false);
+    }
+  }, [onNotesChange, onCredentialsChange]);
 
   // ============================================================================
   // INITIAL FETCH & REFRESH
@@ -321,13 +411,14 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       if (showBrowserTabs) {
         fetchBrowserTabs();
       }
+      fetchWorkspaceItems();
       setTimeout(() => {
         searchInputRef.current?.focus();
       }, 10);
     } else {
       setSearchQuery('');
     }
-  }, [isOpen, fetchPages, fetchBrowserTabs, showBrowserTabs]);
+  }, [isOpen, fetchPages, fetchBrowserTabs, showBrowserTabs, fetchWorkspaceItems]);
 
   // ============================================================================
   // DROPDOWN POSITION
@@ -511,7 +602,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     setDeletingPages(prev => new Set(prev).add(pageURL));
     
     try {
-      debug.log('[PagesSelector] Deleting page embeddings:', pageURL);
+      debug.log('[ContextSelector] Deleting page embeddings:', pageURL);
       const result = await embeddingsStorage.deletePageEmbeddings(pageURL);
       
       if (result.deleted) {
@@ -521,10 +612,10 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
           onPagesChange(selectedPageURLs.filter(url => url !== pageURL));
         }
         
-        debug.log('[PagesSelector] Successfully deleted page:', pageURL, result.counts);
+        debug.log('[ContextSelector] Successfully deleted page:', pageURL, result.counts);
       }
     } catch (error) {
-      debug.error('[PagesSelector] Failed to delete page:', error);
+      debug.error('[ContextSelector] Failed to delete page:', error);
     } finally {
       setDeletingPages(prev => {
         const next = new Set(prev);
@@ -554,7 +645,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     const pagesToDelete = [...selectedPageURLs];
     
     if (pagesToDelete.length === 0) {
-      debug.warn('[PagesSelector] No pages to delete');
+      debug.warn('[ContextSelector] No pages to delete');
       return;
     }
     
@@ -562,7 +653,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     setDeletingPages(new Set(pagesToDelete));
     
     try {
-      debug.log('[PagesSelector] Bulk deleting pages:', pagesToDelete.length);
+      debug.log('[ContextSelector] Bulk deleting pages:', pagesToDelete.length);
       
       // Delete in parallel with concurrency limit
       const CONCURRENCY = 3;
@@ -586,9 +677,9 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       // Remove deleted pages from selection
       onPagesChange(selectedPageURLs.filter(url => !pagesToDelete.includes(url)));
       
-      debug.log('[PagesSelector] Bulk delete complete:', successCount, '/', pagesToDelete.length);
+      debug.log('[ContextSelector] Bulk delete complete:', successCount, '/', pagesToDelete.length);
     } catch (error) {
-      debug.error('[PagesSelector] Bulk delete failed:', error);
+      debug.error('[ContextSelector] Bulk delete failed:', error);
     } finally {
       setDeletingPages(new Set());
     }
@@ -685,7 +776,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     pageTitle: string
   ): Promise<void> => {
     try {
-      debug.log('[PagesSelector] Storing embeddings in IndexedDB...');
+      debug.log('[ContextSelector] Storing embeddings in IndexedDB...');
       
       // Store HTML chunks
       if (result.chunks && result.chunks.length > 0) {
@@ -700,7 +791,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
           })),
           sessionId: sessionId || 'default',
         });
-        debug.log('[PagesSelector] HTML chunks stored:', result.chunks.length);
+        debug.log('[ContextSelector] HTML chunks stored:', result.chunks.length);
       }
       
       // Store form field groups
@@ -710,7 +801,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
           groups: result.formFieldGroupEmbeddings,
           sessionId: sessionId || 'default',
         });
-        debug.log('[PagesSelector] Form field groups stored:', result.formFieldGroupEmbeddings.length);
+        debug.log('[ContextSelector] Form field groups stored:', result.formFieldGroupEmbeddings.length);
       }
 
       // Store clickable element groups
@@ -720,12 +811,12 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
           groups: result.clickableElementGroupEmbeddings,
           sessionId: sessionId || 'default',
         });
-        debug.log('[PagesSelector] Clickable element groups stored:', result.clickableElementGroupEmbeddings.length);
+        debug.log('[ContextSelector] Clickable element groups stored:', result.clickableElementGroupEmbeddings.length);
       }
 
-      debug.log('[PagesSelector] All embeddings stored successfully for:', pageURL);
+      debug.log('[ContextSelector] All embeddings stored successfully for:', pageURL);
     } catch (error) {
-      debug.error('[PagesSelector] Failed to store embeddings:', error);
+      debug.error('[ContextSelector] Failed to store embeddings:', error);
       throw error;
     }
   }, [sessionId]);
@@ -736,7 +827,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       
       const timeout = setTimeout(() => {
         chrome.runtime.onMessage.removeListener(listener);
-        debug.error('[PagesSelector] Embed timeout for tab:', tabId);
+        debug.error('[ContextSelector] Embed timeout for tab:', tabId);
         setEmbeddingErrors(prev => new Map(prev).set(tabId, 'Timeout'));
         resolve(false);
       }, 60000);
@@ -747,19 +838,19 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
           chrome.runtime.onMessage.removeListener(listener);
           
           if (message.error) {
-            debug.error('[PagesSelector] Embed failed:', message.error);
+            debug.error('[ContextSelector] Embed failed:', message.error);
             setEmbeddingErrors(prev => new Map(prev).set(tabId, message.error));
             resolve(false);
       } else {
-            debug.log('[PagesSelector] Tab embedded, now storing...', tabId);
+            debug.log('[ContextSelector] Tab embedded, now storing...', tabId);
             
             try {
               // Store the embeddings to IndexedDB
               await storeEmbeddings(message.result, url, title);
-              debug.log('[PagesSelector] Tab embedded and stored successfully:', tabId);
+              debug.log('[ContextSelector] Tab embedded and stored successfully:', tabId);
               resolve(true);
             } catch (storeError) {
-              debug.error('[PagesSelector] Failed to store embeddings:', storeError);
+              debug.error('[ContextSelector] Failed to store embeddings:', storeError);
               setEmbeddingErrors(prev => new Map(prev).set(tabId, 'Failed to save embeddings'));
               resolve(false);
             }
@@ -777,7 +868,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       }).catch(err => {
         clearTimeout(timeout);
         chrome.runtime.onMessage.removeListener(listener);
-        debug.error('[PagesSelector] Failed to send embed request:', err);
+        debug.error('[ContextSelector] Failed to send embed request:', err);
         setEmbeddingErrors(prev => new Map(prev).set(tabId, err.message));
         resolve(false);
       });
@@ -842,13 +933,13 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
       
     const skippedCount = tabs.length - tabsToEmbed.length - tabs.filter(t => indexedURLs.has(t.url) || embeddingTabs.has(t.id)).length;
     if (skippedCount > 0) {
-      debug.log('[PagesSelector] Skipped', skippedCount, 'protected/PDF pages');
+      debug.log('[ContextSelector] Skipped', skippedCount, 'protected/PDF pages');
     }
     
     if (tabsToEmbed.length === 0) return;
     
     const discardedCount = tabsToEmbed.filter(tab => tab.discarded).length;
-    debug.log('[PagesSelector] Bulk embed starting (parallel):', {
+    debug.log('[ContextSelector] Bulk embed starting (parallel):', {
       total: tabsToEmbed.length,
       discarded: discardedCount,
       regular: tabsToEmbed.length - discardedCount,
@@ -874,7 +965,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
         
         if (success) {
           successfulUrls.push(tab.url);
-          debug.log('[PagesSelector] Bulk: Tab embedded successfully:', tab.title);
+          debug.log('[ContextSelector] Bulk: Tab embedded successfully:', tab.title);
           
           // Immediately update newlyEmbeddedURLs so UI reflects completion
           setNewlyEmbeddedURLs(prev => new Set(prev).add(tab.url));
@@ -884,10 +975,10 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
             onPagesChange([...selectedPageURLs, tab.url]);
           }
         } else {
-          debug.warn('[PagesSelector] Bulk: Failed to embed tab:', tab.title);
+          debug.warn('[ContextSelector] Bulk: Failed to embed tab:', tab.title);
         }
       } catch (embedError) {
-        debug.error('[PagesSelector] Bulk embed error for tab:', tab.id, embedError);
+        debug.error('[ContextSelector] Bulk embed error for tab:', tab.id, embedError);
         setEmbeddingErrors(prev => new Map(prev).set(tab.id, 'Failed to embed'));
       } finally {
         // Remove from embedding set immediately
@@ -922,7 +1013,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
     // Final refresh to ensure everything is in sync
     await fetchPages();
     
-    debug.log('[PagesSelector] Bulk embed complete:', successfulUrls.length, 'of', tabsToEmbed.length, 'succeeded');
+    debug.log('[ContextSelector] Bulk embed complete:', successfulUrls.length, 'of', tabsToEmbed.length, 'succeeded');
   }, [indexedURLs, embeddingTabs, embedTab, fetchPages, selectedPageURLs, onPagesChange]);
       
   const handleCancelBulkEmbed = useCallback(() => {
@@ -958,19 +1049,96 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
   }, []);
 
   // ============================================================================
+  // WORKSPACE ITEM HANDLERS
+  // ============================================================================
+  
+  const handleToggleNote = useCallback(async (noteId: string) => {
+    if (!onNotesChange) return;
+    const newSelection = selectedNoteIds.includes(noteId)
+      ? selectedNoteIds.filter(id => id !== noteId)
+      : [...selectedNoteIds, noteId];
+    onNotesChange(newSelection);
+    
+    // If callback for full notes is provided, fetch content
+    if (onNotesWithContentChange && newSelection.length > 0) {
+      try {
+        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${baseURL}/api/workspace/notes/bulk`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ids: newSelection }),
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          onNotesWithContentChange(data.notes || []);
+          debug.log('[ContextSelector] Fetched', data.notes?.length || 0, 'notes with content');
+        }
+      } catch (error) {
+        debug.error('[ContextSelector] Failed to fetch note content:', error);
+      }
+    } else if (onNotesWithContentChange && newSelection.length === 0) {
+      // Clear notes if nothing selected
+      onNotesWithContentChange([]);
+    }
+  }, [selectedNoteIds, onNotesChange, onNotesWithContentChange]);
+
+  const handleToggleCredential = useCallback(async (credentialId: string) => {
+    if (!onCredentialsChange) return;
+    const newSelection = selectedCredentialIds.includes(credentialId)
+      ? selectedCredentialIds.filter(id => id !== credentialId)
+      : [...selectedCredentialIds, credentialId];
+    onCredentialsChange(newSelection);
+    
+    // If callback for full credentials is provided, fetch secrets
+    if (onCredentialsWithSecretsChange && newSelection.length > 0) {
+      try {
+        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${baseURL}/api/workspace/credentials/bulk`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ids: newSelection }),
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          onCredentialsWithSecretsChange(data.credentials || []);
+          debug.log('[ContextSelector] Fetched', data.credentials?.length || 0, 'credentials with secrets');
+        }
+      } catch (error) {
+        debug.error('[ContextSelector] Failed to fetch credential secrets:', error);
+      }
+    } else if (onCredentialsWithSecretsChange && newSelection.length === 0) {
+      // Clear credentials if nothing selected
+      onCredentialsWithSecretsChange([]);
+    }
+  }, [selectedCredentialIds, onCredentialsChange, onCredentialsWithSecretsChange]);
+
+  // ============================================================================
   // DISPLAY TEXT
   // ============================================================================
   
   const displayText = useMemo(() => {
-    if (loading) return 'Loading pages...';
-    if (pages.length === 0 && browserTabs.length === 0) return 'No pages available';
-    if (selectedPageURLs.length === 0) return 'No pages selected';
-    if (selectedPageURLs.length === 1) return '1 page selected';
-    return `${selectedPageURLs.length} pages selected`;
-  }, [loading, pages.length, browserTabs.length, selectedPageURLs.length]);
+    const totalSelected = selectedPageURLs.length + selectedNoteIds.length + selectedCredentialIds.length;
+    
+    if (loading) return 'Loading...';
+    if (pages.length === 0 && browserTabs.length === 0 && notes.length === 0 && credentials.length === 0) {
+      return 'No items available';
+    }
+    if (totalSelected === 0) return 'No context added';
+    if (totalSelected === 1) return '1 item selected';
+    return `${totalSelected} items selected`;
+  }, [loading, pages.length, browserTabs.length, notes.length, credentials.length, selectedPageURLs.length, selectedNoteIds.length, selectedCredentialIds.length]);
 
   const allFilteredSelected = filteredPages.length > 0 && filteredPages.every(p => selectedPageURLs.includes(p.pageURL));
   const isCompact = variant === 'compact';
+  const hasSelectedItems = selectedPageURLs.length > 0 || selectedNoteIds.length > 0 || selectedCredentialIds.length > 0;
 
   // ============================================================================
   // RENDER
@@ -998,28 +1166,19 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
             : 'cursor-pointer',
           isCompact
             ? isLight
-              ? selectedPageURLs.length > 0
-                ? 'text-gray-700 bg-gray-200/60 hover:bg-gray-200/80' // Same color as addMenuButton when pages selected
-                : 'text-gray-500 bg-gray-200/60 hover:bg-gray-200/80' // Dull when no pages selected
-              : selectedPageURLs.length > 0
-              ? 'text-gray-300 bg-gray-700/40 hover:bg-gray-700/60' // Same color as addMenuButton when pages selected
-              : 'text-gray-500 bg-gray-700/40 hover:bg-gray-700/60' // Dull when no pages selected
+              ? hasSelectedItems
+                ? 'text-gray-700 bg-gray-200/60 hover:bg-gray-200/80' // Same color as addMenuButton when items selected
+                : 'text-gray-500 bg-gray-200/60 hover:bg-gray-200/80' // Dull when no items selected
+              : hasSelectedItems
+              ? 'text-gray-300 bg-gray-700/40 hover:bg-gray-700/60' // Same color as addMenuButton when items selected
+              : 'text-gray-500 bg-gray-700/40 hover:bg-gray-700/60' // Dull when no items selected
             : isLight
             ? 'border-gray-300 bg-gray-100 text-gray-600 hover:border-gray-400 hover:bg-gray-200'
             : 'border-gray-600 bg-gray-800 text-gray-400 hover:border-gray-500 hover:bg-gray-700',
         )}>
-        {!isCompact && (
-          <svg
-            width="14"
-            height="14"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            className="flex-shrink-0">
-            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        )}
+        <span className={cn('flex-shrink-0 font-semibold', isCompact ? 'text-sm' : 'text-base')}>
+          @
+        </span>
 
         <span className={cn('truncate relative overflow-hidden', isCompact ? 'flex-1 min-w-0' : 'flex-1 text-left')}>
           <span ref={textRef} className="block truncate">
@@ -1109,16 +1268,16 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
           </div>
 
           {/* View Mode Tabs */}
-          {showBrowserTabs && (
+          {(showBrowserTabs || onNotesChange || onCredentialsChange) && (
             <div className={cn(
               'flex items-center justify-center gap-1 px-2 py-1.5 border-b',
               isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]'
             )}>
-              {(['all', 'indexed', 'tabs'] as ViewMode[]).map((mode) => (
+              {['all', 'indexed', ...(showBrowserTabs ? ['tabs'] : []), ...((onNotesChange || onCredentialsChange) ? ['workspace'] : [])].map((mode) => (
                 <button
                   key={mode}
                   type="button"
-                  onClick={() => setViewMode(mode)}
+                  onClick={() => setViewMode(mode as ViewMode)}
                   className={cn(
                     'flex-shrink-0 px-3 py-1 text-xs font-medium rounded transition-colors',
                     viewMode === mode
@@ -1133,6 +1292,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                   {mode === 'all' && 'All'}
                   {mode === 'indexed' && `Indexed (${pages.length})`}
                   {mode === 'tabs' && `Tabs (${browserTabs.length})`}
+                  {mode === 'workspace' && `Workspace (${notes.length + credentials.length})`}
                 </button>
               ))}
             </div>
@@ -1386,7 +1546,7 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                                 <div className={cn(
                                   'w-3.5 h-3.5 rounded border flex items-center justify-center transition-opacity',
                                   isSelected
-                                    ? 'bg-blue-600 border-blue-600 opacity-100'
+                                    ? 'bg-blue-600 border-blue-600 opacity-40'
                                     : cn(
                                         'opacity-0 group-hover:opacity-100',
                                         isLight ? 'border-gray-400' : 'border-gray-500'
@@ -1598,6 +1758,154 @@ export const PagesSelector: React.FC<PagesSelectorProps> = ({
                           )}
                         </div>
                       ))
+                    )}
+                  </>
+                )}
+
+                {/* WORKSPACE SECTION */}
+                {(onNotesChange || onCredentialsChange) && (viewMode === 'all' || viewMode === 'workspace') && (
+                  <>
+                    {/* Section Header */}
+                    <div className={cn(
+                      'flex items-center justify-between px-2.5 py-1.5 sticky top-0 z-10',
+                      isLight ? 'bg-gray-100/95 border-b border-gray-200' : 'bg-gray-800/95 border-b border-gray-700'
+                    )}>
+                      <span className={cn(
+                        'text-[10px] font-semibold uppercase tracking-wider',
+                        isLight ? 'text-gray-500' : 'text-gray-400'
+                      )}>
+                        Workspace ({notes.length + credentials.length})
+                      </span>
+                    </div>
+
+                    {loadingWorkspace ? (
+                      <div className={cn('px-3 py-4 text-xs text-center', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                        Loading workspace items...
+                      </div>
+                    ) : notes.length === 0 && credentials.length === 0 ? (
+                      <div className={cn('px-3 py-4 text-xs text-center', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                        No notes or credentials available
+                      </div>
+                    ) : (
+                      <>
+                        {/* Notes subsection */}
+                        {onNotesChange && notes.length > 0 && (
+                          <>
+                            <div className={cn(
+                              'px-2.5 py-1 text-[9px] font-medium uppercase tracking-wider',
+                              isLight ? 'text-gray-400 bg-gray-50' : 'text-gray-500 bg-gray-800/50'
+                            )}>
+                              Notes ({notes.length})
+                            </div>
+                            {notes.map(note => {
+                              const isSelected = selectedNoteIds.includes(note.id);
+                              return (
+                                <button
+                                  type="button"
+                                  key={note.id}
+                                  onClick={() => handleToggleNote(note.id)}
+                                  className={cn(
+                                    'flex w-full items-center px-2.5 py-1.5 text-xs transition-colors border-b gap-2 group text-left',
+                                    isLight ? 'border-gray-100' : 'border-gray-700/50',
+                                    isSelected
+                                      ? isLight
+                                        ? 'bg-gray-100/80 text-gray-700'
+                                        : 'bg-gray-700/40 text-gray-200'
+                                      : isLight
+                                      ? 'text-gray-500 hover:bg-gray-100'
+                                      : 'text-gray-400 hover:bg-gray-700/50',
+                                  )}>
+                                  {/* Icon */}
+                                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                  
+                                  <div className="flex-1 min-w-0 flex flex-col text-left">
+                                    <div className="font-medium truncate leading-tight">{note.title}</div>
+                                    {note.preview && (
+                                      <div className={cn('text-[10px] truncate leading-tight', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                                        {note.preview}
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  {/* Checkbox */}
+                                  <div 
+                                    className={cn(
+                                      'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
+                                      isSelected ? 'bg-blue-600 border-blue-600 opacity-40' : cn('opacity-0 group-hover:opacity-100', isLight ? 'border-gray-400' : 'border-gray-500')
+                                    )}
+                                  >
+                                    {isSelected && (
+                                      <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+              </>
+            )}
+
+                        {/* Credentials subsection */}
+                        {onCredentialsChange && credentials.length > 0 && (
+                          <>
+                            <div className={cn(
+                              'px-2.5 py-1 text-[9px] font-medium uppercase tracking-wider',
+                              isLight ? 'text-gray-400 bg-gray-50' : 'text-gray-500 bg-gray-800/50'
+                            )}>
+                              Credentials ({credentials.length})
+                            </div>
+                            {credentials.map(cred => {
+                              const isSelected = selectedCredentialIds.includes(cred.id);
+                              return (
+                                <button
+                                  type="button"
+                                  key={cred.id}
+                                  onClick={() => handleToggleCredential(cred.id)}
+                                  className={cn(
+                                    'flex w-full items-center px-2.5 py-1.5 text-xs transition-colors border-b gap-2 group text-left',
+                                    isLight ? 'border-gray-100' : 'border-gray-700/50',
+                                    isSelected
+                                      ? isLight
+                                        ? 'bg-gray-100/80 text-gray-700'
+                                        : 'bg-gray-700/40 text-gray-200'
+                                      : isLight
+                                      ? 'text-gray-500 hover:bg-gray-100'
+                                      : 'text-gray-400 hover:bg-gray-700/50',
+                                  )}>
+                                  {/* Icon */}
+                                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                                  </svg>
+                                  
+                                  <div className="flex-1 min-w-0 flex flex-col text-left">
+                                    <div className="font-medium truncate leading-tight">{cred.name}</div>
+                                    <div className={cn('text-[10px] truncate leading-tight', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                                      {cred.type}
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Checkbox */}
+                                  <div 
+                                    className={cn(
+                                      'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
+                                      isSelected ? 'bg-blue-600 border-blue-600 opacity-40' : cn('opacity-0 group-hover:opacity-100', isLight ? 'border-gray-400' : 'border-gray-500')
+                                    )}
+                                  >
+                                    {isSelected && (
+                                      <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </>
+                        )}
+                      </>
                     )}
                   </>
                 )}
@@ -1818,7 +2126,7 @@ const TabItem: React.FC<TabItemProps> = ({
         <div className={cn(
           'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
           isSelected
-            ? 'bg-blue-600 border-blue-600 opacity-100'
+            ? 'bg-blue-600 border-blue-600 opacity-40'
             : cn(
                 'opacity-0 group-hover:opacity-100',
                 isLight ? 'border-gray-400' : 'border-gray-500'

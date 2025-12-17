@@ -223,8 +223,8 @@ router.get('/:service/callback', async (req, res) => {
       expiresIn = tokens.authed_user.expires_in;
     } else {
       // Standard OAuth2 response
-      if (!tokens.access_token) {
-        console.error('[OAuth] No access token in response:', tokens);
+    if (!tokens.access_token) {
+      console.error('[OAuth] No access token in response:', tokens);
         return res.redirect(`/api/oauth/complete?success=false&service=${service}&error=No access token received`);
       }
       accessToken = tokens.access_token;

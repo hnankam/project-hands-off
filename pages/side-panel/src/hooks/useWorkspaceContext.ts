@@ -40,7 +40,8 @@ export function useWorkspaceContext() {
 
     const fetchContext = async () => {
       try {
-        const response = await fetch('http://localhost:3111/api/workspace/summary', {
+        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${baseURL}/api/workspace/summary`, {
           credentials: 'include',
         });
         
@@ -66,10 +67,18 @@ export function useWorkspaceContext() {
 
     fetchContext();
     
-    // Refresh context every 30 seconds
-    const interval = setInterval(fetchContext, 30000);
+    // Refresh context when tab becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchContext();
+      }
+    };
     
-    return () => clearInterval(interval);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user]);
 
   return { context, loading };
