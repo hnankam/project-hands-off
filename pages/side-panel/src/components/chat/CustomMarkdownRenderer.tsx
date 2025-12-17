@@ -46,13 +46,71 @@ interface CustomMarkdownRendererProps {
  */
 /**
  * Preprocess markdown content to ensure proper spacing around code blocks
+ * Also converts mention patterns wrapped in backticks (`@[Type]label`) to HTML spans for styling
+ * 
+ * Mentions are wrapped in backticks like code blocks, but start with @ to distinguish them.
+ * This allows mentions with spaces to be easily extracted and styled differently from code.
+ * Example: `@[Credential]My API Key` -> styled mention chip
+ *          `code example` -> regular code block
  */
 const preprocessMarkdown = (content: string): string => {
   if (!content) return content;
   
+  // Convert mention patterns wrapped in backticks to HTML spans for styling
+  // Pattern: `@[Type]label with spaces` or `@label`
+  // Example: `@[Credential]Wiki` -> <span class="mention-chip"...>@[Credential]Wiki</span>
+  // This handles mentions with spaces and is easy to extract
+  const mentionPattern = /`(@(\[(\w+)\])?([^`]+))`/g;
+  const matches: Array<{ match: string; index: number; groups: RegExpMatchArray }> = [];
+  let match;
+  
+  // Collect all matches with their indices
+  while ((match = mentionPattern.exec(content)) !== null) {
+    matches.push({
+      match: match[0],
+      index: match.index,
+      groups: match
+    });
+  }
+  
+  // Process matches in reverse order to preserve indices
+  let processed = content;
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const { match: matchStr, index: matchIndex, groups } = matches[i];
+    const fullMention = groups[1];
+    const type = groups[3];
+    const label = groups[4];
+    
+    // Skip if inside a code block (check for unclosed ``` before this position)
+    const beforeMatch = content.substring(0, matchIndex);
+    const codeBlockCount = (beforeMatch.match(/```/g) || []).length;
+    if (codeBlockCount % 2 !== 0) {
+      continue; // Inside code block, don't convert
+    }
+    
+    // Skip if already inside an HTML tag
+    const beforeContext = content.substring(Math.max(0, matchIndex - 50), matchIndex);
+    const lastOpenTag = beforeContext.lastIndexOf('<');
+    const lastCloseTag = beforeContext.lastIndexOf('>');
+    if (lastOpenTag > lastCloseTag) {
+      continue; // Inside HTML tag, skip
+    }
+    
+    // Extract the label (everything after @[Type] or @)
+    const mentionLabel = label ? label.trim() : fullMention.replace('@', '').trim();
+    const mentionType = type ? type.toLowerCase() : '';
+    
+    // Build the full mention text (with type prefix)
+    const mentionText = type ? `@[${type}]${label.trim()}` : `@${label.trim()}`;
+    
+    // Replace the match with HTML span for styling (CSS will hide type prefix visually)
+    const replacement = `<span class="mention-chip" data-mention="${mentionLabel}" data-type="${mentionType}">${mentionText}</span>`;
+    processed = processed.substring(0, matchIndex) + replacement + processed.substring(matchIndex + matchStr.length);
+  }
+  
   // Ensure newline before ``` if text is directly adjacent
   // This handles "text```python" -> "text\n```python"
-  const processed = content.replace(/([^\n\s])```/g, '$1\n```');
+  processed = processed.replace(/([^\n\s])```/g, '$1\n```');
   
   return processed.trim();
 };

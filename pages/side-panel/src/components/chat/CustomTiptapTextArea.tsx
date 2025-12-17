@@ -83,9 +83,11 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
     // Access raw context for langGraphInterruptAction (not in typed interface)
     const copilotContext = (copilotRuntimeContext as any)._rawContext || copilotRuntimeContext;
     
-    // Get selected pages and agent state from PageSelectorContext
+    // Get selected pages, notes, credentials, and agent state from PageSelectorContext
     const pageSelectorCtx = useContext(PageSelectorContext);
     const selectedPageURLs = pageSelectorCtx?.selectedPageURLs ?? [];
+    const selectedNotes = pageSelectorCtx?.selectedNotes ?? [];
+    const selectedCredentials = pageSelectorCtx?.selectedCredentials ?? [];
     const agentState = pageSelectorCtx?.agentState;
     
     // Internal ref for the container div - this is what ResizeObserver will observe
@@ -207,6 +209,8 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
     const isInputEnabledRef = useRef(isInputEnabled);
     const selectedPageURLsRef = useRef(selectedPageURLs);
     const agentStateRef = useRef(agentState);
+    const selectedNotesRef = useRef(selectedNotes);
+    const selectedCredentialsRef = useRef(selectedCredentials);
     
     // Update refs when values change
     useEffect(() => {
@@ -228,6 +232,14 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
     useEffect(() => {
       agentStateRef.current = agentState;
     }, [agentState]);
+    
+    useEffect(() => {
+      selectedNotesRef.current = selectedNotes;
+    }, [selectedNotes]);
+    
+    useEffect(() => {
+      selectedCredentialsRef.current = selectedCredentials;
+    }, [selectedCredentials]);
 
     // Tiptap Editor Setup - create editor first before using it in callbacks
     const editor = useEditor({
@@ -329,7 +341,8 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
               });
               const span = document.createElement('span');
               span.className = 'mention';
-              span.textContent = `@${node.attrs.label || node.attrs.id || '[mention]'}`;
+              // Don't add @ here - Tiptap adds it automatically
+              span.textContent = node.attrs.label || node.attrs.id || '[mention]';
               return {
                 dom: span,
               };
@@ -343,9 +356,12 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
             console.log('[Mention renderLabel] Called with node:', {
               attrs: node.attrs,
             });
-            return `@${node.attrs.label || node.attrs.id || 'unknown'}`;
+            const label = node.attrs.label || node.attrs.id || 'unknown';
+            
+            // Visual display - don't add @ here, Tiptap adds it automatically
+            return label;
           },
-          suggestion: createMentionSuggestion(mentionSuggestions, selectedPageURLsRef, agentStateRef),
+          suggestion: createMentionSuggestion(mentionSuggestions, selectedPageURLsRef, agentStateRef, selectedNotesRef, selectedCredentialsRef),
         }),
         Placeholder.configure({
           placeholder: () => {

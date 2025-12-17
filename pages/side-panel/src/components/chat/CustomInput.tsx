@@ -685,7 +685,8 @@ export const CustomInput: React.FC<CustomInputProps> = ({
             });
             const span = document.createElement('span');
             span.className = 'mention';
-            span.textContent = `@${node.attrs.label || node.attrs.id || '[mention]'}`;
+            // Don't add @ here - Tiptap adds it automatically
+            span.textContent = node.attrs.label || node.attrs.id || '[mention]';
             return {
               dom: span,
             };
@@ -699,7 +700,8 @@ export const CustomInput: React.FC<CustomInputProps> = ({
           console.log('[Mention renderLabel] Called with node:', {
             attrs: node.attrs,
           });
-          return `@${node.attrs.label || node.attrs.id || 'unknown'}`;
+          // Don't add @ here - Tiptap adds it automatically
+          return node.attrs.label || node.attrs.id || 'unknown';
         },
         suggestion: createMentionSuggestion(mentionSuggestions),
       }),

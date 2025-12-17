@@ -63,18 +63,47 @@ function jsonToMarkdown(node: any, depth = 0, listContext?: { type: 'bullet' | '
     return text;
   }
 
-  // Handle mention nodes - serialize as inline HTML spans
+  // Handle mention nodes - serialize with type prefix for agent
   if (node.type === 'mention') {
     console.log('[markdownSerializer] Mention node:', {
       type: node.type,
       attrs: node.attrs,
       hasLabel: !!node.attrs?.label,
       hasId: !!node.attrs?.id,
+      mentionType: node.attrs?.type,
     });
     const mentionText = node.attrs?.label || node.attrs?.id || 'unknown';
-    const result = `<span class="mention-chip" data-mention="${mentionText}">@${mentionText}</span>`;
-    console.log('[markdownSerializer] Serialized mention to:', result);
-    return result;
+    const mentionType = node.attrs?.type;
+    
+    // Add type prefix for the agent based on mention type
+    let typePrefix = '';
+    switch(mentionType) {
+      case 'page':
+        typePrefix = '[Page]';
+        break;
+      case 'note':
+        typePrefix = '[Note]';
+        break;
+      case 'credential':
+        typePrefix = '[Credential]';
+        break;
+      case 'plan':
+        typePrefix = '[Plan]';
+        break;
+      case 'graph':
+        typePrefix = '[Graph]';
+        break;
+      default:
+        typePrefix = '';
+    }
+    
+    // Include type prefix in the markdown so agent sees it: @[Type]label
+    // Wrap in backticks for easy extraction (handles spaces): `@[Type]label`
+    // This is different from code blocks because it starts with @
+    const fullMention = typePrefix ? `@${typePrefix}${mentionText}` : `@${mentionText}`;
+    const wrappedMention = `\`${fullMention}\``;
+    console.log('[markdownSerializer] Serialized mention to:', wrappedMention);
+    return wrappedMention;
   }
 
   // Handle hard break

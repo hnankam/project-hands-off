@@ -24,6 +24,11 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
   const [saving, setSaving] = useState(false);
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
   const [noteContents, setNoteContents] = useState<Record<string, string>>({});
+  
+  // Bulk delete state
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   const loadNotes = useCallback(async () => {
     try {
@@ -140,6 +145,80 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     } catch (error) {
       console.error('[Workspace] Delete error:', error);
       alert('Failed to delete note');
+    }
+  };
+
+  const toggleDeleteMode = () => {
+    setDeleteMode(prev => !prev);
+    // Clear selections when exiting delete mode
+    if (deleteMode) {
+      setSelectedNotes(new Set());
+    }
+  };
+
+  const toggleNoteSelection = (noteId: string) => {
+    setSelectedNotes(prev => {
+      const next = new Set(prev);
+      if (next.has(noteId)) {
+        next.delete(noteId);
+      } else {
+        next.add(noteId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const allSelected = notes.every(note => selectedNotes.has(note.id));
+    
+    setSelectedNotes(prev => {
+      const next = new Set(prev);
+      notes.forEach(note => {
+        if (allSelected) {
+          next.delete(note.id);
+        } else {
+          next.add(note.id);
+        }
+      });
+      return next;
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedNotes.size === 0) return;
+
+    if (!confirm(`Delete ${selectedNotes.size} note(s)?`)) return;
+
+    setDeleting(true);
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseURL}/api/workspace/notes/bulk`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          noteIds: Array.from(selectedNotes),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Bulk delete failed');
+      }
+
+      await loadNotes();
+      onStatsChange?.();
+      
+      // Clear selections and exit delete mode
+      setSelectedNotes(new Set());
+      setDeleteMode(false);
+    } catch (error) {
+      console.error('[Workspace] Bulk delete error:', error);
+      alert('Failed to delete notes: ' + (error as Error).message);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -269,20 +348,48 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
           <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
             Your Notes
           </h3>
-          <button
-            onClick={handleCreate}
-            className={cn(
-              'flex items-center gap-1.5 px-1.5 py-1 text-xs font-medium rounded transition-colors',
-              isLight
-                ? 'text-blue-600 hover:bg-blue-50'
-                : 'text-blue-300 hover:bg-blue-900/20'
+          <div className="flex items-center gap-2">
+            {notes.length > 0 && (
+              <button
+                onClick={toggleDeleteMode}
+                className={cn(
+                  'p-1.5 rounded transition-colors',
+                  deleteMode
+                    ? isLight
+                      ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                      : 'bg-red-900/30 text-red-400 hover:bg-red-900/50'
+                    : isLight
+                      ? 'text-gray-600 hover:bg-gray-100'
+                      : 'text-gray-400 hover:bg-gray-800'
+                )}
+                title={deleteMode ? 'Cancel delete mode' : 'Enter delete mode'}
+              >
+                {deleteMode ? (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                )}
+              </button>
             )}
-            title="Create new note">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            NEW NOTE
-          </button>
+            <button
+              onClick={handleCreate}
+              className={cn(
+                'flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium rounded transition-colors border',
+                isLight
+                  ? 'text-blue-600 hover:bg-blue-50 border-blue-200'
+                  : 'text-blue-300 hover:bg-blue-900/20 border-blue-800'
+              )}
+              title="Create new note">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              NEW NOTE
+            </button>
+          </div>
         </div>
         {notes.length === 0 ? (
           <div className={cn('px-4 py-8 text-center text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
@@ -290,13 +397,53 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
           </div>
         ) : (
           <div className="max-h-[600px] w-full overflow-auto">
+            {deleteMode && (
+              <div className={cn('px-3 py-2 border-b flex items-center justify-between', isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#0d1117] border-gray-700')}>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notes.every(note => selectedNotes.has(note.id))}
+                      onChange={toggleSelectAll}
+                      className="w-3.5 h-3.5 rounded border-gray-300"
+                    />
+                    <span className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                      Select All
+                    </span>
+                  </label>
+                  <span className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                    {selectedNotes.size} selected
+                  </span>
+                </div>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={deleting || selectedNotes.size === 0}
+                  className={cn(
+                    'px-3 py-1 text-xs font-medium rounded transition-colors',
+                    deleting || selectedNotes.size === 0
+                      ? 'opacity-50 cursor-not-allowed'
+                      : '',
+                    isLight
+                      ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
+                      : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+                  )}
+                >
+                  {deleting ? 'Deleting...' : 'Delete Selected'}
+                </button>
+              </div>
+            )}
             <table className={cn('min-w-full w-full border-collapse text-xs')}>
               <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
                 <tr className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                  {deleteMode && (
+                    <th className={cn('px-3 py-1.5 w-8', isLight ? 'text-gray-600' : 'text-gray-300')}></th>
+                  )}
                   <th className={cn('px-3 py-1.5 text-left text-xs font-semibold w-8', isLight ? 'text-gray-600' : 'text-gray-300')}></th>
                   <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Title</th>
                   <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Updated</th>
-                  <th className={cn('px-3 py-1.5 text-right text-xs font-semibold w-20', isLight ? 'text-gray-600' : 'text-gray-300')}>Actions</th>
+                  {!deleteMode && (
+                    <th className={cn('px-3 py-1.5 text-right text-xs font-semibold w-20', isLight ? 'text-gray-600' : 'text-gray-300')}>Actions</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -310,6 +457,16 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                           isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40'
                         )}
                       >
+                        {deleteMode && (
+                          <td className="px-3 py-1.5">
+                            <input
+                              type="checkbox"
+                              checked={selectedNotes.has(note.id)}
+                              onChange={() => toggleNoteSelection(note.id)}
+                              className="w-3.5 h-3.5 rounded border-gray-300"
+                            />
+                          </td>
+                        )}
                         <td className="px-3 py-1.5">
                           <button
                             onClick={() => handleToggleExpand(note.id)}
@@ -336,38 +493,40 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                         <td className={cn('px-3 py-1.5 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
                           {formatDate(note.updated_at)}
                         </td>
-                        <td className="px-3 py-1.5 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => handleEdit(note)}
-                              className={cn(
-                                'p-1 rounded transition-colors',
-                                isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400'
-                              )}
-                              title="Edit note"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => handleDelete(note.id, note.title)}
-                              className={cn(
-                                'p-1 rounded transition-colors',
-                                isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400'
-                              )}
-                              title="Delete note"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
-                          </div>
-                        </td>
+                        {!deleteMode && (
+                          <td className="px-3 py-1.5 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => handleEdit(note)}
+                                className={cn(
+                                  'p-1 rounded transition-colors',
+                                  isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400'
+                                )}
+                                title="Edit note"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handleDelete(note.id, note.title)}
+                                className={cn(
+                                  'p-1 rounded transition-colors',
+                                  isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400'
+                                )}
+                                title="Delete note"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                       {isExpanded && (
                         <tr className={cn(isLight ? 'bg-gray-50/50' : 'bg-[#0d1117]')}>
-                          <td colSpan={4} className="px-3 py-4">
+                          <td colSpan={deleteMode ? 5 : 4} className="px-3 py-4">
                             <div className="text-sm">
                               <div className={cn('mb-2 text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-400')}>
                                 Note Content

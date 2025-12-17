@@ -1256,7 +1256,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
-                placeholder="Search pages & tabs..."
+                placeholder="Search indexed pages, tabs, and workspace items..."
               className={cn(
                   'w-full pl-7 pr-2 py-1.5 text-xs rounded-md outline-none transition-colors',
                 isLight
@@ -1546,7 +1546,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                                 <div className={cn(
                                   'w-3.5 h-3.5 rounded border flex items-center justify-center transition-opacity',
                                   isSelected
-                                    ? 'bg-blue-600 border-blue-600 opacity-40'
+                                    ? 'bg-blue-600/60 border-blue-600/60 opacity-100'
                                     : cn(
                                         'opacity-0 group-hover:opacity-100',
                                         isLight ? 'border-gray-400' : 'border-gray-500'
@@ -1833,7 +1833,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                                   <div 
                                     className={cn(
                                       'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
-                                      isSelected ? 'bg-blue-600 border-blue-600 opacity-40' : cn('opacity-0 group-hover:opacity-100', isLight ? 'border-gray-400' : 'border-gray-500')
+                                      isSelected ? 'bg-blue-600/60 border-blue-600/60 opacity-100' : cn('opacity-0 group-hover:opacity-100', isLight ? 'border-gray-400' : 'border-gray-500')
                                     )}
                                   >
                                     {isSelected && (
@@ -1891,7 +1891,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                                   <div 
                                     className={cn(
                                       'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
-                                      isSelected ? 'bg-blue-600 border-blue-600 opacity-40' : cn('opacity-0 group-hover:opacity-100', isLight ? 'border-gray-400' : 'border-gray-500')
+                                      isSelected ? 'bg-blue-600/60 border-blue-600/60 opacity-100' : cn('opacity-0 group-hover:opacity-100', isLight ? 'border-gray-400' : 'border-gray-500')
                                     )}
                                   >
                                     {isSelected && (
@@ -2126,7 +2126,7 @@ const TabItem: React.FC<TabItemProps> = ({
         <div className={cn(
           'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
           isSelected
-            ? 'bg-blue-600 border-blue-600 opacity-40'
+            ? 'bg-blue-600/60 border-blue-600/60 opacity-100'
             : cn(
                 'opacity-0 group-hover:opacity-100',
                 isLight ? 'border-gray-400' : 'border-gray-500'

@@ -223,6 +223,40 @@ router.post('/files/register', requireAuth, express.json(), async (req, res) => 
 });
 
 /**
+ * Update file metadata (rename)
+ * PUT /api/workspace/files/:fileId
+ * Body: { file_name: string }
+ */
+router.put('/files/:fileId', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { fileId } = req.params;
+    const { file_name } = req.body;
+    
+    if (!file_name || !file_name.trim()) {
+      return res.status(400).json({ error: 'file_name is required' });
+    }
+    
+    const pool = getPool();
+    
+    // Update the file name
+    const { rows, rowCount } = await pool.query(
+      'UPDATE workspace_files SET file_name = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3 RETURNING *',
+      [file_name.trim(), fileId, userId]
+    );
+    
+    if (rowCount === 0) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    res.json({ file: rows[0] });
+  } catch (error) {
+    console.error('[Workspace] Error updating file:', error);
+    res.status(500).json({ error: 'Failed to update file' });
+  }
+});
+
+/**
  * Delete file from workspace
  * DELETE /api/workspace/files/:fileId
  */
@@ -277,6 +311,74 @@ router.delete('/files/:fileId', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('[Workspace] Error deleting file:', error);
     res.status(500).json({ error: 'Failed to delete file' });
+  }
+});
+
+/**
+ * Bulk delete files from workspace
+ * DELETE /api/workspace/files/bulk
+ * Body: { fileIds: string[] }
+ */
+router.delete('/files/bulk', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { fileIds } = req.body;
+    
+    if (!Array.isArray(fileIds) || fileIds.length === 0) {
+      return res.status(400).json({ error: 'fileIds must be a non-empty array' });
+    }
+    
+    const pool = getPool();
+    
+    // Get file info for cleanup
+    const { rows: fileRows } = await pool.query(
+      'SELECT id, storage_url FROM workspace_files WHERE id = ANY($1) AND user_id = $2',
+      [fileIds, userId]
+    );
+    
+    if (fileRows.length === 0) {
+      return res.status(404).json({ error: 'No files found' });
+    }
+    
+    // Delete from database
+    const { rowCount } = await pool.query(
+      'DELETE FROM workspace_files WHERE id = ANY($1) AND user_id = $2',
+      [fileIds, userId]
+    );
+    
+    // Delete from Firebase Storage using REST API (best effort)
+    const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET;
+    if (FIREBASE_STORAGE_BUCKET) {
+      for (const file of fileRows) {
+        try {
+          const storageUrl = file.storage_url;
+          const pathMatch = storageUrl.match(/\/o\/([^?]+)/);
+          if (pathMatch) {
+            const encodedPath = pathMatch[1];
+            const deleteUrl = `https://firebasestorage.googleapis.com/v0/b/${FIREBASE_STORAGE_BUCKET}/o/${encodedPath}`;
+            
+            const deleteResponse = await fetch(deleteUrl, {
+              method: 'DELETE',
+            });
+            
+            if (!deleteResponse.ok) {
+              console.warn(`[Workspace] Failed to delete file ${file.id} from Firebase Storage:`, deleteResponse.statusText);
+            }
+          }
+        } catch (storageError) {
+          console.warn(`[Workspace] Error deleting file ${file.id} from Firebase Storage:`, storageError);
+          // Continue even if Firebase deletion fails
+        }
+      }
+    }
+    
+    res.json({ 
+      message: `Successfully deleted ${rowCount} file(s)`,
+      deletedCount: rowCount
+    });
+  } catch (error) {
+    console.error('[Workspace] Error bulk deleting files:', error);
+    res.status(500).json({ error: 'Failed to bulk delete files: ' + error.message });
   }
 });
 
@@ -439,6 +541,42 @@ router.delete('/notes/:noteId', requireAuth, async (req, res) => {
 });
 
 /**
+ * Bulk delete notes from workspace
+ * DELETE /api/workspace/notes/bulk
+ * Body: { noteIds: string[] }
+ */
+router.delete('/notes/bulk', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { noteIds } = req.body;
+    
+    if (!Array.isArray(noteIds) || noteIds.length === 0) {
+      return res.status(400).json({ error: 'noteIds must be a non-empty array' });
+    }
+    
+    const pool = getPool();
+    
+    // Delete from database
+    const { rowCount } = await pool.query(
+      'DELETE FROM workspace_notes WHERE id = ANY($1) AND user_id = $2',
+      [noteIds, userId]
+    );
+    
+    if (rowCount === 0) {
+      return res.status(404).json({ error: 'No notes found' });
+    }
+    
+    res.json({ 
+      message: `Successfully deleted ${rowCount} note(s)`,
+      deletedCount: rowCount
+    });
+  } catch (error) {
+    console.error('[Workspace] Error bulk deleting notes:', error);
+    res.status(500).json({ error: 'Failed to bulk delete notes: ' + error.message });
+  }
+});
+
+/**
  * Fetch multiple notes with full content (bulk)
  * POST /api/workspace/notes/bulk
  * Body: { ids: string[] }
@@ -551,6 +689,7 @@ router.get('/summary', requireAuth, async (req, res) => {
         (SELECT COUNT(*) FROM workspace_files WHERE user_id = $1) as file_count,
         (SELECT COUNT(*) FROM workspace_notes WHERE user_id = $1) as note_count,
         (SELECT COUNT(*) FROM workspace_connections WHERE user_id = $1 AND status = 'active') as connection_count,
+        (SELECT COUNT(*) FROM workspace_credentials WHERE user_id = $1) as credential_count,
         (SELECT COALESCE(SUM(file_size), 0) FROM workspace_files WHERE user_id = $1) as total_size
     `, [userId]);
     

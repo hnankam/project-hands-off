@@ -1215,6 +1215,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         agentModeChat,
         themeColor,
         triggerManualRefreshWithEmbeddingWait,
+        selectedNotes,
+        selectedCredentials,
       ],
     );
 

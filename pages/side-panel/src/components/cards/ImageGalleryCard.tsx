@@ -503,7 +503,8 @@ const ImageGalleryCardComponent: FC<ImageGalleryCardProps> = ({ status, imageUrl
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `generated-image-${currentIndex + 1}.png`;
+                    const timestamp = Date.now();
+                    a.download = `generated-image-${timestamp}-${currentIndex + 1}.png`;
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);

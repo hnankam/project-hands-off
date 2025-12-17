@@ -11,10 +11,12 @@ export interface MentionSuggestion {
   id: string;
   label: string;
   avatar?: string;
-  type?: 'user' | 'agent' | 'file' | 'variable' | 'page' | 'plan' | 'graph';
+  type?: 'user' | 'agent' | 'file' | 'variable' | 'page' | 'plan' | 'graph' | 'note' | 'credential';
   pageURL?: string; // For page mentions
   planId?: string; // For plan mentions
   graphId?: string; // For graph mentions
+  noteId?: string; // For note mentions
+  credentialId?: string; // For credential mentions
 }
 
 interface MentionListProps {
@@ -26,6 +28,8 @@ interface MentionListProps {
     plans?: Record<string, any>;
     graphs?: Record<string, any>;
   };
+  selectedNotes?: any[]; // Selected workspace notes
+  selectedCredentials?: any[]; // Selected workspace credentials
 }
 
 interface MentionListRef {
@@ -107,10 +111,36 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
     }));
   }, [props.agentState?.graphs]);
 
-  // Combine all suggestions: pages, plans, and graphs
+  // Convert notes to mention suggestions
+  const noteSuggestions: MentionSuggestion[] = useMemo(() => {
+    console.log('[MentionList] Computing noteSuggestions from:', props.selectedNotes);
+    if (!props.selectedNotes || props.selectedNotes.length === 0) return [];
+    
+    return props.selectedNotes.map(note => ({
+      id: `note-${note.id}`,
+      label: note.title,
+      type: 'note' as const,
+      noteId: note.id,
+    }));
+  }, [props.selectedNotes]);
+
+  // Convert credentials to mention suggestions
+  const credentialSuggestions: MentionSuggestion[] = useMemo(() => {
+    console.log('[MentionList] Computing credentialSuggestions from:', props.selectedCredentials);
+    if (!props.selectedCredentials || props.selectedCredentials.length === 0) return [];
+    
+    return props.selectedCredentials.map(cred => ({
+      id: `credential-${cred.id}`,
+      label: cred.name,
+      type: 'credential' as const,
+      credentialId: cred.id,
+    }));
+  }, [props.selectedCredentials]);
+
+  // Combine all suggestions: pages, plans, graphs, notes, and credentials
   const allSuggestions = useMemo(() => {
-    return [...pageSuggestions, ...planSuggestions, ...graphSuggestions];
-  }, [pageSuggestions, planSuggestions, graphSuggestions]);
+    return [...pageSuggestions, ...planSuggestions, ...graphSuggestions, ...noteSuggestions, ...credentialSuggestions];
+  }, [pageSuggestions, planSuggestions, graphSuggestions, noteSuggestions, credentialSuggestions]);
 
   // Filter suggestions based on search query
   const filteredSuggestions = useMemo(() => {
@@ -233,6 +263,19 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
             <path d="M12 4v16" />
           </svg>
         );
+      case 'note':
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        );
+      case 'credential':
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0110 0v4" />
+          </svg>
+        );
       default: // user
         return (
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -297,7 +340,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
                 enterHandler();
               }
             }}
-            placeholder="Search pages, plans, graphs..."
+            placeholder="Search pages, plans, notes, credentials..."
             className={cn(
               'w-full pl-8 pr-3 py-1.5 text-xs rounded-md outline-none transition-colors',
               isLight
@@ -351,6 +394,16 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
                     Status: {props.agentState.graphs[item.graphId].status || 'unknown'}
                   </span>
                 )}
+                {item.type === 'note' && item.noteId && props.selectedNotes && (
+                  <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    {props.selectedNotes.find(n => n.id === item.noteId)?.folder || 'Workspace note'}
+                  </span>
+                )}
+                {item.type === 'credential' && item.credentialId && props.selectedCredentials && (
+                  <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    {props.selectedCredentials.find(c => c.id === item.credentialId)?.type || 'Credential'}
+                  </span>
+                )}
               </div>
             </button>
           ))
@@ -375,7 +428,9 @@ MentionList.displayName = 'MentionList';
 export const createMentionSuggestion = (
   suggestions: MentionSuggestion[],
   selectedPageURLsRef?: React.MutableRefObject<string[]>,
-  agentStateRef?: React.MutableRefObject<{ plans?: Record<string, any>; graphs?: Record<string, any> } | undefined>
+  agentStateRef?: React.MutableRefObject<{ plans?: Record<string, any>; graphs?: Record<string, any> } | undefined>,
+  selectedNotesRef?: React.MutableRefObject<any[]>,
+  selectedCredentialsRef?: React.MutableRefObject<any[]>
 ): Omit<SuggestionOptions, 'editor'> => {
   return {
     char: '@',
@@ -391,12 +446,20 @@ export const createMentionSuggestion = (
 
       return {
         onStart: (props: SuggestionProps) => {
+          console.log('[MentionExtension] onStart - refs:', {
+            selectedNotes: selectedNotesRef?.current,
+            selectedCredentials: selectedCredentialsRef?.current,
+            selectedPageURLs: selectedPageURLsRef?.current,
+          });
+          
           component = new ReactRenderer(MentionList, {
             props: {
               ...props,
               query: props.query || '',
               selectedPageURLs: selectedPageURLsRef?.current,
               agentState: agentStateRef?.current,
+              selectedNotes: selectedNotesRef?.current,
+              selectedCredentials: selectedCredentialsRef?.current,
             },
             editor: props.editor,
           });
@@ -423,6 +486,8 @@ export const createMentionSuggestion = (
             query: props.query || '',
             selectedPageURLs: selectedPageURLsRef?.current,
             agentState: agentStateRef?.current,
+            selectedNotes: selectedNotesRef?.current,
+            selectedCredentials: selectedCredentialsRef?.current,
           });
 
           if (!props.clientRect) {

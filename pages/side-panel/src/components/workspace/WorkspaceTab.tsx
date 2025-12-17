@@ -29,6 +29,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({ isLight }) => {
     file_count: 0,
     note_count: 0,
     connection_count: 0,
+    credential_count: 0,
     total_size: 0,
   });
   const [loading, setLoading] = useState(true);
@@ -56,6 +57,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({ isLight }) => {
           file_count: parseInt(data.stats?.file_count || 0, 10),
           note_count: parseInt(data.stats?.note_count || 0, 10),
           connection_count: parseInt(data.stats?.connection_count || 0, 10),
+          credential_count: parseInt(data.stats?.credential_count || 0, 10),
           total_size: parseInt(data.stats?.total_size || 0, 10),
         });
       }
@@ -175,24 +177,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({ isLight }) => {
             )}>
             <div className="flex items-center justify-between mb-2">
               <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                Connections
-              </div>
-              {renderIcon('connection')}
-            </div>
-            <div className={cn('text-2xl font-semibold', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
-              {stats.connection_count}
-            </div>
-            <div className={cn('mt-1 text-xs leading-snug', isLight ? 'text-gray-600' : 'text-gray-400')}>
-              Active connections
-            </div>
-          </div>
-          <div
-            className={cn(
-              'rounded-lg border p-3 transition-colors',
-              isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
-            )}>
-            <div className="flex items-center justify-between mb-2">
-              <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
                 Storage
               </div>
               {renderIcon('storage')}
@@ -202,6 +186,24 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({ isLight }) => {
             </div>
             <div className={cn('mt-1 text-xs leading-snug', isLight ? 'text-gray-600' : 'text-gray-400')}>
               Total size used
+            </div>
+          </div>
+          <div
+            className={cn(
+              'rounded-lg border p-3 transition-colors',
+              isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
+            )}>
+            <div className="flex items-center justify-between mb-2">
+              <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                Connections + Credentials
+              </div>
+              {renderIcon('connection')}
+            </div>
+            <div className={cn('text-2xl font-semibold', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
+              {stats.connection_count + stats.credential_count}
+            </div>
+            <div className={cn('mt-1 text-xs leading-snug', isLight ? 'text-gray-600' : 'text-gray-400')}>
+              {stats.connection_count} services • {stats.credential_count} credentials
             </div>
           </div>
         </div>

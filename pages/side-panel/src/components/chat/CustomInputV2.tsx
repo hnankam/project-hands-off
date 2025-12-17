@@ -25,7 +25,7 @@ import { themeStorage } from '@extension/storage';
 import { ContextSelector } from '../selectors/ContextSelector';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
 import { useAuth } from '../../context/AuthContext';
-import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator } from '@extension/ui';
+import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator, cn } from '@extension/ui';
 import { COPIOLITKIT_CONFIG } from '../../constants';
 import { ensureFirebase, ensureFirebaseAuth } from '../../utils/firebaseStorage';
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
@@ -94,7 +94,7 @@ const CustomIcons = {
       <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
     </svg>
   ),
-  recentFile: (
+  workspaceFiles: (
     <svg
       width="16"
       height="16"
@@ -104,37 +104,8 @@ const CustomIcons = {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round">
-      <path d="M3 3v5h5" />
-      <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
-      <path d="M12 7v5l4 2" />
-    </svg>
-  ),
-  plan: (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round">
-      <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
-      <path d="M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-      <path d="M9 14l2 2 4-4" />
-    </svg>
-  ),
-  workflow: (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round">
-      <polygon points="5 3 19 12 5 21 5 3" />
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      <path d="M2 11h20" />
     </svg>
   ),
 };
@@ -174,13 +145,14 @@ function CustomTiptapTextAreaSlot(props: React.TextareaHTMLAttributes<HTMLTextAr
  */
 type AttachmentItem = {
   id: string;
-  file: File;
+  file: File | null; // null for workspace files that are already uploaded
   name: string;
   size: number;
   previewUrl: string; // object URL for quick preview
   status: 'pending' | 'uploading' | 'uploaded' | 'error';
   progress: number; // 0..100
   uploadedUrl?: string; // Firebase download URL
+  mimeType?: string; // MIME type for workspace files
   error?: string;
 };
 
@@ -238,10 +210,63 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const attachmentsRef = useRef<AttachmentItem[]>([]);
   
+  // Workspace files selector state
+  const [showWorkspaceFilesModal, setShowWorkspaceFilesModal] = useState(false);
+  const [workspaceFiles, setWorkspaceFiles] = useState<any[]>([]);
+  const [selectedWorkspaceFileIds, setSelectedWorkspaceFileIds] = useState<Set<string>>(new Set());
+  const [loadingWorkspaceFiles, setLoadingWorkspaceFiles] = useState(false);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  
+  // Workspace connections state
+  const [workspaceConnections, setWorkspaceConnections] = useState<any[]>([]);
+  
   // Keep ref in sync with state
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
+  
+  // Load workspace connections
+  useEffect(() => {
+    const loadConnections = async () => {
+      try {
+        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${baseURL}/api/workspace/connections`, {
+          credentials: 'include',
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setWorkspaceConnections(data.connections.filter((conn: any) => conn.status === 'active'));
+        }
+      } catch (error) {
+        console.error('[Workspace Connections] Failed to load:', error);
+      }
+    };
+    loadConnections();
+  }, []);
+  
+  // Close dropdown when modal opens
+  useEffect(() => {
+    if (showWorkspaceFilesModal) {
+      // Close dropdown by dispatching a mousedown event outside the dropdown area
+      const event = new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      });
+      document.body.dispatchEvent(event);
+    }
+  }, [showWorkspaceFilesModal]);
+
+  // Debug workspace files state changes (development only)
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[Workspace Files] State changed:', {
+        count: workspaceFiles.length,
+        loading: loadingWorkspaceFiles,
+        modalOpen: showWorkspaceFilesModal
+      });
+    }
+  }, [workspaceFiles, loadingWorkspaceFiles, showWorkspaceFilesModal]);
   
   // V1-style colors - matching user message backgrounds
   const borderColor = isLight ? '#e5e7eb' : '#374151'; // gray-200 / gray-700
@@ -250,14 +275,151 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   // Constants
   const MAX_UPLOAD_BYTES = 30 * 1024 * 1024; // 30MB
   
-  // File size formatter
+  // File size formatter (matching FilesPanel)
   const formatSize = (bytes: number): string => {
-    const kb = bytes / 1024;
-    if (kb >= 1024) {
-      const mb = kb / 1024;
-      return `${mb >= 10 ? Math.round(mb) : Math.round(mb * 10) / 10} MB`;
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+  };
+
+  // Get file icon (matching FilesPanel)
+  const getFileIcon = (fileName: string) => {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    const iconClass = cn('w-4 h-4', isLight ? 'text-gray-400' : 'text-gray-500');
+    
+    // Document icons
+    if (['pdf'].includes(ext || '')) {
+      return <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>;
     }
-    return `${Math.max(1, Math.round(kb))} KB`;
+    if (['doc', 'docx', 'txt', 'md'].includes(ext || '')) {
+      return <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>;
+    }
+    // Image icons
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext || '')) {
+      return <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>;
+    }
+    // Spreadsheet icons
+    if (['xls', 'xlsx', 'csv'].includes(ext || '')) {
+      return <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>;
+    }
+    // Default file icon
+    return <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>;
+  };
+
+  // Get file type category (matching FilesPanel)
+  const getFileTypeCategory = (fileName: string): string => {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext || '')) {
+      return 'Image';
+    }
+    if (['pdf', 'doc', 'docx', 'txt', 'md', 'rtf', 'odt'].includes(ext || '')) {
+      return 'Document';
+    }
+    if (['xls', 'xlsx', 'csv', 'ods'].includes(ext || '')) {
+      return 'Spreadsheet';
+    }
+    if (['ppt', 'pptx', 'odp'].includes(ext || '')) {
+      return 'Presentation';
+    }
+    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext || '')) {
+      return 'Archive';
+    }
+    if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext || '')) {
+      return 'Video';
+    }
+    if (['mp3', 'wav', 'ogg', 'flac', 'm4a'].includes(ext || '')) {
+      return 'Audio';
+    }
+    if (['json', 'xml', 'yaml', 'yml', 'toml'].includes(ext || '')) {
+      return 'Data';
+    }
+    if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'c', 'cs', 'go', 'rs', 'rb', 'php', 'html', 'css', 'scss'].includes(ext || '')) {
+      return 'Code';
+    }
+    return 'File';
+  };
+
+  // Format date (matching FilesPanel)
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+  
+  // Render service logo for connections (matching ConnectionsPanel)
+  const renderServiceLogo = (service: string, size = 'w-4 h-4') => {
+    switch (service) {
+      case 'gmail':
+        return (
+          <svg className={size} viewBox="0 0 24 24" fill="none">
+            <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L12 9.545l8.073-6.052C21.69 2.28 24 3.434 24 5.457z" fill="#EA4335"/>
+          </svg>
+        );
+      case 'outlook':
+        return (
+          <svg className={size} viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="4" width="9" height="9" rx="1" fill="#0078D4"/>
+            <path d="M7.5 6C6.1 6 5 7.1 5 8.5C5 9.9 6.1 11 7.5 11C8.9 11 10 9.9 10 8.5C10 7.1 8.9 6 7.5 6ZM7.5 9.5C7 9.5 6.5 9 6.5 8.5C6.5 8 7 7.5 7.5 7.5C8 7.5 8.5 8 8.5 8.5C8.5 9 8 9.5 7.5 9.5Z" fill="white"/>
+            <path d="M13 6V11L21 15V10L13 6Z" fill="#0078D4"/>
+          </svg>
+        );
+      case 'slack':
+        return (
+          <svg className={size} viewBox="0 0 24 24" fill="none">
+            <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52z" fill="#E01E5A"/>
+            <path d="M8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834z" fill="#36C5F0"/>
+            <path d="M18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834z" fill="#2EB67D"/>
+            <path d="M15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52z" fill="#ECB22E"/>
+          </svg>
+        );
+      case 'google-drive':
+        return (
+          <svg className={size} viewBox="0 0 24 24" fill="none">
+            <path d="M8 3L12 9.5L16 3H8Z" fill="#0066DA"/>
+            <path d="M16 3L20 9.5L16 16L12 9.5L16 3Z" fill="#FFC107"/>
+            <path d="M8 3L4 9.5L8 16L12 9.5L8 3Z" fill="#0F9D58"/>
+            <path d="M12 16L8 16L12 21L16 16L12 16Z" fill="#4285F4"/>
+          </svg>
+        );
+      case 'onedrive':
+        return (
+          <svg className={size} viewBox="0 0 24 24" fill="none">
+            <path d="M5.9 19.5C2.6 19.5 0 16.9 0 13.75C0 10.65 2.5 8.1 5.65 8C7.0 5.9 9.3 4.5 12 4.5C15.5 4.5 18.4 6.8 19.2 10C22.0 10 24 12.1 24 14.75C24 17.3 21.8 19.5 19.4 19.5H5.9Z" fill="#0364B8"/>
+          </svg>
+        );
+      case 'dropbox':
+        return (
+          <svg className={size} viewBox="0 0 24 24" fill="none">
+            <path d="M6 2L12 6L18 2L12 6L6 2Z" fill="#0061FF"/>
+            <path d="M12 6L6 10L12 14L18 10L12 6Z" fill="#0061FF"/>
+          </svg>
+        );
+      default:
+        return (
+          <svg className={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="2" y1="12" x2="22" y2="12" />
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          </svg>
+        );
+    }
+  };
+  
+  // Get connection display name
+  const getConnectionDisplayName = (service: string) => {
+    const names: Record<string, string> = {
+      'gmail': 'Gmail',
+      'outlook': 'Outlook',
+      'slack': 'Slack',
+      'google-drive': 'Google Drive',
+      'onedrive': 'OneDrive',
+      'dropbox': 'Dropbox',
+    };
+    return names[service] || service.charAt(0).toUpperCase() + service.slice(1);
   };
 
   // Get 3-letter file extension
@@ -319,7 +481,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       const storageRef = fbRef(storage as any, path);
       
       return await new Promise<AttachmentItem>((resolve, reject) => {
-        const task = uploadBytesResumable(storageRef as any, item.file);
+        const task = uploadBytesResumable(storageRef as any, item.file!);
         setAttachments(prev => prev.map(a => a.id === item.id ? { ...a, status: 'uploading', progress: 0 } : a));
         
         task.on('state_changed', 
@@ -357,17 +519,17 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
               try {
                 const payload: any = {
                   file_name: item.name,
-                  file_type: item.file.type,
-                  file_size: item.file.size,
+                  file_type: item.file!.type,
+                  file_size: item.file!.size,
                   storage_url: url,
                   folder: 'chat-uploads',
                   description: 'Uploaded via chat',
                 };
                 
                 // If file is text, extract content
-                if (item.file.type.startsWith('text/')) {
+                if (item.file!.type.startsWith('text/')) {
                   try {
-                    const text = await item.file.text();
+                    const text = await item.file!.text();
                     payload.extracted_text = text;
                   } catch (textError) {
                     console.warn('[FileUpload] Failed to extract text:', textError);
@@ -452,6 +614,114 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       const found = prev.find(a => a.id === id);
       if (found) URL.revokeObjectURL(found.previewUrl);
       return prev.filter(a => a.id !== id);
+    });
+  };
+  
+  // Fetch workspace files
+  const fetchWorkspaceFiles = async () => {
+    setLoadingWorkspaceFiles(true);
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseURL}/api/workspace/files`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setWorkspaceFiles(data.files || []);
+      } else {
+        console.error('[Workspace Files] Failed to load. Status:', response.status);
+        setWorkspaceFiles([]);
+      }
+    } catch (error) {
+      console.error('[Workspace Files] Error loading files:', error);
+      setWorkspaceFiles([]);
+    } finally {
+      setLoadingWorkspaceFiles(false);
+    }
+  };
+  
+  // Group files by folder/source
+  const groupFilesByFolder = () => {
+    const grouped: Record<string, any[]> = {};
+    workspaceFiles.forEach(file => {
+      const folder = file.folder || 'other';
+      if (!grouped[folder]) {
+        grouped[folder] = [];
+      }
+      grouped[folder].push(file);
+    });
+    return grouped;
+  };
+
+  const getFolderLabel = (folder: string): string => {
+    const labels: Record<string, string> = {
+      'chat-uploads': 'Chat Attachments',
+      'uploads': 'Uploads',
+      'screenshots': 'Screenshots',
+      'generated': 'AI Generated',
+      'other': 'Other Files',
+    };
+    return labels[folder] || folder.charAt(0).toUpperCase() + folder.slice(1);
+  };
+
+  const toggleFolder = (folder: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(folder)) {
+        next.delete(folder);
+      } else {
+        next.add(folder);
+      }
+      return next;
+    });
+  };
+
+  // Open workspace files modal
+  const openWorkspaceFilesModal = () => {
+    setShowWorkspaceFilesModal(true);
+    fetchWorkspaceFiles();
+    // Expand all folders by default
+    setExpandedFolders(new Set(['chat-uploads', 'uploads', 'screenshots', 'generated', 'other']));
+  };
+  
+  // Add workspace files as attachments
+  const addWorkspaceFilesAsAttachments = () => {
+    const filesToAdd = workspaceFiles.filter((f, idx) => {
+      const fileId = f?.id || `file-${idx}`;
+      return selectedWorkspaceFileIds.has(fileId);
+    });
+    
+    const newAttachments: AttachmentItem[] = filesToAdd.map((file, idx) => {
+      const fileId = file?.id || `file-${idx}`;
+      return {
+        id: `workspace-${fileId}`,
+        file: null as any, // Not a File object, already uploaded
+        name: file.file_name,
+        size: file.file_size,
+        previewUrl: file.storage_url, // Use storage URL directly
+        status: 'uploaded' as const, // Already uploaded to Firebase
+        progress: 100,
+        uploadedUrl: file.storage_url, // Already have the URL
+        mimeType: file.file_type,
+      };
+    });
+    
+    setAttachments(prev => [...prev, ...newAttachments]);
+    setShowWorkspaceFilesModal(false);
+    setSelectedWorkspaceFileIds(new Set());
+  };
+  
+  // Toggle workspace file selection
+  const toggleWorkspaceFileSelection = (fileId: string) => {
+    setSelectedWorkspaceFileIds(prev => {
+      const next = new Set(prev);
+      if (next.has(fileId)) {
+        next.delete(fileId);
+      } else {
+        next.add(fileId);
+      }
+      return next;
     });
   };
   
@@ -551,7 +821,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         // Use BinaryInputContent format for all files (images, docs, etc.)
         contentParts.push({
           type: 'binary',
-          mimeType: att.file.type || 'application/octet-stream',
+          mimeType: att.mimeType || att.file?.type || 'application/octet-stream',
           url: url,
           filename: att.name,
         });
@@ -561,7 +831,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       contentParts: contentParts.length,
       hasText: contentParts.some(p => p.type === 'text'),
       hasBinary: contentParts.some(p => p.type === 'binary'),
-      files: updatedAttachments.map(a => ({ name: a.name, type: a.file.type })),
+      files: updatedAttachments.map(a => ({ name: a.name, type: a.mimeType || a.file?.type })),
     });
     
     // Create user message with multimodal content
@@ -600,6 +870,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   }, [sessionId, uploadAttachment, sendMessage, props.onChange, setAttachments]);
 
   return (
+    <>
     <CopilotChatInput
       {...props}
       textArea={CustomTiptapTextAreaSlot as any}
@@ -743,7 +1014,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                 >
                   {attachments.map(att => {
                     const isError = att.status === 'error';
-                    const isImage = att.file.type.startsWith('image/');
+                    const isImage = att.file?.type.startsWith('image/') || att.mimeType?.startsWith('image/');
                     
                     return (
                       <div
@@ -785,7 +1056,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                                 letterSpacing: '0.5px',
                               }}
                             >
-                              {getFileType(att.name, att.file.type)}
+                              {getFileType(att.name, att.mimeType || att.file?.type || '')}
                             </div>
                           )}
                           {/* Status overlay */}
@@ -872,7 +1143,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                               whiteSpace: 'nowrap',
                             }}
                           >
-                            {getFileType(att.name, att.file.type)} - {formatSize(att.size)}
+                            {getFileType(att.name, att.mimeType || att.file?.type || '')} - {formatSize(att.size)}
                           </div>
                         </div>
                         
@@ -964,33 +1235,39 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                         </div>
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        disabled={true}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openWorkspaceFilesModal();
+                        }}
                         isLight={isLight}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {CustomIcons.recentFile}
-                          <span>Recent Files</span>
+                          {CustomIcons.workspaceFiles}
+                          <span>Workspace Files</span>
                         </div>
                       </DropdownMenuItem>
-                      <DropdownMenuSeparator isLight={isLight} />
-                      <DropdownMenuItem
-                        disabled={true}
-                        isLight={isLight}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {CustomIcons.plan}
-                          <span>Plan</span>
-                        </div>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={true}
-                        isLight={isLight}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {CustomIcons.workflow}
-                          <span>Workflow</span>
-                        </div>
-                      </DropdownMenuItem>
+                      
+                      {/* Active Connections */}
+                      {workspaceConnections.length > 0 && (
+                        <>
+                          <DropdownMenuSeparator isLight={isLight} />
+                          {workspaceConnections.map((connection) => (
+                            <DropdownMenuItem
+                              key={connection.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                // TODO: Add connection action
+                              }}
+                              isLight={isLight}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {renderServiceLogo(connection.service_name)}
+                                <span>{getConnectionDisplayName(connection.service_name)}</span>
+                              </div>
+                            </DropdownMenuItem>
+                          ))}
+                        </>
+                      )}
                     </DropdownMenu>
                     
                     <ContextSelector
@@ -1024,6 +1301,226 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         );
       }}
     </CopilotChatInput>
+    
+    {/* Workspace Files Modal */}
+    {showWorkspaceFilesModal && (
+      <>
+        {/* Backdrop */}
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+          style={{ zIndex: 10000 }}
+          onClick={() => setShowWorkspaceFilesModal(false)}
+        />
+        
+        {/* Modal */}
+        <div
+          className="fixed inset-0 flex items-center justify-center p-4"
+          style={{ zIndex: 10001 }}
+        >
+          <div
+            className={cn(
+              'w-full max-w-4xl rounded-lg shadow-xl',
+              isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]'
+            )}
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 'min(56rem, 90vw)' }}
+          >
+            {/* Header */}
+            <div className={cn('flex items-center justify-between border-b px-3 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
+              <h2 className={cn('text-base font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                Select Workspace Files
+              </h2>
+              <button
+                onClick={() => setShowWorkspaceFilesModal(false)}
+                className={cn(
+                  'rounded-md p-0.5 transition-colors',
+                  isLight ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700' : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                )}
+              >
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            
+            {/* Content */}
+            <div className="px-3 py-2">
+              <div 
+                className="overflow-y-auto" 
+                style={{ 
+                  maxHeight: '400px'
+                }}
+              >
+                {loadingWorkspaceFiles ? (
+                  <div className={cn('py-6 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    Loading files...
+                  </div>
+                ) : !workspaceFiles || workspaceFiles.length === 0 ? (
+                  <div className={cn('py-6 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    No files in workspace. Upload files to see them here.
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {Object.entries(groupFilesByFolder()).map(([folder, folderFiles]) => {
+                      if (folderFiles.length === 0) return null;
+                      
+                      const isExpanded = expandedFolders.has(folder);
+                      
+                      return (
+                        <div key={folder}>
+                          {/* Accordion Header */}
+                          <div
+                            className={cn(
+                              'flex items-center justify-between px-2 py-1 text-xs font-medium border-b',
+                              isLight ? 'border-gray-200' : 'border-gray-700'
+                            )}
+                          >
+                            <button
+                              onClick={() => toggleFolder(folder)}
+                              className={cn(
+                                'flex items-center gap-2 transition-colors flex-1 text-left',
+                                isLight ? 'hover:text-gray-900' : 'hover:text-white'
+                              )}
+                              style={{ color: isLight ? '#374151' : '#bcc1c7' }}
+                            >
+                              <svg
+                                className={cn(
+                                  'w-3.5 h-3.5 transition-transform duration-200 ease-in-out flex-shrink-0',
+                                  isLight ? 'text-gray-400' : 'text-gray-500',
+                                  isExpanded && 'rotate-90'
+                                )}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                              <span className="whitespace-nowrap">{getFolderLabel(folder)}</span>
+                              <span
+                                className={cn(
+                                  'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0',
+                                  isLight ? 'bg-gray-100 text-gray-600' : 'bg-gray-800 text-gray-400'
+                                )}
+                              >
+                                {folderFiles.length}
+                              </span>
+                            </button>
+                          </div>
+
+                          {/* Accordion Content */}
+                          <div 
+                            className={cn(
+                              'overflow-hidden transition-all duration-200 ease-in-out',
+                              isExpanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+                            )}
+                          >
+                            <div className="w-full overflow-x-auto">
+                              <table className="w-full border-collapse text-xs" style={{ minWidth: '100%' }}>
+                                <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
+                                  <tr className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                                    <th className={cn('px-3 py-1.5 w-8', isLight ? 'text-gray-600' : 'text-gray-300')}></th>
+                                    <th className={cn('px-3 py-1.5 text-left text-xs font-semibold whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-300')}>File Name</th>
+                                    <th className={cn('px-3 py-1.5 text-left text-xs font-semibold whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-300')}>Type</th>
+                                    <th className={cn('px-3 py-1.5 text-right text-xs font-semibold whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-300')}>Size</th>
+                                    <th className={cn('px-3 py-1.5 text-left text-xs font-semibold whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-300')}>Created</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {folderFiles.map((file, index) => {
+                                    if (!file) return null;
+                                    
+                                    const fileId = file.id || `file-${index}`;
+                                    const isSelected = selectedWorkspaceFileIds.has(fileId);
+                                    
+                                    return (
+                                      <tr
+                                        key={fileId}
+                                        onClick={() => toggleWorkspaceFileSelection(fileId)}
+                                        className={cn(
+                                          'transition-colors border-b group cursor-pointer',
+                                          isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
+                                          isSelected && (isLight ? 'bg-blue-50' : 'bg-blue-900/20')
+                                        )}
+                                      >
+                                        <td className="px-3 py-1.5">
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => toggleWorkspaceFileSelection(fileId)}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="w-3.5 h-3.5 rounded border-gray-300"
+                                          />
+                                        </td>
+                                        <td className={cn('px-3 py-1.5')}>
+                                          <div className="flex items-center gap-1 min-w-0">
+                                            <div className="flex-shrink-0">{getFileIcon(file.file_name)}</div>
+                                            <span className={cn('font-medium truncate', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')} title={file.file_name}>
+                                              {file.file_name || 'Unnamed file'}
+                                            </span>
+                                          </div>
+                                        </td>
+                                        <td className={cn('px-3 py-1.5 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                          <span className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                            {getFileTypeCategory(file.file_name)}
+                                          </span>
+                                        </td>
+                                        <td className={cn('px-3 py-1.5 text-right whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                          {file.file_size ? formatSize(file.file_size) : 'Unknown'}
+                                        </td>
+                                        <td className={cn('px-3 py-1.5 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                          {file.created_at ? formatDate(file.created_at) : 'Unknown'}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className={cn('flex items-center justify-between border-t px-3 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
+              <span className="text-xs" style={{ color: isLight ? '#6b7280' : '#9ca3af' }}>
+                {selectedWorkspaceFileIds.size} file(s) selected
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowWorkspaceFilesModal(false)}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                    isLight ? 'bg-gray-200 hover:bg-gray-300' : 'bg-gray-700 hover:bg-gray-600'
+                  )}
+                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={addWorkspaceFilesAsAttachments}
+                  disabled={selectedWorkspaceFileIds.size === 0}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                    selectedWorkspaceFileIds.size === 0
+                      ? 'opacity-50 cursor-not-allowed bg-gray-400 text-gray-600'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  )}
+                >
+                  Add {selectedWorkspaceFileIds.size > 0 && `(${selectedWorkspaceFileIds.size})`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    )}
+    </>
   );
 }
 
