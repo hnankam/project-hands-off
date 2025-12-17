@@ -7,6 +7,8 @@ import { ChatInner } from './ChatInner';
 import { SelectorsBar } from '../selectors/SelectorsBar';
 import { SettingsModal } from '../modals/SettingsModal';
 import { UsagePopup } from '../menus/UsagePopup';
+import { PlansPanel } from '../panels/PlansPanel';
+import { GraphsPanel } from '../panels/GraphsPanel';
 import type { AgentStepState } from '../cards';
 import { useContentManager, type ContentState } from '../layout/ContentManager';
 import { useTabManager } from '../layout/TabManager';
@@ -23,14 +25,42 @@ import { useEnabledFrontendTools } from '../../hooks/useEnabledFrontendTools';
 import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG, ABLY_CONFIG } from '../../constants';
 import { ts } from '../../utils/logging';
 import { useAuth } from '../../context/AuthContext';
-import { CopilotKitProvider, useCopilotChat } from '../../hooks/copilotkit';
+import { CopilotKitProvider, useCopilotChat, useCopilotAgent } from '../../hooks/copilotkit';
 import { createAllToolRenderers } from '../../actions/copilot/builtinToolActions';
 import { createActivityMessageRenderers } from '../../actions/copilot/activityRenderers';
+import type { UnifiedAgentState } from '../graph-state/types';
 
 // Helper for text clipping (used by backend tool renderers)
 const clipText = (text: string, maxLength: number): string => {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength - 3) + '...';
+};
+
+/**
+ * Helper component that syncs agent state (plans/graphs) to a ref.
+ * Must be rendered inside CopilotKitProvider.
+ */
+const AgentStateSync: FC<{
+  sessionId: string;
+  agentStateRef: React.MutableRefObject<{ plans?: Record<string, any>; graphs?: Record<string, any> }>;
+}> = ({ sessionId, agentStateRef }) => {
+  // Read live state from CopilotKit agent
+  const { state: liveAgentState } = useCopilotAgent<UnifiedAgentState>({
+    agentId: 'dynamic_agent',
+    initialState: { sessionId, plans: {}, graphs: {} },
+  });
+
+  // Sync to ref whenever it changes
+  useEffect(() => {
+    if (liveAgentState) {
+      agentStateRef.current = {
+        plans: liveAgentState.plans || {},
+        graphs: liveAgentState.graphs || {},
+      };
+    }
+  }, [liveAgentState, agentStateRef]);
+
+  return null;
 };
 
 /**
@@ -43,7 +73,8 @@ const ChatInnerWithSignatureSync: FC<{
   onSignatureChange: (signature: string) => void;
   onStreamingChange: (isStreaming: boolean) => void;
   renderChatInner: () => React.ReactNode;
-}> = ({ sessionId, onSignatureChange, onStreamingChange, renderChatInner }) => {
+  agentStateRef: React.MutableRefObject<{ plans?: Record<string, any>; graphs?: Record<string, any> }>;
+}> = ({ sessionId, onSignatureChange, onStreamingChange, renderChatInner, agentStateRef }) => {
   const { messages, isLoading, reset } = useCopilotChat();
   const prevSessionIdRef = useRef(sessionId);
 
@@ -82,7 +113,12 @@ const ChatInnerWithSignatureSync: FC<{
     }
   }, [messages, onSignatureChange]);
 
-  return <>{renderChatInner()}</>;
+  return (
+    <>
+      <AgentStateSync sessionId={sessionId} agentStateRef={agentStateRef} />
+      {renderChatInner()}
+    </>
+  );
 };
 
 interface ChatSessionContainerProps {
@@ -314,6 +350,12 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     // Workspace context: Selected notes and credentials for agent context
     const [selectedNotes, setSelectedNotes] = useState<any[]>([]);
     const [selectedCredentials, setSelectedCredentials] = useState<any[]>([]);
+
+    // Plans and Graphs panels
+    const [showPlansPanel, setShowPlansPanel] = useState(false);
+    const [showGraphsPanel, setShowGraphsPanel] = useState(false);
+    const [panelWidth, setPanelWidth] = useState(384); // Track actual panel width for dynamic resizing
+    const dynamicAgentStateRef = useRef<{ plans?: Record<string, any>; graphs?: Record<string, any> }>({ plans: {}, graphs: {} });
 
     // Tab management
     const [currentTabId, setCurrentTabId] = useState<number | null>(null);
@@ -970,6 +1012,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           }}
           onUsageClick={() => setIsUsagePopupOpen(true)}
           currentPageUrl={managedTabUrl}
+          onPlansClick={() => setShowPlansPanel(true)}
+          onGraphsClick={() => setShowGraphsPanel(true)}
         />
       ),
       [
@@ -1253,17 +1297,18 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           </div>
         )}
 
-        {/* Chat container */}
+        {/* Chat container with panels */}
         <div className="relative flex flex-1 flex-col overflow-hidden">
           {/* Note: Agent switching modal removed - switching is now instant without remount */}
 
           <div
-            className={`copilot-chat-container flex flex-1 flex-col overflow-hidden ${!isLight ? 'dark' : ''} font-size-${chatFontSize} transition-opacity duration-300`}
+            className={`copilot-chat-container flex flex-1 flex-col overflow-hidden ${!isLight ? 'dark' : ''} font-size-${chatFontSize} transition-opacity duration-300 transition-all`}
             style={
               {
                 '--copilot-kit-primary-color': themeColor,
                 opacity: isCounterReady ? 1 : 0,
                 visibility: isCounterReady ? 'visible' : 'hidden',
+                marginRight: (showPlansPanel || showGraphsPanel) ? `${panelWidth}px` : '0px',
               } as CSSProperties
             }>
             {/* Direct CopilotKitProvider - stable key for performance */}
@@ -1282,12 +1327,38 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                   onSignatureChange={handleMessagesSignatureChange}
                   onStreamingChange={handleStreamingChange}
                   renderChatInner={renderChatInner}
+                  agentStateRef={dynamicAgentStateRef}
+                />
+                
+                {/* Plans and Graphs Panels - positioned absolutely within chat container, inside CopilotKit context */}
+                <PlansPanel
+                  isLight={isLight}
+                  isOpen={showPlansPanel}
+                  onClose={() => setShowPlansPanel(false)}
+                  plans={dynamicAgentStateRef.current.plans}
+                  sessionId={sessionId}
+                  onPlansUpdate={(updatedPlans) => {
+                    dynamicAgentStateRef.current = {
+                      ...dynamicAgentStateRef.current,
+                      plans: updatedPlans,
+                    };
+                  }}
+                  onWidthChange={setPanelWidth}
+                />
+                <GraphsPanel
+                  isLight={isLight}
+                  isOpen={showGraphsPanel}
+                  onClose={() => setShowGraphsPanel(false)}
+                  graphs={dynamicAgentStateRef.current.graphs}
+                  sessionId={sessionId}
+                  onWidthChange={setPanelWidth}
                 />
               </CopilotKitProvider>
             ) : null}
           </div>
+          </div>
 
-          {/* Agent and Model Selectors with Settings */}
+        {/* Agent and Model Selectors with Settings - Outside chat container so panels don't cover it */}
           <SelectorsBar
             isLight={isLight}
             selectedAgent={selectedAgent}
@@ -1301,7 +1372,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
             onShowThoughtBlocksChange={show => preferencesStorage.setShowThoughtBlocks(show)}
             onExpandSettingsClick={() => setIsSettingsOpen(true)}
           />
-        </div>
 
         {/* Settings Modal */}
         <SettingsModal

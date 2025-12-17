@@ -260,11 +260,11 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   // Debug workspace files state changes (development only)
   useEffect(() => {
     if (import.meta.env.DEV) {
-      console.log('[Workspace Files] State changed:', {
-        count: workspaceFiles.length,
-        loading: loadingWorkspaceFiles,
-        modalOpen: showWorkspaceFilesModal
-      });
+    console.log('[Workspace Files] State changed:', {
+      count: workspaceFiles.length,
+      loading: loadingWorkspaceFiles,
+      modalOpen: showWorkspaceFilesModal
+    });
     }
   }, [workspaceFiles, loadingWorkspaceFiles, showWorkspaceFilesModal]);
   
@@ -676,7 +676,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       return next;
     });
   };
-
+  
   // Open workspace files modal
   const openWorkspaceFilesModal = () => {
     setShowWorkspaceFilesModal(true);
@@ -696,14 +696,14 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       const fileId = file?.id || `file-${idx}`;
       return {
         id: `workspace-${fileId}`,
-        file: null as any, // Not a File object, already uploaded
-        name: file.file_name,
-        size: file.file_size,
-        previewUrl: file.storage_url, // Use storage URL directly
-        status: 'uploaded' as const, // Already uploaded to Firebase
-        progress: 100,
-        uploadedUrl: file.storage_url, // Already have the URL
-        mimeType: file.file_type,
+      file: null as any, // Not a File object, already uploaded
+      name: file.file_name,
+      size: file.file_size,
+      previewUrl: file.storage_url, // Use storage URL directly
+      status: 'uploaded' as const, // Already uploaded to Firebase
+      progress: 100,
+      uploadedUrl: file.storage_url, // Already have the URL
+      mimeType: file.file_type,
       };
     });
     
@@ -1250,21 +1250,21 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                       {/* Active Connections */}
                       {workspaceConnections.length > 0 && (
                         <>
-                          <DropdownMenuSeparator isLight={isLight} />
+                      <DropdownMenuSeparator isLight={isLight} />
                           {workspaceConnections.map((connection) => (
-                            <DropdownMenuItem
+                      <DropdownMenuItem
                               key={connection.id}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 // TODO: Add connection action
                               }}
-                              isLight={isLight}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        isLight={isLight}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 {renderServiceLogo(connection.service_name)}
                                 <span>{getConnectionDisplayName(connection.service_name)}</span>
-                              </div>
-                            </DropdownMenuItem>
+                        </div>
+                      </DropdownMenuItem>
                           ))}
                         </>
                       )}
@@ -1309,69 +1309,69 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm"
           style={{ zIndex: 10000 }}
-          onClick={() => setShowWorkspaceFilesModal(false)}
+        onClick={() => setShowWorkspaceFilesModal(false)}
         />
         
         {/* Modal */}
         <div
           className="fixed inset-0 flex items-center justify-center p-4"
           style={{ zIndex: 10001 }}
-        >
-          <div
-            className={cn(
+      >
+        <div
+          className={cn(
               'w-full max-w-4xl rounded-lg shadow-xl',
               isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]'
-            )}
-            onClick={(e) => e.stopPropagation()}
+          )}
+          onClick={(e) => e.stopPropagation()}
             style={{ maxWidth: 'min(56rem, 90vw)' }}
-          >
-            {/* Header */}
+        >
+          {/* Header */}
             <div className={cn('flex items-center justify-between border-b px-3 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
               <h2 className={cn('text-base font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
-                Select Workspace Files
+              Select Workspace Files
               </h2>
-              <button
-                onClick={() => setShowWorkspaceFilesModal(false)}
-                className={cn(
+            <button
+              onClick={() => setShowWorkspaceFilesModal(false)}
+              className={cn(
                   'rounded-md p-0.5 transition-colors',
                   isLight ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700' : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
-                )}
-              >
+              )}
+            >
                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <path d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
+              </svg>
+            </button>
+          </div>
+          
             
             {/* Content */}
             <div className="px-3 py-2">
-              <div 
+          <div 
                 className="overflow-y-auto" 
-                style={{ 
+            style={{ 
                   maxHeight: '400px'
-                }}
-              >
-                {loadingWorkspaceFiles ? (
+            }}
+          >
+            {loadingWorkspaceFiles ? (
                   <div className={cn('py-6 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    Loading files...
-                  </div>
-                ) : !workspaceFiles || workspaceFiles.length === 0 ? (
+                Loading files...
+              </div>
+            ) : !workspaceFiles || workspaceFiles.length === 0 ? (
                   <div className={cn('py-6 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    No files in workspace. Upload files to see them here.
-                  </div>
-                ) : (
+                No files in workspace. Upload files to see them here.
+              </div>
+            ) : (
                   <div className="space-y-1">
                     {Object.entries(groupFilesByFolder()).map(([folder, folderFiles]) => {
                       if (folderFiles.length === 0) return null;
                       
                       const isExpanded = expandedFolders.has(folder);
                       
-                      return (
+                  return (
                         <div key={folder}>
                           {/* Accordion Header */}
                           <div
-                            className={cn(
+                      className={cn(
                               'flex items-center justify-between px-2 py-1 text-xs font-medium border-b',
                               isLight ? 'border-gray-200' : 'border-gray-700'
                             )}
@@ -1442,10 +1442,10 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                                           isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
                                           isSelected && (isLight ? 'bg-blue-50' : 'bg-blue-900/20')
                                         )}
-                                      >
+                    >
                                         <td className="px-3 py-1.5">
-                                          <input
-                                            type="checkbox"
+                      <input
+                        type="checkbox"
                                             checked={isSelected}
                                             onChange={() => toggleWorkspaceFileSelection(fileId)}
                                             onClick={(e) => e.stopPropagation()}
@@ -1456,9 +1456,9 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                                           <div className="flex items-center gap-1 min-w-0">
                                             <div className="flex-shrink-0">{getFileIcon(file.file_name)}</div>
                                             <span className={cn('font-medium truncate', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')} title={file.file_name}>
-                                              {file.file_name || 'Unnamed file'}
+                          {file.file_name || 'Unnamed file'}
                                             </span>
-                                          </div>
+                        </div>
                                         </td>
                                         <td className={cn('px-3 py-1.5 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
                                           <span className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
@@ -1476,48 +1476,48 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                                   })}
                                 </tbody>
                               </table>
-                            </div>
-                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
+                      </div>
+                        </div>
+                  );
+                })}
               </div>
-            </div>
-            
-            {/* Footer */}
+            )}
+              </div>
+          </div>
+          
+          {/* Footer */}
             <div className={cn('flex items-center justify-between border-t px-3 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
               <span className="text-xs" style={{ color: isLight ? '#6b7280' : '#9ca3af' }}>
-                {selectedWorkspaceFileIds.size} file(s) selected
-              </span>
+              {selectedWorkspaceFileIds.size} file(s) selected
+            </span>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowWorkspaceFilesModal(false)}
-                  className={cn(
+              <button
+                onClick={() => setShowWorkspaceFilesModal(false)}
+                className={cn(
                     'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
                     isLight ? 'bg-gray-200 hover:bg-gray-300' : 'bg-gray-700 hover:bg-gray-600'
-                  )}
+                )}
                   style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={addWorkspaceFilesAsAttachments}
-                  disabled={selectedWorkspaceFileIds.size === 0}
-                  className={cn(
+              >
+                Cancel
+              </button>
+              <button
+                onClick={addWorkspaceFilesAsAttachments}
+                disabled={selectedWorkspaceFileIds.size === 0}
+                className={cn(
                     'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    selectedWorkspaceFileIds.size === 0
+                  selectedWorkspaceFileIds.size === 0
                       ? 'opacity-50 cursor-not-allowed bg-gray-400 text-gray-600'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
-                  )}
-                >
-                  Add {selectedWorkspaceFileIds.size > 0 && `(${selectedWorkspaceFileIds.size})`}
-                </button>
-              </div>
+                )}
+              >
+                Add {selectedWorkspaceFileIds.size > 0 && `(${selectedWorkspaceFileIds.size})`}
+              </button>
             </div>
           </div>
         </div>
+      </div>
       </>
     )}
     </>

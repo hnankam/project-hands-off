@@ -524,8 +524,10 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
           </svg>
         )}
-        <span className={`text-[10px] ${isLight ? 'text-gray-600' : 'text-gray-400'}`}>Task:</span>
-        <span className={`${isLight ? 'text-gray-600' : 'text-gray-400'} text-[10px]`}>
+        <span className={`text-[10px] truncate ${isLight ? 'text-gray-700' : 'text-gray-200'}`} title={planName || 'Plan'}>
+          {planName || 'Plan'}
+        </span>
+        <span className={`${isLight ? 'text-gray-600' : 'text-gray-400'} text-[10px] flex-shrink-0`}>
           {completedCount}/{activeSteps.length}
           {failedCount > 0 && <span className="text-red-500 ml-1">({failedCount} failed)</span>}
         </span>

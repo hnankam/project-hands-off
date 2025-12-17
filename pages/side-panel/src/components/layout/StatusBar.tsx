@@ -52,6 +52,9 @@ export interface StatusBarProps {
   onUsageClick?: () => void;
   // Current page URL for detecting restricted pages
   currentPageUrl?: string | null;
+  // Plans and Graphs panels
+  onPlansClick?: () => void;
+  onGraphsClick?: () => void;
 }
 
 export const StatusBar: FC<StatusBarProps> = memo(({
@@ -72,6 +75,8 @@ export const StatusBar: FC<StatusBarProps> = memo(({
   usageData,
   onUsageClick,
   currentPageUrl,
+  onPlansClick,
+  onGraphsClick,
 }) => {
   // Get the current page URL from available sources
   const currentUrl = useMemo(() => {
@@ -311,6 +316,70 @@ export const StatusBar: FC<StatusBarProps> = memo(({
             </span>
           )}
         </button>
+        
+        {/* Plans Button */}
+        {onPlansClick && (
+          <button
+            onClick={onPlansClick}
+            className={`h-[26px] w-[26px] flex items-center justify-center rounded-md transition-colors border ${
+              isLight
+                ? 'text-gray-600 hover:bg-gray-100 border-gray-200'
+                : 'text-gray-400 hover:bg-gray-700 border-gray-700'
+            }`}
+            title="Session plans"
+          >
+            <svg 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+              style={{
+                width: '12px',
+                height: '12px',
+                minWidth: '12px',
+                minHeight: '12px',
+              }}
+            >
+              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          </button>
+        )}
+        
+        {/* Graphs Button */}
+        {onGraphsClick && (
+          <button
+            onClick={onGraphsClick}
+            className={`h-[26px] w-[26px] flex items-center justify-center rounded-md transition-colors border ${
+              isLight
+                ? 'text-gray-600 hover:bg-gray-100 border-gray-200'
+                : 'text-gray-400 hover:bg-gray-700 border-gray-700'
+            }`}
+            title="Session graphs"
+          >
+            <svg 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+              style={{
+                width: '12px',
+                height: '12px',
+                minWidth: '12px',
+                minHeight: '12px',
+              }}
+            >
+              <circle cx="18" cy="5" r="3" />
+              <circle cx="6" cy="12" r="3" />
+              <circle cx="18" cy="19" r="3" />
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );
