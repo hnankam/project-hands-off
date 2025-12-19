@@ -8,8 +8,22 @@ import multer from 'multer';
 import { requireAuth } from '../middleware/auth.js';
 import { getPool } from '../config/database.js';
 import { encryptCredential, decryptCredential, encryptOAuthTokens, decryptOAuthTokens } from '../utils/encryption.js';
+import { fetchGmailEmails, fetchGmailMessage, fetchGmailThread, convertToTextFormat as gmailToText, convertThreadToTextFormat as gmailThreadToText } from '../utils/gmail-client.js';
+import { fetchRecentSlackMessages, fetchSlackConversations, fetchSlackMessages, fetchSlackThreadReplies, downloadSlackFile, convertToTextFormat as slackToText, convertThreadToTextFormat as slackThreadToText, getMessageFilename, getThreadFilename } from '../utils/slack-client.js';
+import { refreshGoogleToken, refreshSlackToken, shouldRefreshToken, calculateExpiryTimestamp } from '../utils/oauth-refresh.js';
 
 const router = express.Router();
+
+// Configure express.json() to be skipped for file download endpoints
+// This prevents JSON parsing from corrupting binary data
+router.use((req, res, next) => {
+  // Skip JSON parsing for binary file download endpoints
+  if (req.path.includes('/file/download')) {
+    return next();
+  }
+  // Apply JSON parsing to all other routes
+  express.json({ limit: '50mb' })(req, res, next);
+});
 
 // Configure multer for file uploads (in-memory)
 const upload = multer({
@@ -257,67 +271,10 @@ router.put('/files/:fileId', requireAuth, async (req, res) => {
 });
 
 /**
- * Delete file from workspace
- * DELETE /api/workspace/files/:fileId
- */
-router.delete('/files/:fileId', requireAuth, async (req, res) => {
-  try {
-    const userId = req.auth.user.id;
-    const { fileId } = req.params;
-    
-    const pool = getPool();
-    
-    // Get file info first for cleanup
-    const { rows: fileRows } = await pool.query(
-      'SELECT storage_url FROM workspace_files WHERE id = $1 AND user_id = $2',
-      [fileId, userId]
-    );
-    
-    if (fileRows.length === 0) {
-      return res.status(404).json({ error: 'File not found' });
-    }
-    
-    // Delete from database
-    await pool.query(
-      'DELETE FROM workspace_files WHERE id = $1 AND user_id = $2',
-      [fileId, userId]
-    );
-    
-    // Delete from Firebase Storage using REST API
-    try {
-      const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET;
-      const storageUrl = fileRows[0].storage_url;
-      
-      // Extract path from URL (format: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media)
-      const pathMatch = storageUrl.match(/\/o\/([^?]+)/);
-      if (pathMatch && FIREBASE_STORAGE_BUCKET) {
-        const encodedPath = pathMatch[1];
-        const deleteUrl = `https://firebasestorage.googleapis.com/v0/b/${FIREBASE_STORAGE_BUCKET}/o/${encodedPath}`;
-        
-        const deleteResponse = await fetch(deleteUrl, {
-          method: 'DELETE',
-        });
-        
-        if (!deleteResponse.ok) {
-          console.warn('[Workspace] Failed to delete file from Firebase Storage:', deleteResponse.statusText);
-        }
-      }
-    } catch (deleteError) {
-      console.warn('[Workspace] Error deleting from Firebase Storage:', deleteError);
-      // Continue anyway - database record is already deleted
-    }
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('[Workspace] Error deleting file:', error);
-    res.status(500).json({ error: 'Failed to delete file' });
-  }
-});
-
-/**
  * Bulk delete files from workspace
  * DELETE /api/workspace/files/bulk
  * Body: { fileIds: string[] }
+ * IMPORTANT: This route must come BEFORE /files/:fileId to avoid matching "bulk" as fileId
  */
 router.delete('/files/bulk', requireAuth, async (req, res) => {
   try {
@@ -379,6 +336,65 @@ router.delete('/files/bulk', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('[Workspace] Error bulk deleting files:', error);
     res.status(500).json({ error: 'Failed to bulk delete files: ' + error.message });
+  }
+});
+
+/**
+ * Delete file from workspace
+ * DELETE /api/workspace/files/:fileId
+ * Note: This route must come AFTER /files/bulk to avoid route conflicts
+ */
+router.delete('/files/:fileId', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { fileId } = req.params;
+    
+    const pool = getPool();
+    
+    // Get file info first for cleanup
+    const { rows: fileRows } = await pool.query(
+      'SELECT storage_url FROM workspace_files WHERE id = $1 AND user_id = $2',
+      [fileId, userId]
+    );
+    
+    if (fileRows.length === 0) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    // Delete from database
+    await pool.query(
+      'DELETE FROM workspace_files WHERE id = $1 AND user_id = $2',
+      [fileId, userId]
+    );
+    
+    // Delete from Firebase Storage using REST API
+    try {
+      const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET;
+      const storageUrl = fileRows[0].storage_url;
+      
+      // Extract path from URL (format: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media)
+      const pathMatch = storageUrl.match(/\/o\/([^?]+)/);
+      if (pathMatch && FIREBASE_STORAGE_BUCKET) {
+        const encodedPath = pathMatch[1];
+        const deleteUrl = `https://firebasestorage.googleapis.com/v0/b/${FIREBASE_STORAGE_BUCKET}/o/${encodedPath}`;
+        
+        const deleteResponse = await fetch(deleteUrl, {
+          method: 'DELETE',
+        });
+        
+        if (!deleteResponse.ok) {
+          console.warn('[Workspace] Failed to delete file from Firebase Storage:', deleteResponse.statusText);
+        }
+      }
+    } catch (deleteError) {
+      console.warn('[Workspace] Error deleting from Firebase Storage:', deleteError);
+      // Continue anyway - database record is already deleted
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Workspace] Error deleting file:', error);
+    res.status(500).json({ error: 'Failed to delete file' });
   }
 });
 
@@ -1007,6 +1023,1203 @@ router.get('/credentials/debug/all', async (req, res) => {
   } catch (error) {
     console.error('[Workspace] Error in debug endpoint:', error);
     res.status(500).json({ error: 'Failed to debug credentials', details: error.message });
+  }
+});
+
+// ============================================================================
+// OAUTH TOKEN REFRESH HELPERS
+// ============================================================================
+
+/**
+ * Helper function to decrypt OAuth tokens with better error handling
+ * @param {Buffer} encryptedCredentials - Encrypted credentials from database
+ * @param {string} userId - User ID for decryption
+ * @param {string} connectionId - Connection ID for error handling
+ * @param {object} pool - Database pool
+ * @returns {Promise<object>} Decrypted tokens or null if failed
+ */
+async function safeDecryptOAuthTokens(encryptedCredentials, userId, connectionId, pool) {
+  try {
+    // Debug: Log what we received
+    console.log('[Workspace Debug] Encrypted credentials type:', typeof encryptedCredentials);
+    console.log('[Workspace Debug] Is Buffer?', Buffer.isBuffer(encryptedCredentials));
+    console.log('[Workspace Debug] Is Object?', encryptedCredentials && typeof encryptedCredentials === 'object' && !Buffer.isBuffer(encryptedCredentials));
+    
+    if (encryptedCredentials && typeof encryptedCredentials === 'object' && !Buffer.isBuffer(encryptedCredentials)) {
+      console.log('[Workspace Debug] Encrypted credentials keys:', Object.keys(encryptedCredentials));
+      
+      // Check if this is the wrong format from previous bug (object with 'encrypted' property)
+      if (encryptedCredentials.encrypted && Buffer.isBuffer(encryptedCredentials.encrypted)) {
+        console.log('[Workspace] Detected corrupted credential format (full object instead of Buffer)');
+        console.log('[Workspace] Attempting to extract Buffer from object...');
+        
+        // Try to decrypt using just the Buffer
+        try {
+          const tokens = decryptOAuthTokens(encryptedCredentials.encrypted, userId);
+          console.log('[Workspace] Successfully decrypted using extracted Buffer!');
+          console.log('[Workspace] This connection needs to be refreshed to fix the stored format');
+          return tokens;
+        } catch (extractError) {
+          console.error('[Workspace] Failed to decrypt even after extracting Buffer:', extractError);
+        }
+      }
+    }
+    
+    return decryptOAuthTokens(encryptedCredentials, userId);
+  } catch (error) {
+    console.error('[Workspace] Failed to decrypt OAuth tokens:', error);
+    console.error('[Workspace] This usually means the connection needs to be recreated via OAuth');
+    console.error('[Workspace Debug] Error details:', error.message);
+    console.error('[Workspace Debug] Error stack:', error.stack);
+    
+    // Check if connection was recently updated (within last 5 seconds)
+    // This prevents marking as invalid if token was just refreshed
+    try {
+      const { rows: checkRows } = await pool.query(
+        `SELECT updated_at FROM workspace_connections WHERE id = $1`,
+        [connectionId]
+      );
+      
+      if (checkRows.length > 0) {
+        const updatedAt = checkRows[0].updated_at;
+        if (updatedAt) {
+          const timeSinceUpdate = Date.now() - new Date(updatedAt).getTime();
+          console.log(`[Workspace Debug] Time since last update: ${Math.round(timeSinceUpdate)}ms`);
+          // If updated within last 5 seconds, don't mark as invalid (likely just refreshed)
+          if (timeSinceUpdate < 5000) {
+            console.log(`[Workspace] Connection ${connectionId} was recently updated (${Math.round(timeSinceUpdate)}ms ago), skipping invalid mark`);
+            return null;
+          }
+        }
+      }
+    } catch (checkError) {
+      console.error('[Workspace] Failed to check connection update time:', checkError);
+    }
+    
+    // Mark connection as invalid in database
+    try {
+      await pool.query(
+        `UPDATE workspace_connections 
+         SET status = 'invalid', 
+             updated_at = CURRENT_TIMESTAMP 
+         WHERE id = $1`,
+        [connectionId]
+      );
+      console.log(`[Workspace] Marked connection ${connectionId} as invalid due to decryption failure`);
+    } catch (updateError) {
+      console.error('[Workspace] Failed to mark connection as invalid:', updateError);
+    }
+    
+    return null;
+  }
+}
+
+/**
+ * Helper function to refresh OAuth token and update database
+ * @param {object} connection - Connection record from database
+ * @param {string} userId - User ID for encryption
+ * @param {object} tokens - Current decrypted tokens
+ * @param {string} service - Service name ('gmail' or 'slack')
+ * @returns {Promise<object>} Refreshed tokens
+ */
+async function refreshAndUpdateToken(connection, userId, tokens, service) {
+  const pool = getPool();
+  
+  if (!tokens.refresh_token) {
+    throw new Error('No refresh token available. User must re-authenticate.');
+  }
+  
+  // Get OAuth credentials from environment
+  const clientId = service === 'gmail' 
+    ? (process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID)
+    : (process.env.SLACK_CLIENT_ID || process.env.VITE_SLACK_CLIENT_ID);
+    
+  const clientSecret = service === 'gmail'
+    ? process.env.GOOGLE_CLIENT_SECRET
+    : process.env.SLACK_CLIENT_SECRET;
+  
+  if (!clientId || !clientSecret) {
+    throw new Error(`OAuth credentials not configured for ${service}`);
+  }
+  
+  // Refresh the token
+  console.log(`[OAuth] Refreshing ${service} token for connection ${connection.id}`);
+  
+  const newTokens = service === 'gmail'
+    ? await refreshGoogleToken(tokens.refresh_token, clientId, clientSecret)
+    : await refreshSlackToken(tokens.refresh_token, clientId, clientSecret);
+  
+  // Calculate new expiry timestamp
+  const expiresAt = newTokens.expires_in 
+    ? calculateExpiryTimestamp(newTokens.expires_in)
+    : null;
+  
+  // Merge with existing tokens (keep refresh_token if not returned)
+  const updatedTokens = {
+    access_token: newTokens.access_token,
+    refresh_token: newTokens.refresh_token || tokens.refresh_token,
+    expires_at: expiresAt,
+    scopes: newTokens.scope ? newTokens.scope.split(' ') : tokens.scopes,
+  };
+  
+  // Encrypt and save to database
+  // Note: Only store the encrypted Buffer, not the full object
+  const encryptResult = encryptOAuthTokens(updatedTokens, userId);
+  console.log('[OAuth Debug] Encrypt result type:', typeof encryptResult);
+  console.log('[OAuth Debug] Encrypt result keys:', Object.keys(encryptResult));
+  
+  const { encrypted } = encryptResult;
+  console.log('[OAuth Debug] Extracted encrypted type:', typeof encrypted);
+  console.log('[OAuth Debug] Is Buffer?', Buffer.isBuffer(encrypted));
+  console.log('[OAuth Debug] Buffer length:', encrypted ? encrypted.length : 'N/A');
+  
+  await pool.query(
+    `UPDATE workspace_connections 
+     SET encrypted_credentials = $1, 
+         token_expires_at = $2,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = $3`,
+    [
+      encrypted,  // Store only the Buffer, not the full object
+      expiresAt ? new Date(expiresAt * 1000) : null,
+      connection.id
+    ]
+  );
+  
+  console.log(`[OAuth] Successfully refreshed and updated ${service} token`);
+  console.log(`[OAuth Debug] Stored credentials in database for connection ${connection.id}`);
+  
+  return updatedTokens;
+}
+
+// ============================================================================
+// GMAIL INTEGRATION ENDPOINTS
+// ============================================================================
+
+/**
+ * Fetch Gmail emails for a connection
+ * GET /api/workspace/connections/:connectionId/gmail/emails
+ */
+router.get('/connections/:connectionId/gmail/emails', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { connectionId } = req.params;
+    const { maxResults = 50, query = '', pageToken = null } = req.query;
+    
+    const pool = getPool();
+    
+    // Get connection with decrypted credentials
+    const { rows } = await pool.query(
+      `SELECT id, service_name, encrypted_credentials, status
+       FROM workspace_connections
+       WHERE id = $1 AND user_id = $2 AND service_name = 'gmail' AND status = 'active'`,
+      [connectionId, userId]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Gmail connection not found or inactive' });
+    }
+    
+    const connection = rows[0];
+    
+    // Debug: Log what we fetched from database
+    console.log('[Workspace Debug] === Fetching Gmail Emails Endpoint ===');
+    console.log('[Workspace Debug] Connection ID:', connection.id);
+    console.log('[Workspace Debug] Encrypted credentials type from DB:', typeof connection.encrypted_credentials);
+    console.log('[Workspace Debug] Is Buffer from DB?', Buffer.isBuffer(connection.encrypted_credentials));
+    if (connection.encrypted_credentials) {
+      console.log('[Workspace Debug] Encrypted credentials length:', connection.encrypted_credentials.length);
+    }
+    
+    // Decrypt OAuth tokens with safe error handling
+    const tokens = await safeDecryptOAuthTokens(connection.encrypted_credentials, userId, connectionId, pool);
+    
+    if (!tokens) {
+      return res.status(401).json({ 
+        error: 'Connection credentials are invalid or corrupted. Please disconnect and reconnect your Gmail account.',
+        action: 'reconnect_required',
+        connectionId 
+      });
+    }
+    
+    if (!tokens.access_token) {
+      return res.status(400).json({ error: 'No access token found for Gmail connection' });
+    }
+    
+    // Check if token needs refresh (proactive refresh)
+    if (tokens.expires_at && shouldRefreshToken(tokens.expires_at)) {
+      console.log('[Workspace] Gmail token expired or expiring soon, refreshing...');
+      try {
+        const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'gmail');
+        Object.assign(tokens, refreshedTokens);
+      } catch (refreshError) {
+        console.error('[Workspace] Failed to refresh token:', refreshError);
+        return res.status(401).json({ 
+          error: 'Authentication expired. Please reconnect your Gmail account.',
+          details: refreshError.message 
+        });
+      }
+    }
+    
+    // Fetch emails using Gmail API
+    try {
+      const result = await fetchGmailEmails(tokens.access_token, {
+        maxResults: parseInt(maxResults),
+        query,
+        pageToken,
+      });
+      
+      // Update last_used_at
+      await pool.query(
+        'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+        [connectionId]
+      );
+      
+      res.json({
+        emails: result.messages,
+        nextPageToken: result.nextPageToken,
+        totalEstimate: result.resultSizeEstimate,
+      });
+    } catch (apiError) {
+      // Check if it's a 401 authentication error
+      if (apiError.message && apiError.message.includes('401')) {
+        console.log('[Workspace] Got 401 error, attempting token refresh...');
+        try {
+          // Refresh token - this updates the database with new encrypted credentials
+          const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'gmail');
+          
+          // Use the refreshed tokens directly (no need to decrypt again)
+          const newAccessToken = refreshedTokens.access_token;
+          
+          // Retry the request with new token
+          const result = await fetchGmailEmails(newAccessToken, {
+            maxResults: parseInt(maxResults),
+            query,
+            pageToken,
+          });
+          
+          // Update last_used_at
+          await pool.query(
+            'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+            [connectionId]
+          );
+          
+          return res.json({
+            emails: result.messages,
+            nextPageToken: result.nextPageToken,
+            totalEstimate: result.resultSizeEstimate,
+          });
+        } catch (retryError) {
+          console.error('[Workspace] Failed after token refresh:', retryError);
+          
+          // Only mark as invalid if refresh token itself is invalid or expired
+          // Don't mark invalid for API errors or other transient issues
+          const isRefreshTokenError = retryError.message && (
+            retryError.message.includes('refresh token') ||
+            retryError.message.includes('invalid_grant') ||
+            retryError.message.includes('No refresh token')
+          );
+          
+          if (isRefreshTokenError) {
+            // Refresh token is invalid, connection needs to be recreated
+            try {
+              await pool.query(
+                `UPDATE workspace_connections 
+                 SET status = 'invalid', 
+                     updated_at = CURRENT_TIMESTAMP 
+                 WHERE id = $1`,
+                [connectionId]
+              );
+              console.log(`[Workspace] Marked connection ${connectionId} as invalid due to invalid refresh token`);
+            } catch (updateError) {
+              console.error('[Workspace] Failed to mark connection as invalid:', updateError);
+            }
+          } else {
+            // Token refresh succeeded but API call failed - don't mark as invalid
+            // This could be a temporary API issue, rate limit, etc.
+            console.log('[Workspace] Token refresh succeeded but API call failed - connection remains active');
+          }
+          
+          return res.status(401).json({ 
+            error: isRefreshTokenError 
+              ? 'Authentication expired. Please reconnect your Gmail account.'
+              : 'Failed to fetch emails after token refresh. Please try again.',
+            action: isRefreshTokenError ? 'reconnect_required' : undefined,
+            details: retryError.message 
+          });
+        }
+      }
+      
+      // Other API errors
+      console.error('[Workspace] Gmail API error:', apiError);
+      res.status(500).json({ 
+        error: 'Failed to fetch Gmail emails', 
+        details: apiError.message 
+      });
+    }
+  } catch (error) {
+    console.error('[Workspace] Error fetching Gmail emails:', error);
+    res.status(500).json({ error: 'Failed to fetch Gmail emails' });
+  }
+});
+
+/**
+ * Fetch a specific Gmail email
+ * GET /api/workspace/connections/:connectionId/gmail/email/:emailId
+ */
+router.get('/connections/:connectionId/gmail/email/:emailId', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { connectionId, emailId } = req.params;
+    
+    const pool = getPool();
+    
+    // Get connection with decrypted credentials
+    const { rows } = await pool.query(
+      `SELECT id, service_name, encrypted_credentials, status
+       FROM workspace_connections
+       WHERE id = $1 AND user_id = $2 AND service_name = 'gmail' AND status = 'active'`,
+      [connectionId, userId]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Gmail connection not found or inactive' });
+    }
+    
+    const connection = rows[0];
+    
+    // Decrypt OAuth tokens
+    let tokens;
+    try {
+      tokens = decryptOAuthTokens(connection.encrypted_credentials, userId);
+    } catch (error) {
+      console.error('[Workspace] Failed to decrypt Gmail tokens:', error);
+      return res.status(500).json({ error: 'Failed to decrypt credentials' });
+    }
+    
+    if (!tokens.access_token) {
+      return res.status(400).json({ error: 'No access token found for Gmail connection' });
+    }
+    
+    // Fetch specific email
+    try {
+      const email = await fetchGmailMessage(tokens.access_token, emailId);
+      
+      if (!email) {
+        return res.status(404).json({ error: 'Email not found' });
+      }
+      
+      // Update last_used_at
+      await pool.query(
+        'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+        [connectionId]
+      );
+      
+      res.json({ email });
+    } catch (apiError) {
+      console.error('[Workspace] Gmail API error:', apiError);
+      res.status(500).json({ 
+        error: 'Failed to fetch Gmail email', 
+        details: apiError.message 
+      });
+    }
+  } catch (error) {
+    console.error('[Workspace] Error fetching Gmail email:', error);
+    res.status(500).json({ error: 'Failed to fetch Gmail email' });
+  }
+});
+
+/**
+ * Fetch a Gmail thread (all messages in conversation)
+ * GET /api/workspace/connections/:connectionId/gmail/thread/:threadId
+ */
+router.get('/connections/:connectionId/gmail/thread/:threadId', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { connectionId, threadId } = req.params;
+    
+    const pool = getPool();
+    
+    // Get connection with decrypted credentials
+    const { rows } = await pool.query(
+      `SELECT id, service_name, encrypted_credentials, status
+       FROM workspace_connections
+       WHERE id = $1 AND user_id = $2 AND service_name = 'gmail' AND status = 'active'`,
+      [connectionId, userId]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Gmail connection not found or inactive' });
+    }
+    
+    const connection = rows[0];
+    
+    // Decrypt OAuth tokens with safe error handling
+    const tokens = await safeDecryptOAuthTokens(connection.encrypted_credentials, userId, connectionId, pool);
+    
+    if (!tokens) {
+      return res.status(401).json({ 
+        error: 'Connection credentials are invalid or corrupted. Please disconnect and reconnect your Gmail account.',
+        action: 'reconnect_required',
+        connectionId 
+      });
+    }
+    
+    if (!tokens.access_token) {
+      return res.status(400).json({ error: 'No access token found for Gmail connection' });
+    }
+    
+    // Check if token needs refresh (proactive refresh)
+    if (tokens.expires_at && shouldRefreshToken(tokens.expires_at)) {
+      console.log('[Workspace] Gmail token expired or expiring soon, refreshing...');
+      try {
+        const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'gmail');
+        Object.assign(tokens, refreshedTokens);
+      } catch (refreshError) {
+        console.error('[Workspace] Failed to refresh token:', refreshError);
+        return res.status(401).json({ 
+          error: 'Authentication expired. Please reconnect your Gmail account.',
+          details: refreshError.message 
+        });
+      }
+    }
+    
+    // Fetch thread with all messages
+    try {
+      const thread = await fetchGmailThread(tokens.access_token, threadId);
+      
+      if (!thread) {
+        return res.status(404).json({ error: 'Thread not found' });
+      }
+      
+      // Convert thread to formatted text
+      const { convertThreadToTextFormat } = await import('../utils/gmail-client.js');
+      const threadContent = convertThreadToTextFormat(thread);
+      
+      // Update last_used_at
+      await pool.query(
+        'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+        [connectionId]
+      );
+      
+      res.json({ thread, threadContent });
+    } catch (apiError) {
+      // Check if it's a 401 authentication error
+      if (apiError.message && apiError.message.includes('401')) {
+        console.log('[Workspace] Got 401 error, attempting token refresh...');
+        try {
+          // Refresh token
+          const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'gmail');
+          Object.assign(tokens, refreshedTokens);
+          
+          // Retry the request with new token
+          const thread = await fetchGmailThread(tokens.access_token, threadId);
+          
+          if (!thread) {
+            return res.status(404).json({ error: 'Thread not found' });
+          }
+          
+          // Convert thread to formatted text
+          const { convertThreadToTextFormat } = await import('../utils/gmail-client.js');
+          const threadContent = convertThreadToTextFormat(thread);
+          
+          // Update last_used_at
+          await pool.query(
+            'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+            [connectionId]
+          );
+          
+          return res.json({ thread, threadContent });
+        } catch (retryError) {
+          console.error('[Workspace] Failed after token refresh:', retryError);
+          return res.status(401).json({ 
+            error: 'Authentication failed. Please reconnect your Gmail account.',
+            action: 'reconnect_required',
+            details: retryError.message 
+          });
+        }
+      }
+      
+      // Other API errors
+      console.error('[Workspace] Gmail API error:', apiError);
+      res.status(500).json({ 
+        error: 'Failed to fetch Gmail thread', 
+        details: apiError.message 
+      });
+    }
+  } catch (error) {
+    console.error('[Workspace] Error fetching Gmail thread:', error);
+    res.status(500).json({ error: 'Failed to fetch Gmail thread' });
+  }
+});
+
+// ============================================================================
+// SLACK INTEGRATION ENDPOINTS
+// ============================================================================
+
+/**
+ * Fetch Slack conversations (channels)
+ * GET /api/workspace/connections/:connectionId/slack/conversations
+ */
+router.get('/connections/:connectionId/slack/conversations', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { connectionId } = req.params;
+    const { types = 'public_channel,private_channel,mpim,im', limit = 100 } = req.query;
+    
+    const pool = getPool();
+    
+    // Get connection with decrypted credentials
+    const { rows } = await pool.query(
+      `SELECT id, service_name, encrypted_credentials, status
+       FROM workspace_connections
+       WHERE id = $1 AND user_id = $2 AND service_name = 'slack' AND status = 'active'`,
+      [connectionId, userId]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Slack connection not found or inactive' });
+    }
+    
+    const connection = rows[0];
+    
+    // Decrypt OAuth tokens with safe error handling
+    const tokens = await safeDecryptOAuthTokens(connection.encrypted_credentials, userId, connectionId, pool);
+    
+    if (!tokens) {
+      return res.status(401).json({ 
+        error: 'Connection credentials are invalid or corrupted. Please disconnect and reconnect your Slack account.',
+        action: 'reconnect_required',
+        connectionId 
+      });
+    }
+    
+    if (!tokens.access_token) {
+      return res.status(400).json({ error: 'No access token found for Slack connection' });
+    }
+    
+    // Check if token needs refresh (proactive refresh)
+    if (tokens.expires_at && shouldRefreshToken(tokens.expires_at)) {
+      console.log('[Workspace] Slack token expired or expiring soon, refreshing...');
+      try {
+        const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'slack');
+        Object.assign(tokens, refreshedTokens);
+      } catch (refreshError) {
+        console.error('[Workspace] Failed to refresh token:', refreshError);
+        return res.status(401).json({ 
+          error: 'Authentication expired. Please reconnect your Slack account.',
+          details: refreshError.message 
+        });
+      }
+    }
+    
+    // Fetch conversations using Slack API
+    try {
+      const result = await fetchSlackConversations(tokens.access_token, {
+        types,
+        limit: parseInt(limit),
+      });
+      
+      // Update last_used_at
+      await pool.query(
+        'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+        [connectionId]
+      );
+      
+      res.json({
+        channels: result.channels,
+        nextCursor: result.nextCursor,
+      });
+    } catch (apiError) {
+      // Check if it's a 401 authentication error
+      if (apiError.message && apiError.message.includes('401')) {
+        console.log('[Workspace] Got 401 error, attempting token refresh...');
+        try {
+          // Refresh token
+          const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'slack');
+          
+          // Retry the request with new token
+          const result = await fetchSlackConversations(refreshedTokens.access_token, {
+            types,
+            limit: parseInt(limit),
+          });
+          
+          // Update last_used_at
+          await pool.query(
+            'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+            [connectionId]
+          );
+          
+          return res.json({
+            channels: result.channels,
+            nextCursor: result.nextCursor,
+          });
+        } catch (retryError) {
+          console.error('[Workspace] Failed after token refresh:', retryError);
+          
+          // Only mark as invalid if refresh token itself is invalid
+          const isRefreshTokenError = retryError.message && (
+            retryError.message.includes('refresh token') ||
+            retryError.message.includes('invalid_grant') ||
+            retryError.message.includes('No refresh token')
+          );
+          
+          if (isRefreshTokenError) {
+            await pool.query(
+              `UPDATE workspace_connections SET status = 'invalid' WHERE id = $1`,
+              [connectionId]
+            );
+          }
+          
+          return res.status(401).json({ 
+            error: 'Authentication failed. Please reconnect your Slack account.',
+            details: retryError.message 
+          });
+        }
+      }
+      
+      console.error('[Workspace] Slack API error:', apiError);
+      res.status(500).json({ 
+        error: 'Failed to fetch Slack conversations', 
+        details: apiError.message 
+      });
+    }
+  } catch (error) {
+    console.error('[Workspace] Error fetching Slack conversations:', error);
+    res.status(500).json({ error: 'Failed to fetch Slack conversations' });
+  }
+});
+
+/**
+ * Fetch recent Slack messages across all channels
+ * GET /api/workspace/connections/:connectionId/slack/messages
+ */
+router.get('/connections/:connectionId/slack/messages', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { connectionId } = req.params;
+    const { limit = 50 } = req.query;
+    
+    const pool = getPool();
+    
+    // Get connection with decrypted credentials
+    const { rows } = await pool.query(
+      `SELECT id, service_name, encrypted_credentials, status
+       FROM workspace_connections
+       WHERE id = $1 AND user_id = $2 AND service_name = 'slack' AND status = 'active'`,
+      [connectionId, userId]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Slack connection not found or inactive' });
+    }
+    
+    const connection = rows[0];
+    
+    // Decrypt OAuth tokens with safe error handling
+    const tokens = await safeDecryptOAuthTokens(connection.encrypted_credentials, userId, connectionId, pool);
+    
+    if (!tokens) {
+      return res.status(401).json({ 
+        error: 'Connection credentials are invalid or corrupted. Please disconnect and reconnect your Slack account.',
+        action: 'reconnect_required',
+        connectionId 
+      });
+    }
+    
+    if (!tokens.access_token) {
+      return res.status(400).json({ error: 'No access token found for Slack connection' });
+    }
+    
+    // Check if token needs refresh (proactive refresh)
+    if (tokens.expires_at && shouldRefreshToken(tokens.expires_at)) {
+      console.log('[Workspace] Slack token expired or expiring soon, refreshing...');
+      try {
+        const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'slack');
+        Object.assign(tokens, refreshedTokens);
+      } catch (refreshError) {
+        console.error('[Workspace] Failed to refresh token:', refreshError);
+        return res.status(401).json({ 
+          error: 'Authentication expired. Please reconnect your Slack account.',
+          details: refreshError.message 
+        });
+      }
+    }
+    
+    // Fetch recent messages using Slack API
+    try {
+      const messages = await fetchRecentSlackMessages(tokens.access_token, parseInt(limit));
+      
+      // Update last_used_at
+      await pool.query(
+        'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+        [connectionId]
+      );
+      
+      res.json({
+        messages,
+        total: messages.length,
+      });
+    } catch (apiError) {
+      // Check if it's a 401 authentication error
+      if (apiError.message && apiError.message.includes('401')) {
+        console.log('[Workspace] Got 401 error, attempting token refresh...');
+        try {
+          // Refresh token
+          const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'slack');
+          
+          // Retry the request with new token
+          const messages = await fetchRecentSlackMessages(refreshedTokens.access_token, parseInt(limit));
+          
+          // Update last_used_at
+          await pool.query(
+            'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+            [connectionId]
+          );
+          
+          return res.json({
+            messages,
+            total: messages.length,
+          });
+        } catch (retryError) {
+          console.error('[Workspace] Failed after token refresh:', retryError);
+          
+          // Only mark as invalid if refresh token itself is invalid
+          const isRefreshTokenError = retryError.message && (
+            retryError.message.includes('refresh token') ||
+            retryError.message.includes('invalid_grant') ||
+            retryError.message.includes('No refresh token')
+          );
+          
+          if (isRefreshTokenError) {
+            await pool.query(
+              `UPDATE workspace_connections SET status = 'invalid' WHERE id = $1`,
+              [connectionId]
+            );
+          }
+          
+          return res.status(401).json({ 
+            error: 'Authentication failed. Please reconnect your Slack account.',
+            details: retryError.message 
+          });
+        }
+      }
+      
+      console.error('[Workspace] Slack API error:', apiError);
+      res.status(500).json({ 
+        error: 'Failed to fetch Slack messages', 
+        details: apiError.message 
+      });
+    }
+  } catch (error) {
+    console.error('[Workspace] Error fetching Slack messages:', error);
+    res.status(500).json({ error: 'Failed to fetch Slack messages' });
+  }
+});
+
+/**
+ * Fetch messages from a specific Slack channel
+ * GET /api/workspace/connections/:connectionId/slack/channel/:channelId/messages
+ */
+router.get('/connections/:connectionId/slack/channel/:channelId/messages', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { connectionId, channelId } = req.params;
+    const { limit = 50 } = req.query;
+    
+    const pool = getPool();
+    
+    // Get connection with decrypted credentials
+    const { rows } = await pool.query(
+      `SELECT id, service_name, encrypted_credentials, status
+       FROM workspace_connections
+       WHERE id = $1 AND user_id = $2 AND service_name = 'slack' AND status = 'active'`,
+      [connectionId, userId]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Slack connection not found or inactive' });
+    }
+    
+    const connection = rows[0];
+    
+    // Decrypt OAuth tokens with safe error handling
+    const tokens = await safeDecryptOAuthTokens(connection.encrypted_credentials, userId, connectionId, pool);
+    
+    if (!tokens) {
+      return res.status(401).json({ 
+        error: 'Connection credentials are invalid or corrupted. Please disconnect and reconnect your Slack account.',
+        action: 'reconnect_required',
+        connectionId 
+      });
+    }
+    
+    if (!tokens.access_token) {
+      return res.status(400).json({ error: 'No access token found for Slack connection' });
+    }
+    
+    // Check if token needs refresh (proactive refresh)
+    if (tokens.expires_at && shouldRefreshToken(tokens.expires_at)) {
+      console.log('[Workspace] Slack token expired or expiring soon, refreshing...');
+      try {
+        const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'slack');
+        Object.assign(tokens, refreshedTokens);
+      } catch (refreshError) {
+        console.error('[Workspace] Failed to refresh token:', refreshError);
+        return res.status(401).json({ 
+          error: 'Authentication expired. Please reconnect your Slack account.',
+          details: refreshError.message 
+        });
+      }
+    }
+    
+    // Fetch messages from channel
+    try {
+      const result = await fetchSlackMessages(tokens.access_token, channelId, {
+        limit: parseInt(limit),
+      });
+      
+      // Update last_used_at
+      await pool.query(
+        'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+        [connectionId]
+      );
+      
+      res.json({
+        messages: result.messages,
+        hasMore: result.hasMore,
+        nextCursor: result.nextCursor,
+      });
+    } catch (apiError) {
+      // Check if it's a 401 authentication error
+      if (apiError.message && apiError.message.includes('401')) {
+        console.log('[Workspace] Got 401 error, attempting token refresh...');
+        try {
+          // Refresh token
+          const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'slack');
+          
+          // Retry the request with new token
+          const result = await fetchSlackMessages(refreshedTokens.access_token, channelId, {
+            limit: parseInt(limit),
+          });
+          
+          // Update last_used_at
+          await pool.query(
+            'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+            [connectionId]
+          );
+          
+          return res.json({
+            messages: result.messages,
+            hasMore: result.hasMore,
+            nextCursor: result.nextCursor,
+          });
+        } catch (retryError) {
+          console.error('[Workspace] Failed after token refresh:', retryError);
+          
+          // Only mark as invalid if refresh token itself is invalid
+          const isRefreshTokenError = retryError.message && (
+            retryError.message.includes('refresh token') ||
+            retryError.message.includes('invalid_grant') ||
+            retryError.message.includes('No refresh token')
+          );
+          
+          if (isRefreshTokenError) {
+            await pool.query(
+              `UPDATE workspace_connections SET status = 'invalid' WHERE id = $1`,
+              [connectionId]
+            );
+          }
+          
+          return res.status(401).json({ 
+            error: 'Authentication failed. Please reconnect your Slack account.',
+            details: retryError.message 
+          });
+        }
+      }
+      
+      console.error('[Workspace] Slack API error:', apiError);
+      res.status(500).json({ 
+        error: 'Failed to fetch Slack channel messages', 
+        details: apiError.message 
+      });
+    }
+  } catch (error) {
+    console.error('[Workspace] Error fetching Slack channel messages:', error);
+    res.status(500).json({ error: 'Failed to fetch Slack channel messages' });
+  }
+});
+
+/**
+ * Fetch thread replies from a Slack message
+ * GET /api/workspace/connections/:connectionId/slack/thread/:channelId/:threadTs
+ */
+router.get('/connections/:connectionId/slack/thread/:channelId/:threadTs', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { connectionId, channelId, threadTs } = req.params;
+    
+    const pool = getPool();
+    
+    // Get connection with decrypted credentials
+    const { rows } = await pool.query(
+      `SELECT id, service_name, encrypted_credentials, status
+       FROM workspace_connections
+       WHERE id = $1 AND user_id = $2 AND service_name = 'slack' AND status = 'active'`,
+      [connectionId, userId]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Slack connection not found or inactive' });
+    }
+    
+    const connection = rows[0];
+    
+    // Decrypt OAuth tokens with safe error handling
+    const tokens = await safeDecryptOAuthTokens(connection.encrypted_credentials, userId, connectionId, pool);
+    
+    if (!tokens) {
+      return res.status(401).json({ 
+        error: 'Connection credentials are invalid or corrupted. Please disconnect and reconnect your Slack account.',
+        action: 'reconnect_required',
+        connectionId 
+      });
+    }
+    
+    if (!tokens.access_token) {
+      return res.status(400).json({ error: 'No access token found for Slack connection' });
+    }
+    
+    // Check if token needs refresh (proactive refresh)
+    if (tokens.expires_at && shouldRefreshToken(tokens.expires_at)) {
+      console.log('[Workspace] Slack token expired or expiring soon, refreshing...');
+      try {
+        const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'slack');
+        Object.assign(tokens, refreshedTokens);
+      } catch (refreshError) {
+        console.error('[Workspace] Failed to refresh token:', refreshError);
+        return res.status(401).json({ 
+          error: 'Authentication expired. Please reconnect your Slack account.',
+          details: refreshError.message 
+        });
+      }
+    }
+    
+    // Fetch thread replies
+    try {
+      const result = await fetchSlackThreadReplies(tokens.access_token, channelId, threadTs);
+      
+      // Update last_used_at
+      await pool.query(
+        'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+        [connectionId]
+      );
+      
+      res.json({
+        messages: result.messages,
+        hasMore: result.hasMore,
+      });
+    } catch (apiError) {
+      // Check if it's a 401 authentication error
+      if (apiError.message && apiError.message.includes('401')) {
+        console.log('[Workspace] Got 401 error, attempting token refresh...');
+        try {
+          // Refresh token
+          const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'slack');
+          
+          // Retry the request with new token
+          const result = await fetchSlackThreadReplies(refreshedTokens.access_token, channelId, threadTs);
+          
+          // Update last_used_at
+          await pool.query(
+            'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+            [connectionId]
+          );
+          
+          return res.json({
+            messages: result.messages,
+            hasMore: result.hasMore,
+          });
+        } catch (retryError) {
+          console.error('[Workspace] Failed after token refresh:', retryError);
+          
+          // Only mark as invalid if refresh token itself is invalid
+          const isRefreshTokenError = retryError.message && (
+            retryError.message.includes('refresh token') ||
+            retryError.message.includes('invalid_grant')
+          );
+          
+          if (isRefreshTokenError) {
+            await pool.query(
+              'UPDATE workspace_connections SET status = $1 WHERE id = $2',
+              ['invalid', connectionId]
+            );
+          }
+          
+          return res.status(401).json({ 
+            error: 'Authentication failed. Please reconnect your Slack account.',
+            details: retryError.message 
+          });
+        }
+      }
+      
+      console.error('[Workspace] Slack API error:', apiError);
+      res.status(500).json({ 
+        error: 'Failed to fetch Slack thread replies', 
+        details: apiError.message 
+      });
+    }
+  } catch (error) {
+    console.error('[Workspace] Error fetching Slack thread replies:', error);
+    res.status(500).json({ error: 'Failed to fetch Slack thread replies' });
+  }
+});
+
+/**
+ * Download a Slack file
+ * POST /api/workspace/connections/:connectionId/slack/file/download
+ * Note: JSON parsing is handled by route-level middleware, not global middleware
+ */
+router.post('/connections/:connectionId/slack/file/download', express.json(), requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { connectionId } = req.params;
+    const { file } = req.body;
+    
+    if (!file || (!file.url_private_download && !file.url_private)) {
+      return res.status(400).json({ error: 'File information is required' });
+    }
+    
+    const pool = getPool();
+    
+    // Get connection with decrypted credentials
+    const { rows } = await pool.query(
+      `SELECT id, service_name, encrypted_credentials, status
+       FROM workspace_connections
+       WHERE id = $1 AND user_id = $2 AND service_name = 'slack' AND status = 'active'`,
+      [connectionId, userId]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Slack connection not found or inactive' });
+    }
+    
+    const connection = rows[0];
+    
+    // Decrypt OAuth tokens with safe error handling
+    const tokens = await safeDecryptOAuthTokens(connection.encrypted_credentials, userId, connectionId, pool);
+    
+    if (!tokens) {
+      return res.status(401).json({ 
+        error: 'Connection credentials are invalid or corrupted. Please disconnect and reconnect your Slack account.',
+        action: 'reconnect_required',
+        connectionId 
+      });
+    }
+    
+    if (!tokens.access_token) {
+      return res.status(400).json({ error: 'No access token found for Slack connection' });
+    }
+    
+    // Check if token needs refresh (proactive refresh)
+    if (tokens.expires_at && shouldRefreshToken(tokens.expires_at)) {
+      console.log('[Workspace] Slack token expired or expiring soon, refreshing...');
+      try {
+        const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'slack');
+        Object.assign(tokens, refreshedTokens);
+      } catch (refreshError) {
+        console.error('[Workspace] Failed to refresh token:', refreshError);
+        return res.status(401).json({ 
+          error: 'Authentication expired. Please reconnect your Slack account.',
+          details: refreshError.message 
+        });
+      }
+    }
+    
+    // Download the file
+    try {
+      const fileBuffer = await downloadSlackFile(tokens.access_token, file);
+      
+      console.log(`[Workspace] Downloaded file buffer: ${fileBuffer.length} bytes, type: ${typeof fileBuffer}, isBuffer: ${Buffer.isBuffer(fileBuffer)}`);
+      console.log(`[Workspace] First 20 bytes:`, fileBuffer.slice(0, 20));
+      console.log(`[Workspace] Last 20 bytes:`, fileBuffer.slice(-20));
+      console.log(`[Workspace] Sending file with mimetype: ${file.mimetype}, name: ${file.name}`);
+      
+      // Update last_used_at
+      await pool.query(
+        'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+        [connectionId]
+      );
+      
+      // Ensure we're sending raw binary - use Node's raw response methods
+      // This bypasses Express's response processing
+      res.status(200);
+      res.setHeader('Content-Type', file.mimetype || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+      res.setHeader('Content-Length', fileBuffer.length);
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      
+      // Use write() + end() to send raw buffer without Express processing
+      res.write(fileBuffer);
+      res.end();
+    } catch (apiError) {
+      // Check if it's a 401 authentication error
+      if (apiError.message && apiError.message.includes('401')) {
+        console.log('[Workspace] Got 401 error, attempting token refresh...');
+        try {
+          // Refresh token
+          const refreshedTokens = await refreshAndUpdateToken(connection, userId, tokens, 'slack');
+          
+          // Retry the request with new token
+          const fileBuffer = await downloadSlackFile(refreshedTokens.access_token, file);
+          
+          // Update last_used_at
+          await pool.query(
+            'UPDATE workspace_connections SET last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+            [connectionId]
+          );
+          
+          res.status(200);
+          res.setHeader('Content-Type', file.mimetype || 'application/octet-stream');
+          res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+          res.setHeader('Content-Length', fileBuffer.length);
+          res.setHeader('Cache-Control', 'no-cache');
+          res.setHeader('X-Content-Type-Options', 'nosniff');
+          res.write(fileBuffer);
+          return res.end();
+        } catch (retryError) {
+          console.error('[Workspace] Failed after token refresh:', retryError);
+          
+          // Only mark as invalid if refresh token itself is invalid
+          const isRefreshTokenError = retryError.message && (
+            retryError.message.includes('refresh token') ||
+            retryError.message.includes('invalid_grant')
+          );
+          
+          if (isRefreshTokenError) {
+            await pool.query(
+              'UPDATE workspace_connections SET status = $1 WHERE id = $2',
+              ['invalid', connectionId]
+            );
+          }
+          
+          return res.status(401).json({ 
+            error: 'Authentication failed. Please reconnect your Slack account.',
+            details: retryError.message 
+          });
+        }
+      }
+      
+      console.error('[Workspace] Slack API error:', apiError);
+      res.status(500).json({ 
+        error: 'Failed to download Slack file', 
+        details: apiError.message 
+      });
+    }
+  } catch (error) {
+    console.error('[Workspace] Error downloading Slack file:', error);
+    res.status(500).json({ error: 'Failed to download Slack file' });
   }
 });
 

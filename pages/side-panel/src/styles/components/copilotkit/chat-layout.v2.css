@@ -67,24 +67,24 @@
 
 .copilot-chat-container.font-size-small,
 .copilot-chat-container.font-size-small p,
-.copilot-chat-container.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer),
-.copilot-chat-container.font-size-small span:not([role=group] span):not([class*=gallery]) {
+.copilot-chat-container.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *),
+.copilot-chat-container.font-size-small span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *) {
   font-size: 13px !important;
   /* line-height: 1.4 !important; */
 }
 
 .copilot-chat-container.font-size-medium,
 .copilot-chat-container.font-size-medium p,
-.copilot-chat-container.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer),
-.copilot-chat-container.font-size-medium span:not([role=group] span):not([class*=gallery]) {
+.copilot-chat-container.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *),
+.copilot-chat-container.font-size-medium span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *) {
   font-size: 16px !important;
   /* line-height: 1.5 !important; */
 }
 
 .copilot-chat-container.font-size-large,
 .copilot-chat-container.font-size-large p,
-.copilot-chat-container.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer),
-.copilot-chat-container.font-size-large span:not([role=group] span):not([class*=gallery]) {
+.copilot-chat-container.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *),
+.copilot-chat-container.font-size-large span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *) {
   font-size: 19px !important;
   /* line-height: 1.55 !important; */
 }

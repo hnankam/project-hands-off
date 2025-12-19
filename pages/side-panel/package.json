@@ -39,6 +39,7 @@
     "better-auth": "1.4.5",
     "codemirror": "^6.0.2",
     "d3-sankey": "^0.12.3",
+    "dompurify": "^3.2.2",
     "firebase": "^11.1.0",
     "html2canvas": "1.4.1",
     "mermaid": "^10.9.1",
@@ -51,7 +52,8 @@
   "devDependencies": {
     "@extension/tailwindcss-config": "workspace:*",
     "@extension/tsconfig": "workspace:*",
-    "@extension/vite-config": "workspace:*"
+    "@extension/vite-config": "workspace:*",
+    "@types/dompurify": "^3.2.0"
   },
   "postcss": {
     "plugins": {

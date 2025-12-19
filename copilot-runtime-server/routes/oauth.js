@@ -47,6 +47,7 @@ const OAUTH_CONFIG = {
       'mpim:history',
       'mpim:read',
       'users:read',
+      'files:read',  // Required to fetch fresh file URLs and download files
     ],
     clientId: process.env.SLACK_CLIENT_ID || process.env.VITE_SLACK_CLIENT_ID,
     clientSecret: process.env.SLACK_CLIENT_SECRET,

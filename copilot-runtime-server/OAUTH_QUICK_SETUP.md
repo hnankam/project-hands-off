@@ -100,6 +100,7 @@ Click **Add an OAuth Scope** for each:
 - `mpim:history`
 - `mpim:read`
 - `users:read`
+- `files:read` (for downloading file attachments)
 
 ### 3.4 Get Credentials
 

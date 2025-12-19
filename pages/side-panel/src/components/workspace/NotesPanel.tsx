@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { cn } from '@extension/ui';
 import { RichTextEditor } from '../admin/editors/RichTextEditor';
+import { AdminConfirmDialog } from '../admin/modals/AdminConfirmDialog';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
+import { cn } from '@extension/ui';
+import React, { useState, useEffect, useCallback } from 'react';
 
 interface WorkspaceNote {
   id: string;
@@ -24,11 +25,16 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
   const [saving, setSaving] = useState(false);
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
   const [noteContents, setNoteContents] = useState<Record<string, string>>({});
-  
+
   // Bulk delete state
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [noteToDelete, setNoteToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
 
   const loadNotes = useCallback(async () => {
     try {
@@ -88,9 +94,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
     try {
       const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const url = editingNote
-        ? `${baseURL}/api/workspace/notes/${editingNote.id}`
-        : `${baseURL}/api/workspace/notes`;
+      const url = editingNote ? `${baseURL}/api/workspace/notes/${editingNote.id}` : `${baseURL}/api/workspace/notes`;
 
       const response = await fetch(url, {
         method: editingNote ? 'PUT' : 'POST',
@@ -125,12 +129,18 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     }
   };
 
-  const handleDelete = async (noteId: string, noteTitle: string) => {
-    if (!confirm(`Delete note "${noteTitle}"?`)) return;
+  const openDeleteDialog = (noteId: string, noteTitle: string) => {
+    setNoteToDelete({ id: noteId, title: noteTitle });
+    setDeleteDialogOpen(true);
+  };
 
+  const confirmDeleteNote = async () => {
+    if (!noteToDelete) return;
+
+    setDeleting(true);
     try {
       const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${baseURL}/api/workspace/notes/${noteId}`, {
+      const response = await fetch(`${baseURL}/api/workspace/notes/${noteToDelete.id}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -142,9 +152,13 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
       await loadNotes();
       // Refresh workspace stats after successful deletion
       onStatsChange?.();
+      setDeleteDialogOpen(false);
+      setNoteToDelete(null);
     } catch (error) {
       console.error('[Workspace] Delete error:', error);
       alert('Failed to delete note');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -170,7 +184,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
   const toggleSelectAll = () => {
     const allSelected = notes.every(note => selectedNotes.has(note.id));
-    
+
     setSelectedNotes(prev => {
       const next = new Set(prev);
       notes.forEach(note => {
@@ -184,10 +198,13 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     });
   };
 
-  const handleBulkDelete = async () => {
+  const openBulkDeleteDialog = () => {
     if (selectedNotes.size === 0) return;
+    setBulkDeleteDialogOpen(true);
+  };
 
-    if (!confirm(`Delete ${selectedNotes.size} note(s)?`)) return;
+  const confirmBulkDelete = async () => {
+    if (selectedNotes.size === 0) return;
 
     setDeleting(true);
     try {
@@ -210,10 +227,11 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
       await loadNotes();
       onStatsChange?.();
-      
+
       // Clear selections and exit delete mode
       setSelectedNotes(new Set());
       setDeleteMode(false);
+      setBulkDeleteDialogOpen(false);
     } catch (error) {
       console.error('[Workspace] Bulk delete error:', error);
       alert('Failed to delete notes: ' + (error as Error).message);
@@ -222,13 +240,12 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString(undefined, {
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString(undefined, {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
     });
-  };
 
   const handleToggleExpand = async (noteId: string) => {
     setExpandedNoteIds(prev => {
@@ -266,7 +283,9 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
   if (loading) {
     return (
-      <div className={cn('text-center py-8 text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>Loading notes...</div>
+      <div className={cn('py-8 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
+        Loading notes...
+      </div>
     );
   }
 
@@ -286,8 +305,10 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
             value={title}
             onChange={e => setTitle(e.target.value)}
             className={cn(
-              'w-full px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-blue-500 outline-none',
-              isLight ? 'bg-white border-gray-300 text-gray-900 placeholder-gray-400' : 'bg-[#151C24] border-gray-600 text-white placeholder-gray-500'
+              'w-full rounded border px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-blue-500',
+              isLight
+                ? 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'
+                : 'border-gray-600 bg-[#151C24] text-white placeholder-gray-500',
             )}
           />
           <RichTextEditor
@@ -300,17 +321,17 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
           />
         </div>
 
-        <div className="flex flex-wrap gap-2 justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             onClick={handleSave}
             disabled={saving}
             className={cn(
-              'px-4 py-1.5 text-xs rounded font-medium transition-colors',
+              'rounded px-4 py-1.5 text-xs font-medium transition-colors',
               saving
-                ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                ? 'cursor-not-allowed bg-gray-400 text-gray-200'
                 : isLight
-                ? 'bg-blue-500/90 text-white hover:bg-blue-500'
-                : 'bg-blue-600/90 text-white hover:bg-blue-600',
+                  ? 'bg-blue-500/90 text-white hover:bg-blue-500'
+                  : 'bg-blue-600/90 text-white hover:bg-blue-600',
             )}>
             {saving ? 'Saving...' : 'Save Note'}
           </button>
@@ -322,7 +343,7 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
               setEditingNote(null);
             }}
             className={cn(
-              'px-4 py-1.5 text-xs rounded font-medium transition-colors',
+              'rounded px-4 py-1.5 text-xs font-medium transition-colors',
               isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
             )}>
             Cancel
@@ -337,40 +358,41 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
       {/* Notes Table */}
       <div
         className={cn(
-          'rounded-lg border overflow-hidden',
-          isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
+          'overflow-hidden rounded-lg border',
+          isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
         )}>
         <div
           className={cn(
-            'border-b px-4 py-2 flex items-center justify-between',
-            isLight ? 'border-gray-200' : 'border-gray-700'
+            'flex items-center justify-between border-b px-4 py-2',
+            isLight ? 'border-gray-200' : 'border-gray-700',
           )}>
-          <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
-            Your Notes
-          </h3>
+          <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>Your Notes</h3>
           <div className="flex items-center gap-2">
             {notes.length > 0 && (
               <button
                 onClick={toggleDeleteMode}
                 className={cn(
-                  'p-1.5 rounded transition-colors',
+                  'rounded p-1.5 transition-colors',
                   deleteMode
                     ? isLight
                       ? 'bg-red-100 text-red-700 hover:bg-red-200'
                       : 'bg-red-900/30 text-red-400 hover:bg-red-900/50'
                     : isLight
                       ? 'text-gray-600 hover:bg-gray-100'
-                      : 'text-gray-400 hover:bg-gray-800'
+                      : 'text-gray-400 hover:bg-gray-800',
                 )}
-                title={deleteMode ? 'Cancel delete mode' : 'Enter delete mode'}
-              >
+                title={deleteMode ? 'Cancel delete mode' : 'Enter delete mode'}>
                 {deleteMode ? (
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 ) : (
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
                   </svg>
                 )}
               </button>
@@ -378,13 +400,13 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
             <button
               onClick={handleCreate}
               className={cn(
-                'flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium rounded transition-colors border',
+                'flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-medium transition-colors',
                 isLight
-                  ? 'text-blue-600 hover:bg-blue-50 border-blue-200'
-                  : 'text-blue-300 hover:bg-blue-900/20 border-blue-800'
+                  ? 'border-blue-200 text-blue-600 hover:bg-blue-50'
+                  : 'border-blue-800 text-blue-300 hover:bg-blue-900/20',
               )}
               title="Create new note">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
               NEW NOTE
@@ -398,14 +420,18 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
         ) : (
           <div className="max-h-[600px] w-full overflow-auto">
             {deleteMode && (
-              <div className={cn('px-3 py-2 border-b flex items-center justify-between', isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#0d1117] border-gray-700')}>
+              <div
+                className={cn(
+                  'flex items-center justify-between border-b px-3 py-2',
+                  isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#0d1117]',
+                )}>
                 <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="flex cursor-pointer items-center gap-2">
                     <input
                       type="checkbox"
                       checked={notes.every(note => selectedNotes.has(note.id))}
                       onChange={toggleSelectAll}
-                      className="w-3.5 h-3.5 rounded border-gray-300"
+                      className="h-3.5 w-3.5 rounded border-gray-300"
                     />
                     <span className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
                       Select All
@@ -416,33 +442,52 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                   </span>
                 </div>
                 <button
-                  onClick={handleBulkDelete}
+                  onClick={openBulkDeleteDialog}
                   disabled={deleting || selectedNotes.size === 0}
                   className={cn(
-                    'px-3 py-1 text-xs font-medium rounded transition-colors',
-                    deleting || selectedNotes.size === 0
-                      ? 'opacity-50 cursor-not-allowed'
-                      : '',
+                    'rounded px-3 py-1 text-xs font-medium transition-colors',
+                    deleting || selectedNotes.size === 0 ? 'cursor-not-allowed opacity-50' : '',
                     isLight
                       ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
-                      : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
-                  )}
-                >
+                      : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                  )}>
                   {deleting ? 'Deleting...' : 'Delete Selected'}
                 </button>
               </div>
             )}
-            <table className={cn('min-w-full w-full border-collapse text-xs')}>
+            <table className={cn('w-full min-w-full border-collapse text-xs')}>
               <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
                 <tr className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
                   {deleteMode && (
-                    <th className={cn('px-3 py-1.5 w-8', isLight ? 'text-gray-600' : 'text-gray-300')}></th>
+                    <th className={cn('w-8 px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-300')}></th>
                   )}
-                  <th className={cn('px-3 py-1.5 text-left text-xs font-semibold w-8', isLight ? 'text-gray-600' : 'text-gray-300')}></th>
-                  <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Title</th>
-                  <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Updated</th>
+                  <th
+                    className={cn(
+                      'w-8 px-3 py-1.5 text-left text-xs font-semibold',
+                      isLight ? 'text-gray-600' : 'text-gray-300',
+                    )}></th>
+                  <th
+                    className={cn(
+                      'px-3 py-1.5 text-left text-xs font-semibold',
+                      isLight ? 'text-gray-600' : 'text-gray-300',
+                    )}>
+                    Title
+                  </th>
+                  <th
+                    className={cn(
+                      'px-3 py-1.5 text-left text-xs font-semibold',
+                      isLight ? 'text-gray-600' : 'text-gray-300',
+                    )}>
+                    Updated
+                  </th>
                   {!deleteMode && (
-                    <th className={cn('px-3 py-1.5 text-right text-xs font-semibold w-20', isLight ? 'text-gray-600' : 'text-gray-300')}>Actions</th>
+                    <th
+                      className={cn(
+                        'w-20 px-3 py-1.5 text-right text-xs font-semibold',
+                        isLight ? 'text-gray-600' : 'text-gray-300',
+                      )}>
+                      Actions
+                    </th>
                   )}
                 </tr>
               </thead>
@@ -453,36 +498,49 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                     <React.Fragment key={note.id}>
                       <tr
                         className={cn(
-                          'transition-colors border-b',
-                          isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40'
-                        )}
-                      >
+                          'border-b transition-colors',
+                          isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
+                        )}>
                         {deleteMode && (
                           <td className="px-3 py-1.5">
-                            <input
-                              type="checkbox"
-                              checked={selectedNotes.has(note.id)}
-                              onChange={() => toggleNoteSelection(note.id)}
-                              className="w-3.5 h-3.5 rounded border-gray-300"
-                            />
+                            <div
+                              className={cn(
+                                'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border transition-opacity',
+                                selectedNotes.has(note.id)
+                                  ? 'border-blue-600/60 bg-blue-600/60 opacity-100'
+                                  : cn('opacity-100', isLight ? 'border-gray-400' : 'border-gray-500'),
+                              )}
+                              onClick={e => {
+                                e.stopPropagation();
+                                toggleNoteSelection(note.id);
+                              }}>
+                              {selectedNotes.has(note.id) && (
+                                <svg
+                                  className="h-2 w-2 text-white"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  strokeWidth={3}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </div>
                           </td>
                         )}
                         <td className="px-3 py-1.5">
                           <button
                             onClick={() => handleToggleExpand(note.id)}
                             className={cn(
-                              'p-1 rounded transition-colors',
-                              isLight ? 'text-gray-400 hover:text-gray-700' : 'text-gray-500 hover:text-gray-300'
+                              'rounded p-1 transition-colors',
+                              isLight ? 'text-gray-400 hover:text-gray-700' : 'text-gray-500 hover:text-gray-300',
                             )}
-                            title={isExpanded ? 'Collapse' : 'Expand'}
-                          >
+                            title={isExpanded ? 'Collapse' : 'Expand'}>
                             <svg
-                              className={cn('w-3.5 h-3.5 transition-transform', isExpanded && 'rotate-90')}
+                              className={cn('h-3.5 w-3.5 transition-transform', isExpanded && 'rotate-90')}
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
-                              strokeWidth={2}
-                            >
+                              strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                             </svg>
                           </button>
@@ -490,7 +548,8 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                         <td className={cn('px-3 py-1.5 font-medium', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
                           {note.title}
                         </td>
-                        <td className={cn('px-3 py-1.5 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                        <td
+                          className={cn('px-3 py-1.5 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
                           {formatDate(note.updated_at)}
                         </td>
                         {!deleteMode && (
@@ -499,25 +558,41 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                               <button
                                 onClick={() => handleEdit(note)}
                                 className={cn(
-                                  'p-1 rounded transition-colors',
-                                  isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400'
+                                  'rounded p-1 transition-colors',
+                                  isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400',
                                 )}
-                                title="Edit note"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                title="Edit note">
+                                <svg
+                                  className="h-3.5 w-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  strokeWidth={2}>
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                                  />
                                 </svg>
                               </button>
                               <button
-                                onClick={() => handleDelete(note.id, note.title)}
+                                onClick={() => openDeleteDialog(note.id, note.title)}
                                 className={cn(
-                                  'p-1 rounded transition-colors',
-                                  isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400'
+                                  'rounded p-1 transition-colors',
+                                  isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400',
                                 )}
-                                title="Delete note"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                title="Delete note">
+                                <svg
+                                  className="h-3.5 w-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  strokeWidth={2}>
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  />
                                 </svg>
                               </button>
                             </div>
@@ -528,7 +603,11 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                         <tr className={cn(isLight ? 'bg-gray-50/50' : 'bg-[#0d1117]')}>
                           <td colSpan={deleteMode ? 5 : 4} className="px-3 py-4">
                             <div className="text-sm">
-                              <div className={cn('mb-2 text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                              <div
+                                className={cn(
+                                  'mb-2 text-xs font-semibold',
+                                  isLight ? 'text-gray-600' : 'text-gray-400',
+                                )}>
                                 Note Content
                               </div>
                               <div className={cn(isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
@@ -546,7 +625,81 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
           </div>
         )}
       </div>
+
+      {/* Single Note Delete Confirmation Modal */}
+      <AdminConfirmDialog
+        isOpen={deleteDialogOpen && !!noteToDelete}
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          setNoteToDelete(null);
+        }}
+        onConfirm={confirmDeleteNote}
+        title="Delete Note"
+        message={
+          <div className="flex items-start gap-3">
+            <div
+              className={cn(
+                'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
+                isLight ? 'bg-red-100' : 'bg-red-900/30',
+              )}>
+              <svg
+                className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')}
+                fill="currentColor"
+                viewBox="0 0 24 24">
+                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className={cn('text-sm font-medium', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
+                Delete note "{noteToDelete?.title}"?
+              </p>
+              <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                This note will be permanently deleted from your workspace. This action cannot be undone.
+              </p>
+            </div>
+          </div>
+        }
+        confirmText="Delete Note"
+        variant="danger"
+        isLight={isLight}
+        isLoading={deleting}
+      />
+
+      {/* Bulk Delete Confirmation Modal */}
+      <AdminConfirmDialog
+        isOpen={bulkDeleteDialogOpen}
+        onClose={() => setBulkDeleteDialogOpen(false)}
+        onConfirm={confirmBulkDelete}
+        title="Delete Multiple Notes"
+        message={
+          <div className="flex items-start gap-3">
+            <div
+              className={cn(
+                'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
+                isLight ? 'bg-red-100' : 'bg-red-900/30',
+              )}>
+              <svg
+                className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')}
+                fill="currentColor"
+                viewBox="0 0 24 24">
+                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className={cn('text-sm font-medium', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
+                Delete {selectedNotes.size} note(s)?
+              </p>
+              <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                These notes will be permanently deleted from your workspace. This action cannot be undone.
+              </p>
+            </div>
+          </div>
+        }
+        confirmText="Delete Notes"
+        variant="danger"
+        isLight={isLight}
+        isLoading={deleting}
+      />
     </div>
   );
 };
-

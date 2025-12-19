@@ -10,7 +10,8 @@
  * - Mentions (@)
  * - Link auto-detection
  * - Enter to send
- * - File paste handling
+ * - File drag & drop handling
+ * - File paste handling (Ctrl/Cmd+V)
  * 
  * IMPORTANT: CopilotKit's renderSlot function checks `typeof slot === "function"`,
  * but React forwardRef components have `typeof === "object"`. To work around this,
@@ -30,6 +31,8 @@ import { COPIOLITKIT_CONFIG } from '../../constants';
 import { ensureFirebase, ensureFirebaseAuth } from '../../utils/firebaseStorage';
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { useCopilotChat, type Message } from '../../hooks/copilotkit';
+import { GmailItemsModal } from '../modals/GmailItemsModal';
+import { SlackItemsModal } from '../modals/SlackItemsModal';
 
 // Context for sharing page selector state and agent state between ChatInner and CustomInputV2
 interface PageSelectorContextValue {
@@ -216,6 +219,14 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   const [selectedWorkspaceFileIds, setSelectedWorkspaceFileIds] = useState<Set<string>>(new Set());
   const [loadingWorkspaceFiles, setLoadingWorkspaceFiles] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  
+  // Gmail modal state
+  const [showGmailModal, setShowGmailModal] = useState(false);
+  const [gmailConnectionId, setGmailConnectionId] = useState<string | null>(null);
+  
+  // Slack modal state
+  const [showSlackModal, setShowSlackModal] = useState(false);
+  const [slackConnectionId, setSlackConnectionId] = useState<string | null>(null);
   
   // Workspace connections state
   const [workspaceConnections, setWorkspaceConnections] = useState<any[]>([]);
@@ -725,6 +736,573 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     });
   };
   
+  // Gmail handlers
+  const openGmailModal = (connectionId: string) => {
+    setGmailConnectionId(connectionId);
+    setShowGmailModal(true);
+  };
+  
+  const handleGmailItemsSelected = async (emails: any[]) => {
+    // Group emails by thread to detect which ones need full thread fetching
+    const threadMap = new Map<string, any[]>();
+    emails.forEach(email => {
+      if (!threadMap.has(email.threadId)) {
+        threadMap.set(email.threadId, []);
+      }
+      threadMap.get(email.threadId)!.push(email);
+    });
+    
+    const newAttachments: AttachmentItem[] = [];
+    
+    // Process each unique thread
+    for (const [threadId, threadEmails] of threadMap.entries()) {
+      const email = threadEmails[0]; // Use first email as reference
+      const isPartOfThread = email.isPartOfThread || email.threadMessageCount > 1;
+      
+      if (isPartOfThread) {
+        // Fetch full thread
+        try {
+          const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+          const response = await fetch(
+            `${baseURL}/api/workspace/connections/${gmailConnectionId}/gmail/thread/${threadId}`,
+            { credentials: 'include' }
+          );
+          
+          if (response.ok) {
+            const data = await response.json();
+            const thread = data.thread;
+            
+            // Format entire thread as single file
+            const threadText = formatGmailThreadAsText(thread);
+            const blob = new Blob([threadText], { type: 'text/plain; charset=utf-8' });
+            const fileName = `gmail-thread-${thread.messages[0].subject.substring(0, 40).replace(/[^a-zA-Z0-9-_\s]/g, '_')}-${thread.messageCount}msgs.txt`.replace(/\s+/g, '-');
+            const file = new File([blob], fileName, { type: 'text/plain' });
+            
+            const id = `gmail-thread-${threadId}-${Date.now()}`;
+            const url = URL.createObjectURL(file);
+            
+            newAttachments.push({
+              id,
+              file,
+              name: file.name,
+              size: file.size,
+              previewUrl: url,
+              status: 'pending' as const,
+              progress: 0,
+              mimeType: 'text/plain',
+            });
+          } else {
+            // Fallback to single email if thread fetch fails - fetch full content
+            console.warn(`Failed to fetch thread ${threadId}, using single email`);
+            try {
+              const emailResponse = await fetch(
+                `${baseURL}/api/workspace/connections/${gmailConnectionId}/gmail/email/${email.id}`,
+                { credentials: 'include' }
+              );
+              
+              let fullEmail = email;
+              if (emailResponse.ok) {
+                const emailData = await emailResponse.json();
+                fullEmail = { ...email, ...emailData.email };
+              }
+              
+              const emailText = formatEmailAsText(fullEmail);
+              const blob = new Blob([emailText], { type: 'text/plain; charset=utf-8' });
+              const file = new File([blob], generateEmailFilename(fullEmail), { type: 'text/plain' });
+              
+              const id = `gmail-${email.id}-${Date.now()}`;
+              const url = URL.createObjectURL(file);
+              
+              newAttachments.push({
+                id,
+                file,
+                name: file.name,
+                size: file.size,
+                previewUrl: url,
+                status: 'pending' as const,
+                progress: 0,
+                mimeType: 'text/plain',
+              });
+            } catch (emailError) {
+              console.error(`Error fetching email ${email.id}:`, emailError);
+              // Final fallback to snippet
+              const emailText = formatEmailAsText(email);
+              const blob = new Blob([emailText], { type: 'text/plain; charset=utf-8' });
+              const file = new File([blob], generateEmailFilename(email), { type: 'text/plain' });
+              
+              const id = `gmail-${email.id}-${Date.now()}`;
+              const url = URL.createObjectURL(file);
+              
+              newAttachments.push({
+                id,
+                file,
+                name: file.name,
+                size: file.size,
+                previewUrl: url,
+                status: 'pending' as const,
+                progress: 0,
+                mimeType: 'text/plain',
+              });
+            }
+          }
+        } catch (error) {
+          console.error(`Error fetching thread ${threadId}:`, error);
+          // Fallback to single email with full content
+          try {
+            const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+            const emailResponse = await fetch(
+              `${baseURL}/api/workspace/connections/${gmailConnectionId}/gmail/email/${email.id}`,
+              { credentials: 'include' }
+            );
+            
+            let fullEmail = email;
+            if (emailResponse.ok) {
+              const emailData = await emailResponse.json();
+              fullEmail = { ...email, ...emailData.email };
+            }
+            
+            const emailText = formatEmailAsText(fullEmail);
+            const blob = new Blob([emailText], { type: 'text/plain; charset=utf-8' });
+            const file = new File([blob], generateEmailFilename(fullEmail), { type: 'text/plain' });
+            
+            const id = `gmail-${email.id}-${Date.now()}`;
+            const url = URL.createObjectURL(file);
+            
+            newAttachments.push({
+              id,
+              file,
+              name: file.name,
+              size: file.size,
+              previewUrl: url,
+              status: 'pending' as const,
+              progress: 0,
+              mimeType: 'text/plain',
+            });
+          } catch (emailError) {
+            console.error(`Error fetching email ${email.id}:`, emailError);
+            // Final fallback to snippet
+            const emailText = formatEmailAsText(email);
+            const blob = new Blob([emailText], { type: 'text/plain; charset=utf-8' });
+            const file = new File([blob], generateEmailFilename(email), { type: 'text/plain' });
+            
+            const id = `gmail-${email.id}-${Date.now()}`;
+            const url = URL.createObjectURL(file);
+            
+            newAttachments.push({
+              id,
+              file,
+              name: file.name,
+              size: file.size,
+              previewUrl: url,
+              status: 'pending' as const,
+              progress: 0,
+              mimeType: 'text/plain',
+            });
+          }
+        }
+      } else {
+        // Single email, not part of a thread - fetch full content
+        try {
+          const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+          const response = await fetch(
+            `${baseURL}/api/workspace/connections/${gmailConnectionId}/gmail/email/${email.id}`,
+            { credentials: 'include' }
+          );
+          
+          let fullEmail = email;
+          if (response.ok) {
+            const data = await response.json();
+            // Merge full email data with existing email data
+            fullEmail = { ...email, ...data.email };
+          } else {
+            console.warn(`Failed to fetch full email ${email.id}, using snippet`);
+          }
+          
+          const emailText = formatEmailAsText(fullEmail);
+          const blob = new Blob([emailText], { type: 'text/plain; charset=utf-8' });
+          const file = new File([blob], generateEmailFilename(fullEmail), { type: 'text/plain' });
+          
+          const id = `gmail-${email.id}-${Date.now()}`;
+          const url = URL.createObjectURL(file);
+          
+          newAttachments.push({
+            id,
+            file,
+            name: file.name,
+            size: file.size,
+            previewUrl: url,
+            status: 'pending' as const,
+            progress: 0,
+            mimeType: 'text/plain',
+          });
+        } catch (error) {
+          console.error(`Error fetching email ${email.id}:`, error);
+          // Fallback to snippet
+          const emailText = formatEmailAsText(email);
+          const blob = new Blob([emailText], { type: 'text/plain; charset=utf-8' });
+          const file = new File([blob], generateEmailFilename(email), { type: 'text/plain' });
+          
+          const id = `gmail-${email.id}-${Date.now()}`;
+          const url = URL.createObjectURL(file);
+          
+          newAttachments.push({
+            id,
+            file,
+            name: file.name,
+            size: file.size,
+            previewUrl: url,
+            status: 'pending' as const,
+            progress: 0,
+            mimeType: 'text/plain',
+          });
+        }
+      }
+    }
+    
+    setAttachments(prev => [...prev, ...newAttachments]);
+  };
+  
+  // Slack handlers
+  const openSlackModal = (connectionId: string) => {
+    setSlackConnectionId(connectionId);
+    setShowSlackModal(true);
+  };
+  
+  const handleSlackItemsSelected = async (messages: any[]) => {
+    const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    const newAttachments: AttachmentItem[] = [];
+    
+    for (const message of messages) {
+      try {
+        let messageText: string;
+        let filename: string;
+        
+        // Check if this message is a thread (has replies)
+        const isThread = message.reply_count && message.reply_count > 0;
+        
+        if (isThread) {
+          // Fetch the entire thread
+          console.log(`[CustomInputV2] Fetching thread for message ${message.ts} with ${message.reply_count} replies...`);
+          
+          const response = await fetch(
+            `${baseURL}/api/workspace/connections/${slackConnectionId}/slack/thread/${message.channelId}/${message.ts}`,
+            { credentials: 'include' }
+          );
+          
+          if (!response.ok) {
+            throw new Error(`Failed to fetch thread: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          const threadMessages = data.messages || [];
+          
+          // Format the entire thread as text
+          messageText = formatSlackThreadAsText(threadMessages, message.channelName);
+          filename = generateSlackThreadFilename(message, threadMessages.length);
+          
+          console.log(`[CustomInputV2] Successfully fetched thread with ${threadMessages.length} messages`);
+        } else {
+          // Single message, not a thread
+          messageText = formatSlackMessageAsText(message);
+          filename = generateSlackFilename(message);
+        }
+        
+        // Create text file attachment
+        const blob = new Blob([messageText], { type: 'text/plain; charset=utf-8' });
+        const file = new File([blob], filename, { type: 'text/plain' });
+        
+        const id = `slack-${message.ts}-${Date.now()}`;
+        const url = URL.createObjectURL(file);
+        
+        newAttachments.push({
+          id,
+          file,
+          name: file.name,
+          size: file.size,
+          previewUrl: url,
+          status: 'pending' as const,
+          progress: 0,
+          mimeType: 'text/plain',
+        });
+        
+        // Download and attach files if present
+        if (message.files && message.files.length > 0) {
+          console.log(`[CustomInputV2] Downloading ${message.files.length} file(s) from Slack message...`);
+          
+          for (const slackFile of message.files) {
+            try {
+              const fileResponse = await fetch(
+                `${baseURL}/api/workspace/connections/${slackConnectionId}/slack/file/download`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  credentials: 'include',
+                  body: JSON.stringify({ file: slackFile }),
+                }
+              );
+              
+              if (!fileResponse.ok) {
+                console.error(`[CustomInputV2] Failed to download file ${slackFile.name}: ${fileResponse.status}`);
+                continue;
+              }
+              
+              const contentType = fileResponse.headers.get('Content-Type');
+              const contentLength = fileResponse.headers.get('Content-Length');
+              console.log(`[CustomInputV2] Response headers - Content-Type: ${contentType}, Content-Length: ${contentLength}`);
+              
+              // Get array buffer first to ensure binary integrity
+              const arrayBuffer = await fileResponse.arrayBuffer();
+              console.log(`[CustomInputV2] Received arrayBuffer - size: ${arrayBuffer.byteLength} bytes`);
+              
+              // Convert to blob
+              const fileBlob = new Blob([arrayBuffer], { type: slackFile.mimetype || 'application/octet-stream' });
+              console.log(`[CustomInputV2] Created blob - size: ${fileBlob.size}, type: ${fileBlob.type}`);
+              
+              // Verify first few bytes for PDF files
+              if (slackFile.mimetype === 'application/pdf' || slackFile.name.endsWith('.pdf')) {
+                const firstBytes = new Uint8Array(arrayBuffer.slice(0, 4));
+                const pdfSignature = [0x25, 0x50, 0x44, 0x46]; // %PDF
+                const isPdf = firstBytes.every((byte, i) => byte === pdfSignature[i]);
+                console.log(`[CustomInputV2] PDF signature check - First 4 bytes: ${Array.from(firstBytes).map(b => '0x' + b.toString(16)).join(' ')}, Valid: ${isPdf}`);
+              }
+              
+              const downloadedFile = new File([fileBlob], slackFile.name, { type: slackFile.mimetype || 'application/octet-stream' });
+              console.log(`[CustomInputV2] Created file - name: ${downloadedFile.name}, size: ${downloadedFile.size}, type: ${downloadedFile.type}`);
+              
+              const fileId = `slack-file-${slackFile.id}-${Date.now()}`;
+              const fileUrl = URL.createObjectURL(downloadedFile);
+              
+              newAttachments.push({
+                id: fileId,
+                file: downloadedFile,
+                name: downloadedFile.name,
+                size: downloadedFile.size,
+                previewUrl: fileUrl,
+                status: 'pending' as const,
+                progress: 0,
+                mimeType: downloadedFile.type,
+              });
+              
+              console.log(`[CustomInputV2] Successfully downloaded file: ${slackFile.name}, attached with preview URL`);
+            } catch (fileError) {
+              console.error(`[CustomInputV2] Error downloading file ${slackFile.name}:`, fileError);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[CustomInputV2] Error processing Slack message:', error);
+        // If thread/file fetch fails, fall back to basic message text
+        const messageText = formatSlackMessageAsText(message);
+        const blob = new Blob([messageText], { type: 'text/plain; charset=utf-8' });
+        const file = new File([blob], generateSlackFilename(message), { type: 'text/plain' });
+        
+        const id = `slack-${message.ts}-${Date.now()}`;
+        const url = URL.createObjectURL(file);
+        
+        newAttachments.push({
+          id,
+          file,
+          name: file.name,
+          size: file.size,
+          previewUrl: url,
+          status: 'pending' as const,
+          progress: 0,
+          mimeType: 'text/plain',
+        });
+      }
+    }
+    
+    setAttachments(prev => [...prev, ...newAttachments]);
+  };
+  
+  // Format Gmail email as text
+  const formatEmailAsText = (email: any): string => {
+    const lines = [];
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push('📧 EMAIL');
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push('');
+    lines.push(`From: ${email.from}`);
+    lines.push(`To: ${email.to}`);
+    lines.push(`Subject: ${email.subject}`);
+    lines.push(`Date: ${email.date}`);
+    lines.push('');
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push('MESSAGE CONTENT:');
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push('');
+    lines.push(email.body || email.snippet);
+    lines.push('');
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    return lines.join('\n');
+  };
+  
+  // Format Gmail thread as text (all messages in chronological order)
+  const formatGmailThreadAsText = (thread: any): string => {
+    const lines = [];
+    
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push(`📧 EMAIL THREAD (${thread.messageCount} messages)`);
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push('');
+    
+    thread.messages.forEach((message: any, index: number) => {
+      if (index > 0) {
+        lines.push('');
+        lines.push('─────────────────────────────────────────────────────────────────────');
+        lines.push(`MESSAGE ${index + 1} OF ${thread.messageCount}`);
+        lines.push('─────────────────────────────────────────────────────────────────────');
+        lines.push('');
+      }
+      
+      lines.push(`From: ${message.from}`);
+      lines.push(`To: ${message.to}`);
+      lines.push(`Subject: ${message.subject}`);
+      lines.push(`Date: ${message.date}`);
+      lines.push('');
+      lines.push(message.body || message.snippet);
+      
+      if (index === thread.messageCount - 1) {
+        lines.push('');
+        lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      }
+    });
+    
+    return lines.join('\n');
+  };
+  
+  // Format Slack timestamp (must be defined first as it's used by other functions)
+  const formatSlackTimestamp = (ts: string): string => {
+    const timestamp = parseFloat(ts) * 1000;
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  };
+  
+  // Format Slack message as text
+  const formatSlackMessageAsText = (message: any): string => {
+    const lines = [];
+    lines.push('========================================================================');
+    lines.push('SLACK MESSAGE');
+    lines.push('========================================================================');
+    lines.push('');
+    lines.push(`Channel: #${message.channelName}`);
+    lines.push(`Type: ${message.channelType}`);
+    lines.push(`Timestamp: ${formatSlackTimestamp(message.ts)}`);
+    if (message.thread_ts && message.thread_ts !== message.ts) {
+      lines.push('Thread Reply: Yes');
+    }
+    lines.push('');
+    lines.push('========================================================================');
+    lines.push('MESSAGE CONTENT:');
+    lines.push('========================================================================');
+    lines.push('');
+    lines.push(message.text || '[No text content]');
+    if (message.attachments && message.attachments.length > 0) {
+      lines.push('');
+      lines.push('Attachments:');
+      message.attachments.forEach((att: any, idx: number) => {
+        lines.push(`  ${idx + 1}. ${att.title || att.fallback || 'Attachment'}`);
+        if (att.text) {
+          lines.push(`     ${att.text.substring(0, 100)}${att.text.length > 100 ? '...' : ''}`);
+        }
+      });
+    }
+    if (message.files && message.files.length > 0) {
+      lines.push('');
+      lines.push('Files:');
+      message.files.forEach((file: any, idx: number) => {
+        lines.push(`  ${idx + 1}. ${file.name} (${file.mimetype || 'unknown type'})`);
+      });
+    }
+    lines.push('');
+    lines.push('========================================================================');
+    return lines.join('\n');
+  };
+  
+  // Format Slack thread as text (all messages in chronological order)
+  const formatSlackThreadAsText = (messages: any[], channelName: string): string => {
+    const lines = [];
+    
+    lines.push('========================================================================');
+    lines.push(`SLACK THREAD (${messages.length} messages)`);
+    lines.push('========================================================================');
+    lines.push('');
+    lines.push(`Channel: #${channelName}`);
+    lines.push('');
+    
+    messages.forEach((message: any, index: number) => {
+      const isParent = index === 0;
+      
+      lines.push('========================================================================');
+      lines.push(`${isParent ? 'PARENT MESSAGE' : `REPLY ${index}`}`);
+      lines.push('========================================================================');
+      lines.push('');
+      lines.push(`Timestamp: ${formatSlackTimestamp(message.ts)}`);
+      lines.push('');
+      lines.push('MESSAGE CONTENT:');
+      lines.push(message.text || '[No text content]');
+      
+      // Add attachments info if present
+      if (message.attachments && message.attachments.length > 0) {
+        lines.push('');
+        lines.push('Attachments:');
+        message.attachments.forEach((att: any, idx: number) => {
+          lines.push(`  ${idx + 1}. ${att.title || att.fallback || 'Attachment'}`);
+          if (att.text) {
+            lines.push(`     ${att.text.substring(0, 100)}${att.text.length > 100 ? '...' : ''}`);
+          }
+        });
+      }
+      
+      // Add files info if present
+      if (message.files && message.files.length > 0) {
+        lines.push('');
+        lines.push('Files:');
+        message.files.forEach((file: any, idx: number) => {
+          lines.push(`  ${idx + 1}. ${file.name} (${file.mimetype || 'unknown type'})`);
+        });
+      }
+      
+      lines.push('');
+    });
+    
+    lines.push('========================================================================');
+    
+    return lines.join('\n');
+  };
+  
+  // Generate Gmail filename
+  const generateEmailFilename = (email: any): string => {
+    const subject = (email.subject || 'No Subject').substring(0, 50).replace(/[^a-zA-Z0-9-_\s]/g, '_');
+    const from = email.from.split('<')[0].trim().substring(0, 30).replace(/[^a-zA-Z0-9-_\s]/g, '_');
+    return `gmail-${from}-${subject}.txt`.replace(/\s+/g, '-');
+  };
+  
+  // Generate Slack filename
+  const generateSlackFilename = (message: any): string => {
+    const channel = message.channelName.substring(0, 30).replace(/[^a-zA-Z0-9-_]/g, '_');
+    const timestamp = formatSlackTimestamp(message.ts).replace(/[/:,\s]/g, '-');
+    const preview = (message.text || 'message').substring(0, 30).replace(/[^a-zA-Z0-9-_]/g, '_');
+    return `slack-${channel}-${timestamp}-${preview}.txt`;
+  };
+  
+  // Generate Slack thread filename
+  const generateSlackThreadFilename = (message: any, threadLength: number): string => {
+    const channel = message.channelName.substring(0, 30).replace(/[^a-zA-Z0-9-_]/g, '_');
+    const timestamp = formatSlackTimestamp(message.ts).replace(/[/:,\s]/g, '-');
+    const preview = (message.text || 'thread').substring(0, 30).replace(/[^a-zA-Z0-9-_]/g, '_');
+    return `slack-thread-${channel}-${timestamp}-${threadLength}-replies-${preview}.txt`;
+  };
+  
   // Drag & drop handlers
   const eventHasFiles = (e: React.DragEvent) => {
     try {
@@ -769,6 +1347,31 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     if (files && files.length > 0) {
       handleFilesPicked(files);
       try { e.dataTransfer.clearData(); } catch {}
+    }
+  };
+  
+  // Handle paste events to support pasting files from clipboard
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) {
+          files.push(file);
+        }
+      }
+    }
+    
+    if (files.length > 0) {
+      e.preventDefault();
+      // Convert to FileList-like object
+      const dataTransfer = new DataTransfer();
+      files.forEach(file => dataTransfer.items.add(file));
+      handleFilesPicked(dataTransfer.files);
     }
   };
   
@@ -952,6 +1555,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
+              onPaste={handlePaste}
               style={{
                 backgroundColor,
                 border: `1px solid ${borderColor}`,
@@ -1254,9 +1858,14 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                           {workspaceConnections.map((connection) => (
                       <DropdownMenuItem
                               key={connection.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                // TODO: Add connection action
+                              onClick={() => {
+                                if (connection.service_name === 'gmail') {
+                                  openGmailModal(connection.id);
+                                } else if (connection.service_name === 'slack') {
+                                  openSlackModal(connection.id);
+                                } else {
+                                  console.log(`Connection ${connection.service_name} not yet implemented`);
+                                }
                               }}
                         isLight={isLight}
                       >
@@ -1314,9 +1923,9 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         
         {/* Modal */}
         <div
-          className="fixed inset-0 flex items-center justify-center p-4"
+          className="fixed inset-0 flex items-center justify-center p-4 attachment-modal"
           style={{ zIndex: 10001 }}
-      >
+        >
         <div
           className={cn(
               'w-full max-w-4xl rounded-lg shadow-xl',
@@ -1444,13 +2053,24 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                                         )}
                     >
                                         <td className="px-3 py-1.5">
-                      <input
-                        type="checkbox"
-                                            checked={isSelected}
-                                            onChange={() => toggleWorkspaceFileSelection(fileId)}
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="w-3.5 h-3.5 rounded border-gray-300"
-                                          />
+                                          <div
+                                            className={cn(
+                                              'w-3.5 h-3.5 rounded flex items-center justify-center flex-shrink-0 transition-opacity',
+                                              isSelected
+                                                ? 'bg-blue-600/60 opacity-100'
+                                                : cn('border opacity-100', isLight ? 'border-gray-400' : 'border-gray-500')
+                                            )}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              toggleWorkspaceFileSelection(fileId);
+                                            }}
+                                          >
+                                            {isSelected && (
+                                              <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                              </svg>
+                                            )}
+                                          </div>
                                         </td>
                                         <td className={cn('px-3 py-1.5')}>
                                           <div className="flex items-center gap-1 min-w-0">
@@ -1519,6 +2139,28 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         </div>
       </div>
       </>
+    )}
+    
+    {/* Gmail Items Modal */}
+    {showGmailModal && gmailConnectionId && (
+      <GmailItemsModal
+        isOpen={showGmailModal}
+        onClose={() => setShowGmailModal(false)}
+        onSelect={handleGmailItemsSelected}
+        connectionId={gmailConnectionId}
+        isLight={isLight}
+      />
+    )}
+    
+    {/* Slack Items Modal */}
+    {showSlackModal && slackConnectionId && (
+      <SlackItemsModal
+        isOpen={showSlackModal}
+        onClose={() => setShowSlackModal(false)}
+        onSelect={handleSlackItemsSelected}
+        connectionId={slackConnectionId}
+        isLight={isLight}
+      />
     )}
     </>
   );

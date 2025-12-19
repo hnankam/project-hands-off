@@ -12,4 +12,6 @@ export { InvitationModal } from './InvitationModal';
 export { default as SupportRequestModal, type SupportRequestData } from './SupportRequestModal';
 export { AboutModal } from './AboutModal';
 export { BulkEmbedModal, type BulkEmbedModalProps, type BrowserTabInfo } from './BulkEmbedModal';
+export { GmailItemsModal } from './GmailItemsModal';
+export { SlackItemsModal } from './SlackItemsModal';
 

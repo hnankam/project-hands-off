@@ -107,6 +107,7 @@ DROPBOX_CLIENT_SECRET=your_dropbox_app_secret
    - `im:history`, `im:read`
    - `mpim:history`, `mpim:read`
    - `users:read`
+   - `files:read` (required for downloading file attachments)
 7. Copy **Client ID** and **Client Secret** from **App Credentials**
 
 ### Security Notes

@@ -1,18 +1,19 @@
 /**
  * ContextSelector Component
- * 
+ *
  * Unified multi-select dropdown for:
  * 1. Selecting indexed pages for agent context (via useCopilotReadable)
  * 2. Browsing all open browser tabs grouped by window and tab group
  * 3. Embedding new tabs on-the-fly without leaving the selector
- * 
+ *
  * Displays indexed pages with metadata and browser tabs with embed capability.
  */
 
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { cn } from '@extension/ui';
 import { embeddingsStorage, debug } from '@extension/shared';
+import { cn } from '@extension/ui';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import type React from 'react';
 
 // ============================================================================
 // TYPES
@@ -159,16 +160,16 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>('all');
   const [expandedWindows, setExpandedWindows] = useState<Set<number>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
-  
+
   // Embedding state
   const [embeddingTabs, setEmbeddingTabs] = useState<Set<number>>(new Set());
   const [embeddingProgress, setEmbeddingProgress] = useState<{ current: number; total: number } | null>(null);
   const [embeddingErrors, setEmbeddingErrors] = useState<Map<number, string>>(new Map());
   const embeddingAbortRef = useRef<AbortController | null>(null);
-  
+
   // Track newly embedded URLs for immediate UI feedback (before pages refresh)
   const [newlyEmbeddedURLs, setNewlyEmbeddedURLs] = useState<Set<string>>(new Set());
-  
+
   // ============================================================================
   // STATE - Workspace Items
   // ============================================================================
@@ -182,7 +183,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // ============================================================================
   // PORTAL SETUP
   // ============================================================================
-  
+
   useEffect(() => {
     let container = document.getElementById('pages-selector-portal');
     if (!container) {
@@ -203,7 +204,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // ============================================================================
   // TEXT TRUNCATION CHECK
   // ============================================================================
-  
+
   useEffect(() => {
     const checkTruncation = () => {
       if (textRef.current) {
@@ -213,7 +214,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
     };
 
     checkTruncation();
-    
+
     const resizeObserver = new ResizeObserver(checkTruncation);
     if (textRef.current) {
       resizeObserver.observe(textRef.current);
@@ -225,14 +226,14 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // ============================================================================
   // DATA FETCHING - Indexed Pages
   // ============================================================================
-  
+
   const fetchPages = useCallback(async () => {
     try {
       const result = await embeddingsStorage.getAllIndexedPages({
         limit: 50,
         includeEmpty: false,
       });
-      
+
       cachedPages = result;
       lastFetchedCount = result.length;
       setPages(result);
@@ -242,17 +243,17 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
     } catch (error) {
       debug.error('[ContextSelector] Failed to load indexed pages:', error);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   }, []);
 
   // ============================================================================
   // DATA FETCHING - Browser Tabs
   // ============================================================================
-  
+
   const fetchBrowserTabs = useCallback(async () => {
     if (!showBrowserTabs) return;
-    
+
     setLoadingTabs(true);
     try {
       // Get current tab ID for marking
@@ -266,12 +267,14 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
 
       // Get all windows
       const allWindows = await chrome.windows.getAll();
-      setWindows(allWindows.map(w => ({
-        id: w.id!,
-        focused: w.focused ?? false,
-        type: w.type ?? 'normal',
-      })));
-      
+      setWindows(
+        allWindows.map(w => ({
+          id: w.id!,
+          focused: w.focused ?? false,
+          type: w.type ?? 'normal',
+        })),
+      );
+
       // Auto-expand focused window
       const focusedWindow = allWindows.find(w => w.focused);
       if (focusedWindow?.id) {
@@ -280,20 +283,18 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
 
       // Get all tabs
       const allTabs = await chrome.tabs.query({});
-      
+
       // Filter out protected URLs
-      const accessibleTabs = allTabs.filter(tab => 
-        tab.url && !PROTECTED_PATTERNS.some(p => tab.url!.startsWith(p))
-      );
-      
+      const accessibleTabs = allTabs.filter(tab => tab.url && !PROTECTED_PATTERNS.some(p => tab.url!.startsWith(p)));
+
       // IMPORTANT: Fetch tab groups BEFORE setting browserTabs
       // This prevents timing issues where organizedTabs runs with empty tabGroups
       let fetchedGroups: TabGroup[] = [];
-      
+
       if (chrome.tabGroups) {
         try {
           const allGroups = await chrome.tabGroups.query({});
-          
+
           if (allGroups.length > 0) {
             fetchedGroups = allGroups.map(g => ({
               id: g.id,
@@ -306,12 +307,12 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
           debug.warn('[ContextSelector] Tab groups API error:', e);
         }
       }
-      
+
       // Set tab groups FIRST, then browser tabs
       // This ensures groups are available when tabs trigger organizedTabs memo
       setTabGroups(fetchedGroups);
       // Tab groups are collapsed by default - don't auto-expand
-      
+
       // Now set browser tabs - organizedTabs will have access to groups
       // Check multiple indicators for discarded/suspended tabs:
       // 1. tab.discarded - explicitly discarded by Chrome
@@ -322,10 +323,11 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
         // - Chrome's discarded property is true, OR
         // - The tab status is 'unloaded' (memory saver feature), OR
         // - The tab is not active and status is not 'complete' or 'loading'
-        const isDiscarded = tab.discarded === true || 
-                           tab.status === 'unloaded' ||
-                           (!tab.active && tab.status !== 'complete' && tab.status !== 'loading');
-        
+        const isDiscarded =
+          tab.discarded === true ||
+          tab.status === 'unloaded' ||
+          (!tab.active && tab.status !== 'complete' && tab.status !== 'loading');
+
         return {
           id: tab.id!,
           url: tab.url!,
@@ -337,12 +339,14 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
           isCurrentTab: tab.id === currentTabId,
         };
       });
-      
+
       setBrowserTabs(mappedTabs);
-      
+
       const discardedCount = mappedTabs.filter(t => t.discarded).length;
-      debug.log(`[ContextSelector] Fetched ${accessibleTabs.length} browser tabs (${discardedCount} discarded)`, 
-        accessibleTabs.slice(0, 3).map(t => ({ id: t.id, status: t.status, discarded: t.discarded, active: t.active })));
+      debug.log(
+        `[ContextSelector] Fetched ${accessibleTabs.length} browser tabs (${discardedCount} discarded)`,
+        accessibleTabs.slice(0, 3).map(t => ({ id: t.id, status: t.status, discarded: t.discarded, active: t.active })),
+      );
     } catch (error) {
       debug.error('[ContextSelector] Failed to fetch browser tabs:', error);
     } finally {
@@ -353,14 +357,14 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // ============================================================================
   // DATA FETCHING - Workspace Items
   // ============================================================================
-  
+
   const fetchWorkspaceItems = useCallback(async () => {
     if (!onNotesChange && !onCredentialsChange) return; // Only fetch if handlers are provided
-    
+
     setLoadingWorkspace(true);
     try {
       const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      
+
       // Fetch notes
       if (onNotesChange) {
         try {
@@ -376,7 +380,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
           debug.error('[ContextSelector] Failed to fetch notes:', error);
         }
       }
-      
+
       // Fetch credentials
       if (onCredentialsChange) {
         try {
@@ -400,7 +404,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // ============================================================================
   // INITIAL FETCH & REFRESH
   // ============================================================================
-  
+
   useEffect(() => {
     fetchPages();
   }, []);
@@ -423,7 +427,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // ============================================================================
   // DROPDOWN POSITION
   // ============================================================================
-  
+
   useEffect(() => {
     if (isOpen && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
@@ -438,21 +442,21 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // ============================================================================
   // OUTSIDE CLICK & ESCAPE HANDLING
   // ============================================================================
-  
+
   useEffect(() => {
     if (!isOpen) return;
 
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
-      
+
       if (target.closest('[data-pages-selector-dropdown]')) {
         return;
       }
-      
+
       if (target.closest('[data-pages-selector-trigger]')) {
         return;
       }
-      
+
       setIsOpen(false);
     };
 
@@ -466,7 +470,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
       document.addEventListener('click', handleClickOutside, true);
       document.addEventListener('keydown', handleEscape);
     }, 10);
-    
+
     return () => {
       clearTimeout(timeoutId);
       document.removeEventListener('click', handleClickOutside, true);
@@ -477,17 +481,17 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // Close sort menu on outside click
   useEffect(() => {
     if (!showSortMenu) return;
-    
+
     const handleClickOutside = (event: MouseEvent) => {
       if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
         setShowSortMenu(false);
       }
     };
-    
+
     const timeoutId = setTimeout(() => {
       document.addEventListener('click', handleClickOutside, true);
     }, 10);
-    
+
     return () => {
       clearTimeout(timeoutId);
       document.removeEventListener('click', handleClickOutside, true);
@@ -497,7 +501,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // ============================================================================
   // HELPER FUNCTIONS
   // ============================================================================
-  
+
   const getDomain = useCallback((url: string): string => {
     try {
       return new URL(url).hostname;
@@ -516,37 +520,37 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
       } else {
         dateObj = new Date(date);
       }
-      
+
       if (isNaN(dateObj.getTime())) {
         return 'Recently';
       }
-      
+
       const now = new Date();
       const diff = now.getTime() - dateObj.getTime();
-      
+
       if (diff < 0) {
         return 'Just now';
       }
-      
+
       const seconds = Math.floor(diff / 1000);
-      
+
       if (seconds < 60) return `${seconds}s ago`;
-      
+
       const minutes = Math.floor(seconds / 60);
       if (minutes < 60) return `${minutes}m ago`;
-      
+
       const hours = Math.floor(minutes / 60);
       if (hours < 24) return `${hours}h ago`;
-      
+
       const days = Math.floor(hours / 24);
       if (days < 7) return `${days}d ago`;
-      
+
       const weeks = Math.floor(days / 7);
       if (weeks < 5) return `${weeks}w ago`;
-      
+
       const months = Math.floor(days / 30);
       if (months < 12) return `${months}mo ago`;
-      
+
       const years = Math.floor(days / 365);
       return `${years}y ago`;
     } catch (error) {
@@ -557,19 +561,20 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // ============================================================================
   // INDEXED PAGES - Filtering & Selection
   // ============================================================================
-  
+
   const filteredPages = useMemo(() => {
     // First filter
     let result = pages;
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
-      result = pages.filter(page => 
-        page.pageTitle.toLowerCase().includes(query) ||
-        page.pageURL.toLowerCase().includes(query) ||
-        getDomain(page.pageURL).toLowerCase().includes(query)
+      result = pages.filter(
+        page =>
+          page.pageTitle.toLowerCase().includes(query) ||
+          page.pageURL.toLowerCase().includes(query) ||
+          getDomain(page.pageURL).toLowerCase().includes(query),
       );
     }
-    
+
     // Then sort
     return [...result].sort((a, b) => {
       switch (sortOption) {
@@ -587,48 +592,54 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
     });
   }, [pages, searchQuery, getDomain, sortOption]);
 
-  const handleTogglePage = useCallback((pageURL: string) => {
-    const newSelection = selectedPageURLs.includes(pageURL)
-      ? selectedPageURLs.filter(url => url !== pageURL)
-      : [...selectedPageURLs, pageURL];
-    onPagesChange(newSelection);
-  }, [selectedPageURLs, onPagesChange]);
+  const handleTogglePage = useCallback(
+    (pageURL: string) => {
+      const newSelection = selectedPageURLs.includes(pageURL)
+        ? selectedPageURLs.filter(url => url !== pageURL)
+        : [...selectedPageURLs, pageURL];
+      onPagesChange(newSelection);
+    },
+    [selectedPageURLs, onPagesChange],
+  );
 
-  const handleDeletePage = useCallback(async (pageURL: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    
-    // Allow deleting any page including the current one
-    // User should have full control over their indexed pages
-    setDeletingPages(prev => new Set(prev).add(pageURL));
-    
-    try {
-      debug.log('[ContextSelector] Deleting page embeddings:', pageURL);
-      const result = await embeddingsStorage.deletePageEmbeddings(pageURL);
-      
-      if (result.deleted) {
-        setPages(prev => prev.filter(p => p.pageURL !== pageURL));
-        
-        if (selectedPageURLs.includes(pageURL)) {
-          onPagesChange(selectedPageURLs.filter(url => url !== pageURL));
+  const handleDeletePage = useCallback(
+    async (pageURL: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+
+      // Allow deleting any page including the current one
+      // User should have full control over their indexed pages
+      setDeletingPages(prev => new Set(prev).add(pageURL));
+
+      try {
+        debug.log('[ContextSelector] Deleting page embeddings:', pageURL);
+        const result = await embeddingsStorage.deletePageEmbeddings(pageURL);
+
+        if (result.deleted) {
+          setPages(prev => prev.filter(p => p.pageURL !== pageURL));
+
+          if (selectedPageURLs.includes(pageURL)) {
+            onPagesChange(selectedPageURLs.filter(url => url !== pageURL));
+          }
+
+          debug.log('[ContextSelector] Successfully deleted page:', pageURL, result.counts);
         }
-        
-        debug.log('[ContextSelector] Successfully deleted page:', pageURL, result.counts);
+      } catch (error) {
+        debug.error('[ContextSelector] Failed to delete page:', error);
+      } finally {
+        setDeletingPages(prev => {
+          const next = new Set(prev);
+          next.delete(pageURL);
+          return next;
+        });
       }
-    } catch (error) {
-      debug.error('[ContextSelector] Failed to delete page:', error);
-    } finally {
-      setDeletingPages(prev => {
-        const next = new Set(prev);
-        next.delete(pageURL);
-        return next;
-      });
-    }
-  }, [currentPageURL, selectedPageURLs, onPagesChange]);
+    },
+    [currentPageURL, selectedPageURLs, onPagesChange],
+  );
 
   const handleSelectAllIndexed = useCallback(() => {
     const filteredURLs = filteredPages.map(p => p.pageURL);
     const allFilteredSelected = filteredURLs.every(url => selectedPageURLs.includes(url));
-    
+
     if (allFilteredSelected) {
       // Deselect all filtered pages - user can choose to have no pages selected
       const newSelection = selectedPageURLs.filter(url => !filteredURLs.includes(url));
@@ -643,28 +654,26 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   const handleBulkDeleteIndexed = useCallback(async () => {
     // Get all selected pages to delete (including current page if selected)
     const pagesToDelete = [...selectedPageURLs];
-    
+
     if (pagesToDelete.length === 0) {
       debug.warn('[ContextSelector] No pages to delete');
       return;
     }
-    
+
     // Mark all as deleting
     setDeletingPages(new Set(pagesToDelete));
-    
+
     try {
       debug.log('[ContextSelector] Bulk deleting pages:', pagesToDelete.length);
-      
+
       // Delete in parallel with concurrency limit
       const CONCURRENCY = 3;
       let successCount = 0;
-      
+
       for (let i = 0; i < pagesToDelete.length; i += CONCURRENCY) {
         const batch = pagesToDelete.slice(i, i + CONCURRENCY);
-        const results = await Promise.allSettled(
-          batch.map(url => embeddingsStorage.deletePageEmbeddings(url))
-        );
-        
+        const results = await Promise.allSettled(batch.map(url => embeddingsStorage.deletePageEmbeddings(url)));
+
         results.forEach((result, index) => {
           if (result.status === 'fulfilled' && result.value.deleted) {
             successCount++;
@@ -673,10 +682,10 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
           }
         });
       }
-      
+
       // Remove deleted pages from selection
       onPagesChange(selectedPageURLs.filter(url => !pagesToDelete.includes(url)));
-      
+
       debug.log('[ContextSelector] Bulk delete complete:', successCount, '/', pagesToDelete.length);
     } catch (error) {
       debug.error('[ContextSelector] Bulk delete failed:', error);
@@ -692,19 +701,22 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   }, []);
 
   // Switch to an existing tab
-  const handleSwitchToTab = useCallback((url: string) => {
-    // Find the tab with this URL and switch to it
-    const tab = browserTabs.find(t => t.url === url);
-    if (tab) {
-      chrome.tabs.update(tab.id, { active: true });
-      chrome.windows.update(tab.windowId, { focused: true });
-    }
-  }, [browserTabs]);
+  const handleSwitchToTab = useCallback(
+    (url: string) => {
+      // Find the tab with this URL and switch to it
+      const tab = browserTabs.find(t => t.url === url);
+      if (tab) {
+        chrome.tabs.update(tab.id, { active: true });
+        chrome.windows.update(tab.windowId, { focused: true });
+      }
+    },
+    [browserTabs],
+  );
 
   // ============================================================================
   // BROWSER TABS - Filtering & Organization
   // ============================================================================
-  
+
   // Combine pages with newly embedded URLs for immediate UI feedback
   const indexedURLs = useMemo(() => {
     const urls = new Set(pages.map(p => p.pageURL));
@@ -715,20 +727,24 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   const filteredBrowserTabs = useMemo(() => {
     if (!searchQuery.trim()) return browserTabs;
     const query = searchQuery.toLowerCase().trim();
-    return browserTabs.filter(tab => 
-      tab.title.toLowerCase().includes(query) ||
-      tab.url.toLowerCase().includes(query) ||
-      getDomain(tab.url).toLowerCase().includes(query)
+    return browserTabs.filter(
+      tab =>
+        tab.title.toLowerCase().includes(query) ||
+        tab.url.toLowerCase().includes(query) ||
+        getDomain(tab.url).toLowerCase().includes(query),
     );
   }, [browserTabs, searchQuery, getDomain]);
 
   // Organize tabs by window and group
   const organizedTabs = useMemo(() => {
-    const result: Map<number, {
-      window: BrowserWindow;
-      groups: Map<number, { group: TabGroup | null; tabs: BrowserTab[] }>;
-      ungroupedTabs: BrowserTab[];
-    }> = new Map();
+    const result: Map<
+      number,
+      {
+        window: BrowserWindow;
+        groups: Map<number, { group: TabGroup | null; tabs: BrowserTab[] }>;
+        ungroupedTabs: BrowserTab[];
+      }
+    > = new Map();
 
     // Initialize windows
     for (const window of windows) {
@@ -759,263 +775,275 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   }, [filteredBrowserTabs, windows, tabGroups]);
 
   // Count unindexed tabs
-  const unindexedTabCount = useMemo(() => {
-    return browserTabs.filter(tab => !indexedURLs.has(tab.url)).length;
-  }, [browserTabs, indexedURLs]);
+  const unindexedTabCount = useMemo(
+    () => browserTabs.filter(tab => !indexedURLs.has(tab.url)).length,
+    [browserTabs, indexedURLs],
+  );
 
   // ============================================================================
   // EMBEDDING FUNCTIONS
   // ============================================================================
-  
+
   /**
    * Store embedding results to IndexedDB
    */
-  const storeEmbeddings = useCallback(async (
-    result: any,
-    pageURL: string,
-    pageTitle: string
-  ): Promise<void> => {
-    try {
-      debug.log('[ContextSelector] Storing embeddings in IndexedDB...');
-      
-      // Store HTML chunks
-      if (result.chunks && result.chunks.length > 0) {
-        await embeddingsStorage.storeHTMLChunks({
-          pageURL,
-          pageTitle,
-          chunks: result.chunks.map((chunk: any, index: number) => ({
-            text: chunk.text,
-            html: chunk.html || '',
-            embedding: chunk.embedding,
-            index,
-          })),
-          sessionId: sessionId || 'default',
-        });
-        debug.log('[ContextSelector] HTML chunks stored:', result.chunks.length);
-      }
-      
-      // Store form field groups
-      if (result.formFieldGroupEmbeddings && result.formFieldGroupEmbeddings.length > 0) {
-        await embeddingsStorage.storeFormFields({
-          pageURL,
-          groups: result.formFieldGroupEmbeddings,
-          sessionId: sessionId || 'default',
-        });
-        debug.log('[ContextSelector] Form field groups stored:', result.formFieldGroupEmbeddings.length);
-      }
+  const storeEmbeddings = useCallback(
+    async (result: any, pageURL: string, pageTitle: string): Promise<void> => {
+      try {
+        debug.log('[ContextSelector] Storing embeddings in IndexedDB...');
 
-      // Store clickable element groups
-      if (result.clickableElementGroupEmbeddings && result.clickableElementGroupEmbeddings.length > 0) {
-        await embeddingsStorage.storeClickableElements({
-          pageURL,
-          groups: result.clickableElementGroupEmbeddings,
-          sessionId: sessionId || 'default',
-        });
-        debug.log('[ContextSelector] Clickable element groups stored:', result.clickableElementGroupEmbeddings.length);
+        // Store HTML chunks
+        if (result.chunks && result.chunks.length > 0) {
+          await embeddingsStorage.storeHTMLChunks({
+            pageURL,
+            pageTitle,
+            chunks: result.chunks.map((chunk: any, index: number) => ({
+              text: chunk.text,
+              html: chunk.html || '',
+              embedding: chunk.embedding,
+              index,
+            })),
+            sessionId: sessionId || 'default',
+          });
+          debug.log('[ContextSelector] HTML chunks stored:', result.chunks.length);
+        }
+
+        // Store form field groups
+        if (result.formFieldGroupEmbeddings && result.formFieldGroupEmbeddings.length > 0) {
+          await embeddingsStorage.storeFormFields({
+            pageURL,
+            groups: result.formFieldGroupEmbeddings,
+            sessionId: sessionId || 'default',
+          });
+          debug.log('[ContextSelector] Form field groups stored:', result.formFieldGroupEmbeddings.length);
+        }
+
+        // Store clickable element groups
+        if (result.clickableElementGroupEmbeddings && result.clickableElementGroupEmbeddings.length > 0) {
+          await embeddingsStorage.storeClickableElements({
+            pageURL,
+            groups: result.clickableElementGroupEmbeddings,
+            sessionId: sessionId || 'default',
+          });
+          debug.log(
+            '[ContextSelector] Clickable element groups stored:',
+            result.clickableElementGroupEmbeddings.length,
+          );
+        }
+
+        debug.log('[ContextSelector] All embeddings stored successfully for:', pageURL);
+      } catch (error) {
+        debug.error('[ContextSelector] Failed to store embeddings:', error);
+        throw error;
       }
+    },
+    [sessionId],
+  );
 
-      debug.log('[ContextSelector] All embeddings stored successfully for:', pageURL);
-    } catch (error) {
-      debug.error('[ContextSelector] Failed to store embeddings:', error);
-      throw error;
-    }
-  }, [sessionId]);
-  
-  const embedTab = useCallback(async (tabId: number, url: string, title: string, skipActivation?: boolean): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const requestId = `embed_tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      const timeout = setTimeout(() => {
-        chrome.runtime.onMessage.removeListener(listener);
-        debug.error('[ContextSelector] Embed timeout for tab:', tabId);
-        setEmbeddingErrors(prev => new Map(prev).set(tabId, 'Timeout'));
-        resolve(false);
-      }, 60000);
+  const embedTab = useCallback(
+    async (tabId: number, url: string, title: string, skipActivation?: boolean): Promise<boolean> =>
+      new Promise(resolve => {
+        const requestId = `embed_tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-      const listener = async (message: any) => {
-        if (message.type === 'embeddingComplete' && message.requestId === requestId) {
-          clearTimeout(timeout);
+        const timeout = setTimeout(() => {
           chrome.runtime.onMessage.removeListener(listener);
-          
-          if (message.error) {
-            debug.error('[ContextSelector] Embed failed:', message.error);
-            setEmbeddingErrors(prev => new Map(prev).set(tabId, message.error));
-            resolve(false);
-      } else {
-            debug.log('[ContextSelector] Tab embedded, now storing...', tabId);
-            
-            try {
-              // Store the embeddings to IndexedDB
-              await storeEmbeddings(message.result, url, title);
-              debug.log('[ContextSelector] Tab embedded and stored successfully:', tabId);
-              resolve(true);
-            } catch (storeError) {
-              debug.error('[ContextSelector] Failed to store embeddings:', storeError);
-              setEmbeddingErrors(prev => new Map(prev).set(tabId, 'Failed to save embeddings'));
+          debug.error('[ContextSelector] Embed timeout for tab:', tabId);
+          setEmbeddingErrors(prev => new Map(prev).set(tabId, 'Timeout'));
+          resolve(false);
+        }, 60000);
+
+        const listener = async (message: any) => {
+          if (message.type === 'embeddingComplete' && message.requestId === requestId) {
+            clearTimeout(timeout);
+            chrome.runtime.onMessage.removeListener(listener);
+
+            if (message.error) {
+              debug.error('[ContextSelector] Embed failed:', message.error);
+              setEmbeddingErrors(prev => new Map(prev).set(tabId, message.error));
               resolve(false);
+            } else {
+              debug.log('[ContextSelector] Tab embedded, now storing...', tabId);
+
+              try {
+                // Store the embeddings to IndexedDB
+                await storeEmbeddings(message.result, url, title);
+                debug.log('[ContextSelector] Tab embedded and stored successfully:', tabId);
+                resolve(true);
+              } catch (storeError) {
+                debug.error('[ContextSelector] Failed to store embeddings:', storeError);
+                setEmbeddingErrors(prev => new Map(prev).set(tabId, 'Failed to save embeddings'));
+                resolve(false);
+              }
             }
           }
-        }
-      };
+        };
 
-      chrome.runtime.onMessage.addListener(listener);
-      
-      chrome.runtime.sendMessage({
-        type: 'embedPageContentForTab',
-        tabId,
-        requestId,
-        skipActivation,
-      }).catch(err => {
-        clearTimeout(timeout);
-        chrome.runtime.onMessage.removeListener(listener);
-        debug.error('[ContextSelector] Failed to send embed request:', err);
-        setEmbeddingErrors(prev => new Map(prev).set(tabId, err.message));
-        resolve(false);
-      });
-    });
-  }, [storeEmbeddings]);
+        chrome.runtime.onMessage.addListener(listener);
 
-  const handleEmbedAndSelect = useCallback(async (tab: BrowserTab) => {
-    if (embeddingTabs.has(tab.id)) return;
-    
-    setEmbeddingTabs(prev => new Set(prev).add(tab.id));
-    setEmbeddingErrors(prev => {
-      const next = new Map(prev);
-      next.delete(tab.id);
-      return next;
-    });
-    
-    // For discarded tabs, the background script will handle activation and loading
-    // We don't need to pre-activate here - just let embedTab handle it
-    // This avoids duplicate activation and simplifies the flow
-    
-    try {
-      const success = await embedTab(tab.id, tab.url, tab.title);
-      
-      if (success) {
-        // Refresh indexed pages
-        await fetchPages();
-        
-        // Auto-select the newly embedded page
-        if (!selectedPageURLs.includes(tab.url)) {
-          onPagesChange([...selectedPageURLs, tab.url]);
-        }
-      }
-    } finally {
-      setEmbeddingTabs(prev => {
-        const next = new Set(prev);
+        chrome.runtime
+          .sendMessage({
+            type: 'embedPageContentForTab',
+            tabId,
+            requestId,
+            skipActivation,
+          })
+          .catch(err => {
+            clearTimeout(timeout);
+            chrome.runtime.onMessage.removeListener(listener);
+            debug.error('[ContextSelector] Failed to send embed request:', err);
+            setEmbeddingErrors(prev => new Map(prev).set(tabId, err.message));
+            resolve(false);
+          });
+      }),
+    [storeEmbeddings],
+  );
+
+  const handleEmbedAndSelect = useCallback(
+    async (tab: BrowserTab) => {
+      if (embeddingTabs.has(tab.id)) return;
+
+      setEmbeddingTabs(prev => new Set(prev).add(tab.id));
+      setEmbeddingErrors(prev => {
+        const next = new Map(prev);
         next.delete(tab.id);
         return next;
       });
-    }
-  }, [embeddingTabs, embedTab, fetchPages, selectedPageURLs, onPagesChange]);
 
-  // Initiate bulk embed - processes tabs in parallel with real-time updates
-  // Background script handles discarded tab activation/reload automatically
-  const handleBulkEmbed = useCallback(async (tabs: BrowserTab[]) => {
-    // Helper to check if URL is protected/uembeddable
-    const isProtectedUrl = (url: string) => {
-      // Skip protected browser pages
-      if (PROTECTED_PATTERNS.some(pattern => url.startsWith(pattern))) return true;
-      // Skip PDF files
-      if (url.endsWith('.pdf') || url.includes('/pdf/viewer')) return true;
-      // Skip empty URLs
-      if (!url || url === 'about:blank') return true;
-      return false;
-    };
-    
-    // Filter to only embeddable, unindexed tabs that aren't already being embedded
-    const tabsToEmbed = tabs.filter(tab => 
-      !indexedURLs.has(tab.url) && 
-      !embeddingTabs.has(tab.id) &&
-      !isProtectedUrl(tab.url)
-    );
-      
-    const skippedCount = tabs.length - tabsToEmbed.length - tabs.filter(t => indexedURLs.has(t.url) || embeddingTabs.has(t.id)).length;
-    if (skippedCount > 0) {
-      debug.log('[ContextSelector] Skipped', skippedCount, 'protected/PDF pages');
-    }
-    
-    if (tabsToEmbed.length === 0) return;
-    
-    const discardedCount = tabsToEmbed.filter(tab => tab.discarded).length;
-    debug.log('[ContextSelector] Bulk embed starting (parallel):', {
-      total: tabsToEmbed.length,
-      discarded: discardedCount,
-      regular: tabsToEmbed.length - discardedCount,
-    });
-    
-    embeddingAbortRef.current = new AbortController();
-    setEmbeddingProgress({ current: 0, total: tabsToEmbed.length });
-    
-    // Add all tabs to embedding set
-    const newEmbeddingSet = new Set(embeddingTabs);
-    tabsToEmbed.forEach(tab => newEmbeddingSet.add(tab.id));
-    setEmbeddingTabs(newEmbeddingSet);
-    
-    let completedCount = 0;
-    const successfulUrls: string[] = [];
-    
-    // Process each tab and update UI immediately when complete
-    const embedSingleTab = async (tab: BrowserTab) => {
-      if (embeddingAbortRef.current?.signal.aborted) return;
-      
+      // For discarded tabs, the background script will handle activation and loading
+      // We don't need to pre-activate here - just let embedTab handle it
+      // This avoids duplicate activation and simplifies the flow
+
       try {
         const success = await embedTab(tab.id, tab.url, tab.title);
-        
+
         if (success) {
-          successfulUrls.push(tab.url);
-          debug.log('[ContextSelector] Bulk: Tab embedded successfully:', tab.title);
-          
-          // Immediately update newlyEmbeddedURLs so UI reflects completion
-          setNewlyEmbeddedURLs(prev => new Set(prev).add(tab.url));
-          
+          // Refresh indexed pages
+          await fetchPages();
+
           // Auto-select the newly embedded page
           if (!selectedPageURLs.includes(tab.url)) {
             onPagesChange([...selectedPageURLs, tab.url]);
           }
-        } else {
-          debug.warn('[ContextSelector] Bulk: Failed to embed tab:', tab.title);
         }
-      } catch (embedError) {
-        debug.error('[ContextSelector] Bulk embed error for tab:', tab.id, embedError);
-        setEmbeddingErrors(prev => new Map(prev).set(tab.id, 'Failed to embed'));
       } finally {
-        // Remove from embedding set immediately
         setEmbeddingTabs(prev => {
           const next = new Set(prev);
           next.delete(tab.id);
           return next;
         });
-        
-        // Update progress
-        completedCount++;
-        setEmbeddingProgress(prev => prev ? { current: completedCount, total: prev.total } : null);
       }
-    };
-    
-    // Run all embeds in parallel with concurrency limit
-    const CONCURRENCY = 5; // Process 5 tabs at a time
-    const chunks: BrowserTab[][] = [];
-    for (let i = 0; i < tabsToEmbed.length; i += CONCURRENCY) {
-      chunks.push(tabsToEmbed.slice(i, i + CONCURRENCY));
-    }
-    
-    for (const chunk of chunks) {
-      if (embeddingAbortRef.current?.signal.aborted) break;
-      await Promise.all(chunk.map(tab => embedSingleTab(tab)));
-    }
-    
-    // Cleanup
-    setEmbeddingProgress(null);
-    embeddingAbortRef.current = null;
-    
-    // Final refresh to ensure everything is in sync
-    await fetchPages();
-    
-    debug.log('[ContextSelector] Bulk embed complete:', successfulUrls.length, 'of', tabsToEmbed.length, 'succeeded');
-  }, [indexedURLs, embeddingTabs, embedTab, fetchPages, selectedPageURLs, onPagesChange]);
-      
+    },
+    [embeddingTabs, embedTab, fetchPages, selectedPageURLs, onPagesChange],
+  );
+
+  // Initiate bulk embed - processes tabs in parallel with real-time updates
+  // Background script handles discarded tab activation/reload automatically
+  const handleBulkEmbed = useCallback(
+    async (tabs: BrowserTab[]) => {
+      // Helper to check if URL is protected/uembeddable
+      const isProtectedUrl = (url: string) => {
+        // Skip protected browser pages
+        if (PROTECTED_PATTERNS.some(pattern => url.startsWith(pattern))) return true;
+        // Skip PDF files
+        if (url.endsWith('.pdf') || url.includes('/pdf/viewer')) return true;
+        // Skip empty URLs
+        if (!url || url === 'about:blank') return true;
+        return false;
+      };
+
+      // Filter to only embeddable, unindexed tabs that aren't already being embedded
+      const tabsToEmbed = tabs.filter(
+        tab => !indexedURLs.has(tab.url) && !embeddingTabs.has(tab.id) && !isProtectedUrl(tab.url),
+      );
+
+      const skippedCount =
+        tabs.length - tabsToEmbed.length - tabs.filter(t => indexedURLs.has(t.url) || embeddingTabs.has(t.id)).length;
+      if (skippedCount > 0) {
+        debug.log('[ContextSelector] Skipped', skippedCount, 'protected/PDF pages');
+      }
+
+      if (tabsToEmbed.length === 0) return;
+
+      const discardedCount = tabsToEmbed.filter(tab => tab.discarded).length;
+      debug.log('[ContextSelector] Bulk embed starting (parallel):', {
+        total: tabsToEmbed.length,
+        discarded: discardedCount,
+        regular: tabsToEmbed.length - discardedCount,
+      });
+
+      embeddingAbortRef.current = new AbortController();
+      setEmbeddingProgress({ current: 0, total: tabsToEmbed.length });
+
+      // Add all tabs to embedding set
+      const newEmbeddingSet = new Set(embeddingTabs);
+      tabsToEmbed.forEach(tab => newEmbeddingSet.add(tab.id));
+      setEmbeddingTabs(newEmbeddingSet);
+
+      let completedCount = 0;
+      const successfulUrls: string[] = [];
+
+      // Process each tab and update UI immediately when complete
+      const embedSingleTab = async (tab: BrowserTab) => {
+        if (embeddingAbortRef.current?.signal.aborted) return;
+
+        try {
+          const success = await embedTab(tab.id, tab.url, tab.title);
+
+          if (success) {
+            successfulUrls.push(tab.url);
+            debug.log('[ContextSelector] Bulk: Tab embedded successfully:', tab.title);
+
+            // Immediately update newlyEmbeddedURLs so UI reflects completion
+            setNewlyEmbeddedURLs(prev => new Set(prev).add(tab.url));
+
+            // Auto-select the newly embedded page
+            if (!selectedPageURLs.includes(tab.url)) {
+              onPagesChange([...selectedPageURLs, tab.url]);
+            }
+          } else {
+            debug.warn('[ContextSelector] Bulk: Failed to embed tab:', tab.title);
+          }
+        } catch (embedError) {
+          debug.error('[ContextSelector] Bulk embed error for tab:', tab.id, embedError);
+          setEmbeddingErrors(prev => new Map(prev).set(tab.id, 'Failed to embed'));
+        } finally {
+          // Remove from embedding set immediately
+          setEmbeddingTabs(prev => {
+            const next = new Set(prev);
+            next.delete(tab.id);
+            return next;
+          });
+
+          // Update progress
+          completedCount++;
+          setEmbeddingProgress(prev => (prev ? { current: completedCount, total: prev.total } : null));
+        }
+      };
+
+      // Run all embeds in parallel with concurrency limit
+      const CONCURRENCY = 5; // Process 5 tabs at a time
+      const chunks: BrowserTab[][] = [];
+      for (let i = 0; i < tabsToEmbed.length; i += CONCURRENCY) {
+        chunks.push(tabsToEmbed.slice(i, i + CONCURRENCY));
+      }
+
+      for (const chunk of chunks) {
+        if (embeddingAbortRef.current?.signal.aborted) break;
+        await Promise.all(chunk.map(tab => embedSingleTab(tab)));
+      }
+
+      // Cleanup
+      setEmbeddingProgress(null);
+      embeddingAbortRef.current = null;
+
+      // Final refresh to ensure everything is in sync
+      await fetchPages();
+
+      debug.log('[ContextSelector] Bulk embed complete:', successfulUrls.length, 'of', tabsToEmbed.length, 'succeeded');
+    },
+    [indexedURLs, embeddingTabs, embedTab, fetchPages, selectedPageURLs, onPagesChange],
+  );
+
   const handleCancelBulkEmbed = useCallback(() => {
     embeddingAbortRef.current?.abort();
   }, []);
@@ -1023,7 +1051,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // ============================================================================
   // TOGGLE HANDLERS
   // ============================================================================
-  
+
   const toggleWindow = useCallback((windowId: number) => {
     setExpandedWindows(prev => {
       const next = new Set(prev);
@@ -1051,82 +1079,88 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   // ============================================================================
   // WORKSPACE ITEM HANDLERS
   // ============================================================================
-  
-  const handleToggleNote = useCallback(async (noteId: string) => {
-    if (!onNotesChange) return;
-    const newSelection = selectedNoteIds.includes(noteId)
-      ? selectedNoteIds.filter(id => id !== noteId)
-      : [...selectedNoteIds, noteId];
-    onNotesChange(newSelection);
-    
-    // If callback for full notes is provided, fetch content
-    if (onNotesWithContentChange && newSelection.length > 0) {
-      try {
-        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const response = await fetch(`${baseURL}/api/workspace/notes/bulk`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ ids: newSelection }),
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          onNotesWithContentChange(data.notes || []);
-          debug.log('[ContextSelector] Fetched', data.notes?.length || 0, 'notes with content');
-        }
-      } catch (error) {
-        debug.error('[ContextSelector] Failed to fetch note content:', error);
-      }
-    } else if (onNotesWithContentChange && newSelection.length === 0) {
-      // Clear notes if nothing selected
-      onNotesWithContentChange([]);
-    }
-  }, [selectedNoteIds, onNotesChange, onNotesWithContentChange]);
 
-  const handleToggleCredential = useCallback(async (credentialId: string) => {
-    if (!onCredentialsChange) return;
-    const newSelection = selectedCredentialIds.includes(credentialId)
-      ? selectedCredentialIds.filter(id => id !== credentialId)
-      : [...selectedCredentialIds, credentialId];
-    onCredentialsChange(newSelection);
-    
-    // If callback for full credentials is provided, fetch secrets
-    if (onCredentialsWithSecretsChange && newSelection.length > 0) {
-      try {
-        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const response = await fetch(`${baseURL}/api/workspace/credentials/bulk`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ ids: newSelection }),
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          onCredentialsWithSecretsChange(data.credentials || []);
-          debug.log('[ContextSelector] Fetched', data.credentials?.length || 0, 'credentials with secrets');
+  const handleToggleNote = useCallback(
+    async (noteId: string) => {
+      if (!onNotesChange) return;
+      const newSelection = selectedNoteIds.includes(noteId)
+        ? selectedNoteIds.filter(id => id !== noteId)
+        : [...selectedNoteIds, noteId];
+      onNotesChange(newSelection);
+
+      // If callback for full notes is provided, fetch content
+      if (onNotesWithContentChange && newSelection.length > 0) {
+        try {
+          const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+          const response = await fetch(`${baseURL}/api/workspace/notes/bulk`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ ids: newSelection }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            onNotesWithContentChange(data.notes || []);
+            debug.log('[ContextSelector] Fetched', data.notes?.length || 0, 'notes with content');
+          }
+        } catch (error) {
+          debug.error('[ContextSelector] Failed to fetch note content:', error);
         }
-      } catch (error) {
-        debug.error('[ContextSelector] Failed to fetch credential secrets:', error);
+      } else if (onNotesWithContentChange && newSelection.length === 0) {
+        // Clear notes if nothing selected
+        onNotesWithContentChange([]);
       }
-    } else if (onCredentialsWithSecretsChange && newSelection.length === 0) {
-      // Clear credentials if nothing selected
-      onCredentialsWithSecretsChange([]);
-    }
-  }, [selectedCredentialIds, onCredentialsChange, onCredentialsWithSecretsChange]);
+    },
+    [selectedNoteIds, onNotesChange, onNotesWithContentChange],
+  );
+
+  const handleToggleCredential = useCallback(
+    async (credentialId: string) => {
+      if (!onCredentialsChange) return;
+      const newSelection = selectedCredentialIds.includes(credentialId)
+        ? selectedCredentialIds.filter(id => id !== credentialId)
+        : [...selectedCredentialIds, credentialId];
+      onCredentialsChange(newSelection);
+
+      // If callback for full credentials is provided, fetch secrets
+      if (onCredentialsWithSecretsChange && newSelection.length > 0) {
+        try {
+          const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+          const response = await fetch(`${baseURL}/api/workspace/credentials/bulk`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ ids: newSelection }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            onCredentialsWithSecretsChange(data.credentials || []);
+            debug.log('[ContextSelector] Fetched', data.credentials?.length || 0, 'credentials with secrets');
+          }
+        } catch (error) {
+          debug.error('[ContextSelector] Failed to fetch credential secrets:', error);
+        }
+      } else if (onCredentialsWithSecretsChange && newSelection.length === 0) {
+        // Clear credentials if nothing selected
+        onCredentialsWithSecretsChange([]);
+      }
+    },
+    [selectedCredentialIds, onCredentialsChange, onCredentialsWithSecretsChange],
+  );
 
   // ============================================================================
   // DISPLAY TEXT
   // ============================================================================
-  
+
   const displayText = useMemo(() => {
     const totalSelected = selectedPageURLs.length + selectedNoteIds.length + selectedCredentialIds.length;
-    
+
     if (loading) return 'Loading...';
     if (pages.length === 0 && browserTabs.length === 0 && notes.length === 0 && credentials.length === 0) {
       return 'No items available';
@@ -1134,11 +1168,22 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
     if (totalSelected === 0) return 'No context added';
     if (totalSelected === 1) return '1 item selected';
     return `${totalSelected} items selected`;
-  }, [loading, pages.length, browserTabs.length, notes.length, credentials.length, selectedPageURLs.length, selectedNoteIds.length, selectedCredentialIds.length]);
+  }, [
+    loading,
+    pages.length,
+    browserTabs.length,
+    notes.length,
+    credentials.length,
+    selectedPageURLs.length,
+    selectedNoteIds.length,
+    selectedCredentialIds.length,
+  ]);
 
-  const allFilteredSelected = filteredPages.length > 0 && filteredPages.every(p => selectedPageURLs.includes(p.pageURL));
+  const allFilteredSelected =
+    filteredPages.length > 0 && filteredPages.every(p => selectedPageURLs.includes(p.pageURL));
   const isCompact = variant === 'compact';
-  const hasSelectedItems = selectedPageURLs.length > 0 || selectedNoteIds.length > 0 || selectedCredentialIds.length > 0;
+  const hasSelectedItems =
+    selectedPageURLs.length > 0 || selectedNoteIds.length > 0 || selectedCredentialIds.length > 0;
 
   // ============================================================================
   // RENDER
@@ -1155,42 +1200,40 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
         disabled={loading || isLoadingSession}
         title={isTruncated ? displayText : undefined}
         className={cn(
-          'flex items-center gap-1.5 rounded-xl h-[22px] transition-all mt-[3px]',
+          'mt-[3px] flex h-[22px] items-center gap-1.5 rounded-xl transition-all',
           isCompact
-            ? 'min-w-0 px-2 py-1 ml-1.5 text-[12px] leading-tight'
-            : 'min-w-[120px] max-w-[200px] px-0 pt-[3px] border text-xs',
+            ? 'ml-1.5 min-w-0 px-2 py-1 text-[12px] leading-tight'
+            : 'max-w-[200px] min-w-[120px] border px-0 pt-[3px] text-xs',
           isLoadingSession
             ? 'cursor-wait opacity-70'
             : loading
-            ? 'cursor-wait opacity-70 animate-pulse'
-            : 'cursor-pointer',
+              ? 'animate-pulse cursor-wait opacity-70'
+              : 'cursor-pointer',
           isCompact
             ? isLight
               ? hasSelectedItems
-                ? 'text-gray-700 bg-gray-200/60 hover:bg-gray-200/80' // Same color as addMenuButton when items selected
-                : 'text-gray-500 bg-gray-200/60 hover:bg-gray-200/80' // Dull when no items selected
+                ? 'bg-gray-200/60 text-gray-700 hover:bg-gray-200/80' // Same color as addMenuButton when items selected
+                : 'bg-gray-200/60 text-gray-500 hover:bg-gray-200/80' // Dull when no items selected
               : hasSelectedItems
-              ? 'text-gray-300 bg-gray-700/40 hover:bg-gray-700/60' // Same color as addMenuButton when items selected
-              : 'text-gray-500 bg-gray-700/40 hover:bg-gray-700/60' // Dull when no items selected
+                ? 'bg-gray-700/40 text-gray-300 hover:bg-gray-700/60' // Same color as addMenuButton when items selected
+                : 'bg-gray-700/40 text-gray-500 hover:bg-gray-700/60' // Dull when no items selected
             : isLight
-            ? 'border-gray-300 bg-gray-100 text-gray-600 hover:border-gray-400 hover:bg-gray-200'
-            : 'border-gray-600 bg-gray-800 text-gray-400 hover:border-gray-500 hover:bg-gray-700',
+              ? 'border-gray-300 bg-gray-100 text-gray-600 hover:border-gray-400 hover:bg-gray-200'
+              : 'border-gray-600 bg-gray-800 text-gray-400 hover:border-gray-500 hover:bg-gray-700',
         )}>
-        <span className={cn('flex-shrink-0 font-semibold', isCompact ? 'text-sm' : 'text-base')}>
-          @
-        </span>
+        <span className={cn('flex-shrink-0 font-semibold', isCompact ? 'text-sm' : 'text-base')}>@</span>
 
-        <span className={cn('truncate relative overflow-hidden', isCompact ? 'flex-1 min-w-0' : 'flex-1 text-left')}>
+        <span className={cn('relative truncate overflow-hidden', isCompact ? 'min-w-0 flex-1' : 'flex-1 text-left')}>
           <span ref={textRef} className="block truncate">
             {displayText}
           </span>
           {isTruncated && isCompact && (
-            <span 
+            <span
               className={cn(
-                'absolute right-0 top-0 bottom-0 w-8 pointer-events-none',
+                'pointer-events-none absolute top-0 right-0 bottom-0 w-8',
                 isLight
                   ? 'bg-gradient-to-l from-white via-white/80 to-transparent'
-                  : 'bg-gradient-to-l from-[#151C24] via-[#151C24]/80 to-transparent'
+                  : 'bg-gradient-to-l from-[#151C24] via-[#151C24]/80 to-transparent',
               )}
             />
           )}
@@ -1211,7 +1254,10 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
       </button>
 
       {/* Dropdown - Portal */}
-      {isOpen && dropdownPosition && portalContainer && createPortal(
+      {isOpen &&
+        dropdownPosition &&
+        portalContainer &&
+        createPortal(
           <div
             ref={dropdownRef}
             data-pages-selector-dropdown
@@ -1220,755 +1266,921 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
               top: dropdownPosition.top - 8,
               left: dropdownPosition.left,
               transform: 'translateY(-100%)',
-            minWidth: Math.max(dropdownPosition.width, 340),
-            maxWidth: 420,
-            minHeight: 300,
+              minWidth: Math.max(dropdownPosition.width, 340),
+              maxWidth: 420,
+              minHeight: 300,
               pointerEvents: 'auto',
             }}
             className={cn(
-            'max-h-[500px] rounded-md border shadow-lg flex flex-col',
+              'flex max-h-[500px] flex-col rounded-md border shadow-lg',
               isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
             )}>
-          
-          {/* Header with Search */}
-        <div
-          className={cn(
-            'flex items-center gap-2 px-2 py-1.5 border-b rounded-t-md',
-            isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
-          )}>
-          <div className="relative flex-1">
-            <svg
+            {/* Header with Search */}
+            <div
               className={cn(
-                'absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5',
-                isLight ? 'text-gray-400' : 'text-gray-500'
-              )}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-                placeholder="Search indexed pages, tabs, and workspace items..."
-              className={cn(
-                  'w-full pl-7 pr-2 py-1.5 text-xs rounded-md outline-none transition-colors',
-                isLight
-                  ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-100'
-                  : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800'
-              )}
-            />
-            </div>
-          </div>
-
-          {/* View Mode Tabs */}
-          {(showBrowserTabs || onNotesChange || onCredentialsChange) && (
-            <div className={cn(
-              'flex items-center justify-center gap-1 px-2 py-1.5 border-b',
-              isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]'
-            )}>
-              {['all', 'indexed', ...(showBrowserTabs ? ['tabs'] : []), ...((onNotesChange || onCredentialsChange) ? ['workspace'] : [])].map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setViewMode(mode as ViewMode)}
+                'flex items-center gap-2 rounded-t-md border-b px-2 py-1.5',
+                isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-[#151C24]',
+              )}>
+              <div className="relative flex-1">
+                <svg
                   className={cn(
-                    'flex-shrink-0 px-3 py-1 text-xs font-medium rounded transition-colors',
-                    viewMode === mode
-                      ? isLight
-                        ? 'bg-gray-200 text-gray-700'
-                        : 'bg-gray-700 text-[#bcc1c7]'
-                      : isLight
-                        ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
-                        : 'text-gray-400 hover:bg-gray-800 hover:text-[#bcc1c7]'
+                    'absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2',
+                    isLight ? 'text-gray-400' : 'text-gray-500',
                   )}
-                >
-                  {mode === 'all' && 'All'}
-                  {mode === 'indexed' && `Indexed (${pages.length})`}
-                  {mode === 'tabs' && `Tabs (${browserTabs.length})`}
-                  {mode === 'workspace' && `Workspace (${notes.length + credentials.length})`}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Content */}
-          <div className="overflow-y-auto flex-1 min-h-[200px]">
-            {loading && loadingTabs ? (
-              <div className="flex items-center justify-center py-6">
-                <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                  Loading...
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* INDEXED PAGES SECTION */}
-                {(viewMode === 'all' || viewMode === 'indexed') && (
-                  <>
-                    {/* Section Header */}
-                    <div className={cn(
-                      'flex items-center justify-between px-2.5 py-1.5 sticky top-0 z-10',
-                      isLight ? 'bg-gray-100/95 border-b border-gray-200' : 'bg-gray-800/95 border-b border-gray-700'
-                    )}>
-                      <span className={cn(
-                        'text-[10px] font-semibold uppercase tracking-wider',
-                        isLight ? 'text-gray-500' : 'text-gray-400'
-                      )}>
-                        Indexed ({filteredPages.length})
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {/* Delete Selected Button */}
-                        {selectedPageURLs.filter(url => filteredPages.some(p => p.pageURL === url)).length > 0 && (
-                          <button
-                            type="button"
-                            onClick={handleBulkDeleteIndexed}
-                            disabled={deletingPages.size > 0}
-                            className={cn(
-                              'flex items-center gap-1 text-[10px] font-medium transition-colors',
-                              deletingPages.size > 0
-                                ? 'opacity-50 cursor-not-allowed'
-                                : isLight 
-                                  ? 'text-red-600 hover:text-red-700' 
-                                  : 'text-red-400 hover:text-red-300'
-                            )}
-                          >
-                            {deletingPages.size > 0 ? (
-                              <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                              </svg>
-                            ) : (
-                              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            )}
-                            Delete ({selectedPageURLs.filter(url => filteredPages.some(p => p.pageURL === url)).length})
-                          </button>
-                        )}
-                        {/* Select All Button */}
-                        {filteredPages.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={handleSelectAllIndexed}
-                            className={cn(
-                              'flex items-center gap-1 text-[10px] font-medium transition-colors',
-                              isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300'
-                            )}
-                          >
-                            <div className={cn(
-                              'w-3 h-3 rounded border flex items-center justify-center',
-                              allFilteredSelected
-                                ? 'bg-blue-600 border-blue-600'
-                                : isLight ? 'border-gray-400' : 'border-gray-500'
-                            )}>
-                              {allFilteredSelected && (
-                                <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                </svg>
-                              )}
-                            </div>
-                            All
-                          </button>
-                        )}
-                        {/* Sort Button with Dropdown */}
-                        <div className="relative" ref={sortMenuRef}>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setShowSortMenu(!showSortMenu); }}
-                            title={`Sort: ${sortOption === 'date-desc' ? 'Newest' : sortOption === 'date-asc' ? 'Oldest' : sortOption === 'name-asc' ? 'A-Z' : 'Z-A'}`}
-                            className={cn(
-                              'p-1 rounded transition-colors',
-                              isLight 
-                                ? 'text-gray-400 hover:bg-gray-200 hover:text-gray-700' 
-                                : 'text-gray-500 hover:bg-gray-700 hover:text-gray-200'
-                            )}
-                          >
-                            {/* Sort icon - up/down arrows */}
-                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                              {/* Up arrow */}
-                              <path d="M8 5L8 19M4 9L8 5L12 9" />
-                              {/* Down arrow */}
-                              <path d="M16 19L16 5M12 15L16 19L20 15" />
-                            </svg>
-                          </button>
-                          {/* Sort Menu */}
-                          {showSortMenu && (
-                            <div className={cn(
-                              'absolute right-0 top-full mt-1 py-1 rounded-md shadow-lg border z-50 min-w-[100px]',
-                              isLight ? 'bg-white border-gray-200' : 'bg-gray-800 border-gray-700'
-                            )}>
-                              {[
-                                { value: 'date-desc', label: 'Newest' },
-                                { value: 'date-asc', label: 'Oldest' },
-                                { value: 'name-asc', label: 'A-Z' },
-                                { value: 'name-desc', label: 'Z-A' },
-                              ].map((option) => (
-                                <button
-                                  key={option.value}
-                                  type="button"
-                                  onClick={(e) => { 
-                                    e.stopPropagation(); 
-                                    setSortOption(option.value as SortOption); 
-                                    setShowSortMenu(false); 
-                                  }}
-                                  className={cn(
-                                    'w-full px-3 py-1 text-left text-[10px] transition-colors',
-                                    sortOption === option.value
-                                      ? isLight ? 'bg-blue-50 text-blue-600' : 'bg-blue-900/30 text-blue-400'
-                                      : isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-300 hover:bg-gray-700'
-                                  )}
-                                >
-                                  {option.label}
-                                  {sortOption === option.value && (
-                                    <span className="ml-2">✓</span>
-                                  )}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-        </div>
-
-                    {/* Indexed Pages List */}
-                    {filteredPages.length === 0 ? (
-            <div className={cn('px-3 py-4 text-xs text-center', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                        {pages.length === 0 ? 'No pages indexed yet' : 'No indexed pages match your search'}
-            </div>
-          ) : (
-            filteredPages.map(page => {
-              const isSelected = selectedPageURLs.includes(page.pageURL);
-              const isCurrent = page.pageURL === currentPageURL;
-              const isDeleting = deletingPages.has(page.pageURL);
-              const totalChunks = page.htmlChunkCount + page.formChunkCount + page.clickableChunkCount;
-
-              return (
-                <button
-                  type="button"
-                  key={page.pageURL}
-                  onClick={() => !isDeleting && handleTogglePage(page.pageURL)}
-                  disabled={isDeleting}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onClick={e => e.stopPropagation()}
+                  onMouseDown={e => e.stopPropagation()}
+                  placeholder="Search indexed pages, tabs, and workspace items..."
                   className={cn(
-                    'flex w-full items-center px-2.5 py-1 text-xs transition-colors border-b gap-2 group text-left',
-                    isLight ? 'border-gray-100' : 'border-gray-700/50',
-                    isDeleting && 'opacity-50 pointer-events-none',
-                    isSelected
-                      ? isLight
-                        ? 'bg-gray-100/80 text-gray-700'
-                        : 'bg-gray-700/40 text-gray-200'
-                      : isLight
-                      ? 'text-gray-500 hover:bg-gray-100'
-                      : 'text-gray-400 hover:bg-gray-700/50',
-                  )}>
-                            {/* Status indicator */}
-                            <span className={cn(
-                              'w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0',
-                              isLight ? 'bg-gray-100 text-gray-500' : 'bg-gray-800 text-gray-400'
-                            )}>
-                              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                              </svg>
-                            </span>
-                            
-                  <div className="flex-1 min-w-0 flex flex-col text-left">
-                              <div className="font-medium truncate leading-tight flex items-center gap-1.5">
-                      {isCurrent && (
+                    'w-full rounded-md py-1.5 pr-2 pl-7 text-xs transition-colors outline-none',
+                    isLight
+                      ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-100'
+                      : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800',
+                  )}
+                />
+              </div>
+            </div>
+
+            {/* View Mode Tabs */}
+            {(showBrowserTabs || onNotesChange || onCredentialsChange) && (
+              <div
+                className={cn(
+                  'flex items-center justify-center gap-1 border-b px-2 py-1.5',
+                  isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#151C24]',
+                )}>
+                {[
+                  'all',
+                  'indexed',
+                  ...(showBrowserTabs ? ['tabs'] : []),
+                  ...(onNotesChange || onCredentialsChange ? ['workspace'] : []),
+                ].map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setViewMode(mode as ViewMode)}
+                    className={cn(
+                      'flex-shrink-0 rounded px-3 py-1 text-xs font-medium transition-colors',
+                      viewMode === mode
+                        ? isLight
+                          ? 'bg-gray-200 text-gray-700'
+                          : 'bg-gray-700 text-[#bcc1c7]'
+                        : isLight
+                          ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
+                          : 'text-gray-400 hover:bg-gray-800 hover:text-[#bcc1c7]',
+                    )}>
+                    {mode === 'all' && 'All'}
+                    {mode === 'indexed' && `Indexed (${pages.length})`}
+                    {mode === 'tabs' && `Tabs (${browserTabs.length})`}
+                    {mode === 'workspace' && `Workspace (${notes.length + credentials.length})`}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Content */}
+            <div className="min-h-[200px] flex-1 overflow-y-auto">
+              {loading && loadingTabs ? (
+                <div className="flex items-center justify-center py-6">
+                  <div className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>Loading...</div>
+                </div>
+              ) : (
+                <>
+                  {/* INDEXED PAGES SECTION */}
+                  {(viewMode === 'all' || viewMode === 'indexed') && (
+                    <>
+                      {/* Section Header */}
+                      <div
+                        className={cn(
+                          'sticky top-0 z-10 flex items-center justify-between px-2.5 py-1.5',
+                          isLight
+                            ? 'border-b border-gray-200 bg-gray-100/95'
+                            : 'border-b border-gray-700 bg-gray-800/95',
+                        )}>
                         <span
                           className={cn(
-                                      'text-[9px] font-semibold px-1 py-0.5 rounded flex-shrink-0',
-                            isLight ? 'bg-green-100 text-green-700' : 'bg-green-900/30 text-green-400',
+                            'text-[10px] font-semibold tracking-wider uppercase',
+                            isLight ? 'text-gray-500' : 'text-gray-400',
                           )}>
-                          CURRENT
+                          Indexed ({filteredPages.length})
                         </span>
-                      )}
-                      <span className="truncate">{page.pageTitle}</span>
-                    </div>
-                    <div className={cn('text-[10px] truncate leading-tight', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                      {getDomain(page.pageURL)} • {totalChunks} chunks • {formatRelativeTime(page.lastIndexed)}
-                    </div>
-                  </div>
-                  
-                            {/* Action buttons - equally spaced */}
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              {/* Open in new tab button */}
-                              <span
-                                role="button"
-                                tabIndex={0}
-                                onClick={(e) => handleOpenInNewTab(page.pageURL, e)}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); handleOpenInNewTab(page.pageURL, e as any); } }}
-                                title="Open in new tab"
+                        <div className="flex items-center gap-2">
+                          {/* Delete Selected Button */}
+                          {selectedPageURLs.filter(url => filteredPages.some(p => p.pageURL === url)).length > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleBulkDeleteIndexed}
+                              disabled={deletingPages.size > 0}
+                              className={cn(
+                                'flex items-center gap-1 text-[10px] font-medium transition-colors',
+                                deletingPages.size > 0
+                                  ? 'cursor-not-allowed opacity-50'
+                                  : isLight
+                                    ? 'text-red-600 hover:text-red-700'
+                                    : 'text-red-400 hover:text-red-300',
+                              )}>
+                              {deletingPages.size > 0 ? (
+                                <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                  <circle
+                                    className="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    strokeWidth="4"
+                                  />
+                                  <path
+                                    className="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                  />
+                                </svg>
+                              ) : (
+                                <svg
+                                  className="h-3 w-3"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  strokeWidth={2}>
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  />
+                                </svg>
+                              )}
+                              Delete (
+                              {selectedPageURLs.filter(url => filteredPages.some(p => p.pageURL === url)).length})
+                            </button>
+                          )}
+                          {/* Select All Button */}
+                          {filteredPages.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleSelectAllIndexed}
+                              className={cn(
+                                'flex items-center gap-1 text-[10px] font-medium transition-colors',
+                                isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
+                              )}>
+                              <div
                                 className={cn(
-                                  'w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-all cursor-pointer',
-                                  isLight 
-                                    ? 'text-gray-400 hover:text-blue-600' 
-                                    : 'text-gray-500 hover:text-blue-400',
+                                  'flex h-3 w-3 items-center justify-center rounded',
+                                  allFilteredSelected
+                                    ? 'bg-blue-600'
+                                    : cn('border', isLight ? 'border-gray-400' : 'border-gray-500'),
                                 )}>
-                                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                {allFilteredSelected && (
+                                  <svg
+                                    className="h-2 w-2 text-white"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                    strokeWidth={3}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </div>
+                              All
+                            </button>
+                          )}
+                          {/* Sort Button with Dropdown */}
+                          <div className="relative" ref={sortMenuRef}>
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setShowSortMenu(!showSortMenu);
+                              }}
+                              title={`Sort: ${sortOption === 'date-desc' ? 'Newest' : sortOption === 'date-asc' ? 'Oldest' : sortOption === 'name-asc' ? 'A-Z' : 'Z-A'}`}
+                              className={cn(
+                                'rounded p-1 transition-colors',
+                                isLight
+                                  ? 'text-gray-400 hover:bg-gray-200 hover:text-gray-700'
+                                  : 'text-gray-500 hover:bg-gray-700 hover:text-gray-200',
+                              )}>
+                              {/* Sort icon - up/down arrows */}
+                              <svg
+                                className="h-3.5 w-3.5"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth={2.5}
+                                strokeLinecap="round"
+                                strokeLinejoin="round">
+                                {/* Up arrow */}
+                                <path d="M8 5L8 19M4 9L8 5L12 9" />
+                                {/* Down arrow */}
+                                <path d="M16 19L16 5M12 15L16 19L20 15" />
+                              </svg>
+                            </button>
+                            {/* Sort Menu */}
+                            {showSortMenu && (
+                              <div
+                                className={cn(
+                                  'absolute top-full right-0 z-50 mt-1 min-w-[100px] rounded-md border py-1 shadow-lg',
+                                  isLight ? 'border-gray-200 bg-white' : 'border-gray-700 bg-gray-800',
+                                )}>
+                                {[
+                                  { value: 'date-desc', label: 'Newest' },
+                                  { value: 'date-asc', label: 'Oldest' },
+                                  { value: 'name-asc', label: 'A-Z' },
+                                  { value: 'name-desc', label: 'Z-A' },
+                                ].map(option => (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      setSortOption(option.value as SortOption);
+                                      setShowSortMenu(false);
+                                    }}
+                                    className={cn(
+                                      'w-full px-3 py-1 text-left text-[10px] transition-colors',
+                                      sortOption === option.value
+                                        ? isLight
+                                          ? 'bg-blue-50 text-blue-600'
+                                          : 'bg-blue-900/30 text-blue-400'
+                                        : isLight
+                                          ? 'text-gray-700 hover:bg-gray-100'
+                                          : 'text-gray-300 hover:bg-gray-700',
+                                    )}>
+                                    {option.label}
+                                    {sortOption === option.value && <span className="ml-2">✓</span>}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Indexed Pages List */}
+                      {filteredPages.length === 0 ? (
+                        <div
+                          className={cn('px-3 py-4 text-center text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                          {pages.length === 0 ? 'No pages indexed yet' : 'No indexed pages match your search'}
+                        </div>
+                      ) : (
+                        filteredPages.map(page => {
+                          const isSelected = selectedPageURLs.includes(page.pageURL);
+                          const isCurrent = page.pageURL === currentPageURL;
+                          const isDeleting = deletingPages.has(page.pageURL);
+                          const totalChunks = page.htmlChunkCount + page.formChunkCount + page.clickableChunkCount;
+
+                          return (
+                            <button
+                              type="button"
+                              key={page.pageURL}
+                              onClick={() => !isDeleting && handleTogglePage(page.pageURL)}
+                              disabled={isDeleting}
+                              className={cn(
+                                'group flex w-full items-center gap-2 border-b px-2.5 py-1 text-left text-xs transition-colors',
+                                isLight ? 'border-gray-100' : 'border-gray-700/50',
+                                isDeleting && 'pointer-events-none opacity-50',
+                                isSelected
+                                  ? isLight
+                                    ? 'bg-gray-100/80 text-gray-700'
+                                    : 'bg-gray-700/40 text-gray-200'
+                                  : isLight
+                                    ? 'text-gray-500 hover:bg-gray-100'
+                                    : 'text-gray-400 hover:bg-gray-700/50',
+                              )}>
+                              {/* Status indicator */}
+                              <span
+                                className={cn(
+                                  'flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full',
+                                  isLight ? 'bg-gray-100 text-gray-500' : 'bg-gray-800 text-gray-400',
+                                )}>
+                                <svg
+                                  className="h-2.5 w-2.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                  strokeWidth={3}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                 </svg>
                               </span>
 
-                              {/* Delete button */}
-                              <span
-                                role="button"
-                                tabIndex={0}
-                                onClick={(e) => { e.stopPropagation(); handleDeletePage(page.pageURL, e); }}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); handleDeletePage(page.pageURL, e as any); } }}
-                                title="Delete indexed page"
-                                className={cn(
-                                  'w-6 h-6 flex items-center justify-center rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100',
-                                  isLight 
-                                    ? 'text-gray-400 hover:text-red-600' 
-                                    : 'text-gray-500 hover:text-red-400',
-                                )}>
-                                {isDeleting ? (
-                                  <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                  </svg>
-                                ) : (
-                                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                  </svg>
-                                )}
-                              </span>
-                  
-                              {/* Checkbox */}
-                              <div className={cn(
-                                'w-6 h-6 flex items-center justify-center flex-shrink-0',
-                              )}>
-                                <div className={cn(
-                                  'w-3.5 h-3.5 rounded border flex items-center justify-center transition-opacity',
-                                  isSelected
-                                    ? 'bg-blue-600/60 border-blue-600/60 opacity-100'
-                                    : cn(
-                                        'opacity-0 group-hover:opacity-100',
-                                        isLight ? 'border-gray-400' : 'border-gray-500'
-                                      )
-                                )}>
-                                  {isSelected && (
-                                    <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                    </svg>
+                              <div className="flex min-w-0 flex-1 flex-col text-left">
+                                <div className="flex items-center gap-1.5 truncate leading-tight font-medium">
+                                  {isCurrent && (
+                                    <span
+                                      className={cn(
+                                        'flex-shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold',
+                                        isLight ? 'bg-green-100 text-green-700' : 'bg-green-900/30 text-green-400',
+                                      )}>
+                                      CURRENT
+                                    </span>
                                   )}
+                                  <span className="truncate">{page.pageTitle}</span>
+                                </div>
+                                <div
+                                  className={cn(
+                                    'truncate text-[10px] leading-tight',
+                                    isLight ? 'text-gray-500' : 'text-gray-500',
+                                  )}>
+                                  {getDomain(page.pageURL)} • {totalChunks} chunks •{' '}
+                                  {formatRelativeTime(page.lastIndexed)}
                                 </div>
                               </div>
-                            </div>
-                </button>
-              );
-            })
-                    )}
-                  </>
-                )}
 
-                {/* BROWSER TABS SECTION */}
-                {showBrowserTabs && (viewMode === 'all' || viewMode === 'tabs') && (
-                  <>
-                    {/* Section Header */}
-                    <div className={cn(
-                      'flex items-center justify-between px-2.5 py-1.5 sticky top-0 z-10',
-                      isLight ? 'bg-gray-100/95 border-b border-gray-200' : 'bg-gray-800/95 border-b border-gray-700'
-                    )}>
-                      <span className={cn(
-                        'text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5',
-                        isLight ? 'text-gray-500' : 'text-gray-400'
-                      )}>
-                        Browser Tabs ({filteredBrowserTabs.length})
-                        {unindexedTabCount > 0 && (
-                          <span className={cn(
-                            'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium normal-case',
-                            isLight ? 'bg-gray-200/80 text-gray-600' : 'bg-gray-700 text-gray-300'
-                          )}>
-                            {unindexedTabCount} not indexed
-                          </span>
-                        )}
-                      </span>
-                      {unindexedTabCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => handleBulkEmbed(browserTabs.filter(t => !indexedURLs.has(t.url)))}
-                          disabled={embeddingProgress !== null}
-                          className={cn(
-                            'text-[10px] font-medium px-1.5 py-0.5 rounded transition-colors',
-                            embeddingProgress
-                              ? 'opacity-50 cursor-not-allowed'
-                              : isLight
-                                ? 'text-blue-600 hover:bg-blue-50'
-                                : 'text-blue-400 hover:bg-blue-900/30'
-                          )}
-                        >
-                          Embed All
-                        </button>
-          )}
-        </div>
+                              {/* Action buttons - equally spaced */}
+                              <div className="flex flex-shrink-0 items-center gap-1.5">
+                                {/* Open in new tab button */}
+                                <span
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={e => handleOpenInNewTab(page.pageURL, e)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.stopPropagation();
+                                      handleOpenInNewTab(page.pageURL, e as any);
+                                    }
+                                  }}
+                                  title="Open in new tab"
+                                  className={cn(
+                                    'flex h-6 w-6 cursor-pointer items-center justify-center rounded opacity-0 transition-all group-hover:opacity-100',
+                                    isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400',
+                                  )}>
+                                  <svg
+                                    className="h-3.5 w-3.5"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                    strokeWidth={2}>
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                    />
+                                  </svg>
+                                </span>
 
-                    {loadingTabs ? (
-                      <div className={cn('px-3 py-4 text-xs text-center', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                        Loading browser tabs...
-                      </div>
-                    ) : filteredBrowserTabs.length === 0 ? (
-                      <div className={cn('px-3 py-4 text-xs text-center', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                        {browserTabs.length === 0 ? 'No accessible tabs' : 'No tabs match your search'}
-                      </div>
-                    ) : (
-                      /* Render organized tabs by window and group */
-                      Array.from(organizedTabs.entries()).map(([windowId, windowData]) => (
-                        <div key={windowId}>
-                          {/* Window Header */}
-                          <button
-                            type="button"
-                            onClick={() => toggleWindow(windowId)}
-                            className={cn(
-                              'w-full flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-colors',
-                              isLight ? 'bg-gray-50 hover:bg-gray-100 text-gray-700' : 'bg-gray-800/50 hover:bg-gray-800 text-gray-300'
-                            )}
-                          >
-                            <svg
-                              className={cn('w-3 h-3 transition-transform', expandedWindows.has(windowId) && 'rotate-90')}
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                              strokeWidth={2}
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                            </svg>
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                              <rect x="3" y="3" width="18" height="18" rx="2" />
-                              <path d="M3 9h18" />
-                            </svg>
-                            <span>
-                              Window {windowData.window.focused ? '(Current)' : ''}
-                            </span>
-                            <span className={cn('ml-auto text-[10px]', isLight ? 'text-gray-400' : 'text-gray-500')}>
-                              {windowData.ungroupedTabs.length + Array.from(windowData.groups.values()).reduce((a, g) => a + g.tabs.length, 0)} tabs
-                            </span>
-                          </button>
-
-                          {expandedWindows.has(windowId) && (
-                            <div className="pl-2">
-                              {/* Tab Groups */}
-                              {Array.from(windowData.groups.entries()).map(([groupId, groupData]) => (
-                                <div key={groupId}>
-                                  {/* Group Header */}
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleGroup(groupId)}
-                                    className={cn(
-                                      'w-full flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium transition-colors',
-                                      isLight ? 'hover:bg-gray-100 text-gray-600' : 'hover:bg-gray-800/40 text-gray-400'
-                                    )}
-                                  >
+                                {/* Delete button */}
+                                <span
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    handleDeletePage(page.pageURL, e);
+                                  }}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.stopPropagation();
+                                      handleDeletePage(page.pageURL, e as any);
+                                    }
+                                  }}
+                                  title="Delete indexed page"
+                                  className={cn(
+                                    'flex h-6 w-6 cursor-pointer items-center justify-center rounded opacity-0 transition-all group-hover:opacity-100',
+                                    isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400',
+                                  )}>
+                                  {isDeleting ? (
+                                    <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                      <circle
+                                        className="opacity-25"
+                                        cx="12"
+                                        cy="12"
+                                        r="10"
+                                        stroke="currentColor"
+                                        strokeWidth="4"
+                                      />
+                                      <path
+                                        className="opacity-75"
+                                        fill="currentColor"
+                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                      />
+                                    </svg>
+                                  ) : (
                                     <svg
-                                      className={cn('w-2.5 h-2.5 transition-transform', expandedGroups.has(groupId) && 'rotate-90')}
+                                      className="h-3.5 w-3.5"
                                       fill="none"
                                       stroke="currentColor"
                                       viewBox="0 0 24 24"
-                                      strokeWidth={2}
-                                    >
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                      strokeWidth={2}>
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                      />
                                     </svg>
-                                    <span
-                                      className="w-2.5 h-2.5 rounded-full"
-                                      style={{ backgroundColor: TAB_GROUP_COLORS[groupData.group?.color || 'grey'] }}
-                                    />
-                                    <span>{groupData.group?.title || 'Untitled Group'}</span>
-                                    <span className={cn('ml-auto', isLight ? 'text-gray-400' : 'text-gray-500')}>
-                                      {groupData.tabs.length}
-                                    </span>
-                                    {/* Group embed button */}
-                                    {groupData.tabs.some(t => !indexedURLs.has(t.url)) && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleBulkEmbed(groupData.tabs.filter(t => !indexedURLs.has(t.url)));
-                                        }}
-                                        className={cn(
-                                          'px-1 py-0.5 rounded text-[9px]',
-                                          isLight ? 'text-blue-600 hover:bg-blue-50' : 'text-blue-400 hover:bg-blue-900/30'
-                                        )}
-                                      >
-                                        Embed
-                                      </button>
-                                    )}
-                                  </button>
-
-                                  {/* Group Tabs */}
-                                  {expandedGroups.has(groupId) && (
-                                    <div className="pl-4">
-                                      {groupData.tabs.map(tab => (
-                                        <TabItem
-                                          key={tab.id}
-                                          tab={tab}
-                                          isLight={isLight}
-                                          isIndexed={indexedURLs.has(tab.url)}
-                                          isSelected={selectedPageURLs.includes(tab.url)}
-                                          isEmbedding={embeddingTabs.has(tab.id)}
-                                          error={embeddingErrors.get(tab.id)}
-                                          getDomain={getDomain}
-                                          onToggle={handleTogglePage}
-                                          onEmbed={() => handleEmbedAndSelect(tab)}
-                                          onOpenTab={handleSwitchToTab}
-                                        />
-                                      ))}
-                                    </div>
                                   )}
-                                </div>
-                              ))}
+                                </span>
 
-                              {/* Ungrouped Tabs */}
-                              {windowData.ungroupedTabs.length > 0 && (
-                                <div className={cn(
-                                  'pl-2',
-                                  windowData.groups.size > 0 && 'border-t',
-                                  isLight ? 'border-gray-100' : 'border-gray-700/50'
-                                )}>
-                                  {windowData.groups.size > 0 && (
-                                    <div className={cn(
-                                      'px-2 py-1 text-[9px] font-medium uppercase tracking-wider',
-                                      isLight ? 'text-gray-400' : 'text-gray-500'
+                                {/* Checkbox */}
+                                <div className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center')}>
+                                  <div
+                                    className={cn(
+                                      'flex h-3.5 w-3.5 items-center justify-center rounded transition-opacity',
+                                      isSelected
+                                        ? 'bg-blue-600/60 opacity-100'
+                                        : cn(
+                                            'border opacity-0 group-hover:opacity-100',
+                                            isLight ? 'border-gray-400' : 'border-gray-500',
+                                          ),
                                     )}>
-                                      Ungrouped
-                                    </div>
-                                  )}
-                                  {windowData.ungroupedTabs.map(tab => (
-                                    <TabItem
-                                      key={tab.id}
-                                      tab={tab}
-                                      isLight={isLight}
-                                      isIndexed={indexedURLs.has(tab.url)}
-                                      isSelected={selectedPageURLs.includes(tab.url)}
-                                      isEmbedding={embeddingTabs.has(tab.id)}
-                                      error={embeddingErrors.get(tab.id)}
-                                      getDomain={getDomain}
-                                      onToggle={handleTogglePage}
-                                      onEmbed={() => handleEmbedAndSelect(tab)}
-                                      onOpenTab={handleSwitchToTab}
-                                    />
-                                  ))}
+                                    {isSelected && (
+                                      <svg
+                                        className="h-2 w-2 text-white"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        strokeWidth={3}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                  </div>
                                 </div>
-                              )}
-                            </div>
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </>
+                  )}
+
+                  {/* BROWSER TABS SECTION */}
+                  {showBrowserTabs && (viewMode === 'all' || viewMode === 'tabs') && (
+                    <>
+                      {/* Section Header */}
+                      <div
+                        className={cn(
+                          'sticky top-0 z-10 flex items-center justify-between px-2.5 py-1.5',
+                          isLight
+                            ? 'border-b border-gray-200 bg-gray-100/95'
+                            : 'border-b border-gray-700 bg-gray-800/95',
+                        )}>
+                        <span
+                          className={cn(
+                            'flex items-center gap-1.5 text-[10px] font-semibold tracking-wider uppercase',
+                            isLight ? 'text-gray-500' : 'text-gray-400',
+                          )}>
+                          Browser Tabs ({filteredBrowserTabs.length})
+                          {unindexedTabCount > 0 && (
+                            <span
+                              className={cn(
+                                'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium normal-case',
+                                isLight ? 'bg-gray-200/80 text-gray-600' : 'bg-gray-700 text-gray-300',
+                              )}>
+                              {unindexedTabCount} not indexed
+                            </span>
                           )}
-                        </div>
-                      ))
-                    )}
-                  </>
-                )}
-
-                {/* WORKSPACE SECTION */}
-                {(onNotesChange || onCredentialsChange) && (viewMode === 'all' || viewMode === 'workspace') && (
-                  <>
-                    {/* Section Header */}
-                    <div className={cn(
-                      'flex items-center justify-between px-2.5 py-1.5 sticky top-0 z-10',
-                      isLight ? 'bg-gray-100/95 border-b border-gray-200' : 'bg-gray-800/95 border-b border-gray-700'
-                    )}>
-                      <span className={cn(
-                        'text-[10px] font-semibold uppercase tracking-wider',
-                        isLight ? 'text-gray-500' : 'text-gray-400'
-                      )}>
-                        Workspace ({notes.length + credentials.length})
-                      </span>
-                    </div>
-
-                    {loadingWorkspace ? (
-                      <div className={cn('px-3 py-4 text-xs text-center', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                        Loading workspace items...
-                      </div>
-                    ) : notes.length === 0 && credentials.length === 0 ? (
-                      <div className={cn('px-3 py-4 text-xs text-center', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                        No notes or credentials available
-                      </div>
-                    ) : (
-                      <>
-                        {/* Notes subsection */}
-                        {onNotesChange && notes.length > 0 && (
-                          <>
-                            <div className={cn(
-                              'px-2.5 py-1 text-[9px] font-medium uppercase tracking-wider',
-                              isLight ? 'text-gray-400 bg-gray-50' : 'text-gray-500 bg-gray-800/50'
+                        </span>
+                        {unindexedTabCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleBulkEmbed(browserTabs.filter(t => !indexedURLs.has(t.url)))}
+                            disabled={embeddingProgress !== null}
+                            className={cn(
+                              'rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors',
+                              embeddingProgress
+                                ? 'cursor-not-allowed opacity-50'
+                                : isLight
+                                  ? 'text-blue-600 hover:bg-blue-50'
+                                  : 'text-blue-400 hover:bg-blue-900/30',
                             )}>
-                              Notes ({notes.length})
-                            </div>
-                            {notes.map(note => {
-                              const isSelected = selectedNoteIds.includes(note.id);
-                              return (
-                                <button
-                                  type="button"
-                                  key={note.id}
-                                  onClick={() => handleToggleNote(note.id)}
-                                  className={cn(
-                                    'flex w-full items-center px-2.5 py-1.5 text-xs transition-colors border-b gap-2 group text-left',
-                                    isLight ? 'border-gray-100' : 'border-gray-700/50',
-                                    isSelected
-                                      ? isLight
-                                        ? 'bg-gray-100/80 text-gray-700'
-                                        : 'bg-gray-700/40 text-gray-200'
-                                      : isLight
-                                      ? 'text-gray-500 hover:bg-gray-100'
-                                      : 'text-gray-400 hover:bg-gray-700/50',
-                                  )}>
-                                  {/* Icon */}
-                                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                  </svg>
-                                  
-                                  <div className="flex-1 min-w-0 flex flex-col text-left">
-                                    <div className="font-medium truncate leading-tight">{note.title}</div>
-                                    {note.preview && (
-                                      <div className={cn('text-[10px] truncate leading-tight', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                                        {note.preview}
+                            Embed All
+                          </button>
+                        )}
+                      </div>
+
+                      {loadingTabs ? (
+                        <div
+                          className={cn('px-3 py-4 text-center text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                          Loading browser tabs...
+                        </div>
+                      ) : filteredBrowserTabs.length === 0 ? (
+                        <div
+                          className={cn('px-3 py-4 text-center text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                          {browserTabs.length === 0 ? 'No accessible tabs' : 'No tabs match your search'}
+                        </div>
+                      ) : (
+                        /* Render organized tabs by window and group */
+                        Array.from(organizedTabs.entries()).map(([windowId, windowData]) => (
+                          <div key={windowId}>
+                            {/* Window Header */}
+                            <button
+                              type="button"
+                              onClick={() => toggleWindow(windowId)}
+                              className={cn(
+                                'flex w-full items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-colors',
+                                isLight
+                                  ? 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                                  : 'bg-gray-800/50 text-gray-300 hover:bg-gray-800',
+                              )}>
+                              <svg
+                                className={cn(
+                                  'h-3 w-3 transition-transform',
+                                  expandedWindows.has(windowId) && 'rotate-90',
+                                )}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                              </svg>
+                              <svg
+                                className="h-3.5 w-3.5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                strokeWidth={2}>
+                                <rect x="3" y="3" width="18" height="18" rx="2" />
+                                <path d="M3 9h18" />
+                              </svg>
+                              <span>Window {windowData.window.focused ? '(Current)' : ''}</span>
+                              <span className={cn('ml-auto text-[10px]', isLight ? 'text-gray-400' : 'text-gray-500')}>
+                                {windowData.ungroupedTabs.length +
+                                  Array.from(windowData.groups.values()).reduce((a, g) => a + g.tabs.length, 0)}{' '}
+                                tabs
+                              </span>
+                            </button>
+
+                            {expandedWindows.has(windowId) && (
+                              <div className="pl-2">
+                                {/* Tab Groups */}
+                                {Array.from(windowData.groups.entries()).map(([groupId, groupData]) => (
+                                  <div key={groupId}>
+                                    {/* Group Header */}
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleGroup(groupId)}
+                                      className={cn(
+                                        'flex w-full items-center gap-1.5 px-2 py-1 text-[10px] font-medium transition-colors',
+                                        isLight
+                                          ? 'text-gray-600 hover:bg-gray-100'
+                                          : 'text-gray-400 hover:bg-gray-800/40',
+                                      )}>
+                                      <svg
+                                        className={cn(
+                                          'h-2.5 w-2.5 transition-transform',
+                                          expandedGroups.has(groupId) && 'rotate-90',
+                                        )}
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                      </svg>
+                                      <span
+                                        className="h-2.5 w-2.5 rounded-full"
+                                        style={{ backgroundColor: TAB_GROUP_COLORS[groupData.group?.color || 'grey'] }}
+                                      />
+                                      <span>{groupData.group?.title || 'Untitled Group'}</span>
+                                      <span className={cn('ml-auto', isLight ? 'text-gray-400' : 'text-gray-500')}>
+                                        {groupData.tabs.length}
+                                      </span>
+                                      {/* Group embed button */}
+                                      {groupData.tabs.some(t => !indexedURLs.has(t.url)) && (
+                                        <button
+                                          type="button"
+                                          onClick={e => {
+                                            e.stopPropagation();
+                                            handleBulkEmbed(groupData.tabs.filter(t => !indexedURLs.has(t.url)));
+                                          }}
+                                          className={cn(
+                                            'rounded px-1 py-0.5 text-[9px]',
+                                            isLight
+                                              ? 'text-blue-600 hover:bg-blue-50'
+                                              : 'text-blue-400 hover:bg-blue-900/30',
+                                          )}>
+                                          Embed
+                                        </button>
+                                      )}
+                                    </button>
+
+                                    {/* Group Tabs */}
+                                    {expandedGroups.has(groupId) && (
+                                      <div className="pl-4">
+                                        {groupData.tabs.map(tab => (
+                                          <TabItem
+                                            key={tab.id}
+                                            tab={tab}
+                                            isLight={isLight}
+                                            isIndexed={indexedURLs.has(tab.url)}
+                                            isSelected={selectedPageURLs.includes(tab.url)}
+                                            isEmbedding={embeddingTabs.has(tab.id)}
+                                            error={embeddingErrors.get(tab.id)}
+                                            getDomain={getDomain}
+                                            onToggle={handleTogglePage}
+                                            onEmbed={() => handleEmbedAndSelect(tab)}
+                                            onOpenTab={handleSwitchToTab}
+                                          />
+                                        ))}
                                       </div>
                                     )}
                                   </div>
-                                  
-                                  {/* Checkbox */}
-                                  <div 
-                                    className={cn(
-                                      'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
-                                      isSelected ? 'bg-blue-600/60 border-blue-600/60 opacity-100' : cn('opacity-0 group-hover:opacity-100', isLight ? 'border-gray-400' : 'border-gray-500')
-                                    )}
-                                  >
-                                    {isSelected && (
-                                      <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                      </svg>
-                                    )}
-                                  </div>
-                                </button>
-                              );
-                            })}
-              </>
-            )}
+                                ))}
 
-                        {/* Credentials subsection */}
-                        {onCredentialsChange && credentials.length > 0 && (
-                          <>
-                            <div className={cn(
-                              'px-2.5 py-1 text-[9px] font-medium uppercase tracking-wider',
-                              isLight ? 'text-gray-400 bg-gray-50' : 'text-gray-500 bg-gray-800/50'
-                            )}>
-                              Credentials ({credentials.length})
-                            </div>
-                            {credentials.map(cred => {
-                              const isSelected = selectedCredentialIds.includes(cred.id);
-                              return (
-                                <button
-                                  type="button"
-                                  key={cred.id}
-                                  onClick={() => handleToggleCredential(cred.id)}
-                                  className={cn(
-                                    'flex w-full items-center px-2.5 py-1.5 text-xs transition-colors border-b gap-2 group text-left',
-                                    isLight ? 'border-gray-100' : 'border-gray-700/50',
-                                    isSelected
-                                      ? isLight
-                                        ? 'bg-gray-100/80 text-gray-700'
-                                        : 'bg-gray-700/40 text-gray-200'
-                                      : isLight
-                                      ? 'text-gray-500 hover:bg-gray-100'
-                                      : 'text-gray-400 hover:bg-gray-700/50',
-                                  )}>
-                                  {/* Icon */}
-                                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                                  </svg>
-                                  
-                                  <div className="flex-1 min-w-0 flex flex-col text-left">
-                                    <div className="font-medium truncate leading-tight">{cred.name}</div>
-                                    <div className={cn('text-[10px] truncate leading-tight', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                                      {cred.type}
-                                    </div>
-                                  </div>
-                                  
-                                  {/* Checkbox */}
-                                  <div 
+                                {/* Ungrouped Tabs */}
+                                {windowData.ungroupedTabs.length > 0 && (
+                                  <div
                                     className={cn(
-                                      'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
-                                      isSelected ? 'bg-blue-600/60 border-blue-600/60 opacity-100' : cn('opacity-0 group-hover:opacity-100', isLight ? 'border-gray-400' : 'border-gray-500')
+                                      'pl-2',
+                                      windowData.groups.size > 0 && 'border-t',
+                                      isLight ? 'border-gray-100' : 'border-gray-700/50',
+                                    )}>
+                                    {windowData.groups.size > 0 && (
+                                      <div
+                                        className={cn(
+                                          'px-2 py-1 text-[9px] font-medium tracking-wider uppercase',
+                                          isLight ? 'text-gray-400' : 'text-gray-500',
+                                        )}>
+                                        Ungrouped
+                                      </div>
                                     )}
-                                  >
-                                    {isSelected && (
-                                      <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                      </svg>
-                                    )}
+                                    {windowData.ungroupedTabs.map(tab => (
+                                      <TabItem
+                                        key={tab.id}
+                                        tab={tab}
+                                        isLight={isLight}
+                                        isIndexed={indexedURLs.has(tab.url)}
+                                        isSelected={selectedPageURLs.includes(tab.url)}
+                                        isEmbedding={embeddingTabs.has(tab.id)}
+                                        error={embeddingErrors.get(tab.id)}
+                                        getDomain={getDomain}
+                                        onToggle={handleTogglePage}
+                                        onEmbed={() => handleEmbedAndSelect(tab)}
+                                        onOpenTab={handleSwitchToTab}
+                                      />
+                                    ))}
                                   </div>
-                                </button>
-                              );
-                            })}
-                          </>
-                        )}
-                      </>
-                    )}
-                  </>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Progress Bar - Shows for bulk embedding OR multiple individual embeddings */}
-          {(embeddingProgress || embeddingTabs.size > 1) && (
-            <div className={cn(
-              'px-3 py-2 border-t flex items-center gap-2',
-              isLight ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/50 border-gray-700'
-            )}>
-              <div className="flex-1">
-                {embeddingProgress ? (
-                  <>
-                    <div className={cn(
-                      'h-1.5 rounded-full overflow-hidden',
-                      isLight ? 'bg-gray-200' : 'bg-gray-700'
-                    )}>
-                      <div
-                        className="h-full bg-blue-500 transition-all duration-300"
-                        style={{ width: `${(embeddingProgress.current / embeddingProgress.total) * 100}%` }}
-                      />
-                    </div>
-                    <div className={cn(
-                      'text-[10px] mt-0.5',
-                      isLight ? 'text-gray-600' : 'text-gray-400'
-                    )}>
-                      Embedding {embeddingProgress.current}/{embeddingProgress.total}...
-                    </div>
-                  </>
-                ) : (
-                  <div className={cn(
-                    'text-[10px] flex items-center gap-2',
-                    isLight ? 'text-gray-600' : 'text-gray-400'
-                  )}>
-                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Embedding {embeddingTabs.size} tabs...
-                  </div>
-                )}
-              </div>
-              {embeddingProgress && (
-                <button
-                  type="button"
-                  onClick={handleCancelBulkEmbed}
-                  className={cn(
-                    'text-[10px] px-2 py-1 rounded font-medium',
-                    isLight ? 'text-red-600 hover:bg-red-50' : 'text-red-400 hover:bg-red-900/20'
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </>
                   )}
-                >
-                  Cancel
-                </button>
+
+                  {/* WORKSPACE SECTION */}
+                  {(onNotesChange || onCredentialsChange) && (viewMode === 'all' || viewMode === 'workspace') && (
+                    <>
+                      {/* Section Header */}
+                      <div
+                        className={cn(
+                          'sticky top-0 z-10 flex items-center justify-between px-2.5 py-1.5',
+                          isLight
+                            ? 'border-b border-gray-200 bg-gray-100/95'
+                            : 'border-b border-gray-700 bg-gray-800/95',
+                        )}>
+                        <span
+                          className={cn(
+                            'text-[10px] font-semibold tracking-wider uppercase',
+                            isLight ? 'text-gray-500' : 'text-gray-400',
+                          )}>
+                          Workspace ({notes.length + credentials.length})
+                        </span>
+                      </div>
+
+                      {loadingWorkspace ? (
+                        <div
+                          className={cn('px-3 py-4 text-center text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                          Loading workspace items...
+                        </div>
+                      ) : notes.length === 0 && credentials.length === 0 ? (
+                        <div
+                          className={cn('px-3 py-4 text-center text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                          No notes or credentials available
+                        </div>
+                      ) : (
+                        <>
+                          {/* Notes subsection */}
+                          {onNotesChange && notes.length > 0 && (
+                            <>
+                              <div
+                                className={cn(
+                                  'px-2.5 py-1 text-[9px] font-medium tracking-wider uppercase',
+                                  isLight ? 'bg-gray-50 text-gray-400' : 'bg-gray-800/50 text-gray-500',
+                                )}>
+                                Notes ({notes.length})
+                              </div>
+                              {notes.map(note => {
+                                const isSelected = selectedNoteIds.includes(note.id);
+                                return (
+                                  <button
+                                    type="button"
+                                    key={note.id}
+                                    onClick={() => handleToggleNote(note.id)}
+                                    className={cn(
+                                      'group flex w-full items-center gap-2 border-b px-2.5 py-1.5 text-left text-xs transition-colors',
+                                      isLight ? 'border-gray-100' : 'border-gray-700/50',
+                                      isSelected
+                                        ? isLight
+                                          ? 'bg-gray-100/80 text-gray-700'
+                                          : 'bg-gray-700/40 text-gray-200'
+                                        : isLight
+                                          ? 'text-gray-500 hover:bg-gray-100'
+                                          : 'text-gray-400 hover:bg-gray-700/50',
+                                    )}>
+                                    {/* Icon */}
+                                    <svg
+                                      className="h-4 w-4 flex-shrink-0"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                      strokeWidth={2}>
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                      />
+                                    </svg>
+
+                                    <div className="flex min-w-0 flex-1 flex-col text-left">
+                                      <div className="truncate leading-tight font-medium">{note.title}</div>
+                                      {note.preview && (
+                                        <div
+                                          className={cn(
+                                            'truncate text-[10px] leading-tight',
+                                            isLight ? 'text-gray-500' : 'text-gray-500',
+                                          )}>
+                                          {note.preview}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Checkbox */}
+                                    <div
+                                      className={cn(
+                                        'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
+                                        isSelected
+                                          ? 'bg-blue-600/60 opacity-100'
+                                          : cn(
+                                              'border opacity-0 group-hover:opacity-100',
+                                              isLight ? 'border-gray-400' : 'border-gray-500',
+                                            ),
+                                      )}>
+                                      {isSelected && (
+                                        <svg
+                                          className="h-2 w-2 text-white"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          viewBox="0 0 24 24"
+                                          strokeWidth={3}>
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </>
+                          )}
+
+                          {/* Credentials subsection */}
+                          {onCredentialsChange && credentials.length > 0 && (
+                            <>
+                              <div
+                                className={cn(
+                                  'px-2.5 py-1 text-[9px] font-medium tracking-wider uppercase',
+                                  isLight ? 'bg-gray-50 text-gray-400' : 'bg-gray-800/50 text-gray-500',
+                                )}>
+                                Credentials ({credentials.length})
+                              </div>
+                              {credentials.map(cred => {
+                                const isSelected = selectedCredentialIds.includes(cred.id);
+                                return (
+                                  <button
+                                    type="button"
+                                    key={cred.id}
+                                    onClick={() => handleToggleCredential(cred.id)}
+                                    className={cn(
+                                      'group flex w-full items-center gap-2 border-b px-2.5 py-1.5 text-left text-xs transition-colors',
+                                      isLight ? 'border-gray-100' : 'border-gray-700/50',
+                                      isSelected
+                                        ? isLight
+                                          ? 'bg-gray-100/80 text-gray-700'
+                                          : 'bg-gray-700/40 text-gray-200'
+                                        : isLight
+                                          ? 'text-gray-500 hover:bg-gray-100'
+                                          : 'text-gray-400 hover:bg-gray-700/50',
+                                    )}>
+                                    {/* Icon */}
+                                    <svg
+                                      className="h-4 w-4 flex-shrink-0"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                      strokeWidth={2}>
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+                                      />
+                                    </svg>
+
+                                    <div className="flex min-w-0 flex-1 flex-col text-left">
+                                      <div className="truncate leading-tight font-medium">{cred.name}</div>
+                                      <div
+                                        className={cn(
+                                          'truncate text-[10px] leading-tight',
+                                          isLight ? 'text-gray-500' : 'text-gray-500',
+                                        )}>
+                                        {cred.type}
+                                      </div>
+                                    </div>
+
+                                    {/* Checkbox */}
+                                    <div
+                                      className={cn(
+                                        'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
+                                        isSelected
+                                          ? 'bg-blue-600/60 opacity-100'
+                                          : cn(
+                                              'border opacity-0 group-hover:opacity-100',
+                                              isLight ? 'border-gray-400' : 'border-gray-500',
+                                            ),
+                                      )}>
+                                      {isSelected && (
+                                        <svg
+                                          className="h-2 w-2 text-white"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          viewBox="0 0 24 24"
+                                          strokeWidth={3}>
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+                </>
               )}
             </div>
-          )}
-      </div>,
-      portalContainer
-      )}
 
+            {/* Progress Bar - Shows for bulk embedding OR multiple individual embeddings */}
+            {(embeddingProgress || embeddingTabs.size > 1) && (
+              <div
+                className={cn(
+                  'flex items-center gap-2 border-t px-3 py-2',
+                  isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-gray-800/50',
+                )}>
+                <div className="flex-1">
+                  {embeddingProgress ? (
+                    <>
+                      <div
+                        className={cn('h-1.5 overflow-hidden rounded-full', isLight ? 'bg-gray-200' : 'bg-gray-700')}>
+                        <div
+                          className="h-full bg-blue-500 transition-all duration-300"
+                          style={{ width: `${(embeddingProgress.current / embeddingProgress.total) * 100}%` }}
+                        />
+                      </div>
+                      <div className={cn('mt-0.5 text-[10px]', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                        Embedding {embeddingProgress.current}/{embeddingProgress.total}...
+                      </div>
+                    </>
+                  ) : (
+                    <div
+                      className={cn(
+                        'flex items-center gap-2 text-[10px]',
+                        isLight ? 'text-gray-600' : 'text-gray-400',
+                      )}>
+                      <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      Embedding {embeddingTabs.size} tabs...
+                    </div>
+                  )}
+                </div>
+                {embeddingProgress && (
+                  <button
+                    type="button"
+                    onClick={handleCancelBulkEmbed}
+                    className={cn(
+                      'rounded px-2 py-1 text-[10px] font-medium',
+                      isLight ? 'text-red-600 hover:bg-red-50' : 'text-red-400 hover:bg-red-900/20',
+                    )}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            )}
+          </div>,
+          portalContainer,
+        )}
     </div>
   );
 };
@@ -2016,7 +2228,7 @@ const TabItem: React.FC<TabItemProps> = ({
       onClick={handleClick}
       disabled={isEmbedding}
       className={cn(
-        'flex w-full items-center px-2 py-1.5 text-xs transition-colors border-b gap-2 group text-left',
+        'group flex w-full items-center gap-2 border-b px-2 py-1.5 text-left text-xs transition-colors',
         isLight ? 'border-gray-100' : 'border-gray-700/50',
         isEmbedding && 'opacity-70',
         isSelected
@@ -2024,50 +2236,64 @@ const TabItem: React.FC<TabItemProps> = ({
             ? 'bg-gray-100/80 text-gray-700'
             : 'bg-gray-700/40 text-gray-200'
           : isLight
-          ? 'text-gray-500 hover:bg-gray-100'
-          : 'text-gray-400 hover:bg-gray-700/50',
+            ? 'text-gray-500 hover:bg-gray-100'
+            : 'text-gray-400 hover:bg-gray-700/50',
       )}>
       {/* Status indicator */}
-      <span className={cn(
-        'w-4 h-4 rounded-full flex items-center justify-center text-[9px] flex-shrink-0',
-        isLight ? 'bg-gray-100 text-gray-500' : 'bg-gray-800 text-gray-400'
-      )}>
+      <span
+        className={cn(
+          'flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[9px]',
+          isLight ? 'bg-gray-100 text-gray-500' : 'bg-gray-800 text-gray-400',
+        )}>
         {isEmbedding ? (
-          <svg className={cn('w-3 h-3 animate-spin', isLight ? 'text-gray-500' : 'text-gray-400')} fill="none" viewBox="0 0 24 24">
+          <svg
+            className={cn('h-3 w-3 animate-spin', isLight ? 'text-gray-500' : 'text-gray-400')}
+            fill="none"
+            viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            />
           </svg>
         ) : isIndexed ? (
-          <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+          <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         ) : tab.discarded ? (
-          <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+            />
           </svg>
         ) : (
-          <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
             <circle cx="12" cy="12" r="8" />
           </svg>
         )}
       </span>
-      
+
       {/* Favicon */}
       {tab.favIconUrl && (
         <img
           src={tab.favIconUrl}
           alt=""
-          className="w-3.5 h-3.5 flex-shrink-0 rounded-sm"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          className="h-3.5 w-3.5 flex-shrink-0 rounded-sm"
+          onError={e => {
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
         />
       )}
-      
-      <div className="flex-1 min-w-0 flex flex-col text-left">
-        <div className="font-medium truncate leading-tight flex items-center gap-1.5">
+
+      <div className="flex min-w-0 flex-1 flex-col text-left">
+        <div className="flex items-center gap-1.5 truncate leading-tight font-medium">
           {tab.isCurrentTab && (
             <span
               className={cn(
-                'text-[9px] font-semibold px-1 py-0.5 rounded flex-shrink-0',
+                'flex-shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold',
                 isLight ? 'bg-gray-200 text-gray-600' : 'bg-gray-700 text-gray-300',
               )}>
               CURRENT
@@ -2075,30 +2301,39 @@ const TabItem: React.FC<TabItemProps> = ({
           )}
           <span className="truncate">{tab.title}</span>
         </div>
-        <div className={cn('text-[10px] truncate leading-tight', isLight ? 'text-gray-500' : 'text-gray-500')}>
+        <div className={cn('truncate text-[10px] leading-tight', isLight ? 'text-gray-500' : 'text-gray-500')}>
           {getDomain(tab.url)}
           {tab.discarded && ' • Discarded'}
           {error && <span className="text-red-500"> • {error}</span>}
         </div>
       </div>
-      
+
       {/* Open tab button - switches to this tab */}
       {!tab.isCurrentTab && (
         <span
           role="button"
           tabIndex={0}
-          onClick={(e) => { e.stopPropagation(); onOpenTab(tab.url); }}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onOpenTab(tab.url); } }}
+          onClick={e => {
+            e.stopPropagation();
+            onOpenTab(tab.url);
+          }}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.stopPropagation();
+              onOpenTab(tab.url);
+            }
+          }}
           title="Switch to this tab"
           className={cn(
-            'flex-shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 transition-all cursor-pointer',
-            isLight 
-              ? 'text-gray-400 hover:text-blue-600' 
-              : 'text-gray-500 hover:text-blue-400',
-          )}
-        >
+            'flex-shrink-0 cursor-pointer rounded p-1 opacity-0 transition-all group-hover:opacity-100',
+            isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400',
+          )}>
           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+            />
           </svg>
         </span>
       )}
@@ -2108,32 +2343,37 @@ const TabItem: React.FC<TabItemProps> = ({
         <span
           role="button"
           tabIndex={0}
-          onClick={(e) => { e.stopPropagation(); onEmbed(); }}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onEmbed(); } }}
+          onClick={e => {
+            e.stopPropagation();
+            onEmbed();
+          }}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.stopPropagation();
+              onEmbed();
+            }
+          }}
           className={cn(
-            'flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer',
+            'flex-shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors',
             isLight
               ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-              : 'bg-blue-900/30 text-blue-400 hover:bg-blue-900/50'
-          )}
-        >
+              : 'bg-blue-900/30 text-blue-400 hover:bg-blue-900/50',
+          )}>
           Embed
         </span>
       )}
-      
+
       {/* Checkbox for indexed/selected tabs */}
       {isIndexed && (
-        <div className={cn(
-          'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-opacity',
-          isSelected
-            ? 'bg-blue-600/60 border-blue-600/60 opacity-100'
-            : cn(
-                'opacity-0 group-hover:opacity-100',
-                isLight ? 'border-gray-400' : 'border-gray-500'
-              )
-        )}>
+        <div
+          className={cn(
+            'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
+            isSelected
+              ? 'bg-blue-600/60 opacity-100'
+              : cn('border opacity-0 group-hover:opacity-100', isLight ? 'border-gray-400' : 'border-gray-500'),
+          )}>
           {isSelected && (
-            <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+            <svg className="h-2 w-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           )}

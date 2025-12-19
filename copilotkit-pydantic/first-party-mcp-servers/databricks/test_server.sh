@@ -1,0 +1,83 @@
+#!/bin/bash
+# Test script for Databricks MCP Server (FastMCP)
+
+echo "=========================================="
+echo "Databricks MCP Server Test Script"
+echo "=========================================="
+echo ""
+
+echo "Testing FastMCP Server..."
+echo ""
+
+# Check if FastMCP is installed
+if ! command -v fastmcp &> /dev/null; then
+    echo "❌ FastMCP not found. Installing..."
+    pip install fastmcp
+    echo ""
+fi
+
+echo "✅ FastMCP is installed"
+echo ""
+
+echo "=========================================="
+echo "Option 1: Run Inspector (Recommended)"
+echo "=========================================="
+echo ""
+echo "Run the following command to test with FastMCP Inspector:"
+echo ""
+echo "  fastmcp dev server.py"
+echo ""
+echo "Then open: http://localhost:5173"
+echo ""
+
+echo "=========================================="
+echo "Option 2: Run Server (stdio)"
+echo "=========================================="
+echo ""
+echo "Run the following command to start server:"
+echo ""
+echo "  python server.py"
+echo ""
+
+echo "=========================================="
+echo "Option 3: Run Server (SSE/HTTP)"
+echo "=========================================="
+echo ""
+echo "Run the following command to start SSE server:"
+echo ""
+echo "  fastmcp run server.py --sse"
+echo ""
+echo "Server will run on: http://localhost:8000/sse"
+echo ""
+
+echo "=========================================="
+echo "Example Tool Call (using MCP client)"
+echo "=========================================="
+echo ""
+echo "from mcp import ClientSession, StdioServerParameters"
+echo "from mcp.client.stdio import stdio_client"
+echo ""
+echo "async with stdio_client("
+echo "    StdioServerParameters("
+echo "        command='python',"
+echo "        args=['server.py']"
+echo "    )"
+echo ") as (read, write):"
+echo "    async with ClientSession(read, write) as session:"
+echo "        await session.initialize()"
+echo "        result = await session.call_tool("
+echo "            'list_queries',"
+echo "            arguments={'host': '...', 'token': '...'}"
+echo "        )"
+echo ""
+
+echo "=========================================="
+echo "Quick Start"
+echo "=========================================="
+echo ""
+echo "1. Install: pip install -r requirements.txt"
+echo "2. Test: fastmcp dev server.py"
+echo "3. Register in Admin UI"
+echo "4. Test with real credentials"
+echo ""
+echo "=========================================="
