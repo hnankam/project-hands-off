@@ -54,7 +54,11 @@ Export and retrieve notebook content in various formats.
   - `DBC`: Databricks archive format
 
 **Returns:**
-- Dictionary with notebook content and metadata
+- `NotebookExportResponse` Pydantic model with:
+  - `content` (str): Decoded notebook content as UTF-8 string (ready to use)
+  - `path` (str): Workspace path of the notebook
+  - `format` (str): Export format used
+  - `file_type` (str): File type/extension of the exported content
 
 **Example:**
 ```python
@@ -66,6 +70,11 @@ notebook = get_notebook(
     format="SOURCE"
 )
 
+# Access the decoded content directly (ready to use)
+print(notebook.content)  # "# Databricks notebook source\nprint('Hello')"
+print(notebook.format)   # "SOURCE"
+print(notebook.file_type)  # "python"
+
 # Export as Jupyter notebook
 jupyter_nb = get_notebook(
     host="https://my-workspace.cloud.databricks.com",
@@ -73,6 +82,13 @@ jupyter_nb = get_notebook(
     path="/Users/me/notebook",
     format="JUPYTER"
 )
+
+# Content is decoded and ready to write to file
+with open("notebook.ipynb", "w") as f:
+    f.write(jupyter_nb.content)
+
+# Pydantic model can be converted to dict
+notebook_dict = notebook.model_dump()
 ```
 
 ---
@@ -85,7 +101,7 @@ Import a notebook into the workspace.
 - `host` (str): Databricks workspace URL
 - `token` (str): Personal Access Token
 - `path` (str): Workspace path where notebook should be imported
-- `content` (str): Base64-encoded notebook content
+- `content` (str): Notebook content as a string (encoding handled internally)
 - `language` (str, optional): Notebook language (default: "PYTHON")
   - `PYTHON`
   - `SCALA`
@@ -100,37 +116,36 @@ Import a notebook into the workspace.
 - `overwrite` (bool, optional): Overwrite existing notebook (default: False)
 
 **Returns:**
-- Dictionary with import status
+- `NotebookImportResponse` Pydantic model with:
+  - `path` (str): Workspace path where notebook was imported
+  - `language` (str): Notebook language
+  - `format` (str): Import format used
+  - `status` (str): Status of the import operation
+  - `overwritten` (bool): Whether an existing notebook was overwritten
 
 **Example:**
 ```python
-import base64
-
-# Read notebook content
+# Read notebook content (no need to encode)
 with open("notebook.py", "r") as f:
     content = f.read()
-    
-# Encode to base64
-encoded_content = base64.b64encode(content.encode()).decode()
 
-# Import notebook
+# Import notebook directly with decoded content
 result = import_notebook(
     host="https://my-workspace.cloud.databricks.com",
     token="dapi...",
     path="/Users/me/imported_notebook",
-    content=encoded_content,
+    content=content,  # Pass decoded string directly
     language="PYTHON",
     format="SOURCE",
     overwrite=True
 )
 
-# Returns:
-{
-    "path": "/Users/me/imported_notebook",
-    "language": "PYTHON",
-    "format": "SOURCE",
-    "status": "imported"
-}
+# Returns NotebookImportResponse:
+# result.path = "/Users/me/imported_notebook"
+# result.language = "PYTHON"
+# result.format = "SOURCE"
+# result.status = "imported"
+# result.overwritten = True
 ```
 
 ---
@@ -146,7 +161,10 @@ Delete a notebook from the workspace.
 - `recursive` (bool, optional): Recursively delete (for directories, default: False)
 
 **Returns:**
-- Dictionary with deletion status
+- `NotebookDeleteResponse` Pydantic model with:
+  - `path` (str): Workspace path of the deleted notebook
+  - `status` (str): Status of the delete operation
+  - `recursive` (bool): Whether delete was recursive
 
 **Example:**
 ```python
@@ -156,11 +174,10 @@ result = delete_notebook(
     path="/Users/me/old_notebook"
 )
 
-# Returns:
-{
-    "path": "/Users/me/old_notebook",
-    "status": "deleted"
-}
+# Returns NotebookDeleteResponse:
+# result.path = "/Users/me/old_notebook"
+# result.status = "deleted"
+# result.recursive = False
 ```
 
 **⚠️ Warning:** This operation is irreversible. Deleted notebooks cannot be recovered.
@@ -182,7 +199,10 @@ Create a new empty notebook in the workspace.
   - `R`
 
 **Returns:**
-- Dictionary with creation status
+- `NotebookCreateResponse` Pydantic model with:
+  - `path` (str): Workspace path where notebook was created
+  - `language` (str): Notebook language
+  - `status` (str): Status of the create operation
 
 **Example:**
 ```python
@@ -193,12 +213,10 @@ result = create_notebook(
     language="PYTHON"
 )
 
-# Returns:
-{
-    "path": "/Users/me/new_analysis",
-    "language": "PYTHON",
-    "status": "created"
-}
+# Returns NotebookCreateResponse:
+# result.path = "/Users/me/new_analysis"
+# result.language = "PYTHON"
+# result.status = "created"
 ```
 
 ---
@@ -246,22 +264,20 @@ notebooks = list_notebooks(host, token, path="/Users/me")
 
 # Export each notebook
 for nb in notebooks:
-    content = get_notebook(host, token, path=nb["path"], format="JUPYTER")
-    # Save to local file system
+    notebook = get_notebook(host, token, path=nb["path"], format="JUPYTER")
+    # Save to local file system - content is already decoded
     with open(f"backup/{nb['path'].replace('/', '_')}.ipynb", "w") as f:
-        f.write(content["content"])
+        f.write(notebook.content)
 ```
 
 ### 2. Deploy Notebooks
 
 ```python
-import base64
-
 # Read local notebook
 with open("production_notebook.py", "r") as f:
-    content = base64.b64encode(f.read().encode()).decode()
+    content = f.read()
 
-# Deploy to workspace
+# Deploy to workspace (no encoding needed)
 import_notebook(
     host, token,
     path="/Production/etl_pipeline",
@@ -274,14 +290,14 @@ import_notebook(
 ### 3. Clone Notebooks
 
 ```python
-# Export from source
+# Export from source (content is decoded)
 source = get_notebook(host, token, path="/Users/me/source_notebook", format="SOURCE")
 
-# Import to destination
+# Import to destination (content already decoded, pass directly)
 import_notebook(
     host, token,
     path="/Users/me/cloned_notebook",
-    content=source["content"],
+    content=source.content,  # Pass decoded content directly
     language="PYTHON"
 )
 ```
@@ -289,7 +305,7 @@ import_notebook(
 ### 4. Migrate Notebooks Between Workspaces
 
 ```python
-# Export from workspace A
+# Export from workspace A (content is decoded)
 notebook = get_notebook(
     host="https://workspace-a.cloud.databricks.com",
     token="dapi_workspace_a...",
@@ -297,12 +313,12 @@ notebook = get_notebook(
     format="JUPYTER"
 )
 
-# Import to workspace B
+# Import to workspace B (pass decoded content directly)
 import_notebook(
     host="https://workspace-b.cloud.databricks.com",
     token="dapi_workspace_b...",
     path="/Users/me/notebook",
-    content=notebook["content"],
+    content=notebook.content,  # Pass decoded content directly
     format="JUPYTER"
 )
 ```
@@ -316,15 +332,15 @@ notebooks = list_notebooks(host, token, path="/Users/me")
 # Move Python notebooks to subfolder
 for nb in notebooks:
     if nb.get("language") == "PYTHON":
-        # Export notebook
-        content = get_notebook(host, token, path=nb["path"], format="SOURCE")
+        # Export notebook (content is decoded)
+        notebook = get_notebook(host, token, path=nb["path"], format="SOURCE")
         
-        # Import to new location
+        # Import to new location (pass decoded content directly)
         new_path = f"/Users/me/python_notebooks/{nb['path'].split('/')[-1]}"
         import_notebook(
             host, token,
             path=new_path,
-            content=content["content"],
+            content=notebook.content,  # Pass decoded content directly
             language="PYTHON"
         )
         
@@ -336,18 +352,19 @@ for nb in notebooks:
 
 ## Type Hints
 
-All notebook tools use proper type annotations:
+All notebook tools use proper type annotations with Pydantic models:
 
 ```python
 from typing import Any
 from databricks.sdk.service.workspace import ObjectInfo, ExportFormat, Language
+from models import NotebookExportResponse
 
 def list_notebooks(host: str, token: str, path: str = "/") -> list[dict[str, Any]]:
     """Returns list matching SDK ObjectInfo type."""
     ...
 
-def get_notebook(host: str, token: str, path: str, format: str = "SOURCE") -> dict[str, Any]:
-    """Returns notebook content with metadata."""
+def get_notebook(host: str, token: str, path: str, format: str = "SOURCE") -> NotebookExportResponse:
+    """Returns NotebookExportResponse Pydantic model with string content."""
     ...
 
 def import_notebook(
@@ -362,6 +379,29 @@ def import_notebook(
     """Imports notebook and returns status."""
     ...
 ```
+
+### NotebookExportResponse Model
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional
+
+class NotebookExportResponse(BaseModel):
+    """Response model for notebook export operations."""
+    
+    content: str = Field(..., description="Decoded notebook content as UTF-8 string")
+    path: Optional[str] = Field(None, description="Workspace path of the notebook")
+    format: Optional[str] = Field(None, description="Export format (SOURCE, HTML, JUPYTER, DBC)")
+    file_type: Optional[str] = Field(None, description="File type/extension of the exported content")
+```
+
+Benefits:
+- **Type Safety**: Pydantic validates the response structure
+- **IDE Support**: Full autocomplete for response attributes
+- **Decoded Content**: Content is automatically decoded from base64 to UTF-8 string
+- **Serialization**: Easy conversion to dict with `.model_dump()`
+- **Validation**: Automatic validation of required fields
+- **Ready to Use**: No need for manual base64 decoding
 
 ---
 

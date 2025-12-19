@@ -1,5 +1,5 @@
 # Databricks SDK
-databricks-sdk>=0.18.0
+databricks-sdk>=0.76.0
 
 # FastMCP - MCP server framework
 fastmcp>=0.1.0
