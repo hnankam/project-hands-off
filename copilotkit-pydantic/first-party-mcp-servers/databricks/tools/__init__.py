@@ -1,6 +1,6 @@
 """Databricks MCP tools organized by category."""
 
-from .queries import (
+from .sql.queries import (
     list_queries,
     get_query,
     create_query,
@@ -8,14 +8,14 @@ from .queries import (
     delete_query,
     list_query_visualizations,
 )
-from .query_history import list_query_history
-from .statement_execution import (
+from .sql.query_history import list_query_history
+from .sql.statement_execution import (
     execute_statement,
     get_statement,
     get_statement_result_chunk,
     cancel_execution,
 )
-from .warehouses import (
+from .sql.warehouses import (
     list_warehouses,
     get_warehouse,
     create_warehouse,
@@ -24,7 +24,7 @@ from .warehouses import (
     start_warehouse,
     stop_warehouse,
 )
-from .secrets import (
+from .unity_catalog.secrets import (
     list_secret_scopes,
     create_secret_scope,
     delete_secret_scope,
@@ -36,7 +36,7 @@ from .secrets import (
     put_secret_acl,
     delete_secret_acl,
 )
-from .repos import (
+from .unity_catalog.repos import (
     list_repos,
     get_repo,
     create_repo,
@@ -47,7 +47,7 @@ from .repos import (
     update_repo_permissions,
     get_repo_permission_levels,
 )
-from .jobs import (
+from .compute.jobs import (
     list_jobs,
     get_job,
     create_job,
@@ -69,7 +69,7 @@ from .jobs import (
     update_job_permissions,
     get_job_permission_levels,
 )
-from .clusters import (
+from .compute.clusters import (
     list_clusters,
     get_cluster,
     create_cluster,
@@ -83,7 +83,15 @@ from .clusters import (
     update_cluster_permissions,
     get_cluster_permission_levels,
 )
-from .notebooks import (
+from .compute.command_execution import (
+    create_execution_context,
+    get_context_status,
+    destroy_execution_context,
+    execute_command,
+    get_command_status,
+    cancel_command,
+)
+from .notebooks.notebooks import (
     list_notebooks,
     get_notebook,
     import_notebook,
@@ -91,7 +99,7 @@ from .notebooks import (
     create_notebook,
     get_notebook_status,
 )
-from .cells import (
+from .notebooks.cells import (
     get_notebook_cells,
     get_notebook_cell,
     search_notebook_cells,
@@ -100,9 +108,9 @@ from .cells import (
     delete_notebook_cell,
     reorder_notebook_cells,
 )
-from .url_utils import resolve_notebook_from_url
-from .workspace import list_workspace_files
-from .directories import (
+from .utils.url_utils import resolve_notebook_from_url
+from .unity_catalog.workspace import list_workspace_files
+from .notebooks.directories import (
     list_directories,
     create_directory,
     delete_directory,
@@ -152,6 +160,163 @@ from .unity_catalog.external_lineage import (
     create_external_lineage,
     delete_external_lineage,
     update_external_lineage,
+)
+from .unity_catalog.external_locations import (
+    list_external_locations,
+    get_external_location,
+    create_external_location,
+    update_external_location,
+    delete_external_location,
+)
+from .compute.postgres import (
+    list_postgres_projects,
+    get_postgres_project,
+    create_postgres_project,
+    update_postgres_project,
+    delete_postgres_project,
+    list_postgres_branches,
+    get_postgres_branch,
+    create_postgres_branch,
+    update_postgres_branch,
+    delete_postgres_branch,
+    list_postgres_endpoints,
+    get_postgres_endpoint,
+    create_postgres_endpoint,
+    update_postgres_endpoint,
+    delete_postgres_endpoint,
+    get_postgres_operation,
+)
+from .pipelines.pipelines import (
+    list_pipelines,
+    get_pipeline,
+    create_pipeline,
+    update_pipeline,
+    delete_pipeline,
+    start_pipeline_update,
+    stop_pipeline,
+    reset_pipeline,
+    list_pipeline_updates,
+    get_pipeline_update,
+)
+from .machine_learning.experiments import (
+    list_experiments,
+    get_experiment,
+    get_experiment_by_name,
+    create_experiment,
+    update_experiment,
+    delete_experiment,
+    restore_experiment,
+    search_experiments,
+    create_experiment_run,
+    get_experiment_run,
+    update_experiment_run,
+    delete_experiment_run,
+    restore_experiment_run,
+    search_experiment_runs,
+    log_metric,
+    log_param,
+    set_experiment_tag,
+    set_run_tag,
+    delete_run_tag,
+)
+from .machine_learning.model_registry import (
+    list_registry_models,
+    get_registry_model,
+    create_registry_model,
+    update_registry_model,
+    delete_registry_model,
+    create_model_version,
+    get_model_version,
+    update_model_version,
+    delete_model_version,
+    search_model_versions,
+    get_latest_model_versions,
+    transition_model_stage,
+    create_transition_request,
+    approve_transition_request,
+    reject_transition_request,
+    create_model_comment,
+    update_model_comment,
+    delete_model_comment,
+    set_model_tag,
+    delete_model_tag,
+    set_model_version_tag,
+    delete_model_version_tag,
+    create_registry_webhook,
+    update_registry_webhook,
+    delete_registry_webhook,
+    list_registry_webhooks,
+)
+from .machine_learning.forecasting import (
+    create_forecasting_experiment,
+    get_forecasting_experiment,
+)
+from .machine_learning.feature_store import (
+    list_online_stores,
+    get_online_store,
+    create_online_store,
+    update_online_store,
+    delete_online_store,
+    publish_table,
+    delete_online_table,
+)
+from .machine_learning.feature_engineering import (
+    list_features,
+    get_feature,
+    create_feature,
+    update_feature,
+    delete_feature,
+    list_kafka_configs,
+    get_kafka_config,
+    create_kafka_config,
+    update_kafka_config,
+    delete_kafka_config,
+    list_materialized_features,
+    get_materialized_feature,
+    create_materialized_feature,
+    batch_create_materialized_features,
+    update_materialized_feature,
+    delete_materialized_feature,
+)
+from .vector_search.endpoints import (
+    list_vector_search_endpoints,
+    get_vector_search_endpoint,
+    create_vector_search_endpoint,
+    delete_vector_search_endpoint,
+    update_endpoint_budget_policy,
+    update_endpoint_custom_tags,
+    retrieve_endpoint_metrics,
+)
+from .vector_search.indexes import (
+    list_vector_search_indexes,
+    get_vector_search_index,
+    create_vector_search_index,
+    delete_vector_search_index,
+    query_vector_search_index,
+    query_vector_search_next_page,
+    scan_vector_search_index,
+    upsert_vector_search_data,
+    delete_vector_search_data,
+    sync_vector_search_index,
+)
+from .unity_catalog.data_quality import (
+    create_data_quality_monitor,
+    get_data_quality_monitor,
+    update_data_quality_monitor,
+    delete_data_quality_monitor,
+    list_data_quality_monitors,
+    create_data_quality_refresh,
+    get_data_quality_refresh,
+    list_data_quality_refreshes,
+    cancel_data_quality_refresh,
+)
+from .accounts.billing import download_billable_usage
+from .accounts.metastores import (
+    create_account_metastore,
+    get_account_metastore,
+    list_account_metastores,
+    update_account_metastore,
+    delete_account_metastore,
 )
 
 __all__ = [
@@ -295,5 +460,158 @@ __all__ = [
     'create_external_lineage',
     'delete_external_lineage',
     'update_external_lineage',
+    # Unity Catalog - External Locations tools
+    'list_external_locations',
+    'get_external_location',
+    'create_external_location',
+    'update_external_location',
+    'delete_external_location',
+    # Postgres tools
+    'list_postgres_projects',
+    'get_postgres_project',
+    'create_postgres_project',
+    'update_postgres_project',
+    'delete_postgres_project',
+    'list_postgres_branches',
+    'get_postgres_branch',
+    'create_postgres_branch',
+    'update_postgres_branch',
+    'delete_postgres_branch',
+    'list_postgres_endpoints',
+    'get_postgres_endpoint',
+    'create_postgres_endpoint',
+    'update_postgres_endpoint',
+    'delete_postgres_endpoint',
+    'get_postgres_operation',
+    # Command Execution tools
+    'create_execution_context',
+    'get_context_status',
+    'destroy_execution_context',
+    'execute_command',
+    'get_command_status',
+    'cancel_command',
+    # Pipelines (Delta Live Tables) tools
+    'list_pipelines',
+    'get_pipeline',
+    'create_pipeline',
+    'update_pipeline',
+    'delete_pipeline',
+    'start_pipeline_update',
+    'stop_pipeline',
+    'reset_pipeline',
+    'list_pipeline_updates',
+    'get_pipeline_update',
+    # Machine Learning (MLflow Experiments) tools
+    'list_experiments',
+    'get_experiment',
+    'get_experiment_by_name',
+    'create_experiment',
+    'update_experiment',
+    'delete_experiment',
+    'restore_experiment',
+    'search_experiments',
+    'create_experiment_run',
+    'get_experiment_run',
+    'update_experiment_run',
+    'delete_experiment_run',
+    'restore_experiment_run',
+    'search_experiment_runs',
+    'log_metric',
+    'log_param',
+    'set_experiment_tag',
+    'set_run_tag',
+    'delete_run_tag',
+    # Machine Learning (Model Registry) tools
+    'list_registry_models',
+    'get_registry_model',
+    'create_registry_model',
+    'update_registry_model',
+    'delete_registry_model',
+    'create_model_version',
+    'get_model_version',
+    'update_model_version',
+    'delete_model_version',
+    'search_model_versions',
+    'get_latest_model_versions',
+    'transition_model_stage',
+    'create_transition_request',
+    'approve_transition_request',
+    'reject_transition_request',
+    'create_model_comment',
+    'update_model_comment',
+    'delete_model_comment',
+    'set_model_tag',
+    'delete_model_tag',
+    'set_model_version_tag',
+    'delete_model_version_tag',
+    'create_registry_webhook',
+    'update_registry_webhook',
+    'delete_registry_webhook',
+    'list_registry_webhooks',
+    # Machine Learning (Forecasting) tools
+    'create_forecasting_experiment',
+    'get_forecasting_experiment',
+    # Machine Learning (Feature Store) tools
+    'list_online_stores',
+    'get_online_store',
+    'create_online_store',
+    'update_online_store',
+    'delete_online_store',
+    'publish_table',
+    'delete_online_table',
+    # Machine Learning (Feature Engineering) tools
+    'list_features',
+    'get_feature',
+    'create_feature',
+    'update_feature',
+    'delete_feature',
+    'list_kafka_configs',
+    'get_kafka_config',
+    'create_kafka_config',
+    'update_kafka_config',
+    'delete_kafka_config',
+    'list_materialized_features',
+    'get_materialized_feature',
+    'create_materialized_feature',
+    'batch_create_materialized_features',
+    'update_materialized_feature',
+    'delete_materialized_feature',
+    # Vector Search (Endpoints) tools
+    'list_vector_search_endpoints',
+    'get_vector_search_endpoint',
+    'create_vector_search_endpoint',
+    'delete_vector_search_endpoint',
+    'update_endpoint_budget_policy',
+    'update_endpoint_custom_tags',
+    'retrieve_endpoint_metrics',
+    # Vector Search (Indexes) tools
+    'list_vector_search_indexes',
+    'get_vector_search_index',
+    'create_vector_search_index',
+    'delete_vector_search_index',
+    'query_vector_search_index',
+    'query_vector_search_next_page',
+    'scan_vector_search_index',
+    'upsert_vector_search_data',
+    'delete_vector_search_data',
+    'sync_vector_search_index',
+    # Data Quality tools
+    'create_data_quality_monitor',
+    'get_data_quality_monitor',
+    'update_data_quality_monitor',
+    'delete_data_quality_monitor',
+    'list_data_quality_monitors',
+    'create_data_quality_refresh',
+    'get_data_quality_refresh',
+    'list_data_quality_refreshes',
+    'cancel_data_quality_refresh',
+    # Account Billing tools
+    'download_billable_usage',
+    # Account Metastores tools
+    'create_account_metastore',
+    'get_account_metastore',
+    'list_account_metastores',
+    'update_account_metastore',
+    'delete_account_metastore',
 ]
 

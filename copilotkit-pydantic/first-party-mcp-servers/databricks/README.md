@@ -18,6 +18,8 @@ First-party MCP server for Databricks workspace operations built with **FastMCP*
 - **Unity Catalog - Functions**: Create, list, and manage User-Defined Functions (UDFs)
 - **Unity Catalog - Volumes**: Create, list, update, and manage file storage volumes (managed & external)
 - **Unity Catalog - External Lineage**: Track data flows between Databricks and external systems with column-level lineage
+- **Postgres**: Manage Postgres database projects, branches, and endpoints
+- **Command Execution**: Execute Python, SQL, Scala, and R code remotely on clusters
 - **Notebooks**: Create, import, export, delete, and list notebooks
 - **Notebook Cells**: Read, search, insert, update, delete, and reorder individual cells
 - **Directories**: Complete folder management (create, delete, list, tree, stats, search)
@@ -25,7 +27,7 @@ First-party MCP server for Databricks workspace operations built with **FastMCP*
 - **Workspace**: List workspace files
 - **Connection Pooling**: Automatic caching of WorkspaceClient instances
 - **Type Safety**: All tools return proper Pydantic models
-- **121 Total Tools**: Comprehensive Databricks automation
+- **143 Total Tools**: Comprehensive Databricks automation
 
 ## Installation
 
@@ -221,6 +223,28 @@ result = await client.call_tool(
 | `create_external_lineage` | Create lineage relationship | `host`, `token`, `source`, `target`, `id` (optional), `columns` (optional), `properties` (optional) |
 | `delete_external_lineage` | Delete lineage relationship | `host`, `token`, `source`, `target`, `id` (optional) |
 | `update_external_lineage` | Update lineage relationship | `host`, `token`, `source`, `target`, `update_mask`, `id` (optional), `columns` (optional), `properties` (optional) |
+| `list_postgres_projects` | List Postgres projects | `host`, `token`, `page_size` (optional), `page_token` (optional) |
+| `get_postgres_project` | Get project details | `host`, `token`, `name` |
+| `create_postgres_project` | Create new project | `host`, `token`, `project_id` (optional), `display_name` (optional), `pg_version` (optional), `settings` (optional) |
+| `update_postgres_project` | Update project | `host`, `token`, `name`, `update_mask`, plus optional fields |
+| `delete_postgres_project` | Delete project | `host`, `token`, `name` |
+| `list_postgres_branches` | List branches in project | `host`, `token`, `parent`, `page_size` (optional), `page_token` (optional) |
+| `get_postgres_branch` | Get branch details | `host`, `token`, `name` |
+| `create_postgres_branch` | Create new branch | `host`, `token`, `parent`, `branch_id` (optional), `is_protected` (optional), `source_branch` (optional) |
+| `update_postgres_branch` | Update branch | `host`, `token`, `name`, `update_mask`, `is_protected` (optional) |
+| `delete_postgres_branch` | Delete branch | `host`, `token`, `name` |
+| `list_postgres_endpoints` | List endpoints in branch | `host`, `token`, `parent`, `page_size` (optional), `page_token` (optional) |
+| `get_postgres_endpoint` | Get endpoint details | `host`, `token`, `name` |
+| `create_postgres_endpoint` | Create new endpoint | `host`, `token`, `parent`, `endpoint_type`, plus optional fields |
+| `update_postgres_endpoint` | Update endpoint | `host`, `token`, `name`, `update_mask`, plus optional fields |
+| `delete_postgres_endpoint` | Delete endpoint | `host`, `token`, `name` |
+| `get_postgres_operation` | Get operation status | `host`, `token`, `name` |
+| `create_execution_context` | Create execution context | `host`, `token`, `cluster_id`, `language` (default: "python") |
+| `get_context_status` | Get context status | `host`, `token`, `cluster_id`, `context_id` |
+| `destroy_execution_context` | Destroy context | `host`, `token`, `cluster_id`, `context_id` |
+| `execute_command` | Execute code on cluster | `host`, `token`, `cluster_id`, `context_id`, `command`, `language` (default: "python") |
+| `get_command_status` | Get command status/results | `host`, `token`, `cluster_id`, `context_id`, `command_id` |
+| `cancel_command` | Cancel running command | `host`, `token`, `cluster_id`, `context_id`, `command_id` |
 | `list_notebooks` | List notebooks in path | `host`, `token`, `path` (optional), `recursive` (optional) |
 | `get_notebook` | Export notebook content | `host`, `token`, `path`, `format` (optional) |
 | `import_notebook` | Import notebook | `host`, `token`, `path`, `content`, `language` (optional), `format` (optional), `overwrite` (optional) |

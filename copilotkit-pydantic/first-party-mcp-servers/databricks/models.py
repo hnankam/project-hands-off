@@ -1212,6 +1212,1105 @@ class UpdateExternalLineageResponse(BaseModel):
     message: str = Field(default="External lineage relationship updated successfully", description="Status message")
 
 
+# ============================================================================
+# Postgres API Models
+# ============================================================================
+
+class PostgresProjectModel(BaseModel):
+    """Postgres project information."""
+    name: Optional[str] = Field(None, description="Resource name (projects/{project_id})")
+    uid: Optional[str] = Field(None, description="Unique identifier")
+    display_name: Optional[str] = Field(None, description="User-defined display name")
+    pg_version: Optional[int] = Field(None, description="PostgreSQL version")
+    create_time: Optional[str] = Field(None, description="Creation timestamp")
+    update_time: Optional[str] = Field(None, description="Last update timestamp")
+    settings: Optional[Dict[str, Any]] = Field(None, description="Project settings")
+    history_retention_duration: Optional[str] = Field(None, description="History retention duration")
+    branch_logical_size_limit_bytes: Optional[int] = Field(None, description="Branch size limit in bytes")
+    synthetic_storage_size_bytes: Optional[int] = Field(None, description="Total storage size")
+
+
+class PostgresBranchModel(BaseModel):
+    """Postgres branch information."""
+    name: Optional[str] = Field(None, description="Resource name (projects/{project_id}/branches/{branch_id})")
+    uid: Optional[str] = Field(None, description="Unique identifier")
+    parent: Optional[str] = Field(None, description="Parent project name")
+    default: Optional[bool] = Field(None, description="Whether this is the default branch")
+    is_protected: Optional[bool] = Field(None, description="Whether branch is protected from deletion")
+    create_time: Optional[str] = Field(None, description="Creation timestamp")
+    update_time: Optional[str] = Field(None, description="Last update timestamp")
+    current_state: Optional[str] = Field(None, description="Current branch state")
+    logical_size_bytes: Optional[int] = Field(None, description="Logical size in bytes")
+    source_branch: Optional[str] = Field(None, description="Source branch if created from another branch")
+
+
+class PostgresEndpointModel(BaseModel):
+    """Postgres endpoint information."""
+    name: Optional[str] = Field(None, description="Resource name (projects/{project_id}/branches/{branch_id}/endpoints/{endpoint_id})")
+    uid: Optional[str] = Field(None, description="Unique identifier")
+    parent: Optional[str] = Field(None, description="Parent branch name")
+    endpoint_type: Optional[str] = Field(None, description="Endpoint type (READ_WRITE, READ_ONLY)")
+    host: Optional[str] = Field(None, description="Connection host")
+    disabled: Optional[bool] = Field(None, description="Whether endpoint is disabled")
+    pooler_mode: Optional[str] = Field(None, description="Pooler mode (TRANSACTION, SESSION)")
+    autoscaling_limit_min_cu: Optional[float] = Field(None, description="Minimum compute units for autoscaling")
+    autoscaling_limit_max_cu: Optional[float] = Field(None, description="Maximum compute units for autoscaling")
+    suspend_timeout_duration: Optional[str] = Field(None, description="Suspend timeout duration")
+    create_time: Optional[str] = Field(None, description="Creation timestamp")
+    update_time: Optional[str] = Field(None, description="Last update timestamp")
+    current_state: Optional[str] = Field(None, description="Current endpoint state")
+
+
+class PostgresOperationModel(BaseModel):
+    """Long-running operation information."""
+    name: Optional[str] = Field(None, description="Operation resource name")
+    done: Optional[bool] = Field(None, description="Whether the operation is complete")
+    error: Optional[Dict[str, Any]] = Field(None, description="Error details if operation failed")
+    response: Optional[Dict[str, Any]] = Field(None, description="Response data if operation succeeded")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Operation metadata")
+
+
+class ListPostgresProjectsResponse(BaseModel):
+    """Response model for listing Postgres projects."""
+    projects: list[PostgresProjectModel] = Field(..., description="List of projects")
+    count: int = Field(..., description="Number of projects returned")
+    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+
+
+class ListPostgresBranchesResponse(BaseModel):
+    """Response model for listing Postgres branches."""
+    branches: list[PostgresBranchModel] = Field(..., description="List of branches")
+    count: int = Field(..., description="Number of branches returned")
+    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+
+
+class ListPostgresEndpointsResponse(BaseModel):
+    """Response model for listing Postgres endpoints."""
+    endpoints: list[PostgresEndpointModel] = Field(..., description="List of endpoints")
+    count: int = Field(..., description="Number of endpoints returned")
+    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+
+
+class CreatePostgresProjectResponse(BaseModel):
+    """Response model for creating a Postgres project."""
+    operation: PostgresOperationModel = Field(..., description="Long-running operation")
+    message: str = Field(default="Postgres project creation initiated", description="Status message")
+
+
+class CreatePostgresBranchResponse(BaseModel):
+    """Response model for creating a Postgres branch."""
+    operation: PostgresOperationModel = Field(..., description="Long-running operation")
+    message: str = Field(default="Postgres branch creation initiated", description="Status message")
+
+
+class CreatePostgresEndpointResponse(BaseModel):
+    """Response model for creating a Postgres endpoint."""
+    operation: PostgresOperationModel = Field(..., description="Long-running operation")
+    message: str = Field(default="Postgres endpoint creation initiated", description="Status message")
+
+
+class DeletePostgresResponse(BaseModel):
+    """Response model for deleting Postgres resources."""
+    name: str = Field(..., description="Name of deleted resource")
+    message: str = Field(default="Resource deleted successfully", description="Status message")
+
+
+class UpdatePostgresResponse(BaseModel):
+    """Response model for updating Postgres resources."""
+    operation: PostgresOperationModel = Field(..., description="Long-running operation")
+    message: str = Field(default="Resource update initiated", description="Status message")
+
+
+# ============================================================================
+# Command Execution API Models
+# ============================================================================
+
+class CommandResultsModel(BaseModel):
+    """Results from a command execution."""
+    result_type: Optional[str] = Field(None, description="Type of result (text, table, image, images, error)")
+    data: Optional[Any] = Field(None, description="Actual result data")
+    summary: Optional[str] = Field(None, description="Result summary")
+    cause: Optional[str] = Field(None, description="Error cause if result_type is error")
+    table_schema: Optional[list[Dict[str, Any]]] = Field(None, description="Table schema if result_type is table")
+    truncated: Optional[bool] = Field(None, description="Whether results are truncated")
+    is_json_schema: Optional[bool] = Field(None, description="Whether schema is JSON schema")
+    file_name: Optional[str] = Field(None, description="File name for image results")
+    file_names: Optional[list[str]] = Field(None, description="File names for images results")
+    pos: Optional[int] = Field(None, description="Position in output")
+
+
+class CommandStatusModel(BaseModel):
+    """Status of a command execution."""
+    id: Optional[str] = Field(None, description="Command ID")
+    status: Optional[str] = Field(None, description="Status (Queued, Running, Finished, Cancelled, Cancelling, Error)")
+    results: Optional[CommandResultsModel] = Field(None, description="Command results if available")
+
+
+class ContextStatusModel(BaseModel):
+    """Status of an execution context."""
+    id: Optional[str] = Field(None, description="Context ID")
+    status: Optional[str] = Field(None, description="Status (Pending, Running, Error)")
+
+
+class CreateExecutionContextResponse(BaseModel):
+    """Response model for creating an execution context."""
+    context: ContextStatusModel = Field(..., description="Created execution context")
+    message: str = Field(default="Execution context created successfully", description="Status message")
+
+
+class ExecuteCommandResponse(BaseModel):
+    """Response model for executing a command."""
+    command: CommandStatusModel = Field(..., description="Command execution status")
+    message: str = Field(default="Command execution initiated", description="Status message")
+
+
+class CancelCommandResponse(BaseModel):
+    """Response model for canceling a command."""
+    command: CommandStatusModel = Field(..., description="Canceled command status")
+    message: str = Field(default="Command cancellation initiated", description="Status message")
+
+
+class DestroyContextResponse(BaseModel):
+    """Response model for destroying an execution context."""
+    cluster_id: str = Field(..., description="Cluster ID")
+    context_id: str = Field(..., description="Context ID")
+    message: str = Field(default="Execution context destroyed successfully", description="Status message")
+
+
+# ============================================================================
+# External Locations API Models
+# ============================================================================
+
+class ExternalLocationInfoModel(BaseModel):
+    """External location information."""
+    name: Optional[str] = Field(None, description="Name of the external location")
+    url: Optional[str] = Field(None, description="Path URL of the external location")
+    credential_name: Optional[str] = Field(None, description="Name of the storage credential")
+    comment: Optional[str] = Field(None, description="User-provided description")
+    owner: Optional[str] = Field(None, description="Owner of the external location")
+    read_only: Optional[bool] = Field(None, description="Whether the external location is read-only")
+    created_at: Optional[int] = Field(None, description="Creation timestamp")
+    created_by: Optional[str] = Field(None, description="User who created the location")
+    updated_at: Optional[int] = Field(None, description="Last update timestamp")
+    updated_by: Optional[str] = Field(None, description="User who last updated the location")
+    metastore_id: Optional[str] = Field(None, description="Metastore ID")
+    enable_file_events: Optional[bool] = Field(None, description="Whether file events are enabled")
+    fallback: Optional[bool] = Field(None, description="Whether fallback mode is enabled")
+    isolation_mode: Optional[str] = Field(None, description="Isolation mode")
+
+
+class ListExternalLocationsResponse(BaseModel):
+    """Response model for listing external locations."""
+    external_locations: list[ExternalLocationInfoModel] = Field(default_factory=list, description="List of external locations")
+    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    message: str = Field(default="External locations retrieved successfully", description="Status message")
+
+
+class CreateExternalLocationResponse(BaseModel):
+    """Response model for creating an external location."""
+    external_location: ExternalLocationInfoModel = Field(..., description="Created external location")
+    message: str = Field(default="External location created successfully", description="Status message")
+
+
+class UpdateExternalLocationResponse(BaseModel):
+    """Response model for updating an external location."""
+    external_location: ExternalLocationInfoModel = Field(..., description="Updated external location")
+    message: str = Field(default="External location updated successfully", description="Status message")
+
+
+class DeleteExternalLocationResponse(BaseModel):
+    """Response model for deleting an external location."""
+    name: str = Field(..., description="Name of deleted external location")
+    message: str = Field(default="External location deleted successfully", description="Status message")
+
+
+# ============================================================================
+# Pipelines (Delta Live Tables) API Models
+# ============================================================================
+
+class PipelineStateModel(BaseModel):
+    """Pipeline state information."""
+    state: Optional[str] = Field(None, description="Pipeline state (IDLE, RUNNING, STOPPING, etc.)")
+    latest_update: Optional[str] = Field(None, description="Latest update ID")
+    creator_user_name: Optional[str] = Field(None, description="Creator username")
+    last_modified: Optional[int] = Field(None, description="Last modified timestamp")
+
+
+class PipelineSpecModel(BaseModel):
+    """Pipeline specification."""
+    id: Optional[str] = Field(None, description="Pipeline ID")
+    name: Optional[str] = Field(None, description="Pipeline name")
+    storage: Optional[str] = Field(None, description="DBFS storage path")
+    target: Optional[str] = Field(None, description="Target database/schema")
+    catalog: Optional[str] = Field(None, description="Unity Catalog catalog")
+    schema_name: Optional[str] = Field(None, description="Unity Catalog schema")
+    continuous: Optional[bool] = Field(None, description="Whether pipeline is continuous")
+    development: Optional[bool] = Field(None, description="Whether in development mode")
+    edition: Optional[str] = Field(None, description="Pipeline edition (CORE, PRO, ADVANCED)")
+    photon: Optional[bool] = Field(None, description="Whether Photon is enabled")
+    serverless: Optional[bool] = Field(None, description="Whether serverless is enabled")
+    channel: Optional[str] = Field(None, description="DLT release channel")
+
+
+class PipelineInfoModel(BaseModel):
+    """Pipeline information."""
+    pipeline_id: Optional[str] = Field(None, description="Pipeline ID")
+    spec: Optional[PipelineSpecModel] = Field(None, description="Pipeline specification")
+    state: Optional[PipelineStateModel] = Field(None, description="Pipeline state")
+    name: Optional[str] = Field(None, description="Pipeline name")
+    creator_user_name: Optional[str] = Field(None, description="Creator username")
+    last_modified: Optional[int] = Field(None, description="Last modified timestamp")
+    latest_updates: Optional[list[str]] = Field(None, description="Latest update IDs")
+
+
+class ListPipelinesResponse(BaseModel):
+    """Response model for listing pipelines."""
+    pipelines: list[PipelineInfoModel] = Field(default_factory=list, description="List of pipelines")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Pipelines retrieved successfully", description="Status message")
+
+
+class CreatePipelineResponse(BaseModel):
+    """Response model for creating a pipeline."""
+    pipeline_id: str = Field(..., description="Created pipeline ID")
+    message: str = Field(default="Pipeline created successfully", description="Status message")
+
+
+class UpdatePipelineResponse(BaseModel):
+    """Response model for updating a pipeline."""
+    message: str = Field(default="Pipeline updated successfully", description="Status message")
+
+
+class DeletePipelineResponse(BaseModel):
+    """Response model for deleting a pipeline."""
+    pipeline_id: str = Field(..., description="Deleted pipeline ID")
+    message: str = Field(default="Pipeline deleted successfully", description="Status message")
+
+
+class UpdateInfoModel(BaseModel):
+    """Pipeline update information."""
+    update_id: Optional[str] = Field(None, description="Update ID")
+    pipeline_id: Optional[str] = Field(None, description="Pipeline ID")
+    state: Optional[str] = Field(None, description="Update state (QUEUED, RUNNING, COMPLETED, FAILED, CANCELED)")
+    creation_time: Optional[int] = Field(None, description="Creation timestamp")
+    full_refresh: Optional[bool] = Field(None, description="Whether this is a full refresh")
+
+
+class StartUpdateResponse(BaseModel):
+    """Response model for starting a pipeline update."""
+    update_id: str = Field(..., description="Started update ID")
+    message: str = Field(default="Pipeline update started successfully", description="Status message")
+
+
+class ListUpdatesResponse(BaseModel):
+    """Response model for listing pipeline updates."""
+    updates: list[UpdateInfoModel] = Field(default_factory=list, description="List of pipeline updates")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Pipeline updates retrieved successfully", description="Status message")
+
+
+class StopPipelineResponse(BaseModel):
+    """Response model for stopping a pipeline."""
+    pipeline_id: str = Field(..., description="Stopped pipeline ID")
+    message: str = Field(default="Pipeline stopped successfully", description="Status message")
+
+
+class ResetPipelineResponse(BaseModel):
+    """Response model for resetting a pipeline."""
+    pipeline_id: str = Field(..., description="Reset pipeline ID")
+    message: str = Field(default="Pipeline reset successfully", description="Status message")
+
+
+# ============================================================================
+# MLflow Experiments API Models
+# ============================================================================
+
+class ExperimentModel(BaseModel):
+    """MLflow experiment information."""
+    experiment_id: Optional[str] = Field(None, description="Experiment ID")
+    name: Optional[str] = Field(None, description="Experiment name")
+    artifact_location: Optional[str] = Field(None, description="Artifact storage location")
+    lifecycle_stage: Optional[str] = Field(None, description="Lifecycle stage (active, deleted)")
+    last_update_time: Optional[int] = Field(None, description="Last update timestamp")
+    creation_time: Optional[int] = Field(None, description="Creation timestamp")
+    tags: Optional[list[Dict[str, str]]] = Field(None, description="Experiment tags")
+
+
+class RunInfoModel(BaseModel):
+    """MLflow run information."""
+    run_id: Optional[str] = Field(None, description="Run ID")
+    run_uuid: Optional[str] = Field(None, description="Run UUID (deprecated)")
+    run_name: Optional[str] = Field(None, description="Run name")
+    experiment_id: Optional[str] = Field(None, description="Experiment ID")
+    user_id: Optional[str] = Field(None, description="User ID")
+    status: Optional[str] = Field(None, description="Run status (RUNNING, FINISHED, FAILED, KILLED)")
+    start_time: Optional[int] = Field(None, description="Start timestamp")
+    end_time: Optional[int] = Field(None, description="End timestamp")
+    artifact_uri: Optional[str] = Field(None, description="Artifact URI")
+    lifecycle_stage: Optional[str] = Field(None, description="Lifecycle stage")
+
+
+class RunDataModel(BaseModel):
+    """MLflow run data (metrics, params, tags)."""
+    metrics: Optional[list[Dict[str, Any]]] = Field(None, description="Run metrics")
+    params: Optional[list[Dict[str, str]]] = Field(None, description="Run parameters")
+    tags: Optional[list[Dict[str, str]]] = Field(None, description="Run tags")
+
+
+class RunModel(BaseModel):
+    """MLflow run."""
+    info: Optional[RunInfoModel] = Field(None, description="Run information")
+    data: Optional[RunDataModel] = Field(None, description="Run data")
+
+
+class ListExperimentsResponse(BaseModel):
+    """Response model for listing experiments."""
+    experiments: list[ExperimentModel] = Field(default_factory=list, description="List of experiments")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Experiments retrieved successfully", description="Status message")
+
+
+class CreateExperimentResponse(BaseModel):
+    """Response model for creating an experiment."""
+    experiment_id: str = Field(..., description="Created experiment ID")
+    message: str = Field(default="Experiment created successfully", description="Status message")
+
+
+class DeleteExperimentResponse(BaseModel):
+    """Response model for deleting an experiment."""
+    experiment_id: str = Field(..., description="Deleted experiment ID")
+    message: str = Field(default="Experiment deleted successfully", description="Status message")
+
+
+class UpdateExperimentResponse(BaseModel):
+    """Response model for updating an experiment."""
+    message: str = Field(default="Experiment updated successfully", description="Status message")
+
+
+class CreateRunResponse(BaseModel):
+    """Response model for creating a run."""
+    run: RunModel = Field(..., description="Created run")
+    message: str = Field(default="Run created successfully", description="Status message")
+
+
+class DeleteRunResponse(BaseModel):
+    """Response model for deleting a run."""
+    run_id: str = Field(..., description="Deleted run ID")
+    message: str = Field(default="Run deleted successfully", description="Status message")
+
+
+class UpdateRunResponse(BaseModel):
+    """Response model for updating a run."""
+    run: RunModel = Field(..., description="Updated run information")
+    message: str = Field(default="Run updated successfully", description="Status message")
+
+
+class SearchRunsResponse(BaseModel):
+    """Response model for searching runs."""
+    runs: list[RunModel] = Field(default_factory=list, description="List of runs matching search criteria")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Runs retrieved successfully", description="Status message")
+
+
+class LogMetricResponse(BaseModel):
+    """Response model for logging a metric."""
+    message: str = Field(default="Metric logged successfully", description="Status message")
+
+
+class LogParamResponse(BaseModel):
+    """Response model for logging a parameter."""
+    message: str = Field(default="Parameter logged successfully", description="Status message")
+
+
+class SetExperimentTagResponse(BaseModel):
+    """Response model for setting an experiment tag."""
+    message: str = Field(default="Experiment tag set successfully", description="Status message")
+
+
+class SetRunTagResponse(BaseModel):
+    """Response model for setting a run tag."""
+    message: str = Field(default="Run tag set successfully", description="Status message")
+
+
+# ============================================================================
+# Model Registry API Models
+# ============================================================================
+
+class RegisteredModelModel(BaseModel):
+    """Registered model information."""
+    name: Optional[str] = Field(None, description="Model name")
+    creation_timestamp: Optional[int] = Field(None, description="Creation timestamp")
+    last_updated_timestamp: Optional[int] = Field(None, description="Last update timestamp")
+    user_id: Optional[str] = Field(None, description="User ID who created the model")
+    description: Optional[str] = Field(None, description="Model description")
+    tags: Optional[list[Dict[str, str]]] = Field(None, description="Model tags")
+
+
+class ModelVersionModel(BaseModel):
+    """Model version information."""
+    name: Optional[str] = Field(None, description="Model name")
+    version: Optional[str] = Field(None, description="Version number")
+    creation_timestamp: Optional[int] = Field(None, description="Creation timestamp")
+    last_updated_timestamp: Optional[int] = Field(None, description="Last update timestamp")
+    user_id: Optional[str] = Field(None, description="User ID who created the version")
+    current_stage: Optional[str] = Field(None, description="Current stage (None, Staging, Production, Archived)")
+    description: Optional[str] = Field(None, description="Version description")
+    source: Optional[str] = Field(None, description="Source URI")
+    run_id: Optional[str] = Field(None, description="MLflow run ID")
+    status: Optional[str] = Field(None, description="Version status")
+    status_message: Optional[str] = Field(None, description="Status message")
+    tags: Optional[list[Dict[str, str]]] = Field(None, description="Version tags")
+
+
+class ModelCommentModel(BaseModel):
+    """Model version comment."""
+    id: Optional[str] = Field(None, description="Comment ID")
+    comment: Optional[str] = Field(None, description="Comment text")
+    user_id: Optional[str] = Field(None, description="User who created comment")
+    creation_timestamp: Optional[int] = Field(None, description="Creation timestamp")
+    last_updated_timestamp: Optional[int] = Field(None, description="Last update timestamp")
+
+
+class TransitionRequestModel(BaseModel):
+    """Stage transition request."""
+    name: Optional[str] = Field(None, description="Model name")
+    version: Optional[str] = Field(None, description="Version number")
+    stage: Optional[str] = Field(None, description="Target stage")
+    user_id: Optional[str] = Field(None, description="User who created request")
+    creation_timestamp: Optional[int] = Field(None, description="Creation timestamp")
+    status: Optional[str] = Field(None, description="Request status")
+    comment: Optional[str] = Field(None, description="Comment")
+
+
+class WebhookModel(BaseModel):
+    """Registry webhook."""
+    id: Optional[str] = Field(None, description="Webhook ID")
+    model_name: Optional[str] = Field(None, description="Model name")
+    events: Optional[list[str]] = Field(None, description="Webhook events")
+    description: Optional[str] = Field(None, description="Description")
+    status: Optional[str] = Field(None, description="Webhook status")
+    creation_timestamp: Optional[int] = Field(None, description="Creation timestamp")
+    last_updated_timestamp: Optional[int] = Field(None, description="Last update timestamp")
+
+
+class ListModelsResponse(BaseModel):
+    """Response model for listing registered models."""
+    models: list[RegisteredModelModel] = Field(default_factory=list, description="List of registered models")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Models retrieved successfully", description="Status message")
+
+
+class CreateModelResponse(BaseModel):
+    """Response model for creating a registered model."""
+    model: RegisteredModelModel = Field(..., description="Created model")
+    message: str = Field(default="Model created successfully", description="Status message")
+
+
+class UpdateModelResponse(BaseModel):
+    """Response model for updating a model."""
+    message: str = Field(default="Model updated successfully", description="Status message")
+
+
+class DeleteModelResponse(BaseModel):
+    """Response model for deleting a model."""
+    model_name: str = Field(..., description="Deleted model name")
+    message: str = Field(default="Model deleted successfully", description="Status message")
+
+
+class CreateModelVersionResponse(BaseModel):
+    """Response model for creating a model version."""
+    model_version: ModelVersionModel = Field(..., description="Created model version")
+    message: str = Field(default="Model version created successfully", description="Status message")
+
+
+class UpdateModelVersionResponse(BaseModel):
+    """Response model for updating a model version."""
+    message: str = Field(default="Model version updated successfully", description="Status message")
+
+
+class DeleteModelVersionResponse(BaseModel):
+    """Response model for deleting a model version."""
+    model_name: str = Field(..., description="Model name")
+    version: str = Field(..., description="Deleted version")
+    message: str = Field(default="Model version deleted successfully", description="Status message")
+
+
+class ListModelVersionsResponse(BaseModel):
+    """Response model for listing model versions."""
+    model_versions: list[ModelVersionModel] = Field(default_factory=list, description="List of model versions")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Model versions retrieved successfully", description="Status message")
+
+
+class TransitionStageResponse(BaseModel):
+    """Response model for transitioning stage."""
+    model_version: ModelVersionModel = Field(..., description="Updated model version")
+    message: str = Field(default="Stage transitioned successfully", description="Status message")
+
+
+class CreateTransitionRequestResponse(BaseModel):
+    """Response model for creating transition request."""
+    request: TransitionRequestModel = Field(..., description="Created transition request")
+    message: str = Field(default="Transition request created successfully", description="Status message")
+
+
+class ApproveTransitionRequestResponse(BaseModel):
+    """Response model for approving transition request."""
+    message: str = Field(default="Transition request approved successfully", description="Status message")
+
+
+class CreateCommentResponse(BaseModel):
+    """Response model for creating a comment."""
+    comment: ModelCommentModel = Field(..., description="Created comment")
+    message: str = Field(default="Comment created successfully", description="Status message")
+
+
+class UpdateCommentResponse(BaseModel):
+    """Response model for updating a comment."""
+    message: str = Field(default="Comment updated successfully", description="Status message")
+
+
+class DeleteCommentResponse(BaseModel):
+    """Response model for deleting a comment."""
+    comment_id: str = Field(..., description="Deleted comment ID")
+    message: str = Field(default="Comment deleted successfully", description="Status message")
+
+
+class SetTagResponse(BaseModel):
+    """Response model for setting a tag."""
+    message: str = Field(default="Tag set successfully", description="Status message")
+
+
+class DeleteTagResponse(BaseModel):
+    """Response model for deleting a tag."""
+    message: str = Field(default="Tag deleted successfully", description="Status message")
+
+
+class CreateWebhookResponse(BaseModel):
+    """Response model for creating a webhook."""
+    webhook: WebhookModel = Field(..., description="Created webhook")
+    message: str = Field(default="Webhook created successfully", description="Status message")
+
+
+class UpdateWebhookResponse(BaseModel):
+    """Response model for updating a webhook."""
+    message: str = Field(default="Webhook updated successfully", description="Status message")
+
+
+class DeleteWebhookResponse(BaseModel):
+    """Response model for deleting a webhook."""
+    webhook_id: str = Field(..., description="Deleted webhook ID")
+    message: str = Field(default="Webhook deleted successfully", description="Status message")
+
+
+class ListWebhooksResponse(BaseModel):
+    """Response model for listing webhooks."""
+    webhooks: list[WebhookModel] = Field(default_factory=list, description="List of webhooks")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Webhooks retrieved successfully", description="Status message")
+
+
+# ============================================================================
+# Forecasting API Models
+# ============================================================================
+
+class ForecastingExperimentModel(BaseModel):
+    """Forecasting experiment information."""
+    experiment_id: Optional[str] = Field(None, description="Experiment ID")
+    state: Optional[str] = Field(None, description="Experiment state (PENDING, RUNNING, SUCCEEDED, FAILED)")
+    train_data_path: Optional[str] = Field(None, description="Training data Unity Catalog path")
+    target_column: Optional[str] = Field(None, description="Target column name")
+    time_column: Optional[str] = Field(None, description="Time column name")
+    forecast_granularity: Optional[str] = Field(None, description="Forecast granularity (e.g., 'Daily', 'Hourly')")
+    forecast_horizon: Optional[int] = Field(None, description="Number of time steps to forecast")
+    experiment_path: Optional[str] = Field(None, description="Workspace path for experiment")
+    prediction_data_path: Optional[str] = Field(None, description="Predictions output path")
+    register_to: Optional[str] = Field(None, description="Unity Catalog model registration path")
+    primary_metric: Optional[str] = Field(None, description="Primary evaluation metric")
+    timeseries_identifier_columns: Optional[list[str]] = Field(None, description="Time series identifier columns")
+    training_frameworks: Optional[list[str]] = Field(None, description="Frameworks used (Prophet, ARIMA, DeepAR)")
+    start_time: Optional[int] = Field(None, description="Experiment start timestamp")
+    end_time: Optional[int] = Field(None, description="Experiment end timestamp")
+    error_message: Optional[str] = Field(None, description="Error message if failed")
+
+
+class CreateForecastingExperimentResponse(BaseModel):
+    """Response model for creating a forecasting experiment."""
+    experiment_id: str = Field(..., description="Created experiment ID")
+    message: str = Field(default="Forecasting experiment created successfully", description="Status message")
+
+
+# ============================================================================
+# Feature Store API Models
+# ============================================================================
+
+class OnlineStoreModel(BaseModel):
+    """Online feature store information."""
+    name: Optional[str] = Field(None, description="Online store name")
+    storage_type: Optional[str] = Field(None, description="Storage type")
+    region: Optional[str] = Field(None, description="Cloud region")
+    status: Optional[str] = Field(None, description="Store status")
+    creation_time: Optional[int] = Field(None, description="Creation timestamp")
+    last_updated_time: Optional[int] = Field(None, description="Last update timestamp")
+
+
+class ListOnlineStoresResponse(BaseModel):
+    """Response model for listing online stores."""
+    online_stores: list[OnlineStoreModel] = Field(default_factory=list, description="List of online stores")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Online stores retrieved successfully", description="Status message")
+
+
+class CreateOnlineStoreResponse(BaseModel):
+    """Response model for creating an online store."""
+    online_store: OnlineStoreModel = Field(..., description="Created online store")
+    message: str = Field(default="Online store created successfully", description="Status message")
+
+
+class UpdateOnlineStoreResponse(BaseModel):
+    """Response model for updating an online store."""
+    online_store: OnlineStoreModel = Field(..., description="Updated online store")
+    message: str = Field(default="Online store updated successfully", description="Status message")
+
+
+class DeleteOnlineStoreResponse(BaseModel):
+    """Response model for deleting an online store."""
+    name: str = Field(..., description="Deleted online store name")
+    message: str = Field(default="Online store deleted successfully", description="Status message")
+
+
+class PublishTableResponse(BaseModel):
+    """Response model for publishing a table."""
+    online_table_name: str = Field(..., description="Published online table name")
+    message: str = Field(default="Table published successfully", description="Status message")
+
+
+class DeleteOnlineTableResponse(BaseModel):
+    """Response model for deleting an online table."""
+    online_table_name: str = Field(..., description="Deleted online table name")
+    message: str = Field(default="Online table deleted successfully", description="Status message")
+
+
+# ============================================================================
+# Feature Engineering API Models
+# ============================================================================
+
+class FeatureModel(BaseModel):
+    """Feature definition."""
+    full_name: Optional[str] = Field(None, description="Full feature name (catalog.schema.table.column)")
+    name: Optional[str] = Field(None, description="Feature name")
+    description: Optional[str] = Field(None, description="Feature description")
+    data_type: Optional[str] = Field(None, description="Feature data type")
+    feature_type: Optional[str] = Field(None, description="Feature type (BATCH, STREAMING)")
+    kafka_config_name: Optional[str] = Field(None, description="Kafka config name (for streaming features)")
+    creation_time: Optional[int] = Field(None, description="Creation timestamp")
+    last_updated_time: Optional[int] = Field(None, description="Last update timestamp")
+
+
+class KafkaConfigModel(BaseModel):
+    """Kafka configuration for streaming features."""
+    name: Optional[str] = Field(None, description="Kafka config name")
+    topic: Optional[str] = Field(None, description="Kafka topic")
+    bootstrap_servers: Optional[str] = Field(None, description="Kafka bootstrap servers")
+    security_protocol: Optional[str] = Field(None, description="Security protocol")
+    sasl_mechanism: Optional[str] = Field(None, description="SASL mechanism")
+    creation_time: Optional[int] = Field(None, description="Creation timestamp")
+    last_updated_time: Optional[int] = Field(None, description="Last update timestamp")
+
+
+class MaterializedFeatureModel(BaseModel):
+    """Materialized feature information."""
+    materialized_feature_id: Optional[str] = Field(None, description="Materialized feature ID")
+    feature_name: Optional[str] = Field(None, description="Source feature name")
+    pipeline_state: Optional[str] = Field(None, description="Pipeline state (ACTIVE, PAUSED)")
+    schedule: Optional[str] = Field(None, description="Refresh schedule")
+    destination_table: Optional[str] = Field(None, description="Destination table name")
+    creation_time: Optional[int] = Field(None, description="Creation timestamp")
+    last_updated_time: Optional[int] = Field(None, description="Last update timestamp")
+
+
+class ListFeaturesResponse(BaseModel):
+    """Response model for listing features."""
+    features: list[FeatureModel] = Field(default_factory=list, description="List of features")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Features retrieved successfully", description="Status message")
+
+
+class CreateFeatureResponse(BaseModel):
+    """Response model for creating a feature."""
+    feature: FeatureModel = Field(..., description="Created feature")
+    message: str = Field(default="Feature created successfully", description="Status message")
+
+
+class UpdateFeatureResponse(BaseModel):
+    """Response model for updating a feature."""
+    feature: FeatureModel = Field(..., description="Updated feature")
+    message: str = Field(default="Feature updated successfully", description="Status message")
+
+
+class DeleteFeatureResponse(BaseModel):
+    """Response model for deleting a feature."""
+    full_name: str = Field(..., description="Deleted feature name")
+    message: str = Field(default="Feature deleted successfully", description="Status message")
+
+
+class ListKafkaConfigsResponse(BaseModel):
+    """Response model for listing Kafka configs."""
+    kafka_configs: list[KafkaConfigModel] = Field(default_factory=list, description="List of Kafka configs")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Kafka configs retrieved successfully", description="Status message")
+
+
+class CreateKafkaConfigResponse(BaseModel):
+    """Response model for creating a Kafka config."""
+    kafka_config: KafkaConfigModel = Field(..., description="Created Kafka config")
+    message: str = Field(default="Kafka config created successfully", description="Status message")
+
+
+class UpdateKafkaConfigResponse(BaseModel):
+    """Response model for updating a Kafka config."""
+    kafka_config: KafkaConfigModel = Field(..., description="Updated Kafka config")
+    message: str = Field(default="Kafka config updated successfully", description="Status message")
+
+
+class DeleteKafkaConfigResponse(BaseModel):
+    """Response model for deleting a Kafka config."""
+    name: str = Field(..., description="Deleted Kafka config name")
+    message: str = Field(default="Kafka config deleted successfully", description="Status message")
+
+
+class ListMaterializedFeaturesResponse(BaseModel):
+    """Response model for listing materialized features."""
+    materialized_features: list[MaterializedFeatureModel] = Field(default_factory=list, description="List of materialized features")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Materialized features retrieved successfully", description="Status message")
+
+
+class CreateMaterializedFeatureResponse(BaseModel):
+    """Response model for creating a materialized feature."""
+    materialized_feature: MaterializedFeatureModel = Field(..., description="Created materialized feature")
+    message: str = Field(default="Materialized feature created successfully", description="Status message")
+
+
+class BatchCreateMaterializedFeaturesResponse(BaseModel):
+    """Response model for batch creating materialized features."""
+    materialized_features: list[MaterializedFeatureModel] = Field(default_factory=list, description="Created materialized features")
+    message: str = Field(default="Materialized features created successfully", description="Status message")
+
+
+class UpdateMaterializedFeatureResponse(BaseModel):
+    """Response model for updating a materialized feature."""
+    materialized_feature: MaterializedFeatureModel = Field(..., description="Updated materialized feature")
+    message: str = Field(default="Materialized feature updated successfully", description="Status message")
+
+
+class DeleteMaterializedFeatureResponse(BaseModel):
+    """Response model for deleting a materialized feature."""
+    materialized_feature_id: str = Field(..., description="Deleted materialized feature ID")
+    message: str = Field(default="Materialized feature deleted successfully", description="Status message")
+
+
+# ============================================================================
+# Vector Search Endpoints API Models
+# ============================================================================
+
+class EndpointInfoModel(BaseModel):
+    """Vector search endpoint information."""
+    name: Optional[str] = Field(None, description="Endpoint name")
+    endpoint_type: Optional[str] = Field(None, description="Endpoint type")
+    endpoint_status: Optional[str] = Field(None, description="Endpoint status")
+    creator: Optional[str] = Field(None, description="Creator username")
+    creation_timestamp: Optional[int] = Field(None, description="Creation timestamp")
+    last_updated_timestamp: Optional[int] = Field(None, description="Last update timestamp")
+    num_indexes: Optional[int] = Field(None, description="Number of indexes")
+    budget_policy_id: Optional[str] = Field(None, description="Budget policy ID")
+
+
+class ListEndpointsResponse(BaseModel):
+    """Response model for listing vector search endpoints."""
+    endpoints: list[EndpointInfoModel] = Field(default_factory=list, description="List of endpoints")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Vector search endpoints retrieved successfully", description="Status message")
+
+
+class CreateEndpointResponse(BaseModel):
+    """Response model for creating a vector search endpoint."""
+    endpoint: EndpointInfoModel = Field(..., description="Created endpoint")
+    message: str = Field(default="Vector search endpoint created successfully", description="Status message")
+
+
+class DeleteEndpointResponse(BaseModel):
+    """Response model for deleting a vector search endpoint."""
+    endpoint_name: str = Field(..., description="Deleted endpoint name")
+    message: str = Field(default="Vector search endpoint deleted successfully", description="Status message")
+
+
+class UpdateEndpointBudgetPolicyResponse(BaseModel):
+    """Response model for updating endpoint budget policy."""
+    endpoint_name: str = Field(..., description="Endpoint name")
+    budget_policy_id: str = Field(..., description="Updated budget policy ID")
+    message: str = Field(default="Budget policy updated successfully", description="Status message")
+
+
+class CustomTagModel(BaseModel):
+    """Custom tag for vector search endpoint."""
+    key: str = Field(..., description="Tag key")
+    value: str = Field(..., description="Tag value")
+
+
+class UpdateEndpointCustomTagsResponse(BaseModel):
+    """Response model for updating endpoint custom tags."""
+    endpoint_name: str = Field(..., description="Endpoint name")
+    custom_tags: list[CustomTagModel] = Field(default_factory=list, description="Updated custom tags")
+    message: str = Field(default="Custom tags updated successfully", description="Status message")
+
+
+class MetricDataPoint(BaseModel):
+    """Metric data point."""
+    timestamp: Optional[str] = Field(None, description="Timestamp")
+    value: Optional[float] = Field(None, description="Metric value")
+
+
+class MetricSeries(BaseModel):
+    """Metric time series."""
+    metric_name: Optional[str] = Field(None, description="Metric name")
+    data_points: list[MetricDataPoint] = Field(default_factory=list, description="Data points")
+
+
+class RetrieveMetricsResponse(BaseModel):
+    """Response model for retrieving endpoint metrics."""
+    endpoint_name: str = Field(..., description="Endpoint name")
+    metrics: list[MetricSeries] = Field(default_factory=list, description="Metric series")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Metrics retrieved successfully", description="Status message")
+
+
+# ============================================================================
+# Vector Search Indexes API Models
+# ============================================================================
+
+class VectorIndexModel(BaseModel):
+    """Vector search index information."""
+    name: Optional[str] = Field(None, description="Index name")
+    endpoint_name: Optional[str] = Field(None, description="Endpoint name")
+    index_type: Optional[str] = Field(None, description="Index type (DELTA_SYNC or DIRECT_ACCESS)")
+    primary_key: Optional[str] = Field(None, description="Primary key column")
+    creator: Optional[str] = Field(None, description="Creator username")
+    status: Optional[str] = Field(None, description="Index status")
+    creation_timestamp: Optional[int] = Field(None, description="Creation timestamp")
+    last_updated_timestamp: Optional[int] = Field(None, description="Last update timestamp")
+
+
+class MiniVectorIndexModel(BaseModel):
+    """Minimal vector index information."""
+    name: Optional[str] = Field(None, description="Index name")
+    endpoint_name: Optional[str] = Field(None, description="Endpoint name")
+    index_type: Optional[str] = Field(None, description="Index type")
+    primary_key: Optional[str] = Field(None, description="Primary key column")
+
+
+class ListIndexesResponse(BaseModel):
+    """Response model for listing vector search indexes."""
+    indexes: list[MiniVectorIndexModel] = Field(default_factory=list, description="List of indexes")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Vector search indexes retrieved successfully", description="Status message")
+
+
+class CreateIndexResponse(BaseModel):
+    """Response model for creating a vector search index."""
+    index: VectorIndexModel = Field(..., description="Created index")
+    message: str = Field(default="Vector search index created successfully", description="Status message")
+
+
+class DeleteIndexResponse(BaseModel):
+    """Response model for deleting a vector search index."""
+    index_name: str = Field(..., description="Deleted index name")
+    message: str = Field(default="Vector search index deleted successfully", description="Status message")
+
+
+class QueryResultRow(BaseModel):
+    """Single query result row."""
+    score: Optional[float] = Field(None, description="Similarity score")
+    metadata: Optional[dict] = Field(None, description="Row metadata")
+
+
+class QueryVectorIndexResponse(BaseModel):
+    """Response model for querying a vector index."""
+    index_name: str = Field(..., description="Index name")
+    results: list[QueryResultRow] = Field(default_factory=list, description="Query results")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Query executed successfully", description="Status message")
+
+
+class UpsertDataResponse(BaseModel):
+    """Response model for upserting data to a vector index."""
+    index_name: str = Field(..., description="Index name")
+    upserted_count: Optional[int] = Field(None, description="Number of vectors upserted")
+    message: str = Field(default="Data upserted successfully", description="Status message")
+
+
+class DeleteDataResponse(BaseModel):
+    """Response model for deleting data from a vector index."""
+    index_name: str = Field(..., description="Index name")
+    deleted_count: Optional[int] = Field(None, description="Number of vectors deleted")
+    message: str = Field(default="Data deleted successfully", description="Status message")
+
+
+class SyncIndexResponse(BaseModel):
+    """Response model for syncing a vector index."""
+    index_name: str = Field(..., description="Index name")
+    message: str = Field(default="Index sync triggered successfully", description="Status message")
+
+
+class ScanResultRow(BaseModel):
+    """Single scan result row."""
+    metadata: Optional[dict] = Field(None, description="Row metadata")
+
+
+class ScanVectorIndexResponse(BaseModel):
+    """Response model for scanning a vector index."""
+    index_name: str = Field(..., description="Index name")
+    results: list[ScanResultRow] = Field(default_factory=list, description="Scan results")
+    last_primary_key: Optional[str] = Field(None, description="Last primary key for pagination")
+    message: str = Field(default="Scan executed successfully", description="Status message")
+
+
+# ============================================================================
+# Account Billing API Models
+# ============================================================================
+
+class BillableUsageDownloadResponse(BaseModel):
+    """Response model for downloading billable usage logs."""
+    csv_content: str = Field(..., description="Billable usage logs in CSV format")
+    start_month: str = Field(..., description="Start month (YYYY-MM)")
+    end_month: str = Field(..., description="End month (YYYY-MM)")
+    message: str = Field(default="Billable usage logs downloaded successfully", description="Status message")
+
+
+# ============================================================================
+# Account Metastores API Models
+# ============================================================================
+
+class AccountMetastoreInfoModel(BaseModel):
+    """Account-level metastore information."""
+    metastore_id: Optional[str] = Field(None, description="Unique identifier of the metastore")
+    name: Optional[str] = Field(None, description="Name of the metastore")
+    storage_root: Optional[str] = Field(None, description="Cloud storage root path")
+    region: Optional[str] = Field(None, description="Cloud region")
+    cloud: Optional[str] = Field(None, description="Cloud provider (AWS, AZURE, GCP)")
+    owner: Optional[str] = Field(None, description="Owner username or group")
+    created_at: Optional[int] = Field(None, description="Creation timestamp")
+    created_by: Optional[str] = Field(None, description="Creator username")
+    updated_at: Optional[int] = Field(None, description="Last update timestamp")
+    updated_by: Optional[str] = Field(None, description="Last updater username")
+    global_metastore_id: Optional[str] = Field(None, description="Global metastore ID")
+    delta_sharing_scope: Optional[str] = Field(None, description="Delta sharing scope")
+    delta_sharing_recipient_token_lifetime_in_seconds: Optional[int] = Field(None, description="Delta sharing token lifetime")
+    delta_sharing_organization_name: Optional[str] = Field(None, description="Delta sharing org name")
+
+
+class CreateAccountMetastoreResponse(BaseModel):
+    """Response model for creating an account metastore."""
+    metastore: AccountMetastoreInfoModel = Field(..., description="Created metastore information")
+    message: str = Field(default="Account metastore created successfully", description="Status message")
+
+
+class GetAccountMetastoreResponse(BaseModel):
+    """Response model for getting an account metastore."""
+    metastore: AccountMetastoreInfoModel = Field(..., description="Metastore information")
+    message: str = Field(default="Account metastore retrieved successfully", description="Status message")
+
+
+class ListAccountMetastoresResponse(BaseModel):
+    """Response model for listing account metastores."""
+    metastores: list[AccountMetastoreInfoModel] = Field(default_factory=list, description="List of metastores")
+    message: str = Field(default="Account metastores retrieved successfully", description="Status message")
+
+
+class UpdateAccountMetastoreResponse(BaseModel):
+    """Response model for updating an account metastore."""
+    metastore: AccountMetastoreInfoModel = Field(..., description="Updated metastore information")
+    message: str = Field(default="Account metastore updated successfully", description="Status message")
+
+
+class DeleteAccountMetastoreResponse(BaseModel):
+    """Response model for deleting an account metastore."""
+    metastore_id: str = Field(..., description="Deleted metastore ID")
+    message: str = Field(default="Account metastore deleted successfully", description="Status message")
+
+
+# ============================================================================
+# Data Quality API Models
+# ============================================================================
+
+class DataQualityMonitorModel(BaseModel):
+    """Data quality monitor information."""
+    monitor_id: Optional[str] = Field(None, description="Monitor ID")
+    object_type: Optional[str] = Field(None, description="Object type (schema or table)")
+    object_id: Optional[str] = Field(None, description="Object ID (schema_id or table_id)")
+    table_name: Optional[str] = Field(None, description="Full table name")
+    schema_name: Optional[str] = Field(None, description="Full schema name")
+    status: Optional[str] = Field(None, description="Monitor status")
+    dashboard_id: Optional[str] = Field(None, description="Dashboard ID")
+    drift_metrics_table_name: Optional[str] = Field(None, description="Drift metrics table")
+    profile_metrics_table_name: Optional[str] = Field(None, description="Profile metrics table")
+
+
+class CreateMonitorResponse(BaseModel):
+    """Response model for creating a data quality monitor."""
+    monitor: DataQualityMonitorModel = Field(..., description="Created monitor")
+    message: str = Field(default="Data quality monitor created successfully", description="Status message")
+
+
+class UpdateMonitorResponse(BaseModel):
+    """Response model for updating a data quality monitor."""
+    monitor: DataQualityMonitorModel = Field(..., description="Updated monitor")
+    message: str = Field(default="Data quality monitor updated successfully", description="Status message")
+
+
+class DeleteMonitorResponse(BaseModel):
+    """Response model for deleting a data quality monitor."""
+    object_type: str = Field(..., description="Object type")
+    object_id: str = Field(..., description="Object ID")
+    message: str = Field(default="Data quality monitor deleted successfully", description="Status message")
+
+
+class ListMonitorsResponse(BaseModel):
+    """Response model for listing data quality monitors."""
+    monitors: list[DataQualityMonitorModel] = Field(default_factory=list, description="List of monitors")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Monitors retrieved successfully", description="Status message")
+
+
+class DataQualityRefreshModel(BaseModel):
+    """Data quality refresh information."""
+    refresh_id: Optional[int] = Field(None, description="Refresh ID")
+    object_type: Optional[str] = Field(None, description="Object type")
+    object_id: Optional[str] = Field(None, description="Object ID")
+    status: Optional[str] = Field(None, description="Refresh status")
+    start_time: Optional[int] = Field(None, description="Start timestamp")
+    end_time: Optional[int] = Field(None, description="End timestamp")
+
+
+class CreateRefreshResponse(BaseModel):
+    """Response model for creating a refresh."""
+    refresh: DataQualityRefreshModel = Field(..., description="Created refresh")
+    message: str = Field(default="Refresh created successfully", description="Status message")
+
+
+class CancelRefreshResponse(BaseModel):
+    """Response model for canceling a refresh."""
+    refresh_id: int = Field(..., description="Canceled refresh ID")
+    message: str = Field(default="Refresh canceled successfully", description="Status message")
+
+
+class ListRefreshesResponse(BaseModel):
+    """Response model for listing refreshes."""
+    refreshes: list[DataQualityRefreshModel] = Field(default_factory=list, description="List of refreshes")
+    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    message: str = Field(default="Refreshes retrieved successfully", description="Status message")
+
+
 class DatabricksResponse(BaseModel):
     """Base response model that can wrap any Databricks SDK dataclass."""
     
