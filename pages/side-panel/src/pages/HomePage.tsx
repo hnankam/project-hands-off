@@ -206,6 +206,29 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     }
   }, [activeHomeTab]);
 
+  // Track sticky state for tab bar
+  const [isTabBarSticky, setIsTabBarSticky] = useState(false);
+  const tabBarRef = React.useRef<HTMLDivElement>(null);
+  const sentinelRef = React.useRef<HTMLDivElement>(null);
+
+  // Detect when tab bar becomes sticky
+  useEffect(() => {
+    if (!sentinelRef.current) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsTabBarSticky(!entry.isIntersecting);
+      },
+      { threshold: 1 }
+    );
+
+    observer.observe(sentinelRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   // Get team name - check cache and fetch if needed
   useEffect(() => {
     if (!activeTeam) {
@@ -664,9 +687,9 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                     )}
                   >
                     <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
-                    Go to Sessions
+                    GO TO SESSIONS
                   </button>
                   <button
                     onClick={handleCreateSession}
@@ -689,7 +712,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         <path d="M12 4v16m8-8H4" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     )}
-                    New Session
+                    NEW SESSION
             </button>
             {onGoAdmin && (
               <button
@@ -703,7 +726,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                           <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" strokeLinecap="round" strokeLinejoin="round" />
                           <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
-                        Admin Console
+                        ADMIN CONSOLE
                       </button>
                     )}
                 </div>
@@ -723,11 +746,21 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
               )}
             </div>
 
+            {/* Sentinel element to detect sticky state */}
+            <div ref={sentinelRef} className="h-0 -mb-[1px]" />
+
             {/* Tab Bar - Sticky */}
             <div
+              ref={tabBarRef}
               className={cn(
-                'sticky top-0 z-10 flex items-center justify-center gap-2 px-2 py-1 h-[34px] rounded-lg max-w-4xl mx-auto',
+                'sticky top-0 z-10 flex items-center justify-center gap-2 px-2 py-1 h-[34px] max-w-4xl mx-auto transition-all duration-200',
                 isLight ? 'bg-gray-50' : 'bg-[#151C24]',
+                isTabBarSticky 
+                  ? cn(
+                      'rounded-b-lg border-x border-b',
+                      isLight ? 'border-gray-200' : 'border-gray-700'
+                    )
+                  : 'rounded-lg'
                 )}>
               <div className="flex items-center gap-1">
                 {(['workspace', 'sessions', 'usage', 'insights'] as const).map(tab => (

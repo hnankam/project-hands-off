@@ -42,6 +42,7 @@ import {
   useCopilotChat,
   useCopilotReadableData,
   useCopilotSuggestions,
+  useAgentWithErrorBanner, // v1.5+ automatic error detection
   // Tool hooks (centralized for v2 migration)
   useFrontendTool,
   useHumanInTheLoop,
@@ -268,6 +269,76 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // THEME & STORAGE
   // ================================================================================
   const { isLight } = useStorage(themeStorage);
+
+  // ================================================================================
+  // AGENT ERROR SUBSCRIPTION (v1.5+ Automatic Error Detection)
+  // ================================================================================
+  
+  // Automatic error detection via agent event subscription
+  // Replaces manual renderError callback that was never connected
+  const { error: agentError, handleRetry: handleAgentRetry, handleDismiss: handleAgentDismiss } = useAgentWithErrorBanner({
+    agentId: 'dynamic_agent',
+    errorBannerAutoDismissMs: 15000,
+    debug: process.env.NODE_ENV === 'development',
+    
+    // Retry logic: reload last assistant or user message
+    onRetry: () => {
+      debug.log('[ChatInner] Error retry triggered');
+      
+      const currentMessages = messages || [];
+      let sanitizedMessagesArr: unknown[] = currentMessages;
+
+      // Sanitize messages before retry
+      try {
+        const result = runCachedSanitization(
+          currentMessages,
+          cachedSanitizedRef,
+          sanitizeMessages as (msgs: unknown[]) => { messages: unknown[]; hasChanges: boolean },
+        );
+        sanitizedMessagesArr = result.messages;
+
+        if (result.hasChanges) {
+          const currentSignature = computeMessagesSignature(currentMessages);
+          const newSignature = computeMessagesSignature(result.messages);
+          if (newSignature !== currentSignature) {
+            setMessages(result.messages as typeof messages);
+          }
+        }
+      } catch (err) {
+        debug.warn?.('[ChatInner] Failed to sanitize before retry:', err);
+      }
+
+      // Find last message to reload
+      const validMessages = filterValidMessages(sanitizedMessagesArr);
+
+      if (validMessages.length === 0) {
+        debug.error('[ChatInner] No valid messages to reload');
+        return;
+      }
+
+      // Try last assistant message first, then last user message
+      const lastAssistant = findLastMessageByRole(validMessages, 'assistant');
+      if (lastAssistant?.id) {
+        debug.log('[ChatInner] Reloading from assistant message:', lastAssistant.id);
+        reloadMessages(lastAssistant.id);
+      } else {
+        const lastUser = findLastMessageByRole(validMessages, 'user');
+        if (lastUser?.id) {
+          debug.log('[ChatInner] Reloading from user message:', lastUser.id);
+          reloadMessages(lastUser.id);
+        } else {
+          debug.warn?.('[ChatInner] No valid message found to reload');
+        }
+      }
+    },
+    
+    // Log errors for analytics/monitoring
+    onError: (error) => {
+      debug.error('[ChatInner] Agent error occurred:', error.error.message, error.code);
+      // Could send to error tracking service here
+      // trackError('agent_run_failed', { message: error.error.message, code: error.code });
+    },
+  });
 
   // ================================================================================
   // AUTH CONTEXT
@@ -886,67 +957,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   );
 
   /**
-   * Handle error display with retry functionality
-   */
-  const renderError = useCallback(
-    (err: { message: string; operation?: string }) => {
-      const { message, operation } = err;
-      const error = new Error(operation ? `${operation}: ${message}` : message);
-      error.name = operation || 'Error';
-
-      const handleRetry = () => {
-        debug.log('[ChatInner] Retrying...');
-
-        const currentMessages = messages || [];
-        let sanitizedMessagesArr: unknown[] = currentMessages;
-
-        try {
-          const result = runCachedSanitization(
-            currentMessages,
-            cachedSanitizedRef,
-            sanitizeMessages as (msgs: unknown[]) => { messages: unknown[]; hasChanges: boolean },
-          );
-          sanitizedMessagesArr = result.messages;
-
-          if (result.hasChanges) {
-            const currentSignature = computeMessagesSignature(currentMessages);
-            const newSignature = computeMessagesSignature(result.messages);
-            if (newSignature !== currentSignature) {
-              setMessages(result.messages as typeof messages);
-            }
-          }
-        } catch (err) {
-          debug.warn?.('[ChatInner] Failed to sanitize before retry:', err);
-        }
-
-        const validMessages = filterValidMessages(sanitizedMessagesArr);
-
-        if (validMessages.length === 0) {
-          debug.error('[ChatInner] No valid messages to reload');
-          return;
-        }
-
-        const lastAssistant = findLastMessageByRole(validMessages, 'assistant');
-        if (lastAssistant?.id) {
-          debug.log('[ChatInner] Reloading from assistant message:', lastAssistant.id);
-          reloadMessages(lastAssistant.id);
-        } else {
-          const lastUser = findLastMessageByRole(validMessages, 'user');
-          if (lastUser?.id) {
-            debug.log('[ChatInner] Reloading from user message:', lastUser.id);
-            reloadMessages(lastUser.id);
-          } else {
-            debug.warn?.('[ChatInner] No valid message found to reload');
-          }
-        }
-      };
-
-      return <ChatErrorDisplay error={error} retry={handleRetry} isLight={isLight} autoDismissMs={15000} />;
-    },
-    [isLight, reloadMessages, messages, sanitizeMessages, cachedSanitizedRef, setMessages],
-  );
-
-  /**
    * Custom Messages wrapper - receives MessagesProps from CopilotChat
    */
   const MessagesComponent = useCallback(
@@ -996,6 +1006,16 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         {selectedCredentials.length > 0 && <SelectedCredentialsContext credentials={selectedCredentials} />}
         
         <div className="flex h-full flex-col overflow-hidden">
+          {/* Error Banner - Automatically appears when agent errors occur */}
+          {agentError && (
+            <ChatErrorDisplay
+              error={agentError}
+              retry={handleAgentRetry}
+              isLight={isLight}
+              autoDismissMs={15000}
+            />
+          )}
+          
           <div
             className={cn(
               'copilot-chat-wrapper relative min-h-0 flex-1 overflow-hidden',

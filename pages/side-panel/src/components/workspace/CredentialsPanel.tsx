@@ -21,6 +21,11 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
   const [password, setPassword] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [credentialToDelete, setCredentialToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   const loadCredentials = useCallback(async () => {
     try {
       const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -108,12 +113,18 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
     }
   };
 
-  const handleDelete = async (id: string, credName: string) => {
-    if (!confirm(`Delete credential "${credName}"?`)) return;
+  const openDeleteDialog = (id: string, credName: string) => {
+    setCredentialToDelete({ id, name: credName });
+    setDeleteDialogOpen(true);
+  };
 
+  const confirmDeleteCredential = async () => {
+    if (!credentialToDelete) return;
+
+    setDeleting(true);
     try {
       const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${baseURL}/api/workspace/credentials/${id}`, {
+      const response = await fetch(`${baseURL}/api/workspace/credentials/${credentialToDelete.id}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -125,9 +136,13 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
       await loadCredentials();
       // Refresh workspace stats after successful deletion
       onStatsChange?.();
+      setDeleteDialogOpen(false);
+      setCredentialToDelete(null);
     } catch (error) {
       console.error('[Workspace] Delete error:', error);
       alert('Failed to delete credential');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -321,7 +336,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
                           </svg>
                         </button>
                         <button
-                          onClick={() => handleDelete(credential.id, credential.name)}
+                          onClick={() => openDeleteDialog(credential.id, credential.name)}
                           className={cn(
                             'p-1 rounded transition-colors',
                             isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400'
@@ -341,6 +356,164 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteDialogOpen && credentialToDelete && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setDeleteDialogOpen(false);
+                setCredentialToDelete(null);
+              }
+            }}
+          />
+
+          {/* Modal */}
+          <div 
+            className="fixed inset-0 z-[10001] flex items-center justify-center p-4 pointer-events-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className={cn(
+                'w-full max-w-sm rounded-lg shadow-xl pointer-events-auto',
+                isLight
+                  ? 'bg-gray-50 border border-gray-200'
+                  : 'bg-[#151C24] border border-gray-700'
+              )}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div
+                className={cn(
+                  'flex items-center justify-between px-3 py-2 border-b',
+                  isLight ? 'border-gray-200' : 'border-gray-700'
+                )}
+              >
+                <h2
+                  className={cn(
+                    'text-sm font-semibold',
+                    isLight ? 'text-gray-900' : 'text-gray-100'
+                  )}
+                >
+                  Delete Credential
+                </h2>
+                <button
+                  onClick={() => {
+                    setDeleteDialogOpen(false);
+                    setCredentialToDelete(null);
+                  }}
+                  className={cn(
+                    'p-0.5 rounded-md transition-colors',
+                    isLight
+                      ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                  )}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="px-3 py-4 space-y-3">
+                {/* Warning Icon */}
+                <div className="flex items-start gap-3">
+                  <div
+                    className={cn(
+                      'flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center',
+                      isLight ? 'bg-red-100' : 'bg-red-900/30'
+                    )}
+                  >
+                    <svg
+                      className={cn(
+                        'w-4 h-4',
+                        isLight ? 'text-red-600' : 'text-red-400'
+                      )}
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                    </svg>
+                  </div>
+
+                  <div className="flex-1">
+                    <p
+                      className={cn(
+                        'text-sm font-medium',
+                        isLight ? 'text-gray-900' : 'text-gray-100'
+                      )}
+                    >
+                      Permanently delete credential?
+                    </p>
+                    <p
+                      className={cn(
+                        'text-xs mt-1',
+                        isLight ? 'text-gray-600' : 'text-gray-400'
+                      )}
+                    >
+                      "{credentialToDelete.name}" will be permanently deleted and cannot be recovered.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div
+                className={cn(
+                  'flex items-center justify-end gap-2 px-3 py-2 border-t',
+                  isLight ? 'border-gray-200' : 'border-gray-700'
+                )}
+              >
+                <button
+                  onClick={() => {
+                    setDeleteDialogOpen(false);
+                    setCredentialToDelete(null);
+                  }}
+                  disabled={deleting}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                    deleting ? 'opacity-50 cursor-not-allowed' : '',
+                    isLight
+                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
+                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600'
+                  )}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    confirmDeleteCredential();
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  disabled={deleting}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                    deleting ? 'opacity-50 cursor-not-allowed' : '',
+                    'bg-red-600 text-white hover:bg-red-700'
+                  )}
+                >
+                  {deleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };

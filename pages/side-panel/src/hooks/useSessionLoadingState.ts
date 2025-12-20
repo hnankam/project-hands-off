@@ -24,6 +24,9 @@ export function useSessionLoadingState(currentSessionId: string | null): UseSess
   
   const sessionReadyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const skeletonStartTimeRef = useRef<number | null>(null);
+  // PERFORMANCE FIX: Track timeouts for proper cleanup to prevent state updates on unmounted components
+  const messagesLoadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const sessionReadyDelayTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Handle messages loading state change with minimum display time
   const handleMessagesLoadingChange = useCallback(
@@ -39,11 +42,25 @@ export function useSessionLoadingState(currentSessionId: string | null): UseSess
         const remaining = SKELETON_TIMINGS.minDisplayTime - elapsed;
 
         if (remaining > 0) {
-          setTimeout(() => {
-            setIsMessagesLoading(false);
+          // PERFORMANCE FIX: Track timeout for cleanup
+          if (messagesLoadingTimeoutRef.current) {
+            clearTimeout(messagesLoadingTimeoutRef.current);
+          }
+          messagesLoadingTimeoutRef.current = setTimeout(() => {
+            // Verify session hasn't changed before updating state
+            if (currentSessionId === sessionId) {
+              setIsMessagesLoading(false);
+            }
+            messagesLoadingTimeoutRef.current = null;
           }, remaining);
           return;
         }
+      }
+
+      // Clear any pending timeout if updating immediately
+      if (messagesLoadingTimeoutRef.current) {
+        clearTimeout(messagesLoadingTimeoutRef.current);
+        messagesLoadingTimeoutRef.current = null;
       }
 
       setIsMessagesLoading(isLoading);
@@ -72,9 +89,17 @@ export function useSessionLoadingState(currentSessionId: string | null): UseSess
         const remaining = SKELETON_TIMINGS.minDisplayTime - elapsed;
 
         if (remaining > 0) {
-          setTimeout(() => {
-            setIsSessionReady(true);
-            skeletonStartTimeRef.current = null;
+          // PERFORMANCE FIX: Track timeout for cleanup
+          if (sessionReadyDelayTimeoutRef.current) {
+            clearTimeout(sessionReadyDelayTimeoutRef.current);
+          }
+          sessionReadyDelayTimeoutRef.current = setTimeout(() => {
+            // Verify session hasn't changed before updating state
+            if (currentSessionId === sessionId) {
+              setIsSessionReady(true);
+              skeletonStartTimeRef.current = null;
+            }
+            sessionReadyDelayTimeoutRef.current = null;
           }, remaining);
           return;
         }
@@ -117,9 +142,18 @@ export function useSessionLoadingState(currentSessionId: string | null): UseSess
     }, SKELETON_TIMINGS.fallbackTimeout);
 
     return () => {
+      // PERFORMANCE FIX: Clean up all timeouts on unmount/session change
       if (sessionReadyTimeoutRef.current) {
         clearTimeout(sessionReadyTimeoutRef.current);
         sessionReadyTimeoutRef.current = null;
+      }
+      if (messagesLoadingTimeoutRef.current) {
+        clearTimeout(messagesLoadingTimeoutRef.current);
+        messagesLoadingTimeoutRef.current = null;
+      }
+      if (sessionReadyDelayTimeoutRef.current) {
+        clearTimeout(sessionReadyDelayTimeoutRef.current);
+        sessionReadyDelayTimeoutRef.current = null;
       }
     };
   }, [currentSessionId]);

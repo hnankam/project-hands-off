@@ -77,6 +77,9 @@ const ChatInnerWithSignatureSync: FC<{
 }> = ({ sessionId, onSignatureChange, onStreamingChange, renderChatInner, agentStateRef }) => {
   const { messages, isLoading, reset } = useCopilotChat();
   const prevSessionIdRef = useRef(sessionId);
+  // CRITICAL FIX: Stable signature ref to prevent infinite loops
+  // Using Date.now() in catch block creates new value every millisecond → infinite re-renders
+  const lastSignatureRef = useRef<string>('');
 
   // Handle session switch - reset CopilotKit messages when session changes
   // This allows CopilotKitProvider to remain stable (no key change) while still
@@ -107,9 +110,17 @@ const ChatInnerWithSignatureSync: FC<{
             : JSON.stringify((message as any)?.content ?? '').length,
         })),
       );
+      lastSignatureRef.current = signature;
       onSignatureChange(signature);
-    } catch {
-      onSignatureChange(`${messages.length}:${Date.now()}`);
+    } catch (error) {
+      // CRITICAL FIX: Use stable fallback without Date.now() to prevent infinite loops
+      // If signature computation fails, only update if the fallback actually changed
+      const fallback = `error:${messages.length}`;
+      if (lastSignatureRef.current !== fallback) {
+        debug.warn('[ChatInnerWithSignatureSync] Failed to compute signature:', error);
+        lastSignatureRef.current = fallback;
+        onSignatureChange(fallback);
+      }
     }
   }, [messages, onSignatureChange]);
 
@@ -621,10 +632,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
 
       if (hydrationCompleted && hasReportedInitialCountRef.current) {
-        debug.log(
-          '[ChatSessionContainer] Runtime reported messages update after hydration; ensuring skeleton is cleared',
-          { sessionId: sessionId.slice(0, 8), signature },
-        );
         setIsCounterReady(true);
       }
     }, [isActive, messagesSignature, hydrationCompleted, sessionId]);
@@ -1311,50 +1318,62 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                 marginRight: (showPlansPanel || showGraphsPanel) ? `${panelWidth}px` : '0px',
               } as CSSProperties
             }>
-            {/* Direct CopilotKitProvider - stable key for performance */}
-            {/* Session switching handled internally via reset() in ChatInnerWithSignatureSync */}
-            {activeAgent && activeModel ? (
-              <CopilotKitProvider
-                key="copilot-provider-stable"
-                runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
-                headers={copilotHeaders}
-                showDevConsole={false}
-                renderToolCalls={toolRenderersRef.current as any}
-                renderActivityMessages={activityRenderersRef.current as any}
-              >
-                <ChatInnerWithSignatureSync
-                  sessionId={sessionId}
-                  onSignatureChange={handleMessagesSignatureChange}
-                  onStreamingChange={handleStreamingChange}
-                  renderChatInner={renderChatInner}
-                  agentStateRef={dynamicAgentStateRef}
-                />
-                
-                {/* Plans and Graphs Panels - positioned absolutely within chat container, inside CopilotKit context */}
-                <PlansPanel
-                  isLight={isLight}
-                  isOpen={showPlansPanel}
-                  onClose={() => setShowPlansPanel(false)}
-                  plans={dynamicAgentStateRef.current.plans}
-                  sessionId={sessionId}
-                  onPlansUpdate={(updatedPlans) => {
-                    dynamicAgentStateRef.current = {
-                      ...dynamicAgentStateRef.current,
-                      plans: updatedPlans,
-                    };
-                  }}
-                  onWidthChange={setPanelWidth}
-                />
-                <GraphsPanel
-                  isLight={isLight}
-                  isOpen={showGraphsPanel}
-                  onClose={() => setShowGraphsPanel(false)}
-                  graphs={dynamicAgentStateRef.current.graphs}
-                  sessionId={sessionId}
-                  onWidthChange={setPanelWidth}
-                />
-              </CopilotKitProvider>
-            ) : null}
+            {/* CRITICAL FIX: Always render CopilotKitProvider to prevent unmount/remount cycles
+                Unmounting causes all 9 useAgent() connections to disconnect and reconnect,
+                which can trigger infinite loops and rate limiting (429 errors).
+                Instead, conditionally render children inside the provider. */}
+            <CopilotKitProvider
+              key="copilot-provider-stable"
+              runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
+              headers={copilotHeaders}
+              showDevConsole={false}
+              renderToolCalls={toolRenderersRef.current as any}
+              renderActivityMessages={activityRenderersRef.current as any}
+            >
+              {activeAgent && activeModel ? (
+                <>
+                  <ChatInnerWithSignatureSync
+                    sessionId={sessionId}
+                    onSignatureChange={handleMessagesSignatureChange}
+                    onStreamingChange={handleStreamingChange}
+                    renderChatInner={renderChatInner}
+                    agentStateRef={dynamicAgentStateRef}
+                  />
+                  
+                  {/* Plans and Graphs Panels - positioned absolutely within chat container, inside CopilotKit context */}
+                  <PlansPanel
+                    isLight={isLight}
+                    isOpen={showPlansPanel}
+                    onClose={() => setShowPlansPanel(false)}
+                    plans={dynamicAgentStateRef.current.plans}
+                    sessionId={sessionId}
+                    onPlansUpdate={(updatedPlans) => {
+                      dynamicAgentStateRef.current = {
+                        ...dynamicAgentStateRef.current,
+                        plans: updatedPlans,
+                      };
+                    }}
+                    onWidthChange={setPanelWidth}
+                  />
+                  <GraphsPanel
+                    isLight={isLight}
+                    isOpen={showGraphsPanel}
+                    onClose={() => setShowGraphsPanel(false)}
+                    graphs={dynamicAgentStateRef.current.graphs}
+                    sessionId={sessionId}
+                    onWidthChange={setPanelWidth}
+                  />
+                </>
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <div className="text-center">
+                    <p className={isLight ? 'text-gray-600' : 'text-gray-400'}>
+                      {!selectedAgent || !selectedModel ? 'Select an agent and model to continue' : 'Loading agent configuration...'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </CopilotKitProvider>
           </div>
           </div>
 

@@ -45,8 +45,10 @@ export const RATE_LIMIT_MAX = rateLimitMax > 0 ? rateLimitMax : 120; // requests
 // Request timeouts (with validation)
 const requestTimeout = Number(process.env.REQUEST_TIMEOUT_MS);
 const headersTimeout = Number(process.env.HEADERS_TIMEOUT_MS);
-export const REQUEST_TIMEOUT_MS = requestTimeout > 0 ? requestTimeout : 30_000; // 30 seconds
-export const HEADERS_TIMEOUT_MS = headersTimeout > 0 ? headersTimeout : 65_000; // Node default
+// Increased timeout for long-running agent executions (5 minutes)
+// Agent runs with tool calls, code execution, etc. can take several minutes
+export const REQUEST_TIMEOUT_MS = requestTimeout > 0 ? requestTimeout : 300_000; // 5 minutes (was 30s)
+export const HEADERS_TIMEOUT_MS = headersTimeout > 0 ? headersTimeout : 310_000; // 5 min + 10s buffer (was 65s)
 
 // Trust proxy (for rate-limit + IPs behind proxies)
 export const TRUST_PROXY = parseBoolean(process.env.TRUST_PROXY, false);

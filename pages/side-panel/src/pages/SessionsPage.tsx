@@ -103,31 +103,27 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
   const lastStorageUserIdRef = useRef<string | null>(null);
   const hasSeenSessionsForCurrentUserRef = useRef<boolean>(false);
 
-  // Track when the storage userId changes; require at least one sessions fetch after change
+  // PERFORMANCE FIX: Combine two useEffects that both check storage user ID
+  // This reduces redundant getCurrentUserId() calls
   useEffect(() => {
     const storageUserId = sessionStorageDBWrapper.getCurrentUserId();
     
     if (!user?.id || !storageUserId) {
       return;
     }
+    
+    // Track when the storage userId changes; require at least one sessions fetch after change
     if (lastStorageUserIdRef.current !== storageUserId) {
       lastStorageUserIdRef.current = storageUserId;
       hasSeenSessionsForCurrentUserRef.current = false;
       hasAttemptedInitialSessionRef.current = false;
     }
-  }, [user?.id, hasAttemptedInitialSessionRef]);
-
-  // Mark that we've observed at least one sessions snapshot for the current user
-  useEffect(() => {
-    const storageUserId = sessionStorageDBWrapper.getCurrentUserId();
     
-    if (!user?.id || !storageUserId) {
-      return;
-    }
+    // Mark that we've observed at least one sessions snapshot for the current user
     if (lastStorageUserIdRef.current === storageUserId) {
       hasSeenSessionsForCurrentUserRef.current = true;
     }
-  }, [sessions, user?.id]);
+  }, [sessions, user?.id, hasAttemptedInitialSessionRef]);
 
   // Initialize with a default session if none exist
   useEffect(() => {
@@ -205,10 +201,19 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
     return sessions.filter(s => s.isOpen && mountedSessionIds.has(s.id));
   }, [sessions, mountedSessionIds]);
 
-  // Log cache stats in debug mode
+  // PERFORMANCE FIX: Log cache stats only when size changes, not on every update
+  // This prevents excessive logging on every session switch
+  const prevCacheSizeRef = useRef(0);
   useEffect(() => {
     const stats = getCacheStats();
-    debug.log('[SessionsPage] Session cache:', stats);
+    if (stats.size !== prevCacheSizeRef.current) {
+      debug.log('[SessionsPage] Session cache size changed:', {
+        size: stats.size,
+        maxSize: stats.maxSize,
+        ids: stats.ids.map(id => id.slice(0, 8))
+      });
+      prevCacheSizeRef.current = stats.size;
+    }
   }, [getCacheStats, mountedSessionIds]);
 
   const hasSessions = sessions.length > 0;

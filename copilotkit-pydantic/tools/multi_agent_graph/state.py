@@ -355,6 +355,13 @@ def sync_to_shared_state(
     graph.planned_steps = list(state.planned_steps) if state.planned_steps else []
     graph.updated_at = datetime.now().isoformat()
     
+    # ============================================================================
+    # FIX: Build and update steps from current state
+    # This was the missing piece causing completed graphs to have empty steps!
+    # ============================================================================
+    graph_agent_state = build_graph_agent_state(state, current_node, "completed" if state.result else "in_progress")
+    graph.steps = graph_agent_state.get("steps", [])
+    
     # Update status based on state
     if hasattr(state, 'deferred_tool_requests') and state.deferred_tool_requests:
         graph.deferred_tool_requests = state.deferred_tool_requests
@@ -466,13 +473,13 @@ async def send_graph_state_snapshot(
             "graphs": all_graphs,
             # Include existing plans from shared state to preserve them
             "plans": {k: v.model_dump() for k, v in shared_state.plans.items()} if (shared_state and hasattr(shared_state, 'plans')) else {},
-            # Session metadata (sessionId is optional in schema, so can be undefined)
-            "deferred_tool_requests": getattr(shared_state, 'deferred_tool_requests', None) if shared_state else None,
         }
         
-        # Only include sessionId if it exists (Zod schema makes it optional)
+        # Only include optional fields if they exist (Zod schema expects undefined, not null)
         if shared_state and hasattr(shared_state, 'sessionId') and shared_state.sessionId:
             nested_snapshot["sessionId"] = shared_state.sessionId
+        if shared_state and hasattr(shared_state, 'deferred_tool_requests') and shared_state.deferred_tool_requests:
+            nested_snapshot["deferred_tool_requests"] = shared_state.deferred_tool_requests
         
         logger.info(f"   [StateSnapshot] Sending for {current_node} ({step_status})")
         
@@ -496,8 +503,11 @@ async def send_graph_state_snapshot(
             "graphs": {
                 graph_id: graph_instance_data
             },
-            "sessionId": shared_state.sessionId if (shared_state and hasattr(shared_state, 'sessionId')) else None,
         }
+        
+        # Only include sessionId if it exists (Zod schema expects string or undefined, not null)
+        if shared_state and hasattr(shared_state, 'sessionId') and shared_state.sessionId:
+            activity_content["sessionId"] = shared_state.sessionId
         
         await send_stream.send(
             encoder.encode(

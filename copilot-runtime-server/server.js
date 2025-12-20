@@ -34,9 +34,12 @@ import { cors } from 'hono/cors';
 import {
   CopilotRuntime,
   createCopilotEndpoint,
-  InMemoryAgentRunner
+  // InMemoryAgentRunner  // Commented out - using PostgresAgentRunner instead
 } from '@copilotkit/runtime/v2';
 import { HttpAgent } from '@ag-ui/client';
+
+// PostgresAgentRunner for persistent storage
+import { PostgresAgentRunner } from './runners/postgres-agent-runner.js';
 
 // ============================================================================
 // Configuration
@@ -162,24 +165,25 @@ function getCachedAgent(context) {
   };
 
   // Add stable auth context headers (org/team don't change per-request)
+  // NOTE: Do NOT include sessionId here - it's per-request and added in buildPerRequestHeaders
   if (authContext) {
     const stableAuthHeaders = {
-    userId: 'x-copilot-user-id',
-    userEmail: 'x-copilot-user-email',
-    userName: 'x-copilot-user-name',
-    organizationId: 'x-copilot-organization-id',
-    organizationName: 'x-copilot-organization-name',
-    organizationSlug: 'x-copilot-organization-slug',
-    memberRole: 'x-copilot-member-role',
-    teamId: 'x-copilot-team-id',
-    teamName: 'x-copilot-team-name',
-  };
+      userId: 'x-copilot-user-id',
+      userEmail: 'x-copilot-user-email',
+      userName: 'x-copilot-user-name',
+      organizationId: 'x-copilot-organization-id',
+      organizationName: 'x-copilot-organization-name',
+      organizationSlug: 'x-copilot-organization-slug',
+      memberRole: 'x-copilot-member-role',
+      teamId: 'x-copilot-team-id',
+      teamName: 'x-copilot-team-name',
+    };
 
     Object.entries(stableAuthHeaders).forEach(([contextKey, headerName]) => {
       if (authContext[contextKey]) {
         headers[headerName] = authContext[contextKey];
-    }
-  });
+      }
+    });
   }
   
   const agent = new HttpAgent({ url, headers });
@@ -216,8 +220,27 @@ function buildPerRequestHeaders(context) {
     headers['x-copilot-thread-id'] = context.threadId;
   }
   
-  if (context.authContext?.sessionId) {
-    headers['x-copilot-session-id'] = context.authContext.sessionId;
+  // Include ALL auth context headers to override cached agent headers
+  // This ensures fresh auth context even when agent is reused from cache
+  if (context.authContext) {
+    const authHeaderMapping = {
+      userId: 'x-copilot-user-id',
+      userEmail: 'x-copilot-user-email',
+      userName: 'x-copilot-user-name',
+      organizationId: 'x-copilot-organization-id',
+      organizationName: 'x-copilot-organization-name',
+      organizationSlug: 'x-copilot-organization-slug',
+      memberRole: 'x-copilot-member-role',
+      teamId: 'x-copilot-team-id',
+      teamName: 'x-copilot-team-name',
+      sessionId: 'x-copilot-session-id',
+    };
+    
+    Object.entries(authHeaderMapping).forEach(([contextKey, headerName]) => {
+      if (context.authContext[contextKey]) {
+        headers[headerName] = context.authContext[contextKey];
+      }
+    });
   }
 
   return headers;
@@ -228,7 +251,11 @@ function buildPerRequestHeaders(context) {
 // ============================================================================
 
 /**
- * Create the shared CopilotKit runtime with InMemoryAgentRunner
+ * Create the shared CopilotKit runtime with PostgresAgentRunner
+ * 
+ * Uses PostgresAgentRunner for persistent storage, horizontal scalability,
+ * and crash recovery. Messages are stored in a separate agent_messages table
+ * for efficient querying.
  */
 async function createCopilotKitRuntime() {
   const defaultAgentType = await getDefaultAgent();
@@ -244,15 +271,37 @@ async function createCopilotKitRuntime() {
     },
   });
 
-  // Create runtime with InMemoryAgentRunner
+  // Create runner with PostgresAgentRunner
+  const runner = new PostgresAgentRunner({
+    pool: getPool(),
+    ttl: 86400000,        // 24 hours
+    cleanupInterval: 3600000, // 1 hour
+    persistEventsImmediately: false, // Better performance
+    maxHistoricRuns: 10,  // Limit history load
+    debug: DEBUG,         // Verbose logging in development only
+  });
+
+  // Recover any stalled runs from previous server instance
+  log('Recovering stalled runs...');
+  await runner.recoverStalledRuns();
+  log('Recovery complete');
+
+  // Create runtime with PostgresAgentRunner
+  // const runtime = new CopilotRuntime({
+  //   agents: {
+  //     [DEFAULT_AGENT_ID]: defaultAgent,
+  //   },
+  //   runner: new InMemoryAgentRunner(),  // Old: in-memory only
+  // });
+  
   const runtime = new CopilotRuntime({
     agents: {
       [DEFAULT_AGENT_ID]: defaultAgent,
     },
-    runner: new InMemoryAgentRunner(),
+    runner,  // New: PostgreSQL-backed with persistence
   });
 
-  return { runtime, defaultAgent, defaultAgentType, defaultModelType };
+  return { runtime, defaultAgent, defaultAgentType, defaultModelType, runner };
 }
 
 // ============================================================================
@@ -262,13 +311,43 @@ async function createCopilotKitRuntime() {
 /**
  * Resolve authentication context from request headers
  * Auto-selects organization and team if not set
+ * 
+ * Supports two modes:
+ * 1. Session-based auth (from cookies) - for frontend requests
+ * 2. Header-based auth (from x-copilot-* headers) - for internal agent requests
  */
 async function resolveAuthContext(headers, requestId) {
   const authContext = {};
   const pool = getPool();
 
   try {
-    // Get user session from auth
+    // Check if auth context is already in headers (internal agent request)
+    const hasAuthHeaders = 
+      headers['x-copilot-user-id'] && 
+      headers['x-copilot-organization-id'] && 
+      headers['x-copilot-team-id'];
+    
+    if (hasAuthHeaders) {
+      // Use existing auth headers (from cached agent)
+      authContext.userId = headers['x-copilot-user-id'];
+      authContext.userEmail = headers['x-copilot-user-email'];
+      authContext.userName = headers['x-copilot-user-name'];
+      authContext.organizationId = headers['x-copilot-organization-id'];
+      authContext.organizationName = headers['x-copilot-organization-name'];
+      authContext.organizationSlug = headers['x-copilot-organization-slug'];
+      authContext.memberRole = headers['x-copilot-member-role'];
+      authContext.teamId = headers['x-copilot-team-id'];
+      authContext.teamName = headers['x-copilot-team-name'];
+      authContext.sessionId = headers['x-copilot-session-id'];
+      
+      if (DEBUG) {
+        log('[Auth] Using cached auth headers (internal request)', requestId);
+      }
+      
+      return { authContext };
+    }
+    
+    // Get user session from auth (frontend request with cookies)
     const session = await auth.api.getSession({ headers });
     
     if (!session?.user) {
@@ -443,11 +522,12 @@ const app = express();
     // CopilotKit Runtime Initialization
     // ========================================================================
 
-    const { runtime, defaultAgent, defaultAgentType, defaultModelType } = 
+    const { runtime, defaultAgent, defaultAgentType, defaultModelType, runner } = 
       await createCopilotKitRuntime();
 
     log('CopilotKit Runtime initialized');
     log(`Default agent: ${defaultAgentType}, Default model: ${defaultModelType}`);
+    log('Runner: PostgresAgentRunner (persistent storage enabled)');
 
     // ========================================================================
     // Hono App for CopilotKit Endpoint
@@ -534,6 +614,10 @@ const app = express();
       log(`Agent: ${agentType} | Model: ${modelType} | Method: ${c.req.method} | Path: ${c.req.path}`, requestId);
       if (DEBUG) {
         log(`Auth: org=${context.authContext.organizationId} team=${context.authContext.teamId}`, requestId);
+        log(`SessionId: ${context.authContext.sessionId}`, requestId);
+        if (threadId) {
+          log(`ThreadId from header: ${threadId}`, requestId);
+        }
       }
       log('=============================', requestId);
 
@@ -790,13 +874,31 @@ const app = express();
     server.headersTimeout = HEADERS_TIMEOUT_MS;
 
     // Graceful shutdown
-    const shutdown = () => {
+    const shutdown = async () => {
       log('');
       log('Shutting down gracefully...');
+      
+      // Shutdown PostgresAgentRunner
+      if (runner) {
+        log('Shutting down PostgresAgentRunner...');
+        try {
+          await runner.shutdown();
+          log('PostgresAgentRunner shutdown complete');
+        } catch (error) {
+          log(`Error shutting down runner: ${error.message}`);
+        }
+      }
+      
       server.close(() => {
         log('Server closed. Goodbye!');
         process.exit(0);
       });
+      
+      // Force exit after 10 seconds if graceful shutdown hangs
+      setTimeout(() => {
+        log('Forcefully shutting down...');
+        process.exit(1);
+      }, 10000);
     };
 
     process.on('SIGINT', shutdown);

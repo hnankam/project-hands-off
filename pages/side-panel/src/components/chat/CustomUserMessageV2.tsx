@@ -136,66 +136,29 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
     return extractTextContent(message?.content);
   }, [message?.content]);
   
-  // Find the index of the current message - stabilize to prevent rerenders during streaming
-  // Use refs to track values and only update when structure changes (not content)
-  const messageIdRef = React.useRef(message?.id);
-  const messageIndexRef = React.useRef(-1);
-  const isLastRef = React.useRef(false);
-  const messagesLengthRef = React.useRef(0);
-  const messagesRefSignature = React.useRef<string>('');
-  
-  // Stabilize messages length - only update when it actually changes
-  const stableMessagesLength = React.useMemo(() => messages?.length ?? 0, [messages?.length]);
-  
-  // Create a signature for messages array to detect if it's actually different
-  const messagesSignature = React.useMemo(() => {
-    if (!messages) return '';
-    return messages.map(m => m.id).join(',');
-  }, [messages]);
-  
-  // Update message index/isLast only when necessary
-  // This runs synchronously during render to ensure refs are up-to-date
-  const currentMessageId = message?.id;
-  const currentMessagesLength = stableMessagesLength;
-  
-  // Check if we need to update the refs
-  if (currentMessageId !== messageIdRef.current) {
-    // Message ID changed - recalculate everything
-    messageIdRef.current = currentMessageId;
-    if (messages && currentMessageId) {
-      messageIndexRef.current = messages.findIndex(m => m.id === currentMessageId);
-      isLastRef.current = messageIndexRef.current >= 0 && messageIndexRef.current === messages.length - 1;
-    } else {
-      messageIndexRef.current = -1;
-      isLastRef.current = false;
+  // PERFORMANCE FIX: Move findIndex computation to useMemo instead of render phase
+  // This prevents O(n) array search on every render for every message component
+  const { messageIndex, isLast } = useMemo(() => {
+    if (!messages || !message?.id) {
+      return { messageIndex: -1, isLast: false };
     }
-    messagesLengthRef.current = currentMessagesLength;
-    messagesRefSignature.current = messagesSignature;
-  } else if (currentMessagesLength !== messagesLengthRef.current || messagesSignature !== messagesRefSignature.current) {
-    // Messages length or order changed - recalculate index and isLast
-    messagesLengthRef.current = currentMessagesLength;
-    messagesRefSignature.current = messagesSignature;
     
-    // Recalculate index since message order may have changed
-    if (messages && currentMessageId) {
-      messageIndexRef.current = messages.findIndex(m => m.id === currentMessageId);
-      isLastRef.current = messageIndexRef.current >= 0 && messageIndexRef.current === messages.length - 1;
-    } else {
-      messageIndexRef.current = -1;
-      isLastRef.current = false;
-    }
-  }
-  
-  // Use ref values directly to avoid recalculation on every render
-  const messageIndex = messageIndexRef.current;
-  const isLast = isLastRef.current;
+    const index = messages.findIndex(m => m.id === message.id);
+    return {
+      messageIndex: index,
+      isLast: index >= 0 && index === messages.length - 1
+    };
+  }, [messages, message?.id, messages?.length]);
   
   // Handle rerun - regenerate assistant response
   // Use refs to access latest messages without causing rerenders
   const messagesRef = React.useRef(messages);
+  const messageIndexRef = React.useRef(messageIndex);
+  
   React.useEffect(() => {
     messagesRef.current = messages;
-  }, [messages]);
+    messageIndexRef.current = messageIndex;
+  }, [messages, messageIndex]);
   
   // Stabilize message using ref to prevent recreations
   const messageRef = React.useRef(message);

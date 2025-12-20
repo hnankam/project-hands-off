@@ -16,7 +16,7 @@
  * ================================================================================
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { debug } from '@extension/shared';
 import type { SessionMetadata } from '@extension/shared';
 
@@ -67,6 +67,12 @@ export function useSessionCache({
     );
   }, [sessions]);
 
+  // PERFORMANCE FIX: Track currentSessionId in ref to avoid recreating touchSession on every session change
+  const currentSessionIdRef = useRef(currentSessionId);
+  useEffect(() => {
+    currentSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
+
   /**
    * Add session to cache (move to front if already exists)
    */
@@ -82,9 +88,10 @@ export function useSessionCache({
       // Evict if over limit (keep active session even if it's oldest)
       if (updated.length > maxCachedSessions) {
         // Find sessions to evict (from end, but skip current session)
+        // Use ref to avoid dependency on currentSessionId
         const toEvict: string[] = [];
         for (let i = updated.length - 1; i >= 0 && updated.length - toEvict.length > maxCachedSessions; i--) {
-          if (updated[i] !== currentSessionId) {
+          if (updated[i] !== currentSessionIdRef.current) {
             toEvict.push(updated[i]);
           }
         }
@@ -97,7 +104,7 @@ export function useSessionCache({
       
       return updated;
     });
-  }, [maxCachedSessions, currentSessionId]);
+  }, [maxCachedSessions]); // ✅ FIXED: Removed currentSessionId dependency
 
   /**
    * When current session changes, add it to cache
@@ -160,8 +167,9 @@ export function useSessionCache({
     ids: [...lruOrder],
   }), [lruOrder, maxCachedSessions]);
 
-  // Create Set for efficient lookup
-  const mountedSessionIds = new Set(lruOrder);
+  // PERFORMANCE FIX: Memoize Set to prevent new object on every render
+  // This prevents unnecessary re-renders in components that depend on mountedSessionIds
+  const mountedSessionIds = useMemo(() => new Set(lruOrder), [lruOrder]);
 
   return {
     mountedSessionIds,

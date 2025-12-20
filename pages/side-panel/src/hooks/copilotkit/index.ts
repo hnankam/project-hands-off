@@ -31,6 +31,24 @@ export type {
 export { useCopilotAgent } from './useCopilotAgent';
 export type { CopilotAgentOptions, CopilotAgentState } from './useCopilotAgent';
 
+// Agent event subscriptions (v1.5+ comprehensive event system)
+export { useAgentEventSubscriber } from './useAgentEventSubscriber';
+export type {
+  AgentError,
+  LifecyclePhase,
+  AgentLifecycleState,
+  ToolExecution,
+  AgentEventSubscriberConfig,
+  AgentEventSubscriberResult,
+} from './useAgentEventSubscriber';
+
+// Convenience hook for error banner display
+export { useAgentWithErrorBanner } from './useAgentWithErrorBanner';
+export type {
+  AgentWithErrorBannerConfig,
+  AgentWithErrorBannerResult,
+} from './useAgentWithErrorBanner';
+
 // Runtime context
 export { useCopilotRuntimeContext } from './useCopilotRuntimeContext';
 export type { CopilotRuntimeContextValue, CopilotApiConfig } from './useCopilotRuntimeContext';

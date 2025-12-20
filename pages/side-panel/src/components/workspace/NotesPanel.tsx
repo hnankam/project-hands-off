@@ -445,11 +445,11 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                   onClick={openBulkDeleteDialog}
                   disabled={deleting || selectedNotes.size === 0}
                   className={cn(
-                    'rounded px-3 py-1 text-xs font-medium transition-colors',
+                    'rounded px-3 py-1 text-xs font-medium transition-colors border',
                     deleting || selectedNotes.size === 0 ? 'cursor-not-allowed opacity-50' : '',
                     isLight
-                      ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
-                      : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                      ? 'text-red-600 border-red-300 hover:bg-red-50 hover:text-red-700'
+                      : 'text-red-400 border-red-700/70 hover:bg-red-900/20 hover:text-red-300',
                   )}>
                   {deleting ? 'Deleting...' : 'Delete Selected'}
                 </button>
@@ -505,10 +505,10 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                           <td className="px-3 py-1.5">
                             <div
                               className={cn(
-                                'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border transition-opacity',
+                                'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
                                 selectedNotes.has(note.id)
-                                  ? 'border-blue-600/60 bg-blue-600/60 opacity-100'
-                                  : cn('opacity-100', isLight ? 'border-gray-400' : 'border-gray-500'),
+                                  ? 'bg-blue-600/80 opacity-100'
+                                  : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500'),
                               )}
                               onClick={e => {
                                 e.stopPropagation();
@@ -666,40 +666,155 @@ export const NotesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
       />
 
       {/* Bulk Delete Confirmation Modal */}
-      <AdminConfirmDialog
-        isOpen={bulkDeleteDialogOpen}
-        onClose={() => setBulkDeleteDialogOpen(false)}
-        onConfirm={confirmBulkDelete}
-        title="Delete Multiple Notes"
-        message={
-          <div className="flex items-start gap-3">
+      {bulkDeleteDialogOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setBulkDeleteDialogOpen(false);
+              }
+            }}
+          />
+
+          {/* Modal */}
+          <div 
+            className="fixed inset-0 z-[10001] flex items-center justify-center p-4 pointer-events-none"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div
               className={cn(
-                'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
-                isLight ? 'bg-red-100' : 'bg-red-900/30',
-              )}>
-              <svg
-                className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')}
-                fill="currentColor"
-                viewBox="0 0 24 24">
-                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
-              </svg>
-            </div>
-            <div className="flex-1">
-              <p className={cn('text-sm font-medium', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
-                Delete {selectedNotes.size} note(s)?
-              </p>
-              <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                These notes will be permanently deleted from your workspace. This action cannot be undone.
-              </p>
+                'w-full max-w-sm rounded-lg shadow-xl pointer-events-auto',
+                isLight
+                  ? 'bg-gray-50 border border-gray-200'
+                  : 'bg-[#151C24] border border-gray-700'
+              )}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div
+                className={cn(
+                  'flex items-center justify-between px-3 py-2 border-b',
+                  isLight ? 'border-gray-200' : 'border-gray-700'
+                )}
+              >
+                <h2
+                  className={cn(
+                    'text-sm font-semibold',
+                    isLight ? 'text-gray-900' : 'text-gray-100'
+                  )}
+                >
+                  Delete Multiple Notes
+                </h2>
+                <button
+                  onClick={() => setBulkDeleteDialogOpen(false)}
+                  className={cn(
+                    'p-0.5 rounded-md transition-colors',
+                    isLight
+                      ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                  )}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="px-3 py-4 space-y-3">
+                {/* Warning Icon */}
+                <div className="flex items-start gap-3">
+                  <div
+                    className={cn(
+                      'flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center',
+                      isLight ? 'bg-red-100' : 'bg-red-900/30'
+                    )}
+                  >
+                    <svg
+                      className={cn(
+                        'w-4 h-4',
+                        isLight ? 'text-red-600' : 'text-red-400'
+                      )}
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                    </svg>
+                  </div>
+
+                  <div className="flex-1">
+                    <p
+                      className={cn(
+                        'text-sm font-medium',
+                        isLight ? 'text-gray-900' : 'text-gray-100'
+                      )}
+                    >
+                      Delete {selectedNotes.size} note(s)?
+                    </p>
+                    <p
+                      className={cn(
+                        'text-xs mt-1',
+                        isLight ? 'text-gray-600' : 'text-gray-400'
+                      )}
+                    >
+                      These notes will be permanently deleted from your workspace and cannot be recovered.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div
+                className={cn(
+                  'flex items-center justify-end gap-2 px-3 py-2 border-t',
+                  isLight ? 'border-gray-200' : 'border-gray-700'
+                )}
+              >
+                <button
+                  onClick={() => setBulkDeleteDialogOpen(false)}
+                  disabled={deleting}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                    deleting ? 'opacity-50 cursor-not-allowed' : '',
+                    isLight
+                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
+                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600'
+                  )}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    confirmBulkDelete();
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  disabled={deleting}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                    deleting ? 'opacity-50 cursor-not-allowed' : '',
+                    'bg-red-600 text-white hover:bg-red-700'
+                  )}
+                >
+                  {deleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
             </div>
           </div>
-        }
-        confirmText="Delete Notes"
-        variant="danger"
-        isLight={isLight}
-        isLoading={deleting}
-      />
+        </>
+      )}
     </div>
   );
 };
