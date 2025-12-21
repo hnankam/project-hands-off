@@ -216,9 +216,11 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   // Workspace files selector state
   const [showWorkspaceFilesModal, setShowWorkspaceFilesModal] = useState(false);
   const [workspaceFiles, setWorkspaceFiles] = useState<any[]>([]);
+  const [workspaceFolders, setWorkspaceFolders] = useState<any[]>([]);
+  const [currentFolder, setCurrentFolder] = useState<string | null>(null);
   const [selectedWorkspaceFileIds, setSelectedWorkspaceFileIds] = useState<Set<string>>(new Set());
+  const [selectedFolderPaths, setSelectedFolderPaths] = useState<Set<string>>(new Set());
   const [loadingWorkspaceFiles, setLoadingWorkspaceFiles] = useState(false);
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   
   // Gmail modal state
   const [showGmailModal, setShowGmailModal] = useState(false);
@@ -651,49 +653,41 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       setLoadingWorkspaceFiles(false);
     }
   };
-  
-  // Group files by folder/source
-  const groupFilesByFolder = () => {
-    const grouped: Record<string, any[]> = {};
-    workspaceFiles.forEach(file => {
-      const folder = file.folder || 'other';
-      if (!grouped[folder]) {
-        grouped[folder] = [];
-      }
-      grouped[folder].push(file);
-    });
-    return grouped;
-  };
 
-  const getFolderLabel = (folder: string): string => {
-    const labels: Record<string, string> = {
-      'chat-uploads': 'Chat Attachments',
-      'uploads': 'Uploads',
-      'screenshots': 'Screenshots',
-      'generated': 'AI Generated',
-      'other': 'Other Files',
-    };
-    return labels[folder] || folder.charAt(0).toUpperCase() + folder.slice(1);
-  };
-
-  const toggleFolder = (folder: string) => {
-    setExpandedFolders(prev => {
-      const next = new Set(prev);
-      if (next.has(folder)) {
-        next.delete(folder);
+  // Fetch workspace folders
+  const fetchWorkspaceFolders = async () => {
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseURL}/api/workspace/folders`, {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setWorkspaceFolders(data.folders || []);
       } else {
-        next.add(folder);
+        console.error('[Workspace Folders] Failed to load. Status:', response.status);
+        setWorkspaceFolders([]);
       }
-      return next;
-    });
+    } catch (error) {
+      console.error('[Workspace Folders] Error loading folders:', error);
+      setWorkspaceFolders([]);
+    }
+  };
+  
+  // Navigate to folder
+  const navigateToFolder = (folderPath: string | null) => {
+    setCurrentFolder(folderPath);
   };
   
   // Open workspace files modal
   const openWorkspaceFilesModal = () => {
     setShowWorkspaceFilesModal(true);
+    setCurrentFolder(null);
+    setSelectedWorkspaceFileIds(new Set());
+    setSelectedFolderPaths(new Set());
     fetchWorkspaceFiles();
-    // Expand all folders by default
-    setExpandedFolders(new Set(['chat-uploads', 'uploads', 'screenshots', 'generated', 'other']));
+    fetchWorkspaceFolders();
   };
   
   // Add workspace files as attachments
@@ -721,10 +715,27 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     setAttachments(prev => [...prev, ...newAttachments]);
     setShowWorkspaceFilesModal(false);
     setSelectedWorkspaceFileIds(new Set());
+    setSelectedFolderPaths(new Set());
   };
   
+  // Get all files in a folder (including subfolders)
+  const getFilesInFolder = (folderPath: string): string[] => {
+    return workspaceFiles
+      .filter(file => {
+        const fileFolder = file.folder === 'root' ? null : file.folder;
+        // Match files directly in this folder or in subfolders
+        if (fileFolder === folderPath) return true;
+        if (fileFolder && fileFolder.startsWith(folderPath + '/')) return true;
+        return false;
+      })
+      .map(file => file.id);
+  };
+
   // Toggle workspace file selection
   const toggleWorkspaceFileSelection = (fileId: string) => {
+    const file = workspaceFiles.find(f => f.id === fileId);
+    const fileFolder = file ? (file.folder === 'root' ? null : file.folder) : null;
+    
     setSelectedWorkspaceFileIds(prev => {
       const next = new Set(prev);
       if (next.has(fileId)) {
@@ -732,8 +743,69 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       } else {
         next.add(fileId);
       }
+      
+      // Update folder selection state based on file selections
+      if (fileFolder) {
+        const filesInFolder = getFilesInFolder(fileFolder);
+        const allSelected = filesInFolder.every(id => next.has(id));
+        
+        // Update folder selection in a separate state update
+        setTimeout(() => {
+          setSelectedFolderPaths(prevFolders => {
+            const nextFolders = new Set(prevFolders);
+            if (allSelected) {
+              nextFolders.add(fileFolder);
+            } else {
+              nextFolders.delete(fileFolder);
+            }
+            return nextFolders;
+          });
+        }, 0);
+      }
+      
       return next;
     });
+  };
+
+  // Toggle folder selection
+  const toggleFolderSelection = (folderPath: string) => {
+    const filesInFolder = getFilesInFolder(folderPath);
+    const isFolderSelected = selectedFolderPaths.has(folderPath);
+    
+    if (isFolderSelected) {
+      // Deselect folder and all its files
+      setSelectedFolderPaths(prev => {
+        const next = new Set(prev);
+        next.delete(folderPath);
+        return next;
+      });
+      setSelectedWorkspaceFileIds(prev => {
+        const next = new Set(prev);
+        filesInFolder.forEach(fileId => next.delete(fileId));
+        return next;
+      });
+    } else {
+      // Select folder and all its files
+      setSelectedFolderPaths(prev => {
+        const next = new Set(prev);
+        next.add(folderPath);
+        return next;
+      });
+      setSelectedWorkspaceFileIds(prev => {
+        const next = new Set(prev);
+        filesInFolder.forEach(fileId => next.add(fileId));
+        return next;
+      });
+    }
+  };
+
+  // Check if a folder is partially selected (some but not all files selected)
+  const isFolderPartiallySelected = (folderPath: string): boolean => {
+    const filesInFolder = getFilesInFolder(folderPath);
+    if (filesInFolder.length === 0) return false;
+    
+    const selectedCount = filesInFolder.filter(fileId => selectedWorkspaceFileIds.has(fileId)).length;
+    return selectedCount > 0 && selectedCount < filesInFolder.length;
   };
   
   // Gmail handlers
@@ -1918,7 +1990,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm"
           style={{ zIndex: 10000 }}
-        onClick={() => setShowWorkspaceFilesModal(false)}
+          onClick={() => setShowWorkspaceFilesModal(false)}
         />
         
         {/* Modal */}
@@ -1926,218 +1998,309 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
           className="fixed inset-0 flex items-center justify-center p-4 attachment-modal"
           style={{ zIndex: 10001 }}
         >
-        <div
-          className={cn(
+          <div
+            className={cn(
               'w-full max-w-4xl rounded-lg shadow-xl',
               isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]'
-          )}
-          onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 'min(56rem, 90vw)' }}
-        >
-          {/* Header */}
-            <div className={cn('flex items-center justify-between border-b px-3 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
-              <h2 className={cn('text-base font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
-              Select Workspace Files
-              </h2>
-            <button
-              onClick={() => setShowWorkspaceFilesModal(false)}
-              className={cn(
-                  'rounded-md p-0.5 transition-colors',
-                  isLight ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700' : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
-              )}
-            >
-                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          
-            
-            {/* Content */}
-            <div className="px-3 py-2">
-          <div 
-                className="overflow-y-auto" 
-            style={{ 
-                  maxHeight: '400px'
-            }}
-          >
-            {loadingWorkspaceFiles ? (
-                  <div className={cn('py-6 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                Loading files...
-              </div>
-            ) : !workspaceFiles || workspaceFiles.length === 0 ? (
-                  <div className={cn('py-6 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                No files in workspace. Upload files to see them here.
-              </div>
-            ) : (
-                  <div className="space-y-1">
-                    {Object.entries(groupFilesByFolder()).map(([folder, folderFiles]) => {
-                      if (folderFiles.length === 0) return null;
-                      
-                      const isExpanded = expandedFolders.has(folder);
-                      
-                  return (
-                        <div key={folder}>
-                          {/* Accordion Header */}
-                          <div
-                      className={cn(
-                              'flex items-center justify-between px-2 py-1 text-xs font-medium border-b',
-                              isLight ? 'border-gray-200' : 'border-gray-700'
-                            )}
-                          >
-                            <button
-                              onClick={() => toggleFolder(folder)}
-                              className={cn(
-                                'flex items-center gap-2 transition-colors flex-1 text-left',
-                                isLight ? 'hover:text-gray-900' : 'hover:text-white'
-                              )}
-                              style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-                            >
-                              <svg
-                                className={cn(
-                                  'w-3.5 h-3.5 transition-transform duration-200 ease-in-out flex-shrink-0',
-                                  isLight ? 'text-gray-400' : 'text-gray-500',
-                                  isExpanded && 'rotate-90'
-                                )}
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                              <span className="whitespace-nowrap">{getFolderLabel(folder)}</span>
-                              <span
-                                className={cn(
-                                  'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0',
-                                  isLight ? 'bg-gray-100 text-gray-600' : 'bg-gray-800 text-gray-400'
-                                )}
-                              >
-                                {folderFiles.length}
-                              </span>
-                            </button>
-                          </div>
-
-                          {/* Accordion Content */}
-                          <div 
-                            className={cn(
-                              'overflow-hidden transition-all duration-200 ease-in-out',
-                              isExpanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
-                            )}
-                          >
-                            <div className="w-full overflow-x-auto">
-                              <table className="w-full border-collapse text-xs" style={{ minWidth: '100%' }}>
-                                <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
-                                  <tr className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
-                                    <th className={cn('px-3 py-1.5 w-8', isLight ? 'text-gray-600' : 'text-gray-300')}></th>
-                                    <th className={cn('px-3 py-1.5 text-left text-xs font-semibold whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-300')}>File Name</th>
-                                    <th className={cn('px-3 py-1.5 text-left text-xs font-semibold whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-300')}>Type</th>
-                                    <th className={cn('px-3 py-1.5 text-right text-xs font-semibold whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-300')}>Size</th>
-                                    <th className={cn('px-3 py-1.5 text-left text-xs font-semibold whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-300')}>Created</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {folderFiles.map((file, index) => {
-                                    if (!file) return null;
-                                    
-                                    const fileId = file.id || `file-${index}`;
-                                    const isSelected = selectedWorkspaceFileIds.has(fileId);
-                                    
-                                    return (
-                                      <tr
-                                        key={fileId}
-                                        onClick={() => toggleWorkspaceFileSelection(fileId)}
-                                        className={cn(
-                                          'transition-colors border-b group cursor-pointer',
-                                          isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
-                                          isSelected && (isLight ? 'bg-blue-50' : 'bg-blue-900/20')
-                                        )}
-                    >
-                                        <td className="px-3 py-1.5">
-                                          <div
-                                            className={cn(
-                                              'w-3.5 h-3.5 rounded flex items-center justify-center flex-shrink-0 transition-opacity',
-                                              isSelected
-                                                ? 'bg-blue-600/60 opacity-100'
-                                                : cn('border opacity-100', isLight ? 'border-gray-400' : 'border-gray-500')
-                                            )}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              toggleWorkspaceFileSelection(fileId);
-                                            }}
-                                          >
-                                            {isSelected && (
-                                              <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                              </svg>
-                                            )}
-                                          </div>
-                                        </td>
-                                        <td className={cn('px-3 py-1.5')}>
-                                          <div className="flex items-center gap-1 min-w-0">
-                                            <div className="flex-shrink-0">{getFileIcon(file.file_name)}</div>
-                                            <span className={cn('font-medium truncate', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')} title={file.file_name}>
-                          {file.file_name || 'Unnamed file'}
-                                            </span>
-                        </div>
-                                        </td>
-                                        <td className={cn('px-3 py-1.5 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                          <span className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                            {getFileTypeCategory(file.file_name)}
-                                          </span>
-                                        </td>
-                                        <td className={cn('px-3 py-1.5 text-right whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                          {file.file_size ? formatSize(file.file_size) : 'Unknown'}
-                                        </td>
-                                        <td className={cn('px-3 py-1.5 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                          {file.created_at ? formatDate(file.created_at) : 'Unknown'}
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                        </div>
-                      </div>
-                        </div>
-                  );
-                })}
-              </div>
             )}
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 'min(56rem, 90vw)' }}
+          >
+            {/* Header with Breadcrumbs */}
+            <div className={cn('flex items-center justify-between border-b px-3 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <h2 className={cn('text-base font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                  Select Files
+                </h2>
+                <span className={cn('text-xs mx-2', isLight ? 'text-gray-400' : 'text-gray-500')}>|</span>
+                <div className="flex items-center gap-1.5 overflow-x-auto">
+                  <button
+                    onClick={() => navigateToFolder(null)}
+                    className={cn(
+                      'flex items-center gap-1 text-xs font-medium transition-colors whitespace-nowrap',
+                      !currentFolder
+                        ? isLight ? 'text-gray-900' : 'text-white'
+                        : isLight ? 'text-gray-500 hover:text-gray-700' : 'text-gray-400 hover:text-gray-200'
+                    )}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                    </svg>
+                    Root
+                  </button>
+                  {currentFolder && currentFolder.split('/').map((part, index, parts) => {
+                    const fullPath = parts.slice(0, index + 1).join('/');
+                    const isLast = index === parts.length - 1;
+                    return (
+                      <React.Fragment key={fullPath}>
+                        <span className={cn('text-xs', isLight ? 'text-gray-400' : 'text-gray-500')}>/</span>
+                        <button
+                          onClick={() => navigateToFolder(fullPath)}
+                          className={cn(
+                            'text-xs font-medium truncate transition-colors',
+                            isLast
+                              ? isLight ? 'text-gray-900' : 'text-white'
+                              : isLight ? 'text-gray-500 hover:text-gray-700' : 'text-gray-400 hover:text-gray-200'
+                          )}
+                        >
+                          {part}
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
               </div>
-          </div>
-          
-          {/* Footer */}
-            <div className={cn('flex items-center justify-between border-t px-3 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
-              <span className="text-xs" style={{ color: isLight ? '#6b7280' : '#9ca3af' }}>
-              {selectedWorkspaceFileIds.size} file(s) selected
-            </span>
-              <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowWorkspaceFilesModal(false)}
                 className={cn(
+                  'rounded-md p-0.5 transition-colors flex-shrink-0',
+                  isLight ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700' : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                )}
+              >
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            {/* Content */}
+            <div className="px-3 py-2">
+              <div 
+                className="overflow-y-auto" 
+                style={{ maxHeight: '400px' }}
+              >
+                {loadingWorkspaceFiles ? (
+                  <div className={cn('py-6 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    Loading files...
+                  </div>
+                ) : !workspaceFiles || workspaceFiles.length === 0 ? (
+                  <div className={cn('py-6 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    No files in workspace. Upload files to see them here.
+                  </div>
+                ) : (() => {
+                  // Get folders and files for current directory
+                  const currentFolders = workspaceFolders.filter(f => {
+                    if (!currentFolder) {
+                      // Root: show folders without parent (no slash or only one level)
+                      return !f.path.includes('/') && f.path !== 'root';
+                    }
+                    // Show folders that are direct children
+                    const folderDepth = currentFolder.split('/').length;
+                    const itemDepth = f.path.split('/').length;
+                    return f.path.startsWith(currentFolder + '/') && itemDepth === folderDepth + 1;
+                  });
+
+                  const currentFiles = workspaceFiles.filter(f => {
+                    const fileFolder = f.folder === 'root' ? null : f.folder;
+                    return fileFolder === currentFolder;
+                  });
+
+                  const folderIcon = (
+                    <svg className={cn('w-4 h-4', isLight ? 'text-blue-500' : 'text-blue-400')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                  );
+
+                  if (currentFolders.length === 0 && currentFiles.length === 0) {
+                    return (
+                      <div className={cn('py-6 text-center text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                        {currentFolder ? 'This folder is empty.' : 'No files yet.'}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="w-full">
+                      <table className="w-full border-collapse text-xs">
+                        <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
+                          <tr className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                            <th className={cn('w-8 px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-300')}></th>
+                            <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>
+                              Name
+                            </th>
+                            <th className={cn('px-3 py-1.5 text-right text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>
+                              Size
+                            </th>
+                            <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>
+                              Created
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {/* Folders */}
+                          {currentFolders.map(folder => {
+                            const isFolderSelected = selectedFolderPaths.has(folder.path);
+                            const isPartiallySelected = isFolderPartiallySelected(folder.path);
+                            
+                            return (
+                              <tr
+                                key={folder.path}
+                                className={cn(
+                                  'group border-b transition-colors',
+                                  isLight ? 'border-gray-100 hover:bg-blue-50/50' : 'border-gray-700 hover:bg-blue-900/10',
+                                  isFolderSelected && (isLight ? 'bg-blue-50' : 'bg-blue-900/20')
+                                )}
+                              >
+                                <td className="px-3 py-1.5">
+                                  <div
+                                    className={cn(
+                                      'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity cursor-pointer',
+                                      isFolderSelected
+                                        ? 'bg-blue-600/80 opacity-100'
+                                        : isPartiallySelected
+                                          ? 'bg-blue-400/40 opacity-100'
+                                          : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500')
+                                    )}
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      toggleFolderSelection(folder.path);
+                                    }}
+                                  >
+                                    {isFolderSelected && (
+                                      <svg
+                                        className="h-2 w-2 text-white"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        strokeWidth={3}
+                                      >
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                    {isPartiallySelected && !isFolderSelected && (
+                                      <svg
+                                        className="h-2 w-2 text-blue-600"
+                                        fill="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <rect x="4" y="11" width="16" height="2" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                </td>
+                                <td 
+                                  className="px-3 py-1.5 cursor-pointer"
+                                  onClick={() => navigateToFolder(folder.path)}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    {folderIcon}
+                                    <span className={cn('font-medium', isLight ? 'text-blue-600' : 'text-blue-400')}>
+                                      {folder.name}
+                                    </span>
+                                    <span className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                                      ({folder.file_count} {folder.file_count === 1 ? 'file' : 'files'})
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className={cn('px-3 py-1.5 text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>—</td>
+                                <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>—</td>
+                              </tr>
+                            );
+                          })}
+
+                          {/* Files */}
+                          {currentFiles.map(file => {
+                            const fileId = file.id;
+                            const isSelected = selectedWorkspaceFileIds.has(fileId);
+                            
+                            return (
+                              <tr
+                                key={fileId}
+                                className={cn(
+                                  'group border-b transition-colors',
+                                  isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
+                                  isSelected && (isLight ? 'bg-blue-50' : 'bg-blue-900/20')
+                                )}
+                                onClick={() => toggleWorkspaceFileSelection(fileId)}
+                              >
+                                <td className="px-3 py-1.5">
+                                  <div
+                                    className={cn(
+                                      'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity cursor-pointer',
+                                      isSelected
+                                        ? 'bg-blue-600/80 opacity-100'
+                                        : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500')
+                                    )}
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      toggleWorkspaceFileSelection(fileId);
+                                    }}
+                                  >
+                                    {isSelected && (
+                                      <svg
+                                        className="h-2 w-2 text-white"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        strokeWidth={3}
+                                      >
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  <div className="flex items-center gap-2">
+                                    {getFileIcon(file.file_name)}
+                                    <span className={cn('font-medium truncate', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')} title={file.file_name}>
+                                      {file.file_name}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className={cn('px-3 py-1.5 text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                  {formatSize(file.file_size)}
+                                </td>
+                                <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                  {formatDate(file.created_at)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className={cn('flex items-center justify-between border-t px-3 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
+              <span className="text-xs" style={{ color: isLight ? '#6b7280' : '#9ca3af' }}>
+                {selectedWorkspaceFileIds.size} file(s) selected
+                {selectedFolderPaths.size > 0 && ` from ${selectedFolderPaths.size} folder(s)`}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setShowWorkspaceFilesModal(false);
+                    setSelectedWorkspaceFileIds(new Set());
+                    setSelectedFolderPaths(new Set());
+                  }}
+                  className={cn(
                     'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
                     isLight ? 'bg-gray-200 hover:bg-gray-300' : 'bg-gray-700 hover:bg-gray-600'
-                )}
+                  )}
                   style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={addWorkspaceFilesAsAttachments}
-                disabled={selectedWorkspaceFileIds.size === 0}
-                className={cn(
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={addWorkspaceFilesAsAttachments}
+                  disabled={selectedWorkspaceFileIds.size === 0}
+                  className={cn(
                     'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                  selectedWorkspaceFileIds.size === 0
+                    selectedWorkspaceFileIds.size === 0
                       ? 'opacity-50 cursor-not-allowed bg-gray-400 text-gray-600'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
-                )}
-              >
-                Add {selectedWorkspaceFileIds.size > 0 && `(${selectedWorkspaceFileIds.size})`}
-              </button>
+                  )}
+                >
+                  Add {selectedWorkspaceFileIds.size > 0 && `(${selectedWorkspaceFileIds.size})`}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
       </>
     )}
     

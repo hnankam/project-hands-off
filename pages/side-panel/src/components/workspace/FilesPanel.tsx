@@ -12,45 +12,50 @@ interface WorkspaceFile {
   file_type: string;
   file_size: number;
   storage_url: string;
-  folder: string;
+  folder: string | null;
   tags: string[];
   description: string;
   created_at: string;
 }
 
+interface FolderItem {
+  name: string;
+  path: string;
+  file_count: number;
+}
+
 export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void }> = ({ isLight, onStatsChange }) => {
   const { user } = useAuth();
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
+  const [folders, setFolders] = useState<FolderItem[]>([]);
+  const [currentFolder, setCurrentFolder] = useState<string | null>(null); // null = root
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
-  const [expandedTypes, setExpandedTypes] = useState<Set<string>>(
-    new Set(['uploads', 'chat', 'screenshots', 'generated', 'other']),
-  );
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const dragCounterRef = React.useRef(0);
 
-  // Bulk delete state
-  const [deleteMode, setDeleteMode] = useState<Record<string, boolean>>({
-    uploads: false,
-    chat: false,
-    screenshots: false,
-    generated: false,
-    other: false,
-  });
+  // Delete state
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  // Delete confirmation dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<{ id: string; name: string } | null>(null);
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
-  const [bulkDeleteSource, setBulkDeleteSource] = useState<string | null>(null);
+  const [folderDeleteDialogOpen, setFolderDeleteDialogOpen] = useState(false);
+  const [folderToDelete, setFolderToDelete] = useState<{ path: string; name: string; fileCount: number } | null>(null);
+  const [deleteFilesInFolder, setDeleteFilesInFolder] = useState(false);
 
   // Rename state
   const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = React.useRef<HTMLInputElement>(null);
+
+  // New folder state
+  const [showNewFolderInput, setShowNewFolderInput] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const newFolderInputRef = React.useRef<HTMLInputElement>(null);
 
   const loadFiles = useCallback(async () => {
     try {
@@ -69,23 +74,42 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     }
   }, []);
 
+  const loadFolders = useCallback(async () => {
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseURL}/api/workspace/folders`, {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setFolders(data.folders || []);
+      }
+    } catch (error) {
+      console.error('[Workspace] Failed to load folders:', error);
+    }
+  }, []);
+
   useEffect(() => {
     loadFiles();
-  }, [loadFiles]);
+    loadFolders();
+  }, [loadFiles, loadFolders]);
+
+  // Focus new folder input when it appears
+  React.useEffect(() => {
+    if (showNewFolderInput && newFolderInputRef.current) {
+      newFolderInputRef.current.focus();
+    }
+  }, [showNewFolderInput]);
 
   const uploadFile = async (file: File) => {
     setUploading(true);
 
     try {
-      // Check if Firebase is configured
       if (!COPIOLITKIT_CONFIG.ENABLE_FIREBASE_UPLOADS || !COPIOLITKIT_CONFIG.FIREBASE?.storageBucket) {
         throw new Error('Firebase Storage not configured');
       }
 
-      // Ensure Firebase authentication
       await ensureFirebaseAuth(COPIOLITKIT_CONFIG.FIREBASE as any);
-
-      // Upload to Firebase Storage
       const storage = ensureFirebase(COPIOLITKIT_CONFIG.FIREBASE as any);
       const userId = user?.id || 'anonymous';
       const timestamp = Date.now();
@@ -93,14 +117,12 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
       const storagePath = `workspace/${userId}/uploads/${timestamp}-${safeName}`;
       const storageRef = fbRef(storage as any, storagePath);
 
-      // Upload file
       const uploadTask = uploadBytesResumable(storageRef as any, file);
 
       await new Promise<string>((resolve, reject) => {
         uploadTask.on(
           'state_changed',
           snapshot => {
-            // Progress tracking (optional)
             const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
             console.log('[Workspace] Upload progress:', progress);
           },
@@ -119,10 +141,8 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
         );
       });
 
-      // Get the download URL
       const storageUrl = await getDownloadURL(uploadTask.snapshot.ref);
 
-      // Register file with backend
       const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
       const response = await fetch(`${baseURL}/api/workspace/files/register`, {
         method: 'POST',
@@ -135,7 +155,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
           file_type: file.type,
           file_size: file.size,
           storage_url: storageUrl,
-          folder: 'uploads',
+          folder: currentFolder || undefined,
         }),
       });
 
@@ -145,7 +165,6 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
       }
 
       await loadFiles();
-      // Refresh workspace stats after successful upload
       onStatsChange?.();
     } catch (error) {
       console.error('[Workspace] Upload error:', error);
@@ -159,7 +178,6 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     const file = event.target.files?.[0];
     if (file) {
       await uploadFile(file);
-      // Reset file input
       event.target.value = '';
     }
   };
@@ -199,6 +217,37 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     }
   };
 
+  const createFolder = async () => {
+    if (!newFolderName.trim()) return;
+
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const folderPath = currentFolder ? `${currentFolder}/${newFolderName.trim()}` : newFolderName.trim();
+      
+      const response = await fetch(`${baseURL}/api/workspace/folders`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          folder_name: folderPath,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create folder');
+      }
+
+      await loadFolders();
+      setShowNewFolderInput(false);
+      setNewFolderName('');
+    } catch (error) {
+      console.error('[Workspace] Create folder error:', error);
+      alert('Failed to create folder');
+    }
+  };
+
   const openDeleteDialog = (fileId: string, fileName: string) => {
     setFileToDelete({ id: fileId, name: fileName });
     setDeleteDialogOpen(true);
@@ -220,7 +269,6 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
       }
 
       await loadFiles();
-      // Refresh workspace stats after successful deletion
       onStatsChange?.();
       setDeleteDialogOpen(false);
       setFileToDelete(null);
@@ -232,23 +280,48 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     }
   };
 
-  const toggleDeleteMode = (source: string) => {
-    const isCurrentlyDeleting = deleteMode[source];
+  const openFolderDeleteDialog = (folder: FolderItem) => {
+    setFolderToDelete({ path: folder.path, name: folder.name, fileCount: folder.file_count });
+    setDeleteFilesInFolder(false);
+    setFolderDeleteDialogOpen(true);
+  };
 
-    setDeleteMode(prev => {
-      const next = { ...prev };
-      next[source] = !isCurrentlyDeleting;
-      return next;
-    });
+  const confirmDeleteFolder = async () => {
+    if (!folderToDelete) return;
 
-    // Clear selections when exiting delete mode
-    if (isCurrentlyDeleting) {
-      const sourceFiles = groupFilesBySource()[source] || [];
-      setSelectedFiles(prev => {
-        const next = new Set(prev);
-        sourceFiles.forEach(file => next.delete(file.id));
-        return next;
+    setDeleting(true);
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const encodedPath = encodeURIComponent(folderToDelete.path);
+      const response = await fetch(`${baseURL}/api/workspace/folders/${encodedPath}?deleteFiles=${deleteFilesInFolder}`, {
+        method: 'DELETE',
+        credentials: 'include',
       });
+
+      if (!response.ok) {
+        throw new Error('Delete failed');
+      }
+
+      await loadFiles();
+      await loadFolders();
+      onStatsChange?.();
+      setFolderDeleteDialogOpen(false);
+      setFolderToDelete(null);
+      setDeleteFilesInFolder(false);
+    } catch (error) {
+      console.error('[Workspace] Delete folder error:', error);
+      alert('Failed to delete folder');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const toggleBulkSelectMode = () => {
+    setBulkSelectMode(!bulkSelectMode);
+    if (bulkSelectMode) {
+      // Exiting bulk select mode
+      setSelectedFiles(new Set());
+      setSelectedFolders(new Set());
     }
   };
 
@@ -264,69 +337,91 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     });
   };
 
-  const toggleSelectAll = (source: string) => {
-    const sourceFiles = groupFilesBySource()[source] || [];
-    const allSelected = sourceFiles.every(file => selectedFiles.has(file.id));
-
-    setSelectedFiles(prev => {
+  const toggleFolderSelection = (folderPath: string) => {
+    setSelectedFolders(prev => {
       const next = new Set(prev);
-      sourceFiles.forEach(file => {
-        if (allSelected) {
-          next.delete(file.id);
-        } else {
-          next.add(file.id);
-        }
-      });
+      if (next.has(folderPath)) {
+        next.delete(folderPath);
+      } else {
+        next.add(folderPath);
+      }
       return next;
     });
   };
 
-  const openBulkDeleteDialog = (source: string) => {
-    const sourceFiles = groupFilesBySource()[source] || [];
-    const selectedInSource = sourceFiles.filter(file => selectedFiles.has(file.id));
+  const toggleSelectAll = () => {
+    const allSelected = 
+      currentFiles.every(f => selectedFiles.has(f.id)) &&
+      currentFolders.every(f => selectedFolders.has(f.path)) &&
+      (currentFiles.length + currentFolders.length) > 0;
 
-    if (selectedInSource.length === 0) return;
+    if (allSelected) {
+      setSelectedFiles(new Set());
+      setSelectedFolders(new Set());
+    } else {
+      setSelectedFiles(new Set(currentFiles.map(f => f.id)));
+      setSelectedFolders(new Set(currentFolders.map(f => f.path)));
+    }
+  };
 
-    setBulkDeleteSource(source);
+  const openBulkDeleteDialog = () => {
+    if (selectedFiles.size === 0 && selectedFolders.size === 0) return;
     setBulkDeleteDialogOpen(true);
   };
 
   const confirmBulkDelete = async () => {
-    if (!bulkDeleteSource) return;
-
-    const sourceFiles = groupFilesBySource()[bulkDeleteSource] || [];
-    const selectedInSource = sourceFiles.filter(file => selectedFiles.has(file.id));
-
     setDeleting(true);
     try {
       const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${baseURL}/api/workspace/files/bulk`, {
-        method: 'DELETE',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          fileIds: selectedInSource.map(f => f.id),
-        }),
-      });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Bulk delete failed');
+      // Delete files
+      if (selectedFiles.size > 0) {
+        const response = await fetch(`${baseURL}/api/workspace/files/bulk`, {
+          method: 'DELETE',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fileIds: Array.from(selectedFiles),
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to delete files');
+        }
+      }
+
+      // Delete folders
+      if (selectedFolders.size > 0) {
+        const response = await fetch(`${baseURL}/api/workspace/folders/bulk`, {
+          method: 'DELETE',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            folderPaths: Array.from(selectedFolders),
+            deleteFiles: deleteFilesInFolder,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to delete folders');
+        }
       }
 
       await loadFiles();
+      await loadFolders();
       onStatsChange?.();
-
-      // Clear selections and exit delete mode
       setSelectedFiles(new Set());
-      setDeleteMode(prev => ({ ...prev, [bulkDeleteSource]: false }));
+      setSelectedFolders(new Set());
+      setBulkSelectMode(false);
       setBulkDeleteDialogOpen(false);
-      setBulkDeleteSource(null);
+      setDeleteFilesInFolder(false);
     } catch (error) {
       console.error('[Workspace] Bulk delete error:', error);
-      alert('Failed to delete files: ' + (error as Error).message);
+      alert('Failed to delete items: ' + (error as Error).message);
     } finally {
       setDeleting(false);
     }
@@ -335,7 +430,6 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
   const handleStartRename = (file: WorkspaceFile) => {
     setRenamingFileId(file.id);
     setRenameValue(file.file_name);
-    // Focus will happen after render via useEffect
   };
 
   const handleCancelRename = () => {
@@ -375,7 +469,6 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     }
   };
 
-  // Focus rename input when it appears
   React.useEffect(() => {
     if (renamingFileId && renameInputRef.current) {
       renameInputRef.current.focus();
@@ -405,182 +498,74 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     );
   }
 
-  const getFileSource = (file: WorkspaceFile): string => {
-    const folder = file.folder?.toLowerCase() || '';
-
-    if (folder === 'chat-uploads') {
-      return 'chat';
-    }
-    if (folder === 'uploads') {
-      return 'uploads';
-    }
-    if (folder === 'screenshots') {
-      return 'screenshots';
-    }
-    if (folder === 'generated') {
-      return 'generated';
-    }
-    return 'other';
+  // Normalize folder value: treat null, '', and 'root' as root
+  const normalizeFolder = (folder: string | null): string | null => {
+    if (!folder || folder === '' || folder === 'root') return null;
+    return folder;
   };
 
-  const getFileTypeCategory = (fileName: string): string => {
-    const ext = fileName.split('.').pop()?.toLowerCase();
+  // Get folders and files for current directory
+  const currentFolders = folders.filter(f => {
+    if (!currentFolder) {
+      // Root: show folders without parent (no slash or only one level)
+      return !f.path.includes('/') || f.path.split('/').length === 1;
+    }
+    // Show folders that are direct children
+    const folderDepth = currentFolder.split('/').length;
+    const itemDepth = f.path.split('/').length;
+    return f.path.startsWith(currentFolder + '/') && itemDepth === folderDepth + 1;
+  });
 
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext || '')) {
-      return 'Image';
-    }
-    if (['pdf', 'doc', 'docx', 'txt', 'md', 'rtf', 'odt'].includes(ext || '')) {
-      return 'Document';
-    }
-    if (['xls', 'xlsx', 'csv', 'ods'].includes(ext || '')) {
-      return 'Spreadsheet';
-    }
-    if (['ppt', 'pptx', 'odp'].includes(ext || '')) {
-      return 'Presentation';
-    }
-    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext || '')) {
-      return 'Archive';
-    }
-    if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext || '')) {
-      return 'Video';
-    }
-    if (['mp3', 'wav', 'ogg', 'flac', 'm4a'].includes(ext || '')) {
-      return 'Audio';
-    }
-    if (['json', 'xml', 'yaml', 'yml', 'toml'].includes(ext || '')) {
-      return 'Data';
-    }
-    if (
-      [
-        'js',
-        'ts',
-        'jsx',
-        'tsx',
-        'py',
-        'java',
-        'cpp',
-        'c',
-        'cs',
-        'go',
-        'rs',
-        'rb',
-        'php',
-        'html',
-        'css',
-        'scss',
-      ].includes(ext || '')
-    ) {
-      return 'Code';
-    }
-    return 'File';
-  };
+  const currentFiles = files.filter(f => normalizeFolder(f.folder) === currentFolder);
 
-  const getSourceLabel = (source: string): string => {
-    const labels: Record<string, string> = {
-      uploads: 'Uploads',
-      chat: 'Chat Attachments',
-      screenshots: 'Screenshots',
-      generated: 'AI Generated',
-      other: 'Other Files',
-    };
-    return labels[source] || 'Other Files';
-  };
+  // Breadcrumb path
+  const pathParts = currentFolder ? currentFolder.split('/') : [];
 
-  const toggleType = (type: string) => {
-    setExpandedTypes(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(type)) {
-        newSet.delete(type);
-      } else {
-        newSet.add(type);
-      }
-      return newSet;
-    });
-  };
-
-  const groupFilesBySource = () => {
-    const grouped: Record<string, WorkspaceFile[]> = {
-      uploads: [],
-      chat: [],
-      screenshots: [],
-      generated: [],
-      other: [],
-    };
-
-    files.forEach(file => {
-      const source = getFileSource(file);
-      grouped[source].push(file);
-    });
-
-    return grouped;
+  const navigateToFolder = (folderPath: string | null) => {
+    setCurrentFolder(folderPath);
+    setSelectedFiles(new Set());
   };
 
   const getFileIcon = (fileName: string) => {
     const ext = fileName.split('.').pop()?.toLowerCase();
     const iconClass = cn('w-4 h-4', isLight ? 'text-gray-400' : 'text-gray-500');
 
-    // Document icons
     if (['pdf'].includes(ext || '')) {
       return (
         <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-          />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
         </svg>
       );
     }
     if (['doc', 'docx', 'txt', 'md'].includes(ext || '')) {
       return (
         <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       );
     }
-    // Image icons
     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext || '')) {
       return (
         <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-          />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
       );
     }
-    // Spreadsheet icons
-    if (['xls', 'xlsx', 'csv'].includes(ext || '')) {
-      return (
-        <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-          />
-        </svg>
-      );
-    }
-    // Default file icon - matches InfoMenu document icon
     return (
       <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-        />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     );
   };
 
+  const folderIcon = (
+    <svg className={cn('w-4 h-4', isLight ? 'text-blue-500' : 'text-blue-400')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+    </svg>
+  );
+
   return (
     <div className="space-y-4">
-      {/* Hidden File Input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -590,7 +575,6 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
         accept=".pdf,.doc,.docx,.txt,.md,.csv,.json,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp"
       />
 
-      {/* Files List with Accordions and Drag-Drop */}
       <div
         className={cn(
           'relative overflow-hidden rounded-lg border',
@@ -600,7 +584,6 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}>
-        {/* Drag Overlay */}
         {isDragging && (
           <div
             className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-lg"
@@ -609,17 +592,8 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
               background: isLight ? 'rgba(59,130,246,0.06)' : 'rgba(255,255,255,0.06)',
             }}>
             <div className="text-center">
-              <svg
-                className={cn('mx-auto mb-2 h-12 w-12', isLight ? 'text-blue-500/90' : 'text-blue-400/90')}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                />
+              <svg className={cn('mx-auto mb-2 h-12 w-12', isLight ? 'text-blue-500/90' : 'text-blue-400/90')} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
               <p className={cn('text-sm font-medium', isLight ? 'text-blue-700/90' : 'text-blue-300/90')}>
                 Drop file to upload
@@ -628,416 +602,449 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
           </div>
         )}
 
-        <div
-          className={cn(
-            'flex items-center justify-between border-b px-4 py-2',
-            isLight ? 'border-gray-200' : 'border-gray-700',
-          )}>
-          <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>All Files</h3>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className={cn(
-              'flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-medium transition-colors',
-              uploading
-                ? 'cursor-not-allowed opacity-50'
-                : isLight
-                  ? 'border-gray-200 text-blue-600 hover:bg-blue-50'
-                  : 'border-gray-700 text-blue-300 hover:bg-blue-900/20',
+        {/* Header with breadcrumbs */}
+        <div className={cn('flex items-center justify-between border-b px-4 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <button
+              onClick={() => navigateToFolder(null)}
+              className={cn(
+                'flex items-center gap-1 text-xs font-medium transition-colors',
+                !currentFolder
+                  ? isLight ? 'text-gray-900' : 'text-white'
+                  : isLight ? 'text-gray-500 hover:text-gray-700' : 'text-gray-400 hover:text-gray-200'
+              )}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              Root
+            </button>
+            {pathParts.map((part, index) => {
+              const fullPath = pathParts.slice(0, index + 1).join('/');
+              const isLast = index === pathParts.length - 1;
+              return (
+                <React.Fragment key={fullPath}>
+                  <span className={cn('text-xs', isLight ? 'text-gray-400' : 'text-gray-500')}>/</span>
+                  <button
+                    onClick={() => navigateToFolder(fullPath)}
+                    className={cn(
+                      'text-xs font-medium truncate transition-colors',
+                      isLast
+                        ? isLight ? 'text-gray-900' : 'text-white'
+                        : isLight ? 'text-gray-500 hover:text-gray-700' : 'text-gray-400 hover:text-gray-200'
+                    )}>
+                    {part}
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-2">
+            {bulkSelectMode && (
+              <button
+                onClick={openBulkDeleteDialog}
+                disabled={selectedFiles.size === 0 && selectedFolders.size === 0}
+                className={cn(
+                  'flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-medium transition-colors',
+                  selectedFiles.size === 0 && selectedFolders.size === 0
+                    ? 'cursor-not-allowed opacity-50'
+                    : isLight
+                      ? 'border-red-300 text-red-600 hover:bg-red-50'
+                      : 'border-red-700 text-red-400 hover:bg-red-900/20',
+                )}
+                title="Delete selected">
+                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                DELETE ({selectedFiles.size + selectedFolders.size})
+              </button>
             )}
-            title="Upload file">
-            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-              />
-            </svg>
-            {uploading ? 'UPLOADING...' : 'UPLOAD'}
-          </button>
+            <button
+              onClick={toggleBulkSelectMode}
+              className={cn(
+                'flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-medium transition-colors',
+                bulkSelectMode
+                  ? isLight
+                    ? 'border-blue-300 bg-blue-50 text-blue-600'
+                    : 'border-blue-700 bg-blue-900/20 text-blue-400'
+                  : isLight
+                    ? 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    : 'border-gray-700 text-gray-300 hover:bg-gray-800',
+              )}
+              title={bulkSelectMode ? 'Exit select mode' : 'Select multiple items'}>
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+              {bulkSelectMode ? 'DONE' : 'SELECT'}
+            </button>
+            {!bulkSelectMode && (
+              <>
+            <button
+              onClick={() => setShowNewFolderInput(true)}
+              className={cn(
+                'flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-medium transition-colors',
+                isLight
+                  ? 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  : 'border-gray-700 text-gray-300 hover:bg-gray-800',
+              )}
+              title="New folder">
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              FOLDER
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className={cn(
+                'flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-medium transition-colors',
+                uploading
+                  ? 'cursor-not-allowed opacity-50'
+                  : isLight
+                    ? 'border-gray-200 text-blue-600 hover:bg-blue-50'
+                    : 'border-gray-700 text-blue-300 hover:bg-blue-900/20',
+              )}
+              title="Upload file">
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              {uploading ? 'UPLOADING...' : 'UPLOAD'}
+            </button>
+              </>
+            )}
+          </div>
         </div>
-        {files.length === 0 ? (
+
+        {/* New folder input */}
+        {showNewFolderInput && (
+          <div className={cn('flex items-center gap-2 border-b px-4 py-2', isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#0d1117]')}>
+            {folderIcon}
+            <input
+              ref={newFolderInputRef}
+              type="text"
+              value={newFolderName}
+              onChange={e => setNewFolderName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  createFolder();
+                } else if (e.key === 'Escape') {
+                  setShowNewFolderInput(false);
+                  setNewFolderName('');
+                }
+              }}
+              onBlur={() => {
+                if (!newFolderName.trim()) {
+                  setShowNewFolderInput(false);
+                }
+              }}
+              placeholder="Folder name"
+              className={cn(
+                'flex-1 rounded border px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500',
+                isLight ? 'border-gray-300 bg-white text-gray-900' : 'border-gray-600 bg-[#1a1f28] text-white',
+              )}
+            />
+            <button
+              onClick={createFolder}
+              disabled={!newFolderName.trim()}
+              className={cn(
+                'rounded px-2 py-1 text-xs font-medium transition-colors',
+                !newFolderName.trim()
+                  ? 'cursor-not-allowed opacity-50'
+                  : isLight
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-blue-600 text-white hover:bg-blue-700',
+              )}>
+              Create
+            </button>
+          </div>
+        )}
+
+        {/* Bulk select toolbar */}
+        {bulkSelectMode && (currentFolders.length > 0 || currentFiles.length > 0) && (
+          <div className={cn('flex items-center justify-between border-b px-4 py-2', isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#0d1117]')}>
+            <div
+              className="flex cursor-pointer items-center gap-2"
+              onClick={toggleSelectAll}>
+              <div
+                className={cn(
+                  'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
+                  currentFiles.every(f => selectedFiles.has(f.id)) &&
+                  currentFolders.every(f => selectedFolders.has(f.path)) &&
+                  (currentFiles.length + currentFolders.length) > 0
+                    ? 'bg-blue-600/60 opacity-100'
+                    : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500'),
+                )}>
+                {currentFiles.every(f => selectedFiles.has(f.id)) &&
+                currentFolders.every(f => selectedFolders.has(f.path)) &&
+                (currentFiles.length + currentFolders.length) > 0 && (
+                  <svg
+                    className="h-2 w-2 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </div>
+              <span className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                Select All
+              </span>
+            </div>
+            <span className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+              {selectedFiles.size + selectedFolders.size} selected
+            </span>
+          </div>
+        )}
+
+        {/* Files and folders list */}
+        {currentFolders.length === 0 && currentFiles.length === 0 ? (
           <div className={cn('px-4 py-8 text-center text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
-            No files yet. Upload your first file or attach files in chat.
+            {currentFolder ? 'This folder is empty.' : 'No files yet. Upload your first file or create a folder.'}
           </div>
         ) : (
           <div className="w-full">
-            <div className="min-w-full">
-              {Object.entries(groupFilesBySource()).map(([source, sourceFiles]) => {
-                if (sourceFiles.length === 0) return null;
-
-                const isExpanded = expandedTypes.has(source);
-
-                return (
-                  <div key={source} className="min-w-full">
-                    {/* Accordion Header */}
-                    <div
-                      className={cn(
-                        'flex w-full min-w-full items-center justify-between border-b px-3 py-2 text-xs font-medium',
-                        isLight ? 'border-gray-200' : 'border-gray-700',
-                      )}>
-                      <button
-                        onClick={() => toggleType(source)}
-                        className={cn(
-                          'flex items-center gap-2 transition-colors',
-                          isLight ? 'hover:text-gray-900' : 'hover:text-white',
-                        )}>
-                        <svg
-                          className={cn(
-                            'h-3.5 w-3.5 flex-shrink-0 transition-transform',
-                            isLight ? 'text-gray-400' : 'text-gray-500',
-                            isExpanded && 'rotate-90',
-                          )}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                        <span className={cn('whitespace-nowrap', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
-                          {getSourceLabel(source)}
-                        </span>
-                        <span
-                          className={cn(
-                            'flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
-                            isLight ? 'bg-gray-100 text-gray-600' : 'bg-gray-800 text-gray-400',
-                          )}>
-                          {sourceFiles.length}
-                        </span>
-                      </button>
-                      {isExpanded && (
-                        <button
-                          onClick={() => toggleDeleteMode(source)}
-                          className={cn(
-                            'rounded p-1.5 transition-colors',
-                            deleteMode[source]
-                              ? isLight
-                                ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                                : 'bg-red-900/30 text-red-400 hover:bg-red-900/50'
-                              : isLight
-                                ? 'text-gray-600 hover:bg-gray-100'
-                                : 'text-gray-400 hover:bg-gray-800',
-                          )}
-                          title={deleteMode[source] ? 'Cancel delete mode' : 'Enter delete mode'}>
-                          {deleteMode[source] ? (
-                            <svg
-                              className="h-3.5 w-3.5"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                              strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          ) : (
-                            <svg
-                              className="h-3.5 w-3.5"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                              strokeWidth={2}>
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                              />
-                            </svg>
-                          )}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Accordion Content - Table */}
-                    {isExpanded && (
-                      <div className="w-full max-h-[400px] overflow-x-auto overflow-y-auto">
-                        {deleteMode[source] && (
-                          <div
-                            className={cn(
-                              'flex items-center justify-between border-b px-3 py-2',
-                              isLight ? 'border-gray-200 bg-gray-50' : 'border-gray-700 bg-[#0d1117]',
-                            )}>
-                            <div className="flex items-center gap-3">
-                              <div
-                                className="flex cursor-pointer items-center gap-2"
-                                onClick={() => toggleSelectAll(source)}>
-                                <div
-                                  className={cn(
-                                    'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
-                                    sourceFiles.every(file => selectedFiles.has(file.id)) && sourceFiles.length > 0
-                                      ? 'bg-blue-600/60 opacity-100'
-                                      : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500'),
-                                  )}>
-                                  {sourceFiles.every(file => selectedFiles.has(file.id)) && sourceFiles.length > 0 && (
-                                    <svg
-                                      className="h-2 w-2 text-white"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                      strokeWidth={3}>
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                  )}
-                                </div>
-                                <span
-                                  className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                                  Select All
-                                </span>
-                              </div>
-                              <span className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                {sourceFiles.filter(f => selectedFiles.has(f.id)).length} selected
-                              </span>
-                            </div>
-                            <button
-                              onClick={() => openBulkDeleteDialog(source)}
-                              disabled={deleting || sourceFiles.filter(f => selectedFiles.has(f.id)).length === 0}
-                              className={cn(
-                                'rounded px-3 py-1 text-xs font-medium transition-colors border',
-                                deleting || sourceFiles.filter(f => selectedFiles.has(f.id)).length === 0
-                                  ? 'cursor-not-allowed opacity-50'
-                                  : '',
-                                isLight
-                                  ? 'text-red-600 border-red-300 hover:bg-red-50 hover:text-red-700'
-                                  : 'text-red-400 border-red-700/70 hover:bg-red-900/20 hover:text-red-300',
-                              )}>
-                              {deleting ? 'Deleting...' : 'Delete Selected'}
-                            </button>
-                          </div>
-                        )}
-                        <table className="w-full border-collapse text-xs" style={{ minWidth: '100%' }}>
-                          <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
-                            <tr className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
-                              {deleteMode[source] && (
-                                <th className={cn('w-8 px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-300')}></th>
-                              )}
-                              <th
-                                className={cn(
-                                  'px-3 py-1.5 text-left text-xs font-semibold whitespace-nowrap',
-                                  isLight ? 'text-gray-600' : 'text-gray-300',
-                                )}>
-                                File Name
-                              </th>
-                              <th
-                                className={cn(
-                                  'px-3 py-1.5 text-left text-xs font-semibold whitespace-nowrap',
-                                  isLight ? 'text-gray-600' : 'text-gray-300',
-                                )}>
-                                Type
-                              </th>
-                              <th
-                                className={cn(
-                                  'px-3 py-1.5 text-right text-xs font-semibold whitespace-nowrap',
-                                  isLight ? 'text-gray-600' : 'text-gray-300',
-                                )}>
-                                Size
-                              </th>
-                              <th
-                                className={cn(
-                                  'px-3 py-1.5 text-left text-xs font-semibold whitespace-nowrap',
-                                  isLight ? 'text-gray-600' : 'text-gray-300',
-                                )}>
-                                Created
-                              </th>
-                              {!deleteMode[source] && (
-                                <th
-                                  className={cn(
-                                    'w-24 px-3 py-1.5 text-right text-xs font-semibold whitespace-nowrap',
-                                    isLight ? 'text-gray-600' : 'text-gray-300',
-                                  )}>
-                                  Actions
-                                </th>
-                              )}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sourceFiles.map(file => (
-                              <tr
-                                key={file.id}
-                                className={cn(
-                                  'group border-b transition-colors',
-                                  isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
-                                )}>
-                                {deleteMode[source] && (
-                                  <td className="px-3 py-1.5">
-                                    <div
-                                      className={cn(
-                                        'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
-                                        selectedFiles.has(file.id)
-                                          ? 'bg-blue-600/80 opacity-100'
-                                          : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500'),
-                                      )}
-                                      onClick={e => {
-                                        e.stopPropagation();
-                                        toggleFileSelection(file.id);
-                                      }}>
-                                      {selectedFiles.has(file.id) && (
-                                        <svg
-                                          className="h-2 w-2 text-white"
-                                          fill="none"
-                                          stroke="currentColor"
-                                          viewBox="0 0 24 24"
-                                          strokeWidth={3}>
-                                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                        </svg>
-                                      )}
-                                    </div>
-                                  </td>
-                                )}
-                                <td className={cn('px-3 py-1.5')}>
-                                  {renamingFileId === file.id ? (
-                                    <div className="flex min-w-0 items-center gap-2">
-                                      <div className="flex-shrink-0">{getFileIcon(file.file_name)}</div>
-                                      <input
-                                        ref={renameInputRef}
-                                        type="text"
-                                        value={renameValue}
-                                        onChange={e => setRenameValue(e.target.value)}
-                                        onKeyDown={e => {
-                                          if (e.key === 'Enter') {
-                                            handleSaveRename(file.id);
-                                          } else if (e.key === 'Escape') {
-                                            handleCancelRename();
-                                          }
-                                        }}
-                                        onBlur={() => handleSaveRename(file.id)}
-                                        className={cn(
-                                          'flex-1 rounded border px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500',
-                                          isLight
-                                            ? 'border-gray-300 bg-white text-gray-900'
-                                            : 'border-gray-600 bg-[#1a1f28] text-white',
-                                        )}
-                                      />
-                                    </div>
-                                  ) : (
-                                    <div className="flex min-w-0 items-center gap-1">
-                                      <div className="flex-shrink-0">{getFileIcon(file.file_name)}</div>
-                                      <span
-                                        className={cn(
-                                          'truncate font-medium',
-                                          isLight ? 'text-gray-700' : 'text-[#bcc1c7]',
-                                        )}
-                                        title={file.file_name}>
-                                        {file.file_name}
-                                      </span>
-                                      <button
-                                        onClick={() => handleStartRename(file)}
-                                        disabled={renamingFileId !== null}
-                                        className={cn(
-                                          'flex-shrink-0 rounded p-0.5 opacity-0 transition-all group-hover:opacity-100',
-                                          renamingFileId !== null
-                                            ? 'cursor-not-allowed'
-                                            : isLight
-                                              ? 'text-gray-400 hover:bg-blue-50 hover:text-blue-600'
-                                              : 'text-gray-500 hover:bg-blue-900/20 hover:text-blue-400',
-                                        )}
-                                        title="Rename file">
-                                        <svg
-                                          className="h-3 w-3"
-                                          fill="none"
-                                          stroke="currentColor"
-                                          viewBox="0 0 24 24"
-                                          strokeWidth={2}>
-                                          <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                                          />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  )}
-                                </td>
-                                <td
-                                  className={cn(
-                                    'px-3 py-1.5 whitespace-nowrap',
-                                    isLight ? 'text-gray-600' : 'text-gray-400',
-                                  )}>
-                                  <span className={cn('text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                    {getFileTypeCategory(file.file_name)}
-                                  </span>
-                                </td>
-                                <td
-                                  className={cn(
-                                    'px-3 py-1.5 text-right whitespace-nowrap',
-                                    isLight ? 'text-gray-600' : 'text-gray-400',
-                                  )}>
-                                  {formatSize(file.file_size)}
-                                </td>
-                                <td
-                                  className={cn(
-                                    'px-3 py-1.5 whitespace-nowrap',
-                                    isLight ? 'text-gray-600' : 'text-gray-400',
-                                  )}>
-                                  {formatDate(file.created_at)}
-                                </td>
-                                {!deleteMode[source] && (
-                                  <td className="px-3 py-1.5 text-right">
-                                    <div className="flex flex-shrink-0 items-center justify-end gap-1">
-                                      <a
-                                        href={file.storage_url}
-                                        download={file.file_name}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className={cn(
-                                          'rounded p-1 transition-colors',
-                                          isLight
-                                            ? 'text-gray-400 hover:text-blue-600'
-                                            : 'text-gray-500 hover:text-blue-400',
-                                        )}
-                                        title="Download file">
-                                        <svg
-                                          className="h-3.5 w-3.5"
-                                          fill="none"
-                                          stroke="currentColor"
-                                          viewBox="0 0 24 24"
-                                          strokeWidth={2}>
-                                          <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                                          />
-                                        </svg>
-                                      </a>
-                                      <button
-                                        onClick={() => openDeleteDialog(file.id, file.file_name)}
-                                        disabled={renamingFileId !== null}
-                                        className={cn(
-                                          'rounded p-1 transition-colors',
-                                          renamingFileId !== null
-                                            ? 'cursor-not-allowed opacity-50'
-                                            : isLight
-                                              ? 'text-gray-400 hover:text-red-600'
-                                              : 'text-gray-500 hover:text-red-400',
-                                        )}
-                                        title="Delete file">
-                                        <svg
-                                          className="h-3.5 w-3.5"
-                                          fill="none"
-                                          stroke="currentColor"
-                                          viewBox="0 0 24 24"
-                                          strokeWidth={2}>
-                                          <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                          />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  </td>
-                                )}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+            <table className="w-full border-collapse text-xs">
+              <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
+                <tr className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                  {bulkSelectMode && (
+                    <th className={cn('w-8 px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-300')}></th>
+                  )}
+                  <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>
+                    Name
+                  </th>
+                  <th className={cn('px-3 py-1.5 text-right text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>
+                    Size
+                  </th>
+                  <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>
+                    Created
+                  </th>
+                  {!bulkSelectMode && (
+                  <th className={cn('w-24 px-3 py-1.5 text-right text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>
+                    Actions
+                  </th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Folders */}
+                {currentFolders.map(folder => (
+                  <tr
+                    key={folder.path}
+                    className={cn(
+                      'group border-b transition-colors',
+                      !bulkSelectMode && 'cursor-pointer',
+                      isLight ? 'border-gray-100 hover:bg-blue-50/50' : 'border-gray-700 hover:bg-blue-900/10',
                     )}
-                  </div>
-                );
-              })}
-            </div>
+                    onClick={(e) => {
+                      if (bulkSelectMode) {
+                        e.stopPropagation();
+                        toggleFolderSelection(folder.path);
+                      } else {
+                        navigateToFolder(folder.path);
+                      }
+                    }}>
+                    {bulkSelectMode && (
+                      <td className="px-3 py-1.5">
+                        <div
+                          className={cn(
+                            'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
+                            selectedFolders.has(folder.path)
+                              ? 'bg-blue-600/80 opacity-100'
+                              : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500'),
+                          )}
+                          onClick={e => {
+                            e.stopPropagation();
+                            toggleFolderSelection(folder.path);
+                          }}>
+                          {selectedFolders.has(folder.path) && (
+                            <svg
+                              className="h-2 w-2 text-white"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-2">
+                        {folderIcon}
+                        <span className={cn('font-medium', isLight ? 'text-blue-600' : 'text-blue-400')}>
+                          {folder.name}
+                        </span>
+                        <span className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                          ({folder.file_count} {folder.file_count === 1 ? 'file' : 'files'})
+                        </span>
+                      </div>
+                    </td>
+                    <td className={cn('px-3 py-1.5 text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>—</td>
+                    <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>—</td>
+                    {!bulkSelectMode && (
+                      <td className="px-3 py-1.5 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openFolderDeleteDialog(folder);
+                            }}
+                            className={cn(
+                              'rounded p-1 opacity-0 transition-all group-hover:opacity-100',
+                              isLight
+                                ? 'text-gray-400 hover:text-red-600'
+                                : 'text-gray-500 hover:text-red-400',
+                            )}
+                            title="Delete folder">
+                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+
+                {/* Files */}
+                {currentFiles.map(file => (
+                  <tr
+                    key={file.id}
+                    className={cn(
+                      'group border-b transition-colors',
+                      isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
+                    )}
+                    onClick={() => {
+                      if (bulkSelectMode) {
+                        toggleFileSelection(file.id);
+                      }
+                    }}>
+                    {bulkSelectMode && (
+                      <td className="px-3 py-1.5">
+                        <div
+                          className={cn(
+                            'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
+                            selectedFiles.has(file.id)
+                              ? 'bg-blue-600/80 opacity-100'
+                              : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500'),
+                          )}
+                          onClick={e => {
+                            e.stopPropagation();
+                            toggleFileSelection(file.id);
+                          }}>
+                          {selectedFiles.has(file.id) && (
+                            <svg
+                              className="h-2 w-2 text-white"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                    <td className="px-3 py-1.5">
+                      {renamingFileId === file.id ? (
+                        <div className="flex items-center gap-2">
+                          {getFileIcon(file.file_name)}
+                          <input
+                            ref={renameInputRef}
+                            type="text"
+                            value={renameValue}
+                            onChange={e => setRenameValue(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                handleSaveRename(file.id);
+                              } else if (e.key === 'Escape') {
+                                handleCancelRename();
+                              }
+                            }}
+                            onBlur={() => handleSaveRename(file.id)}
+                            className={cn(
+                              'flex-1 rounded border px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500',
+                              isLight ? 'border-gray-300 bg-white text-gray-900' : 'border-gray-600 bg-[#1a1f28] text-white',
+                            )}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          {getFileIcon(file.file_name)}
+                          <span className={cn('font-medium truncate', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')} title={file.file_name}>
+                            {file.file_name}
+                          </span>
+                          <button
+                            onClick={() => handleStartRename(file)}
+                            disabled={renamingFileId !== null}
+                            className={cn(
+                              'rounded p-0.5 opacity-0 transition-all group-hover:opacity-100',
+                              renamingFileId !== null
+                                ? 'cursor-not-allowed'
+                                : isLight
+                                  ? 'text-gray-400 hover:bg-blue-50 hover:text-blue-600'
+                                  : 'text-gray-500 hover:bg-blue-900/20 hover:text-blue-400',
+                            )}
+                            title="Rename file">
+                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                    <td className={cn('px-3 py-1.5 text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      {formatSize(file.file_size)}
+                    </td>
+                    <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      {formatDate(file.created_at)}
+                    </td>
+                    {!bulkSelectMode && (
+                    <td className="px-3 py-1.5 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <a
+                          href={file.storage_url}
+                          download={file.file_name}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={cn(
+                            'rounded p-1 transition-colors',
+                            isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400',
+                          )}
+                          title="Download file">
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </a>
+                        <button
+                          onClick={() => openDeleteDialog(file.id, file.file_name)}
+                          disabled={renamingFileId !== null}
+                          className={cn(
+                            'rounded p-1 transition-colors',
+                            renamingFileId !== null
+                              ? 'cursor-not-allowed opacity-50'
+                              : isLight
+                                ? 'text-gray-400 hover:text-red-600'
+                                : 'text-gray-500 hover:text-red-400',
+                          )}
+                          title="Delete file">
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
 
-      {/* Single File Delete Confirmation Modal */}
+      {/* Delete File Confirmation Dialog */}
       <AdminConfirmDialog
         isOpen={deleteDialogOpen && !!fileToDelete}
         onClose={() => {
@@ -1048,15 +1055,8 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
         title="Delete File"
         message={
           <div className="flex items-start gap-3">
-            <div
-              className={cn(
-                'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full',
-                isLight ? 'bg-red-100' : 'bg-red-900/30',
-              )}>
-              <svg
-                className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')}
-                fill="currentColor"
-                viewBox="0 0 24 24">
+            <div className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full', isLight ? 'bg-red-100' : 'bg-red-900/30')}>
+              <svg className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')} fill="currentColor" viewBox="0 0 24 24">
                 <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
               </svg>
             </div>
@@ -1076,157 +1076,178 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
         isLoading={deleting}
       />
 
-      {/* Bulk Delete Confirmation Modal */}
-      {bulkDeleteDialogOpen && bulkDeleteSource && (
+      {/* Delete Folder Confirmation Dialog */}
+      {folderDeleteDialogOpen && folderToDelete && (
         <>
-          {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setBulkDeleteDialogOpen(false);
-                setBulkDeleteSource(null);
-              }
+            onClick={() => {
+              setFolderDeleteDialogOpen(false);
+              setFolderToDelete(null);
+              setDeleteFilesInFolder(false);
             }}
           />
-
-          {/* Modal */}
-          <div 
-            className="fixed inset-0 z-[10001] flex items-center justify-center p-4 pointer-events-none"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 pointer-events-none">
             <div
               className={cn(
-                'w-full max-w-sm rounded-lg shadow-xl pointer-events-auto',
-                isLight
-                  ? 'bg-gray-50 border border-gray-200'
-                  : 'bg-[#151C24] border border-gray-700'
+                'w-full max-w-md rounded-lg shadow-xl pointer-events-auto',
+                isLight ? 'bg-gray-50 border border-gray-200' : 'bg-[#151C24] border border-gray-700'
               )}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div
-                className={cn(
-                  'flex items-center justify-between px-3 py-2 border-b',
-                  isLight ? 'border-gray-200' : 'border-gray-700'
-                )}
-              >
-                <h2
-                  className={cn(
-                    'text-sm font-semibold',
-                    isLight ? 'text-gray-900' : 'text-gray-100'
-                  )}
-                >
-                  Delete Multiple Files
+              onClick={(e) => e.stopPropagation()}>
+              <div className={cn('flex items-center justify-between px-4 py-3 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                  Delete Folder
                 </h2>
-                <button
-                  onClick={() => {
-                    setBulkDeleteDialogOpen(false);
-                    setBulkDeleteSource(null);
-                  }}
-                  className={cn(
-                    'p-0.5 rounded-md transition-colors',
-                    isLight
-                      ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
-                  )}
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
               </div>
-
-              {/* Content */}
-              <div className="px-3 py-4 space-y-3">
-                {/* Warning Icon */}
+              <div className="px-4 py-4 space-y-3">
                 <div className="flex items-start gap-3">
-                  <div
-                    className={cn(
-                      'flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center',
-                      isLight ? 'bg-red-100' : 'bg-red-900/30'
-                    )}
-                  >
-                    <svg
-                      className={cn(
-                        'w-4 h-4',
-                        isLight ? 'text-red-600' : 'text-red-400'
-                      )}
-                      fill="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                  <div className={cn('flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center', isLight ? 'bg-red-100' : 'bg-red-900/30')}>
+                    <svg className={cn('w-4 h-4', isLight ? 'text-red-600' : 'text-red-400')} fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                     </svg>
                   </div>
-
                   <div className="flex-1">
-                    <p
-                      className={cn(
-                        'text-sm font-medium',
-                        isLight ? 'text-gray-900' : 'text-gray-100'
-                      )}
-                    >
-                      Delete {groupFilesBySource()[bulkDeleteSource]?.filter(f => selectedFiles.has(f.id)).length} file(s)?
+                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                      Delete folder "{folderToDelete.name}"?
                     </p>
-                    <p
-                      className={cn(
-                        'text-xs mt-1',
-                        isLight ? 'text-gray-600' : 'text-gray-400'
-                      )}
-                    >
-                      These files will be permanently deleted from your workspace and cannot be recovered.
+                    <p className={cn('text-xs mt-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      This folder contains {folderToDelete.fileCount} {folderToDelete.fileCount === 1 ? 'file' : 'files'}.
                     </p>
                   </div>
                 </div>
+                <div className={cn('rounded p-3', isLight ? 'bg-gray-100' : 'bg-gray-800/50')}>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={deleteFilesInFolder}
+                      onChange={(e) => setDeleteFilesInFolder(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <div className={cn('text-xs font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                        Delete all files in folder
+                      </div>
+                      <div className={cn('text-[10px] mt-0.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                        If unchecked, files will be moved to root folder
+                      </div>
+                    </div>
+                  </label>
+                </div>
               </div>
-
-              {/* Footer */}
-              <div
-                className={cn(
-                  'flex items-center justify-end gap-2 px-3 py-2 border-t',
-                  isLight ? 'border-gray-200' : 'border-gray-700'
-                )}
-              >
+              <div className={cn('flex items-center justify-end gap-2 px-4 py-3 border-t', isLight ? 'border-gray-200' : 'border-gray-700')}>
                 <button
                   onClick={() => {
-                    setBulkDeleteDialogOpen(false);
-                    setBulkDeleteSource(null);
+                    setFolderDeleteDialogOpen(false);
+                    setFolderToDelete(null);
+                    setDeleteFilesInFolder(false);
                   }}
                   disabled={deleting}
                   className={cn(
                     'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
                     deleting ? 'opacity-50 cursor-not-allowed' : '',
-                    isLight
-                      ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
-                      : 'bg-gray-700 text-gray-100 hover:bg-gray-600'
-                  )}
-                >
+                    isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-700 text-gray-100 hover:bg-gray-600'
+                  )}>
                   Cancel
                 </button>
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    confirmBulkDelete();
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={confirmDeleteFolder}
                   disabled={deleting}
                   className={cn(
                     'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
                     deleting ? 'opacity-50 cursor-not-allowed' : '',
                     'bg-red-600 text-white hover:bg-red-700'
-                  )}
-                >
-                  {deleting ? 'Deleting...' : 'Delete'}
+                  )}>
+                  {deleting ? 'Deleting...' : 'Delete Folder'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Bulk Delete Confirmation Dialog */}
+      {bulkDeleteDialogOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 z-[10000] backdrop-blur-sm"
+            onClick={() => {
+              setBulkDeleteDialogOpen(false);
+              setDeleteFilesInFolder(false);
+            }}
+          />
+          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 pointer-events-none">
+            <div
+              className={cn(
+                'w-full max-w-md rounded-lg shadow-xl pointer-events-auto',
+                isLight ? 'bg-gray-50 border border-gray-200' : 'bg-[#151C24] border border-gray-700'
+              )}
+              onClick={(e) => e.stopPropagation()}>
+              <div className={cn('flex items-center justify-between px-4 py-3 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                  Delete Multiple Items
+                </h2>
+              </div>
+              <div className="px-4 py-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className={cn('flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center', isLight ? 'bg-red-100' : 'bg-red-900/30')}>
+                    <svg className={cn('w-4 h-4', isLight ? 'text-red-600' : 'text-red-400')} fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                      Delete {selectedFiles.size + selectedFolders.size} item(s)?
+                    </p>
+                    <div className={cn('text-xs mt-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      {selectedFiles.size > 0 && <div>• {selectedFiles.size} {selectedFiles.size === 1 ? 'file' : 'files'}</div>}
+                      {selectedFolders.size > 0 && <div>• {selectedFolders.size} {selectedFolders.size === 1 ? 'folder' : 'folders'}</div>}
+                    </div>
+                  </div>
+                </div>
+                {selectedFolders.size > 0 && (
+                  <div className={cn('rounded p-3', isLight ? 'bg-gray-100' : 'bg-gray-800/50')}>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={deleteFilesInFolder}
+                        onChange={(e) => setDeleteFilesInFolder(e.target.checked)}
+                        className="mt-0.5"
+                      />
+                      <div>
+                        <div className={cn('text-xs font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                          Delete all files in folders
+                        </div>
+                        <div className={cn('text-[10px] mt-0.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                          If unchecked, files will be moved to root folder
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                )}
+              </div>
+              <div className={cn('flex items-center justify-end gap-2 px-4 py-3 border-t', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                <button
+                  onClick={() => {
+                    setBulkDeleteDialogOpen(false);
+                    setDeleteFilesInFolder(false);
+                  }}
+                  disabled={deleting}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                    deleting ? 'opacity-50 cursor-not-allowed' : '',
+                    isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-700 text-gray-100 hover:bg-gray-600'
+                  )}>
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmBulkDelete}
+                  disabled={deleting}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                    deleting ? 'opacity-50 cursor-not-allowed' : '',
+                    'bg-red-600 text-white hover:bg-red-700'
+                  )}>
+                  {deleting ? 'Deleting...' : `Delete ${selectedFiles.size + selectedFolders.size} Item(s)`}
                 </button>
               </div>
             </div>
@@ -1236,3 +1257,4 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     </div>
   );
 };
+

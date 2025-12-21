@@ -53,6 +53,358 @@ const upload = multer({
 });
 
 // ============================================================================
+// FOLDERS ENDPOINTS
+// ============================================================================
+
+/**
+ * List user's folders with file counts
+ * GET /api/workspace/folders
+ */
+router.get('/folders', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const pool = getPool();
+    
+    // Get distinct folders with file counts (excluding .folder placeholders)
+    const { rows } = await pool.query(
+      `SELECT 
+        folder as path,
+        folder as name,
+        COUNT(CASE WHEN file_name != '.folder' THEN 1 END) as file_count
+       FROM workspace_files
+       WHERE user_id = $1 AND folder IS NOT NULL AND folder != ''
+       GROUP BY folder
+       ORDER BY folder`,
+      [userId]
+    );
+    
+    // Format folder names (extract last part of path for display)
+    const folders = rows.map(row => ({
+      name: row.path.includes('/') ? row.path.split('/').pop() : row.path,
+      path: row.path,
+      file_count: parseInt(row.file_count)
+    }));
+    
+    // Prevent caching to ensure fresh data
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    res.json({ folders });
+  } catch (error) {
+    console.error('[Workspace] Error listing folders:', error);
+    res.status(500).json({ error: 'Failed to list folders' });
+  }
+});
+
+/**
+ * Create a new folder
+ * POST /api/workspace/folders
+ * Body: { folder_name: string }
+ * Creates a hidden .folder placeholder file to make the folder visible
+ */
+router.post('/folders', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { folder_name } = req.body;
+    
+    if (!folder_name || !folder_name.trim()) {
+      return res.status(400).json({ error: 'folder_name is required' });
+    }
+    
+    const normalized = folder_name.trim();
+    
+    // Basic validation
+    if (normalized.includes('//') || normalized.startsWith('/') || normalized.endsWith('/')) {
+      return res.status(400).json({ error: 'Invalid folder name format' });
+    }
+    
+    const pool = getPool();
+    
+    // Check if folder already exists
+    const { rows: existingFiles } = await pool.query(
+      'SELECT COUNT(*) as count FROM workspace_files WHERE user_id = $1 AND folder = $2',
+      [userId, normalized]
+    );
+    
+    if (existingFiles[0].count > 0) {
+      // Folder already exists
+      return res.status(200).json({ 
+        success: true,
+        folder: {
+          name: normalized.includes('/') ? normalized.split('/').pop() : normalized,
+          path: normalized,
+          file_count: parseInt(existingFiles[0].count),
+          exists: true
+        }
+      });
+    }
+    
+    // Create hidden placeholder file to make folder visible
+    const { rows } = await pool.query(
+      `INSERT INTO workspace_files 
+       (user_id, file_name, file_type, file_size, storage_url, extracted_text, folder, description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, folder, created_at`,
+      [
+        userId,
+        '.folder',
+        'application/x-folder-placeholder',
+        0,
+        '',
+        '',
+        normalized,
+        'Placeholder file to maintain empty folder structure'
+      ]
+    );
+    
+    res.status(201).json({ 
+      success: true,
+      folder: {
+        name: normalized.includes('/') ? normalized.split('/').pop() : normalized,
+        path: normalized,
+        file_count: 0,
+        created_at: rows[0].created_at
+      }
+    });
+  } catch (error) {
+    console.error('[Workspace] Error creating folder:', error);
+    res.status(500).json({ error: 'Failed to create folder: ' + error.message });
+  }
+});
+
+/**
+ * Delete a folder and optionally its contents
+ * DELETE /api/workspace/folders/:folderPath
+ * Query: deleteFiles=true/false (default: false - moves files to root)
+ */
+router.delete('/folders/:folderPath(*)', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const folderPath = req.params.folderPath;
+    const deleteFiles = req.query.deleteFiles === 'true';
+    
+    if (!folderPath) {
+      return res.status(400).json({ error: 'Folder path is required' });
+    }
+    
+    const pool = getPool();
+    
+    // Get files in this folder and subfolders
+    const { rows: filesInFolder } = await pool.query(
+      `SELECT id, folder, storage_url, file_name FROM workspace_files 
+       WHERE user_id = $1 AND (folder = $2 OR folder LIKE $3)`,
+      [userId, folderPath, `${folderPath}/%`]
+    );
+    
+    if (filesInFolder.length === 0) {
+      // Folder is already empty
+      return res.json({ 
+        success: true, 
+        message: 'Folder deleted (was empty)',
+        filesDeleted: 0,
+        filesMoved: 0
+      });
+    }
+    
+    // Separate placeholder files from real files (trim whitespace and check file type too)
+    const placeholderFiles = filesInFolder.filter(f => 
+      f.file_name && f.file_name.trim() === '.folder'
+    );
+    const realFiles = filesInFolder.filter(f => 
+      !f.file_name || f.file_name.trim() !== '.folder'
+    );
+    
+    // Always delete placeholder files - delete directly by folder and file_name to be extra sure
+    await pool.query(
+      `DELETE FROM workspace_files 
+       WHERE user_id = $1 AND folder = $2 AND file_name = '.folder'`,
+      [userId, folderPath]
+    );
+    
+    // Also delete by IDs if we found any placeholders
+    if (placeholderFiles.length > 0) {
+      const placeholderIds = placeholderFiles.map(f => f.id);
+      await pool.query(
+        'DELETE FROM workspace_files WHERE id = ANY($1) AND user_id = $2',
+        [placeholderIds, userId]
+      );
+    }
+    
+    // If only placeholders existed, we're done
+    if (realFiles.length === 0) {
+      return res.json({ 
+        success: true, 
+        message: 'Folder deleted',
+        filesDeleted: 0,
+        filesMoved: 0
+      });
+    }
+    
+    if (deleteFiles) {
+      // Delete all real files in folder
+      const fileIds = realFiles.map(f => f.id);
+      
+      await pool.query(
+        'DELETE FROM workspace_files WHERE id = ANY($1) AND user_id = $2',
+        [fileIds, userId]
+      );
+      
+      // Delete from Firebase Storage (best effort)
+      const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET;
+      if (FIREBASE_STORAGE_BUCKET) {
+        for (const file of realFiles) {
+          try {
+            const storageUrl = file.storage_url;
+            const pathMatch = storageUrl.match(/\/o\/([^?]+)/);
+            if (pathMatch) {
+              const encodedPath = pathMatch[1];
+              const deleteUrl = `https://firebasestorage.googleapis.com/v0/b/${FIREBASE_STORAGE_BUCKET}/o/${encodedPath}`;
+              await fetch(deleteUrl, { method: 'DELETE' });
+            }
+          } catch (storageError) {
+            console.warn(`[Workspace] Error deleting file from Firebase:`, storageError);
+          }
+        }
+      }
+      
+      res.json({ 
+        success: true, 
+        message: `Deleted folder and ${realFiles.length} file(s)`,
+        filesDeleted: realFiles.length,
+        filesMoved: 0
+      });
+    } else {
+      // Move real files to root (set folder to null)
+      const fileIds = realFiles.map(f => f.id);
+      await pool.query(
+        `UPDATE workspace_files 
+         SET folder = NULL, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ANY($1) AND user_id = $2`,
+        [fileIds, userId]
+      );
+      
+      res.json({ 
+        success: true, 
+        message: `Deleted folder, moved ${realFiles.length} file(s) to root`,
+        filesDeleted: 0,
+        filesMoved: realFiles.length
+      });
+    }
+  } catch (error) {
+    console.error('[Workspace] Error deleting folder:', error);
+    res.status(500).json({ error: 'Failed to delete folder' });
+  }
+});
+
+/**
+ * Bulk delete folders
+ * DELETE /api/workspace/folders/bulk
+ * Body: { folderPaths: string[], deleteFiles: boolean }
+ */
+router.delete('/folders/bulk', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { folderPaths, deleteFiles = false } = req.body;
+    
+    if (!Array.isArray(folderPaths) || folderPaths.length === 0) {
+      return res.status(400).json({ error: 'folderPaths must be a non-empty array' });
+    }
+    
+    const pool = getPool();
+    let totalFilesDeleted = 0;
+    let totalFilesMoved = 0;
+    
+    for (const folderPath of folderPaths) {
+      // Get files in this folder and subfolders
+      const { rows: filesInFolder } = await pool.query(
+        `SELECT id, storage_url, file_name FROM workspace_files 
+         WHERE user_id = $1 AND (folder = $2 OR folder LIKE $3)`,
+        [userId, folderPath, `${folderPath}/%`]
+      );
+      
+      if (filesInFolder.length === 0) continue;
+      
+      // Separate placeholder files from real files (trim whitespace)
+      const placeholderFiles = filesInFolder.filter(f => 
+        f.file_name && f.file_name.trim() === '.folder'
+      );
+      const realFiles = filesInFolder.filter(f => 
+        !f.file_name || f.file_name.trim() !== '.folder'
+      );
+      
+      // Always delete placeholder files - delete directly by folder and file_name
+      await pool.query(
+        `DELETE FROM workspace_files 
+         WHERE user_id = $1 AND folder = $2 AND file_name = '.folder'`,
+        [userId, folderPath]
+      );
+      
+      // Also delete by IDs if we found any placeholders
+      if (placeholderFiles.length > 0) {
+        const placeholderIds = placeholderFiles.map(f => f.id);
+        await pool.query(
+          'DELETE FROM workspace_files WHERE id = ANY($1) AND user_id = $2',
+          [placeholderIds, userId]
+        );
+      }
+      
+      // Skip if no real files
+      if (realFiles.length === 0) continue;
+      
+      if (deleteFiles) {
+        // Delete all real files
+        const fileIds = realFiles.map(f => f.id);
+        await pool.query(
+          'DELETE FROM workspace_files WHERE id = ANY($1) AND user_id = $2',
+          [fileIds, userId]
+        );
+        totalFilesDeleted += realFiles.length;
+        
+        // Delete from Firebase Storage (best effort)
+        const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET;
+        if (FIREBASE_STORAGE_BUCKET) {
+          for (const file of realFiles) {
+            try {
+              const storageUrl = file.storage_url;
+              const pathMatch = storageUrl.match(/\/o\/([^?]+)/);
+              if (pathMatch) {
+                const encodedPath = pathMatch[1];
+                const deleteUrl = `https://firebasestorage.googleapis.com/v0/b/${FIREBASE_STORAGE_BUCKET}/o/${encodedPath}`;
+                await fetch(deleteUrl, { method: 'DELETE' });
+              }
+            } catch (storageError) {
+              console.warn(`[Workspace] Error deleting file from Firebase:`, storageError);
+            }
+          }
+        }
+      } else {
+        // Move real files to root
+        const fileIds = realFiles.map(f => f.id);
+        await pool.query(
+          `UPDATE workspace_files 
+           SET folder = NULL, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ANY($1) AND user_id = $2`,
+          [fileIds, userId]
+        );
+        totalFilesMoved += realFiles.length;
+      }
+    }
+    
+    res.json({ 
+      success: true,
+      message: `Deleted ${folderPaths.length} folder(s)`,
+      foldersDeleted: folderPaths.length,
+      filesDeleted: totalFilesDeleted,
+      filesMoved: totalFilesMoved
+    });
+  } catch (error) {
+    console.error('[Workspace] Error bulk deleting folders:', error);
+    res.status(500).json({ error: 'Failed to bulk delete folders' });
+  }
+});
+
+// ============================================================================
 // FILES ENDPOINTS
 // ============================================================================
 
@@ -66,7 +418,7 @@ router.get('/files', requireAuth, async (req, res) => {
     const { folder, tags, limit = 50, offset = 0 } = req.query;
     
     const pool = getPool();
-    let query = 'SELECT * FROM workspace_files WHERE user_id = $1';
+    let query = "SELECT * FROM workspace_files WHERE user_id = $1 AND file_name != '.folder'";
     const params = [userId];
     let paramIndex = 2;
     

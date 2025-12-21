@@ -994,13 +994,22 @@ BACKEND_TOOLS = {
     'web_search': web_search,
     'code_execution': code_execution,
     'url_context': url_context,
-    # Workspace tools (personal resources)
-    'search_workspace_files': None,  # Lazy loaded
+    # Workspace tools (personal resources) - lazy loaded
+    'search_workspace_files': None,
     'get_file_content': None,
     'search_workspace_notes': None,
     'get_note_content': None,
-    'search_user_emails': None,
-    'search_user_slack': None,
+    'get_file_metadata': None,
+    'list_folders': None,
+    'create_folder': None,
+    'rename_folder': None,
+    'delete_folder': None,
+    'list_files': None,
+    'delete_file': None,
+    'rename_file': None,
+    'move_file': None,
+    'create_text_file': None,
+    'update_file_content': None,
 }
 
 
@@ -1014,23 +1023,47 @@ def get_backend_tool(tool_key: str):
         The tool function, or None if not found
     """
     # Lazy load workspace tools
-    if tool_key in ('search_workspace_files', 'get_file_content', 'search_workspace_notes', 
-                     'get_note_content', 'search_user_emails', 'search_user_slack'):
-        if BACKEND_TOOLS[tool_key] is None:
+    workspace_tools = (
+        'search_workspace_files', 'get_file_content', 'search_workspace_notes', 
+        'get_note_content', 'get_file_metadata', 'list_folders', 'create_folder',
+        'rename_folder', 'delete_folder', 'list_files', 'delete_file', 
+        'rename_file', 'move_file', 'create_text_file', 'update_file_content'
+    )
+    
+    if tool_key in workspace_tools:
+        if BACKEND_TOOLS.get(tool_key) is None:
             from tools.workspace_tools import (
-                search_workspace_files_tool,
-                get_file_content_tool,
-                search_workspace_notes_tool,
-                get_note_content_tool,
-                search_user_emails_tool,
-                search_user_slack_tool
+                search_workspace_files,
+                get_file_content,
+                search_workspace_notes,
+                get_note_content,
+                get_file_metadata,
+                list_folders,
+                create_folder,
+                rename_folder,
+                delete_folder,
+                list_files,
+                delete_file,
+                rename_file,
+                move_file,
+                create_text_file,
+                update_file_content
             )
-            BACKEND_TOOLS['search_workspace_files'] = search_workspace_files_tool
-            BACKEND_TOOLS['get_file_content'] = get_file_content_tool
-            BACKEND_TOOLS['search_workspace_notes'] = search_workspace_notes_tool
-            BACKEND_TOOLS['get_note_content'] = get_note_content_tool
-            BACKEND_TOOLS['search_user_emails'] = search_user_emails_tool
-            BACKEND_TOOLS['search_user_slack'] = search_user_slack_tool
+            BACKEND_TOOLS['search_workspace_files'] = search_workspace_files
+            BACKEND_TOOLS['get_file_content'] = get_file_content
+            BACKEND_TOOLS['search_workspace_notes'] = search_workspace_notes
+            BACKEND_TOOLS['get_note_content'] = get_note_content
+            BACKEND_TOOLS['get_file_metadata'] = get_file_metadata
+            BACKEND_TOOLS['list_folders'] = list_folders
+            BACKEND_TOOLS['create_folder'] = create_folder
+            BACKEND_TOOLS['rename_folder'] = rename_folder
+            BACKEND_TOOLS['delete_folder'] = delete_folder
+            BACKEND_TOOLS['list_files'] = list_files
+            BACKEND_TOOLS['delete_file'] = delete_file
+            BACKEND_TOOLS['rename_file'] = rename_file
+            BACKEND_TOOLS['move_file'] = move_file
+            BACKEND_TOOLS['create_text_file'] = create_text_file
+            BACKEND_TOOLS['update_file_content'] = update_file_content
     
     return BACKEND_TOOLS.get(tool_key)
 
