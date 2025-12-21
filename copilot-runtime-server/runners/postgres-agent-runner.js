@@ -97,6 +97,11 @@ export class PostgresAgentRunner extends AgentRunner {
     
     this.metrics.runsStarted++;
     
+    // Debug: Log what CopilotRuntime is passing us
+    console.log(`[PostgresAgentRunner] run() called with threadId: ${threadId}`);
+    console.log(`[PostgresAgentRunner] agent.headers['x-copilot-thread-id']: ${agent?.headers?.['x-copilot-thread-id']}`);
+    console.log(`[PostgresAgentRunner] input.threadId: ${input?.threadId}`);
+    
     if (this.debug) {
       console.log(`[PostgresAgentRunner] Run started: ${threadId}/${runId}`);
     }
@@ -206,6 +211,7 @@ export class PostgresAgentRunner extends AgentRunner {
       
       // Compact and store (use same client for transactional consistency)
       const compactedEvents = compactEvents(currentEvents);
+      console.log(`[PostgresAgentRunner] Persisting ${compactedEvents.length} compacted events for run ${runId} (from ${currentEvents.length} raw events)`);
       await this.completeRun(runId, compactedEvents, stopRequested ? 'stopped' : 'completed', client);
       
       // Update thread state (use same client for transactional consistency)
@@ -273,13 +279,32 @@ export class PostgresAgentRunner extends AgentRunner {
       
       throw error;
       
-    } finally {
+      } finally {
       // Release database lock (always release, whether success or error)
       if (client) {
         try {
           // Try to commit if transaction is still active
+          console.log(`[PostgresAgentRunner] Committing transaction for run ${runId}`);
           await client.query('COMMIT');
+          console.log(`[PostgresAgentRunner] Transaction committed successfully for run ${runId}`);
+          
+          // Verify the data was actually saved
+          try {
+            const verify = await this.pool.query(
+              `SELECT run_id, status, jsonb_array_length(events) as event_count, completed_at 
+               FROM agent_runs WHERE run_id = $1`,
+              [runId]
+            );
+            if (verify.rows.length > 0) {
+              console.log(`[PostgresAgentRunner] ✅ Verified in DB: run_id=${verify.rows[0].run_id}, status=${verify.rows[0].status}, events=${verify.rows[0].event_count}`);
+            } else {
+              console.error(`[PostgresAgentRunner] ❌ Run ${runId} NOT FOUND in database after commit!`);
+            }
+          } catch (verifyErr) {
+            console.error(`[PostgresAgentRunner] Verification query failed: ${verifyErr.message}`);
+          }
         } catch (commitErr) {
+          console.error(`[PostgresAgentRunner] Commit failed for run ${runId}: ${commitErr.message}`);
           // Ignore commit errors (transaction may have been rolled back)
         }
         
@@ -542,6 +567,13 @@ export class PostgresAgentRunner extends AgentRunner {
   async acquireRunLock(threadId, runId, agent) {
     const client = await this.pool.connect();
     
+    // Add error handler to prevent unhandled error events from crashing the server
+    // This catches connection termination errors (timeouts, network issues, DB restarts)
+    client.on('error', (err) => {
+      console.error(`[PostgresAgentRunner] Client connection error: ${err.message}`);
+      // Don't throw - just log. Client will be released in finally block.
+    });
+    
     try {
       await client.query('BEGIN');
       
@@ -716,12 +748,21 @@ export class PostgresAgentRunner extends AgentRunner {
     // Use provided client (transactional) or pool (non-transactional)
     const dbClient = client || this.pool;
     
-    await dbClient.query(
+    console.log(`[PostgresAgentRunner] completeRun: runId=${runId}, status=${status}, events=${events.length}`);
+    
+    const result = await dbClient.query(
       `UPDATE agent_runs 
        SET status = $2, events = $3, completed_at = NOW() 
-       WHERE run_id = $1`,
+       WHERE run_id = $1
+       RETURNING run_id, status, jsonb_array_length(events) as event_count`,
       [runId, status, JSON.stringify(events)]
     );
+    
+    if (result.rows.length > 0) {
+      console.log(`[PostgresAgentRunner] completeRun SUCCESS: run_id=${result.rows[0].run_id}, status=${result.rows[0].status}, saved_events=${result.rows[0].event_count}`);
+    } else {
+      console.error(`[PostgresAgentRunner] completeRun FAILED: No rows updated for run_id=${runId}`);
+    }
   }
   
   /**
@@ -729,16 +770,18 @@ export class PostgresAgentRunner extends AgentRunner {
    * @private
    */
   async getHistoricRuns(threadId) {
+    // Load most recent N runs (DESC), then reverse to get chronological order for replay
     const result = await this.pool.query(
       `SELECT run_id, parent_run_id, events, created_at, completed_at 
        FROM agent_runs 
        WHERE thread_id = $1 AND status IN ('completed', 'stopped') 
-       ORDER BY created_at ASC 
+       ORDER BY created_at DESC 
        LIMIT $2`,
       [threadId, this.maxHistoricRuns]
     );
     
-    return result.rows.map(row => ({
+    // Reverse to get chronological order (oldest first) for proper event replay
+    return result.rows.reverse().map(row => ({
       runId: row.run_id,
       parentRunId: row.parent_run_id,
       events: row.events, // Already parsed by pg

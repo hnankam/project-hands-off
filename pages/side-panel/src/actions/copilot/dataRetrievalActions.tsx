@@ -226,6 +226,8 @@ function createChunkRangeAction(
       })() : result;
       const numChunks = status === 'complete' && parsedResult?.chunks ? parsedResult.chunks.length : 0;
 
+      const instanceId = `${name}-${start}-${end}`;
+
       return (
         <ActionStatus
           toolName={`${toolNamePrefix} ${start}–${end}`}
@@ -239,6 +241,7 @@ function createChunkRangeAction(
           args={args}
           result={result}
           error={error}
+          instanceId={instanceId}
         />
       );
     },

@@ -65,25 +65,37 @@ router.get('/folders', requireAuth, async (req, res) => {
     const userId = req.auth.user.id;
     const pool = getPool();
     
-    // Get distinct folders with file counts (excluding .folder placeholders)
+    // Get distinct folders with file counts (excluding .folder placeholders from count)
     const { rows } = await pool.query(
       `SELECT 
         folder as path,
         folder as name,
         COUNT(CASE WHEN file_name != '.folder' THEN 1 END) as file_count
        FROM workspace_files
-       WHERE user_id = $1 AND folder IS NOT NULL AND folder != ''
+       WHERE user_id = $1 AND folder IS NOT NULL AND folder != '' AND folder != 'root'
        GROUP BY folder
        ORDER BY folder`,
       [userId]
     );
     
-    // Format folder names (extract last part of path for display)
-    const folders = rows.map(row => ({
-      name: row.path.includes('/') ? row.path.split('/').pop() : row.path,
-      path: row.path,
-      file_count: parseInt(row.file_count)
-    }));
+    // Calculate subfolder counts for each folder
+    const folders = rows.map(row => {
+      // Count direct subfolders (folders that start with this path + /)
+      const subfolder_count = rows.filter(f => {
+        if (f.path === row.path) return false;
+        if (!f.path.startsWith(row.path + '/')) return false;
+        // Only count direct children (not nested subfolders)
+        const relativePath = f.path.substring(row.path.length + 1);
+        return !relativePath.includes('/');
+      }).length;
+      
+      return {
+        name: row.path.includes('/') ? row.path.split('/').pop() : row.path,
+        path: row.path,
+        file_count: parseInt(row.file_count),
+        subfolder_count: subfolder_count
+      };
+    });
     
     // Prevent caching to ensure fresh data
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
@@ -415,7 +427,7 @@ router.delete('/folders/bulk', requireAuth, async (req, res) => {
 router.get('/files', requireAuth, async (req, res) => {
   try {
     const userId = req.auth.user.id;
-    const { folder, tags, limit = 50, offset = 0 } = req.query;
+    const { folder, tags, limit = 1000, offset = 0 } = req.query; // Increased default limit to 1000
     
     const pool = getPool();
     let query = "SELECT * FROM workspace_files WHERE user_id = $1 AND file_name != '.folder'";
@@ -619,6 +631,67 @@ router.put('/files/:fileId', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('[Workspace] Error updating file:', error);
     res.status(500).json({ error: 'Failed to update file' });
+  }
+});
+
+/**
+ * Get file content (extracted text or fetch from storage)
+ * GET /api/workspace/files/:fileId/content
+ * Note: This route must come BEFORE /files/:fileId to avoid route conflicts
+ */
+router.get('/files/:fileId/content', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { fileId } = req.params;
+    
+    const pool = getPool();
+    
+    // Get file info
+    const { rows } = await pool.query(
+      'SELECT file_name, file_type, file_size, storage_url, extracted_text FROM workspace_files WHERE id = $1 AND user_id = $2',
+      [fileId, userId]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    const file = rows[0];
+    let content = file.extracted_text || '';
+    
+    // If no extracted text, try to fetch from storage for text-based files
+    if (!content) {
+      const fileType = file.file_type.toLowerCase();
+      const textBasedTypes = [
+        'text/', 'application/json', 'application/xml', 'application/yaml',
+        'application/x-yaml', 'application/javascript', 'application/typescript',
+        'application/x-sh', 'application/x-python', 'application/sql',
+        'text/markdown', 'text/plain', 'text/csv', 'text/html', 'text/css',
+      ];
+      
+      const isTextFile = textBasedTypes.some(t => fileType.startsWith(t) || fileType.includes(t));
+      
+      if (isTextFile && file.storage_url) {
+        try {
+          const fetchResponse = await fetch(file.storage_url);
+          if (fetchResponse.ok) {
+            content = await fetchResponse.text();
+          }
+        } catch (fetchError) {
+          console.warn(`[Workspace] Failed to fetch content from storage for file ${fileId}:`, fetchError);
+        }
+      }
+    }
+    
+    res.json({ 
+      content,
+      file_name: file.file_name,
+      file_type: file.file_type,
+      file_size: file.file_size,
+    });
+  } catch (error) {
+    console.error('[Workspace] Error getting file content:', error);
+    res.status(500).json({ error: 'Failed to get file content' });
   }
 });
 

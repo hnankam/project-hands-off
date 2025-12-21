@@ -23,10 +23,12 @@
  * The suggestions automatically regenerate when the page context changes
  * (via useCopilotReadable values like pageMetadataForAgent).
  */
-export const CHAT_SUGGESTIONS_INSTRUCTIONS = `Suggest concise next steps from chat + page context. Your suggestions MUST be actionable and concise, based on the current chat history and page context. Keep to 1–2 sentences.`;
 
 /**
  * Default maximum number of suggestions to show
  */
 export const DEFAULT_MAX_SUGGESTIONS = 3;
+
+export const CHAT_SUGGESTIONS_INSTRUCTIONS = `Suggest concise next steps from chat + page context. Your suggestions MUST be actionable and concise, based on the current chat history and page context. Keep to 1–2 sentences. Generate a maximum of ` + DEFAULT_MAX_SUGGESTIONS + ` suggestions.`;
+
 

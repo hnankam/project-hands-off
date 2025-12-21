@@ -106,7 +106,25 @@ export function useAgentWithErrorBanner(
     errorAutoDismissMs: errorBannerAutoDismissMs,
     agentUpdates, // Pass through configured updates
     onError: (error) => {
-      debug.error('[useAgentWithErrorBanner] Error occurred:', error.error.message);
+      // SPECIFIC filter for anyio cancel scope errors only
+      const errorMsg = error.error.message || '';
+      const lowerMsg = errorMsg.toLowerCase();
+      
+      const isAnyCancelScopeError = 
+        (lowerMsg.includes('attempted to exit') && lowerMsg.includes('cancel scope')) ||
+        (lowerMsg.includes('exit cancel scope') && lowerMsg.includes('different task'));
+      
+      if (isAnyCancelScopeError) {
+        debug.log('[useAgentWithErrorBanner] ✅ Filtered anyio cancel scope error');
+        // Still call user's onError in case they want to handle it
+        if (restConfig.onError) {
+          restConfig.onError(error);
+        }
+        return; // Don't log this error to console
+      }
+      
+      // Log all other errors normally
+      debug.error('[useAgentWithErrorBanner] Error occurred:', errorMsg);
       // Call user's onError if provided
       if (restConfig.onError) {
         restConfig.onError(error);

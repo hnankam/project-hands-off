@@ -46,8 +46,10 @@ interface PageSelectorContextValue {
   // Workspace context items
   selectedNotes?: any[];
   selectedCredentials?: any[];
+  selectedFiles?: any[];
   onNotesChange?: (notes: any[]) => void;
   onCredentialsChange?: (credentials: any[]) => void;
+  onFilesChange?: (files: any[]) => void;
 }
 
 export const PageSelectorContext = createContext<PageSelectorContextValue | null>(null);
@@ -55,6 +57,13 @@ export const PageSelectorContext = createContext<PageSelectorContextValue | null
 export const PageSelectorProvider: React.FC<{ value: PageSelectorContextValue; children: React.ReactNode }> = ({ value, children }) => (
   <PageSelectorContext.Provider value={value}>{children}</PageSelectorContext.Provider>
 );
+
+// Context for mention handlers
+interface MentionHandlers {
+  onInsert?: (mention: { type: string; id: string; workspaceFileId?: string }) => void;
+  onDelete?: (mention: { type: string; id: string; workspaceFileId?: string }) => void;
+}
+const MentionHandlersContext = createContext<MentionHandlers | null>(null);
 
 const usePageSelectorContext = () => {
   const ctx = useContext(PageSelectorContext);
@@ -122,12 +131,15 @@ const CustomTiptapTextAreaSlotInner = React.forwardRef<
 >((textareaProps, ref) => {
   const { placeholder: propsPlaceholder, ...restProps } = textareaProps;
   const context = useCopilotChatContext();
+  const mentionHandlers = useContext(MentionHandlersContext);
 
   return (
     <CustomTiptapTextArea
       {...restProps}
       ref={ref}
       placeholder={propsPlaceholder || context.labels?.chatInputPlaceholder || 'Type a message...'}
+      onMentionInsert={mentionHandlers?.onInsert}
+      onMentionDelete={mentionHandlers?.onDelete}
     />
   );
 });
@@ -191,11 +203,34 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   // Workspace context state - use context if available, otherwise local state
   const [localNotesWithContent, setLocalNotesWithContent] = useState<any[]>([]);
   const [localCredentialsWithSecrets, setLocalCredentialsWithSecrets] = useState<any[]>([]);
+  const [localFilesWithDetails, setLocalFilesWithDetails] = useState<any[]>([]);
   
   const selectedNotes = pageSelectorCtx?.selectedNotes ?? localNotesWithContent;
   const setSelectedNotes = pageSelectorCtx?.onNotesChange ?? setLocalNotesWithContent;
   const selectedCredentials = pageSelectorCtx?.selectedCredentials ?? localCredentialsWithSecrets;
   const setSelectedCredentials = pageSelectorCtx?.onCredentialsChange ?? setLocalCredentialsWithSecrets;
+  // For files, prefer whichever has content (context or local)
+  const selectedFiles = (pageSelectorCtx?.selectedFiles && pageSelectorCtx.selectedFiles.length > 0) 
+    ? pageSelectorCtx.selectedFiles 
+    : localFilesWithDetails;
+  // Create a wrapper for setSelectedFiles that updates both local and context
+  const setSelectedFiles = useCallback((files: any[] | ((prev: any[]) => any[])) => {
+    const newFiles = typeof files === 'function' ? files(localFilesWithDetails) : files;
+    setLocalFilesWithDetails(newFiles);
+    if (pageSelectorCtx?.onFilesChange) {
+      pageSelectorCtx.onFilesChange(newFiles);
+    }
+  }, [localFilesWithDetails, pageSelectorCtx]);
+  
+  // Debug logging for selectedFiles
+  useEffect(() => {
+    console.log('[CustomInputV2] selectedFiles updated:', {
+      count: selectedFiles.length,
+      usingContext: !!pageSelectorCtx,
+      hasContextFiles: !!pageSelectorCtx?.selectedFiles,
+      localFilesCount: localFilesWithDetails.length,
+    });
+  }, [selectedFiles, localFilesWithDetails, pageSelectorCtx]);
   
   // Track selected IDs locally for the selector UI
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
@@ -212,6 +247,9 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   // Attachments state
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const attachmentsRef = useRef<AttachmentItem[]>([]);
+  
+  // Track mapping between mention IDs and attachment IDs (for auto-added attachments)
+  const mentionToAttachmentMapRef = useRef<Map<string, string>>(new Map());
   
   // Workspace files selector state
   const [showWorkspaceFilesModal, setShowWorkspaceFilesModal] = useState(false);
@@ -653,7 +691,109 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       setLoadingWorkspaceFiles(false);
     }
   };
-
+  
+  // Handle mention insertions - auto-add non-text files as attachments
+  const handleMentionInsert = useCallback(async (mention: { type: string; id: string; workspaceFileId?: string }) => {
+    if (mention.type !== 'workspace_file' || !mention.workspaceFileId) return;
+    
+    // Find the file in workspaceFiles or selectedFiles
+    let file = workspaceFiles.find(f => f.id === mention.workspaceFileId) ||
+               selectedFiles.find(f => f.id === mention.workspaceFileId);
+    
+    // If not found locally, try to fetch it
+    if (!file) {
+      try {
+        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${baseURL}/api/workspace/files/${mention.workspaceFileId}/metadata`, {
+          credentials: 'include',
+        });
+        if (response.ok) {
+          const data = await response.json();
+          file = data.file;
+        }
+      } catch (error) {
+        console.error('[CustomInputV2] Error fetching file metadata:', error);
+      }
+    }
+    
+    if (!file) {
+      console.warn('[CustomInputV2] File not found for mention:', mention.workspaceFileId);
+      return;
+    }
+    
+    // Check if file is non-text (images, PDFs, etc.)
+    const fileType = file.file_type || '';
+    const fileName = file.file_name || '';
+    const isTextFile = fileType.startsWith('text/') ||
+                      fileType === 'application/json' ||
+                      fileType === 'application/xml' ||
+                      fileType === 'application/yaml' ||
+                      fileType === 'application/x-yaml' ||
+                      fileType === 'application/javascript' ||
+                      fileType === 'application/typescript' ||
+                      fileType === 'application/x-sh' ||
+                      fileType === 'application/x-python' ||
+                      fileType === 'application/sql' ||
+                      fileType === 'application/markdown' ||
+                      fileType === 'text/markdown' ||
+                      fileName.endsWith('.md') ||
+                      fileName.endsWith('.txt') ||
+                      fileName.endsWith('.json') ||
+                      fileName.endsWith('.yaml') ||
+                      fileName.endsWith('.yml') ||
+                      fileName.endsWith('.js') ||
+                      fileName.endsWith('.ts') ||
+                      fileName.endsWith('.jsx') ||
+                      fileName.endsWith('.tsx') ||
+                      fileName.endsWith('.py') ||
+                      fileName.endsWith('.sh') ||
+                      fileName.endsWith('.sql');
+    
+    // If it's a non-text file, add it as an attachment
+    if (!isTextFile) {
+      // Check if already attached
+      const alreadyAttached = attachments.some(a => 
+        a.id === `workspace-${file.id}` || 
+        (a.name === file.file_name && a.uploadedUrl === file.storage_url)
+      );
+      
+      if (!alreadyAttached) {
+        const newAttachment: AttachmentItem = {
+          id: `workspace-${file.id}`,
+          file: null as any, // Not a File object, already uploaded
+          name: file.file_name,
+          size: file.file_size,
+          previewUrl: file.storage_url,
+          status: 'uploaded' as const,
+          progress: 100,
+          uploadedUrl: file.storage_url,
+          mimeType: file.file_type,
+        };
+        
+        setAttachments(prev => [...prev, newAttachment]);
+        // Track the mapping between mention ID and attachment ID
+        mentionToAttachmentMapRef.current.set(mention.id, newAttachment.id);
+        console.log('[CustomInputV2] Auto-added non-text file as attachment:', file.file_name);
+      }
+    }
+  }, [workspaceFiles, selectedFiles, attachments]);
+  
+  // Handle mention deletions - remove corresponding attachments
+  const handleMentionDelete = useCallback((mention: { type: string; id: string; workspaceFileId?: string }) => {
+    if (mention.type !== 'workspace_file' || !mention.workspaceFileId) return;
+    
+    // Find the attachment ID from the mapping
+    const attachmentId = mentionToAttachmentMapRef.current.get(mention.id);
+    
+    if (attachmentId) {
+      // Remove the attachment
+      setAttachments(prev => prev.filter(a => a.id !== attachmentId));
+      // Remove from mapping
+      mentionToAttachmentMapRef.current.delete(mention.id);
+      console.log('[CustomInputV2] Removed attachment for deleted mention:', mention.id);
+    }
+  }, []);
+  
   // Fetch workspace folders
   const fetchWorkspaceFolders = async () => {
     try {
@@ -672,7 +812,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     } catch (error) {
       console.error('[Workspace Folders] Error loading folders:', error);
       setWorkspaceFolders([]);
-    }
+      }
   };
   
   // Navigate to folder
@@ -689,6 +829,40 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     fetchWorkspaceFiles();
     fetchWorkspaceFolders();
   };
+  
+  // Load workspace files for mentions on mount
+  useEffect(() => {
+    const loadFilesForMentions = async () => {
+      try {
+        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${baseURL}/api/workspace/files?limit=1000`, {
+          credentials: 'include',
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const files = data.files || [];
+          console.log('[CustomInputV2] Loaded files for mentions:', files.length);
+          // Set all workspace files as available for mentions
+          setSelectedFiles(files);
+        }
+      } catch (error) {
+        console.error('[CustomInputV2] Error loading files for mentions:', error);
+      }
+    };
+    
+    if (user) {
+      loadFilesForMentions();
+    }
+  }, [user]);
+  
+  // Sync workspaceFiles to selectedFiles for mentions whenever workspaceFiles changes
+  useEffect(() => {
+    if (workspaceFiles.length > 0) {
+      console.log('[CustomInputV2] Syncing workspaceFiles to selectedFiles:', workspaceFiles.length);
+      setSelectedFiles(workspaceFiles);
+    }
+  }, [workspaceFiles]);
   
   // Add workspace files as attachments
   const addWorkspaceFilesAsAttachments = () => {
@@ -713,6 +887,16 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     });
     
     setAttachments(prev => [...prev, ...newAttachments]);
+    
+    // Files are already in selectedFiles (loaded on mount), but ensure they're there
+    setSelectedFiles(prev => {
+      const newFiles = filesToAdd.filter(file => !prev.some(f => f.id === file.id));
+      if (newFiles.length > 0) {
+        return [...prev, ...newFiles];
+      }
+      return prev;
+    });
+    
     setShowWorkspaceFilesModal(false);
     setSelectedWorkspaceFileIds(new Set());
     setSelectedFolderPaths(new Set());
@@ -730,7 +914,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
       })
       .map(file => file.id);
   };
-
+  
   // Toggle workspace file selection
   const toggleWorkspaceFileSelection = (fileId: string) => {
     const file = workspaceFiles.find(f => f.id === fileId);
@@ -1546,6 +1730,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
 
   return (
     <>
+    <MentionHandlersContext.Provider value={{ onInsert: handleMentionInsert, onDelete: handleMentionDelete }}>
     <CopilotChatInput
       {...props}
       textArea={CustomTiptapTextAreaSlot as any}
@@ -1982,6 +2167,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         );
       }}
     </CopilotChatInput>
+    </MentionHandlersContext.Provider>
     
     {/* Workspace Files Modal */}
     {showWorkspaceFilesModal && (
@@ -1990,7 +2176,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm"
           style={{ zIndex: 10000 }}
-          onClick={() => setShowWorkspaceFilesModal(false)}
+        onClick={() => setShowWorkspaceFilesModal(false)}
         />
         
         {/* Modal */}
@@ -1998,20 +2184,20 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
           className="fixed inset-0 flex items-center justify-center p-4 attachment-modal"
           style={{ zIndex: 10001 }}
         >
-          <div
-            className={cn(
+        <div
+          className={cn(
               'w-full max-w-4xl rounded-lg shadow-xl',
               isLight ? 'border border-gray-200 bg-gray-50' : 'border border-gray-700 bg-[#151C24]'
-            )}
-            onClick={(e) => e.stopPropagation()}
+          )}
+          onClick={(e) => e.stopPropagation()}
             style={{ maxWidth: 'min(56rem, 90vw)' }}
-          >
+        >
             {/* Header with Breadcrumbs */}
             <div className={cn('flex items-center justify-between border-b px-3 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <h2 className={cn('text-base font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+              <h2 className={cn('text-base font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                   Select Files
-                </h2>
+              </h2>
                 <span className={cn('text-xs mx-2', isLight ? 'text-gray-400' : 'text-gray-500')}>|</span>
                 <div className="flex items-center gap-1.5 overflow-x-auto">
                   <button
@@ -2050,33 +2236,33 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                   })}
                 </div>
               </div>
-              <button
-                onClick={() => setShowWorkspaceFilesModal(false)}
-                className={cn(
+            <button
+              onClick={() => setShowWorkspaceFilesModal(false)}
+              className={cn(
                   'rounded-md p-0.5 transition-colors flex-shrink-0',
                   isLight ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700' : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
-                )}
-              >
+              )}
+            >
                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <path d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+              </svg>
+            </button>
+          </div>
             
             {/* Content */}
             <div className="px-3 py-2">
-              <div 
+          <div 
                 className="overflow-y-auto" 
                 style={{ maxHeight: '400px' }}
-              >
-                {loadingWorkspaceFiles ? (
+          >
+            {loadingWorkspaceFiles ? (
                   <div className={cn('py-6 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    Loading files...
-                  </div>
-                ) : !workspaceFiles || workspaceFiles.length === 0 ? (
+                Loading files...
+              </div>
+            ) : !workspaceFiles || workspaceFiles.length === 0 ? (
                   <div className={cn('py-6 text-center text-sm', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    No files in workspace. Upload files to see them here.
-                  </div>
+                No files in workspace. Upload files to see them here.
+              </div>
                 ) : (() => {
                   // Get folders and files for current directory
                   const currentFolders = workspaceFolders.filter(f => {
@@ -2094,7 +2280,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                     const fileFolder = f.folder === 'root' ? null : f.folder;
                     return fileFolder === currentFolder;
                   });
-
+                      
                   const folderIcon = (
                     <svg className={cn('w-4 h-4', isLight ? 'text-blue-500' : 'text-blue-400')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -2102,7 +2288,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                   );
 
                   if (currentFolders.length === 0 && currentFiles.length === 0) {
-                    return (
+                  return (
                       <div className={cn('py-6 text-center text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                         {currentFolder ? 'This folder is empty.' : 'No files yet.'}
                       </div>
@@ -2135,15 +2321,15 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                             return (
                               <tr
                                 key={folder.path}
-                                className={cn(
+                      className={cn(
                                   'group border-b transition-colors',
                                   isLight ? 'border-gray-100 hover:bg-blue-50/50' : 'border-gray-700 hover:bg-blue-900/10',
                                   isFolderSelected && (isLight ? 'bg-blue-50' : 'bg-blue-900/20')
-                                )}
-                              >
+                            )}
+                          >
                                 <td className="px-3 py-1.5">
                                   <div
-                                    className={cn(
+                              className={cn(
                                       'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity cursor-pointer',
                                       isFolderSelected
                                         ? 'bg-blue-600/80 opacity-100'
@@ -2159,13 +2345,13 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                                     {isFolderSelected && (
                                       <svg
                                         className="h-2 w-2 text-white"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
                                         strokeWidth={3}
-                                      >
+                              >
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                      </svg>
+                              </svg>
                                     )}
                                     {isPartiallySelected && !isFolderSelected && (
                                       <svg
@@ -2181,7 +2367,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                                 <td 
                                   className="px-3 py-1.5 cursor-pointer"
                                   onClick={() => navigateToFolder(folder.path)}
-                                >
+                          >
                                   <div className="flex items-center gap-2">
                                     {folderIcon}
                                     <span className={cn('font-medium', isLight ? 'text-blue-600' : 'text-blue-400')}>
@@ -2194,39 +2380,39 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                                 </td>
                                 <td className={cn('px-3 py-1.5 text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>—</td>
                                 <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>—</td>
-                              </tr>
+                                  </tr>
                             );
                           })}
 
                           {/* Files */}
                           {currentFiles.map(file => {
                             const fileId = file.id;
-                            const isSelected = selectedWorkspaceFileIds.has(fileId);
-                            
-                            return (
-                              <tr
-                                key={fileId}
-                                className={cn(
+                                    const isSelected = selectedWorkspaceFileIds.has(fileId);
+                                    
+                                    return (
+                                      <tr
+                                        key={fileId}
+                                        className={cn(
                                   'group border-b transition-colors',
-                                  isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
-                                  isSelected && (isLight ? 'bg-blue-50' : 'bg-blue-900/20')
-                                )}
+                                          isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
+                                          isSelected && (isLight ? 'bg-blue-50' : 'bg-blue-900/20')
+                                        )}
                                 onClick={() => toggleWorkspaceFileSelection(fileId)}
-                              >
-                                <td className="px-3 py-1.5">
-                                  <div
-                                    className={cn(
+                    >
+                                        <td className="px-3 py-1.5">
+                                          <div
+                                            className={cn(
                                       'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity cursor-pointer',
-                                      isSelected
+                                              isSelected
                                         ? 'bg-blue-600/80 opacity-100'
                                         : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500')
-                                    )}
+                                            )}
                                     onClick={e => {
-                                      e.stopPropagation();
-                                      toggleWorkspaceFileSelection(fileId);
-                                    }}
-                                  >
-                                    {isSelected && (
+                                              e.stopPropagation();
+                                              toggleWorkspaceFileSelection(fileId);
+                                            }}
+                                          >
+                                            {isSelected && (
                                       <svg
                                         className="h-2 w-2 text-white"
                                         fill="none"
@@ -2234,73 +2420,73 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                                         viewBox="0 0 24 24"
                                         strokeWidth={3}
                                       >
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                      </svg>
-                                    )}
-                                  </div>
-                                </td>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                              </svg>
+                                            )}
+                                          </div>
+                                        </td>
                                 <td className="px-3 py-1.5">
                                   <div className="flex items-center gap-2">
                                     {getFileIcon(file.file_name)}
-                                    <span className={cn('font-medium truncate', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')} title={file.file_name}>
+                                            <span className={cn('font-medium truncate', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')} title={file.file_name}>
                                       {file.file_name}
-                                    </span>
-                                  </div>
-                                </td>
+                                            </span>
+                        </div>
+                                        </td>
                                 <td className={cn('px-3 py-1.5 text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>
                                   {formatSize(file.file_size)}
-                                </td>
+                                        </td>
                                 <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
                                   {formatDate(file.created_at)}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                        </div>
                   );
                 })()}
               </div>
-            </div>
-            
-            {/* Footer */}
+          </div>
+          
+          {/* Footer */}
             <div className={cn('flex items-center justify-between border-t px-3 py-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
               <span className="text-xs" style={{ color: isLight ? '#6b7280' : '#9ca3af' }}>
-                {selectedWorkspaceFileIds.size} file(s) selected
+              {selectedWorkspaceFileIds.size} file(s) selected
                 {selectedFolderPaths.size > 0 && ` from ${selectedFolderPaths.size} folder(s)`}
-              </span>
+            </span>
               <div className="flex items-center gap-2">
-                <button
+              <button
                   onClick={() => {
                     setShowWorkspaceFilesModal(false);
                     setSelectedWorkspaceFileIds(new Set());
                     setSelectedFolderPaths(new Set());
                   }}
-                  className={cn(
+                className={cn(
                     'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
                     isLight ? 'bg-gray-200 hover:bg-gray-300' : 'bg-gray-700 hover:bg-gray-600'
-                  )}
+                )}
                   style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={addWorkspaceFilesAsAttachments}
-                  disabled={selectedWorkspaceFileIds.size === 0}
-                  className={cn(
+              >
+                Cancel
+              </button>
+              <button
+                onClick={addWorkspaceFilesAsAttachments}
+                disabled={selectedWorkspaceFileIds.size === 0}
+                className={cn(
                     'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    selectedWorkspaceFileIds.size === 0
+                  selectedWorkspaceFileIds.size === 0
                       ? 'opacity-50 cursor-not-allowed bg-gray-400 text-gray-600'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
-                  )}
-                >
-                  Add {selectedWorkspaceFileIds.size > 0 && `(${selectedWorkspaceFileIds.size})`}
-                </button>
-              </div>
+                )}
+              >
+                Add {selectedWorkspaceFileIds.size > 0 && `(${selectedWorkspaceFileIds.size})`}
+              </button>
             </div>
           </div>
         </div>
+      </div>
       </>
     )}
     

@@ -256,6 +256,13 @@ def register_agent_routes(app: FastAPI) -> None:
     async def run_agent(
         agent_type: str, model: str, request: Request, background_tasks: BackgroundTasks
     ):
+        # Extract session/thread IDs early for logging
+        session_id_header = request.headers.get("x-copilot-session-id")
+        thread_id_header = request.headers.get("x-copilot-thread-id")
+        
+        # Log incoming request for debugging
+        logger.info(f"🐍 [PYTHON] Received request: agent={agent_type}, model={model}, session={session_id_header}, thread={thread_id_header}")
+        
         # Enforce authentication context propagated from runtime
         (
             session_id,
@@ -346,7 +353,7 @@ def register_agent_routes(app: FastAPI) -> None:
             send_stream, receive_stream = create_memory_object_stream[str]()
 
             async def run_agent_task(send_stream: MemoryObjectSendStream[str]) -> None:
-                async with send_stream:
+                try:
                     # Get agent info for auxiliary agents
                     from config.prompts import get_agent_info_for_context
                     agent_info = get_agent_info_for_context(agent_type, organization_id, team_id) or {}
@@ -387,16 +394,39 @@ def register_agent_routes(app: FastAPI) -> None:
                     )
                     async for event in event_stream:
                         await send_stream.send(event)
+                except Exception as e:
+                    logger.error(f"Agent execution error: {e}")
+                finally:
+                    try:
+                        await send_stream.aclose()
+                    except Exception:
+                        pass
 
             async def event_generator():
-                """Generate SSE events from memory stream."""
+                """Generate SSE events from memory stream.
+                
+                Uses anyio.create_task_group() to keep both producer and consumer
+                in the same anyio context, avoiding cancel scope conflicts.
+                """
                 async with create_task_group() as tg:
+                    # Start agent task in task group (same cancel scope as streams)
                     tg.start_soon(run_agent_task, send_stream)
-                    async with receive_stream:
+                    
+                    # Yield events from receive_stream in same task group context
+                    # When client disconnects, task group will cancel agent task cleanly
+                    try:
                         async for event_str in receive_stream:
                             yield event_str
+                    except Exception as e:
+                        logger.error(f"Event streaming error: {e}")
+                    finally:
+                        try:
+                            await receive_stream.aclose()
+                        except Exception:
+                            pass
 
             response = StreamingResponse(event_generator(), media_type=accept)
+            logger.info(f"🐍 [PYTHON] Streaming response started: agent={agent_type}, model={model}, session={session_id}, thread={conversation_id}")
 
         except Exception as exc:
             logger.exception(

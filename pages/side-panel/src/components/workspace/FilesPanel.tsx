@@ -5,6 +5,8 @@ import { AdminConfirmDialog } from '../admin/modals/AdminConfirmDialog';
 import { cn } from '@extension/ui';
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import React, { useState, useEffect, useCallback } from 'react';
+import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
+import { CodeBlock } from '../chat/slots/CustomCodeBlock';
 
 interface WorkspaceFile {
   id: string;
@@ -22,6 +24,7 @@ interface FolderItem {
   name: string;
   path: string;
   file_count: number;
+  subfolder_count: number;
 }
 
 export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void }> = ({ isLight, onStatsChange }) => {
@@ -56,6 +59,11 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const newFolderInputRef = React.useRef<HTMLInputElement>(null);
+
+  // File preview state
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
+  const [fileContents, setFileContents] = useState<Map<string, { content: string; loading: boolean; error?: string }>>(new Map());
+  const [loadingPreviews, setLoadingPreviews] = useState<Set<string>>(new Set());
 
   const loadFiles = useCallback(async () => {
     try {
@@ -93,6 +101,13 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     loadFiles();
     loadFolders();
   }, [loadFiles, loadFolders]);
+
+  // Reload files when navigating to a folder to ensure fresh data
+  useEffect(() => {
+    if (currentFolder !== null) {
+      loadFiles();
+    }
+  }, [currentFolder, loadFiles]);
 
   // Focus new folder input when it appears
   React.useEffect(() => {
@@ -516,7 +531,11 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     return f.path.startsWith(currentFolder + '/') && itemDepth === folderDepth + 1;
   });
 
-  const currentFiles = files.filter(f => normalizeFolder(f.folder) === currentFolder);
+  // Filter files for current directory
+  const currentFiles = files.filter(f => {
+    const fileFolder = normalizeFolder(f.folder);
+    return fileFolder === currentFolder;
+  });
 
   // Breadcrumb path
   const pathParts = currentFolder ? currentFolder.split('/') : [];
@@ -563,6 +582,210 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
       <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
     </svg>
   );
+
+  // File preview functions
+  const toggleFilePreview = async (fileId: string, file: WorkspaceFile) => {
+    if (expandedFiles.has(fileId)) {
+      // Collapse
+      const newExpanded = new Set(expandedFiles);
+      newExpanded.delete(fileId);
+      setExpandedFiles(newExpanded);
+    } else {
+      // Expand and fetch content if not already loaded
+      const newExpanded = new Set(expandedFiles);
+      newExpanded.add(fileId);
+      setExpandedFiles(newExpanded);
+
+      // Check if it's a PDF - PDFs don't need content fetching
+      const fileType = getFileType(file.file_name);
+      if (!fileType.isPdf && !fileContents.has(fileId)) {
+        await fetchFileContent(fileId, file);
+      }
+    }
+  };
+
+  const fetchFileContent = async (fileId: string, file: WorkspaceFile) => {
+    const newLoadingPreviews = new Set(loadingPreviews);
+    newLoadingPreviews.add(fileId);
+    setLoadingPreviews(newLoadingPreviews);
+
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseURL}/api/workspace/files/${fileId}/content`, {
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch file content');
+      }
+
+      const data = await response.json();
+      const newContents = new Map(fileContents);
+      newContents.set(fileId, {
+        content: data.content || '',
+        loading: false,
+      });
+      setFileContents(newContents);
+    } catch (error) {
+      console.error('[Workspace] Failed to fetch file content:', error);
+      const newContents = new Map(fileContents);
+      newContents.set(fileId, {
+        content: '',
+        loading: false,
+        error: 'Failed to load content',
+      });
+      setFileContents(newContents);
+    } finally {
+      const newLoadingPreviews = new Set(loadingPreviews);
+      newLoadingPreviews.delete(fileId);
+      setLoadingPreviews(newLoadingPreviews);
+    }
+  };
+
+  const getFileType = (fileName: string): { language: string; isMarkdown: boolean; isImage: boolean; isPdf: boolean } => {
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+
+    if (['md', 'markdown'].includes(ext)) {
+      return { language: 'markdown', isMarkdown: true, isImage: false, isPdf: false };
+    }
+
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) {
+      return { language: '', isMarkdown: false, isImage: true, isPdf: false };
+    }
+
+    if (ext === 'pdf') {
+      return { language: '', isMarkdown: false, isImage: false, isPdf: true };
+    }
+
+    const languageMap: Record<string, string> = {
+      js: 'javascript',
+      jsx: 'jsx',
+      ts: 'typescript',
+      tsx: 'tsx',
+      py: 'python',
+      rb: 'ruby',
+      java: 'java',
+      c: 'c',
+      cpp: 'cpp',
+      cs: 'csharp',
+      go: 'go',
+      rs: 'rust',
+      php: 'php',
+      swift: 'swift',
+      kt: 'kotlin',
+      scala: 'scala',
+      html: 'html',
+      css: 'css',
+      scss: 'scss',
+      sass: 'sass',
+      json: 'json',
+      xml: 'xml',
+      yaml: 'yaml',
+      yml: 'yaml',
+      sql: 'sql',
+      sh: 'bash',
+      bash: 'bash',
+      zsh: 'bash',
+      ps1: 'powershell',
+      dockerfile: 'dockerfile',
+      txt: 'text',
+    };
+
+    return { 
+      language: languageMap[ext] || 'text',
+      isMarkdown: false,
+      isImage: false,
+      isPdf: false,
+    };
+  };
+
+  const renderFilePreview = (file: WorkspaceFile) => {
+    const fileData = fileContents.get(file.id);
+    const fileType = getFileType(file.file_name);
+
+    // For PDFs, we don't need to load content - just show the iframe
+    if (fileType.isPdf) {
+      return (
+        <div className="flex flex-col items-center justify-center py-4 px-4">
+          <iframe
+            src={file.storage_url}
+            className="w-full rounded border"
+            style={{
+              height: '600px',
+              borderColor: isLight ? '#e5e7eb' : '#374151',
+            }}
+            title={file.file_name}
+          />
+          <a
+            href={file.storage_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              'mt-3 flex items-center gap-2 rounded px-3 py-2 text-xs font-medium transition-colors',
+              isLight
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            )}>
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+            Open in New Tab
+          </a>
+        </div>
+      );
+    }
+
+    if (!fileData) return null;
+
+    if (fileData.loading) {
+      return (
+        <div className={cn('flex items-center justify-center py-8', isLight ? 'text-gray-500' : 'text-gray-400')}>
+          <div className="text-xs">Loading preview...</div>
+        </div>
+      );
+    }
+
+    if (fileData.error) {
+      return (
+        <div className={cn('flex items-center justify-center py-8', isLight ? 'text-red-600' : 'text-red-400')}>
+          <div className="text-xs">{fileData.error}</div>
+        </div>
+      );
+    }
+
+    // Render image
+    if (fileType.isImage) {
+      return (
+        <div className="flex items-center justify-center py-4">
+          <img
+            src={file.storage_url}
+            alt={file.file_name}
+            className="max-h-96 max-w-full rounded border"
+            style={{
+              borderColor: isLight ? '#e5e7eb' : '#374151',
+            }}
+            referrerPolicy="no-referrer"
+          />
+        </div>
+      );
+    }
+
+    // Render markdown
+    if (fileType.isMarkdown) {
+      return (
+        <div className={cn('px-4 py-3', isLight ? 'bg-white' : 'bg-[#0d1117]')}>
+          <CustomMarkdownRenderer content={fileData.content} isLight={isLight} />
+        </div>
+      );
+    }
+
+    // Render code/text
+    return (
+      <div className="overflow-auto" style={{ maxHeight: '400px' }}>
+        <CodeBlock language={fileType.language} code={fileData.content} isLight={isLight} />
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -876,7 +1099,8 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                           {folder.name}
                         </span>
                         <span className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                          ({folder.file_count} {folder.file_count === 1 ? 'file' : 'files'})
+                          ({folder.file_count} {folder.file_count === 1 ? 'file' : 'files'}
+                          {folder.subfolder_count > 0 && `, ${folder.subfolder_count} ${folder.subfolder_count === 1 ? 'folder' : 'folders'}`})
                         </span>
                       </div>
                     </td>
@@ -909,91 +1133,117 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
                 {/* Files */}
                 {currentFiles.map(file => (
-                  <tr
-                    key={file.id}
-                    className={cn(
-                      'group border-b transition-colors',
-                      isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
-                    )}
-                    onClick={() => {
-                      if (bulkSelectMode) {
-                        toggleFileSelection(file.id);
-                      }
-                    }}>
-                    {bulkSelectMode && (
-                      <td className="px-3 py-1.5">
-                        <div
-                          className={cn(
-                            'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
-                            selectedFiles.has(file.id)
-                              ? 'bg-blue-600/80 opacity-100'
-                              : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500'),
-                          )}
-                          onClick={e => {
-                            e.stopPropagation();
-                            toggleFileSelection(file.id);
-                          }}>
-                          {selectedFiles.has(file.id) && (
-                            <svg
-                              className="h-2 w-2 text-white"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                              strokeWidth={3}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </div>
-                      </td>
-                    )}
-                    <td className="px-3 py-1.5">
-                      {renamingFileId === file.id ? (
-                        <div className="flex items-center gap-2">
-                          {getFileIcon(file.file_name)}
-                          <input
-                            ref={renameInputRef}
-                            type="text"
-                            value={renameValue}
-                            onChange={e => setRenameValue(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                handleSaveRename(file.id);
-                              } else if (e.key === 'Escape') {
-                                handleCancelRename();
-                              }
-                            }}
-                            onBlur={() => handleSaveRename(file.id)}
-                            className={cn(
-                              'flex-1 rounded border px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500',
-                              isLight ? 'border-gray-300 bg-white text-gray-900' : 'border-gray-600 bg-[#1a1f28] text-white',
-                            )}
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          {getFileIcon(file.file_name)}
-                          <span className={cn('font-medium truncate', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')} title={file.file_name}>
-                            {file.file_name}
-                          </span>
-                          <button
-                            onClick={() => handleStartRename(file)}
-                            disabled={renamingFileId !== null}
-                            className={cn(
-                              'rounded p-0.5 opacity-0 transition-all group-hover:opacity-100',
-                              renamingFileId !== null
-                                ? 'cursor-not-allowed'
-                                : isLight
-                                  ? 'text-gray-400 hover:bg-blue-50 hover:text-blue-600'
-                                  : 'text-gray-500 hover:bg-blue-900/20 hover:text-blue-400',
-                            )}
-                            title="Rename file">
-                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </button>
-                        </div>
+                  <React.Fragment key={file.id}>
+                    <tr
+                      className={cn(
+                        'group border-b transition-colors',
+                        isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
                       )}
-                    </td>
+                      onClick={() => {
+                        if (bulkSelectMode) {
+                          toggleFileSelection(file.id);
+                        }
+                      }}>
+                      {bulkSelectMode && (
+                        <td className="px-3 py-1.5">
+                          <div
+                            className={cn(
+                              'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
+                              selectedFiles.has(file.id)
+                                ? 'bg-blue-600/80 opacity-100'
+                                : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500'),
+                            )}
+                            onClick={e => {
+                              e.stopPropagation();
+                              toggleFileSelection(file.id);
+                            }}>
+                            {selectedFiles.has(file.id) && (
+                              <svg
+                                className="h-2 w-2 text-white"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                      <td className="px-3 py-1.5">
+                        {renamingFileId === file.id ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-3" /> {/* Spacer for chevron alignment */}
+                            {getFileIcon(file.file_name)}
+                            <input
+                              ref={renameInputRef}
+                              type="text"
+                              value={renameValue}
+                              onChange={e => setRenameValue(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  handleSaveRename(file.id);
+                                } else if (e.key === 'Escape') {
+                                  handleCancelRename();
+                                }
+                              }}
+                              onBlur={() => handleSaveRename(file.id)}
+                              className={cn(
+                                'flex-1 rounded border px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500',
+                                isLight ? 'border-gray-300 bg-white text-gray-900' : 'border-gray-600 bg-[#1a1f28] text-white',
+                              )}
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            {/* Chevron for preview toggle */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFilePreview(file.id, file);
+                              }}
+                              className={cn(
+                                'flex items-center justify-center rounded p-0.5 transition-all',
+                                isLight
+                                  ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                                  : 'text-gray-500 hover:bg-gray-800 hover:text-gray-300',
+                              )}
+                              title={expandedFiles.has(file.id) ? 'Hide preview' : 'Show preview'}>
+                              <svg
+                                className="h-3 w-3 transition-transform"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                strokeWidth={2.5}
+                                style={{
+                                  transform: expandedFiles.has(file.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                                }}>
+                                <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+                            {getFileIcon(file.file_name)}
+                            <span className={cn('font-medium truncate', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')} title={file.file_name}>
+                              {file.file_name}
+                            </span>
+                            <button
+                              onClick={() => handleStartRename(file)}
+                              disabled={renamingFileId !== null}
+                              className={cn(
+                                'rounded p-0.5 opacity-0 transition-all group-hover:opacity-100',
+                                renamingFileId !== null
+                                  ? 'cursor-not-allowed'
+                                  : isLight
+                                    ? 'text-gray-400 hover:bg-blue-50 hover:text-blue-600'
+                                    : 'text-gray-500 hover:bg-blue-900/20 hover:text-blue-400',
+                              )}
+                              title="Rename file">
+                              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                          </div>
+                        )}
+                      </td>
                     <td className={cn('px-3 py-1.5 text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>
                       {formatSize(file.file_size)}
                     </td>
@@ -1003,6 +1253,27 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                     {!bulkSelectMode && (
                     <td className="px-3 py-1.5 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFilePreview(file.id, file);
+                          }}
+                          className={cn(
+                            'rounded p-1 transition-colors',
+                            expandedFiles.has(file.id)
+                              ? isLight
+                                ? 'text-blue-600'
+                                : 'text-blue-400'
+                              : isLight
+                                ? 'text-gray-400 hover:text-blue-600'
+                                : 'text-gray-500 hover:text-blue-400',
+                          )}
+                          title={expandedFiles.has(file.id) ? 'Hide preview' : 'View file'}>
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        </button>
                         <a
                           href={file.storage_url}
                           download={file.file_name}
@@ -1037,6 +1308,30 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                     </td>
                     )}
                   </tr>
+                  {/* File Preview Row */}
+                  {expandedFiles.has(file.id) && (
+                    <tr
+                      key={`${file.id}-preview`}
+                      className={cn(
+                        'border-b',
+                        isLight ? 'border-gray-100 bg-gray-50/50' : 'border-gray-700 bg-gray-900/20',
+                      )}>
+                      <td colSpan={bulkSelectMode ? 5 : 4}>
+                        <div
+                          className={cn(
+                            'border-l-2 ml-3',
+                            isLight ? 'border-blue-200' : 'border-blue-800',
+                          )}
+                          style={{
+                            maxHeight: '500px',
+                            overflow: 'auto',
+                          }}>
+                          {renderFilePreview(file)}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

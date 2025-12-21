@@ -267,13 +267,13 @@ async def search_workspace_notes(
                 # Use full-text search for specific queries
                 await cur.execute("""
                     SELECT id, title, content, folder, tags, created_at, updated_at,
-                           ts_rank(
-                               to_tsvector('english', title || ' ' || content),
-                               plainto_tsquery('english', %s)
-                           ) as rank
+                        ts_rank(
+                            to_tsvector('english', title || ' ' || content),
+                            plainto_tsquery('english', %s)
+                        ) as rank
                     FROM workspace_notes
                     WHERE user_id = %s
-                      AND to_tsvector('english', title || ' ' || content) @@ plainto_tsquery('english', %s)
+                    AND to_tsvector('english', title || ' ' || content) @@ plainto_tsquery('english', %s)
                     ORDER BY rank DESC, updated_at DESC
                     LIMIT %s
                 """, (query, user_id, query, limit))

@@ -52,6 +52,8 @@ interface CustomTiptapTextAreaProps extends React.TextareaHTMLAttributes<HTMLTex
   onFilesPicked?: (files: FileList | null) => void;
   placeholder?: string;
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onMentionInsert?: (mention: { type: string; id: string; workspaceFileId?: string }) => void;
+  onMentionDelete?: (mention: { type: string; id: string; workspaceFileId?: string }) => void;
 }
 
 /**
@@ -70,6 +72,8 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
       value,
       onChange,
       onKeyDown,
+      onMentionInsert,
+      onMentionDelete,
       className,
       ...restProps
     },
@@ -83,11 +87,12 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
     // Access raw context for langGraphInterruptAction (not in typed interface)
     const copilotContext = (copilotRuntimeContext as any)._rawContext || copilotRuntimeContext;
     
-    // Get selected pages, notes, credentials, and agent state from PageSelectorContext
+    // Get selected pages, notes, credentials, files, and agent state from PageSelectorContext
     const pageSelectorCtx = useContext(PageSelectorContext);
     const selectedPageURLs = pageSelectorCtx?.selectedPageURLs ?? [];
     const selectedNotes = pageSelectorCtx?.selectedNotes ?? [];
     const selectedCredentials = pageSelectorCtx?.selectedCredentials ?? [];
+    const selectedFiles = pageSelectorCtx?.selectedFiles ?? [];
     const agentState = pageSelectorCtx?.agentState;
     
     // Internal ref for the container div - this is what ResizeObserver will observe
@@ -211,6 +216,7 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
     const agentStateRef = useRef(agentState);
     const selectedNotesRef = useRef(selectedNotes);
     const selectedCredentialsRef = useRef(selectedCredentials);
+    const selectedFilesRef = useRef(selectedFiles);
     
     // Update refs when values change
     useEffect(() => {
@@ -240,6 +246,25 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
     useEffect(() => {
       selectedCredentialsRef.current = selectedCredentials;
     }, [selectedCredentials]);
+    
+    useEffect(() => {
+      selectedFilesRef.current = selectedFiles;
+    }, [selectedFiles]);
+
+    // Track inserted mentions to detect new ones and deletions
+    const insertedMentionsRef = useRef<Set<string>>(new Set());
+    const previousMentionsRef = useRef<Set<string>>(new Set());
+    const mentionDataCacheRef = useRef<Map<string, { type: string; workspaceFileId?: string }>>(new Map());
+    const onMentionInsertRef = useRef(onMentionInsert);
+    const onMentionDeleteRef = useRef(onMentionDelete);
+    
+    useEffect(() => {
+      onMentionInsertRef.current = onMentionInsert;
+    }, [onMentionInsert]);
+    
+    useEffect(() => {
+      onMentionDeleteRef.current = onMentionDelete;
+    }, [onMentionDelete]);
 
     // Tiptap Editor Setup - create editor first before using it in callbacks
     const editor = useEditor({
@@ -361,7 +386,7 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
             // Visual display - don't add @ here, Tiptap adds it automatically
             return label;
           },
-          suggestion: createMentionSuggestion(mentionSuggestions, selectedPageURLsRef, agentStateRef, selectedNotesRef, selectedCredentialsRef),
+          suggestion: createMentionSuggestion(mentionSuggestions, selectedPageURLsRef, agentStateRef, selectedNotesRef, selectedCredentialsRef, selectedFilesRef),
         }),
         Placeholder.configure({
           placeholder: () => {
@@ -485,6 +510,76 @@ export const CustomTiptapTextArea = forwardRef<HTMLDivElement, CustomTiptapTextA
         // Auto-focus can be added here if needed
       },
       onUpdate: ({ editor }) => {
+        const doc = editor.state.doc;
+        const currentMentions = new Set<string>();
+        const mentionDataMap = new Map<string, { type: string; workspaceFileId?: string }>();
+        
+        // Find all mentions in the document
+        doc.descendants((node, pos) => {
+          if (node.type.name === 'mention') {
+            const mentionId = node.attrs.id || `${node.attrs.type}-${pos}`;
+            currentMentions.add(mentionId);
+            mentionDataMap.set(mentionId, {
+              type: node.attrs.type || 'unknown',
+              workspaceFileId: node.attrs.type === 'workspace_file' || mentionId.startsWith('workspace_file-')
+                ? mentionId.replace('workspace_file-', '')
+                : undefined,
+            });
+            
+            // Check if this is a new mention
+            if (!insertedMentionsRef.current.has(mentionId)) {
+              insertedMentionsRef.current.add(mentionId);
+              
+              // Store mention data in cache
+              const mentionData = {
+                type: node.attrs.type || 'unknown',
+                workspaceFileId: node.attrs.type === 'workspace_file' || mentionId.startsWith('workspace_file-')
+                  ? mentionId.replace('workspace_file-', '')
+                  : undefined,
+              };
+              mentionDataCacheRef.current.set(mentionId, mentionData);
+              
+              // Extract workspaceFileId from the mention ID (format: workspace_file-{fileId})
+              if (node.attrs.type === 'workspace_file' || mentionId.startsWith('workspace_file-')) {
+                const workspaceFileId = mentionId.replace('workspace_file-', '');
+                if (onMentionInsertRef.current) {
+                  onMentionInsertRef.current({
+                    type: 'workspace_file',
+                    id: mentionId,
+                    workspaceFileId,
+                  });
+                }
+              }
+            }
+          }
+        });
+        
+        // Detect deleted mentions
+        if (onMentionDeleteRef.current) {
+          const previousMentions = previousMentionsRef.current;
+          previousMentions.forEach(mentionId => {
+            if (!currentMentions.has(mentionId)) {
+              // This mention was deleted - get data from cache
+              const mentionData = mentionDataCacheRef.current.get(mentionId);
+              if (mentionData && mentionData.type === 'workspace_file') {
+                if (onMentionDeleteRef.current) {
+                  onMentionDeleteRef.current({
+                    type: 'workspace_file',
+                    id: mentionId,
+                    workspaceFileId: mentionData.workspaceFileId,
+                  });
+                }
+              }
+              // Remove from inserted mentions tracking and cache
+              insertedMentionsRef.current.delete(mentionId);
+              mentionDataCacheRef.current.delete(mentionId);
+            }
+          });
+        }
+        
+        // Update previous mentions for next comparison
+        previousMentionsRef.current = new Set(currentMentions);
+        
         // Sync with onChange if provided - defer to avoid updating during render
         if (onChange) {
           queueMicrotask(() => {

@@ -11,12 +11,13 @@ export interface MentionSuggestion {
   id: string;
   label: string;
   avatar?: string;
-  type?: 'user' | 'agent' | 'file' | 'variable' | 'page' | 'plan' | 'graph' | 'note' | 'credential';
+  type?: 'user' | 'agent' | 'file' | 'variable' | 'page' | 'plan' | 'graph' | 'note' | 'credential' | 'workspace_file';
   pageURL?: string; // For page mentions
   planId?: string; // For plan mentions
   graphId?: string; // For graph mentions
   noteId?: string; // For note mentions
   credentialId?: string; // For credential mentions
+  workspaceFileId?: string; // For workspace file mentions
 }
 
 interface MentionListProps {
@@ -30,6 +31,7 @@ interface MentionListProps {
   };
   selectedNotes?: any[]; // Selected workspace notes
   selectedCredentials?: any[]; // Selected workspace credentials
+  selectedFiles?: any[]; // Selected workspace files
 }
 
 interface MentionListRef {
@@ -41,6 +43,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState(props.query || '');
   const [pages, setPages] = useState<Array<{ pageURL: string; pageTitle: string }>>([]);
+  const [workspaceFiles, setWorkspaceFiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -60,6 +63,30 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
       }
     };
     fetchPages();
+  }, []);
+
+  // Fetch workspace files on mount
+  useEffect(() => {
+    const fetchWorkspaceFiles = async () => {
+      try {
+        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${baseURL}/api/workspace/files?limit=1000`, {
+          credentials: 'include',
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const files = data.files || [];
+          console.log('[MentionList] Loaded workspace files:', files.length);
+          setWorkspaceFiles(files);
+        } else {
+          console.error('[MentionList] Failed to fetch workspace files:', response.status);
+        }
+      } catch (error) {
+        console.error('[MentionList] Error fetching workspace files:', error);
+      }
+    };
+    fetchWorkspaceFiles();
   }, []);
 
   // Convert pages to mention suggestions, filtered by selectedPageURLs if provided
@@ -137,10 +164,33 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
     }));
   }, [props.selectedCredentials]);
 
-  // Combine all suggestions: pages, plans, graphs, notes, and credentials
+  // Convert workspace files to mention suggestions
+  // Use props.selectedFiles if provided (explicitly selected), otherwise use all loaded files
+  const fileSuggestions: MentionSuggestion[] = useMemo(() => {
+    const filesToUse = props.selectedFiles && props.selectedFiles.length > 0 
+      ? props.selectedFiles 
+      : workspaceFiles;
+    
+    console.log('[MentionList] Computing fileSuggestions:', {
+      fromProps: props.selectedFiles?.length || 0,
+      fromLoaded: workspaceFiles.length,
+      using: filesToUse.length,
+    });
+    
+    if (!filesToUse || filesToUse.length === 0) return [];
+    
+    return filesToUse.map(file => ({
+      id: `workspace_file-${file.id}`,
+      label: file.file_name,
+      type: 'workspace_file' as const,
+      workspaceFileId: file.id,
+    }));
+  }, [props.selectedFiles, workspaceFiles]);
+
+  // Combine all suggestions: pages, plans, graphs, notes, credentials, and workspace files
   const allSuggestions = useMemo(() => {
-    return [...pageSuggestions, ...planSuggestions, ...graphSuggestions, ...noteSuggestions, ...credentialSuggestions];
-  }, [pageSuggestions, planSuggestions, graphSuggestions, noteSuggestions, credentialSuggestions]);
+    return [...pageSuggestions, ...planSuggestions, ...graphSuggestions, ...noteSuggestions, ...credentialSuggestions, ...fileSuggestions];
+  }, [pageSuggestions, planSuggestions, graphSuggestions, noteSuggestions, credentialSuggestions, fileSuggestions]);
 
   // Filter suggestions based on search query
   const filteredSuggestions = useMemo(() => {
@@ -276,6 +326,13 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
             <path d="M7 11V7a5 5 0 0110 0v4" />
           </svg>
         );
+      case 'workspace_file':
+        return (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+            <polyline points="13 2 13 9 20 9" />
+          </svg>
+        );
       default: // user
         return (
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -340,7 +397,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
                 enterHandler();
               }
             }}
-            placeholder="Search pages, plans, notes, credentials..."
+            placeholder="Search pages, plans, notes, files..."
             className={cn(
               'w-full pl-8 pr-3 py-1.5 text-xs rounded-md outline-none transition-colors',
               isLight
@@ -404,6 +461,20 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>((props, 
                     {props.selectedCredentials.find(c => c.id === item.credentialId)?.type || 'Credential'}
                   </span>
                 )}
+                {item.type === 'workspace_file' && item.workspaceFileId && (
+                  <span className={cn('text-[10px] truncate w-full', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                    {(() => {
+                      // Try to find file in props.selectedFiles first, then workspaceFiles
+                      const file = (props.selectedFiles && props.selectedFiles.find(f => f.id === item.workspaceFileId)) ||
+                                   workspaceFiles.find(f => f.id === item.workspaceFileId);
+                      if (!file) return 'Workspace file';
+                      // Show folder path, or "Root" if no folder
+                      const folder = file.folder;
+                      if (!folder || folder === 'root' || folder === '') return 'Root';
+                      return folder;
+                    })()}
+                  </span>
+                )}
               </div>
             </button>
           ))
@@ -430,7 +501,8 @@ export const createMentionSuggestion = (
   selectedPageURLsRef?: React.MutableRefObject<string[]>,
   agentStateRef?: React.MutableRefObject<{ plans?: Record<string, any>; graphs?: Record<string, any> } | undefined>,
   selectedNotesRef?: React.MutableRefObject<any[]>,
-  selectedCredentialsRef?: React.MutableRefObject<any[]>
+  selectedCredentialsRef?: React.MutableRefObject<any[]>,
+  selectedFilesRef?: React.MutableRefObject<any[]>
 ): Omit<SuggestionOptions, 'editor'> => {
   return {
     char: '@',
@@ -449,6 +521,7 @@ export const createMentionSuggestion = (
           console.log('[MentionExtension] onStart - refs:', {
             selectedNotes: selectedNotesRef?.current,
             selectedCredentials: selectedCredentialsRef?.current,
+            selectedFiles: selectedFilesRef?.current,
             selectedPageURLs: selectedPageURLsRef?.current,
           });
           
@@ -460,6 +533,7 @@ export const createMentionSuggestion = (
               agentState: agentStateRef?.current,
               selectedNotes: selectedNotesRef?.current,
               selectedCredentials: selectedCredentialsRef?.current,
+              selectedFiles: selectedFilesRef?.current,
             },
             editor: props.editor,
           });
@@ -488,6 +562,7 @@ export const createMentionSuggestion = (
             agentState: agentStateRef?.current,
             selectedNotes: selectedNotesRef?.current,
             selectedCredentials: selectedCredentialsRef?.current,
+            selectedFiles: selectedFilesRef?.current,
           });
 
           if (!props.clientRect) {

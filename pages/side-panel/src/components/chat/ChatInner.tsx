@@ -223,8 +223,10 @@ export interface ChatInnerProps {
   // Workspace context items
   selectedNotes?: any[];
   selectedCredentials?: any[];
+  selectedFiles?: any[];
   onNotesChange?: (notes: any[]) => void;
   onCredentialsChange?: (credentials: any[]) => void;
+  onFilesChange?: (files: any[]) => void;
 }
 
 // ================================================================================
@@ -262,8 +264,10 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   enabledFrontendTools,
   selectedNotes = [],
   selectedCredentials = [],
+  selectedFiles = [],
   onNotesChange,
   onCredentialsChange,
+  onFilesChange,
 }) => {
   // ================================================================================
   // THEME & STORAGE
@@ -334,7 +338,22 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     
     // Log errors for analytics/monitoring
     onError: (error) => {
-      debug.error('[ChatInner] Agent error occurred:', error.error.message, error.code);
+      // ============================================================================
+      // SPECIFIC filter for anyio cancel scope errors (backup safety net)
+      const errorMsg = error.error.message || '';
+      const lowerMsg = errorMsg.toLowerCase();
+      
+      const isAnyCancelScopeError = 
+        (lowerMsg.includes('attempted to exit') && lowerMsg.includes('cancel scope')) ||
+        (lowerMsg.includes('exit cancel scope') && lowerMsg.includes('different task'));
+      
+      if (isAnyCancelScopeError) {
+        debug.log('[ChatInner] ✅ Filtered anyio cancel scope error (backup filter)');
+        return; // Don't log or track - this is expected
+      }
+      
+      // Log all other errors for debugging and analytics
+      debug.error('[ChatInner] Agent error occurred:', errorMsg, error.code);
       // Could send to error tracking service here
       // trackError('agent_run_failed', { message: error.error.message, code: error.code });
     },
@@ -801,11 +820,11 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // ================================================================================
   // CHAT SUGGESTIONS
   // ================================================================================
-  // Note: Hook must be called unconditionally per React rules.
-  // We control behavior via the enabled parameter.
   useCopilotSuggestions({
     enabled: showSuggestions,
     instructions: CHAT_SUGGESTIONS_INSTRUCTIONS,
+    providerAgentId: 'dynamic_agent',
+    available: 'after-first-message',
   });
 
   // ================================================================================
@@ -996,8 +1015,10 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         },
         selectedNotes,
         selectedCredentials,
+        selectedFiles,
         onNotesChange,
         onCredentialsChange,
+        onFilesChange,
       }}>
         {/* Conditionally add selected notes to context */}
         {selectedNotes.length > 0 && <SelectedNotesContext notes={selectedNotes} />}

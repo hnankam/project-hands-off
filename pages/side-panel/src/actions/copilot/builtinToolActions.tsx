@@ -17,6 +17,7 @@ import React from 'react';
 import { z } from 'zod';
 import { ActionStatus } from '../../components/feedback/ActionStatus';
 import { ImageGalleryCard } from '../../components/cards/ImageGalleryCard';
+import { FileManagementCard } from '../../components/feedback/FileManagementCard';
 
 // ============================================================================
 // ZOD SCHEMAS FOR BACKEND TOOL PARAMETERS
@@ -233,6 +234,8 @@ export function createWebSearchRenderer(deps: BuiltinToolDependencies) {
       const displayText = prompt ? ` "${clipText(prompt, MAX_PROMPT_LENGTH)}"` : '';
       const status = mapV2Status(props.status);
 
+      const instanceId = `web-search-${clipText(prompt, 50)}`;
+
       return (
         <ActionStatus
           toolName="Web Search"
@@ -245,6 +248,7 @@ export function createWebSearchRenderer(deps: BuiltinToolDependencies) {
           }}
           args={props.args}
           result={props.result}
+          instanceId={instanceId}
         />
       );
     },
@@ -265,6 +269,8 @@ export function createCodeExecutionRenderer(deps: BuiltinToolDependencies) {
       const displayText = prompt ? ` "${clipText(prompt, MAX_PROMPT_LENGTH)}"` : '';
       const status = mapV2Status(props.status);
 
+      const instanceId = `code-execution-${clipText(prompt, 50)}`;
+
       return (
         <ActionStatus
           toolName="Code Execution"
@@ -277,6 +283,7 @@ export function createCodeExecutionRenderer(deps: BuiltinToolDependencies) {
           }}
           args={props.args}
           result={props.result}
+          instanceId={instanceId}
         />
       );
     },
@@ -300,6 +307,8 @@ export function createUrlContextRenderer(deps: BuiltinToolDependencies) {
       const firstUrlDisplay = firstUrl ? ` - ${clipText(firstUrl, MAX_URL_LENGTH)}` : '';
       const status = mapV2Status(props.status);
 
+      const instanceId = `url-context-${firstUrl ? clipText(firstUrl, 50) : urlCount}`;
+
       return (
         <ActionStatus
           toolName="Load URL Context"
@@ -312,6 +321,7 @@ export function createUrlContextRenderer(deps: BuiltinToolDependencies) {
           }}
           args={props.args}
           result={props.result}
+          instanceId={instanceId}
         />
       );
     },
@@ -408,6 +418,143 @@ export function createGenerateImagesRenderer(deps: BuiltinToolDependencies & { t
 }
 
 /**
+ * Creates V2-compatible ReactToolCallRenderer for create_text_file
+ * 
+ * Optimized to handle large file content without freezing the UI.
+ */
+export function createFileCreationRenderer(deps: BuiltinToolDependencies) {
+  const { clipText } = deps;
+  
+  // Schema for create_text_file tool
+  const createTextFileSchema = z.object({
+    file_name: z.string(),
+    content: z.string(),
+    folder: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    description: z.string().optional(),
+  });
+  
+  return {
+    name: 'create_text_file',
+    args: createTextFileSchema,
+    render: (props: V2RenderProps<z.infer<typeof createTextFileSchema>>) => {
+      const fileName = props.args?.file_name || 'file.txt';
+      const folder = props.args?.folder;
+      const content = props.args?.content || '';
+      const status = mapV2Status(props.status);
+      
+      // Check for error in result
+      const hasError = isErrorResult(props.result);
+      const error = hasError ? props.result as string : undefined;
+      
+      // Calculate content size
+      const contentSize = new Blob([content]).size;
+      
+      // Create unique instance ID based on file name
+      const instanceId = `create-file-${clipText(fileName, 50)}`;
+
+      return (
+        <FileManagementCard
+          fileName={fileName}
+          folder={folder}
+          status={status}
+          result={props.result}
+          error={error}
+          content={content}
+          contentSize={contentSize}
+          instanceId={instanceId}
+          operation="create"
+        />
+      );
+    },
+  };
+}
+
+/**
+ * Creates V2-compatible ReactToolCallRenderer for update_file_content
+ * 
+ * Optimized to handle large file content updates without freezing the UI.
+ */
+export function createFileUpdateRenderer(deps: BuiltinToolDependencies) {
+  const { clipText } = deps;
+  
+  // Schema for update_file_content tool
+  const updateFileContentSchema = z.object({
+    file_id: z.string(),
+    content: z.string(),
+    append: z.boolean().optional(),
+    file_name: z.string().optional(),
+  });
+  
+  return {
+    name: 'update_file_content',
+    args: updateFileContentSchema,
+    render: (props: V2RenderProps<z.infer<typeof updateFileContentSchema>>) => {
+      const content = props.args?.content || '';
+      const status = mapV2Status(props.status);
+      
+      // Check for error in result
+      const hasError = isErrorResult(props.result);
+      const error = hasError ? props.result as string : undefined;
+      
+      // Extract file info - prioritize args.file_name, then result, then default
+      let fileName = props.args?.file_name || 'file.txt';
+      let folder = undefined;
+      let fileId = props.args?.file_id || '';
+      let displaySize = 0;
+      
+      // If we have a result, extract additional metadata
+      if (props.result && typeof props.result === 'string' && !hasError) {
+        try {
+          const parsed = JSON.parse(props.result);
+          // Update fileName only if we didn't get it from args
+          if (!props.args?.file_name && parsed.file_name) {
+            fileName = parsed.file_name;
+          }
+          // Extract folder from file_path
+          if (parsed.folder) {
+            folder = parsed.folder;
+          } else if (parsed.file_path && parsed.file_path.includes('/')) {
+            folder = parsed.file_path.split('/').slice(0, -1).join('/');
+          }
+          // Extract size
+          if (parsed.size_bytes) {
+            displaySize = parsed.size_bytes;
+          }
+          fileId = parsed.file_id || fileId;
+        } catch {
+          // If parsing fails, try regex extraction
+          const fileNameMatch = props.result.match(/file[_\s]name['"]?\s*:\s*['"]?([^'"}\s,]+)/i);
+          if (fileNameMatch && !props.args?.file_name) {
+            fileName = fileNameMatch[1];
+          }
+        }
+      }
+      
+      // Calculate content size (use actual result size if available, otherwise estimate from content)
+      const contentSize = displaySize || new Blob([content]).size;
+      
+      // Create unique instance ID based on file ID
+      const instanceId = `update-file-${clipText(fileId || fileName, 50)}`;
+
+      return (
+        <FileManagementCard
+          fileName={fileName}
+          folder={folder}
+          status={status}
+          result={props.result}
+          error={error}
+          content={content}
+          contentSize={contentSize}
+          instanceId={instanceId}
+          operation="update"
+        />
+      );
+    },
+  };
+}
+
+/**
  * Creates all V2 backend tool renderers
  * Use this to get the renderToolCalls array for CopilotKitProvider
  */
@@ -418,6 +565,8 @@ export function createBackendToolRenderers(deps: BuiltinToolDependencies & { the
     createUrlContextRenderer(deps),
     createRunGraphRenderer(deps),
     createGenerateImagesRenderer(deps),
+    createFileCreationRenderer(deps),
+    createFileUpdateRenderer(deps),
   ];
 }
 
@@ -510,6 +659,26 @@ export function createDefaultToolRenderer(deps: BuiltinToolDependencies) {
       const hasError = isErrorResult(props.result);
       const error = hasError ? props.result as string : undefined;
 
+      // Generate lightweight instanceId to avoid expensive JSON.stringify of large args
+      // Use tool name + first key/value or timestamp
+      let instanceIdSuffix = Date.now().toString();
+      try {
+        if (props.args && typeof props.args === 'object') {
+          const firstKey = Object.keys(props.args as object)[0];
+          if (firstKey) {
+            const firstValue = (props.args as any)[firstKey];
+            // Use first 50 chars of first value (or just the key if value is large/complex)
+            const valueStr = typeof firstValue === 'string' 
+              ? firstValue.slice(0, 50) 
+              : firstKey;
+            instanceIdSuffix = valueStr;
+          }
+        }
+      } catch {
+        // Fallback to timestamp if anything fails
+      }
+      const instanceId = `${props.name}-${instanceIdSuffix}`;
+
       return (
         <ActionStatus
           toolName={displayName}
@@ -523,6 +692,7 @@ export function createDefaultToolRenderer(deps: BuiltinToolDependencies) {
           args={props.args as Record<string, unknown>}
           result={props.result}
           error={error}
+          instanceId={instanceId}
         />
       );
     },
@@ -540,6 +710,8 @@ export function createAllToolRenderers(deps: BuiltinToolDependencies & { themeCo
     createUrlContextRenderer(deps),
     createRunGraphRenderer(deps),
     createGenerateImagesRenderer(deps),
+    createFileCreationRenderer(deps),
+    createFileUpdateRenderer(deps),
     createDefaultToolRenderer(deps),  // Wildcard must be last
   ];
 }

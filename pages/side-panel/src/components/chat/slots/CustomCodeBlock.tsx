@@ -5,7 +5,7 @@
  * - CodeBlock: Shared code block with syntax highlighting (used by graph card, markdown, etc.)
  * - CustomCodeBlockWrapper: Wrapper for CopilotKit that extracts code from children and handles mermaid diagrams
  */
-import React, { useState, useCallback, Children, isValidElement } from 'react';
+import React, { useState, useCallback, Children, isValidElement, memo } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { MermaidBlock } from '../MermaidBlock';
@@ -69,7 +69,7 @@ export interface CodeBlockProps {
  * - CustomCodeBlockWrapper (for CopilotKit V2 chat)
  * - MarkdownRenderer (for graph card and other markdown rendering)
  */
-export const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, isLight }) => {
+export const CodeBlock: React.FC<CodeBlockProps> = memo(({ language, code, isLight }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -223,7 +223,9 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, isLight })
       </SyntaxHighlighter>
     </div>
   );
-};
+});
+
+CodeBlock.displayName = 'CodeBlock';
 
 // =============================================================================
 // CustomCodeBlockWrapper - Wrapper for CopilotKit/Markdown renderers
@@ -293,7 +295,7 @@ function extractCodeInfo(children: React.ReactNode): { code: string; language: s
  * 
  * Used as the `pre` component override in markdown renderers.
  */
-export const CustomCodeBlockWrapper: React.FC<CustomCodeBlockWrapperProps> = ({
+export const CustomCodeBlockWrapper: React.FC<CustomCodeBlockWrapperProps> = memo(({
   children,
   className,
   ...props
@@ -315,7 +317,9 @@ export const CustomCodeBlockWrapper: React.FC<CustomCodeBlockWrapperProps> = ({
 
   // Handle all other code with syntax highlighting
   return <CodeBlock language={language} code={code} isLight={isLight} />;
-};
+});
+
+CustomCodeBlockWrapper.displayName = 'CustomCodeBlockWrapper';
 
 export default CustomCodeBlockWrapper;
 

@@ -276,8 +276,8 @@ async function createCopilotKitRuntime() {
     pool: getPool(),
     ttl: 86400000,        // 24 hours
     cleanupInterval: 3600000, // 1 hour
-    persistEventsImmediately: false, // Better performance
-    maxHistoricRuns: 10,  // Limit history load
+    persistEventsImmediately: true, // Persist events immediately for data durability
+    maxHistoricRuns: parseInt(process.env.AGENT_RUNNER_MAX_HISTORIC_RUNS) || 1000,  // Max runs to load on connect (default: 10)
     debug: DEBUG,         // Verbose logging in development only
   });
 
@@ -609,15 +609,12 @@ const app = express();
         authContext: authResult.authContext,
       };
 
-      // Log request
+      // Log request with tracking for suggestion debugging
       log('=== CopilotKit Request ===', requestId);
-      log(`Agent: ${agentType} | Model: ${modelType} | Method: ${c.req.method} | Path: ${c.req.path}`, requestId);
+      log(`🔍 [RUNTIME] Agent: ${agentType} | Model: ${modelType} | Method: ${c.req.method} | Path: ${c.req.path}`, requestId);
+      log(`🔍 [RUNTIME] Session: ${context.authContext.sessionId} | Thread: ${threadId || 'none'}`, requestId);
       if (DEBUG) {
         log(`Auth: org=${context.authContext.organizationId} team=${context.authContext.teamId}`, requestId);
-        log(`SessionId: ${context.authContext.sessionId}`, requestId);
-        if (threadId) {
-          log(`ThreadId from header: ${threadId}`, requestId);
-        }
       }
       log('=============================', requestId);
 
@@ -650,10 +647,33 @@ const app = express();
           modifiedHeaders.set(key, value);
         });
 
+        // Debug: Log request body for /run requests to see threadId mismatch
+        let bodyForRequest = c.req.raw.body;
+        if (DEBUG && c.req.path.includes('/run')) {
+          try {
+            const bodyText = await c.req.text();
+            const bodyObj = JSON.parse(bodyText);
+            console.log(`[Server] Request body threadId: ${bodyObj.threadId || 'undefined'}`);
+            console.log(`[Server] Request header x-copilot-thread-id: ${threadId}`);
+            if (bodyObj.threadId !== threadId) {
+              console.log(`[Server] ⚠️  ThreadId mismatch: body=${bodyObj.threadId} header=${threadId}`);
+            }
+            // Recreate body stream for the forwarded request
+            bodyForRequest = new ReadableStream({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode(bodyText));
+                controller.close();
+              }
+            });
+          } catch (err) {
+            // Ignore parsing errors
+          }
+        }
+
         const modifiedRequest = new Request(originalUrl.toString(), {
           method: c.req.raw.method,
           headers: modifiedHeaders,
-          body: c.req.raw.body,
+          body: bodyForRequest,
           duplex: 'half',
         });
 
@@ -903,6 +923,27 @@ const app = express();
 
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
+
+    // Handle unhandled errors gracefully to prevent crashes
+    process.on('uncaughtException', (error) => {
+      console.error('═══════════════════════════════════════════════════════════════════');
+      console.error('Uncaught Exception - Server will continue running');
+      console.error('═══════════════════════════════════════════════════════════════════');
+      console.error('Error:', error.message);
+      console.error('Stack:', error.stack);
+      console.error('═══════════════════════════════════════════════════════════════════');
+      // Don't exit - let server continue
+    });
+
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('═══════════════════════════════════════════════════════════════════');
+      console.error('Unhandled Promise Rejection - Server will continue running');
+      console.error('═══════════════════════════════════════════════════════════════════');
+      console.error('Reason:', reason);
+      console.error('Promise:', promise);
+      console.error('═══════════════════════════════════════════════════════════════════');
+      // Don't exit - let server continue
+    });
 
   } catch (error) {
     console.error('═══════════════════════════════════════════════════════════════════');

@@ -1052,7 +1052,8 @@ async def update_file_content(
     ctx: RunContext[UnifiedDeps],
     file_id: str,
     content: str,
-    append: bool = False
+    append: bool = False,
+    file_name: str = ""
 ) -> str:
     """Update content of an existing text file.
     
@@ -1063,6 +1064,7 @@ async def update_file_content(
         file_id: UUID of the file to update
         content: New content or content to append
         append: If True, append to existing content; if False, replace (default: False)
+        file_name: Optional filename for display (if you know the filename, provide it for better UI feedback)
     
     Returns:
         JSON string with update result (structured as FileWriteResult)

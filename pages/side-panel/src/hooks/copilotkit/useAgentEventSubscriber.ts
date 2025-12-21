@@ -314,6 +314,22 @@ export function useAgentEventSubscriber(
   }, [debugEnabled]);
 
   const triggerError = useCallback((err: Error, context?: string) => {
+    // SPECIFIC filter for anyio cancel scope errors only
+    const errorMsg = err.message || '';
+    const lowerMsg = errorMsg.toLowerCase();
+    
+    const isAnyCancelScopeError = 
+      (lowerMsg.includes('attempted to exit') && lowerMsg.includes('cancel scope')) ||
+      (lowerMsg.includes('exit cancel scope') && lowerMsg.includes('different task'));
+    
+    if (isAnyCancelScopeError) {
+      log('✅ FILTERED anyio cancel scope error (expected from CopilotKit cancellation):', errorMsg);
+      return; // Don't propagate - this is expected behavior
+    }
+    
+    // All other errors are logged and propagated
+    log('⚠️ Error occurred:', errorMsg, context);
+    
     const agentError: AgentError = {
       error: err,
       timestamp: Date.now(),
@@ -326,8 +342,6 @@ export function useAgentEventSubscriber(
     if (callbacksRef.current.onError) {
       callbacksRef.current.onError(agentError);
     }
-    
-    log('Error triggered:', err.message, context);
   }, [log]);
 
   const clearError = useCallback(() => {
@@ -374,6 +388,20 @@ export function useAgentEventSubscriber(
        * CRITICAL: This is where we catch and display errors
        */
       onRunFailed: async ({ error, messages, state, agent, input }) => {
+        // SPECIFIC filter for anyio cancel scope errors only
+        // These occur when CopilotKit cancels slower parallel suggestion requests
+        const errorMsg = error.message || '';
+        const lowerMsg = errorMsg.toLowerCase();
+        
+        const isAnyCancelScopeError = 
+          (lowerMsg.includes('attempted to exit') && lowerMsg.includes('cancel scope')) ||
+          (lowerMsg.includes('exit cancel scope') && lowerMsg.includes('different task'));
+        
+        if (isAnyCancelScopeError) {
+          log('✅ FILTERED anyio cancel scope error (expected from CopilotKit cancellation):', errorMsg);
+          return; // Don't propagate - this is expected behavior
+        }
+        
         log('Run failed:', error.message);
         
         const agentError: AgentError = {
@@ -459,6 +487,19 @@ export function useAgentEventSubscriber(
        * This is more specific than onRunFailed
        */
       onRunErrorEvent: async ({ event, messages, state }) => {
+        // SPECIFIC filter for anyio cancel scope errors only
+        const errorMsg = event.message || '';
+        const lowerMsg = errorMsg.toLowerCase();
+        
+        const isAnyCancelScopeError = 
+          (lowerMsg.includes('attempted to exit') && lowerMsg.includes('cancel scope')) ||
+          (lowerMsg.includes('exit cancel scope') && lowerMsg.includes('different task'));
+        
+        if (isAnyCancelScopeError) {
+          log('✅ FILTERED anyio cancel scope error in onRunErrorEvent:', errorMsg);
+          return; // Don't propagate - this is expected behavior
+        }
+        
         log('Run error event:', event.message, 'Code:', event.code);
         
         const error = new Error(event.message);

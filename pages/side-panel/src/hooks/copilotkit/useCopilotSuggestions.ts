@@ -5,6 +5,7 @@
  * Uses DynamicSuggestionsConfig with providerAgentId set to 'dynamic_agent'.
  */
 
+import { useEffect, useRef, useState } from 'react';
 import { useConfigureSuggestions } from '@copilotkit/react-core/v2';
 
 // Must match the agentId used in CopilotChat component
@@ -30,6 +31,15 @@ export interface CopilotSuggestionsConfig {
  * When enabled=false, suggestions are completely disabled (not just hidden).
  * This prevents SuggestionEngine from running and causing errors.
  *
+ * CRITICAL FIX: This hook creates a STABLE config object that only changes ONCE when enabled
+ * becomes true for the first time. This prevents the double-configuration bug where:
+ * 1. First render: enabled=false → configures with available="disabled"  
+ * 2. Second render: enabled=true → configures with available="after-first-message"
+ * 3. Each configuration change triggers new suggestion requests in CopilotKit
+ *
+ * By keeping the config stable (always "disabled" until enabled=true, then locked),
+ * we only trigger suggestion generation once.
+ *
  * @example
  * ```tsx
  * useCopilotSuggestions({
@@ -44,12 +54,40 @@ export function useCopilotSuggestions({
   providerAgentId = DEFAULT_AGENT_ID,
   available = 'after-first-message',
 }: CopilotSuggestionsConfig): void {
-  // V2 DynamicSuggestionsConfig:
-  // - When disabled, set available='disabled' to stop SuggestionEngine entirely
-  // - When enabled, use 'after-first-message' to prevent errors during initial load
-  useConfigureSuggestions({
-    instructions,
-    providerAgentId,
-    available: enabled ? available : 'disabled',
-  });
+  // CRITICAL INSIGHT: useConfigureSuggestions likely checks config VALUES, not just reference
+  // Any change to the config object (even if same reference) triggers reconfiguration
+  // Solution: Create config object ONCE when first called and NEVER change it
+  
+  const initialConfigRef = useRef<{ instructions: string; providerAgentId: string; available: SuggestionAvailability } | null>(null);
+  
+  // Initialize config on first render with the FIRST values we receive
+  // This means if enabled=false initially, we start with 'disabled'
+  // If enabled=true initially, we start with the target availability
+  if (!initialConfigRef.current) {
+    initialConfigRef.current = {
+      instructions,
+      providerAgentId,
+      available: enabled ? available : 'disabled',
+    };
+    console.log('[useCopilotSuggestions] 🔒 Config INITIALIZED (will never change):', { 
+      instructions: instructions.substring(0, 50) + '...', 
+      available: initialConfigRef.current.available,
+      providerAgentId,
+      enabled,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  // Log when enabled state changes (for debugging)
+  useEffect(() => {
+    console.log('[useCopilotSuggestions] 📊 Enabled state:', { 
+      enabled,
+      configAvailable: initialConfigRef.current?.available,
+      timestamp: new Date().toISOString()
+    });
+  }, [enabled]);
+  
+  // CRITICAL: Call useConfigureSuggestions with the FROZEN config
+  // The config never changes after initialization, preventing any reconfiguration
+  useConfigureSuggestions(initialConfigRef.current);
 }

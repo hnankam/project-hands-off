@@ -49,7 +49,15 @@ export function getPool() {
     });
     
     pool.on('error', (err) => {
-      console.error('Unexpected error on idle database client:', err.message);
+      console.error('═══════════════════════════════════════════════════════════════════');
+      console.error('PostgreSQL Pool Error (idle client)');
+      console.error('═══════════════════════════════════════════════════════════════════');
+      console.error('Error:', err.message);
+      console.error('Code:', err.code);
+      console.error('This is expected for connection timeouts or database restarts.');
+      console.error('Pool will recover automatically by creating new connections.');
+      console.error('═══════════════════════════════════════════════════════════════════');
+      // Don't throw - pool will handle recovery
     });
     
     pool.on('connect', () => {
@@ -62,11 +70,19 @@ export function getPool() {
 }
 
 /**
- * Get a database client from the pool
+ * Get a database client from the pool with error handler attached
  */
 export async function getClient() {
   const pool = getPool();
-  return await pool.connect();
+  const client = await pool.connect();
+  
+  // Add error handler to prevent unhandled error events
+  client.on('error', (err) => {
+    console.error('[Database] Client connection error:', err.message);
+    // Don't throw - just log. Client should be released by caller.
+  });
+  
+  return client;
 }
 
 /**

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
@@ -40,7 +40,7 @@ export interface ActionStatusProps {
   instanceId?: string; // unique ID to persist expanded state across remounts
 }
 
-export const ActionStatus: React.FC<ActionStatusProps> = ({
+export const ActionStatus: React.FC<ActionStatusProps> = memo(({
   toolName,
   status,
   messages,
@@ -450,6 +450,8 @@ export const ActionStatus: React.FC<ActionStatusProps> = ({
       </div>
     </div>
   );
-};
+});
+
+ActionStatus.displayName = 'ActionStatus';
 
 export default ActionStatus;
