@@ -121,6 +121,17 @@ function getFirstElement<T>(arr: unknown): T | undefined {
   return undefined;
 }
 
+// /**
+//  * Format bytes to human-readable string
+//  */
+// function formatBytes(bytes: number): string {
+//   if (bytes === 0) return '0 Bytes';
+//   const k = 1024;
+//   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+//   const i = Math.floor(Math.log(bytes) / Math.log(k));
+//   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+// }
+
 
 // ============================================================================
 // ICONS
@@ -428,7 +439,7 @@ export function createFileCreationRenderer(deps: BuiltinToolDependencies) {
   // Schema for create_text_file tool
   const createTextFileSchema = z.object({
     file_name: z.string(),
-    content: z.string(),
+    content: z.string().optional(),
     folder: z.string().optional(),
     tags: z.array(z.string()).optional(),
     description: z.string().optional(),
@@ -453,6 +464,20 @@ export function createFileCreationRenderer(deps: BuiltinToolDependencies) {
       // Create unique instance ID based on file name
       const instanceId = `create-file-${clipText(fileName, 50)}`;
 
+      // // TEMPORARILY USING DEFAULT ActionStatus INSTEAD OF FileManagementCard
+      // const displayText = folder ? `${folder}/${fileName}` : fileName;
+      // const sizeText = contentSize > 0 ? ` (${formatBytes(contentSize)})` : '';
+      
+      // return (
+      //   <ActionStatus
+      //     toolName={`Create File: ${displayText}${sizeText}`}
+      //     status={status}
+      //     args={props.args}
+      //     result={props.result}
+      //     error={error}
+      //   />
+      // );
+      
       return (
         <FileManagementCard
           fileName={fileName}
@@ -537,6 +562,22 @@ export function createFileUpdateRenderer(deps: BuiltinToolDependencies) {
       // Create unique instance ID based on file ID
       const instanceId = `update-file-${clipText(fileId || fileName, 50)}`;
 
+      // TEMPORARILY USING DEFAULT ActionStatus INSTEAD OF FileManagementCard
+      // const displayText = folder ? `${folder}/${fileName}` : fileName;
+      // const sizeText = contentSize > 0 ? ` (${formatBytes(contentSize)})` : '';
+      // const operation = props.args?.append ? 'Append to' : 'Update';
+      
+      // return (
+      //   <ActionStatus
+      //     toolName={`${operation} File: ${displayText}${sizeText}`}
+      //     status={status}
+      //     args={props.args}
+      //     result={props.result}
+      //     error={error}
+      //   />
+      // );
+      
+      // ORIGINAL FileManagementCard (commented out)
       return (
         <FileManagementCard
           fileName={fileName}

@@ -377,29 +377,62 @@ async def list_user_connections(user_id: str) -> List[Dict[str, Any]]:
 # Folder Management Functions
 # ============================================================================
 
-async def list_folders(user_id: str) -> List[Dict[str, Any]]:
-    """List all folders for a user.
+async def list_folders(user_id: str, parent_folder: Optional[str] = None) -> List[Dict[str, Any]]:
+    """List folders for a user, optionally filtered by parent folder.
     
     Args:
         user_id: User ID
+        parent_folder: Optional parent folder path to list immediate children only
         
     Returns:
         List of folder information with file counts (excluding .folder placeholders)
     """
     async with get_db_connection() as conn:
         async with conn.cursor() as cur:
-            # Get distinct folders with file counts (excluding .folder placeholders)
-            await cur.execute("""
-                SELECT 
-                    folder as path,
-                    COALESCE(SUBSTRING(folder FROM '[^/]+$'), folder) as name,
-                    COUNT(CASE WHEN file_name != '.folder' THEN 1 END) as file_count,
-                    MIN(created_at) as created
-                FROM workspace_files
-                WHERE user_id = %s AND folder IS NOT NULL AND folder != ''
-                GROUP BY folder
-                ORDER BY folder
-            """, (user_id,))
+            if parent_folder is None:
+                # Get all distinct folders with file counts and subfolder counts
+                await cur.execute("""
+                    SELECT 
+                        f1.folder as path,
+                        COALESCE(SUBSTRING(f1.folder FROM '[^/]+$'), f1.folder) as name,
+                        COUNT(CASE WHEN f1.file_name != '.folder' THEN 1 END) as file_count,
+                        COALESCE((
+                            SELECT COUNT(DISTINCT f2.folder)
+                            FROM workspace_files f2
+                            WHERE f2.user_id = %s
+                              AND f2.folder LIKE f1.folder || '/%'
+                              AND f2.folder NOT LIKE f1.folder || '/%/%'
+                        ), 0) as folder_count,
+                        MIN(f1.created_at) as created
+                    FROM workspace_files f1
+                    WHERE f1.user_id = %s AND f1.folder IS NOT NULL AND f1.folder != ''
+                    GROUP BY f1.folder
+                    ORDER BY f1.folder
+                """, (user_id, user_id))
+            else:
+                # Get only immediate child folders of the parent
+                # Match folders that start with parent_folder/ and have no more slashes after
+                parent_prefix = f"{parent_folder}/"
+                await cur.execute("""
+                    SELECT 
+                        f1.folder as path,
+                        COALESCE(SUBSTRING(f1.folder FROM '[^/]+$'), f1.folder) as name,
+                        COUNT(CASE WHEN f1.file_name != '.folder' THEN 1 END) as file_count,
+                        COALESCE((
+                            SELECT COUNT(DISTINCT f2.folder)
+                            FROM workspace_files f2
+                            WHERE f2.user_id = %s
+                              AND f2.folder LIKE f1.folder || '/%'
+                              AND f2.folder NOT LIKE f1.folder || '/%/%'
+                        ), 0) as folder_count,
+                        MIN(f1.created_at) as created
+                    FROM workspace_files f1
+                    WHERE f1.user_id = %s 
+                      AND f1.folder LIKE %s
+                      AND f1.folder NOT LIKE %s
+                    GROUP BY f1.folder
+                    ORDER BY f1.folder
+                """, (user_id, user_id, f"{parent_prefix}%", f"{parent_prefix}%/%"))
             
             rows = await cur.fetchall()
             return [dict(row) for row in rows]

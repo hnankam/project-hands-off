@@ -38,6 +38,7 @@ async def _persist_usage_event(
 
     # Validate that agent_id and model_id are valid UUIDs
     # If they're not (e.g., fallback to agent_type string), skip database persistence
+    # This is expected when deployments aren't ready or IDs aren't found in the database
     def is_valid_uuid(value: Optional[str]) -> bool:
         if not value:
             return False
@@ -48,10 +49,6 @@ async def _persist_usage_event(
             return False
     
     if not is_valid_uuid(agent_id) or not is_valid_uuid(model_id):
-        logger.debug(
-            f"Skipping usage persistence: invalid UUID format "
-            f"(agent_id={agent_id!r}, model_id={model_id!r})"
-        )
         return
 
     try:

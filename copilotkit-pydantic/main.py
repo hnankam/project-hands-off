@@ -10,7 +10,17 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from config import DEBUG, HOST, PORT, logger
+from config import (
+    DEBUG, 
+    HOST, 
+    PORT, 
+    logger,
+    LOGFIRE_ENABLED,
+    LOGFIRE_TOKEN,
+    LOGFIRE_SERVICE_NAME,
+    LOGFIRE_ENVIRONMENT,
+    LOGFIRE_CAPTURE_HEADERS,
+)
 from database.connection import init_connection_pool
 from middleware import agent_error_middleware, agent_model_middleware
 from api import (
@@ -21,10 +31,53 @@ from api import (
 from services import initialize_deployments
 from pydantic_ai.exceptions import AgentRunError, ModelHTTPError
 
-# Optional: Logfire integration
-# import logfire
-# logfire.configure()
-# logfire.instrument_pydantic_ai()
+# Logfire integration
+if LOGFIRE_ENABLED:
+    try:
+        import logfire
+        
+        # Configure Logfire with service details
+        logfire.configure(
+            token=LOGFIRE_TOKEN if LOGFIRE_TOKEN else None,
+            service_name=LOGFIRE_SERVICE_NAME,
+            environment=LOGFIRE_ENVIRONMENT,
+            send_to_logfire='if-token-present',  # Only send if token is provided
+        )
+        
+        # Instrument Pydantic AI for agent tracing
+        try:
+            logfire.instrument_pydantic_ai()
+        except Exception as e:
+            logger.debug(f"Could not instrument Pydantic AI: {e}")
+        
+        # Instrument common libraries (each one independently)
+        try:
+            logfire.instrument_psycopg()
+        except Exception as e:
+            logger.debug(f"Could not instrument psycopg: {e}")
+        
+        try:
+            logfire.instrument_httpx(capture_request_headers=LOGFIRE_CAPTURE_HEADERS, capture_response_headers=LOGFIRE_CAPTURE_HEADERS)
+        except Exception as e:
+            logger.debug(f"Could not instrument httpx: {e}")
+        
+        try:
+            logfire.instrument_openai(capture_request_headers=LOGFIRE_CAPTURE_HEADERS, capture_response_headers=LOGFIRE_CAPTURE_HEADERS)
+        except Exception as e:
+            logger.debug(f"Could not instrument OpenAI: {e}")
+        
+        try:
+            logfire.instrument_anthropic(capture_request_headers=LOGFIRE_CAPTURE_HEADERS, capture_response_headers=LOGFIRE_CAPTURE_HEADERS)
+        except Exception as e:
+            logger.debug(f"Could not instrument Anthropic: {e}")
+        
+        logger.info(f"✅ Logfire instrumentation enabled (service: {LOGFIRE_SERVICE_NAME}, env: {LOGFIRE_ENVIRONMENT})")
+    except ImportError:
+        logger.warning("⚠️  Logfire package not installed. Install with: pip install logfire[fastapi]")
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to initialize Logfire: {e}")
+else:
+    logger.info("ℹ️  Logfire instrumentation disabled (set LOGFIRE_ENABLED=true to enable)")
 
 
 @asynccontextmanager
@@ -64,6 +117,19 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
 )
+
+# Instrument FastAPI with Logfire
+if LOGFIRE_ENABLED:
+    try:
+        import logfire
+        logfire.instrument_fastapi(
+            app,
+            capture_headers=LOGFIRE_CAPTURE_HEADERS,  # Capture request and response headers
+        )
+        headers_status = "headers enabled" if LOGFIRE_CAPTURE_HEADERS else "headers disabled"
+        logger.info(f"✅ FastAPI instrumented with Logfire ({headers_status})")
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to instrument FastAPI with Logfire: {e}")
 
 # CORS configuration
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS")

@@ -174,7 +174,7 @@ async def create_agent(
 ) -> Agent:
     """Create an agent with the specified type, model, and context."""
 
-    from utils.message_processor import process_message_attachments, keep_recent_messages
+    from utils.message_processor import keep_recent_messages
 
     models = get_models_for_context(organization_id, team_id)
     if model_name not in models:
@@ -227,11 +227,11 @@ async def create_agent(
         instructions=instructions,
         deps_type=UnifiedDeps,
         model_settings=model_settings,
-        history_processors=[process_message_attachments, keep_recent_messages],
+        history_processors=[keep_recent_messages],
         builtin_tools=builtin_tool_instances,
         tools=backend_tools,  # Backend callable functions
         toolsets=mcp_toolsets,  # MCP toolsets loaded from static config (TESTING)
-        retries=3,
+        retries=10,
     )
 
     # Add dynamic instructions to inject AGUI context at runtime

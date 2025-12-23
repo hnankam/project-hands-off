@@ -1134,10 +1134,10 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                 {/* Files */}
                 {currentFiles.map(file => (
                   <React.Fragment key={file.id}>
-                    <tr
-                      className={cn(
-                        'group border-b transition-colors',
-                        isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
+                  <tr
+                    className={cn(
+                      'group border-b transition-colors',
+                      isLight ? 'border-gray-100 hover:bg-gray-50' : 'border-gray-700 hover:bg-gray-900/40',
                       )}
                       onClick={() => {
                         if (bulkSelectMode) {
@@ -1170,32 +1170,32 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                           </div>
                         </td>
                       )}
-                      <td className="px-3 py-1.5">
-                        {renamingFileId === file.id ? (
-                          <div className="flex items-center gap-2">
+                    <td className="px-3 py-1.5">
+                      {renamingFileId === file.id ? (
+                        <div className="flex items-center gap-2">
                             <div className="w-3" /> {/* Spacer for chevron alignment */}
-                            {getFileIcon(file.file_name)}
-                            <input
-                              ref={renameInputRef}
-                              type="text"
-                              value={renameValue}
-                              onChange={e => setRenameValue(e.target.value)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') {
-                                  handleSaveRename(file.id);
-                                } else if (e.key === 'Escape') {
-                                  handleCancelRename();
-                                }
-                              }}
-                              onBlur={() => handleSaveRename(file.id)}
-                              className={cn(
-                                'flex-1 rounded border px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500',
-                                isLight ? 'border-gray-300 bg-white text-gray-900' : 'border-gray-600 bg-[#1a1f28] text-white',
-                              )}
-                            />
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
+                          {getFileIcon(file.file_name)}
+                          <input
+                            ref={renameInputRef}
+                            type="text"
+                            value={renameValue}
+                            onChange={e => setRenameValue(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                handleSaveRename(file.id);
+                              } else if (e.key === 'Escape') {
+                                handleCancelRename();
+                              }
+                            }}
+                            onBlur={() => handleSaveRename(file.id)}
+                            className={cn(
+                              'flex-1 rounded border px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500',
+                              isLight ? 'border-gray-300 bg-white text-gray-900' : 'border-gray-600 bg-[#1a1f28] text-white',
+                            )}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
                             {/* Chevron for preview toggle */}
                             <button
                               onClick={(e) => {
@@ -1221,29 +1221,29 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                                 <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round" />
                               </svg>
                             </button>
-                            {getFileIcon(file.file_name)}
-                            <span className={cn('font-medium truncate', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')} title={file.file_name}>
-                              {file.file_name}
-                            </span>
-                            <button
-                              onClick={() => handleStartRename(file)}
-                              disabled={renamingFileId !== null}
-                              className={cn(
-                                'rounded p-0.5 opacity-0 transition-all group-hover:opacity-100',
-                                renamingFileId !== null
-                                  ? 'cursor-not-allowed'
-                                  : isLight
-                                    ? 'text-gray-400 hover:bg-blue-50 hover:text-blue-600'
-                                    : 'text-gray-500 hover:bg-blue-900/20 hover:text-blue-400',
-                              )}
-                              title="Rename file">
-                              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                              </svg>
-                            </button>
-                          </div>
-                        )}
-                      </td>
+                          {getFileIcon(file.file_name)}
+                          <span className={cn('font-medium truncate', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')} title={file.file_name}>
+                            {file.file_name}
+                          </span>
+                          <button
+                            onClick={() => handleStartRename(file)}
+                            disabled={renamingFileId !== null}
+                            className={cn(
+                              'rounded p-0.5 opacity-0 transition-all group-hover:opacity-100',
+                              renamingFileId !== null
+                                ? 'cursor-not-allowed'
+                                : isLight
+                                  ? 'text-gray-400 hover:bg-blue-50 hover:text-blue-600'
+                                  : 'text-gray-500 hover:bg-blue-900/20 hover:text-blue-400',
+                            )}
+                            title="Rename file">
+                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </td>
                     <td className={cn('px-3 py-1.5 text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>
                       {formatSize(file.file_size)}
                     </td>

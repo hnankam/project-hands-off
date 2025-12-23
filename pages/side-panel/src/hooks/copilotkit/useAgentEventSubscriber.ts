@@ -314,10 +314,11 @@ export function useAgentEventSubscriber(
   }, [debugEnabled]);
 
   const triggerError = useCallback((err: Error, context?: string) => {
-    // SPECIFIC filter for anyio cancel scope errors only
+    // SPECIFIC filters for expected/handled errors
     const errorMsg = err.message || '';
     const lowerMsg = errorMsg.toLowerCase();
     
+    // Filter 1: anyio cancel scope errors (expected from CopilotKit cancellation)
     const isAnyCancelScopeError = 
       (lowerMsg.includes('attempted to exit') && lowerMsg.includes('cancel scope')) ||
       (lowerMsg.includes('exit cancel scope') && lowerMsg.includes('different task'));
@@ -388,11 +389,11 @@ export function useAgentEventSubscriber(
        * CRITICAL: This is where we catch and display errors
        */
       onRunFailed: async ({ error, messages, state, agent, input }) => {
-        // SPECIFIC filter for anyio cancel scope errors only
-        // These occur when CopilotKit cancels slower parallel suggestion requests
+        // SPECIFIC filters for expected/handled errors
         const errorMsg = error.message || '';
         const lowerMsg = errorMsg.toLowerCase();
         
+        // Filter 1: anyio cancel scope errors (expected from CopilotKit cancellation)
         const isAnyCancelScopeError = 
           (lowerMsg.includes('attempted to exit') && lowerMsg.includes('cancel scope')) ||
           (lowerMsg.includes('exit cancel scope') && lowerMsg.includes('different task'));
@@ -487,10 +488,11 @@ export function useAgentEventSubscriber(
        * This is more specific than onRunFailed
        */
       onRunErrorEvent: async ({ event, messages, state }) => {
-        // SPECIFIC filter for anyio cancel scope errors only
+        // SPECIFIC filters for expected/handled errors
         const errorMsg = event.message || '';
         const lowerMsg = errorMsg.toLowerCase();
         
+        // Filter 1: anyio cancel scope errors (expected from CopilotKit cancellation)
         const isAnyCancelScopeError = 
           (lowerMsg.includes('attempted to exit') && lowerMsg.includes('cancel scope')) ||
           (lowerMsg.includes('exit cancel scope') && lowerMsg.includes('different task'));

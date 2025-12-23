@@ -710,7 +710,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
         if (response.ok) {
           const data = await response.json();
           file = data.file;
-        }
+      }
       } catch (error) {
         console.error('[CustomInputV2] Error fetching file metadata:', error);
       }

@@ -46,6 +46,7 @@
     "rehype-raw": "^7.0.0",
     "streamdown": "^1.6.10",
     "tiptap-markdown": "^0.9.0",
+    "untruncate-json": "^0.0.1",
     "virtua": "^0.47.0",
     "zod": "3.25.76"
   },

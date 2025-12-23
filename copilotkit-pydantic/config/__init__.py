@@ -1,6 +1,18 @@
 """Configuration module for Pydantic Agent Server."""
 
-from .environment import DEBUG, logger, HOST, PORT, ABLY_API_KEY, GOOGLE_API_KEY
+from .environment import (
+    DEBUG, 
+    logger, 
+    HOST, 
+    PORT, 
+    ABLY_API_KEY, 
+    GOOGLE_API_KEY,
+    LOGFIRE_TOKEN,
+    LOGFIRE_ENABLED,
+    LOGFIRE_SERVICE_NAME,
+    LOGFIRE_ENVIRONMENT,
+    LOGFIRE_CAPTURE_HEADERS,
+)
 from .models import (
     get_models,
     get_model_names,
@@ -47,6 +59,11 @@ __all__ = [
     'PORT',
     'ABLY_API_KEY',
     'GOOGLE_API_KEY',
+    'LOGFIRE_TOKEN',
+    'LOGFIRE_ENABLED',
+    'LOGFIRE_SERVICE_NAME',
+    'LOGFIRE_ENVIRONMENT',
+    'LOGFIRE_CAPTURE_HEADERS',
     'get_models',
     'get_model_names',
     'get_models_for_context',

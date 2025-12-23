@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from typing import Any, Dict, List, Tuple
 
-from anthropic import AsyncAnthropicBedrock
+from anthropic import AsyncAnthropic, AsyncAnthropicBedrock
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 
 from pydantic_ai import ModelSettings
@@ -55,6 +55,7 @@ def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
     All credentials must be provided in the configuration file.
     For multi-tenant support, each team/org will have their own credential set.
     """
+    from . import logger
     providers: Dict[str, Any] = {}
 
     for provider_key, provider_cfg in (config.get('providers') or {}).items():
@@ -81,12 +82,17 @@ def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
             if not region:
                 raise ValueError(f"Provider '{provider_key}': region is required")
             
+            # Extract extra_headers from provider's model_settings
+            model_settings = provider_cfg.get('model_settings', {})
+            extra_headers = model_settings.get('extra_headers', {})
+
             providers[provider_key] = AnthropicProvider(
                 anthropic_client=AsyncAnthropicBedrock(
                     aws_access_key=aws_access_key_id,
                     aws_secret_key=aws_secret_access_key,
                     aws_session_token=aws_session_token,
                     aws_region=region,
+                    default_headers=extra_headers if extra_headers else None,
                 )
             )
         
@@ -95,7 +101,17 @@ def _build_providers(config: Dict[str, Any]) -> Dict[str, Any]:
             api_key = credentials.get('api_key')
             if not api_key:
                 raise ValueError(f"Provider '{provider_key}': api_key is required in credentials")
-            providers[provider_key] = AnthropicProvider(anthropic_client=AsyncAnthropic(api_key=api_key))
+            
+            # Extract extra_headers from provider's model_settings
+            model_settings = provider_cfg.get('model_settings', {})
+            extra_headers = model_settings.get('extra_headers', {})
+            
+            providers[provider_key] = AnthropicProvider(
+                anthropic_client=AsyncAnthropic(
+                    api_key=api_key,
+                    default_headers=extra_headers if extra_headers else None,
+                )
+            )
             
         elif provider_type == 'openai':
             # OpenAI (non-Azure)
@@ -134,21 +150,16 @@ def _create_model_instance(
 ) -> tuple[Any, Any]:
     """Create model instance and settings based on provider type."""
     if provider_type == 'google':
-        # Lazy import to avoid circular dependency - use importlib to bypass utils.__init__
-        google_module = importlib.import_module('utils.google_attachments')
-        GoogleModelWithAttachments = google_module.GoogleModelWithAttachments
-        
         settings = GoogleModelSettings(**per_model_settings_cfg)
-        model_instance = GoogleModelWithAttachments(model_name, provider=provider)
+        model_instance = GoogleModel(model_name, provider=provider)
         return model_instance, settings
         
     elif provider_type in {'anthropic', 'anthropic_bedrock'}:
-        # Lazy import to avoid circular dependency - use importlib to bypass utils.__init__
-        anthropic_module = importlib.import_module('utils.anthropic_attachments')
-        AnthropicModelWithAttachments = anthropic_module.AnthropicModelWithAttachments
+        settings_cfg = {k: v for k, v in per_model_settings_cfg.items() if k != 'extra_headers'}
         
-        settings = AnthropicModelSettings(**per_model_settings_cfg)
-        model_instance = AnthropicModelWithAttachments(model_name, provider=provider)
+        settings = AnthropicModelSettings(**settings_cfg)
+        from pydantic_ai.models.anthropic import AnthropicModel
+        model_instance = AnthropicModel(model_name, provider=provider)
         return model_instance, settings
     
     elif provider_type in {'openai', 'azure_openai'}:
@@ -165,6 +176,7 @@ def _build_models(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     
     Returns models_dict mapping model key -> {'model': Model, 'model_settings': ModelSettings}
     """
+    from . import logger
     providers = _build_providers(config)
 
     # Note: We delay imports of custom model classes until we need them to avoid circular imports
@@ -178,12 +190,32 @@ def _build_models(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         if provider is None:
             raise ValueError(f"Model '{key}' references unknown provider '{provider_ref}'")
 
-        # Per-model overrides for settings
-        per_model_settings_cfg = (model_cfg.get('model_settings') or {})
-        provider_type = (config['providers'][provider_ref]).get('type')
+        # Merge provider-level model_settings with per-model overrides
+        provider_cfg = config['providers'][provider_ref]
+        provider_type = provider_cfg.get('type')
+        
+        # Start with provider-level defaults
+        merged_settings = dict(provider_cfg.get('model_settings') or {})
+        
+        # For Bedrock, also merge bedrock_model_settings
+        if provider_type == 'anthropic_bedrock':
+            bedrock_settings = provider_cfg.get('bedrock_model_settings') or {}
+            merged_settings.update(bedrock_settings)
+        
+        # Apply per-model overrides (these take precedence)
+        model_overrides = model_cfg.get('model_settings') or {}
+        merged_settings.update(model_overrides)
+        
+        # Log the final merged settings
+        settings_summary = {
+            k: v for k, v in merged_settings.items() 
+            if k in ('max_tokens', 'temperature', 'extra_headers', 'bedrock_additional_model_requests_fields')
+        }
+        if settings_summary:
+            logger.info(f"Model '{key}' final settings: {settings_summary}")
 
         model_instance, settings = _create_model_instance(
-            provider_type, model_name, provider, per_model_settings_cfg
+            provider_type, model_name, provider, merged_settings
         )
 
         models[key] = {

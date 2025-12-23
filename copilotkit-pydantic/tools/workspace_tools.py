@@ -96,6 +96,7 @@ class FolderItem(BaseModel):
     name: str = Field(description="Folder name")
     path: str = Field(description="Full folder path")
     file_count: int = Field(default=0, description="Number of files in folder")
+    folder_count: int = Field(default=0, description="Number of subfolders in folder")
     created: Optional[str] = Field(default=None, description="Creation timestamp (ISO 8601)")
 
 
@@ -500,11 +501,17 @@ async def get_note_content(
 # ============================================================================
 
 async def list_folders(
-    ctx: RunContext[UnifiedDeps]
+    ctx: RunContext[UnifiedDeps],
+    parent_folder: Optional[str] = None
 ) -> str:
-    """List all folders in user's workspace.
+    """List folders in user's workspace, optionally filtered by parent folder.
     
     Use this to see the folder structure and available folders.
+    When parent_folder is provided, lists only immediate child folders.
+    
+    Args:
+        parent_folder: Optional parent folder path to list immediate children only
+                       (e.g., "projects" to list folders like "projects/2024", "projects/docs")
     
     Returns:
         JSON string with list of folders (structured as FolderListResult)
@@ -513,6 +520,8 @@ async def list_folders(
         - User: "What folders do I have?"
         - User: "Show me my workspace organization"
         - User: "List all my folders"
+        - User: "What folders are in 'projects'?"
+        - User: "Show me subfolders of 'reports'"
     """
     user_id = ctx.deps.user_id
     if not user_id:
@@ -520,15 +529,26 @@ async def list_folders(
         return error.model_dump_json(indent=2)
     
     try:
-        folders_data = await _list_folders_service(user_id)
+        # Normalize parent folder (handle 'root' as None)
+        parent_path = parent_folder if parent_folder and parent_folder.lower() != 'root' else None
+        folders_data = await _list_folders_service(user_id, parent_path)
         
         folders = []
         for folder_info in folders_data:
+            created_value = folder_info.get('created')
+            created_str = None
+            if created_value:
+                if hasattr(created_value, 'isoformat'):
+                    created_str = created_value.isoformat()
+                else:
+                    created_str = str(created_value)
+            
             folder_item = FolderItem(
                 name=folder_info['name'],
                 path=folder_info['path'],
                 file_count=folder_info.get('file_count', 0),
-                created=folder_info.get('created')
+                folder_count=folder_info.get('folder_count', 0),
+                created=created_str
             )
             folders.append(folder_item)
         
@@ -980,7 +1000,7 @@ async def get_file_metadata(
 async def create_text_file(
     ctx: RunContext[UnifiedDeps],
     file_name: str,
-    content: str,
+    content: Optional[str] = "",
     folder: Optional[str] = None,
     tags: Optional[List[str]] = None,
     description: Optional[str] = None
@@ -991,25 +1011,34 @@ async def create_text_file(
     Supports plain text, markdown, JSON, CSV, and other text formats.
     
     Args:
-        file_name: Name of the file (must include extension, e.g., 'notes.txt', 'data.json')
-        content: Text content to write
-        folder: Optional folder path to save file in
-        tags: Optional list of tags
-        description: Optional file description
+        file_name: Name of the file (must include extension, e.g., 'notes.txt', 'data.json'). KEEP SHORT!
+        content: Text content to write (optional, defaults to empty)
+        tags: Optional list of tags (max 3 tags)
+        description: Optional SHORT file description (max 50 chars, or omit)
     
     Returns:
         JSON string with creation result (structured as FileWriteResult)
     
     Examples:
-        - User: "Create a file called 'meeting-summary.txt' with my notes"
-        - User: "Save this data as 'results.json' in the 'analysis' folder"
-        - User: "Write a markdown file with the documentation"
+        GOOD (concise):
+        - file_name="notes.txt", folder="docs", description="Meeting notes"
+        - file_name="data.csv", folder="reports", description=""
+        
+        BAD (too verbose, will cause truncation):
+        - file_name="A_B_Test_Daily_Tracking_Template_With_Statistics.csv"
+        - description="Daily A/B test metrics tracking template with statistical significance calculations"
     """
     user_id = ctx.deps.user_id
     if not user_id:
         error = ErrorResponse(error="authentication_required", details="User ID not available")
         return error.model_dump_json(indent=2)
     
+    logger.info(
+        f"[create_text_file] 📝 Called with: file_name='{file_name}', "
+        f"folder='{folder}', content_length={len(content)}, "
+        f"tags={tags}, description='{description}'"
+    )
+
     try:
         # Normalize folder
         folder_path = folder if folder and folder.lower() != 'root' else None
@@ -1023,6 +1052,7 @@ async def create_text_file(
             return error.model_dump_json(indent=2)
         
         # Create file
+        # logger.info(f"[create_text_file] 🔧 Calling service with folder_path='{folder_path}'")
         result_data = await _create_text_file_service(
             user_id=user_id,
             file_name=file_name,
@@ -1032,6 +1062,12 @@ async def create_text_file(
             description=description or ""
         )
         
+        # logger.info(
+        #     f"[create_text_file] ✅ Service returned: "
+        #     f"id={result_data.get('id')}, file_name={result_data.get('file_name')}, "
+        #     f"file_size={result_data.get('file_size')}, folder={result_data.get('folder')}"
+        # )
+        
         result = FileWriteResult(
             success=True,
             message=f"File '{file_name}' created successfully",
@@ -1040,20 +1076,31 @@ async def create_text_file(
             file_path=result_data.get('folder'),
             size_bytes=result_data['file_size']
         )
-        return result.model_dump_json(indent=2)
+        
+        result_json = result.model_dump_json(indent=2)
+        logger.info(
+            f"[create_text_file] 📤 Returning result (length={len(result_json)}): "
+            f"{result_json[:200]}..."
+        )
+        return result_json
         
     except Exception as e:
-        logger.error(f"Error creating text file '{file_name}': {e}", exc_info=True)
+        logger.error(
+            f"[create_text_file] ❌ Error creating text file '{file_name}': {e}", 
+            exc_info=True
+        )
         error = ErrorResponse(error="create_failed", details=str(e))
-        return error.model_dump_json(indent=2)
+        error_json = error.model_dump_json(indent=2)
+        logger.error(f"[create_text_file] 📤 Returning error: {error_json}")
+        return error_json
 
 
 async def update_file_content(
     ctx: RunContext[UnifiedDeps],
     file_id: str,
     content: str,
-    append: bool = False,
-    file_name: str = ""
+    append: Optional[bool] = False,
+    file_name: Optional[str] = None
 ) -> str:
     """Update content of an existing text file.
     
@@ -1079,7 +1126,13 @@ async def update_file_content(
         error = ErrorResponse(error="authentication_required", details="User ID not available")
         return error.model_dump_json(indent=2)
     
+    logger.info(
+        f"[update_file_content] 📝 Called with: file_id='{file_id}', "
+        f"content_length={len(content)}, append={append}, file_name='{file_name}'"
+    )
+    
     try:
+        logger.info(f"[update_file_content] 🔧 Calling service...")
         result_data = await _update_file_content_service(
             user_id=user_id,
             file_id=file_id,
@@ -1095,9 +1148,20 @@ async def update_file_content(
             file_path=result_data.get('folder'),
             size_bytes=result_data['file_size']
         )
-        return result.model_dump_json(indent=2)
+        
+        result_json = result.model_dump_json(indent=2)
+        logger.info(
+            f"[update_file_content] 📤 Returning result (length={len(result_json)}): "
+            f"{result_json[:200]}..."
+        )
+        return result_json
         
     except Exception as e:
-        logger.error(f"Error updating file content for {file_id}: {e}", exc_info=True)
+        logger.error(
+            f"[update_file_content] ❌ Error updating file content for {file_id}: {e}", 
+            exc_info=True
+        )
         error = ErrorResponse(error="update_failed", details=str(e))
-        return error.model_dump_json(indent=2)
+        error_json = error.model_dump_json(indent=2)
+        logger.error(f"[update_file_content] 📤 Returning error: {error_json}")
+        return error_json

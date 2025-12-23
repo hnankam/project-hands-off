@@ -74,81 +74,6 @@ def _trigger_prewarm(organization_id: str, background_tasks: BackgroundTasks) ->
         background_tasks.add_task(prewarm_user_context, organization_id, None)
 
 
-def _preprocess_multimodal_content(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Preprocess multimodal content arrays to structured JSON format.
-    
-    TEMPORARY WORKAROUND: The AG-UI protocol supports content as an array of InputContent objects,
-    but the Python ag_ui library's Pydantic models only support string content.
-    
-    This function converts AG-UI multimodal format:
-    - content: [{ type: 'text', text: '...' }, { type: 'binary', url: '...', ... }]
-    
-    To structured JSON string that message_processor.py can parse:
-    - content: '{"text": "...", "attachments": [{"url": "...", "filename": "...", "mimeType": "..."}]}'
-    
-    This format is:
-    - Cleaner than HTML comment manifests (no regex parsing)
-    - Easy to validate and parse (direct JSON)
-    - Simple to remove when pydantic-ai adds native multimodal support
-    
-    Args:
-        data: The incoming request JSON
-        
-    Returns:
-        Preprocessed data with content arrays converted to JSON strings
-    """
-    if not isinstance(data, dict):
-        return data
-    
-    # Process messages array
-    messages = data.get('messages', [])
-    if not isinstance(messages, list):
-        return data
-    
-    for message in messages:
-        if not isinstance(message, dict):
-            continue
-            
-        # Only process user messages with array content
-        if message.get('role') != 'user':
-            continue
-            
-        content = message.get('content')
-        if not isinstance(content, list):
-            continue
-        
-        # Extract text and binary parts
-        text_parts = []
-        binary_parts = []
-        
-        for part in content:
-            if not isinstance(part, dict):
-                continue
-                
-            part_type = part.get('type')
-            if part_type == 'text':
-                text = part.get('text', '')
-                if text:
-                    text_parts.append(text)
-            elif part_type == 'binary':
-                binary_parts.append({
-                    'url': part.get('url'),
-                    'filename': part.get('filename'),
-                    'mimeType': part.get('mimeType'),
-                })
-        
-        # Build structured JSON content
-        structured_content = {
-            'text': '\n'.join(text_parts),
-            'attachments': binary_parts if binary_parts else []
-        }
-        
-        # Serialize to JSON string (message_processor.py will parse this)
-        message['content'] = json.dumps(structured_content, ensure_ascii=False)
-    
-    return data
-
-
 async def _resolve_tracking_ids(
     agent_type: str, model: str, organization_id: str, team_id: str
 ) -> tuple[str | None, str | None]:
@@ -249,6 +174,63 @@ async def _resolve_tracking_ids(
     return agent_db_id, model_db_id
 
 
+async def _preprocess_binary_attachments(request_data: dict, model: str) -> None:
+    """Preprocess binary attachments in request messages.
+    
+    Converts HTTP URLs to data URLs for latest message only.
+    For historical messages: removes binary content to prevent fetching.
+    URLs are preserved in original messages but not included in request.
+    
+    Args:
+        request_data: The request JSON data (modified in-place)
+        model: The model name (unused, kept for API compatibility)
+    """
+    import base64
+    import aiohttp
+    
+    messages = request_data.get('messages', [])
+    if not messages:
+        return
+    
+    last_idx = len(messages) - 1
+    for msg_idx, msg in enumerate(messages):
+        if not isinstance(msg.get('content'), list):
+            continue
+        
+        is_latest = (msg_idx == last_idx)
+        content = msg['content']
+        new_content = []
+        needs_update = False
+        
+        for item in content:
+            if isinstance(item, dict) and item.get('type') == 'binary':
+                url = item.get('url', '')
+                
+                if is_latest and url.startswith('http'):
+                    # Latest message: fetch URL and convert to data URL
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                                if response.status == 200:
+                                    base64_data = base64.b64encode(await response.read()).decode('utf-8')
+                                    item['url'] = f"data:{item.get('mimeType', 'application/octet-stream')};base64,{base64_data}"
+                                    new_content.append(item)
+                                else:
+                                    new_content.append(item)
+                    except Exception:
+                        new_content.append(item)
+                elif not is_latest:
+                    # Historical message: remove binary content to prevent fetching
+                    needs_update = True
+                else:
+                    new_content.append(item)
+            else:
+                new_content.append(item)
+        
+        if needs_update:
+            msg['content'] = new_content
+
+
 def register_agent_routes(app: FastAPI) -> None:
     """Register agent routes with parameterized handler."""
 
@@ -259,10 +241,7 @@ def register_agent_routes(app: FastAPI) -> None:
         # Extract session/thread IDs early for logging
         session_id_header = request.headers.get("x-copilot-session-id")
         thread_id_header = request.headers.get("x-copilot-thread-id")
-        
-        # Log incoming request for debugging
-        logger.info(f"🐍 [PYTHON] Received request: agent={agent_type}, model={model}, session={session_id_header}, thread={thread_id_header}")
-        
+
         # Enforce authentication context propagated from runtime
         (
             session_id,
@@ -332,8 +311,7 @@ def register_agent_routes(app: FastAPI) -> None:
             accept = request.headers.get('accept', SSE_CONTENT_TYPE)
             try:
                 request_data = await request.json()
-                # Preprocess multimodal content arrays to manifest format
-                request_data = _preprocess_multimodal_content(request_data)
+                await _preprocess_binary_attachments(request_data, model)
                 run_input = RunAgentInput.model_validate(request_data)
             except ValidationError as e:  
                 return JSONResponse(
@@ -403,11 +381,7 @@ def register_agent_routes(app: FastAPI) -> None:
                         pass
 
             async def event_generator():
-                """Generate SSE events from memory stream.
-                
-                Uses anyio.create_task_group() to keep both producer and consumer
-                in the same anyio context, avoiding cancel scope conflicts.
-                """
+                """Generate SSE events from memory stream."""
                 async with create_task_group() as tg:
                     # Start agent task in task group (same cancel scope as streams)
                     tg.start_soon(run_agent_task, send_stream)
@@ -426,7 +400,6 @@ def register_agent_routes(app: FastAPI) -> None:
                             pass
 
             response = StreamingResponse(event_generator(), media_type=accept)
-            logger.info(f"🐍 [PYTHON] Streaming response started: agent={agent_type}, model={model}, session={session_id}, thread={conversation_id}")
 
         except Exception as exc:
             logger.exception(

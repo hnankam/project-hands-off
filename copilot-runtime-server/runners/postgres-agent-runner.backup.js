@@ -126,21 +126,17 @@ export class PostgresAgentRunner extends AgentRunner {
     const { threadId, agent, input } = request;
     const { runId } = input;
     
-    let error = null;
-    const currentEvents = [];
+    let client = null;
     
     try {
-      // Step 1: Get parent run ID (for nested agent calls)
-      const parentRunId = await this.getLatestRunId(threadId);
+      // Step 1: Acquire lock and validate (pass agent for auth context)
+      client = await this.acquireRunLock(threadId, runId, agent);
       
-      // Step 2: Acquire lock and validate (pass agent for auth context)
-      await this.acquireRunLock(threadId, runId, agent, parentRunId);
-      
-      // Step 3: Load historic data for message deduplication
+      // Step 2: Load historic data for message deduplication
       const historicRuns = await this.getHistoricRuns(threadId);
       const historicMessageIds = this.extractMessageIds(historicRuns);
       
-      // Step 4: Set up observables
+      // Step 3: Set up observables
       const threadSubject = this.getOrCreateThreadSubject(threadId);
       this.activeSubjects.set(threadId, {
         threadSubject,
@@ -148,10 +144,11 @@ export class PostgresAgentRunner extends AgentRunner {
         agent,
       });
       
-      // Step 5: Track events
+      // Step 4: Track events
+      const currentEvents = [];
       const seenMessageIds = new Set(historicMessageIds);
       
-      // Step 6: Execute agent
+      // Step 5: Execute agent
       await agent.runAgent(input, {
         onEvent: async ({ event }) => {
           try {
@@ -203,105 +200,121 @@ export class PostgresAgentRunner extends AgentRunner {
         }
       });
       
-    } catch (err) {
-      error = err;
-      console.error(`[PostgresAgentRunner] Run failed: ${error.message}`);
-      this.metrics.runsFailed++;
-      
-    } finally {
-      // Always finalize (success or error)
-      await this.finalizeRun(request, currentEvents, error, runSubject, startTime);
-    }
-  }
-  
-  /**
-   * Finalize run - persist events, update state, cleanup
-   * @private
-   */
-  async finalizeRun(request, currentEvents, error, runSubject, startTime) {
-    const { threadId, input } = request;
-    const { runId } = input;
-    
-    try {
-      // Step 7: Finalize and persist
+      // Step 6: Finalize and persist
       const stopRequested = await this.isStopRequested(threadId);
       const appendedEvents = finalizeRunEvents(currentEvents, { stopRequested });
       
-      // Emit finalization events
-      const threadSubject = this.activeSubjects.get(threadId)?.threadSubject;
       for (const event of appendedEvents) {
-        if (!runSubject.closed) {
-          runSubject.next(event);
-        }
-        if (threadSubject) {
-          threadSubject.next(event);
-        }
+        runSubject.next(event);
+        threadSubject.next(event);
       }
       
-      // Determine final status
-      const status = error ? 'error' : (stopRequested ? 'stopped' : 'completed');
-      
-      // Compact and store
+      // Compact and store (use same client for transactional consistency)
       const compactedEvents = compactEvents(currentEvents);
       console.log(`[PostgresAgentRunner] Persisting ${compactedEvents.length} compacted events for run ${runId} (from ${currentEvents.length} raw events)`);
-      await this.completeRun(runId, compactedEvents, status);
+      await this.completeRun(runId, compactedEvents, stopRequested ? 'stopped' : 'completed', client);
       
-      // Update thread state
+      // Update thread state (use same client for transactional consistency)
       await this.updateThreadState(threadId, {
         is_running: false,
         current_run_id: null,
         stop_requested: false,
         last_accessed_at: new Date(),
-      });
+      }, client);
       
       // Update metrics
       const duration = Date.now() - startTime;
-      if (error) {
-        // Already counted in runsFailed
-      } else if (stopRequested) {
+      if (stopRequested) {
         this.metrics.runsStopped++;
       } else {
         this.metrics.runsCompleted++;
-        this.metrics.avgRunDuration = 
-          (this.metrics.avgRunDuration * (this.metrics.runsCompleted - 1) + duration) / 
-          this.metrics.runsCompleted;
       }
+      this.metrics.avgRunDuration = 
+        (this.metrics.avgRunDuration * (this.metrics.runsCompleted - 1) + duration) / 
+        this.metrics.runsCompleted;
       
       if (this.debug) {
-        console.log(`[PostgresAgentRunner] Run finalized: ${threadId}/${runId} (${duration}ms, ${status})`);
-      }
-      
-      // Verify data was saved (debug only)
-      if (this.debug) {
-        try {
-          const verify = await this.pool.query(
-            `SELECT run_id, status, jsonb_array_length(events) as event_count 
-             FROM agent_runs WHERE run_id = $1`,
-            [runId]
-          );
-          if (verify.rows.length > 0) {
-            console.log(`[PostgresAgentRunner] ✅ Verified: status=${verify.rows[0].status}, events=${verify.rows[0].event_count}`);
-          } else {
-            console.error(`[PostgresAgentRunner] ❌ Run ${runId} NOT FOUND in database!`);
-          }
-        } catch (verifyErr) {
-          console.error(`[PostgresAgentRunner] Verification failed: ${verifyErr.message}`);
-        }
+        console.log(`[PostgresAgentRunner] Run completed: ${threadId}/${runId} (${duration}ms)`);
       }
       
       // Complete observables
-      if (error) {
-        runSubject.error(error);
+      runSubject.complete();
+      
+    } catch (error) {
+      console.error(`[PostgresAgentRunner] Run failed: ${error.message}`);
+      this.metrics.runsFailed++;
+      
+      // Only finalize if we successfully acquired a client/lock
+      // If client is null, we never got the lock, so don't try to update thread state
+      if (client) {
+        try {
+          const currentEvents = [];
+          const appendedEvents = finalizeRunEvents(currentEvents, { 
+            stopRequested: await this.isStopRequested(threadId) 
+          });
+          
+          if (appendedEvents.length > 0) {
+            const compactedEvents = compactEvents(appendedEvents);
+            await this.completeRun(runId, compactedEvents, 'error', client);
+          }
+          
+          // Use same client to update thread state (avoids lock timeout)
+          await this.updateThreadState(threadId, {
+            is_running: false,
+            current_run_id: null,
+            stop_requested: false,
+          }, client);
+        } catch (finalizeError) {
+          console.error(`[PostgresAgentRunner] Error during finalization: ${finalizeError.message}`);
+        }
       } else {
-        runSubject.complete();
+        // Lock acquisition failed - thread state is already consistent
+        if (this.debug) {
+          console.log(`[PostgresAgentRunner] Skipping finalization - lock was never acquired`);
+        }
       }
       
-    } catch (finalizeError) {
-      console.error(`[PostgresAgentRunner] Finalization error: ${finalizeError.message}`);
-      if (!runSubject.closed) {
-        runSubject.error(finalizeError);
+      // Complete the observable with error to properly close streaming connection
+      runSubject.error(error);
+      
+      throw error;
+      
+      } finally {
+      // Release database lock (always release, whether success or error)
+      if (client) {
+        try {
+          // Try to commit if transaction is still active
+          console.log(`[PostgresAgentRunner] Committing transaction for run ${runId}`);
+          await client.query('COMMIT');
+          console.log(`[PostgresAgentRunner] Transaction committed successfully for run ${runId}`);
+          
+          // Verify the data was actually saved
+          try {
+            const verify = await this.pool.query(
+              `SELECT run_id, status, jsonb_array_length(events) as event_count, completed_at 
+               FROM agent_runs WHERE run_id = $1`,
+              [runId]
+            );
+            if (verify.rows.length > 0) {
+              console.log(`[PostgresAgentRunner] ✅ Verified in DB: run_id=${verify.rows[0].run_id}, status=${verify.rows[0].status}, events=${verify.rows[0].event_count}`);
+            } else {
+              console.error(`[PostgresAgentRunner] ❌ Run ${runId} NOT FOUND in database after commit!`);
+            }
+          } catch (verifyErr) {
+            console.error(`[PostgresAgentRunner] Verification query failed: ${verifyErr.message}`);
+          }
+        } catch (commitErr) {
+          console.error(`[PostgresAgentRunner] Commit failed for run ${runId}: ${commitErr.message}`);
+          // Ignore commit errors (transaction may have been rolled back)
+        }
+        
+        try {
+          client.release();
+        } catch (releaseErr) {
+          console.error(`[PostgresAgentRunner] Error releasing client: ${releaseErr.message}`);
+        }
       }
-    } finally {
+      
       // Complete thread subject before deleting
       const subjects = this.activeSubjects.get(threadId);
       if (subjects?.threadSubject) {
@@ -350,98 +363,22 @@ export class PostgresAgentRunner extends AgentRunner {
         return;
       }
       
-      /* ========================================================================
-       * TRANSFORMATION CODE (COMMENTED OUT FOR LATER REUSE)
-       * ========================================================================
-       * This code transforms RUN_ERROR events to RUN_FINISHED to show failed
-       * runs in history. Currently disabled - we just filter them out.
-       * 
-       * To re-enable: Uncomment this block and remove the simple filter below.
-       * ========================================================================
-       *
-      const completeRuns = historicRuns.map(run => {
+      // Filter out incomplete runs (runs that started but never finished)
+      // This happens when runs error out without emitting RUN_FINISHED
+      const completeRuns = historicRuns.filter(run => {
         const events = run.events || [];
         const hasRunStarted = events.some(e => e.type === 'RUN_STARTED');
         const hasRunFinished = events.some(e => e.type === 'RUN_FINISHED');
-        const hasRunError = events.some(e => e.type === 'RUN_ERROR');
         
-        // Always process events to remove RUN_ERROR
-        if (hasRunError) {
-          let transformedEvents;
-          
-          if (hasRunFinished) {
-            // Run already has RUN_FINISHED, just filter out RUN_ERROR events
-            transformedEvents = events.filter(event => {
-              if (event.type === 'RUN_ERROR') {
-                if (this.debug) {
-                  console.log(`[PostgresAgentRunner] Filtering out RUN_ERROR for complete run ${run.runId}`);
-                }
-                return false; // Remove RUN_ERROR
-              }
-              return true; // Keep all other events
-            });
-          } else {
-            // No RUN_FINISHED, transform RUN_ERROR to RUN_FINISHED
-            transformedEvents = events.map(event => {
-              if (event.type === 'RUN_ERROR') {
-                if (this.debug) {
-                  console.log(`[PostgresAgentRunner] Transforming RUN_ERROR to RUN_FINISHED for run ${run.runId}`);
-                }
-                // Ensure required fields are present
-                const runStartedEvent = events.find(e => e.type === 'RUN_STARTED');
-                return {
-                  ...event,
-                  type: 'RUN_FINISHED',
-                  threadId: event.threadId || runStartedEvent?.threadId || threadId,
-                  runId: event.runId || run.runId,
-                  // Preserve error info in metadata
-                  metadata: {
-                    ...event.metadata,
-                    originalType: 'RUN_ERROR',
-                    error: event.error
-                  }
-                };
-              }
-              return event;
-            });
-            
-            // If still no RUN_FINISHED after transformation, add synthetic one
-            const nowHasFinished = transformedEvents.some(e => e.type === 'RUN_FINISHED');
-            if (!nowHasFinished && hasRunStarted) {
-              if (this.debug) {
-                console.log(`[PostgresAgentRunner] Adding synthetic RUN_FINISHED for incomplete run ${run.runId}`);
-              }
-              const runStartedEvent = transformedEvents.find(e => e.type === 'RUN_STARTED');
-              transformedEvents.push({
-                type: 'RUN_FINISHED',
-                threadId: runStartedEvent?.threadId || threadId,
-                runId: run.runId,
-                metadata: {
-                  synthetic: true,
-                  reason: 'incomplete_run'
-                }
-              });
-            }
-          }
-          
-          return { ...run, events: transformedEvents };
-        }
-        
-        return run;
-      });
-       *
-       * ======================================================================== */
-      
-      // Simple approach: Filter out runs with RUN_ERROR events
-      const completeRuns = historicRuns.filter(run => {
-        const hasError = (run.events || []).some(e => e.type === 'RUN_ERROR');
-        if (hasError && this.debug) {
-          console.log(`[PostgresAgentRunner] Filtering out run ${run.runId} (contains RUN_ERROR)`);
-        }
-        return !hasError; // Only keep runs without errors
+        // Include runs that have both started and finished, or haven't started at all
+        return !hasRunStarted || hasRunFinished;
       });
       
-      // Flatten and compact all events from all runs
+      if (this.debug && completeRuns.length < historicRuns.length) {
+        console.log(`[PostgresAgentRunner] Filtered ${historicRuns.length - completeRuns.length} incomplete runs from history`);
+      }
+      
+      // Flatten and compact all events from complete runs
       const allEvents = completeRuns.flatMap(run => run.events);
       const compactedEvents = compactEvents(allEvents);
       
@@ -624,71 +561,135 @@ export class PostgresAgentRunner extends AgentRunner {
   }
 
   /**
-   * Get the latest run ID for a thread (for parent tracking)
+   * Acquire run lock using SELECT FOR UPDATE
    * @private
    */
-  async getLatestRunId(threadId) {
-    const result = await this.pool.query(
-      `SELECT run_id FROM agent_runs 
-       WHERE thread_id = $1 AND status IN ('completed', 'stopped')
-       ORDER BY created_at DESC 
-       LIMIT 1`,
-      [threadId]
-    );
-    return result.rows[0]?.run_id || null;
-  }
-
-  /**
-   * Acquire run lock using atomic INSERT...ON CONFLICT
-   * @private
-   */
-  async acquireRunLock(threadId, runId, agent, parentRunId = null) {
-    const authContext = this.extractAuthContext(agent);
+  async acquireRunLock(threadId, runId, agent) {
+    const client = await this.pool.connect();
     
-    // Try to acquire lock atomically - insert new thread or update existing
-    const result = await this.pool.query(
-      `INSERT INTO agent_threads 
-       (thread_id, user_id, organization_id, team_id, session_id, 
-        agent_type, model_type, is_running, current_run_id, 
-        created_at, updated_at, last_accessed_at) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, NOW(), NOW(), NOW())
-       ON CONFLICT (thread_id) DO UPDATE SET
-         is_running = TRUE,
-         current_run_id = $8,
-         updated_at = NOW(),
-         last_accessed_at = NOW()
-       WHERE agent_threads.is_running = FALSE
-       RETURNING thread_id, is_running`,
-      [
-        threadId, 
-        authContext.userId, 
-        authContext.organizationId, 
-        authContext.teamId,
-        authContext.sessionId,
-        authContext.agentType,
-        authContext.modelType,
-        runId
-      ]
-    );
+    // Add error handler to prevent unhandled error events from crashing the server
+    // This catches connection termination errors (timeouts, network issues, DB restarts)
+    client.on('error', (err) => {
+      console.error(`[PostgresAgentRunner] Client connection error: ${err.message}`);
+      // Don't throw - just log. Client will be released in finally block.
+    });
     
-    // If no rows returned, thread is already running
-    if (result.rows.length === 0) {
-      throw new Error('Thread already running');
+    try {
+      await client.query('BEGIN');
+      
+      // Set statement timeout for this transaction (5 seconds)
+      await client.query('SET LOCAL statement_timeout = 5000');
+      
+      // Extract auth context from agent headers
+      const authContext = this.extractAuthContext(agent);
+      
+      // SELECT FOR UPDATE NOWAIT - fail immediately if row is locked
+      // This prevents cascading timeouts when multiple runs try to access same thread
+      let result;
+      try {
+        result = await client.query(
+          `SELECT is_running, stop_requested 
+           FROM agent_threads 
+           WHERE thread_id = $1 
+           FOR UPDATE NOWAIT`,
+          [threadId]
+        );
+      } catch (lockError) {
+        // Rollback and release client before throwing
+        try {
+          await client.query('ROLLBACK');
+        } catch (rollbackErr) {
+          // Ignore rollback errors
+        }
+        client.release();
+        
+        if (lockError.code === '55P03') {
+          // Lock not available - another run is active on this thread
+          throw new Error(`Thread ${threadId} is locked by another run. Please wait and try again.`);
+        }
+        throw lockError;
+      }
+      
+      if (result.rows.length === 0) {
+        // Thread doesn't exist, create it with auth context
+        await client.query(
+          `INSERT INTO agent_threads 
+           (thread_id, user_id, organization_id, team_id, session_id, 
+            agent_type, model_type, is_running, current_run_id, 
+            created_at, updated_at, last_accessed_at) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, NOW(), NOW(), NOW())`,
+          [
+            threadId, 
+            authContext.userId, 
+            authContext.organizationId, 
+            authContext.teamId,
+            authContext.sessionId,
+            authContext.agentType,
+            authContext.modelType,
+            runId
+          ]
+        );
+        
+        // Create run record
+        await client.query(
+          `INSERT INTO agent_runs 
+           (run_id, thread_id, status, events, created_at) 
+           VALUES ($1, $2, 'running', '[]'::jsonb, NOW())`,
+          [runId, threadId]
+        );
+        
+        if (this.debug) {
+          console.log(`[PostgresAgentRunner] Thread created: ${threadId}`);
+        }
+        return client;
+      }
+      
+      if (result.rows[0].is_running) {
+        // Rollback and release client before throwing
+        try {
+          await client.query('ROLLBACK');
+        } catch (rollbackErr) {
+          // Ignore rollback errors
+        }
+        client.release();
+        throw new Error('Thread already running');
+      }
+      
+      // Update to running state
+      await client.query(
+        `UPDATE agent_threads 
+         SET is_running = TRUE, current_run_id = $2, updated_at = NOW(), last_accessed_at = NOW() 
+         WHERE thread_id = $1`,
+        [threadId, runId]
+      );
+      
+      // Create run record
+      await client.query(
+        `INSERT INTO agent_runs 
+         (run_id, thread_id, status, events, created_at) 
+         VALUES ($1, $2, 'running', '[]'::jsonb, NOW())`,
+        [runId, threadId]
+      );
+      
+      return client;
+      
+    } catch (error) {
+      // Rollback and release on any error
+      // Since we're throwing, executeRun won't receive the client, so we must release it here
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error(`[PostgresAgentRunner] Rollback error: ${rollbackError.message}`);
+      }
+      
+      try {
+        client.release();
+      } catch (releaseError) {
+        console.error(`[PostgresAgentRunner] Release error: ${releaseError.message}`);
+      }
+      
+      throw error;
     }
-    
-    // Create run record with optional parent (separate query, no transaction needed)
-    await this.pool.query(
-      `INSERT INTO agent_runs 
-       (run_id, thread_id, parent_run_id, status, events, created_at) 
-       VALUES ($1, $2, $3, 'running', '[]'::jsonb, NOW())`,
-      [runId, threadId, parentRunId]
-    );
-    
-    if (this.debug) {
-      console.log(`[PostgresAgentRunner] Lock acquired: ${threadId}/${runId}`);
-    }
-    
-    return null; // No client needed anymore
   }
   
   /**
@@ -708,15 +709,19 @@ export class PostgresAgentRunner extends AgentRunner {
    * @private
    * @param {string} threadId - Thread ID
    * @param {Object} updates - Fields to update
+   * @param {Object} [client] - Optional database client (uses pool if not provided)
    */
-  async updateThreadState(threadId, updates) {
+  async updateThreadState(threadId, updates, client = null) {
     const setClauses = Object.keys(updates)
       .map((key, idx) => `${key} = $${idx + 2}`)
       .join(', ');
     
     const values = [threadId, ...Object.values(updates)];
     
-    await this.pool.query(
+    // Use provided client (transactional) or pool (non-transactional)
+    const dbClient = client || this.pool;
+    
+    await dbClient.query(
       `UPDATE agent_threads SET ${setClauses}, updated_at = NOW() WHERE thread_id = $1`,
       values
     );
@@ -737,11 +742,15 @@ export class PostgresAgentRunner extends AgentRunner {
    * @param {string} runId - Run ID
    * @param {Array} events - Events to store
    * @param {string} status - Final status ('completed', 'stopped', 'error')
+   * @param {Object} [client] - Optional database client (uses pool if not provided)
    */
-  async completeRun(runId, events, status) {
+  async completeRun(runId, events, status, client = null) {
+    // Use provided client (transactional) or pool (non-transactional)
+    const dbClient = client || this.pool;
+    
     console.log(`[PostgresAgentRunner] completeRun: runId=${runId}, status=${status}, events=${events.length}`);
     
-    const result = await this.pool.query(
+    const result = await dbClient.query(
       `UPDATE agent_runs 
        SET status = $2, events = $3, completed_at = NOW() 
        WHERE run_id = $1
@@ -1063,5 +1072,4 @@ export class PostgresAgentRunner extends AgentRunner {
     console.log('[PostgresAgentRunner] Shutdown complete');
   }
 }
-
 

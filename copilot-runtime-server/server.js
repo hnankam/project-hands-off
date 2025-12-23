@@ -40,6 +40,7 @@ import { HttpAgent } from '@ag-ui/client';
 
 // PostgresAgentRunner for persistent storage
 import { PostgresAgentRunner } from './runners/postgres-agent-runner.js';
+import {SqliteAgentRunner} from "@copilotkitnext/sqlite-runner";
 
 // ============================================================================
 // Configuration
@@ -56,6 +57,10 @@ import {
   TRUST_PROXY,
   DEBUG
 } from './config/index.js';
+
+// Runner configuration
+const USE_SQLITE_RUNNER = process.env.USE_SQLITE_RUNNER === 'true';
+const SQLITE_DB_PATH = process.env.SQLITE_DB_PATH || './copilotkit.db';
 
 // ============================================================================
 // Utilities
@@ -271,22 +276,34 @@ async function createCopilotKitRuntime() {
     },
   });
 
-  // Create runner with PostgresAgentRunner
-  const runner = new PostgresAgentRunner({
-    pool: getPool(),
-    ttl: 86400000,        // 24 hours
-    cleanupInterval: 3600000, // 1 hour
-    persistEventsImmediately: true, // Persist events immediately for data durability
-    maxHistoricRuns: parseInt(process.env.AGENT_RUNNER_MAX_HISTORIC_RUNS) || 1000,  // Max runs to load on connect (default: 10)
-    debug: DEBUG,         // Verbose logging in development only
-  });
+  // Create runner based on configuration
+  let runner;
+  
+  if (USE_SQLITE_RUNNER) {
+    // SQLite runner for lightweight persistence
+    log('Using SqliteAgentRunner');
+    runner = new SqliteAgentRunner({
+      dbPath: SQLITE_DB_PATH,
+    });
+  } else {
+    // PostgreSQL runner for production (default)
+    log('Using PostgresAgentRunner');
+    runner = new PostgresAgentRunner({
+      pool: getPool(),
+      ttl: 86400000,        // 24 hours
+      cleanupInterval: 3600000, // 1 hour
+      persistEventsImmediately: true, // Persist events immediately for data durability
+      maxHistoricRuns: parseInt(process.env.AGENT_RUNNER_MAX_HISTORIC_RUNS) || 1000,  // Max runs to load on connect (default: 10)
+      debug: DEBUG,         // Verbose logging in development only
+    });
 
-  // Recover any stalled runs from previous server instance
-  log('Recovering stalled runs...');
-  await runner.recoverStalledRuns();
-  log('Recovery complete');
+    // Recover any stalled runs from previous server instance (PostgreSQL only)
+    log('Recovering stalled runs...');
+    await runner.recoverStalledRuns();
+    log('Recovery complete');
+  }
 
-  // Create runtime with PostgresAgentRunner
+  // Create runtime with selected runner
   // const runtime = new CopilotRuntime({
   //   agents: {
   //     [DEFAULT_AGENT_ID]: defaultAgent,
@@ -298,7 +315,7 @@ async function createCopilotKitRuntime() {
     agents: {
       [DEFAULT_AGENT_ID]: defaultAgent,
     },
-    runner,  // New: PostgreSQL-backed with persistence
+    runner,  // PostgreSQL or SQLite backed with persistence
   });
 
   return { runtime, defaultAgent, defaultAgentType, defaultModelType, runner };
