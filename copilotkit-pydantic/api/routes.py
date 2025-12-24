@@ -373,7 +373,12 @@ def register_agent_routes(app: FastAPI) -> None:
                     async for event in event_stream:
                         await send_stream.send(event)
                 except Exception as e:
-                    logger.error(f"Agent execution error: {e}")
+                    from pydantic import ValidationError
+                    if isinstance(e, ValidationError):
+                        logger.error(f"Agent state validation error: {e}")
+                        logger.error(f"Validation errors: {e.errors()}")
+                    else:
+                        logger.error(f"Agent execution error: {e}")
                 finally:
                     try:
                         await send_stream.aclose()

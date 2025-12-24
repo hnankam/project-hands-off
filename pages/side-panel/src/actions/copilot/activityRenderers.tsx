@@ -219,7 +219,7 @@ const LiveGraphStateCard: React.FC<{
   // Convert to GraphAgentState for rendering
   const graphState = convertToGraphAgentState({ graphs: { [graphId]: graph } });
   
-  if (!graphState || !graphState.steps || graphState.steps.length === 0) {
+  if (!graphState) {
     return null;
   }
 
@@ -241,6 +241,7 @@ const LiveGraphStateCard: React.FC<{
         state={graphState}
         isCollapsed={false}
         sessionId={sessionId}
+        instanceId={graphId}
       />
     </div>
   );

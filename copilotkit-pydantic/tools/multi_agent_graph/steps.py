@@ -206,6 +206,12 @@ async def run_worker_step(
     run_index = calculate_run_index(state.execution_history, node_name)
     indexed_key = f"{node_name}:{run_index}"
     
+    # Check if this step has already been executed (during resume)
+    if indexed_key in state.execution_history:
+        logger.info(f"   [{node_name}] {indexed_key} already in execution history, skipping...")
+        # Step already executed, return continue to proceed to next step
+        return "continue"
+    
     # Append indexed key to preserve unique results for each run
     state.execution_history.append(indexed_key)
     

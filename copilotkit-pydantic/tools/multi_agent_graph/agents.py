@@ -1,7 +1,9 @@
 """Agent factory for multi-agent graph.
 
 This module creates and configures all specialized agents used in the
-multi-agent graph orchestration.
+multi-agent graph orchestration. Specialized agents (image_generation,
+web_search, code_execution) MUST be configured as auxiliary agents in
+the main agent's metadata. No fallback agents are provided.
 """
 
 from __future__ import annotations
@@ -9,37 +11,43 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic_ai import Agent
-from pydantic_ai import ImageGenerationTool, WebSearchTool, CodeExecutionTool
-from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.tools import DeferredToolRequests
 
-from config.environment import GOOGLE_API_KEY
+from config import logger
+from tools.auxiliary_agents import get_auxiliary_agent
 from .types import RoutingDecision, ErrorRecoveryDecision
-from .constants import THINKING_INSTRUCTION, DEFAULT_GENERAL_MODEL, DEFAULT_IMAGE_MODEL
+from .constants import THINKING_INSTRUCTION
 
 
-def create_agents(
+async def create_agents(
     orchestrator_model: Any,
-    api_key: str | None = None,
+    organization_id: str | None = None,
+    team_id: str | None = None,
+    agent_type: str | None = None,
+    agent_info: dict | None = None,
 ) -> dict[str, Any]:
     """Create all agents needed for the multi-agent graph.
     
+    Specialized agents (image_generation, web_search, code_execution) are loaded
+    as auxiliary agents from the main agent's configuration. These are REQUIRED
+    and must be configured in the main agent's metadata.
+    
+    The orchestrator model is used for both orchestration and result aggregation.
+    
     Args:
-        orchestrator_model: The model to use for the orchestrator agent (from ctx.model).
-                           This is REQUIRED - never create a new model for orchestrator.
-        api_key: Google API key. If None, uses GOOGLE_API_KEY from environment.
+        orchestrator_model: The model to use for orchestrator and result aggregator (from ctx.model).
+                           This is REQUIRED - never create a new model.
+        organization_id: Organization ID for loading auxiliary agents (REQUIRED)
+        team_id: Team ID for loading auxiliary agents (REQUIRED)
+        agent_type: Main agent type for auxiliary agent lookup (REQUIRED)
+        agent_info: Main agent info/metadata containing auxiliary agent configuration (REQUIRED)
         
     Returns:
         Dict with all agent instances
+        
+    Raises:
+        ValueError: If any required auxiliary agent is not configured in agent metadata
     """
-    key = api_key or GOOGLE_API_KEY
-    if not key:
-        raise ValueError("Google API key is required. Set GOOGLE_API_KEY environment variable.")
-    
-    google_provider = GoogleProvider(api_key=key)
-    image_generation_model = GoogleModel(model_name=DEFAULT_IMAGE_MODEL, provider=google_provider)
-    general_model = GoogleModel(model_name=DEFAULT_GENERAL_MODEL, provider=google_provider)
 
     # Build orchestrator agent with the provided model
     # Include DeferredToolRequests in output_type to support human-in-the-loop tools
@@ -49,46 +57,75 @@ def create_agents(
         instructions=_get_orchestrator_instructions(),
     )
     
-    image_generation_agent = Agent(
-        model=image_generation_model,
-        builtin_tools=[ImageGenerationTool()],
-        output_type=str,
-        instructions=(
-            "You are an image generation assistant. Based on the user's prompt, "
-            "generate an image based on the description provided. "
-            "Use the image generation tool to create the image."
-            + THINKING_INSTRUCTION
-        ),
+    # ==================== Load specialized agents as auxiliary agents ====================
+    # Load from main agent's auxiliary_agents configuration
+    # Auxiliary agents are REQUIRED - no fallbacks
+    
+    main_agent_metadata = agent_info.get('metadata', {}) if agent_info else {}
+    
+    # Image Generation Agent
+    image_generation_agent = await get_auxiliary_agent(
+        aux_type='image_generation',
+        main_agent_type=agent_type or 'unknown',
+        main_agent_metadata=main_agent_metadata,
+        organization_id=organization_id,
+        team_id=team_id,
     )
     
-    web_search_agent = Agent(
-        model=general_model,
-        builtin_tools=[WebSearchTool()],
-        output_type=str,
-        instructions=(
-            "You are a web search assistant. Search the web for relevant information."
-            + THINKING_INSTRUCTION
-        ),
+    if not image_generation_agent:
+        logger.error(
+            "Image generation auxiliary agent not configured for agent_type=%s. "
+            "Configure auxiliary_agents.image_generation in agent metadata.",
+            agent_type
+        )
+        raise ValueError(
+            f"Image generation auxiliary agent not configured for agent '{agent_type}'. "
+            "Please configure auxiliary_agents.image_generation in agent metadata."
+        )
+    
+    # Web Search Agent
+    web_search_agent = await get_auxiliary_agent(
+        aux_type='web_search',
+        main_agent_type=agent_type or 'unknown',
+        main_agent_metadata=main_agent_metadata,
+        organization_id=organization_id,
+        team_id=team_id,
     )
     
-    code_execution_agent = Agent(
-        model=general_model,
-        builtin_tools=[CodeExecutionTool()],
-        output_type=str,
-        instructions=(
-            "You are a code execution assistant. Execute code to solve problems.\n\n"
-            "When responding, you MUST return a structured JSON object with the following fields:\n"
-            "- language: The programming language used (e.g., 'python', 'javascript')\n"
-            "- code: The exact source code you executed\n"
-            "- output: The result/output from running the code\n"
-            "- success: True if execution succeeded, False if it failed\n"
-            "- error_message: Any error message if execution failed (empty if successful)"
-            + THINKING_INSTRUCTION
-        ),
+    if not web_search_agent:
+        logger.error(
+            "Web search auxiliary agent not configured for agent_type=%s. "
+            "Configure auxiliary_agents.web_search in agent metadata.",
+            agent_type
+        )
+        raise ValueError(
+            f"Web search auxiliary agent not configured for agent '{agent_type}'. "
+            "Please configure auxiliary_agents.web_search in agent metadata."
+        )
+    
+    # Code Execution Agent
+    code_execution_agent = await get_auxiliary_agent(
+        aux_type='code_execution',
+        main_agent_type=agent_type or 'unknown',
+        main_agent_metadata=main_agent_metadata,
+        organization_id=organization_id,
+        team_id=team_id,
     )
     
+    if not code_execution_agent:
+        logger.error(
+            "Code execution auxiliary agent not configured for agent_type=%s. "
+            "Configure auxiliary_agents.code_execution in agent metadata.",
+            agent_type
+        )
+        raise ValueError(
+            f"Code execution auxiliary agent not configured for agent '{agent_type}'. "
+            "Please configure auxiliary_agents.code_execution in agent metadata."
+        )
+    
+    # Result Aggregator - uses orchestrator model (not configurable as auxiliary)
     result_aggregator_agent = Agent(
-        model=general_model,
+        model=orchestrator_model,
         output_type=str,
         instructions=(
             "You are a result aggregator. Your job is to synthesize and summarize results from multiple "
@@ -99,8 +136,7 @@ def create_agents(
     )
     
     return {
-        'general_model': general_model,
-        'google_provider': google_provider,
+        'general_model': orchestrator_model,  # Same model as orchestrator for dummy agent
         'orchestrator': orchestrator_agent,
         'image_generation': image_generation_agent,
         'web_search': web_search_agent,

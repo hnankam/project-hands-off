@@ -34,22 +34,31 @@ from .steps import (
 from .constants import DEFAULT_IMAGE_MODEL, DEFAULT_GENERAL_MODEL
 
 
-def create_multi_agent_graph(
+async def create_multi_agent_graph(
     orchestrator_model: Any,
-    api_key: str | None = None,
+    organization_id: str | None = None,
+    team_id: str | None = None,
+    agent_type: str | None = None,
+    agent_info: dict | None = None,
 ):
     """Create a multi-agent graph using the beta API builder pattern.
     
     Args:
-        orchestrator_model: The model from ctx.model to use for orchestrator (REQUIRED).
-        api_key: Optional Google API key. If None, uses environment variable.
+        orchestrator_model: The model from ctx.model to use for orchestrator and aggregator (REQUIRED).
+        organization_id: Organization ID for loading auxiliary agents
+        team_id: Team ID for loading auxiliary agents
+        agent_type: Main agent type for auxiliary agent lookup
+        agent_info: Main agent info/metadata containing auxiliary agent configuration
         
     Returns:
         Built graph ready for execution
     """
-    agents = create_agents(
+    agents = await create_agents(
         orchestrator_model=orchestrator_model,
-        api_key=api_key,
+        organization_id=organization_id,
+        team_id=team_id,
+        agent_type=agent_type,
+        agent_info=agent_info,
     )
     
     g = GraphBuilder(
@@ -357,6 +366,25 @@ def create_multi_agent_graph(
             if h == "Confirmation" or h.startswith("Confirmation:")
         ])
         indexed_key = f"Confirmation:{run_index}"
+        
+        # Check if this confirmation has already been completed (during resume)
+        if indexed_key in ctx.state.execution_history:
+            logger.info(f"   [Confirmation] {indexed_key} already in execution history, skipping...")
+            # Check if confirmation was approved
+            if indexed_key in ctx.state.tool_calls:
+                for tc in ctx.state.tool_calls[indexed_key]:
+                    tc_dict = tc if isinstance(tc, dict) else tc.__dict__
+                    if tc_dict.get("status") == "completed":
+                        result = tc_dict.get("result", "")
+                        if isinstance(result, str) and "true" in result.lower():
+                            logger.info(f"   [Confirmation] User confirmed, continuing...")
+                            return "continue"
+                        else:
+                            logger.info(f"   [Confirmation] User declined, ending...")
+                            ctx.state.result = "User cancelled the action"
+                            return "end"
+            logger.info(f"   [Confirmation] No completed confirmation found, continuing anyway...")
+            return "continue"
         
         # Append to execution history
         ctx.state.execution_history.append(indexed_key)

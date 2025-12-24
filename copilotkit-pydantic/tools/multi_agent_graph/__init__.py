@@ -42,6 +42,9 @@ result = await run_multi_agent_graph(
 from .runner import run_multi_agent_graph
 from .graph import create_multi_agent_graph
 
+# Graph tools
+from .actions import create_graph, resume_graph
+
 # Types
 from .types import (
     # Action types
@@ -94,6 +97,9 @@ __all__ = [
     # Main entry points
     'run_multi_agent_graph',
     'create_multi_agent_graph',
+    # Graph tools
+    'create_graph',
+    'resume_graph',
     # Types
     'ActionType',
     'WorkerResult',

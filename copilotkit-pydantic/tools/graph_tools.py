@@ -1,10 +1,24 @@
 """
 Graph Management Tools
 
-Similar to plan management tools, these provide CRUD operations for GraphInstance objects.
-Graphs can be referenced by name or ID, supporting multi-instance graph execution.
+Provides comprehensive graph lifecycle management and execution tools:
 
-Also includes run_graph() for executing multi-agent graphs.
+**Lifecycle Tools:**
+- create_graph: Initialize a new graph instance
+- resume_graph: Resume a paused/waiting graph after user interaction
+
+**Management Tools:**
+- update_graph_status: Change graph status (active, paused, completed, etc.)
+- rename_graph: Rename a graph for better organization
+- list_graphs: View all graphs in the session
+- get_graph_details: Get detailed information about a specific graph
+- delete_graph: Remove a graph from the session
+
+**Execution Tool:**
+- run_graph: Execute multi-agent graphs for complex queries
+
+Graphs can be referenced by name or ID, supporting multi-instance graph execution.
+All tools integrate with the AG-UI protocol for real-time frontend updates.
 """
 
 from __future__ import annotations
@@ -14,311 +28,429 @@ import logging
 
 from pydantic_ai.tools import ToolReturn
 from pydantic_ai import RunContext
-from ag_ui.core import RunAgentInput, UserMessage
+from ag_ui.core import RunAgentInput, UserMessage, EventType, StateDeltaEvent, ActivityDeltaEvent, StateSnapshotEvent, ActivitySnapshotEvent
 
-from core.models import UnifiedDeps, GraphInstance
+from core.models import UnifiedDeps, GraphInstance, JSONPatchOp
 from tools.multi_agent_graph import run_multi_agent_graph, QueryState
+from tools.multi_agent_graph.actions import (
+    create_graph as create_graph_internal,
+    resume_graph as resume_graph_internal
+)
+from tools.multi_agent_graph.state import build_graph_agent_state
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
-
-
-# ========== Helper Functions ==========
-
-def resolve_graph_identifier(state, graph_identifier: str) -> str | None:
-    """
-    Resolve graph identifier (name or ID) to actual graph_id.
-    Supports case-insensitive and partial name matching.
-    
-    Args:
-        state: AgentState containing graphs dictionary
-        graph_identifier: Either graph_id or graph name
-        
-    Returns:
-        graph_id if found, None otherwise
-    """
-    graphs = state.graphs
-    
-    # Direct ID match
-    if graph_identifier in graphs:
-        return graph_identifier
-    
-    # Case-insensitive exact name match
-    for gid, graph in graphs.items():
-        if graph.name.lower() == graph_identifier.lower():
-            return gid
-    
-    # Partial name match (case-insensitive)
-    matches = []
-    search_lower = graph_identifier.lower()
-    for gid, graph in graphs.items():
-        if search_lower in graph.name.lower():
-            matches.append((gid, graph.name))
-    
-    if len(matches) == 1:
-        return matches[0][0]
-    elif len(matches) > 1:
-        logger.warning(f"Multiple graphs match '{graph_identifier}': {[m[1] for m in matches]}")
-        return None  # Ambiguous
-    
-    return None
 
 
 # ========== Graph Management Tools ==========
 
 async def update_graph_status(
     ctx: RunContext[UnifiedDeps],
-    graph_identifier: str,
+    graph_id: str,
     status: str
 ) -> ToolReturn:
-    """
-    Update the status of a graph execution.
+    """Change a graph's execution status.
     
-    Use this to pause, resume, complete, or cancel graph executions.
+    Updates the status flag for a graph instance (active, paused, completed, cancelled, waiting).
     
     Args:
-        ctx: The run context
-        graph_identifier: Graph name or ID
-        status: New status - 'active', 'paused', 'completed', 'cancelled', 'waiting'
+        graph_id: Graph ID (e.g., "abc123def456")
+        status: New status ('active', 'paused', 'completed', 'cancelled', 'waiting')
         
     Returns:
-        Success or error message
-        
-    Examples:
-        # Pause a running graph
-        update_graph_status("Research ML Topics", "paused")
-        
-        # Resume a paused graph
-        update_graph_status("Research ML Topics", "active")
-        
-        # Mark as completed
-        update_graph_status("abc123def456", "completed")
+        Confirmation message with old and new status
     """
-    graph_id = resolve_graph_identifier(ctx.deps.state, graph_identifier)
-    if not graph_id:
-        return ToolReturn(return_value=f'Graph "{graph_identifier}" not found')
+    if graph_id not in ctx.deps.state.graphs:
+        return ToolReturn(return_value=f'Graph "{graph_id}" not found')
     
     graph = ctx.deps.state.graphs[graph_id]
     old_status = graph.status
     graph.status = status
-    graph.updated_at = datetime.now().isoformat()
+    new_timestamp = datetime.now().isoformat()
+    graph.updated_at = new_timestamp
+    
+    # Create JSON Patch operations for state delta
+    patch_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/status',
+            value=status
+        ),
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/updated_at',
+            value=new_timestamp
+        ),
+    ]
+    
+    # Create activity delta operations
+    activity_message_id = f"graph-{graph_id}"
+    activity_delta_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/status',
+            value=status
+        ),
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/updated_at',
+            value=new_timestamp
+        ),
+    ]
     
     return ToolReturn(
         return_value=f'Graph "{graph.name}" status changed from {old_status} to {status}',
-        metadata=[{
-            "type": "agent_state",
-            "activity_content": ctx.deps.state.model_dump()
-        }]
+        metadata=[
+            StateDeltaEvent(
+                type=EventType.STATE_DELTA,
+                delta=[op.model_dump(by_alias=True) for op in patch_ops],
+            ),
+            ActivityDeltaEvent(
+                messageId=activity_message_id,
+                activityType="agent_state",
+                patch=[op.model_dump(by_alias=True) for op in activity_delta_ops],
+            ),
+        ],
+    )
+
+
+async def pause_graph(
+    ctx: RunContext[UnifiedDeps],
+    graph_id: str
+) -> ToolReturn:
+    """Pause a running graph execution.
+    
+    Temporarily stops graph execution. Can be resumed later with resume_graph().
+    
+    Args:
+        graph_id: Graph ID (e.g., "abc123def456")
+        
+    Returns:
+        Confirmation message
+    """
+    if graph_id not in ctx.deps.state.graphs:
+        return ToolReturn(return_value=f'Graph "{graph_id}" not found')
+    
+    graph = ctx.deps.state.graphs[graph_id]
+    
+    if graph.status == 'paused':
+        return ToolReturn(return_value=f'Graph "{graph.name}" is already paused')
+    
+    old_status = graph.status
+    graph.status = 'paused'
+    graph.should_continue = False
+    new_timestamp = datetime.now().isoformat()
+    graph.updated_at = new_timestamp
+    
+    # Create JSON Patch operations for state delta
+    patch_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/status',
+            value='paused'
+        ),
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/should_continue',
+            value=False
+        ),
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/updated_at',
+            value=new_timestamp
+        ),
+    ]
+    
+    # Create activity delta operations
+    activity_message_id = f"graph-{graph_id}"
+    activity_delta_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/status',
+            value='paused'
+        ),
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/updated_at',
+            value=new_timestamp
+        ),
+    ]
+    
+    return ToolReturn(
+        return_value=f'Graph "{graph.name}" paused',
+        metadata=[
+            StateDeltaEvent(
+                type=EventType.STATE_DELTA,
+                delta=[op.model_dump(by_alias=True) for op in patch_ops],
+            ),
+            ActivityDeltaEvent(
+                messageId=activity_message_id,
+                activityType="agent_state",
+                patch=[op.model_dump(by_alias=True) for op in activity_delta_ops],
+            ),
+        ],
+    )
+
+
+async def cancel_graph(
+    ctx: RunContext[UnifiedDeps],
+    graph_id: str
+) -> ToolReturn:
+    """Cancel a graph execution.
+    
+    Permanently stops graph execution. Cannot be resumed.
+    
+    Args:
+        graph_id: Graph ID (e.g., "abc123def456")
+        
+    Returns:
+        Confirmation message
+    """
+    if graph_id not in ctx.deps.state.graphs:
+        return ToolReturn(return_value=f'Graph "{graph_id}" not found')
+    
+    graph = ctx.deps.state.graphs[graph_id]
+    
+    if graph.status == 'cancelled':
+        return ToolReturn(return_value=f'Graph "{graph.name}" is already cancelled')
+    
+    old_status = graph.status
+    graph.status = 'cancelled'
+    graph.should_continue = False
+    new_timestamp = datetime.now().isoformat()
+    graph.updated_at = new_timestamp
+    
+    # Create JSON Patch operations for state delta
+    patch_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/status',
+            value='cancelled'
+        ),
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/should_continue',
+            value=False
+        ),
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/updated_at',
+            value=new_timestamp
+        ),
+    ]
+    
+    # Create activity delta operations
+    activity_message_id = f"graph-{graph_id}"
+    activity_delta_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/status',
+            value='cancelled'
+        ),
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/updated_at',
+            value=new_timestamp
+        ),
+    ]
+    
+    return ToolReturn(
+        return_value=f'Graph "{graph.name}" cancelled',
+        metadata=[
+            StateDeltaEvent(
+                type=EventType.STATE_DELTA,
+                delta=[op.model_dump(by_alias=True) for op in patch_ops],
+            ),
+            ActivityDeltaEvent(
+                messageId=activity_message_id,
+                activityType="agent_state",
+                patch=[op.model_dump(by_alias=True) for op in activity_delta_ops],
+            ),
+        ],
     )
 
 
 async def rename_graph(
     ctx: RunContext[UnifiedDeps],
-    graph_identifier: str,
+    graph_id: str,
     new_name: str
 ) -> ToolReturn:
-    """
-    Rename a graph execution for easier reference.
+    """Rename a graph for easier reference.
+    
+    Changes the display name of a graph. Useful for organization and clarity.
     
     Args:
-        ctx: The run context
-        graph_identifier: Current graph name or ID
-        new_name: New name for the graph
+        graph_id: Graph ID (e.g., "abc123def456")
+        new_name: New display name for the graph
         
     Returns:
-        Success or error message
-        
-    Example:
-        rename_graph("Research ML", "Research Machine Learning Topics")
+        Confirmation message with old and new names
     """
-    graph_id = resolve_graph_identifier(ctx.deps.state, graph_identifier)
-    if not graph_id:
-        return ToolReturn(return_value=f'Graph "{graph_identifier}" not found')
+    if graph_id not in ctx.deps.state.graphs:
+        return ToolReturn(return_value=f'Graph "{graph_id}" not found')
     
     graph = ctx.deps.state.graphs[graph_id]
     old_name = graph.name
     graph.name = new_name
-    graph.updated_at = datetime.now().isoformat()
+    new_timestamp = datetime.now().isoformat()
+    graph.updated_at = new_timestamp
+    
+    # Create JSON Patch operations for state delta
+    patch_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/name',
+            value=new_name
+        ),
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/updated_at',
+            value=new_timestamp
+        ),
+    ]
+    
+    # Create activity delta operations
+    activity_message_id = f"graph-{graph_id}"
+    activity_delta_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/name',
+            value=new_name
+        ),
+        JSONPatchOp(
+            op='replace',
+            path=f'/graphs/{graph_id}/updated_at',
+            value=new_timestamp
+        ),
+    ]
     
     return ToolReturn(
         return_value=f'Graph renamed from "{old_name}" to "{new_name}"',
-        metadata=[{
-            "type": "agent_state",
-            "activity_content": ctx.deps.state.model_dump()
-        }]
+        metadata=[
+            StateDeltaEvent(
+                type=EventType.STATE_DELTA,
+                delta=[op.model_dump(by_alias=True) for op in patch_ops],
+            ),
+            ActivityDeltaEvent(
+                messageId=activity_message_id,
+                activityType="agent_state",
+                patch=[op.model_dump(by_alias=True) for op in activity_delta_ops],
+            ),
+        ],
     )
 
 
 async def list_graphs(ctx: RunContext[UnifiedDeps]) -> ToolReturn:
-    """
-    List all graph executions in the current session.
+    """List all graphs in the current session.
     
-    Shows graph names, IDs, status, and queries for easy reference.
+    Returns all graph instances with their complete data as JSON.
     
     Returns:
-        Formatted list of all graphs
-        
-    Example:
-        list_graphs()
+        ToolReturn with JSON string containing all graphs from state
     """
+    import json
+    
     graphs = ctx.deps.state.graphs
     
     if not graphs:
-        return ToolReturn(return_value="No graph executions in this session.")
+        return ToolReturn(return_value=json.dumps({"graphs": {}}, indent=2))
     
-    # Group by status
-    active = [g for g in graphs.values() if g.status == 'active']
-    paused = [g for g in graphs.values() if g.status == 'paused']
-    completed = [g for g in graphs.values() if g.status == 'completed']
-    cancelled = [g for g in graphs.values() if g.status == 'cancelled']
-    waiting = [g for g in graphs.values() if g.status == 'waiting']
+    # Get JSON dump of all graphs
+    graphs_data = {
+        graph_id: graph.model_dump()
+        for graph_id, graph in graphs.items()
+    }
     
-    result = []
-    
-    if active:
-        result.append(f"Active Graphs ({len(active)}):")
-        for g in active:
-            result.append(f'  - "{g.name}" (ID: {g.graph_id})')
-            result.append(f'    Query: {g.query[:60]}{"..." if len(g.query) > 60 else ""}')
-            result.append(f'    Steps: {len(g.steps)} | Iterations: {g.iteration_count}/{g.max_iterations}')
-    
-    if paused:
-        result.append(f"\nPaused Graphs ({len(paused)}):")
-        for g in paused:
-            result.append(f'  - "{g.name}" (ID: {g.graph_id})')
-    
-    if waiting:
-        result.append(f"\nWaiting Graphs ({len(waiting)}):")
-        for g in waiting:
-            result.append(f'  - "{g.name}" (ID: {g.graph_id})')
-    
-    if completed:
-        result.append(f"\nCompleted Graphs ({len(completed)}):")
-        for g in completed:
-            result.append(f'  - "{g.name}" (ID: {g.graph_id})')
-    
-    if cancelled:
-        result.append(f"\nCancelled Graphs ({len(cancelled)}):")
-        for g in cancelled:
-            result.append(f'  - "{g.name}" (ID: {g.graph_id})')
-    
-    return ToolReturn(return_value="\n".join(result))
+    # Return JSON string
+    return ToolReturn(return_value=json.dumps({"graphs": graphs_data}, indent=2))
 
 
 async def get_graph_details(
     ctx: RunContext[UnifiedDeps],
-    graph_identifier: str
-) -> str:
-    """Get detailed information about a graph execution including all steps.
+    graph_id: str
+) -> ToolReturn:
+    """Get detailed information about a specific graph.
     
-    Returns the graph's complete step list with node names, statuses, and results,
-    useful for reviewing execution flow or debugging.
+    Returns comprehensive details including status, query, execution steps, tool calls,
+    results, and any errors as JSON.
     
     Args:
-        graph_identifier: Graph name or ID
+        graph_id: Graph ID (e.g., "abc123def456")
         
     Returns:
-        Detailed graph information with all steps
-        
-    Example:
-        get_graph_details("Image Generation Task")
+        ToolReturn with JSON string containing complete graph data
     """
-    graph_id = resolve_graph_identifier(ctx.deps.state, graph_identifier)
-    if not graph_id:
-        available = [f'"{g.name}" ({gid})' for gid, g in ctx.deps.state.graphs.items()]
+    import json
+    
+    if graph_id not in ctx.deps.state.graphs:
+        available = [f'"{g.name}" (ID: {gid})' for gid, g in ctx.deps.state.graphs.items()]
         error_msg = (
-            f'Graph "{graph_identifier}" not found. Available graphs:\n' +
+            f'Graph "{graph_id}" not found. Available graphs:\n' +
             ('\n'.join(available) if available else 'No graphs available')
         )
-        return error_msg
+        return ToolReturn(return_value=error_msg)
     
     graph = ctx.deps.state.graphs[graph_id]
     
-    # Build detailed output
-    result = f'**{graph.name}**\n'
-    result += f'ID: {graph_id}\n'
-    result += f'Status: {graph.status}\n'
-    result += f'Query Type: {graph.query_type}\n'
-    result += f'Original Query: {graph.original_query}\n'
-    result += f'Iterations: {graph.iteration_count}/{graph.max_iterations}\n'
-    result += f'Created: {graph.created_at}\n'
-    result += f'Updated: {graph.updated_at}\n'
+    # Get JSON dump of graph
+    graph_data = graph.model_dump()
     
-    if graph.result:
-        result += f'\nFinal Result:\n{graph.result[:200]}{"..." if len(graph.result) > 200 else ""}\n'
-    
-    # Show execution history
-    if graph.execution_history:
-        result += f'\nExecution History:\n'
-        result += ' → '.join(graph.execution_history)
-        result += '\n'
-    
-    # Show steps with details
-    if graph.steps:
-        result += f'\nSteps ({len(graph.steps)}):\n\n'
-        
-        for i, step in enumerate(graph.steps):
-            result += f'{i}. [{step.status}] Node: {step.node}\n'
-            
-            if step.prompt:
-                result += f'   Prompt: {step.prompt[:100]}{"..." if len(step.prompt) > 100 else ""}\n'
-            
-            if step.result:
-                result += f'   Result: {step.result[:150]}{"..." if len(step.result) > 150 else ""}\n'
-            
-            if step.tool_calls:
-                result += f'   Tools used: {len(step.tool_calls)} call(s)\n'
-            
-            if step.timestamp:
-                result += f'   Time: {step.timestamp}\n'
-            
-            result += '\n'
-    
-    # Show errors if any
-    if graph.errors:
-        result += f'Errors ({len(graph.errors)}):\n'
-        for err in graph.errors[-3:]:  # Show last 3 errors
-            result += f'  - Node: {err.get("node", "unknown")}\n'
-            result += f'    Error: {err.get("error", "")[:100]}\n'
-            if err.get("timestamp"):
-                result += f'    Time: {err.get("timestamp")}\n'
-    
-    return result
+    # Return JSON string
+    return ToolReturn(return_value=json.dumps({"graph": graph_data}, indent=2))
 
 
 async def delete_graph(
     ctx: RunContext[UnifiedDeps],
-    graph_identifier: str
+    graph_id: str
 ) -> ToolReturn:
-    """
-    Delete a graph execution from the session.
+    """Delete a graph from the session.
     
-    This permanently removes the graph and all its execution history.
-    Use with caution!
+    Permanently removes the graph and all its execution history. Cannot be undone.
     
     Args:
-        ctx: The run context
-        graph_identifier: Graph name or ID to delete
+        graph_id: Graph ID to delete (e.g., "abc123def456")
         
     Returns:
-        Success or error message
-        
-    Example:
-        delete_graph("Old Research Graph")
+        Confirmation message with deleted graph name and ID
     """
-    graph_id = resolve_graph_identifier(ctx.deps.state, graph_identifier)
-    if not graph_id:
-        return ToolReturn(return_value=f'Graph "{graph_identifier}" not found')
+    if graph_id not in ctx.deps.state.graphs:
+        return ToolReturn(return_value=f'Graph "{graph_id}" not found')
     
     graph_name = ctx.deps.state.graphs[graph_id].name
+    
+    # Create JSON Patch operations for removal (before deleting from state)
+    patch_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='remove',
+            path=f'/graphs/{graph_id}'
+        ),
+    ]
+    
+    # Create activity delta operations for removal
+    activity_message_id = f"graph-{graph_id}"
+    activity_delta_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='remove',
+            path=f'/graphs/{graph_id}'
+        ),
+    ]
+    
+    # Delete from in-memory state
     del ctx.deps.state.graphs[graph_id]
     
     return ToolReturn(
         return_value=f'Graph "{graph_name}" (ID: {graph_id}) deleted',
-        metadata=[{
-            "type": "agent_state",
-            "activity_content": ctx.deps.state.model_dump()
-        }]
+        metadata=[
+            StateDeltaEvent(
+                type=EventType.STATE_DELTA,
+                delta=[op.model_dump(by_alias=True) for op in patch_ops],
+            ),
+            ActivityDeltaEvent(
+                messageId=activity_message_id,
+                activityType="agent_state",
+                patch=[op.model_dump(by_alias=True) for op in activity_delta_ops],
+            ),
+        ],
     )
 
 
@@ -326,111 +458,72 @@ async def delete_graph(
 
 async def run_graph(
     ctx: RunContext[UnifiedDeps], 
-    query: str,
-    name: str | None = None,
-    max_iterations: int = 5
+    graph_id: str,
 ) -> ToolReturn:
-    """Run a multi-agent graph to process complex queries.
+    """Execute an existing multi-agent graph by ID.
     
-    This tool orchestrates multiple specialized agents (image generation, web search,
-    code execution) to handle complex, multi-step queries. The graph uses an orchestrator
-    agent to analyze the query and route it to the appropriate worker agents.
+    Runs the graph's query through specialized sub-agents (image generation, web search,
+    code execution) and returns the final result. The graph must already exist - use
+    create_graph() first if needed.
     
-    State updates are sent via StateSnapshotEvent, using the flat AgentState.graphs structure.
-    Each graph execution is a named instance that can coexist with other graphs and plans.
-    
-    Use cases:
-    - Complex queries requiring multiple steps (e.g., "Search for X and create an image of it")
-    - Queries that need specialized processing (calculations, image generation, web search)
-    - Multi-modal tasks that combine different capabilities
+    When to use:
+    - After creating a graph with create_graph()
+    - To re-run a completed/failed graph
+    - To resume a waiting graph after user confirmation
     
     Args:
-        ctx: The run context with agent state and context
-        query: The user query to process through the multi-agent graph
-        name: Human-readable name for this graph execution (max 50 chars, auto-generated from query if not provided)
-        max_iterations: Maximum number of orchestrator iterations (default: 5)
+        graph_id: Graph ID (e.g., "abc123def456")
         
     Returns:
-        ToolReturn with the final result and StateSnapshotEvent for state sync
-        
-    Example:
-        run_graph(ctx, "Search for the latest SpaceX launch and create an image visualizing it",
-                  name="SpaceX Launch Research")
+        Final result from graph execution, or error if graph not found
     """
-    logger.info(f"🚀 run_graph tool invoked with query: {query[:100]}...")
+    logger.info(f"🚀 run_graph tool invoked for graph: {graph_id}")
     
     # Get context from deps
     deps = ctx.deps
     send_stream = getattr(deps, 'send_stream', None)
     adapter = getattr(deps, 'adapter', None)
     
-    # Auto-generate name from query if not provided
-    if not name:
-        name = query[:50] + ("..." if len(query) > 50 else "")
+    # Check if graph exists
+    if graph_id not in ctx.deps.state.graphs:
+        error_msg = (
+            f'Graph "{graph_id}" not found.\n\n'
+            f'To create a new graph:\n'
+            f'1. Use create_graph(ctx, "your query", name="Graph Name")\n'
+            f'2. Then execute it: run_graph(ctx, graph_id="<returned_id>")\n\n'
+            f'Or use list_graphs() to see available graph IDs.'
+        )
+        logger.warning(f"   [run_graph] {error_msg}")
+        return ToolReturn(return_value=error_msg)
     
-    # Check if there's an existing graph in "waiting" status (e.g., after confirmation)
-    # Look for a graph with matching query and "waiting" status
-    waiting_graph_id = None
-    for gid, graph in ctx.deps.state.graphs.items():
-        if graph.status == 'waiting' and graph.query == query:
-            waiting_graph_id = gid
-            logger.info(f"🔄 Found waiting graph: {gid}")
-            break
+    graph_instance = ctx.deps.state.graphs[graph_id]
     
-    if waiting_graph_id:
-        # RESUME existing graph
-        logger.info(f"   [run_graph] RESUMING graph {waiting_graph_id} from waiting state")
-        graph_id = waiting_graph_id
-        graph_instance = ctx.deps.state.graphs[graph_id]
+    # Log current status
+    logger.info(f"   [run_graph] Found graph: {graph_id} - '{graph_instance.name}' (status: {graph_instance.status})")
+    
+    # Validate graph can be executed
+    if graph_instance.status == 'completed':
+        logger.info(f"   [run_graph] Graph {graph_id} already completed, re-running")
+    elif graph_instance.status == 'cancelled':
+        logger.info(f"   [run_graph] Graph {graph_id} was cancelled, resetting to active")
+    elif graph_instance.status == 'waiting':
+        logger.info(f"   [run_graph] Resuming waiting graph {graph_id}")
         
-        # Update status to resume execution
+    # Update status to active for execution
         graph_instance.status = 'active'
         graph_instance.should_continue = True
         graph_instance.updated_at = datetime.now().isoformat()
         
-        # Clear deferred_tool_requests
+    # Clear deferred_tool_requests if any
         if graph_instance.deferred_tool_requests:
             graph_instance.deferred_tool_requests = None
-    else:
-        # CREATE new graph instance
-        logger.info(f"   [run_graph] Starting NEW graph execution")
-        
-        # Generate unique graph_id
-        graph_id = uuid.uuid4().hex[:12]
-        
-        # Create new GraphInstance
-        graph_instance = GraphInstance(
-            graph_id=graph_id,
-            name=name,
-            status='active',
-            steps=[],
-            query=query,
-            original_query=query,
-            result="",
-            query_type="",
-            execution_history=[],
-            intermediate_results={},
-            streaming_text={},
-            prompts={},
-            tool_calls={},
-            errors=[],
-            last_error_node="",
-            retry_count=0,
-            max_retries=2,
-            iteration_count=0,
-            max_iterations=max_iterations,
-            should_continue=True,
-            next_action="",
-            planned_steps=[],
-            mermaid_diagram="",
-            deferred_tool_requests=None,
-            created_at=datetime.now().isoformat(),
-            updated_at=datetime.now().isoformat()
-        )
-        
-        # Store in state.graphs
-        ctx.deps.state.graphs[graph_id] = graph_instance
-        logger.info(f"   [run_graph] Created GraphInstance: {graph_id}")
+    
+    # Get query and other properties from the graph instance
+    query = graph_instance.query
+    
+    # Get graph name and max_iterations from the existing graph instance
+    graph_name = graph_instance.name
+    max_iterations = graph_instance.max_iterations
     
     # Create RunAgentInput from adapter or create a new one
     if adapter and hasattr(adapter, 'run_input'):
@@ -476,9 +569,9 @@ async def run_graph(
             send_stream=send_stream,
             max_iterations=max_iterations,
             shared_state=ctx.deps.state,  # Pass shared state for updates
-            # Graph instance metadata (NEW: pass graph_id and name)
+            # Graph instance metadata
             graph_id=graph_id,
-            graph_name=name,
+            graph_name=graph_name,
             # Usage tracking context
             session_id=session_id,
             user_id=user_id,
@@ -491,6 +584,9 @@ async def run_graph(
             model_id=model_id,
             # AGUI context from frontend (useCopilotReadableData)
             agui_context=agui_context,
+            # Auxiliary agent configuration
+            agent_type=ctx.deps.agent_type,
+            agent_info=ctx.deps.agent_info,
         )
         
         # Update the graph instance with the final result
@@ -498,13 +594,7 @@ async def run_graph(
         ctx.deps.state.graphs[graph_id].status = 'completed'
         ctx.deps.state.graphs[graph_id].updated_at = datetime.now().isoformat()
         
-        logger.info(f"run_graph completed successfully for graph {graph_id}")
-        
-        # NOTE: Do NOT send StateSnapshotEvent here!
-        # The graph already sends GraphAgentState format during execution.
-        # Sending AgentState format here would overwrite the graph progress
-        # with { steps: [], graph: {...} } which causes the UI to hide progress.
-        # The final GraphAgentState is sent by the finalize_result step.
+        logger.info(f"✅ run_graph completed successfully for graph {graph_id} - '{graph_instance.name}'")
         
         return ToolReturn(
             return_value=result,
@@ -528,11 +618,326 @@ async def run_graph(
         return ToolReturn(return_value=error_msg)
 
 
+async def create_graph(
+    ctx: RunContext[UnifiedDeps],
+    query: str,
+    name: str | None = None,
+    max_iterations: int = 5,
+) -> ToolReturn:
+    """Create a new graph instance with execution plan.
+    
+    Initializes a graph with the given query and calls the orchestrator to determine
+    the execution plan (sequence of steps). The graph is NOT executed - use run_graph()
+    after creation to execute it.
+    
+    When to use:
+    - To set up a graph with a clear execution plan before running it
+    - To create multiple graphs for batch execution
+    - When you need explicit control over execution timing
+    - To preview what steps will be executed before running
+    
+    Args:
+        query: The query for the graph to process
+        name: Display name (auto-generated from query if not provided)
+        max_iterations: Max orchestrator routing iterations (default: 5)
+        
+    Returns:
+        Confirmation with graph ID, name, and planned execution steps
+        
+    Example:
+        create_graph(
+            query="Research latest electric cars and create comparison",
+            name="Electric Cars Research"
+        )
+        # Returns: "Planned execution steps: Web Search → Result Aggregator"
+    """
+    logger.info(f"🆕 create_graph tool invoked with query: {query[:100]}...")
+    
+    # Auto-generate name from query if not provided
+    if not name:
+        name = query[:50] + ("..." if len(query) > 50 else "")
+    
+    # Generate unique graph_id
+    graph_id = uuid.uuid4().hex[:12]
+    
+    # Check if this is the first graph (before adding it)
+    is_first_graph = len(ctx.deps.state.graphs) == 0
+    
+    try:
+        # Get context from deps
+        send_stream = getattr(ctx.deps, 'send_stream', None)
+        session_id = ctx.deps.state.sessionId or ctx.deps.session_id or "default"
+        user_id = ctx.deps.user_id
+        
+        # Update state with session_id if it was None
+        if not ctx.deps.state.sessionId:
+            ctx.deps.state.sessionId = session_id
+        
+        # Call internal create_graph function with orchestrator model
+        state, created_graph_id, created_graph_name = await create_graph_internal(
+            query=query,
+            max_iterations=max_iterations,
+            user_id=user_id,
+            graph_id=graph_id,
+            graph_name=name,
+            shared_state=ctx.deps.state,
+            send_stream=send_stream,
+            session_id=session_id,
+            mermaid_diagram="",  # Will be generated when graph runs
+            orchestrator_model=ctx.model,  # Pass model for execution planning
+            organization_id=ctx.deps.organization_id,
+            team_id=ctx.deps.team_id,
+            agent_type=ctx.deps.agent_type,
+            agent_info=ctx.deps.agent_info,
+        )
+        
+        logger.info(f"✅ Graph created: {created_graph_id} - {created_graph_name}")
+        
+        # Get the graph instance that was created
+        graph_instance = ctx.deps.state.graphs[created_graph_id]
+        
+        # Build result message with execution plan if available
+        if graph_instance.planned_steps and len(graph_instance.planned_steps) > 0:
+            # Map action types to friendly names
+            action_names = {
+                'web_search': 'Web Search',
+                'image_generation': 'Image Generation',
+                'code_execution': 'Code Execution',
+                'confirmation': 'User Confirmation',
+                'result_aggregator': 'Result Aggregator'
+            }
+            steps_list = [action_names.get(step, step.title()) for step in graph_instance.planned_steps]
+            result_msg = (
+                f'Created graph "{created_graph_name}" (ID: {created_graph_id})\n'
+                f'Query: {query}\n'
+                f'Planned execution steps: {" → ".join(steps_list)}\n'
+                f'Status: Ready to execute\n'
+                f'Max iterations: {max_iterations}'
+            )
+        else:
+            result_msg = (
+                f'Created graph "{created_graph_name}" (ID: {created_graph_id})\n'
+                f'Query: {query}\n'
+                f'Status: Initialized (execution plan will be determined during execution)\n'
+                f'Max iterations: {max_iterations}'
+            )
+        
+        # Activity message for this specific graph
+        activity_message_id = f"graph-{created_graph_id}"
+        
+        # Choose between full snapshot (first graph) or delta (subsequent graphs)
+        if is_first_graph:
+            # Send full snapshot to establish state structure
+            state_dict = ctx.deps.state.model_dump()
+            
+            # For first graph, use ActivitySnapshotEvent to establish activity structure
+            activity_content = {
+                "graphs": {created_graph_id: graph_instance.model_dump()},
+                "sessionId": session_id,
+            }
+            
+            return ToolReturn(
+                return_value=result_msg,
+                metadata=[
+                    StateSnapshotEvent(
+                        type=EventType.STATE_SNAPSHOT,
+                        snapshot=state_dict,
+                    ),
+                    ActivitySnapshotEvent(
+                        messageId=activity_message_id,
+                        activityType="agent_state",
+                        content=activity_content,
+                    ),
+                ],
+            )
+        else:
+            # Send delta for efficient incremental update
+            state_patch_ops: list[JSONPatchOp] = [
+                JSONPatchOp(
+                    op='add',
+                    path=f'/graphs/{created_graph_id}',
+                    value=graph_instance.model_dump()
+                )
+            ]
+            
+            # Always send ActivitySnapshotEvent to create a new chat message for each graph
+            activity_content = {
+                "graphs": {created_graph_id: graph_instance.model_dump()},
+                "sessionId": session_id,
+            }
+            
+            return ToolReturn(
+                return_value=result_msg,
+                metadata=[
+                    StateDeltaEvent(
+                        type=EventType.STATE_DELTA,
+                        delta=[op.model_dump(by_alias=True) for op in state_patch_ops],
+                    ),
+                    ActivitySnapshotEvent(
+                        messageId=activity_message_id,
+                        activityType="agent_state",
+                        content=activity_content,
+                    ),
+                ],
+            )
+        
+    except Exception as e:
+        error_msg = f"Failed to create graph: {str(e)}"
+        logger.exception(error_msg)
+        return ToolReturn(return_value=error_msg)
+
+
+async def resume_graph(
+    ctx: RunContext[UnifiedDeps],
+    graph_id: str,
+) -> ToolReturn:
+    """Resume a paused or waiting graph and continue execution.
+    
+    Reconstructs the graph state and continues execution from where it left off.
+    Used after user confirmation or when continuing a paused graph.
+    
+    When to use:
+    - After user confirms an action (status: waiting)
+    - To continue a paused graph
+    - When resuming after an interruption
+    
+    Args:
+        graph_id: Graph ID to resume (e.g., "abc123def456")
+        
+    Returns:
+        Final result from continued graph execution
+    """
+    logger.info(f"🔄 resume_graph tool invoked for: {graph_id}")
+    
+    # Check if graph exists
+    if graph_id not in ctx.deps.state.graphs:
+        return ToolReturn(return_value=f'Graph "{graph_id}" not found')
+    
+    graph_instance = ctx.deps.state.graphs[graph_id]
+    
+    # Check if graph is in a resumable state
+    if graph_instance.status not in ['waiting', 'paused', 'active']:
+        return ToolReturn(
+            return_value=f'Graph "{graph_instance.name}" is {graph_instance.status} and cannot be resumed. Only waiting/paused/active graphs can be resumed.'
+        )
+    
+    try:
+        # Get context from deps
+        send_stream = getattr(ctx.deps, 'send_stream', None)
+        adapter = getattr(ctx.deps, 'adapter', None)
+        user_id = ctx.deps.user_id
+        
+        # Create a run_input from adapter or build a minimal one
+        if adapter and hasattr(adapter, 'run_input'):
+            run_input = adapter.run_input
+        else:
+            # Create minimal run_input
+            run_input = RunAgentInput(
+                thread_id=uuid.uuid4().hex,
+                run_id=uuid.uuid4().hex,
+                messages=[
+                    UserMessage(
+                        id=f'msg_{uuid.uuid4().hex[:8]}',
+                        content=graph_instance.query,
+                    )
+                ],
+                state=ctx.deps.state.model_dump(),
+                context=ctx.deps.agui_context or [],
+                tools=[],
+                forwarded_props=None,
+            )
+        
+        # Call internal resume_graph function to update state
+        state, user_confirmed = await resume_graph_internal(
+            graph_id=graph_id,
+            shared_state=ctx.deps.state,
+            run_input=run_input,
+            query=graph_instance.query,
+            max_iterations=graph_instance.max_iterations,
+            user_id=user_id,
+            graph_name=graph_instance.name,
+            send_stream=send_stream,
+        )
+        
+        logger.info(f"✅ Graph resumed: {graph_id} - confirmed={user_confirmed}")
+        
+        # If user cancelled, update status and return
+        if not user_confirmed:
+            ctx.deps.state.graphs[graph_id].status = 'cancelled'
+            ctx.deps.state.graphs[graph_id].updated_at = datetime.now().isoformat()
+            
+            result_msg = (
+                f'Graph "{graph_instance.name}" (ID: {graph_id}) was cancelled by user\n'
+                f'Status: Cancelled\n'
+                f'The graph will not continue execution.'
+            )
+            
+            return ToolReturn(return_value=result_msg)
+        
+        # User confirmed - continue execution
+        logger.info(f"   Continuing graph execution from step {len(state.execution_history)}")
+        
+        # Get execution context
+        organization_id = ctx.deps.organization_id
+        team_id = ctx.deps.team_id
+        session_id = ctx.deps.state.sessionId or ctx.deps.session_id or "default"
+        auth_session_id = ctx.deps.auth_session_id
+        broadcast_func = ctx.deps.broadcast_func
+        agent_id = ctx.deps.agent_id
+        model_id = ctx.deps.model_id
+        agui_context = ctx.deps.agui_context
+        
+        # Execute the graph from resumed state
+        result = await run_multi_agent_graph(
+            query=graph_instance.query,
+            orchestrator_model=ctx.model,
+            run_input=run_input,
+            send_stream=send_stream,
+            max_iterations=graph_instance.max_iterations,
+            shared_state=ctx.deps.state,
+            graph_id=graph_id,
+            graph_name=graph_instance.name,
+            session_id=session_id,
+            user_id=user_id,
+            organization_id=organization_id,
+            team_id=team_id,
+            auth_session_id=auth_session_id,
+            broadcast_func=broadcast_func,
+            agent_id=agent_id,
+            model_id=model_id,
+            agui_context=agui_context,
+            agent_type=ctx.deps.agent_type,
+            agent_info=ctx.deps.agent_info,
+        )
+        
+        # Update the graph instance with the final result
+        ctx.deps.state.graphs[graph_id].result = result
+        ctx.deps.state.graphs[graph_id].status = 'completed'
+        ctx.deps.state.graphs[graph_id].updated_at = datetime.now().isoformat()
+        
+        result_msg = (
+            f'Graph "{graph_instance.name}" (ID: {graph_id}) completed successfully\n\n'
+            f'Result: {result[:200]}{"..." if len(result) > 200 else ""}'
+        )
+        
+        return ToolReturn(return_value=result_msg)
+        
+    except Exception as e:
+        error_msg = f"Failed to resume graph: {str(e)}"
+        logger.exception(error_msg)
+        return ToolReturn(return_value=error_msg)
+
+
 # ========== Tool Registry ==========
 
 GRAPH_TOOLS = {
+    # Graph lifecycle
+    'create_graph': create_graph,
+    'resume_graph': resume_graph,
     # Graph management
     'update_graph_status': update_graph_status,
+    'pause_graph': pause_graph,
+    'cancel_graph': cancel_graph,
     'rename_graph': rename_graph,
     'list_graphs': list_graphs,
     'get_graph_details': get_graph_details,

@@ -2,6 +2,9 @@
 
 This module provides the main entry point for running the multi-agent graph
 with AG-UI event streaming.
+
+The runner focuses solely on graph execution. Graph creation and resume logic
+are handled by the actions module.
 """
 
 from __future__ import annotations
@@ -11,17 +14,16 @@ import uuid
 
 from pydantic_ai import Agent
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
-from ag_ui.core import RunAgentInput, UserMessage, EventType, StateSnapshotEvent, StateDeltaEvent, ActivitySnapshotEvent
-from ag_ui.encoder import EventEncoder
+from ag_ui.core import RunAgentInput, UserMessage
 
 from config import logger
-from config.environment import GOOGLE_API_KEY
 
 from .types import QueryState
 from .graph import create_multi_agent_graph
 from .agents import create_agents
 from .state import sync_to_shared_state
-from core.models import UnifiedDeps, JSONPatchOp
+from .actions import create_graph, resume_graph
+from core.models import UnifiedDeps
 
 if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectSendStream
@@ -32,7 +34,6 @@ async def run_multi_agent_graph(
     orchestrator_model: Any,
     run_input: RunAgentInput | None = None,
     send_stream: MemoryObjectSendStream[str] | None = None,
-    api_key: str | None = None,
     max_iterations: int = 5,
     shared_state: Any = None,
     # Graph instance metadata
@@ -50,17 +51,27 @@ async def run_multi_agent_graph(
     model_id: str | None = None,
     # AGUI context from frontend
     agui_context: list[dict] | None = None,
+    # Auxiliary agent configuration
+    agent_type: str | None = None,
+    agent_info: dict | None = None,
 ) -> str:
     """Run the multi-agent graph with AG UI event streaming.
     
+    This function orchestrates the full graph lifecycle:
+    1. Determines if creating new or resuming existing graph
+    2. Creates/resumes graph state using actions module
+    3. Builds and executes the graph
+    4. Returns final result
+    
     Args:
         query: The user query to process
-        orchestrator_model: The model from ctx.model for orchestrator (REQUIRED)
+        orchestrator_model: The model from ctx.model for orchestrator and aggregator (REQUIRED)
         run_input: Optional RunAgentInput for AG-UI protocol. If None, creates a default one.
         send_stream: Optional MemoryObjectSendStream for custom event streaming
-        api_key: Optional Google API key. If None, uses environment variable.
         max_iterations: Maximum number of routing iterations (default: 5)
         shared_state: Optional AgentState for syncing graph state with session state
+        graph_name: Optional graph name (auto-generated if not provided)
+        graph_id: Optional graph ID (auto-generated if not provided)
         session_id: Session ID for usage tracking
         user_id: User ID for usage tracking
         organization_id: Organization ID for usage tracking
@@ -70,29 +81,33 @@ async def run_multi_agent_graph(
         agent_id: DB UUID of the parent agent (for sub-agent usage tracking)
         model_id: DB UUID of the model (for sub-agent usage tracking)
         agui_context: AGUI context from frontend (useCopilotReadableData / useAgentContext)
+        agent_type: Main agent type for auxiliary agent lookup
+        agent_info: Main agent info/metadata containing auxiliary agent configuration
     
     Returns:
         Final result from the graph execution
     """
-    # Create the graph with orchestrator model from context
-    multi_agent_graph = create_multi_agent_graph(
+    logger.info(f"🚀 Running Multi-Agent Graph: {query[:100]}...")
+    
+    # ==================== STEP 1: Create the graph instance ====================
+    multi_agent_graph = await create_multi_agent_graph(
         orchestrator_model=orchestrator_model,
-        api_key=api_key,
+        organization_id=organization_id,
+        team_id=team_id,
+        agent_type=agent_type,
+        agent_info=agent_info,
     )
     
     # Generate mermaid diagram for the graph structure
     try:
         mermaid_diagram = multi_agent_graph.render(title='Multi-Agent Graph', direction='TB')
-        logger.info(f"Generated mermaid diagram: {len(mermaid_diagram)} chars")
+        logger.info(f"   Generated mermaid diagram: {len(mermaid_diagram)} chars")
     except Exception as e:
-        logger.warning(f"Failed to generate mermaid diagram: {e}")
+        logger.warning(f"   Failed to generate mermaid diagram: {e}")
         mermaid_diagram = ""
     
-    # Store mermaid diagram in shared state if available
-    if shared_state and graph_id and graph_id in shared_state.graphs:
-        shared_state.graphs[graph_id].mermaid_diagram = mermaid_diagram
+    # ==================== STEP 2: Create default run_input if needed ====================
     
-    # Create default run_input if not provided
     if run_input is None:
         run_input = RunAgentInput(
             thread_id=uuid.uuid4().hex,
@@ -109,76 +124,54 @@ async def run_multi_agent_graph(
             forwarded_props=None,
         )
     
-    logger.info(f"🚀 Running Multi-Agent Graph")
-    logger.info(f"Thread ID: {run_input.thread_id}")
-    logger.info(f"Run ID: {run_input.run_id}")
-    logger.info(f"Query: {query}")
+    logger.info(f"   Thread ID: {run_input.thread_id}")
+    logger.info(f"   Run ID: {run_input.run_id}")
     
-    # Initialize encoder if we have a send stream
-    encoder = EventEncoder(accept=SSE_CONTENT_TYPE) if send_stream else None
+    # ==================== STEP 3: Create AGUIAdapter for sub-agents ====================
     
-    # Create agents to get the general model for the adapter
-    # Note: We reuse the google_provider from agents instead of creating new model
-    agents = create_agents(orchestrator_model, api_key)
+    # Create a general model agent for the AGUIAdapter
+    # This adapter is passed to sub-agents via UnifiedDeps
+    agents = await create_agents(
+        orchestrator_model=orchestrator_model,
+        organization_id=organization_id,
+        team_id=team_id,
+        agent_type=agent_type,
+        agent_info=agent_info,
+    )
     dummy_agent = Agent(model=agents['general_model'])
     
-    # Create AGUIAdapter instance with the dummy agent
     ag_ui_adapter = AGUIAdapter(
         agent=dummy_agent,
         run_input=run_input,
         accept=SSE_CONTENT_TYPE
     )
     
-    # Check if we're resuming from a waiting state
-    graph_instance = None
-    if shared_state and graph_id and graph_id in shared_state.graphs:
-        graph_instance = shared_state.graphs[graph_id]
+    # ==================== STEP 4: Determine if creating new, resuming, or continuing ====================
     
-    is_resuming = (
-        graph_instance and 
-        graph_instance.status == 'active' and
-        graph_instance.execution_history and
-        len(graph_instance.execution_history) > 0
+    # Check if graph already exists with execution history (already resumed)
+    is_already_resumed = (
+        shared_state and 
+        graph_id and 
+        graph_id in shared_state.graphs and
+        shared_state.graphs[graph_id].status == 'active' and
+        shared_state.graphs[graph_id].execution_history and
+        len(shared_state.graphs[graph_id].execution_history) > 0
     )
     
-    if is_resuming:
-        logger.info(f"🔄 RESUMING graph {graph_id} from previous state")
-        logger.info(f"   Execution history: {graph_instance.execution_history}")
-        logger.info(f"   Planned steps: {graph_instance.planned_steps}")
-        
-        # Check if user confirmed or cancelled by looking at tool result in messages
-        user_confirmed = True  # Default to confirmed
-        for msg in run_input.messages:
-            # Check for tool result message
-            if hasattr(msg, 'role') and msg.role == 'tool':
-                # Tool result message
-                result_content = getattr(msg, 'content', '')
-                if isinstance(result_content, str) and 'confirmed' in result_content.lower():
-                    try:
-                        import json
-                        result_data = json.loads(result_content)
-                        if isinstance(result_data, dict) and 'confirmed' in result_data:
-                            user_confirmed = result_data['confirmed']
-                            logger.info(f"   Found confirmAction result: confirmed={user_confirmed}")
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-            # Also check for ToolResultMessage type
-            elif hasattr(msg, 'result'):
-                result_content = msg.result
-                if isinstance(result_content, str) and 'confirmed' in result_content.lower():
-                    try:
-                        import json
-                        result_data = json.loads(result_content)
-                        if isinstance(result_data, dict) and 'confirmed' in result_data:
-                            user_confirmed = result_data['confirmed']
-                            logger.info(f"   Found confirmAction result: confirmed={user_confirmed}")
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                elif isinstance(result_content, dict) and 'confirmed' in result_content:
-                    user_confirmed = result_content['confirmed']
-                    logger.info(f"   Found confirmAction result: confirmed={user_confirmed}")
-        
-        # Create QueryState from existing graph_instance
+    # Check if graph is waiting for user interaction
+    is_resuming = (
+        shared_state and 
+        graph_id and 
+        graph_id in shared_state.graphs and
+        shared_state.graphs[graph_id].status == 'waiting'
+    )
+    
+    state: QueryState
+    
+    if is_already_resumed:
+        # Graph was already resumed (e.g., by resume_graph tool), reconstruct state from shared_state
+        logger.info(f"   Graph {graph_id} already resumed, reconstructing state...")
+        graph_instance = shared_state.graphs[graph_id]
         state = QueryState(
             query=graph_instance.query or query,
             original_query=graph_instance.original_query or query,
@@ -191,96 +184,38 @@ async def run_multi_agent_graph(
             tool_calls=dict(graph_instance.tool_calls or {}),
             errors=list(graph_instance.errors or []),
             result=graph_instance.result or "",
-            should_continue=user_confirmed,  # Only continue if user confirmed
+            should_continue=graph_instance.should_continue,
             planned_steps=list(graph_instance.planned_steps or []),
-            user_id=user_id,  # For workspace integration
+            user_id=user_id,
         )
-        
-        # Set result based on user's choice
-        confirmation_result = '{"confirmed": true}' if user_confirmed else '{"confirmed": false}'
-        confirmation_text = "User confirmed the action" if user_confirmed else "User cancelled the action"
-        
-        # Mark Confirmation step as completed with user's choice
-        # Find any Confirmation steps in history and update their tool calls
-        for entry in state.execution_history:
-            if entry.startswith("Confirmation:") or entry == "Confirmation":
-                confirmation_key = entry
-                # Update the indexed key
-                if confirmation_key in state.tool_calls:
-                    for tc in state.tool_calls[confirmation_key]:
-                        if isinstance(tc, dict):
-                            tc["status"] = "completed"
-                            tc["result"] = confirmation_result
-                        elif hasattr(tc, 'status'):
-                            tc.status = "completed"
-                            tc.result = confirmation_result
-                    logger.info(f"   Updated {confirmation_key} tool calls to completed (confirmed={user_confirmed})")
-                # Also update the base "Confirmation" key
-                if "Confirmation" in state.tool_calls:
-                    for tc in state.tool_calls["Confirmation"]:
-                        if isinstance(tc, dict):
-                            tc["status"] = "completed"
-                            tc["result"] = confirmation_result
-                        elif hasattr(tc, 'status'):
-                            tc.status = "completed"
-                            tc.result = confirmation_result
-                # Update streaming text
-                if confirmation_key in state.streaming_text:
-                    state.streaming_text[confirmation_key] = confirmation_text
-                if "Confirmation" in state.streaming_text:
-                    state.streaming_text["Confirmation"] = confirmation_text
-        
-        # Clear the result from waiting state since we're continuing
-        if state.result and "Waiting for user interaction" in state.result:
-            state.result = ""
-        
-        # If user cancelled, set appropriate result and stop
-        if not user_confirmed:
-            state.result = "User cancelled the action"
-            state.should_continue = False
-            logger.info(f"   User cancelled - graph will end")
-        
-        # Sync updated state to shared_state and send delta to show Confirmation completed
-        if shared_state:
-            sync_to_shared_state(state, shared_state, "", graph_id, graph_name)
-            if send_stream and encoder:
-                from .state import build_graph_agent_state
-                graph_state = build_graph_agent_state(state, "", "completed")
-                if graph_id in shared_state.graphs and shared_state.graphs[graph_id].mermaid_diagram:
-                    graph_state["mermaid_diagram"] = shared_state.graphs[graph_id].mermaid_diagram
-                
-                # Use delta to update only this graph
-                patch_ops = [
-                    JSONPatchOp(
-                        op='replace',
-                        path=f'/graphs/{graph_id}',
-                        value=shared_state.graphs[graph_id].model_dump()
-                    )
-                ]
-                
-                await send_stream.send(
-                    encoder.encode(
-                        StateDeltaEvent(
-                            type=EventType.STATE_DELTA,
-                            delta=[op.model_dump(by_alias=True) for op in patch_ops],
-                        )
-                    )
-                )
-                logger.info(f"   Sent delta with updated Confirmation step")
+    elif is_resuming:
+        # Resume existing graph from waiting state
+        state, user_confirmed = await resume_graph(
+            graph_id=graph_id,
+            shared_state=shared_state,
+            run_input=run_input,
+            query=query,
+            max_iterations=max_iterations,
+            user_id=user_id,
+            graph_name=graph_name,
+            send_stream=send_stream,
+        )
     else:
-        logger.info(f"🆕 Starting NEW graph execution")
-        # Initialize internal graph state (only for NEW executions)
-        state = QueryState(query=query, max_iterations=max_iterations, user_id=user_id)
+        # Create new graph instance
+        state, graph_id, graph_name = await create_graph(
+            query=query,
+            max_iterations=max_iterations,
+            user_id=user_id,
+            graph_id=graph_id,
+            graph_name=graph_name,
+            shared_state=shared_state,
+            send_stream=send_stream,
+            session_id=session_id,
+            mermaid_diagram=mermaid_diagram,
+        )
     
-        # Generate graph_id if not provided
-        if not graph_id:
-            graph_id = uuid.uuid4().hex[:12]
-        
-        # Generate graph_name from query if not provided
-        if not graph_name:
-            graph_name = query[:50] + ("..." if len(query) > 50 else "")
+    # ==================== STEP 5: Create UnifiedDeps for graph execution ====================
     
-    # Create UnifiedDeps with all required context
     deps = UnifiedDeps(
         send_stream=send_stream,
         adapter=ag_ui_adapter,
@@ -296,116 +231,27 @@ async def run_multi_agent_graph(
         agui_context=agui_context,
     )
     
-    # Send state update: snapshot for first graph, delta for subsequent graphs
-    if shared_state and send_stream and encoder and not is_resuming and graph_id:
-        # Check if this is the first graph in the session
-        existing_graphs = shared_state.graphs if hasattr(shared_state, 'graphs') else {}
-        is_first_graph = len(existing_graphs) == 1
-        
-        # Prepare graph data structure
-        graph_data = {
-            "graph_id": graph_id,
-            "name": graph_name or query[:50],
-            "status": "running",
-            "steps": [],
-            "query": query,
-            "original_query": query,
-            "result": "",
-            "query_type": "",
-            "execution_history": [],
-            "intermediate_results": {},
-            "streaming_text": {},
-            "prompts": {},
-            "tool_calls": {},
-            "errors": [],
-            "last_error_node": "",
-            "retry_count": 0,
-            "max_retries": 2,
-            "iteration_count": 0,
-            "max_iterations": max_iterations,
-            "should_continue": True,
-            "next_action": "",
-            "planned_steps": [],
-            "mermaid_diagram": mermaid_diagram,
-            "deferred_tool_requests": None,
-            "created_at": existing_graphs[graph_id].created_at if graph_id in existing_graphs else "",
-            "updated_at": existing_graphs[graph_id].updated_at if graph_id in existing_graphs else "",
-        }
-        
-        if is_first_graph:
-            # First graph - send full StateSnapshotEvent to establish state structure
-            initial_state = {
-                "sessionId": shared_state.sessionId if hasattr(shared_state, 'sessionId') else session_id,
-                "plans": {k: v.model_dump() for k, v in shared_state.plans.items()} if hasattr(shared_state, 'plans') else {},
-                "graphs": {graph_id: graph_data},
-            }
-            
-            await send_stream.send(
-                encoder.encode(
-                    StateSnapshotEvent(
-                        type=EventType.STATE_SNAPSHOT,
-                        snapshot=initial_state,
-                    )
-                )
-            )
-            logger.info(f"   [StateSnapshot] Sent initial state snapshot for first graph {graph_id}")
-        else:
-            # Subsequent graph - send StateDeltaEvent with 'add' operation
-            patch_ops = [
-                JSONPatchOp(
-                    op='add',
-                    path=f'/graphs/{graph_id}',
-                    value=graph_data
-                )
-            ]
-            
-            await send_stream.send(
-                encoder.encode(
-                    StateDeltaEvent(
-                        type=EventType.STATE_DELTA,
-                        delta=[op.model_dump(by_alias=True) for op in patch_ops],
-                    )
-                )
-            )
-            logger.info(f"   [StateDelta] Sent delta to add new graph {graph_id}")
-        
-        # Send ActivitySnapshotEvent for the new graph to create its chat message
-        activity_message_id = f"graph-{graph_id}"
-        activity_content = {
-            "graphs": {
-                graph_id: graph_data
-            },
-        }
-        
-        if session_id:
-            activity_content["sessionId"] = session_id
-        
-        await send_stream.send(
-            encoder.encode(
-                ActivitySnapshotEvent(
-                    messageId=activity_message_id,
-                    activityType="agent_state",
-                    content=activity_content,
-                )
-            )
-        )
-        logger.info(f"   [ActivitySnapshot] Sent initial activity snapshot for new graph {graph_id}")
+    # ==================== STEP 6: Execute the graph ====================
+    
+    logger.info(f"   ▶️  Executing graph with state: {len(state.execution_history)} steps in history")
     
     try:
         # Run the graph with UnifiedDeps
         result = await multi_agent_graph.run(state=state, inputs=query, deps=deps)
         
-        # Sync final result to shared state (for persistence)
+        # ==================== STEP 7: Sync final result to shared state ====================
+        
         if shared_state:
             graph_id = sync_to_shared_state(state, shared_state, "", graph_id, graph_name)
         
-        logger.info(f"✅ FINAL RESULT: {result[:200]}..." if len(result) > 200 else f"✅ FINAL RESULT: {result}")
+        logger.info(f"✅ GRAPH EXECUTION COMPLETE")
+        logger.info(f"   Result: {result[:200]}..." if len(result) > 200 else f"   Result: {result}")
         
         return result
         
     except Exception as e:
         error_msg = f"Graph execution failed: {str(e)}"
-        logger.exception(error_msg)
+        logger.exception(f"❌ {error_msg}")
         
         # Sync error to shared state
         if shared_state and graph_id and graph_id in shared_state.graphs:

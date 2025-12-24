@@ -62,10 +62,8 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
     }
   }, [state.status, state.steps]);
 
-  // Don't render if no steps
-  if (!state?.steps || state.steps.length === 0) {
-    return null;
-  }
+  // Render even with empty steps (graph created but not yet executed)
+  const hasSteps = state?.steps && state.steps.length > 0;
 
   const toggleExpanded = () => {
     const newState = !isExpanded;
@@ -79,12 +77,12 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
   };
 
   // Calculate progress - count steps by status
-  const completedSteps = state.steps.filter(s => s.status === 'completed').length;
-  const errorSteps = state.steps.filter(s => s.status === 'error').length;
-  const inProgressSteps = state.steps.filter(s => s.status === 'in_progress').length;
-  const pendingSteps = state.steps.filter(s => s.status === 'pending').length;
-  const waitingSteps = state.steps.filter(s => s.status === 'waiting').length;
-  const totalSteps = state.steps.length;
+  const completedSteps = hasSteps ? state.steps.filter(s => s.status === 'completed').length : 0;
+  const errorSteps = hasSteps ? state.steps.filter(s => s.status === 'error').length : 0;
+  const inProgressSteps = hasSteps ? state.steps.filter(s => s.status === 'in_progress').length : 0;
+  const pendingSteps = hasSteps ? state.steps.filter(s => s.status === 'pending').length : 0;
+  const waitingSteps = hasSteps ? state.steps.filter(s => s.status === 'waiting').length : 0;
+  const totalSteps = hasSteps ? state.steps.length : 0;
   const progressPercent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
   // Compute actual status - prefer backend state.status when available
@@ -103,8 +101,13 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
     if (pendingSteps === 0 && waitingSteps === 0 && totalSteps > 0) {
       return 'completed';
     }
-    if (completedSteps > 0 || pendingSteps > 0) {
+    // Only show 'running' if execution has actually started (some steps completed or in progress)
+    if (completedSteps > 0) {
       return 'running';
+    }
+    // If only pending steps exist and nothing has started, keep as pending
+    if (pendingSteps > 0 && completedSteps === 0 && inProgressSteps === 0) {
+      return 'pending';
     }
     // Fall back to backend status if available
     if (state.status && state.status !== 'pending') {
@@ -237,14 +240,22 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
 
           {/* Steps */}
           <div className="space-y-1">
-            {state.steps.map((step, index) => (
+            {hasSteps ? (
+              state.steps.map((step, index) => (
               <GraphStepItem 
                 key={`${step.node}-${index}`} 
                 step={step} 
                 isLight={isLight} 
                 isLast={index === state.steps.length - 1} 
               />
-            ))}
+              ))
+            ) : (
+              <div className={`p-3 rounded ${isLight ? 'bg-gray-50' : 'bg-[#1a2332]'}`}>
+                <p style={{ color: isLight ? '#6b7280' : '#9ca3af' }} className="text-sm text-center">
+                  Graph initialized. The orchestrator will determine the execution plan when run_graph() is called.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Final result */}

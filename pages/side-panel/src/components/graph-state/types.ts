@@ -179,9 +179,22 @@ export function convertToGraphAgentState(state: UnifiedAgentState): GraphAgentSt
   const activeGraphs = graphs.filter(g => g.status === 'active' || g.status === 'running' || g.status === 'waiting' || g.status === 'completed');
   const g = activeGraphs.length > 0 ? activeGraphs[0] : graphs[0];
       
-  if (!g || !g.steps || g.steps.length === 0) {
+  if (!g) {
     return null;
       }
+      
+  // Map status: 'active' -> 'pending' (not yet running), 'running' stays 'running'
+  // Check for errors in the errors array since GraphInstance doesn't have 'error' status
+  const hasErrors = g.errors && g.errors.length > 0;
+  const mappedStatus: GraphAgentState['status'] = 
+    hasErrors ? 'error' :
+    g.status === 'active' ? 'pending' :
+    g.status === 'running' ? 'running' :
+    g.status === 'waiting' ? 'waiting' :
+    g.status === 'completed' ? 'completed' :
+    g.status === 'cancelled' ? 'completed' : // Treat cancelled as completed for display
+    g.status === 'paused' ? 'pending' : // Treat paused as pending
+    'pending'; // Default to pending
       
       return {
     query: g.query,
@@ -189,11 +202,11 @@ export function convertToGraphAgentState(state: UnifiedAgentState): GraphAgentSt
     current_node: g.next_action,
     iteration: g.iteration_count,
     max_iterations: g.max_iterations,
-    steps: g.steps,
+    steps: g.steps || [], // Ensure steps is always an array
       planned_steps: g.planned_steps,
       mermaid_diagram: g.mermaid_diagram,
     final_result: g.result,
-    status: g.status as GraphAgentState['status'],
+    status: mappedStatus,
     graphId: g.graph_id,
     name: g.name,
     };

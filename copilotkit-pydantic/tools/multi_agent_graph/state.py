@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any, TYPE_CHECKING
 
 from pydantic import Field
-from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, BaseEvent, ActivitySnapshotEvent, ActivityDeltaEvent
+from ag_ui.core import EventType, StateDeltaEvent, BaseEvent, ActivitySnapshotEvent, ActivityDeltaEvent
 from ag_ui.encoder import EventEncoder
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE
 
@@ -295,7 +295,7 @@ def sync_to_shared_state(
         shared_state.graphs[graph_id] = GraphInstance(
             graph_id=graph_id,
             name=graph_name,
-            status='running',
+            status='active',
             steps=[],
             query=state.query,
             original_query=state.original_query or state.query,
@@ -354,15 +354,21 @@ def sync_to_shared_state(
     graph.steps = graph_agent_state.get("steps", [])
     
     # Update status based on state
-    if hasattr(state, 'deferred_tool_requests') and state.deferred_tool_requests:
-        graph.deferred_tool_requests = state.deferred_tool_requests
-        graph.status = 'waiting'
-    elif state.result:
-        graph.status = 'completed'
-    elif state.errors:
-        graph.status = 'error'
-    else:
-        graph.status = 'active'  # Changed from 'running' to match status types
+    # Valid statuses: 'active', 'running', 'paused', 'completed', 'cancelled', 'waiting'
+    try:
+        if hasattr(state, 'deferred_tool_requests') and state.deferred_tool_requests:
+            graph.deferred_tool_requests = state.deferred_tool_requests
+            graph.status = 'waiting'
+        elif state.result:
+            graph.status = 'completed'
+        elif state.errors:
+            # Graph stopped due to errors - mark as cancelled
+            graph.status = 'cancelled'
+        else:
+            graph.status = 'active'
+    except Exception as e:
+        logger.error(f"Error setting graph status: {e}. Defaulting to 'active'")
+        graph.status = 'active'
     
     return graph_id
 
@@ -373,17 +379,13 @@ async def send_graph_state_delta(
     current_node: str = "",
     step_status: str = "in_progress",
     shared_state: Any = None,
-    send_snapshot: bool = False,
 ) -> bool:
-    """Send graph state updates to the frontend using hybrid snapshot/delta approach.
+    """Send graph state updates to the frontend using delta approach.
     
     Strategy:
-    - When send_snapshot=True: Sends full StateSnapshotEvent to establish state structure
-    - When send_snapshot=False: Sends StateDeltaEvent with JSON Patch operations
-    - ActivitySnapshotEvent is always sent for both modes
-    
-    This hybrid approach ensures the frontend always has the proper state structure
-    while maximizing efficiency for incremental updates.
+    - Sends StateDeltaEvent with JSON Patch operations for efficient incremental updates
+    - Uses 'add' operation for new graphs, 'replace' for updates
+    - ActivitySnapshotEvent is always sent to update activity messages
     
     Args:
         send_stream: The stream to send events to
@@ -391,7 +393,6 @@ async def send_graph_state_delta(
         current_node: Node currently being executed
         step_status: Status of current step ("in_progress", "completed", "error")
         shared_state: Optional AgentState for syncing with session
-        send_snapshot: Whether to send full snapshots (True) or deltas (False). Defaults to False.
         
     Returns:
         True if update was sent successfully, False otherwise
@@ -475,95 +476,67 @@ async def send_graph_state_delta(
             "updated_at": shared_state.graphs[graph_id].updated_at if (shared_state and hasattr(shared_state, 'graphs') and graph_id in shared_state.graphs) else "",
         }
         
-        # Choose between full snapshot or delta based on send_snapshot parameter
-        if send_snapshot:
-            # Send full snapshot to establish state structure
-            logger.info(f"   [StateSnapshot] Sending full snapshot for graph {graph_id} for {current_node} ({step_status})")
-            
-            # Build complete state
-            nested_snapshot = {
-                "graphs": {graph_id: graph_instance_data},
-                "plans": {k: v.model_dump() for k, v in shared_state.plans.items()} if (shared_state and hasattr(shared_state, 'plans')) else {},
-            }
-            
-            # Only include optional fields if they exist
-            if shared_state and hasattr(shared_state, 'sessionId') and shared_state.sessionId:
-                nested_snapshot["sessionId"] = shared_state.sessionId
-            if shared_state and hasattr(shared_state, 'deferred_tool_requests') and shared_state.deferred_tool_requests:
-                nested_snapshot["deferred_tool_requests"] = shared_state.deferred_tool_requests
-            
-            # Send StateSnapshotEvent
-            await send_stream.send(
-                encoder.encode(
-                    StateSnapshotEvent(
-                        type=EventType.STATE_SNAPSHOT,
-                        snapshot=nested_snapshot,
-                    )
-                )
-            )
-        else:
-            # Subsequent graphs or updates - send delta for efficiency
-            patch_ops: list[JSONPatchOp] = []
-            
-            # Use 'add' for new graphs, 'replace' for updates
-            if is_new_graph:
-                # New graph - use 'add' operation
-                patch_ops.append(JSONPatchOp(
-                    op='add',
-                    path=f'/graphs/{graph_id}',
-                    value=graph_instance_data
-                ))
-                logger.info(f"   [StateDelta] Adding new graph {graph_id} for {current_node} ({step_status})")
-            else:
-                # Existing graph - use 'replace' operation for the entire graph
-                patch_ops.append(JSONPatchOp(
-                    op='replace',
-                    path=f'/graphs/{graph_id}',
-                    value=graph_instance_data
-                ))
-                logger.info(f"   [StateDelta] Updating graph {graph_id} for {current_node} ({step_status})")
-            
-            # Send StateDeltaEvent for agent state persistence
-            await send_stream.send(
-                encoder.encode(
-                    StateDeltaEvent(
-                        type=EventType.STATE_DELTA,
-                        delta=[op.model_dump(by_alias=True) for op in patch_ops],
-                    )
-                )
-            )
-            
-            # Send ActivityDeltaEvent for UI updates (delta mode)
-            activity_message_id = f"graph-{graph_id}"
-            activity_patch_ops: list[JSONPatchOp] = []
-            
-            # Create patch for activity content (same path structure as state)
-            if is_new_graph:
-                activity_patch_ops.append(JSONPatchOp(
-                    op='add',
-                    path=f'/graphs/{graph_id}',
-                    value=graph_instance_data
-                ))
-            else:
-                activity_patch_ops.append(JSONPatchOp(
-                    op='replace',
-                    path=f'/graphs/{graph_id}',
-                    value=graph_instance_data
-                ))
-            
-            await send_stream.send(
-                encoder.encode(
-                    ActivityDeltaEvent(
-                        messageId=activity_message_id,
-                        activityType="agent_state",
-                        patch=[op.model_dump(by_alias=True) for op in activity_patch_ops],
-                    )
-                )
-            )
+        # Send delta for efficiency
+        patch_ops: list[JSONPatchOp] = []
         
-        # Log success message based on what we sent
-        event_type = "StateSnapshot" if send_snapshot else "StateDelta"
-        logger.info(f"   [{event_type}] ✓ Sent successfully for {current_node}")
+        # Use 'add' for new graphs, 'replace' for updates
+        if is_new_graph:
+            # New graph - use 'add' operation
+            patch_ops.append(JSONPatchOp(
+                op='add',
+                path=f'/graphs/{graph_id}',
+                value=graph_instance_data
+            ))
+            logger.info(f"   [StateDelta] Adding new graph {graph_id} for {current_node} ({step_status})")
+        else:
+            # Existing graph - use 'replace' operation for the entire graph
+            patch_ops.append(JSONPatchOp(
+                op='replace',
+                path=f'/graphs/{graph_id}',
+                value=graph_instance_data
+            ))
+            logger.info(f"   [StateDelta] Updating graph {graph_id} for {current_node} ({step_status})")
+        
+        # Send StateDeltaEvent for agent state persistence
+        await send_stream.send(
+            encoder.encode(
+                StateDeltaEvent(
+                    type=EventType.STATE_DELTA,
+                    delta=[op.model_dump(by_alias=True) for op in patch_ops],
+                )
+            )
+        )
+        
+        # Send ActivityDeltaEvent for UI updates (delta mode)
+        activity_message_id = f"graph-{graph_id}"
+        activity_patch_ops: list[JSONPatchOp] = []
+        
+        # Create patch for activity content (same path structure as state)
+        if is_new_graph:
+            activity_patch_ops.append(JSONPatchOp(
+                op='add',
+                path=f'/graphs/{graph_id}',
+                value=graph_instance_data
+            ))
+        else:
+            activity_patch_ops.append(JSONPatchOp(
+                op='replace',
+                path=f'/graphs/{graph_id}',
+                value=graph_instance_data
+            ))
+        
+        await send_stream.send(
+            encoder.encode(
+                ActivityDeltaEvent(
+                    messageId=activity_message_id,
+                    activityType="agent_state",
+                    patch=[op.model_dump(by_alias=True) for op in activity_patch_ops],
+                )
+            )
+        )
+        
+        # Log success message
+        logger.info(f"   [StateDelta] ✓ Sent successfully for {current_node}")
         return True
     except Exception as e:
         logger.warning(f"Failed to send graph state delta: {type(e).__name__}: {e}")

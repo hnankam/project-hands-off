@@ -156,7 +156,7 @@ export const GraphsPanel: React.FC<GraphsPanelProps> = ({
               // Convert to GraphAgentState for rendering
               const graphState = convertToGraphAgentState({ graphs: { [graphId]: graph } });
               
-              if (!graphState || !graphState.steps || graphState.steps.length === 0) {
+              if (!graphState) {
                 return null;
               }
 
@@ -166,6 +166,7 @@ export const GraphsPanel: React.FC<GraphsPanelProps> = ({
                   state={graphState}
                   isCollapsed={false}
                   sessionId={sessionId}
+                  instanceId={graphId}
                 />
               );
             })}

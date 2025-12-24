@@ -726,28 +726,29 @@ async def rename_plan(
     )
 
 
-async def list_plans(ctx: RunContext[UnifiedDeps]) -> str:
-    """List all plans in the session with their names, IDs, and status.
+async def list_plans(ctx: RunContext[UnifiedDeps]) -> ToolReturn:
+    """List all plans in the session with their complete data.
+    
+    Returns all plan instances with their complete data as JSON.
     
     Returns:
-        Formatted string with plan details
+        ToolReturn with JSON string containing all plans from state
     """
-    if not ctx.deps.state.plans:
-        return "No plans in this session."
+    import json
     
-    result = "Plans in this session:\n\n"
+    plans = ctx.deps.state.plans
     
-    for plan_id, plan in ctx.deps.state.plans.items():
-        completed = sum(1 for s in plan.steps if s.status == 'completed')
-        total = len(plan.steps)
-        
-        result += f'**{plan.name}**\n'
-        result += f'   ID: {plan_id}\n'
-        result += f'   Status: {plan.status}\n'
-        result += f'   Progress: {completed}/{total} steps\n'
-        result += f'   Created: {plan.created_at}\n\n'
+    if not plans:
+        return ToolReturn(return_value=json.dumps({"plans": {}}, indent=2))
     
-    return result
+    # Get JSON dump of all plans
+    plans_data = {
+        plan_id: plan.model_dump()
+        for plan_id, plan in plans.items()
+    }
+    
+    # Return JSON string
+    return ToolReturn(return_value=json.dumps({"plans": plans_data}, indent=2))
 
 
 async def get_plan_details(
