@@ -3,11 +3,12 @@ fastapi
 uvicorn[standard]
 python-dotenv
 pydantic-ai>=1.37.0
-pydantic-ai-slim[ag-ui,bedrock,google,mcp]>=1.37.0
+dbos>=2.5.0
+pydantic-ai-slim[ag-ui,bedrock,google,mcp,dbos]>=1.37.0
 psycopg[binary]>=3.1
 psycopg_pool>=3.1
 openai>=1.50.0
 requests>=2.31.0
 google-cloud-storage>=2.10.0
 ably>=2.0.0
-logfire[fastapi]>=2.0.0
+logfire[fastapi,psycopg]>=2.0.0

@@ -211,8 +211,8 @@ def _build_models(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             k: v for k, v in merged_settings.items() 
             if k in ('max_tokens', 'temperature', 'extra_headers', 'bedrock_additional_model_requests_fields')
         }
-        if settings_summary:
-            logger.info(f"Model '{key}' final settings: {settings_summary}")
+        # if settings_summary:
+        #     logger.info(f"Model '{key}' final settings: {settings_summary}")
 
         model_instance, settings = _create_model_instance(
             provider_type, model_name, provider, merged_settings

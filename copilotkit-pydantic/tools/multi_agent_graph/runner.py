@@ -11,7 +11,7 @@ import uuid
 
 from pydantic_ai import Agent
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
-from ag_ui.core import RunAgentInput, UserMessage, EventType, StateSnapshotEvent
+from ag_ui.core import RunAgentInput, UserMessage, EventType, StateSnapshotEvent, StateDeltaEvent
 from ag_ui.encoder import EventEncoder
 
 from config import logger
@@ -21,7 +21,7 @@ from .types import QueryState
 from .graph import create_multi_agent_graph
 from .agents import create_agents
 from .state import sync_to_shared_state
-from core.models import UnifiedDeps
+from core.models import UnifiedDeps, JSONPatchOp
 
 if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectSendStream
@@ -240,7 +240,7 @@ async def run_multi_agent_graph(
             state.should_continue = False
             logger.info(f"   User cancelled - graph will end")
         
-        # Sync updated state to shared_state and send snapshot to show Confirmation completed
+        # Sync updated state to shared_state and send delta to show Confirmation completed
         if shared_state:
             sync_to_shared_state(state, shared_state, "", graph_id, graph_name)
             if send_stream and encoder:
@@ -248,15 +248,25 @@ async def run_multi_agent_graph(
                 graph_state = build_graph_agent_state(state, "", "completed")
                 if graph_id in shared_state.graphs and shared_state.graphs[graph_id].mermaid_diagram:
                     graph_state["mermaid_diagram"] = shared_state.graphs[graph_id].mermaid_diagram
+                
+                # Use delta to update only this graph
+                patch_ops = [
+                    JSONPatchOp(
+                        op='replace',
+                        path=f'/graphs/{graph_id}',
+                        value=shared_state.graphs[graph_id].model_dump()
+                    )
+                ]
+                
                 await send_stream.send(
                     encoder.encode(
-                        StateSnapshotEvent(
-                            type=EventType.STATE_SNAPSHOT,
-                            snapshot={"steps": graph_state.get("steps", []), "graphs": {graph_id: shared_state.graphs[graph_id].model_dump()}, **graph_state},
+                        StateDeltaEvent(
+                            type=EventType.STATE_DELTA,
+                            delta=[op.model_dump(by_alias=True) for op in patch_ops],
                         )
                     )
                 )
-                logger.info(f"   Sent snapshot with updated Confirmation step")
+                logger.info(f"   Sent delta with updated Confirmation step")
     else:
         logger.info(f"🆕 Starting NEW graph execution")
         # Initialize internal graph state (only for NEW executions)
@@ -286,16 +296,25 @@ async def run_multi_agent_graph(
         agui_context=agui_context,
     )
     
-    # Send initial state snapshot if we have shared state
+    # Send minimal initial state snapshot to establish state structure
+    # This ensures the frontend has a base state object for delta operations
     if shared_state and send_stream and encoder:
+        # Send a minimal snapshot to initialize the state structure
+        initial_state = {
+            "sessionId": shared_state.sessionId if hasattr(shared_state, 'sessionId') else session_id,
+            "plans": {k: v.model_dump() for k, v in shared_state.plans.items()} if hasattr(shared_state, 'plans') else {},
+            "graphs": {k: v.model_dump() for k, v in shared_state.graphs.items()} if hasattr(shared_state, 'graphs') else {},
+        }
+        
         await send_stream.send(
             encoder.encode(
                 StateSnapshotEvent(
                     type=EventType.STATE_SNAPSHOT,
-                    snapshot=shared_state.model_dump(),
+                    snapshot=initial_state,
                 )
             )
         )
+        logger.info(f"   [InitialState] Sent initial state snapshot with {len(initial_state.get('plans', {}))} plans and {len(initial_state.get('graphs', {}))} graphs")
     
     try:
         # Run the graph with UnifiedDeps

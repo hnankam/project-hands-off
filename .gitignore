@@ -35,3 +35,8 @@ copilotkit-openai/.venv/
 copilotkit-anthropic/.venv/
 copilotkit-google/.venv/
 copilotkit-bedrock/.venv/
+
+# Python bytecode files
+**/__pycache__
+*.pyc
+*.pyo

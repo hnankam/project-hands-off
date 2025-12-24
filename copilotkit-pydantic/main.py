@@ -51,23 +51,23 @@ if LOGFIRE_ENABLED:
             logger.debug(f"Could not instrument Pydantic AI: {e}")
         
         # Instrument common libraries (each one independently)
-        try:
-            logfire.instrument_psycopg()
-        except Exception as e:
-            logger.debug(f"Could not instrument psycopg: {e}")
+        # try:
+        #     logfire.instrument_psycopg()
+        # except Exception as e:
+        #     logger.debug(f"Could not instrument psycopg: {e}")
         
         try:
-            logfire.instrument_httpx(capture_request_headers=LOGFIRE_CAPTURE_HEADERS, capture_response_headers=LOGFIRE_CAPTURE_HEADERS)
+            logfire.instrument_httpx(capture_headers=LOGFIRE_CAPTURE_HEADERS)
         except Exception as e:
             logger.debug(f"Could not instrument httpx: {e}")
         
         try:
-            logfire.instrument_openai(capture_request_headers=LOGFIRE_CAPTURE_HEADERS, capture_response_headers=LOGFIRE_CAPTURE_HEADERS)
+            logfire.instrument_openai()
         except Exception as e:
             logger.debug(f"Could not instrument OpenAI: {e}")
         
         try:
-            logfire.instrument_anthropic(capture_request_headers=LOGFIRE_CAPTURE_HEADERS, capture_response_headers=LOGFIRE_CAPTURE_HEADERS)
+            logfire.instrument_anthropic()
         except Exception as e:
             logger.debug(f"Could not instrument Anthropic: {e}")
         

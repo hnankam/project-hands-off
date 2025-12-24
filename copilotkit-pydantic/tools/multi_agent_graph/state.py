@@ -11,26 +11,17 @@ from datetime import datetime
 from typing import Any, TYPE_CHECKING
 
 from pydantic import Field
-from ag_ui.core import EventType, StateSnapshotEvent, BaseEvent
+from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, BaseEvent, ActivitySnapshotEvent
 from ag_ui.encoder import EventEncoder
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE
 
 from config import logger
+from core.models import JSONPatchOp
 from .types import (
     QueryState,
     GraphAgentState,
     ACTION_TO_NODE,
 )
-
-# ActivitySnapshotEvent is not in the Python ag_ui.core package (only in TypeScript SDK)
-# We create a custom BaseEvent subclass that will serialize to the correct AG-UI format
-class ActivitySnapshotEvent(BaseEvent):
-    """Activity snapshot event for inline rendering in V2."""
-    type: str = Field(default="ACTIVITY_SNAPSHOT")
-    messageId: str
-    activityType: str
-    content: dict
-    replace: bool = True
 
 if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectSendStream
@@ -376,14 +367,21 @@ def sync_to_shared_state(
     return graph_id
 
 
-async def send_graph_state_snapshot(
+async def send_graph_state_delta(
     send_stream: MemoryObjectSendStream[str] | None,
     state: QueryState,
     current_node: str = "",
     step_status: str = "in_progress",
     shared_state: Any = None,
 ) -> bool:
-    """Send a StateSnapshotEvent for the graph state to the frontend.
+    """Send graph state updates to the frontend using hybrid snapshot/delta approach.
+    
+    Strategy:
+    - First graph: Sends full StateSnapshotEvent to establish state structure
+    - Subsequent graphs/updates: Sends StateDeltaEvent with JSON Patch operations
+    
+    This hybrid approach ensures the frontend always has the proper state structure
+    while maximizing efficiency for incremental updates.
     
     Args:
         send_stream: The stream to send events to
@@ -393,12 +391,12 @@ async def send_graph_state_snapshot(
         shared_state: Optional AgentState for syncing with session
         
     Returns:
-        True if snapshot was sent successfully, False otherwise
+        True if update was sent successfully, False otherwise
     """
-    logger.debug(f"   [StateSnapshot] Called for node={current_node}, status={step_status}")
+    logger.debug(f"   [GraphState] Called for node={current_node}, status={step_status}")
     
     if not send_stream:
-        logger.warning(f"   [StateSnapshot] No send_stream available for {current_node}")
+        logger.warning(f"   [StateDelta] No send_stream available for {current_node}")
         return False
     
     try:
@@ -407,17 +405,31 @@ async def send_graph_state_snapshot(
         # Get or generate graph_id
         graph_id = None
         graph_name = None
+        is_new_graph = True
+        
+        # Check if this is the first graph (before any syncing)
+        is_first_graph = not shared_state or not hasattr(shared_state, 'graphs') or len(shared_state.graphs) == 0
+        
         if shared_state and hasattr(shared_state, 'graphs'):
             # Try to find existing graph for this query
             for gid, graph in shared_state.graphs.items():
                 if graph.original_query == (state.original_query or state.query):
                     graph_id = gid
                     graph_name = graph.name
+                    is_new_graph = False
                     break
+        
+        # Remember if this was a new graph BEFORE sync
+        # (sync will add it to shared_state, so we need to check before that)
+        was_new_graph_before_sync = is_new_graph
         
         # Sync to shared state if available (for persistence)
         if shared_state and hasattr(shared_state, 'graphs'):
             graph_id = sync_to_shared_state(state, shared_state, current_node, graph_id, graph_name)
+        
+        # Use the "before sync" value to determine operation type
+        # After sync, the graph will exist in shared_state, but we want to use 'add' on first call
+        is_new_graph = was_new_graph_before_sync
         
         # Build GraphAgentState format for frontend rendering
         graph_agent_state = build_graph_agent_state(state, current_node, step_status)
@@ -460,38 +472,63 @@ async def send_graph_state_snapshot(
             "updated_at": shared_state.graphs[graph_id].updated_at if (shared_state and hasattr(shared_state, 'graphs') and graph_id in shared_state.graphs) else "",
         }
         
-        # Build graphs dictionary - include ALL graphs from shared state to preserve them
-        all_graphs = {}
-        if shared_state and hasattr(shared_state, 'graphs'):
-            # First, add all existing graphs
-            all_graphs = {k: v.model_dump() for k, v in shared_state.graphs.items()}
-        # Then update with current graph (overwrites if already exists)
-        all_graphs[graph_id] = graph_instance_data
-        
-        nested_snapshot = {
-            # Flat structure: graphs dictionary matching AgentState schema
-            "graphs": all_graphs,
-            # Include existing plans from shared state to preserve them
-            "plans": {k: v.model_dump() for k, v in shared_state.plans.items()} if (shared_state and hasattr(shared_state, 'plans')) else {},
-        }
-        
-        # Only include optional fields if they exist (Zod schema expects undefined, not null)
-        if shared_state and hasattr(shared_state, 'sessionId') and shared_state.sessionId:
-            nested_snapshot["sessionId"] = shared_state.sessionId
-        if shared_state and hasattr(shared_state, 'deferred_tool_requests') and shared_state.deferred_tool_requests:
-            nested_snapshot["deferred_tool_requests"] = shared_state.deferred_tool_requests
-        
-        logger.info(f"   [StateSnapshot] Sending for {current_node} ({step_status})")
-        
-        # Send StateSnapshotEvent for agent state persistence
-        await send_stream.send(
-            encoder.encode(
-                StateSnapshotEvent(
-                    type=EventType.STATE_SNAPSHOT,
-                    snapshot=nested_snapshot,
+        # Choose between full snapshot (first graph) or delta (subsequent graphs)
+        if is_first_graph and is_new_graph:
+            # First graph - send full snapshot to establish state structure
+            logger.info(f"   [StateSnapshot] Sending full snapshot for first graph {graph_id} for {current_node} ({step_status})")
+            
+            # Build complete state
+            nested_snapshot = {
+                "graphs": {graph_id: graph_instance_data},
+                "plans": {k: v.model_dump() for k, v in shared_state.plans.items()} if (shared_state and hasattr(shared_state, 'plans')) else {},
+            }
+            
+            # Only include optional fields if they exist
+            if shared_state and hasattr(shared_state, 'sessionId') and shared_state.sessionId:
+                nested_snapshot["sessionId"] = shared_state.sessionId
+            if shared_state and hasattr(shared_state, 'deferred_tool_requests') and shared_state.deferred_tool_requests:
+                nested_snapshot["deferred_tool_requests"] = shared_state.deferred_tool_requests
+            
+            # Send StateSnapshotEvent
+            await send_stream.send(
+                encoder.encode(
+                    StateSnapshotEvent(
+                        type=EventType.STATE_SNAPSHOT,
+                        snapshot=nested_snapshot,
+                    )
                 )
             )
-        )
+        else:
+            # Subsequent graphs or updates - send delta for efficiency
+            patch_ops: list[JSONPatchOp] = []
+            
+            # Use 'add' for new graphs, 'replace' for updates
+            if is_new_graph:
+                # New graph - use 'add' operation
+                patch_ops.append(JSONPatchOp(
+                    op='add',
+                    path=f'/graphs/{graph_id}',
+                    value=graph_instance_data
+                ))
+                logger.info(f"   [StateDelta] Adding new graph {graph_id} for {current_node} ({step_status})")
+            else:
+                # Existing graph - use 'replace' operation for the entire graph
+                patch_ops.append(JSONPatchOp(
+                    op='replace',
+                    path=f'/graphs/{graph_id}',
+                    value=graph_instance_data
+                ))
+                logger.info(f"   [StateDelta] Updating graph {graph_id} for {current_node} ({step_status})")
+            
+            # Send StateDeltaEvent for agent state persistence
+            await send_stream.send(
+                encoder.encode(
+                    StateDeltaEvent(
+                        type=EventType.STATE_DELTA,
+                        delta=[op.model_dump(by_alias=True) for op in patch_ops],
+                    )
+                )
+            )
         
         # Use graph_id from sync (already generated if needed)
         if not graph_id:
@@ -519,10 +556,12 @@ async def send_graph_state_snapshot(
             )
         )
         
-        logger.info(f"   [StateSnapshot] ✓ Sent successfully for {current_node}")
+        # Log success message based on what we sent
+        event_type = "StateSnapshot" if (is_first_graph and is_new_graph) else "StateDelta"
+        logger.info(f"   [{event_type}] ✓ Sent successfully for {current_node}")
         return True
     except Exception as e:
-        logger.warning(f"Failed to send graph state snapshot: {type(e).__name__}: {e}")
+        logger.warning(f"Failed to send graph state delta: {type(e).__name__}: {e}")
         return False
 
 

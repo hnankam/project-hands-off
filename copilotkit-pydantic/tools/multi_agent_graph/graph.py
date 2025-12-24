@@ -23,7 +23,7 @@ from .types import (
     ToolCallInfo,
 )
 from .agents import create_agents
-from .state import send_graph_state_snapshot
+from .state import send_graph_state_delta
 from .steps import (
     run_worker_step,
     create_orchestrator_run_input,
@@ -77,7 +77,7 @@ def create_multi_agent_graph(
         
         send_stream = ctx.deps.send_stream if ctx.deps else None
         shared_state = ctx.deps.state if ctx.deps else None
-        await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
+        await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
         
         # Check iteration limit
         if ctx.state.iteration_count > ctx.state.max_iterations:
@@ -87,7 +87,7 @@ def create_multi_agent_graph(
                 "error": f"Max iterations ({ctx.state.max_iterations}) reached",
                 "timestamp": datetime.now().isoformat()
             })
-            await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "error", shared_state)
+            await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "error", shared_state)
             return "end"
         
         # Build context
@@ -145,7 +145,7 @@ def create_multi_agent_graph(
                                     ctx.state.tool_calls["Orchestrator"] = ctx.state.tool_calls[orchestrator_key]
                                     logger.info(f"   [Orchestrator] Tool call started: {tool_name}")
                                     # Send snapshot to show tool call started
-                                    await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
+                                    await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
                                 
                                 # Handle TOOL_CALL_ARGS - tool arguments streaming
                                 elif event_type == 'TOOL_CALL_ARGS':
@@ -175,7 +175,7 @@ def create_multi_agent_graph(
                                             break
                                     ctx.state.tool_calls["Orchestrator"] = ctx.state.tool_calls[orchestrator_key]
                                     # Send snapshot to show tool call result
-                                    await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
+                                    await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
                     except json.JSONDecodeError:
                         pass
                     except Exception as e:
@@ -275,7 +275,7 @@ def create_multi_agent_graph(
                     # Update state to "waiting" status
                     ctx.state.result = f"Waiting for user interaction: {tool_names}"
                     
-                    await send_graph_state_snapshot(send_stream, ctx.state, "Confirmation", "waiting", shared_state)
+                    await send_graph_state_delta(send_stream, ctx.state, "Confirmation", "waiting", shared_state)
                     
                     # Store the deferred requests so parent can access them
                     ctx.state.deferred_tool_requests = output
@@ -327,7 +327,7 @@ def create_multi_agent_graph(
             ctx.state.should_continue = decision.needs_followup
             ctx.state.next_action = decision.next_task_type.lower()
             
-            await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "completed", shared_state)
+            await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "completed", shared_state)
             
             return decision.next_task_type.lower()  # type: ignore
             
@@ -338,7 +338,7 @@ def create_multi_agent_graph(
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             })
-            await send_graph_state_snapshot(send_stream, ctx.state, "Orchestrator", "error", shared_state)
+            await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "error", shared_state)
             return "end"
     
     # ==================== CONFIRMATION STEP ====================
@@ -374,7 +374,7 @@ def create_multi_agent_graph(
         ctx.state.prompts["Confirmation"] = action_description
         
         # Send state snapshot - step started
-        await send_graph_state_snapshot(send_stream, ctx.state, "Confirmation", "in_progress", shared_state)
+        await send_graph_state_delta(send_stream, ctx.state, "Confirmation", "in_progress", shared_state)
         
         try:
             from pydantic_ai.tools import DeferredToolRequests
@@ -418,7 +418,7 @@ def create_multi_agent_graph(
             ctx.state.streaming_text["Confirmation"] = ctx.state.streaming_text[indexed_key]
             
             # Update state to "waiting"
-            await send_graph_state_snapshot(send_stream, ctx.state, "Confirmation", "waiting", shared_state)
+            await send_graph_state_delta(send_stream, ctx.state, "Confirmation", "waiting", shared_state)
             
             logger.info(f"   [Confirmation] Returning DeferredToolRequests")
             
@@ -432,7 +432,7 @@ def create_multi_agent_graph(
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             })
-            await send_graph_state_snapshot(send_stream, ctx.state, "Confirmation", "error", shared_state)
+            await send_graph_state_delta(send_stream, ctx.state, "Confirmation", "error", shared_state)
             return "error"
     
     # ==================== WORKER STEPS ====================
@@ -511,7 +511,7 @@ def create_multi_agent_graph(
         ctx.state.should_continue = False
         
         logger.info(f"   [Finalize] Sending final snapshot with status={final_status}, result length={len(final_result)}")
-        await send_graph_state_snapshot(send_stream, ctx.state, "", final_status, shared_state)
+        await send_graph_state_delta(send_stream, ctx.state, "", final_status, shared_state)
         
         return final_result
     

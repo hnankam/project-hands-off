@@ -11,7 +11,7 @@ from typing import Any, TYPE_CHECKING
 
 from config import logger
 from .types import QueryState, ToolCallInfo
-from .state import send_graph_state_snapshot
+from .state import send_graph_state_delta
 
 if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectSendStream
@@ -138,9 +138,9 @@ async def process_sub_agent_events(
                 should_send_snapshot = True
                 logger.debug(f"   [{node_name}] Tool result received: {result_str[:50]}...")
             
-            # Send snapshot if needed (with failure protection)
+            # Send delta if needed (with failure protection)
             if should_send_snapshot and not snapshot_disabled:
-                success = await send_graph_state_snapshot(
+                success = await send_graph_state_delta(
                     send_stream, state, node_name, "in_progress", shared_state
                 )
                 if success:

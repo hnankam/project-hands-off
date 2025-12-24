@@ -38,21 +38,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, BinaryImage, ToolReturn
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
-from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, CustomEvent, RunAgentInput, UserMessage, BaseEvent
-
-# ActivitySnapshotEvent is not in the Python ag_ui.core package (only in TypeScript SDK)
-# We create a custom BaseEvent subclass that will serialize to the correct AG-UI format
-class ActivitySnapshotEvent(BaseEvent):
-    """Activity snapshot event for inline rendering in V2.
-    
-    This mimics the AG-UI ACTIVITY_SNAPSHOT event type which is available
-    in the TypeScript SDK but not the Python SDK.
-    """
-    type: str = Field(default="ACTIVITY_SNAPSHOT")  # Override the type field
-    messageId: str
-    activityType: str
-    content: dict
-    replace: bool = True
+from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, CustomEvent, RunAgentInput, UserMessage, BaseEvent, ActivitySnapshotEvent, ActivityDeltaEvent
 
 from core.models import AgentState, Step, StepStatus, UnifiedDeps, PlanInstance, GraphInstance
 
@@ -151,6 +137,10 @@ async def create_plan(
     Multiple plans can be active simultaneously. Each plan has a unique ID and
     a human-readable name. Users can reference plans by name (e.g., @"Build House Plan").
     
+    Uses hybrid snapshot/delta approach:
+    - First plan: Sends full StateSnapshotEvent to establish state structure
+    - Subsequent plans: Sends StateDeltaEvent with JSON Patch 'add' operation
+    
     Args:
         ctx: The run context with agent state
         name: Human-readable name for this plan (max 50 chars, e.g., "Build Dream House", "Research ML")
@@ -169,6 +159,9 @@ async def create_plan(
     # Generate unique plan ID
     plan_id = f"{uuid.uuid4().hex[:12]}"
     
+    # Check if this is the first plan (before adding it)
+    is_first_plan = len(ctx.deps.state.plans) == 0
+    
     # Create plan instance
     plan_instance = PlanInstance(
         plan_id=plan_id,
@@ -182,37 +175,75 @@ async def create_plan(
     # Add to state
     ctx.deps.state.plans[plan_id] = plan_instance
     
-    # Build state snapshot
-    state_dict = ctx.deps.state.model_dump()
     # Get sessionId, handle None case
-    session_id = state_dict.get("sessionId") or ctx.deps.session_id or "default"
+    session_id = ctx.deps.state.sessionId or ctx.deps.session_id or "default"
     
     # Update state with session_id if it was None
     if not ctx.deps.state.sessionId:
         ctx.deps.state.sessionId = session_id
-        state_dict = ctx.deps.state.model_dump()
     
-    # Activity message for this specific plan (using flat structure for frontend)
+    # Activity message for this specific plan
     activity_message_id = f"plan-{plan_id}"
-    activity_content = {
-        "plans": {plan_id: plan_instance.model_dump()},
-        "sessionId": session_id,
-    }
+    
+    # Choose between full snapshot (first plan) or delta (subsequent plans)
+    if is_first_plan:
+        # Send full snapshot to establish state structure
+        state_dict = ctx.deps.state.model_dump()
+        
+        # For first plan, use ActivitySnapshotEvent to establish activity structure
+        activity_content = {
+            "plans": {plan_id: plan_instance.model_dump()},
+            "sessionId": session_id,
+        }
 
-    result = ToolReturn(
-        return_value=f'Plan "{name}" (ID: {plan_id}) created with {len(steps)} steps',
-        metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=state_dict,
-            ),
-            ActivitySnapshotEvent(
-                messageId=activity_message_id,
-                activityType="task_progress",
-                content=activity_content,
-            ),
-        ],
-    )
+        result = ToolReturn(
+            return_value=f'Plan "{name}" (ID: {plan_id}) created with {len(steps)} steps',
+            metadata=[
+                StateSnapshotEvent(
+                    type=EventType.STATE_SNAPSHOT,
+                    snapshot=state_dict,
+                ),
+                ActivitySnapshotEvent(
+                    messageId=activity_message_id,
+                    activityType="task_progress",
+                    content=activity_content,
+                ),
+            ],
+        )
+    else:
+        # Send delta for efficient incremental update
+        state_patch_ops: list[JSONPatchOp] = [
+            JSONPatchOp(
+                op='add',
+                path=f'/plans/{plan_id}',
+                value=plan_instance.model_dump()
+            )
+        ]
+        
+        # Activity delta operations - add the new plan to activity content
+        activity_delta_ops: list[JSONPatchOp] = [
+            JSONPatchOp(
+                op='add',
+                path=f'/plans/{plan_id}',
+                value=plan_instance.model_dump()
+            )
+        ]
+        
+        result = ToolReturn(
+            return_value=f'Plan "{name}" (ID: {plan_id}) created with {len(steps)} steps',
+            metadata=[
+                StateDeltaEvent(
+                    type=EventType.STATE_DELTA,
+                    delta=[op.model_dump(by_alias=True) for op in state_patch_ops],
+                ),
+                ActivityDeltaEvent(
+                    messageId=activity_message_id,
+                    activityType="task_progress",
+                    patch=[op.model_dump(by_alias=True) for op in activity_delta_ops],
+                ),
+            ],
+        )
+    
     return result
 
 async def update_plan_step(
@@ -223,6 +254,8 @@ async def update_plan_step(
     status: StepStatus | None = None
 ) -> ToolReturn:
     """Update a specific plan's step.
+    
+    Uses StateDeltaEvent with JSON Patch operations for efficient incremental updates.
     
     Args:
         ctx: The run context with agent state
@@ -263,42 +296,102 @@ async def update_plan_step(
         )
         return ToolReturn(return_value=error_msg)
 
-    # Update step
+    # Validate status if provided
+    valid_statuses = ['pending', 'running', 'completed', 'failed', 'deleted']
+    if status is not None:
+        status_str = str(status).lower().strip()
+        # Find matching valid status (case-insensitive check)
+        matched_status = None
+        for valid_status in valid_statuses:
+            if status_str == valid_status.lower():
+                matched_status = valid_status
+                break
+        
+        if matched_status is None:
+            error_msg = (
+                f"Invalid step status '{status}'. "
+                f"Accepted values are: {', '.join(valid_statuses)}. "
+                f"Please use one of these exact values."
+            )
+            return ToolReturn(return_value=error_msg)
+        
+        # Use the exact valid status value (normalize case)
+        status = matched_status  # type: ignore
+
+    # Build JSON Patch operations for delta update
+    patch_ops: list[JSONPatchOp] = []
+    
+    # Update step fields
     if description is not None:
         plan.steps[step_index].description = description
+        patch_ops.append(JSONPatchOp(
+            op='replace',
+            path=f'/plans/{plan_id}/steps/{step_index}/description',
+            value=description
+        ))
+    
     if status is not None:
-        plan.steps[step_index].status = status
+        plan.steps[step_index].status = status  # type: ignore
+        patch_ops.append(JSONPatchOp(
+            op='replace',
+            path=f'/plans/{plan_id}/steps/{step_index}/status',
+            value=status
+        ))
     
-    plan.updated_at = datetime.now().isoformat()
+    # Update plan timestamp
+    new_timestamp = datetime.now().isoformat()
+    plan.updated_at = new_timestamp
+    patch_ops.append(JSONPatchOp(
+        op='replace',
+        path=f'/plans/{plan_id}/updated_at',
+        value=new_timestamp
+    ))
     
-    # Build state snapshot
-    state_dict = ctx.deps.state.model_dump()
     # Get sessionId, handle None case
-    session_id = state_dict.get("sessionId") or ctx.deps.session_id or "default"
+    session_id = ctx.deps.state.sessionId or ctx.deps.session_id or "default"
     
     # Update state with session_id if it was None
     if not ctx.deps.state.sessionId:
         ctx.deps.state.sessionId = session_id
-        state_dict = ctx.deps.state.model_dump()
     
-    # Activity message for this specific plan
+    # Activity delta operations - update only the changed step
     activity_message_id = f"plan-{plan_id}"
-    activity_content = {
-        "plans": {plan_id: plan.model_dump()},
-        "sessionId": session_id,
-    }
+    activity_delta_ops: list[JSONPatchOp] = []
+    
+    # Update the changed step in activity content
+    changed_step = plan.steps[step_index]
+    if description is not None:
+        activity_delta_ops.append(JSONPatchOp(
+            op='replace',
+            path=f'/plans/{plan_id}/steps/{step_index}/description',
+            value=description
+        ))
+    
+    if status is not None:
+        activity_delta_ops.append(JSONPatchOp(
+            op='replace',
+            path=f'/plans/{plan_id}/steps/{step_index}/status',
+            value=status
+        ))
+    
+    # Update timestamp
+    activity_delta_ops.append(JSONPatchOp(
+        op='replace',
+        path=f'/plans/{plan_id}/updated_at',
+        value=new_timestamp
+    ))
     
     return ToolReturn(
         return_value=f'Updated step {step_index} in plan "{plan.name}"',
         metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=state_dict,
+            StateDeltaEvent(
+                type=EventType.STATE_DELTA,
+                delta=[op.model_dump(by_alias=True) for op in patch_ops],
             ),
-            ActivitySnapshotEvent(
+            ActivityDeltaEvent(
                 messageId=activity_message_id,
                 activityType="task_progress",
-                content=activity_content,
+                patch=[op.model_dump(by_alias=True) for op in activity_delta_ops],
             ),
         ],
     )
@@ -313,6 +406,8 @@ async def update_plan_steps(
     
     More efficient than calling update_plan_step multiple times. Useful for
     updating step sequences (e.g., mark step 1 completed and step 2 running).
+    
+    Uses StateDeltaEvent with JSON Patch operations for efficient incremental updates.
     
     Args:
         ctx: The run context with agent state
@@ -345,7 +440,8 @@ async def update_plan_steps(
     
     plan = ctx.deps.state.plans[plan_id]
     
-    # Validate and apply all updates
+    # Build JSON Patch operations for delta update
+    patch_ops: list[JSONPatchOp] = []
     updated_indices = []
     errors = []
     
@@ -363,14 +459,48 @@ async def update_plan_steps(
             )
             continue
         
-        # Apply updates
+        # Create JSON Patch operations for each field change
         description = update.get('description')
         status = update.get('status')
         
+        # Validate status if provided
+        valid_statuses = ['pending', 'running', 'completed', 'failed', 'deleted']
+        if status is not None:
+            status_str = str(status).lower().strip()
+            # Find matching valid status (case-insensitive check)
+            matched_status = None
+            for valid_status in valid_statuses:
+                if status_str == valid_status.lower():
+                    matched_status = valid_status
+                    break
+            
+            if matched_status is None:
+                errors.append(
+                    f"Update {i}: Invalid step status '{status}'. "
+                    f"Accepted values are: {', '.join(valid_statuses)}"
+                )
+                continue
+            
+            # Use the exact valid status value (normalize case)
+            status = matched_status
+        
         if description is not None:
             plan.steps[step_index].description = description
+            # JSON Pointer path: /plans/{plan_id}/steps/{step_index}/description
+            patch_ops.append(JSONPatchOp(
+                op='replace',
+                path=f'/plans/{plan_id}/steps/{step_index}/description',
+                value=description
+            ))
+        
         if status is not None:
-            plan.steps[step_index].status = status
+            plan.steps[step_index].status = status  # type: ignore
+            # JSON Pointer path: /plans/{plan_id}/steps/{step_index}/status
+            patch_ops.append(JSONPatchOp(
+                op='replace',
+                path=f'/plans/{plan_id}/steps/{step_index}/status',
+                value=status
+            ))
         
         updated_indices.append(step_index)
     
@@ -381,25 +511,41 @@ async def update_plan_steps(
             error_msg += f'\nErrors:\n' + '\n'.join(f'  - {e}' for e in errors)
         return ToolReturn(return_value=error_msg)
     
-    # Update plan timestamp
-    plan.updated_at = datetime.now().isoformat()
+    # Update plan timestamp (both in memory and as a patch operation)
+    new_timestamp = datetime.now().isoformat()
+    plan.updated_at = new_timestamp
+    patch_ops.append(JSONPatchOp(
+        op='replace',
+        path=f'/plans/{plan_id}/updated_at',
+        value=new_timestamp
+    ))
     
-    # Build state snapshot
-    state_dict = ctx.deps.state.model_dump()
     # Get sessionId, handle None case
-    session_id = state_dict.get("sessionId") or ctx.deps.session_id or "default"
+    session_id = ctx.deps.state.sessionId or ctx.deps.session_id or "default"
     
     # Update state with session_id if it was None
     if not ctx.deps.state.sessionId:
         ctx.deps.state.sessionId = session_id
-        state_dict = ctx.deps.state.model_dump()
     
-    # Activity message for this specific plan
+    # Activity delta operations - update only the changed steps
     activity_message_id = f"plan-{plan_id}"
-    activity_content = {
-        "plans": {plan_id: plan.model_dump()},
-        "sessionId": session_id,
-    }
+    activity_delta_ops: list[JSONPatchOp] = []
+    
+    # Add delta operations for each changed step
+    for step_index in updated_indices:
+        step = plan.steps[step_index]
+        # The patch_ops already contain the step updates, reuse them for activity delta
+        # Filter to get only the step-related operations
+        for op in patch_ops:
+            if f'/plans/{plan_id}/steps/{step_index}' in op.path:
+                activity_delta_ops.append(op)
+    
+    # Add timestamp update
+    activity_delta_ops.append(JSONPatchOp(
+        op='replace',
+        path=f'/plans/{plan_id}/updated_at',
+        value=new_timestamp
+    ))
     
     # Build result message
     result_msg = f'Updated {len(updated_indices)} step(s) in plan "{plan.name}": {sorted(updated_indices)}'
@@ -409,14 +555,15 @@ async def update_plan_steps(
     return ToolReturn(
         return_value=result_msg,
         metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=state_dict,
+            # Use StateDeltaEvent for efficient incremental updates
+            StateDeltaEvent(
+                type=EventType.STATE_DELTA,
+                delta=[op.model_dump(by_alias=True) for op in patch_ops],
             ),
-            ActivitySnapshotEvent(
+            ActivityDeltaEvent(
                 messageId=activity_message_id,
                 activityType="task_progress",
-                content=activity_content,
+                patch=[op.model_dump(by_alias=True) for op in activity_delta_ops],
             ),
         ],
     )
@@ -428,6 +575,8 @@ async def update_plan_status(
     status: str
 ) -> ToolReturn:
     """Change a plan's status (pause, resume, complete, cancel).
+    
+    Uses StateDeltaEvent with JSON Patch operations for efficient incremental updates.
     
     Args:
         ctx: The run context with agent state
@@ -447,30 +596,56 @@ async def update_plan_status(
     
     plan = ctx.deps.state.plans[plan_id]
     old_status = plan.status
+    
+    # Build JSON Patch operations
+    patch_ops: list[JSONPatchOp] = []
+    
+    # Update status
     plan.status = status  # type: ignore
-    plan.updated_at = datetime.now().isoformat()
+    patch_ops.append(JSONPatchOp(
+        op='replace',
+        path=f'/plans/{plan_id}/status',
+        value=status
+    ))
     
-    # Build state snapshot
-    state_dict = ctx.deps.state.model_dump()
-    session_id = state_dict.get("sessionId", "default")
+    # Update timestamp
+    new_timestamp = datetime.now().isoformat()
+    plan.updated_at = new_timestamp
+    patch_ops.append(JSONPatchOp(
+        op='replace',
+        path=f'/plans/{plan_id}/updated_at',
+        value=new_timestamp
+    ))
     
+    # Get sessionId
+    session_id = ctx.deps.state.sessionId or ctx.deps.session_id or "default"
+    
+    # Activity delta operations - update only the changed status
     activity_message_id = f"plan-{plan_id}"
-    activity_content = {
-        "plans": {plan_id: plan.model_dump()},
-        "sessionId": session_id,
-    }
+    activity_delta_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='replace',
+            path=f'/plans/{plan_id}/status',
+            value=status
+        ),
+        JSONPatchOp(
+            op='replace',
+            path=f'/plans/{plan_id}/updated_at',
+            value=new_timestamp
+        ),
+    ]
     
     return ToolReturn(
         return_value=f'Plan "{plan.name}" status: {old_status} → {status}',
         metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=state_dict,
+            StateDeltaEvent(
+                type=EventType.STATE_DELTA,
+                delta=[op.model_dump(by_alias=True) for op in patch_ops],
             ),
-            ActivitySnapshotEvent(
+            ActivityDeltaEvent(
                 messageId=activity_message_id,
                 activityType="task_progress",
-                content=activity_content,
+                patch=[op.model_dump(by_alias=True) for op in activity_delta_ops],
             ),
         ],
     )
@@ -482,6 +657,8 @@ async def rename_plan(
     new_name: str
 ) -> ToolReturn:
     """Rename a plan.
+    
+    Uses StateDeltaEvent with JSON Patch operations for efficient incremental updates.
     
     Args:
         ctx: The run context with agent state
@@ -497,29 +674,56 @@ async def rename_plan(
     
     plan = ctx.deps.state.plans[plan_id]
     old_name = plan.name
-    plan.name = new_name
-    plan.updated_at = datetime.now().isoformat()
-
-    state_dict = ctx.deps.state.model_dump()
-    session_id = state_dict.get("sessionId", "default")
     
+    # Build JSON Patch operations
+    patch_ops: list[JSONPatchOp] = []
+    
+    # Update name
+    plan.name = new_name
+    patch_ops.append(JSONPatchOp(
+        op='replace',
+        path=f'/plans/{plan_id}/name',
+        value=new_name
+    ))
+    
+    # Update timestamp
+    new_timestamp = datetime.now().isoformat()
+    plan.updated_at = new_timestamp
+    patch_ops.append(JSONPatchOp(
+        op='replace',
+        path=f'/plans/{plan_id}/updated_at',
+        value=new_timestamp
+    ))
+
+    # Get sessionId
+    session_id = ctx.deps.state.sessionId or ctx.deps.session_id or "default"
+    
+    # Activity delta operations - update only the changed name
     activity_message_id = f"plan-{plan_id}"
-    activity_content = {
-        "plans": {plan_id: plan.model_dump()},
-        "sessionId": session_id,
-    }
+    activity_delta_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='replace',
+            path=f'/plans/{plan_id}/name',
+            value=new_name
+        ),
+        JSONPatchOp(
+            op='replace',
+            path=f'/plans/{plan_id}/updated_at',
+            value=new_timestamp
+        ),
+    ]
 
     return ToolReturn(
         return_value=f'Plan renamed: "{old_name}" → "{new_name}"',
         metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=state_dict,
+            StateDeltaEvent(
+                type=EventType.STATE_DELTA,
+                delta=[op.model_dump(by_alias=True) for op in patch_ops],
             ),
-            ActivitySnapshotEvent(
+            ActivityDeltaEvent(
                 messageId=activity_message_id,
                 activityType="task_progress",
-                content=activity_content,
+                patch=[op.model_dump(by_alias=True) for op in activity_delta_ops],
             ),
         ],
     )
@@ -601,6 +805,8 @@ async def delete_plan(
 ) -> ToolReturn:
     """Remove a plan from the session.
     
+    Uses StateDeltaEvent with JSON Patch 'remove' operation for efficient deletion.
+    
     Args:
         ctx: The run context with agent state
         plan_identifier: Plan name OR plan_id
@@ -613,16 +819,24 @@ async def delete_plan(
         return ToolReturn(return_value=f'Plan "{plan_identifier}" not found')
     
     plan_name = ctx.deps.state.plans[plan_id].name
-    del ctx.deps.state.plans[plan_id]
     
-    state_dict = ctx.deps.state.model_dump()
+    # Build JSON Patch operation for deletion
+    patch_ops: list[JSONPatchOp] = [
+        JSONPatchOp(
+            op='remove',
+            path=f'/plans/{plan_id}'
+        )
+    ]
+    
+    # Delete from in-memory state
+    del ctx.deps.state.plans[plan_id]
     
     return ToolReturn(
         return_value=f'Plan "{plan_name}" deleted',
         metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=state_dict,
+            StateDeltaEvent(
+                type=EventType.STATE_DELTA,
+                delta=[op.model_dump(by_alias=True) for op in patch_ops],
             ),
         ],
     )

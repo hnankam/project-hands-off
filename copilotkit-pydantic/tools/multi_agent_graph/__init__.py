@@ -78,7 +78,7 @@ from .agents import create_agents
 from .state import (
     build_graph_agent_state,
     sync_to_shared_state,
-    send_graph_state_snapshot,
+    send_graph_state_delta,
     build_context_with_previous_results,
 )
 
@@ -117,7 +117,7 @@ __all__ = [
     # State management
     'build_graph_agent_state',
     'sync_to_shared_state',
-    'send_graph_state_snapshot',
+    'send_graph_state_delta',
     'build_context_with_previous_results',
     # Step utilities
     'run_worker_step',

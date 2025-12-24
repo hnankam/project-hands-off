@@ -32,7 +32,7 @@ from .types import (
     WorkerResult,
     CodeExecutionOutput,
 )
-from .state import send_graph_state_snapshot, build_context_with_previous_results
+from .state import send_graph_state_delta, build_context_with_previous_results
 
 if TYPE_CHECKING:
     from .events import process_sub_agent_events
@@ -212,8 +212,8 @@ async def run_worker_step(
     send_stream = deps.send_stream
     shared_state = deps.state
     
-    # Send state snapshot - step started
-    await send_graph_state_snapshot(send_stream, state, node_name, "in_progress", shared_state)
+    # Send state delta - step started
+    await send_graph_state_delta(send_stream, state, node_name, "in_progress", shared_state)
     
     try:
         # Build the prompt - use custom builder or default
@@ -277,8 +277,8 @@ async def run_worker_step(
         
         logger.info(f"   [{node_name}] ✓ Complete")
         
-        # Send state snapshot - step completed
-        await send_graph_state_snapshot(send_stream, state, node_name, "completed", shared_state)
+        # Send state delta - step completed
+        await send_graph_state_delta(send_stream, state, node_name, "completed", shared_state)
         
         return "continue" if state.should_continue else "end"
         
@@ -290,8 +290,8 @@ async def run_worker_step(
         })
         logger.exception(f"{node_name} error: {e}")
         
-        # Send state snapshot - step error
-        await send_graph_state_snapshot(send_stream, state, node_name, "error", shared_state)
+        # Send state delta - step error
+        await send_graph_state_delta(send_stream, state, node_name, "error", shared_state)
         
         return "error"
 
