@@ -11,7 +11,7 @@ import uuid
 
 from pydantic_ai import Agent
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
-from ag_ui.core import RunAgentInput, UserMessage, EventType, StateSnapshotEvent, StateDeltaEvent
+from ag_ui.core import RunAgentInput, UserMessage, EventType, StateSnapshotEvent, StateDeltaEvent, ActivitySnapshotEvent
 from ag_ui.encoder import EventEncoder
 
 from config import logger
@@ -296,25 +296,100 @@ async def run_multi_agent_graph(
         agui_context=agui_context,
     )
     
-    # Send minimal initial state snapshot to establish state structure
-    # This ensures the frontend has a base state object for delta operations
-    if shared_state and send_stream and encoder:
-        # Send a minimal snapshot to initialize the state structure
-        initial_state = {
-            "sessionId": shared_state.sessionId if hasattr(shared_state, 'sessionId') else session_id,
-            "plans": {k: v.model_dump() for k, v in shared_state.plans.items()} if hasattr(shared_state, 'plans') else {},
-            "graphs": {k: v.model_dump() for k, v in shared_state.graphs.items()} if hasattr(shared_state, 'graphs') else {},
+    # Send state update: snapshot for first graph, delta for subsequent graphs
+    if shared_state and send_stream and encoder and not is_resuming and graph_id:
+        # Check if this is the first graph in the session
+        existing_graphs = shared_state.graphs if hasattr(shared_state, 'graphs') else {}
+        is_first_graph = len(existing_graphs) == 1
+        
+        # Prepare graph data structure
+        graph_data = {
+            "graph_id": graph_id,
+            "name": graph_name or query[:50],
+            "status": "running",
+            "steps": [],
+            "query": query,
+            "original_query": query,
+            "result": "",
+            "query_type": "",
+            "execution_history": [],
+            "intermediate_results": {},
+            "streaming_text": {},
+            "prompts": {},
+            "tool_calls": {},
+            "errors": [],
+            "last_error_node": "",
+            "retry_count": 0,
+            "max_retries": 2,
+            "iteration_count": 0,
+            "max_iterations": max_iterations,
+            "should_continue": True,
+            "next_action": "",
+            "planned_steps": [],
+            "mermaid_diagram": mermaid_diagram,
+            "deferred_tool_requests": None,
+            "created_at": existing_graphs[graph_id].created_at if graph_id in existing_graphs else "",
+            "updated_at": existing_graphs[graph_id].updated_at if graph_id in existing_graphs else "",
         }
+        
+        if is_first_graph:
+            # First graph - send full StateSnapshotEvent to establish state structure
+            initial_state = {
+                "sessionId": shared_state.sessionId if hasattr(shared_state, 'sessionId') else session_id,
+                "plans": {k: v.model_dump() for k, v in shared_state.plans.items()} if hasattr(shared_state, 'plans') else {},
+                "graphs": {graph_id: graph_data},
+            }
+            
+            await send_stream.send(
+                encoder.encode(
+                    StateSnapshotEvent(
+                        type=EventType.STATE_SNAPSHOT,
+                        snapshot=initial_state,
+                    )
+                )
+            )
+            logger.info(f"   [StateSnapshot] Sent initial state snapshot for first graph {graph_id}")
+        else:
+            # Subsequent graph - send StateDeltaEvent with 'add' operation
+            patch_ops = [
+                JSONPatchOp(
+                    op='add',
+                    path=f'/graphs/{graph_id}',
+                    value=graph_data
+                )
+            ]
+            
+            await send_stream.send(
+                encoder.encode(
+                    StateDeltaEvent(
+                        type=EventType.STATE_DELTA,
+                        delta=[op.model_dump(by_alias=True) for op in patch_ops],
+                    )
+                )
+            )
+            logger.info(f"   [StateDelta] Sent delta to add new graph {graph_id}")
+        
+        # Send ActivitySnapshotEvent for the new graph to create its chat message
+        activity_message_id = f"graph-{graph_id}"
+        activity_content = {
+            "graphs": {
+                graph_id: graph_data
+            },
+        }
+        
+        if session_id:
+            activity_content["sessionId"] = session_id
         
         await send_stream.send(
             encoder.encode(
-                StateSnapshotEvent(
-                    type=EventType.STATE_SNAPSHOT,
-                    snapshot=initial_state,
+                ActivitySnapshotEvent(
+                    messageId=activity_message_id,
+                    activityType="agent_state",
+                    content=activity_content,
                 )
             )
         )
-        logger.info(f"   [InitialState] Sent initial state snapshot with {len(initial_state.get('plans', {}))} plans and {len(initial_state.get('graphs', {}))} graphs")
+        logger.info(f"   [ActivitySnapshot] Sent initial activity snapshot for new graph {graph_id}")
     
     try:
         # Run the graph with UnifiedDeps

@@ -138,8 +138,8 @@ async def create_plan(
     a human-readable name. Users can reference plans by name (e.g., @"Build House Plan").
     
     Uses hybrid snapshot/delta approach:
-    - First plan: Sends full StateSnapshotEvent to establish state structure
-    - Subsequent plans: Sends StateDeltaEvent with JSON Patch 'add' operation
+    - State updates: First plan sends StateSnapshotEvent, subsequent use StateDeltaEvent
+    - Activity messages: Always sends ActivitySnapshotEvent to create new chat message
     
     Args:
         ctx: The run context with agent state
@@ -220,14 +220,11 @@ async def create_plan(
             )
         ]
         
-        # Activity delta operations - add the new plan to activity content
-        activity_delta_ops: list[JSONPatchOp] = [
-            JSONPatchOp(
-                op='add',
-                path=f'/plans/{plan_id}',
-                value=plan_instance.model_dump()
-            )
-        ]
+        # Always send ActivitySnapshotEvent to create a new chat message for each plan
+        activity_content = {
+            "plans": {plan_id: plan_instance.model_dump()},
+            "sessionId": session_id,
+        }
         
         result = ToolReturn(
             return_value=f'Plan "{name}" (ID: {plan_id}) created with {len(steps)} steps',
@@ -236,10 +233,10 @@ async def create_plan(
                     type=EventType.STATE_DELTA,
                     delta=[op.model_dump(by_alias=True) for op in state_patch_ops],
                 ),
-                ActivityDeltaEvent(
+                ActivitySnapshotEvent(
                     messageId=activity_message_id,
                     activityType="task_progress",
-                    patch=[op.model_dump(by_alias=True) for op in activity_delta_ops],
+                    content=activity_content,
                 ),
             ],
         )

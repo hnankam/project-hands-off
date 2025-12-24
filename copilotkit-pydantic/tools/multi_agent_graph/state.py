@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any, TYPE_CHECKING
 
 from pydantic import Field
-from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, BaseEvent, ActivitySnapshotEvent
+from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, BaseEvent, ActivitySnapshotEvent, ActivityDeltaEvent
 from ag_ui.encoder import EventEncoder
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE
 
@@ -373,12 +373,14 @@ async def send_graph_state_delta(
     current_node: str = "",
     step_status: str = "in_progress",
     shared_state: Any = None,
+    send_snapshot: bool = False,
 ) -> bool:
     """Send graph state updates to the frontend using hybrid snapshot/delta approach.
     
     Strategy:
-    - First graph: Sends full StateSnapshotEvent to establish state structure
-    - Subsequent graphs/updates: Sends StateDeltaEvent with JSON Patch operations
+    - When send_snapshot=True: Sends full StateSnapshotEvent to establish state structure
+    - When send_snapshot=False: Sends StateDeltaEvent with JSON Patch operations
+    - ActivitySnapshotEvent is always sent for both modes
     
     This hybrid approach ensures the frontend always has the proper state structure
     while maximizing efficiency for incremental updates.
@@ -389,6 +391,7 @@ async def send_graph_state_delta(
         current_node: Node currently being executed
         step_status: Status of current step ("in_progress", "completed", "error")
         shared_state: Optional AgentState for syncing with session
+        send_snapshot: Whether to send full snapshots (True) or deltas (False). Defaults to False.
         
     Returns:
         True if update was sent successfully, False otherwise
@@ -472,10 +475,10 @@ async def send_graph_state_delta(
             "updated_at": shared_state.graphs[graph_id].updated_at if (shared_state and hasattr(shared_state, 'graphs') and graph_id in shared_state.graphs) else "",
         }
         
-        # Choose between full snapshot (first graph) or delta (subsequent graphs)
-        if is_first_graph and is_new_graph:
-            # First graph - send full snapshot to establish state structure
-            logger.info(f"   [StateSnapshot] Sending full snapshot for first graph {graph_id} for {current_node} ({step_status})")
+        # Choose between full snapshot or delta based on send_snapshot parameter
+        if send_snapshot:
+            # Send full snapshot to establish state structure
+            logger.info(f"   [StateSnapshot] Sending full snapshot for graph {graph_id} for {current_node} ({step_status})")
             
             # Build complete state
             nested_snapshot = {
@@ -529,35 +532,37 @@ async def send_graph_state_delta(
                     )
                 )
             )
-        
-        # Use graph_id from sync (already generated if needed)
-        if not graph_id:
-            graph_id = uuid.uuid4().hex[:12]
-        
-        activity_message_id = f"graph-{graph_id}"
-        activity_content = {
-            # Use flat structure
-            "graphs": {
-                graph_id: graph_instance_data
-            },
-        }
-        
-        # Only include sessionId if it exists (Zod schema expects string or undefined, not null)
-        if shared_state and hasattr(shared_state, 'sessionId') and shared_state.sessionId:
-            activity_content["sessionId"] = shared_state.sessionId
-        
-        await send_stream.send(
-            encoder.encode(
-                ActivitySnapshotEvent(
-                    messageId=activity_message_id,
-                    activityType="agent_state",
-                    content=activity_content,
+            
+            # Send ActivityDeltaEvent for UI updates (delta mode)
+            activity_message_id = f"graph-{graph_id}"
+            activity_patch_ops: list[JSONPatchOp] = []
+            
+            # Create patch for activity content (same path structure as state)
+            if is_new_graph:
+                activity_patch_ops.append(JSONPatchOp(
+                    op='add',
+                    path=f'/graphs/{graph_id}',
+                    value=graph_instance_data
+                ))
+            else:
+                activity_patch_ops.append(JSONPatchOp(
+                    op='replace',
+                    path=f'/graphs/{graph_id}',
+                    value=graph_instance_data
+                ))
+            
+            await send_stream.send(
+                encoder.encode(
+                    ActivityDeltaEvent(
+                        messageId=activity_message_id,
+                        activityType="agent_state",
+                        patch=[op.model_dump(by_alias=True) for op in activity_patch_ops],
+                    )
                 )
             )
-        )
         
         # Log success message based on what we sent
-        event_type = "StateSnapshot" if (is_first_graph and is_new_graph) else "StateDelta"
+        event_type = "StateSnapshot" if send_snapshot else "StateDelta"
         logger.info(f"   [{event_type}] ✓ Sent successfully for {current_node}")
         return True
     except Exception as e:
