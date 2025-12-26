@@ -215,85 +215,10 @@ async def create_multi_agent_graph(
             if final_result:
                 output = getattr(final_result, 'output', final_result)
                 
-                # Check if it's a DeferredToolRequests (frontend tool needs user interaction)
-                from pydantic_ai.tools import DeferredToolRequests
-                if isinstance(output, DeferredToolRequests):
-                    # This means a frontend tool (like confirmAction) was called
-                    # DeferredToolRequests is a VALID output type, not an error
-                    # The tool call events were already emitted via the stream
-                    # The frontend will handle the deferred tool and respond
-                    
-                    deferred_calls = list(output.calls) if output.calls else []
-                    deferred_approvals = list(output.approvals) if output.approvals else []
-                    
-                    tool_names = [c.tool_name for c in deferred_calls + deferred_approvals]
-                    logger.info(f"   Orchestrator returned DeferredToolRequests for: {tool_names}")
-                    
-                    # Track orchestrator in execution history (completed its decision)
-                    orchestrator_iteration = ctx.state.iteration_count - 1
-                    indexed_key = f"Orchestrator:{orchestrator_iteration}"
-                    ctx.state.execution_history.append(indexed_key)
-                    ctx.state.streaming_text[indexed_key] = f"Requesting user confirmation for: {tool_names}"
-                    ctx.state.streaming_text["Orchestrator"] = ctx.state.streaming_text[indexed_key]
-                    
-                    # Extract action description from confirmAction args if available
-                    action_description = "proceed with the action"
-                    for call in deferred_calls:
-                        if call.tool_name == "confirmAction" and hasattr(call, 'args'):
-                            args = call.args if isinstance(call.args, dict) else {}
-                            action_description = args.get("actionDescription", action_description)
-                            break
-                    
-                    # Add Confirmation step to show in UI
-                    confirmation_index = len([
-                        h for h in ctx.state.execution_history 
-                        if h == "Confirmation" or h.startswith("Confirmation:")
-                    ])
-                    confirmation_key = f"Confirmation:{confirmation_index}"
-                    ctx.state.execution_history.append(confirmation_key)
-                    ctx.state.prompts[confirmation_key] = action_description
-                    ctx.state.prompts["Confirmation"] = action_description
-                    ctx.state.streaming_text[confirmation_key] = f"Requesting confirmation: {action_description}"
-                    ctx.state.streaming_text["Confirmation"] = ctx.state.streaming_text[confirmation_key]
-                    
-                    # Store the tool call info for the Confirmation step
-                    ctx.state.tool_calls[confirmation_key] = [
-                        ToolCallInfo(
-                            tool_name=call.tool_name,
-                            args=json.dumps(call.args) if hasattr(call, 'args') else "{}",
-                            result="",
-                            status="in_progress"
-                        )
-                        for call in deferred_calls
-                    ]
-                    ctx.state.tool_calls["Confirmation"] = ctx.state.tool_calls[confirmation_key]
-                    
-                    # Set planned steps if not already set (infer from confirmation context)
-                    if not ctx.state.planned_steps:
-                        # Infer likely next steps based on the confirmation
-                        if "code" in action_description.lower() or "calculate" in action_description.lower():
-                            ctx.state.planned_steps = ["code_execution", "result_aggregator"]
-                        elif "search" in action_description.lower() or "find" in action_description.lower():
-                            ctx.state.planned_steps = ["web_search", "result_aggregator"]
-                        elif "image" in action_description.lower() or "generate" in action_description.lower():
-                            ctx.state.planned_steps = ["image_generation", "result_aggregator"]
-                        else:
-                            ctx.state.planned_steps = ["result_aggregator"]
-                        logger.info(f"   Inferred planned steps: {ctx.state.planned_steps}")
-                    
-                    # Update state to "waiting" status
-                    ctx.state.result = f"Waiting for user interaction: {tool_names}"
-                    
-                    await send_graph_state_delta(send_stream, ctx.state, "Confirmation", "waiting", shared_state)
-                    
-                    # Store the deferred requests so parent can access them
-                    ctx.state.deferred_tool_requests = output
-                    
-                    # Return "deferred" to indicate we're waiting for user interaction
-                    # The graph will handle this and the parent adapter will manage the flow
-                    return "deferred"
+                # DeferredToolRequests handling removed - confirmation is now handled via run_graph with message content
+                # The orchestrator should route to confirmation_step instead
                 
-                elif hasattr(output, 'next_task_type'):
+                if hasattr(output, 'next_task_type'):
                     # Normal RoutingDecision
                         decision = output
                 else:
@@ -355,8 +280,8 @@ async def create_multi_agent_graph(
     async def confirmation_step(ctx: StepContext[QueryState, None, ActionType]) -> WorkerResult:
         """Request user confirmation before proceeding with an action.
         
-        Creates a DeferredToolRequests for the confirmAction tool and returns it
-        so the parent adapter can handle the human-in-the-loop flow.
+        Marks the step as waiting for user confirmation. The user will click
+        accept/reject buttons in the UI, which triggers run_graph with the confirmation result.
         """
         logger.info("✋ Confirmation step - requesting user confirmation...")
         
@@ -401,67 +326,27 @@ async def create_multi_agent_graph(
         ctx.state.prompts[indexed_key] = action_description
         ctx.state.prompts["Confirmation"] = action_description
         
-        # Send state snapshot - step started
-        await send_graph_state_delta(send_stream, ctx.state, "Confirmation", "in_progress", shared_state)
+        # Track the tool call in state (for UI display)
+        current_tool_call = ToolCallInfo(
+            tool_name="confirmAction",
+            status="in_progress",
+            args=json.dumps({"actionDescription": action_description})
+        )
+        ctx.state.tool_calls[indexed_key].append(current_tool_call)
+        ctx.state.tool_calls["Confirmation"] = ctx.state.tool_calls[indexed_key]
         
-        try:
-            from pydantic_ai.tools import DeferredToolRequests
-            from pydantic_ai.messages import ToolCallPart
-            import uuid
-            
-            # Create a unique tool call ID
-            tool_call_id = f"confirm_{uuid.uuid4().hex[:8]}"
-            
-            # Create the tool call for confirmAction
-            tool_call = ToolCallPart(
-                tool_name="confirmAction",
-                args={"actionDescription": action_description},
-                tool_call_id=tool_call_id,
-            )
-            
-            # Track the tool call in state
-            current_tool_call = ToolCallInfo(
-                tool_name="confirmAction",
-                status="in_progress",
-                args=json.dumps({"actionDescription": action_description})
-            )
-            ctx.state.tool_calls[indexed_key].append(current_tool_call)
-            ctx.state.tool_calls["Confirmation"] = ctx.state.tool_calls[indexed_key]
-            
-            logger.info(f"   [Confirmation] Creating DeferredToolRequests for confirmAction")
-            logger.info(f"   [Confirmation] Tool call ID: {tool_call_id}")
-            logger.info(f"   [Confirmation] Action description: {action_description[:100]}...")
-            
-            # Create the DeferredToolRequests
-            # Use 'calls' for external tools (confirmAction is a frontend tool that needs external execution)
-            deferred = DeferredToolRequests(
-                calls=[tool_call],
-                approvals=[],
-            )
-            
-            # Store the deferred request in state
-            ctx.state.deferred_tool_requests = deferred
-            ctx.state.result = f"Waiting for user interaction: ['confirmAction']"
-            ctx.state.streaming_text[indexed_key] = f"Requesting confirmation: {action_description}"
-            ctx.state.streaming_text["Confirmation"] = ctx.state.streaming_text[indexed_key]
-            
-            # Update state to "waiting"
-            await send_graph_state_delta(send_stream, ctx.state, "Confirmation", "waiting", shared_state)
-            
-            logger.info(f"   [Confirmation] Returning DeferredToolRequests")
-            
-            # Return "deferred" - the graph will handle this and finalize with waiting status
-            return "deferred"
-                
-        except Exception as e:
-            logger.exception(f"Confirmation step error: {e}")
-            ctx.state.errors.append({
-                "node": "Confirmation",
-                "error": str(e),
-                "timestamp": datetime.now().isoformat()
-            })
-            await send_graph_state_delta(send_stream, ctx.state, "Confirmation", "error", shared_state)
-            return "error"
+        # Mark as waiting for user interaction (no deferred_tool_requests)
+        ctx.state.result = f"Waiting for user confirmation: {action_description}"
+        ctx.state.streaming_text[indexed_key] = f"Requesting confirmation: {action_description}"
+        ctx.state.streaming_text["Confirmation"] = ctx.state.streaming_text[indexed_key]
+        
+        # Update state to "waiting"
+        await send_graph_state_delta(send_stream, ctx.state, "Confirmation", "waiting", shared_state)
+        
+        logger.info(f"   [Confirmation] Waiting for user confirmation: {action_description[:100]}...")
+        
+        # Return "deferred" - the graph will handle this and finalize with waiting status
+        return "deferred"
     
     # ==================== WORKER STEPS ====================
     @g.step
@@ -531,8 +416,8 @@ async def create_multi_agent_graph(
         
         final_result = ctx.state.result if ctx.state.result else "Task completed."
         
-        # Check if we're waiting for user interaction (deferred tools)
-        is_waiting = ctx.state.deferred_tool_requests is not None
+        # Check if we're waiting for user confirmation
+        is_waiting = final_result and "Waiting for user confirmation" in final_result
         final_status = "waiting" if is_waiting else "completed"
         
         ctx.state.result = final_result

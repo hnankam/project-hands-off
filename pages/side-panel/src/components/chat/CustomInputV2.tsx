@@ -222,16 +222,6 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     }
   }, [localFilesWithDetails, pageSelectorCtx]);
   
-  // Debug logging for selectedFiles
-  useEffect(() => {
-    console.log('[CustomInputV2] selectedFiles updated:', {
-      count: selectedFiles.length,
-      usingContext: !!pageSelectorCtx,
-      hasContextFiles: !!pageSelectorCtx?.selectedFiles,
-      localFilesCount: localFilesWithDetails.length,
-    });
-  }, [selectedFiles, localFilesWithDetails, pageSelectorCtx]);
-  
   // Track selected IDs locally for the selector UI
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [selectedCredentialIds, setSelectedCredentialIds] = useState<string[]>([]);

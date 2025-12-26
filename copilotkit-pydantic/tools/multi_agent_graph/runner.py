@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 import uuid
+from datetime import datetime
 
 from pydantic_ai import Agent
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
@@ -148,60 +149,96 @@ async def run_multi_agent_graph(
     
     # ==================== STEP 4: Determine if creating new, resuming, or continuing ====================
     
-    # Check if graph already exists with execution history (already resumed)
-    is_already_resumed = (
+    # Check if graph already exists (CRITICAL: run_graph should NEVER create a new graph)
+    graph_exists = (
         shared_state and 
         graph_id and 
-        graph_id in shared_state.graphs and
-        shared_state.graphs[graph_id].status == 'active' and
+        graph_id in shared_state.graphs
+    )
+    
+    # Check if graph already has execution history (already running/resumed)
+    is_already_resumed = (
+        graph_exists and
         shared_state.graphs[graph_id].execution_history and
         len(shared_state.graphs[graph_id].execution_history) > 0
     )
     
     # Check if graph is waiting for user interaction
     is_resuming = (
-        shared_state and 
-        graph_id and 
-        graph_id in shared_state.graphs and
+        graph_exists and
         shared_state.graphs[graph_id].status == 'waiting'
     )
     
     state: QueryState
     
-    if is_already_resumed:
-        # Graph was already resumed (e.g., by resume_graph tool), reconstruct state from shared_state
-        logger.info(f"   Graph {graph_id} already resumed, reconstructing state...")
+    if graph_exists:
+        # Graph exists - always resume it, never create a new one
         graph_instance = shared_state.graphs[graph_id]
-        state = QueryState(
-            query=graph_instance.query or query,
-            original_query=graph_instance.original_query or query,
-            max_iterations=graph_instance.max_iterations or max_iterations,
-            iteration_count=graph_instance.iteration_count or 0,
-            execution_history=list(graph_instance.execution_history or []),
-            intermediate_results=dict(graph_instance.intermediate_results or {}),
-            streaming_text=dict(graph_instance.streaming_text or {}),
-            prompts=dict(graph_instance.prompts or {}),
-            tool_calls=dict(graph_instance.tool_calls or {}),
-            errors=list(graph_instance.errors or []),
-            result=graph_instance.result or "",
-            should_continue=graph_instance.should_continue,
-            planned_steps=list(graph_instance.planned_steps or []),
-            user_id=user_id,
-        )
-    elif is_resuming:
-        # Resume existing graph from waiting state
-        state, user_confirmed = await resume_graph(
-            graph_id=graph_id,
-            shared_state=shared_state,
-            run_input=run_input,
-            query=query,
-            max_iterations=max_iterations,
-            user_id=user_id,
-            graph_name=graph_name,
-            send_stream=send_stream,
-        )
+        
+        if is_resuming:
+            # Resume existing graph from waiting state
+            logger.info(f"   Resuming waiting graph {graph_id}")
+            state, user_confirmed = await resume_graph(
+                graph_id=graph_id,
+                shared_state=shared_state,
+                run_input=run_input,
+                query=query,
+                max_iterations=max_iterations,
+                user_id=user_id,
+                graph_name=graph_name,
+                send_stream=send_stream,
+            )
+        elif is_already_resumed:
+            # Graph was already resumed (e.g., by resume_graph tool), reconstruct state from shared_state
+            logger.info(f"   Graph {graph_id} already resumed, reconstructing state...")
+            state = QueryState(
+                query=graph_instance.query or query,
+                original_query=graph_instance.original_query or query,
+                max_iterations=graph_instance.max_iterations or max_iterations,
+                iteration_count=graph_instance.iteration_count or 0,
+                execution_history=list(graph_instance.execution_history or []),
+                intermediate_results=dict(graph_instance.intermediate_results or {}),
+                streaming_text=dict(graph_instance.streaming_text or {}),
+                prompts=dict(graph_instance.prompts or {}),
+                tool_calls=dict(graph_instance.tool_calls or {}),
+                errors=list(graph_instance.errors or []),
+                result=graph_instance.result or "",
+                should_continue=graph_instance.should_continue,
+                planned_steps=list(graph_instance.planned_steps or []),
+                user_id=user_id,
+            )
+        else:
+            # Graph exists but hasn't started execution yet - initialize state from graph instance
+            logger.info(f"   Resuming existing graph {graph_id} (status: {graph_instance.status})")
+            state = QueryState(
+                query=graph_instance.query or query,
+                original_query=graph_instance.original_query or query,
+                max_iterations=graph_instance.max_iterations or max_iterations,
+                iteration_count=graph_instance.iteration_count or 0,
+                execution_history=list(graph_instance.execution_history or []),
+                intermediate_results=dict(graph_instance.intermediate_results or {}),
+                streaming_text=dict(graph_instance.streaming_text or {}),
+                prompts=dict(graph_instance.prompts or {}),
+                tool_calls=dict(graph_instance.tool_calls or {}),
+                errors=list(graph_instance.errors or []),
+                result=graph_instance.result or "",
+                should_continue=True,  # Reset to continue execution
+                planned_steps=list(graph_instance.planned_steps or []),
+                user_id=user_id,
+            )
+            # Reset graph status to active if it was completed/cancelled
+            if graph_instance.status in ['completed', 'cancelled']:
+                graph_instance.status = 'active'
+                graph_instance.should_continue = True
+                graph_instance.updated_at = datetime.now().isoformat()
     else:
-        # Create new graph instance
+        # Graph doesn't exist - only create new if graph_id was not provided
+        # If graph_id was provided but graph doesn't exist, this is an error
+        if graph_id:
+            raise ValueError(f"Graph {graph_id} not found. Cannot create new graph when graph_id is specified.")
+        
+        # Create new graph instance (only when graph_id is None)
+        logger.info(f"🆕 Creating NEW graph (no graph_id provided)")
         state, graph_id, graph_name = await create_graph(
             query=query,
             max_iterations=max_iterations,

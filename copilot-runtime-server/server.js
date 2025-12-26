@@ -664,28 +664,7 @@ const app = express();
           modifiedHeaders.set(key, value);
         });
 
-        // Debug: Log request body for /run requests to see threadId mismatch
         let bodyForRequest = c.req.raw.body;
-        if (DEBUG && c.req.path.includes('/run')) {
-          try {
-            const bodyText = await c.req.text();
-            const bodyObj = JSON.parse(bodyText);
-            console.log(`[Server] Request body threadId: ${bodyObj.threadId || 'undefined'}`);
-            console.log(`[Server] Request header x-copilot-thread-id: ${threadId}`);
-            if (bodyObj.threadId !== threadId) {
-              console.log(`[Server] ⚠️  ThreadId mismatch: body=${bodyObj.threadId} header=${threadId}`);
-            }
-            // Recreate body stream for the forwarded request
-            bodyForRequest = new ReadableStream({
-              start(controller) {
-                controller.enqueue(new TextEncoder().encode(bodyText));
-                controller.close();
-              }
-            });
-          } catch (err) {
-            // Ignore parsing errors
-          }
-        }
 
         const modifiedRequest = new Request(originalUrl.toString(), {
           method: c.req.raw.method,

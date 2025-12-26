@@ -155,13 +155,16 @@ AutoScrollDiv.displayName = 'AutoScrollDiv';
 interface ConfirmationStepContentProps {
   step: GraphStep;
   isLight: boolean;
+  graphId?: string;
+  graphName?: string;
+  onConfirm?: (confirmed: boolean) => Promise<void>;
 }
 
 /**
  * Renders the confirmation step content with a ConfirmationCard-like UI
  * when there's an active confirmAction tool call.
  */
-const ConfirmationStepContent: FC<ConfirmationStepContentProps> = memo(({ step, isLight }) => {
+const ConfirmationStepContent: FC<ConfirmationStepContentProps> = memo(({ step, isLight, graphId, graphName, onConfirm }) => {
   // Find the confirmAction tool call
   const confirmToolCall = step.tool_calls?.find(tc => tc.tool_name === 'confirmAction');
   const [isExpanded, setIsExpanded] = useState(false);
@@ -451,6 +454,12 @@ const ConfirmationStepContent: FC<ConfirmationStepContentProps> = memo(({ step, 
           }}
         >
           <button
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (onConfirm) {
+                await onConfirm(false);
+              }
+            }}
             className="transition-colors duration-200"
             style={{
               padding: '6px 12px',
@@ -458,16 +467,22 @@ const ConfirmationStepContent: FC<ConfirmationStepContentProps> = memo(({ step, 
               fontWeight: 500,
               borderRadius: '6px',
               border: 'none',
-              cursor: 'default',
-              opacity: 0.6,
+              cursor: onConfirm ? 'pointer' : 'default',
+              opacity: onConfirm ? 1 : 0.6,
               backgroundColor: isLight ? '#e5e7eb' : '#374151',
               color: isLight ? '#374151' : '#bcc1c7',
             }}
-            disabled
+            disabled={!onConfirm}
           >
             Cancel
           </button>
           <button
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (onConfirm) {
+                await onConfirm(true);
+              }
+            }}
             className="transition-colors duration-200"
             style={{
               padding: '6px 12px',
@@ -475,12 +490,12 @@ const ConfirmationStepContent: FC<ConfirmationStepContentProps> = memo(({ step, 
               fontWeight: 500,
               borderRadius: '6px',
               border: 'none',
-              cursor: 'default',
-              opacity: 0.6,
+              cursor: onConfirm ? 'pointer' : 'default',
+              opacity: onConfirm ? 1 : 0.6,
               backgroundColor: '#2563eb',
               color: 'white',
             }}
-            disabled
+            disabled={!onConfirm}
           >
             Confirm
           </button>
@@ -498,9 +513,13 @@ interface GraphStepItemProps {
   step: GraphStep;
   isLight: boolean;
   isLast: boolean;
+  controls?: React.ReactNode; // Optional controls to render on the header
+  graphId?: string;
+  graphName?: string;
+  onConfirm?: (confirmed: boolean) => Promise<void>;
 }
 
-export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLast }) => {
+export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLast, controls, graphId, graphName, onConfirm }) => {
   // Create stable cache key based on step node and timestamp
   const stepCacheKey = `${step.node}-${step.timestamp || ''}`;
   
@@ -572,35 +591,25 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
         <div
           className={`absolute w-0.5 ${isLight ? 'bg-gray-200' : 'bg-gray-700'}`}
           style={{ 
-            left: 'calc(0.75rem + 8px)',
+            left: 'calc(0.75rem + 8px)', // Aligned with status icon center
             top: '2rem',
             height: 'calc(100% - 1.5rem)' 
           }}
         />
       )}
 
-      {/* Status icon */}
+      {/* Status icon - outside header */}
       <div className="relative z-10 flex-shrink-0">{statusIcon}</div>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div 
-          className={`flex items-center gap-2 ${!isConfirmationStep && (hasResult || hasPrompt || hasProcessContent) ? 'cursor-pointer' : ''}`}
+          className={`group relative flex items-center gap-2 ${!isConfirmationStep && (hasResult || hasPrompt || hasProcessContent) ? 'cursor-pointer' : ''}`}
           onClick={() => !isConfirmationStep && (hasResult || hasPrompt || hasProcessContent) && setIsResultExpanded(!isResultExpanded)}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
-          <span className="flex-shrink-0" style={{ color: isLight ? '#6b7280' : '#9ca3af' }}>
-            {getNodeIcon(step.node, 'h-4 w-4')}
-          </span>
-          <span className="font-medium" style={{ color: textColor }}>{isConfirmationStep ? 'Confirmation' : step.node}</span>
-          {step.status === 'in_progress' && !isConfirmationStep && (
-            <span className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Processing...</span>
-          )}
-          {step.status === 'waiting' && (
-            <span className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Waiting...</span>
-          )}
-          {/* Expand/collapse chevron (not for Confirmation steps) */}
+          {/* Expand/collapse chevron (not for Confirmation steps) - between status icon and node icon */}
           {!isConfirmationStep && (hasResult || hasPrompt || hasProcessContent) && (
             <svg
               width="12"
@@ -611,7 +620,7 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="ml-auto"
+              className="flex-shrink-0"
               style={{
                 transition: 'transform 0.2s ease-in-out, opacity 0.2s ease-in-out',
                 transform: isResultExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
@@ -622,11 +631,29 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
               <polyline points="9 18 15 12 9 6" />
             </svg>
           )}
+          
+          <span className="flex-shrink-0" style={{ color: isLight ? '#6b7280' : '#9ca3af' }}>
+            {getNodeIcon(step.node, 'h-4 w-4')}
+          </span>
+          <span className="font-medium flex-1 min-w-0" style={{ color: textColor }}>{isConfirmationStep ? 'Confirmation' : step.node}</span>
+          {step.status === 'in_progress' && !isConfirmationStep && (
+            <span className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Processing...</span>
+          )}
+          {step.status === 'waiting' && (
+            <span className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Waiting...</span>
+          )}
+          
+          {/* Controls on the right side of header */}
+          {controls && (
+            <div className="flex items-center gap-0.5 ml-auto opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto">
+              {controls}
+            </div>
+          )}
         </div>
         
         {/* Confirmation step - show special ConfirmationStepContent directly */}
         {isConfirmationStep && hasConfirmAction && (
-          <ConfirmationStepContent step={step} isLight={isLight} />
+          <ConfirmationStepContent step={step} isLight={isLight} graphId={graphId} graphName={graphName} onConfirm={onConfirm} />
         )}
         
         {/* Result accordion - contains prompt, process block, and result content (not for Confirmation steps) */}

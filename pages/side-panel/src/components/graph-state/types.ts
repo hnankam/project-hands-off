@@ -141,6 +141,7 @@ export interface GraphAgentState {
 
 export interface GraphStateCardProps {
   state: GraphAgentState;
+  setState?: (state: UnifiedAgentState) => void;
   isCollapsed?: boolean;
   sessionId?: string;
   instanceId?: string; // unique ID to persist expanded state across remounts

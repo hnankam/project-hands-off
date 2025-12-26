@@ -203,7 +203,7 @@ const LiveGraphStateCard: React.FC<{
   const { isLight } = useStorage(themeStorage);
   
   // Read live state from CopilotKit agent
-  const { state: liveAgentState } = useCopilotAgent<UnifiedAgentState>({
+  const { state: liveAgentState, setState: setLiveAgentState } = useCopilotAgent<UnifiedAgentState>({
     agentId: 'dynamic_agent',
     initialState: { sessionId, plans: {}, graphs: {} },
   });
@@ -223,6 +223,9 @@ const LiveGraphStateCard: React.FC<{
     return null;
   }
 
+  // Use setDynamicAgentState if provided, otherwise use setLiveAgentState
+  const handleSetState = setDynamicAgentState || setLiveAgentState;
+
   return (
     <div
       data-graph-progress="true"
@@ -239,6 +242,7 @@ const LiveGraphStateCard: React.FC<{
     >
       <GraphStateCard
         state={graphState}
+        setState={handleSetState}
         isCollapsed={false}
         sessionId={sessionId}
         instanceId={graphId}

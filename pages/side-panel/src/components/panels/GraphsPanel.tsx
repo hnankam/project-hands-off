@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { cn } from '@extension/ui';
-import { GraphStateCard, convertToGraphAgentState } from '../graph-state';
+import { GraphStateCard, convertToGraphAgentState, type UnifiedAgentState } from '../graph-state';
+import { useCopilotAgent } from '../../hooks/copilotkit/useCopilotAgent';
 
 interface GraphsPanelProps {
   isLight: boolean;
@@ -27,6 +28,12 @@ export const GraphsPanel: React.FC<GraphsPanelProps> = ({
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(DEFAULT_PANEL_WIDTH);
+  
+  // Get setState from CopilotKit agent for editing graph steps
+  const { setState: setAgentState } = useCopilotAgent<UnifiedAgentState>({
+    agentId: 'dynamic_agent',
+    initialState: { sessionId, plans: {}, graphs: {} },
+  });
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -164,6 +171,7 @@ export const GraphsPanel: React.FC<GraphsPanelProps> = ({
                 <GraphStateCard
                   key={graphId}
                   state={graphState}
+                  setState={setAgentState}
                   isCollapsed={false}
                   sessionId={sessionId}
                   instanceId={graphId}

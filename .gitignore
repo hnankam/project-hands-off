@@ -37,6 +37,10 @@ copilotkit-google/.venv/
 copilotkit-bedrock/.venv/
 
 # Python bytecode files
-**/__pycache__
+__pycache__/
+**/__pycache__/
+**/__pycache__/**
 *.pyc
 *.pyo
+*.py[cod]
+*$py.class

@@ -201,9 +201,8 @@ def build_graph_agent_state(
                     continue
                 
                 # Determine step status based on graph state
-                # If graph is waiting (deferred tool request), pending steps should show as "waiting"
-                has_deferred = hasattr(state, 'deferred_tool_requests') and state.deferred_tool_requests is not None
-                is_waiting_state = has_deferred or step_status == "waiting"
+                # If graph is waiting for confirmation, pending steps should show as "waiting"
+                is_waiting_state = step_status == "waiting" or (state.result and "Waiting for user confirmation" in state.result)
                 
                 if is_completing and not is_waiting_state:
                     step_stat = "cancelled"
@@ -228,7 +227,7 @@ def build_graph_agent_state(
     # Determine overall status
     if state.errors:
         overall_status = "error"
-    elif hasattr(state, 'deferred_tool_requests') and state.deferred_tool_requests is not None:
+    elif state.result and "Waiting for user confirmation" in state.result:
         overall_status = "waiting"  # Waiting for user interaction
     elif state.result and step_status == "waiting":
         overall_status = "waiting"  # Explicitly marked as waiting
@@ -349,15 +348,110 @@ def sync_to_shared_state(
     # ============================================================================
     # FIX: Build and update steps from current state
     # This was the missing piece causing completed graphs to have empty steps!
+    # IMPORTANT: Preserve UI-modified steps (reordered, edited node types/prompts, deleted)
+    # by merging execution-derived steps with existing UI-modified steps
     # ============================================================================
     graph_agent_state = build_graph_agent_state(state, current_node, "completed" if state.result else "in_progress")
-    graph.steps = graph_agent_state.get("steps", [])
+    execution_steps = graph_agent_state.get("steps", [])
+    
+    # Preserve UI modifications: merge execution steps with existing steps
+    # Strategy: Use execution steps as source of truth for status/result, but preserve:
+    # - Step order from existing steps (if UI reordered)
+    # - Node types and prompts from existing steps (if UI edited)
+    # - Deleted steps (status='cancelled') from existing steps
+    existing_steps = graph.steps if graph.steps else []
+    
+    if existing_steps:
+        # Convert existing steps to dicts for easier manipulation
+        # Handle both Pydantic models and dicts
+        existing_steps_dicts = []
+        for step in existing_steps:
+            if hasattr(step, 'model_dump'):
+                # Pydantic model
+                existing_steps_dicts.append(step.model_dump())
+            elif isinstance(step, dict):
+                # Already a dict
+                existing_steps_dicts.append(step)
+            else:
+                # Fallback: convert to dict
+                existing_steps_dicts.append({
+                    "node": getattr(step, "node", ""),
+                    "status": getattr(step, "status", "pending"),
+                    "result": getattr(step, "result", ""),
+                    "prompt": getattr(step, "prompt", ""),
+                    "streaming_text": getattr(step, "streaming_text", ""),
+                    "tool_calls": getattr(step, "tool_calls", []),
+                    "timestamp": getattr(step, "timestamp", ""),
+                })
+        
+        # Create a map of execution steps by node+timestamp for quick lookup
+        execution_map = {}
+        for exec_step in execution_steps:
+            key = (exec_step.get("node"), exec_step.get("timestamp", ""))
+            execution_map[key] = exec_step
+        
+        # Merge: preserve order and UI edits from existing_steps, update with execution data
+        merged_steps = []
+        for existing_step in existing_steps_dicts:
+            # Skip cancelled steps unless they're being re-executed
+            if existing_step.get("status") == "cancelled":
+                # Check if this step is being re-executed
+                exec_key = (existing_step.get("node"), existing_step.get("timestamp", ""))
+                if exec_key in execution_map:
+                    # Step is being re-executed, use execution data but preserve node/prompt edits
+                    exec_step = execution_map[exec_key]
+                    merged_step = {
+                        **exec_step,
+                        "node": existing_step.get("node"),  # Preserve UI-edited node type
+                        "prompt": existing_step.get("prompt"),  # Preserve UI-edited prompt
+                    }
+                    merged_steps.append(merged_step)
+                else:
+                    # Step is still cancelled, preserve it
+                    merged_steps.append(existing_step)
+            else:
+                # Active step: merge execution data with UI edits
+                exec_key = (existing_step.get("node"), existing_step.get("timestamp", ""))
+                if exec_key in execution_map:
+                    exec_step = execution_map[exec_key]
+                    merged_step = {
+                        **exec_step,
+                        "node": existing_step.get("node"),  # Preserve UI-edited node type
+                        "prompt": existing_step.get("prompt") or exec_step.get("prompt"),  # Preserve UI-edited prompt
+                    }
+                    merged_steps.append(merged_step)
+                else:
+                    # Step exists in UI but not in execution yet, preserve it
+                    merged_steps.append(existing_step)
+        
+        # Add any new execution steps not in existing_steps
+        for exec_step in execution_steps:
+            exec_key = (exec_step.get("node"), exec_step.get("timestamp", ""))
+            if not any(
+                (s.get("node"), s.get("timestamp", "")) == exec_key 
+                for s in merged_steps
+            ):
+                merged_steps.append(exec_step)
+        
+        # Convert merged steps back to GraphStep objects
+        from core.models import GraphStep
+        graph.steps = [
+            GraphStep(**step) if isinstance(step, dict) else step
+            for step in merged_steps
+        ]
+    else:
+        # No existing steps, use execution steps as-is
+        from core.models import GraphStep
+        graph.steps = [
+            GraphStep(**step) if isinstance(step, dict) else step
+            for step in execution_steps
+        ]
     
     # Update status based on state
     # Valid statuses: 'active', 'running', 'paused', 'completed', 'cancelled', 'waiting'
     try:
-        if hasattr(state, 'deferred_tool_requests') and state.deferred_tool_requests:
-            graph.deferred_tool_requests = state.deferred_tool_requests
+        # Check if graph is waiting for confirmation (no deferred_tool_requests anymore)
+        if state.result and "Waiting for user confirmation" in state.result:
             graph.status = 'waiting'
         elif state.result:
             graph.status = 'completed'

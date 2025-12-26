@@ -170,12 +170,41 @@ async def resume_graph(
     logger.info(f"   Execution history: {graph_instance.execution_history}")
     logger.info(f"   Planned steps: {graph_instance.planned_steps}")
     
-    # Check if user confirmed or cancelled by looking at tool result in messages
+    # Check if user confirmed or cancelled by looking at message content
+    # The frontend sends: "Run graph `@[Graph]...` with confirmation result: {\"confirmed\": true/false}"
     user_confirmed = True  # Default to confirmed
     for msg in run_input.messages:
+        # Check message content for confirmation result
+        content = getattr(msg, 'content', '')
+        if isinstance(content, str):
+            # Look for "confirmation result: {...}" pattern
+            if 'confirmation result:' in content.lower():
+                try:
+                    # Extract JSON from message content
+                    import re
+                    match = re.search(r'confirmation result:\s*(\{[^}]+\})', content, re.IGNORECASE)
+                    if match:
+                        result_json = match.group(1)
+                        result_data = json.loads(result_json)
+                        if isinstance(result_data, dict) and 'confirmed' in result_data:
+                            user_confirmed = result_data['confirmed']
+                            logger.info(f"   Found confirmation result in message: confirmed={user_confirmed}")
+                            break
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    pass
+            # Also check if content contains JSON with confirmed field
+            elif 'confirmed' in content.lower():
+                try:
+                    # Try to parse entire content as JSON
+                    result_data = json.loads(content)
+                    if isinstance(result_data, dict) and 'confirmed' in result_data:
+                        user_confirmed = result_data['confirmed']
+                        logger.info(f"   Found confirmation result in JSON: confirmed={user_confirmed}")
+                        break
+                except (json.JSONDecodeError, TypeError):
+                    pass
         # Check for tool result message
         if hasattr(msg, 'role') and msg.role == 'tool':
-            # Tool result message
             result_content = getattr(msg, 'content', '')
             if isinstance(result_content, str) and 'confirmed' in result_content.lower():
                 try:
@@ -183,6 +212,7 @@ async def resume_graph(
                     if isinstance(result_data, dict) and 'confirmed' in result_data:
                         user_confirmed = result_data['confirmed']
                         logger.info(f"   Found confirmAction result: confirmed={user_confirmed}")
+                        break
                 except (json.JSONDecodeError, TypeError):
                     pass
         # Also check for ToolResultMessage type
@@ -194,11 +224,13 @@ async def resume_graph(
                     if isinstance(result_data, dict) and 'confirmed' in result_data:
                         user_confirmed = result_data['confirmed']
                         logger.info(f"   Found confirmAction result: confirmed={user_confirmed}")
+                        break
                 except (json.JSONDecodeError, TypeError):
                     pass
             elif isinstance(result_content, dict) and 'confirmed' in result_content:
                 user_confirmed = result_content['confirmed']
                 logger.info(f"   Found confirmAction result: confirmed={user_confirmed}")
+                break
     
     # Create QueryState from existing graph_instance
     state = QueryState(

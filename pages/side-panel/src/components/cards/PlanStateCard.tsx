@@ -325,9 +325,21 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
   // Run button handler - submit a user message to continue plan
   const handleRunPlan = async () => {
     try {
-      await sendMessage({ role: 'user', content: 'Continue to the next step in the plan' } as any);
+      if (!sendMessage) {
+        console.error('[PlanStateCard] sendMessage is undefined!');
+        return;
+      }
+      
+      // Create message with proper format: id, role, content (per CopilotKit v1.50 docs)
+      const message = { 
+        id: crypto.randomUUID(),
+        role: 'user' as const,
+        content: `Continue plan \`@[Plan]${planName}\``
+      };
+      
+      await sendMessage(message);
     } catch (e) {
-      // Silently fail
+      console.error('[PlanStateCard] Error in handleRunPlan:', e);
     }
   };
 
