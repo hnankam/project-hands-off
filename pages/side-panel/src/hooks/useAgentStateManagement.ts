@@ -251,10 +251,24 @@ export const useAgentStateManagement = ({
   
   /**
    * Notify parent component when agent step state changes.
+   * Uses a ref to track the last notified state to prevent duplicate notifications.
    */
+  const lastNotifiedStateRef = useRef<string>('');
+  
   useEffect(() => {
     if (onAgentStepStateChange && dynamicAgentState) {
+      // Create a stable signature of the state to detect actual changes
+      const stateSignature = JSON.stringify({
+        sessionId: dynamicAgentState.sessionId,
+        plansCount: Object.keys(dynamicAgentState.plans || {}).length,
+        graphsCount: Object.keys(dynamicAgentState.graphs || {}).length,
+      });
+      
+      // Only notify if state actually changed (not just object reference)
+      if (lastNotifiedStateRef.current !== stateSignature) {
+        lastNotifiedStateRef.current = stateSignature;
       onAgentStepStateChange(dynamicAgentState);
+      }
     }
   }, [dynamicAgentState, onAgentStepStateChange]);
   

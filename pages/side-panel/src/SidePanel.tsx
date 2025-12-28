@@ -84,16 +84,19 @@ const SidePanel = () => {
     setSSOEmail,
   } = useNavigationManager();
   
+  // Stable callback for page changes to prevent unnecessary re-renders
+  const handlePageChange = useCallback((page: 'sessions') => {
+    if (page === 'sessions') {
+      navigateToSessions();
+    }
+  }, [navigateToSessions]);
+  
   // Session URL synchronization
   useSessionUrlSync({
     sessions,
     currentSessionId,
     activePage,
-    onPageChange: (page) => {
-      if (page === 'sessions') {
-        navigateToSessions();
-      }
-    }
+    onPageChange: handlePageChange,
   });
   
   // Message handlers (context menu, close events)

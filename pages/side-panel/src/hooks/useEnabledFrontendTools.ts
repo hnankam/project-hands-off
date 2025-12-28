@@ -171,6 +171,12 @@ export function useEnabledFrontendTools({
 
   // Fetch tools when parameters change
   useEffect(() => {
+    // Skip if agent/model are empty (initial state before DB load)
+    // This prevents fetching with empty strings during panel initialization
+    if (!agentType || !modelType || agentType === '' || modelType === '') {
+      return;
+    }
+
     const paramsKey = `${agentType}:${modelType}:${organizationId}:${teamId}`;
 
     if (paramsKey === prevParamsRef.current) {

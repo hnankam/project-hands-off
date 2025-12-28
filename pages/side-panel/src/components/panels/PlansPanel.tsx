@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { cn } from '@extension/ui';
+import { debug } from '@extension/shared';
 import { PlanStateCard } from '../cards/PlanStateCard';
 import type { UnifiedAgentState } from '../graph-state/types';
 
@@ -30,6 +31,19 @@ export const PlansPanel: React.FC<PlansPanelProps> = ({
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(DEFAULT_PANEL_WIDTH);
+
+  // Debug logging
+  React.useEffect(() => {
+    debug.log('[PlansPanel] Render:', {
+      isOpen,
+      sessionId: sessionId?.slice(0, 8),
+      plansCount: plans ? Object.keys(plans).length : 0,
+      plans: plans,
+      width,
+      hasOnClose: !!onClose,
+      hasOnWidthChange: !!onWidthChange,
+    });
+  }, [isOpen, sessionId, plans, width, onClose, onWidthChange]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -68,9 +82,27 @@ export const PlansPanel: React.FC<PlansPanelProps> = ({
     };
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
-  if (!isOpen) return null;
+  // Debug: Log render decision
+  React.useEffect(() => {
+    debug.log('[PlansPanel] Render check:', {
+      isOpen,
+      willRender: isOpen,
+      sessionId: sessionId?.slice(0, 8),
+    });
+  }, [isOpen, sessionId]);
+
+  if (!isOpen) {
+    debug.log('[PlansPanel] Returning null because isOpen is false');
+    return null;
+  }
 
   const planEntries = plans ? Object.entries(plans) : [];
+
+  debug.log('[PlansPanel] Rendering panel:', {
+    width,
+    planEntries: planEntries.length,
+    sessionId: sessionId?.slice(0, 8),
+  });
 
   return (
     <div

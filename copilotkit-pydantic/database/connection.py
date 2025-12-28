@@ -1,17 +1,23 @@
-"""Database connection utilities for PostgreSQL.
+"""Database connection utilities for PostgreSQL (Neon-optimized).
 
 Connection Pool Configuration:
-- DB_HOST: PostgreSQL host
+- DB_HOST: PostgreSQL host (should be Neon pooling endpoint)
 - DB_PORT: PostgreSQL port (default: 5432)
 - DB_DATABASE: Database name
 - DB_USERNAME: Database user
 - DB_PASSWORD: Database password
 - DB_OTHER_PARAMS: Additional connection params (default: sslmode=require)
-- DB_POOL_MIN_SIZE: Minimum connections (default: 1)
-- DB_POOL_MAX_SIZE: Maximum connections (default: 10)
+- DB_POOL_MIN_SIZE: Minimum connections (default: 0 for Neon)
+- DB_POOL_MAX_SIZE: Maximum connections (default: 5 for Neon)
+- DB_CONNECT_TIMEOUT: Connection timeout in seconds (default: 10)
+- DB_STATEMENT_TIMEOUT: Statement timeout in milliseconds (default: 10000)
+
+Note: When using Neon's pooling endpoint, keep application pool small (0-5 connections)
+as Neon's pooler handles the real connection pooling.
 """
 
 import os
+import time
 import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
@@ -23,17 +29,23 @@ import asyncio
 
 from config import logger
 
-# Connection pool configuration from environment
-DB_POOL_MIN_SIZE = int(os.getenv("DB_POOL_MIN_SIZE", "1"))
-DB_POOL_MAX_SIZE = int(os.getenv("DB_POOL_MAX_SIZE", "10"))
+# Connection pool configuration from environment (Neon-optimized defaults)
+DB_POOL_MIN_SIZE = int(os.getenv("DB_POOL_MIN_SIZE", "0"))  # 0 for Neon - on-demand connections
+DB_POOL_MAX_SIZE = int(os.getenv("DB_POOL_MAX_SIZE", "5"))  # Small pool - Neon handles pooling
+DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "10"))  # 10s for cold starts
+DB_STATEMENT_TIMEOUT = int(os.getenv("DB_STATEMENT_TIMEOUT", "10000"))  # 10s default
 
 _pool: AsyncConnectionPool | None = None
 _pool_lock = asyncio.Lock()
+_last_successful_query_time = time.time()  # Track for cold start detection
 
 
 
 def get_connection_string() -> str:
-    """Build PostgreSQL connection string from environment variables."""
+    """Build PostgreSQL connection string from environment variables.
+    
+    Optimized for Neon with connection-level defaults that work with transaction pooling.
+    """
     host = os.getenv('DB_HOST')
     port = os.getenv('DB_PORT', '5432')
     database = os.getenv('DB_DATABASE')
@@ -44,41 +56,133 @@ def get_connection_string() -> str:
     if not all([host, database, username, password]):
         raise ValueError("Database connection parameters not fully configured in .env")
     
-    return f"postgresql://{username}:{password}@{host}:{port}/{database}?{other_params}"
+    # Build connection string with timeout parameter
+    # Note: We don't set statement_timeout in the connection string for Neon's transaction pooling
+    # as session-level parameters don't persist across pooled transactions
+    conn_string = f"postgresql://{username}:{password}@{host}:{port}/{database}"
+    
+    # Add connection timeout to other_params if not already present
+    if 'connect_timeout' not in other_params:
+        if other_params:
+            other_params += f'&connect_timeout={DB_CONNECT_TIMEOUT}'
+        else:
+            other_params = f'connect_timeout={DB_CONNECT_TIMEOUT}'
+    
+    if other_params:
+        conn_string += f'?{other_params}'
+    
+    return conn_string
 
 
 @asynccontextmanager
 async def get_db_connection():
-    """Get an async database connection from the pool with automatic cleanup.
+    """Get an async database connection from the pool with Neon cold-start handling.
     
-    Automatically resets and reinitializes the pool on OperationalError,
-    then re-raises the exception so the caller can retry.
+    Optimized for Neon serverless architecture:
+    - Handles cold starts (database wake-up after auto-suspend)
+    - Works with Neon's transaction-level pooling
+    - No aggressive pool resets (lets retries handle issues)
+    - Tracks connection timing for monitoring
     """
-    global _pool
+    global _pool, _last_successful_query_time
     if _pool is None:
         await init_connection_pool()
     assert _pool is not None
     
-    try:
-        async with _pool.connection() as conn:
-            # ensure rows are returned as dicts and apply sensible timeouts per session
-            conn.row_factory = dict_row
-            try:
-                async with conn.cursor() as cur:
-                    # 10s statement timeout, 5min idle in transaction timeout
-                    await cur.execute(
-                        "SET statement_timeout TO 10000; SET idle_in_transaction_session_timeout TO 300000;"
+    start_time = time.time()
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            async with _pool.connection() as conn:
+                # Configure connection
+                conn.row_factory = dict_row
+                
+                # Health check with cold-start tolerance
+                try:
+                    async with conn.cursor() as cur:
+                        # Simple health check
+                        await cur.execute("SELECT 1")
+                except Exception as e:
+                    # Connection is bad, retry
+                    if attempt < max_retries - 1:
+                        wait_time = 3 if attempt == 0 else 1  # Longer wait on first retry
+                        logger.warning(
+                            f"[DB] Connection health check failed (attempt {attempt + 1}/{max_retries}): {e}. "
+                            f"Retrying in {wait_time}s..."
+                        )
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise
+                
+                # Log potential cold starts
+                time_since_last_query = start_time - _last_successful_query_time
+                if time_since_last_query > 300:  # 5+ minutes since last query
+                    logger.info(
+                        f"[DB] Potential cold start detected - {time_since_last_query:.0f}s since last query"
                     )
-            except Exception:
-                # Ignore if SET fails (e.g., insufficient perms); continue
+                
+                yield conn
+                
+                # Update last successful query time and record stats
+                _last_successful_query_time = time.time()
+                connection_time = time.time() - start_time
+                
+                # Record connection stats for monitoring
+                try:
+                    from database.monitoring import get_connection_stats
+                    stats = get_connection_stats()
+                    stats.record_connection(connection_time, True, connection_time > 2)
+                except ImportError:
+                    pass  # Monitoring module not available
+                
+                # Log slow connection acquisitions (likely cold starts)
+                if connection_time > 2:
+                    logger.warning(
+                        f"[DB] Slow connection acquisition: {connection_time:.2f}s (possible cold start)"
+                    )
+                
+                return  # Success
+                
+        except psycopg.OperationalError as exc:
+            error_msg = str(exc).lower()
+            
+            # Check if it's a cold start scenario
+            is_cold_start = any(keyword in error_msg for keyword in [
+                'timeout', 'connection refused', 'could not connect',
+                'no route to host', 'network unreachable', 'connection timed out'
+            ])
+            
+            if attempt < max_retries - 1:
+                # Record retry for monitoring
+                try:
+                    from database.monitoring import get_connection_stats
+                    stats = get_connection_stats()
+                    stats.record_retry()
+                except ImportError:
+                    pass
+                
+                wait_time = 3 if is_cold_start else 0.5
+                logger.warning(
+                    f"[DB] Connection error (attempt {attempt + 1}/{max_retries}, "
+                    f"cold_start={is_cold_start}): {exc}. Retrying in {wait_time}s..."
+                )
+                await asyncio.sleep(wait_time)
+                continue
+            
+            # Final attempt failed - record error
+            connection_time = time.time() - start_time
+            try:
+                from database.monitoring import get_connection_stats
+                stats = get_connection_stats()
+                stats.record_error(str(exc))
+            except ImportError:
                 pass
-            yield conn
-    except psycopg.OperationalError as exc:
-        logger.warning("[DB] Connection error; resetting pool for next attempt", exc_info=True)
-        # Reset the pool so the next call gets a fresh connection
-        await reset_connection_pool(force=True)
-        # Re-raise so caller knows to retry
-        raise
+            
+            logger.error(
+                f"[DB] Connection failed after {max_retries} attempts ({connection_time:.2f}s): {exc}"
+            )
+            raise
 
 
 async def init_connection_pool(
@@ -87,9 +191,15 @@ async def init_connection_pool(
 ) -> None:
     """Initialize the global async connection pool (idempotent).
     
+    Optimized for Neon serverless PostgreSQL:
+    - Small pool size (Neon's pooler handles real connection pooling)
+    - Longer timeout for cold starts
+    - Short max_idle to avoid stale connections
+    - Disabled keepalives (Neon's pooler handles this)
+    
     Args:
-        min_size: Minimum pool size (default: DB_POOL_MIN_SIZE env var or 1)
-        max_size: Maximum pool size (default: DB_POOL_MAX_SIZE env var or 10)
+        min_size: Minimum pool size (default: DB_POOL_MIN_SIZE env var or 0)
+        max_size: Maximum pool size (default: DB_POOL_MAX_SIZE env var or 5)
     """
     global _pool
     async with _pool_lock:
@@ -102,17 +212,22 @@ async def init_connection_pool(
         conn_string = get_connection_string()
         _pool = AsyncConnectionPool(
             conninfo=conn_string,
-            min_size=min_size,
-            max_size=max_size,
-            timeout=10,
-            kwargs={"autocommit": True},
+            min_size=min_size,  # 0 for Neon - connections created on demand
+            max_size=max_size,  # Small (5) - Neon handles the real pooling
+            timeout=30,  # Longer timeout for cold starts
+            max_lifetime=600,  # 10 minutes - recycle before Neon auto-suspend
+            max_idle=120,  # 2 minutes - avoid stale connections
+            num_workers=2,  # Fewer background workers
+            kwargs={
+                "autocommit": True,
+                "connect_timeout": DB_CONNECT_TIMEOUT,
+            },
             open=False,
         )
         await _pool.open()
-        # Give the pool a moment to stabilize after opening
-        await asyncio.sleep(0.1)
         logger.info(
-            "PostgreSQL pool initialized (min=%d, max=%d)",
+            "PostgreSQL pool initialized for Neon (min=%d, max=%d, timeout=30s, "
+            "max_lifetime=600s, max_idle=120s)",
             min_size, max_size
         )
 

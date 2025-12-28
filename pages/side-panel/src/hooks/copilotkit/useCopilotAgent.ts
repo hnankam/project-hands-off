@@ -1,133 +1,165 @@
-/**
- * Centralized CopilotKit Agent Hook
- *
- * This abstraction layer provides a stable API for agent state management.
- *
- * V2 Implementation:
- * Uses useAgent from @copilotkit/react-core/v2
- */
-
+import React, { createContext, useContext, useMemo, useRef, useCallback, useEffect, memo, useState } from 'react';
 import { useAgent } from '@copilotkit/react-core/v2';
-import { useCallback, useMemo, useRef } from 'react';
+import { debug } from '@extension/shared';
 
-// UseAgentUpdate enum values (not exported from the package)
-// These control which updates trigger re-renders
-const UseAgentUpdate = {
-  OnMessagesChanged: 'OnMessagesChanged',
-  OnStateChanged: 'OnStateChanged',
-  OnRunStatusChanged: 'OnRunStatusChanged',
-} as const;
-
-// Stable updates array (prevents re-initialization on each render)
-const AGENT_UPDATES = [
-  UseAgentUpdate.OnStateChanged,
-  UseAgentUpdate.OnMessagesChanged,
-  UseAgentUpdate.OnRunStatusChanged,
-] as const;
+// --- Types ---
 
 export interface CopilotAgentOptions<T> {
-  /** The agent identifier */
-  agentId: string;
-  /** Initial state for the agent (not used in V2 - state comes from backend) */
+  agentId?: string;
   initialState?: T;
 }
 
 export interface CopilotAgentState<T> {
-  /** The name of the agent currently being used */
   name: string;
-  /** The name of the current LangGraph node */
   nodeName: string | undefined;
-  /** The current state of the agent */
   state: T;
-  /** A function to update the state of the agent */
   setState: (state: T | ((prev: T) => T)) => void;
-  /** A boolean indicating if the agent is currently running */
   running: boolean;
-  /** A function to start the agent */
   start: () => void;
-  /** A function to stop the agent */
   stop: () => void;
-  /** A function to re-run the agent */
   run: (hint?: string) => void;
+  messages: any[];
+  setMessages: (messages: any[]) => void;
+  agent: any;
+}
+
+// --- Configuration ---
+
+const STABLE_AGENT_CONFIG = {
+  agentId: 'dynamic_agent',
+};
+
+// --- Context ---
+
+export const SharedAgentContext = createContext<CopilotAgentState<any> | null>(null);
+
+/**
+ * INTERNAL HOOK: Only used by SharedAgentProvider to establish the single connection.
+ */
+function useSharedAgentConnection<T>(sessionKey: string): CopilotAgentState<T> {
+  // Establish the connection using the standard hook
+  // We MUST call this unconditionally
+  const agentResult = useAgent(STABLE_AGENT_CONFIG);
+  const agentAny = agentResult.agent as any;
+  
+  // 1. Stabilize messages to prevent unnecessary re-renders when only reference changes
+  const rawMessages = agentAny?.messages || [];
+  const lastMessagesRef = useRef<any[]>([]);
+  const messages = useMemo(() => {
+    if (!rawMessages || rawMessages.length === 0) {
+      if (lastMessagesRef.current.length > 0) {
+        lastMessagesRef.current = [];
+        return [];
+      }
+      return lastMessagesRef.current;
+    }
+
+    const hasChanged = 
+      rawMessages.length !== lastMessagesRef.current.length ||
+      rawMessages.some((m: any, i: number) => {
+        const prev = lastMessagesRef.current[i];
+        return m?.id !== prev?.id || m?.content !== prev?.content || m?.role !== prev?.role;
+      });
+
+    if (hasChanged) {
+      lastMessagesRef.current = rawMessages;
+      return rawMessages;
+    }
+    return lastMessagesRef.current;
+  }, [rawMessages]);
+
+  // 2. Stabilize state object
+  const rawState = agentAny?.state || {};
+  const lastStateRef = useRef<any>({});
+  const state = useMemo(() => {
+    const hasChanged = JSON.stringify(rawState) !== JSON.stringify(lastStateRef.current);
+    if (hasChanged) {
+      lastStateRef.current = rawState;
+      return rawState;
+    }
+    return lastStateRef.current;
+  }, [rawState]);
+
+  // 3. Return a stable interface that pulls from the hook's latest result
+  // We only update if the AGENT INSTANCE or the STABILIZED data changes
+  return useMemo(() => ({
+    name: STABLE_AGENT_CONFIG.agentId,
+    nodeName: agentAny?.nodeName,
+    state,
+    setState: (newState: any) => agentAny?.setState?.(newState),
+    running: agentAny?.isRunning || false,
+    start: () => {},
+    stop: () => agentAny?.stop?.(),
+    run: (hint?: string) => agentAny?.run?.(hint),
+    messages,
+    setMessages: (newMessages: any[]) => agentAny?.setMessages?.(newMessages),
+    agent: agentAny,
+  }), [agentAny, messages, state]); 
 }
 
 /**
- * Centralized hook for CopilotKit agent state management.
- *
- * V2 implementation using useAgent from @copilotkit/react-core/v2
- *
- * @example
- * ```tsx
- * const { state, setState } = useCopilotAgent<MyState>({
- *   agentId: 'my-agent',
- * });
- * ```
+ * SharedAgentProvider: The ONLY component allowed to initiate a connection.
+ * Now uses a "Mounting Gate" to prevent race conditions with CopilotChat.
+ */
+export const SharedAgentProvider: React.FC<{ children: React.ReactNode; sessionKey: string }> = memo(({ children, sessionKey }) => {
+  // Mounting Gate
+  const [isGateOpen, setIsGateOpen] = useState(false);
+  const gateTimerRef = useRef<number | null>(null);
+  
+  useEffect(() => {
+    // Increased delay to 400ms to ensure the connection is truly stable before children mount
+    gateTimerRef.current = window.setTimeout(() => {
+      setIsGateOpen(true);
+    }, 400);
+    
+    return () => {
+      if (gateTimerRef.current !== null) {
+        clearTimeout(gateTimerRef.current);
+        gateTimerRef.current = null;
+      }
+    };
+  }, [sessionKey]);
+
+  // Establish the SINGLE connection here
+  const agentState = useSharedAgentConnection<any>(sessionKey);
+
+  // RESTORE REACTIVITY: The context value MUST change for consumers to re-render.
+  // Since useSharedAgentConnection uses useMemo with [agentAny, messages, state],
+  // agentState will only change reference when the data actually changes.
+  const contextValue = useMemo(() => agentState, [agentState]);
+
+  return React.createElement(
+    SharedAgentContext.Provider, 
+    { value: contextValue }, 
+    isGateOpen ? children : null
+  );
+}, (prev, next) => prev.sessionKey === next.sessionKey);
+
+/**
+ * PUBLIC HOOK: Pure consumer of the shared agent.
+ * Contains ZERO connection logic to prevent accidental redundant connections.
  */
 export function useCopilotAgent<T>({
-  agentId,
-}: CopilotAgentOptions<T>): CopilotAgentState<T> {
-  // Stable empty state fallback (prevents new object reference each render)
-  const emptyStateRef = useRef<T>({} as T);
-  
-  // V2 implementation using useAgent
-  // IMPORTANT: Must subscribe to OnStateChanged to re-render when STATE_SNAPSHOT events arrive
-  const { agent } = useAgent({
-    agentId,
-    updates: AGENT_UPDATES as any,
-  });
+  agentId = 'dynamic_agent',
+}: CopilotAgentOptions<T> = {}): CopilotAgentState<T> {
+  const sharedAgent = useContext(SharedAgentContext);
 
-  // Get agent state with proper typing
-  // Note: V2 AbstractAgent type is limited, use type assertions for extended properties
-  const agentAny = agent as any;
-  
-  // Use stable empty state ref to prevent new object reference each render
-  const state = useMemo<T>(() => {
-    return (agentAny?.state ?? emptyStateRef.current) as T;
-  }, [agentAny?.state]);
-  
-  const nodeName = agentAny?.nodeName as string | undefined;
-  const running = agentAny?.isRunning ?? false;
-
-  // setState wrapper for compatibility - use ref to avoid state in deps
-  const stateRef = useRef(state);
-  stateRef.current = state;
-  
-  const setState = useCallback((newState: T | ((prev: T) => T)) => {
-    if (agentAny?.setState) {
-      if (typeof newState === 'function') {
-        const updateFn = newState as (prev: T) => T;
-        agentAny.setState(updateFn(stateRef.current));
-      } else {
-        agentAny.setState(newState);
-      }
-    }
-  }, [agentAny]);
-
-  // Start agent - V2 agent runs are triggered via CopilotChat component
-  const start = useCallback(() => {
-    // No-op: V2 agent runs are triggered via CopilotChat component input
-  }, []);
-
-  // Stop agent
-  const stop = useCallback(() => {
-    if (agentAny?.stop) {
-      agentAny.stop();
-    }
-  }, [agentAny]);
-
-  // Run agent - V2 agent runs are triggered via CopilotChat component
-  const run = useCallback((_hint?: string) => {
-    // No-op: V2 agent runs are triggered via CopilotChat component input
-  }, []);
+  if (sharedAgent) {
+    // Successfully using shared agent
+    return sharedAgent as CopilotAgentState<T>;
+  }
 
   return {
     name: agentId,
-    nodeName,
-    state,
-    setState,
-    running,
-    start,
-    stop,
-    run,
+    nodeName: undefined,
+    state: {} as T,
+    setState: () => {},
+    running: false,
+    start: () => {},
+    stop: () => {},
+    run: () => {},
+    messages: [],
+    setMessages: () => {},
+    agent: null,
   };
 }

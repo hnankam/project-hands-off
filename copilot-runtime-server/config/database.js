@@ -1,6 +1,10 @@
 /**
- * Database connection utilities for PostgreSQL (Neon)
- * Connects to the same database as the Python/Pydantic server
+ * Database connection utilities for PostgreSQL (Neon-optimized)
+ * 
+ * Optimized for Neon serverless PostgreSQL with pooling endpoints:
+ * - Small application pool (Neon's pooler handles real connection pooling)
+ * - Handles cold starts gracefully
+ * - Works with Neon's transaction-level pooling
  */
 
 import { config } from 'dotenv';
@@ -33,19 +37,23 @@ export function getConnectionString() {
 }
 
 /**
- * Get or create database connection pool
+ * Get or create database connection pool (Neon-optimized)
  */
 export function getPool() {
   if (!pool) {
     const connectionString = getConnectionString();
     pool = new Pool({
       connectionString,
-      max: 20, // Increased for better concurrency
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-      // Additional recommended settings
+      // Neon-optimized settings
+      max: 5,  // Small pool - Neon's pooler handles real connection pooling
+      min: 0,  // No minimum connections - create on demand
+      idleTimeoutMillis: 120000,  // 2 minutes - shorter for Neon to avoid stale connections
+      connectionTimeoutMillis: 10000,  // 10s for cold starts
       allowExitOnIdle: false,
-      statement_timeout: 10000, // 10 second statement timeout
+      statement_timeout: 10000,  // 10 second statement timeout
+      query_timeout: 10000,  // Query timeout
+      // Don't use keepalive - Neon's pooler handles this
+      keepAlive: false,
     });
     
     pool.on('error', (err) => {
@@ -54,16 +62,18 @@ export function getPool() {
       console.error('═══════════════════════════════════════════════════════════════════');
       console.error('Error:', err.message);
       console.error('Code:', err.code);
-      console.error('This is expected for connection timeouts or database restarts.');
+      console.error('This is expected for connection timeouts or Neon cold starts.');
       console.error('Pool will recover automatically by creating new connections.');
       console.error('═══════════════════════════════════════════════════════════════════');
       // Don't throw - pool will handle recovery
     });
     
-    pool.on('connect', () => {
+    pool.on('connect', (client) => {
       // Uncomment for debugging connection events
-      // console.log('Database client connected to pool');
+      // console.log('[DB] Client connected to Neon pool');
     });
+    
+    console.log('✓ PostgreSQL pool initialized for Neon (max=5, min=0, timeout=10s)');
   }
   
   return pool;

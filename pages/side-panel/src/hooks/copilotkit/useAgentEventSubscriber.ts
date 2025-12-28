@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useAgent } from '@copilotkit/react-core/v2';
+import { useCopilotAgent } from './useCopilotAgent';
 import type {
   RunErrorEvent,
   RunStartedEvent,
@@ -96,7 +96,7 @@ export interface ToolExecution {
  */
 export interface AgentEventSubscriberConfig {
   /** Agent ID to subscribe to */
-  agentId: string;
+  agentId?: string;
   
   /** Enable debug logging */
   debug?: boolean;
@@ -208,7 +208,7 @@ export function useAgentEventSubscriber(
   config: AgentEventSubscriberConfig
 ): AgentEventSubscriberResult {
   const {
-    agentId,
+    agentId = 'dynamic_agent',
     debug: debugEnabled = false,
     errorAutoDismissMs = 15000,
     agentUpdates = ['OnRunStatusChanged'], // Default: only re-render on run status changes
@@ -295,13 +295,9 @@ export function useAgentEventSubscriber(
   // AGENT INSTANCE
   // ============================================================================
 
-  // Use configured updates array (defaults to OnRunStatusChanged only)
-  const { agent } = useAgent({
-    agentId,
-    updates: agentUpdates as any,
-  });
-
-  const isRunning = (agent as any)?.isRunning ?? false;
+  // ARCHITECTURE CHANGE: Use useCopilotAgent which supports SharedAgentProvider context
+  // This ensures multiple hooks share a single connection to the runtime server
+  const { agent, running: isRunning } = useCopilotAgent({ agentId });
 
   // ============================================================================
   // HELPERS
@@ -371,7 +367,7 @@ export function useAgentEventSubscriber(
       /**
        * Called when agent run initializes
        */
-      onRunInitialized: async ({ messages, state, agent, input }) => {
+      onRunInitialized: async ({ messages, state, agent, input }: any) => {
         log('Run initialized:', input.runId);
         
         setLifecycle({
@@ -388,7 +384,7 @@ export function useAgentEventSubscriber(
        * Called when agent run fails
        * CRITICAL: This is where we catch and display errors
        */
-      onRunFailed: async ({ error, messages, state, agent, input }) => {
+      onRunFailed: async ({ error, messages, state, agent, input }: any) => {
         // SPECIFIC filters for expected/handled errors
         const errorMsg = error.message || '';
         const lowerMsg = errorMsg.toLowerCase();
@@ -432,7 +428,7 @@ export function useAgentEventSubscriber(
       /**
        * Called when agent run finalizes (success or failure)
        */
-      onRunFinalized: async ({ messages, state, agent, input }) => {
+      onRunFinalized: async ({ messages, state, agent, input }: any) => {
         log('Run finalized:', input.runId);
         
         setLifecycle(prev => ({
@@ -452,7 +448,7 @@ export function useAgentEventSubscriber(
       /**
        * Called when agent run starts
        */
-      onRunStartedEvent: async ({ event, messages, state }) => {
+      onRunStartedEvent: async ({ event, messages, state }: any) => {
         log('Run started event:', event.runId);
         
         setLifecycle({
@@ -469,7 +465,7 @@ export function useAgentEventSubscriber(
       /**
        * Called when agent run finishes successfully
        */
-      onRunFinishedEvent: async ({ event, messages, state, result }) => {
+      onRunFinishedEvent: async ({ event, messages, state, result }: any) => {
         log('Run finished event:', event.runId, 'Result:', result);
         
         setLifecycle(prev => ({
@@ -487,7 +483,7 @@ export function useAgentEventSubscriber(
        * Called when RUN_ERROR event is received
        * This is more specific than onRunFailed
        */
-      onRunErrorEvent: async ({ event, messages, state }) => {
+      onRunErrorEvent: async ({ event, messages, state }: any) => {
         // SPECIFIC filters for expected/handled errors
         const errorMsg = event.message || '';
         const lowerMsg = errorMsg.toLowerCase();
@@ -531,7 +527,7 @@ export function useAgentEventSubscriber(
       // STEP EVENTS (LangGraph)
       // ========================================================================
 
-      onStepStartedEvent: async ({ event, state }) => {
+      onStepStartedEvent: async ({ event, state }: any) => {
         log('Step started:', event.stepName);
         
         if (callbacksRef.current.onStepStarted) {
@@ -539,7 +535,7 @@ export function useAgentEventSubscriber(
         }
       },
 
-      onStepFinishedEvent: async ({ event, state }) => {
+      onStepFinishedEvent: async ({ event, state }: any) => {
         log('Step finished:', event.stepName);
         
         if (callbacksRef.current.onStepFinished) {
@@ -551,7 +547,7 @@ export function useAgentEventSubscriber(
       // TOOL EVENTS
       // ========================================================================
 
-      onToolCallStartEvent: async ({ event }) => {
+      onToolCallStartEvent: async ({ event }: any) => {
         log('Tool call started:', event.toolCallId, event.toolCallName);
         
         setActiveTools(prev => {
@@ -569,7 +565,7 @@ export function useAgentEventSubscriber(
         }
       },
 
-      onToolCallEndEvent: async ({ event, toolCallName, toolCallArgs }) => {
+      onToolCallEndEvent: async ({ event, toolCallName, toolCallArgs }: any) => {
         log('Tool call ended:', event.toolCallId, toolCallName);
         
         setActiveTools(prev => {
@@ -590,12 +586,12 @@ export function useAgentEventSubscriber(
         }
       },
 
-      onToolCallResultEvent: async ({ event, messages, state }) => {
+      onToolCallResultEvent: async ({ event, messages, state }: any) => {
         log('Tool call result:', event.toolCallId);
         
         // Check if this is a tool error
         const toolMessage = messages.find(
-          m => m.role === 'tool' && (m as any).toolCallId === event.toolCallId
+          (m: any) => m.role === 'tool' && (m as any).toolCallId === event.toolCallId
         );
         
         if (toolMessage && (toolMessage as any).error) {
@@ -647,7 +643,7 @@ export function useAgentEventSubscriber(
       // STATE EVENTS
       // ========================================================================
 
-      onStateChanged: async ({ messages, state }) => {
+      onStateChanged: async ({ messages, state }: any) => {
         log('State changed');
         
         if (callbacksRef.current.onStateChanged) {
@@ -655,7 +651,7 @@ export function useAgentEventSubscriber(
         }
       },
 
-      onMessagesChanged: async ({ messages, state }) => {
+      onMessagesChanged: async ({ messages, state }: any) => {
         log('Messages changed, count:', messages.length);
         
         if (callbacksRef.current.onMessagesChanged) {
@@ -667,7 +663,7 @@ export function useAgentEventSubscriber(
       // ACTIVITY EVENTS
       // ========================================================================
 
-      onActivitySnapshotEvent: async ({ event, activityMessage, existingMessage }) => {
+      onActivitySnapshotEvent: async ({ event, activityMessage, existingMessage }: any) => {
         log('Activity snapshot:', event.messageId);
         
         if (callbacksRef.current.onActivityUpdate) {

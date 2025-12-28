@@ -5,6 +5,7 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { unstable_batchedUpdates } from 'react-dom';
 import { authClient, Session, User, Organization, Member } from '../lib/auth-client';
 import { API_CONFIG } from '../constants';
 import { sessionStorageDBWrapper, debug } from '@extension/shared';
@@ -166,111 +167,97 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const sessionResult = await authClient.getSession();
       
       if (sessionResult.data) {
-        setSession(sessionResult.data);
-        setUser(sessionResult.data.user);
-        
-        // Extract organization and team from session
+        // Prepare state updates to be applied together
+        const user = sessionResult.data.user;
         const sessionData = sessionResult.data.session as any;
         const activeOrgId = sessionData?.activeOrganizationId;
         const activeTeamId = sessionData?.activeTeamId || null;
+        const currentUserId = user?.id || null;
         
-        debug.log('[AuthContext] loadSession - activeOrgId:', activeOrgId?.slice(0, 8));
-        debug.log('[AuthContext] loadSession - activeTeamId:', activeTeamId?.slice(0, 8));
+        debug.log('[AuthContext] loadSession - data ready:', {
+          activeOrgId: activeOrgId?.slice(0, 8),
+          activeTeamId: activeTeamId?.slice(0, 8),
+          userId: currentUserId?.slice(0, 8)
+        });
         
-        const currentUserId = sessionResult.data.user?.id || null;
-        
-        // Set userId for session storage (required for multi-user support)
+        // Set userId for session storage immediately
         if (currentUserId) {
-          debug.log('[AuthContext] Setting userId for session storage:', currentUserId.slice(0, 8));
           sessionStorageDBWrapper.setCurrentUserId(currentUserId);
         } else {
-          debug.log('[AuthContext] No userId found, clearing session storage userId');
           sessionStorageDBWrapper.setCurrentUserId(null);
         }
+
+        let orgToSet: Organization | null = null;
+        let teamIdToSet: string | null = activeTeamId;
 
         // If we have an active org, fetch its details
         if (activeOrgId) {
           try {
             const orgsResult = await authClient.organization.list();
-            const activeOrg = orgsResult.data?.find((org: any) => org.id === activeOrgId);
-            setOrganization(activeOrg || null);
-            
-            // If we have an org but no active team, auto-select the first team
-            if (!activeTeamId) {
-              await autoSelectFirstTeam(setActiveTeamState, updateSessionContext);
-            } else {
-              debug.log('[AuthContext] Setting activeTeamState from session:', activeTeamId.slice(0, 8));
-              setActiveTeamState(activeTeamId);
-            }
-
-            await fetchAndSetMember(activeOrgId, currentUserId);
-          } catch {
-            setOrganization(null);
-            setMember(null);
+            orgToSet = orgsResult.data?.find((org: any) => org.id === activeOrgId) || null;
+          } catch (e) {
+            debug.error('[AuthContext] Error fetching org details:', e);
           }
         } else {
-          // No active organization - auto-select the first one the user belongs to
-          debug.log('[AuthContext] No active organization, attempting auto-select');
+          // Auto-select first org
           try {
             const orgsResult = await authClient.organization.list();
-            const userOrgs = orgsResult.data || [];
-            
-            if (userOrgs.length > 0) {
-              const firstOrg = userOrgs[0];
-              debug.log('[AuthContext] Auto-selecting first organization:', firstOrg.name);
-              
-              // Set this organization as active
-              await authClient.organization.setActive({
-                organizationId: firstOrg.id,
-              });
-              
-              setOrganization(firstOrg);
-              updateSessionContext({ activeOrganizationId: firstOrg.id });
-              
-              // Now auto-select the first team in this organization
-              await autoSelectFirstTeam(setActiveTeamState, updateSessionContext);
-
-              await fetchAndSetMember(firstOrg.id, currentUserId);
-            } else {
-              debug.log('[AuthContext] No organizations found for user');
-              setOrganization(null);
-              setActiveTeamState(null);
-              setMember(null);
+            const firstOrg = orgsResult.data?.[0];
+            if (firstOrg) {
+              await authClient.organization.setActive({ organizationId: firstOrg.id });
+              orgToSet = firstOrg;
             }
-          } catch (orgError) {
-            debug.error('[AuthContext] Error auto-selecting organization:', orgError);
-            setOrganization(null);
-            setActiveTeamState(null);
-            setMember(null);
+          } catch (e) {
+            debug.error('[AuthContext] Error auto-selecting org:', e);
           }
+        }
+
+        // Apply all updates in a single batch to prevent multiple re-renders
+        unstable_batchedUpdates(() => {
+          setSession(sessionResult.data);
+          setUser(user);
+          setOrganization(orgToSet);
+          
+          if (orgToSet && !teamIdToSet) {
+            // Team will be auto-selected by autoSelectFirstTeam effect or call
+            // but we can at least set the rest of the state now
+          } else {
+            setActiveTeamState(teamIdToSet);
+          }
+        });
+
+        // Finalize member and team info
+        if (orgToSet) {
+          if (!teamIdToSet) {
+              await autoSelectFirstTeam(setActiveTeamState, updateSessionContext);
+          }
+          await fetchAndSetMember(orgToSet.id, currentUserId);
         }
         
       } else {
+        unstable_batchedUpdates(() => {
         setSession(null);
         setUser(null);
         setOrganization(null);
         setMember(null);
         setActiveTeamState(null);
-        
-        // Clear userId from session storage
-        debug.log('[AuthContext] No session found, clearing session storage userId');
+        });
         sessionStorageDBWrapper.setCurrentUserId(null);
       }
     } catch (error) {
       debug.error('[AuthContext] Error loading session:', error);
+      unstable_batchedUpdates(() => {
       setSession(null);
       setUser(null);
       setOrganization(null);
       setMember(null);
       setActiveTeamState(null);
-      
-      // Clear userId from session storage on error
-      debug.log('[AuthContext] Error loading session, clearing session storage userId');
+      });
       sessionStorageDBWrapper.setCurrentUserId(null);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [fetchAndSetMember, updateSessionContext]);
 
   /**
    * Sign in with email and password

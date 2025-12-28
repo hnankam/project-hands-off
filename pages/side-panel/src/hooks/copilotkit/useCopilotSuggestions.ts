@@ -54,9 +54,6 @@ export function useCopilotSuggestions({
   providerAgentId = DEFAULT_AGENT_ID,
   available = 'after-first-message',
 }: CopilotSuggestionsConfig): void {
-  // CRITICAL INSIGHT: useConfigureSuggestions likely checks config VALUES, not just reference
-  // Any change to the config object (even if same reference) triggers reconfiguration
-  // Solution: Create config object ONCE when first called and NEVER change it
   
   const initialConfigRef = useRef<{ instructions: string; providerAgentId: string; available: SuggestionAvailability } | null>(null);
   
@@ -69,23 +66,7 @@ export function useCopilotSuggestions({
       providerAgentId,
       available: enabled ? available : 'disabled',
     };
-    console.log('[useCopilotSuggestions] 🔒 Config INITIALIZED (will never change):', { 
-      instructions: instructions.substring(0, 50) + '...', 
-      available: initialConfigRef.current.available,
-      providerAgentId,
-      enabled,
-      timestamp: new Date().toISOString()
-    });
   }
-  
-  // Log when enabled state changes (for debugging)
-  useEffect(() => {
-    console.log('[useCopilotSuggestions] 📊 Enabled state:', { 
-      enabled,
-      configAvailable: initialConfigRef.current?.available,
-      timestamp: new Date().toISOString()
-    });
-  }, [enabled]);
   
   // CRITICAL: Call useConfigureSuggestions with the FROZEN config
   // The config never changes after initialization, preventing any reconfiguration

@@ -394,3 +394,6 @@
   font-size: 1.15em !important;
 }
 
+.copilot-chat-container .list-inside {
+  list-style-position: outside !important;
+}

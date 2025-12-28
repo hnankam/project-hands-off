@@ -161,6 +161,14 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   const [expandedWindows, setExpandedWindows] = useState<Set<number>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
 
+  // Debug: Wrap onPagesChange to log all calls (using ref to avoid initialization issues)
+  const selectedPageURLsRef = useRef(selectedPageURLs);
+  selectedPageURLsRef.current = selectedPageURLs;
+  
+  const wrappedOnPagesChange = useCallback((newSelection: string[]) => {
+    onPagesChange(newSelection);
+  }, [onPagesChange]);
+
   // Embedding state
   const [embeddingTabs, setEmbeddingTabs] = useState<Set<number>>(new Set());
   const [embeddingProgress, setEmbeddingProgress] = useState<{ current: number; total: number } | null>(null);
@@ -597,9 +605,9 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
       const newSelection = selectedPageURLs.includes(pageURL)
         ? selectedPageURLs.filter(url => url !== pageURL)
         : [...selectedPageURLs, pageURL];
-      onPagesChange(newSelection);
+      wrappedOnPagesChange(newSelection);
     },
-    [selectedPageURLs, onPagesChange],
+    [selectedPageURLs, wrappedOnPagesChange, viewMode],
   );
 
   const handleDeletePage = useCallback(
@@ -618,7 +626,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
           setPages(prev => prev.filter(p => p.pageURL !== pageURL));
 
           if (selectedPageURLs.includes(pageURL)) {
-            onPagesChange(selectedPageURLs.filter(url => url !== pageURL));
+            wrappedOnPagesChange(selectedPageURLs.filter(url => url !== pageURL));
           }
 
           debug.log('[ContextSelector] Successfully deleted page:', pageURL, result.counts);
@@ -633,7 +641,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
         });
       }
     },
-    [currentPageURL, selectedPageURLs, onPagesChange],
+    [currentPageURL, selectedPageURLs, wrappedOnPagesChange],
   );
 
   const handleSelectAllIndexed = useCallback(() => {
@@ -643,12 +651,12 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
     if (allFilteredSelected) {
       // Deselect all filtered pages - user can choose to have no pages selected
       const newSelection = selectedPageURLs.filter(url => !filteredURLs.includes(url));
-      onPagesChange(newSelection);
+      wrappedOnPagesChange(newSelection);
     } else {
       const newSelection = Array.from(new Set([...selectedPageURLs, ...filteredURLs]));
-      onPagesChange(newSelection);
+      wrappedOnPagesChange(newSelection);
     }
-  }, [filteredPages, selectedPageURLs, onPagesChange]);
+  }, [filteredPages, selectedPageURLs, wrappedOnPagesChange, viewMode]);
 
   // Bulk delete selected indexed pages
   const handleBulkDeleteIndexed = useCallback(async () => {
@@ -684,7 +692,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
       }
 
       // Remove deleted pages from selection
-      onPagesChange(selectedPageURLs.filter(url => !pagesToDelete.includes(url)));
+      wrappedOnPagesChange(selectedPageURLs.filter(url => !pagesToDelete.includes(url)));
 
       debug.log('[ContextSelector] Bulk delete complete:', successCount, '/', pagesToDelete.length);
     } catch (error) {
@@ -692,7 +700,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
     } finally {
       setDeletingPages(new Set());
     }
-  }, [selectedPageURLs, onPagesChange]);
+  }, [selectedPageURLs, wrappedOnPagesChange]);
 
   // Open page in new tab
   const handleOpenInNewTab = useCallback((pageURL: string, e: React.MouseEvent) => {
@@ -922,7 +930,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
 
           // Auto-select the newly embedded page
           if (!selectedPageURLs.includes(tab.url)) {
-            onPagesChange([...selectedPageURLs, tab.url]);
+            wrappedOnPagesChange([...selectedPageURLs, tab.url]);
           }
         }
       } finally {
@@ -933,7 +941,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
         });
       }
     },
-    [embeddingTabs, embedTab, fetchPages, selectedPageURLs, onPagesChange],
+    [embeddingTabs, embedTab, fetchPages, selectedPageURLs, wrappedOnPagesChange],
   );
 
   // Initiate bulk embed - processes tabs in parallel with real-time updates
@@ -998,7 +1006,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
 
             // Auto-select the newly embedded page
             if (!selectedPageURLs.includes(tab.url)) {
-              onPagesChange([...selectedPageURLs, tab.url]);
+              wrappedOnPagesChange([...selectedPageURLs, tab.url]);
             }
           } else {
             debug.warn('[ContextSelector] Bulk: Failed to embed tab:', tab.title);
@@ -1426,7 +1434,11 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                           {filteredPages.length > 0 && (
                             <button
                               type="button"
-                              onClick={handleSelectAllIndexed}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleSelectAllIndexed();
+                              }}
                               className={cn(
                                 'flex items-center gap-1 text-[10px] font-medium transition-colors',
                                 isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300',
@@ -1540,7 +1552,13 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                             <button
                               type="button"
                               key={page.pageURL}
-                              onClick={() => !isDeleting && handleTogglePage(page.pageURL)}
+                              onClick={(e) => {
+                                if (!isDeleting) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleTogglePage(page.pageURL);
+                                }
+                              }}
                               disabled={isDeleting}
                               className={cn(
                                 'group flex w-full items-center gap-2 border-b px-2.5 py-1 text-left text-xs transition-colors',
@@ -2214,10 +2232,20 @@ const TabItem: React.FC<TabItemProps> = ({
   onEmbed,
   onOpenTab,
 }) => {
-  const handleClick = () => {
+  const handleClick = (e?: React.MouseEvent) => {
+    // FIX: Allow toggling selection for indexed tabs
+    // For unindexed tabs, embed first then they become selectable
     if (isIndexed) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
       onToggle(tab.url);
     } else if (!isEmbedding) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
       onEmbed();
     }
   };
@@ -2225,7 +2253,10 @@ const TabItem: React.FC<TabItemProps> = ({
   return (
     <button
       type="button"
-      onClick={handleClick}
+      onClick={(e) => {
+        e.stopPropagation();
+        handleClick(e);
+      }}
       disabled={isEmbedding}
       className={cn(
         'group flex w-full items-center gap-2 border-b px-2 py-1.5 text-left text-xs transition-colors',
@@ -2238,7 +2269,8 @@ const TabItem: React.FC<TabItemProps> = ({
           : isLight
             ? 'text-gray-500 hover:bg-gray-100'
             : 'text-gray-400 hover:bg-gray-700/50',
-      )}>
+      )}
+      style={{ pointerEvents: isEmbedding ? 'none' : 'auto' }}>
       {/* Status indicator */}
       <span
         className={cn(

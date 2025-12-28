@@ -1,14 +1,15 @@
 /**
  * Centralized CopilotKit Chat Hook
  *
- * V2 Implementation using useAgent and useCopilotKit from @copilotkit/react-core/v2.
+ * V2 Implementation using shared agent from SharedAgentProvider.
+ * Requires SharedAgentProvider to be present in the component tree.
  * Suggestions are configured separately via useCopilotSuggestions hook.
  */
 
-import { useAgent, useCopilotKit } from '@copilotkit/react-core/v2';
+import { useCopilotKit } from '@copilotkit/react-core/v2';
 import type { Message } from '@ag-ui/core';
 import { useMemo, useCallback } from 'react';
-import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
+import { useCopilotAgent } from './useCopilotAgent';
 
 // Re-export Message type for convenience
 export type { Message };
@@ -62,37 +63,33 @@ const DEFAULT_AGENT_ID = 'dynamic_agent';
  * ```
  */
 export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatState {
-  // Get the current session/thread ID from context
-  // CRITICAL: threadId is required for agent execution to work properly
-  const threadId = useChatSessionIdSafe();
-  
-  // V2 implementation using useAgent
-  const { agent } = useAgent({
-    agentId,
-  });
+  // ARCHITECTURE CHANGE: Use useCopilotAgent which supports SharedAgentProvider context
+  // This ensures multiple hooks share a single connection to the runtime server
+  const { 
+    agent, 
+    messages: agentMessages, 
+    setMessages: agentSetMessages, 
+    running: agentIsRunning 
+  } = useCopilotAgent({ agentId });
 
   // CopilotKit core for stopAgent and other utilities
   const { copilotkit } = useCopilotKit();
 
   // Memoize messages to prevent unnecessary re-renders
   const messages = useMemo(() => {
-    return (agent?.messages ?? []) as Message[];
-  }, [agent?.messages]);
+    return (agentMessages ?? []) as Message[];
+  }, [agentMessages]);
 
-  // Set messages - V2 uses agent.setMessages() per CopilotKit v1.50 docs
+  // Set messages
   const setMessages = useCallback((newMessages: Message[]) => {
-    if (agent && typeof agent.setMessages === 'function') {
-      agent.setMessages(newMessages);
-    }
-  }, [agent]);
+    agentSetMessages(newMessages);
+  }, [agentSetMessages]);
 
   // Delete message by ID - filter and use agent.setMessages()
   const deleteMessage = useCallback((messageId: string) => {
-    if (agent && typeof agent.setMessages === 'function') {
-      const filtered = (agent.messages ?? []).filter((m: Message) => m.id !== messageId);
-      agent.setMessages(filtered);
-    }
-  }, [agent]);
+    const filtered = (agentMessages ?? []).filter((m: Message) => m.id !== messageId);
+    agentSetMessages(filtered);
+  }, [agentMessages, agentSetMessages]);
 
   // Send a new message - V2 implementation
   // Call agent.runAgent() directly to bypass CopilotKit runtime caching
@@ -104,8 +101,13 @@ export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatS
     
     try {
       // Add message to agent's message list
-     (agent as any).addMessage(message);
-      await (agent as any).runAgent();
+      if (typeof agent.addMessage === 'function') {
+        agent.addMessage(message);
+      }
+      
+      if (typeof agent.runAgent === 'function') {
+        await agent.runAgent();
+      }
       
     } catch (error) {
       console.error('[useCopilotChat] Error sending message:', error);
@@ -116,23 +118,19 @@ export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatS
   // Reload/regenerate messages
   const reloadMessages = useCallback(async (_messageId?: string) => {
     // In V2, explicitly call runAgent to re-run
-    if (agent && typeof (agent as any).runAgent === 'function') {
-      await (agent as any).runAgent();
-      console.log('[useCopilotChat] Agent re-run triggered');
+    if (agent && typeof agent.runAgent === 'function') {
+      await agent.runAgent();
     } else if (agent && typeof agent.setMessages === 'function') {
       // Fallback: refresh messages array
       const currentMessages = agent.messages ?? [];
       agent.setMessages([...currentMessages]);
-      console.log('[useCopilotChat] Messages refreshed (fallback)');
     }
   }, [agent]);
 
-  // Reset chat state - V2 implementation using agent.setMessages([])
+  // Reset chat state
   const reset = useCallback(() => {
-    if (agent && typeof agent.setMessages === 'function') {
-      agent.setMessages([]);
-    }
-  }, [agent]);
+    agentSetMessages([]);
+  }, [agentSetMessages]);
 
   // Stop current generation
   const stopGeneration = useCallback(() => {
@@ -142,7 +140,7 @@ export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatS
   }, [copilotkit, agentId]);
 
   // Loading state - derive from agent state
-  const isLoading = agent?.isRunning ?? false;
+  const isLoading = agentIsRunning;
 
   return {
     messages,

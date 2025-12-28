@@ -34,7 +34,7 @@ export interface CustomUserMessageRendererProps {
  * - Position relative container (for absolute positioned buttons in parent)
  * - Matches copilotKitUserMessage styling from V1
  */
-export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps> = ({
+export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps> = React.memo(({
   content,
   className = '',
   isEditing = false,
@@ -279,7 +279,23 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
       </div>
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  const propsChanged = {
+    content: prevProps.content !== nextProps.content,
+    isEditing: prevProps.isEditing !== nextProps.isEditing,
+    editedContent: prevProps.editedContent !== nextProps.editedContent,
+    isFirstMessage: prevProps.isFirstMessage !== nextProps.isFirstMessage,
+    attachments: prevProps.attachments?.length !== nextProps.attachments?.length,
+  };
+  
+  return (
+    !propsChanged.content &&
+    !propsChanged.isEditing &&
+    !propsChanged.editedContent &&
+    !propsChanged.isFirstMessage &&
+    !propsChanged.attachments
+  );
+});
 
 export default CustomUserMessageRenderer;
 

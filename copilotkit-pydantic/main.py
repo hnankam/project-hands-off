@@ -47,27 +47,10 @@ if LOGFIRE_ENABLED:
         # Instrument Pydantic AI for agent tracing
         try:
             logfire.instrument_pydantic_ai()
-        except Exception as e:
-            logger.debug(f"Could not instrument Pydantic AI: {e}")
-        
-        # Instrument common libraries (each one independently)
-        # try:
-        #     logfire.instrument_psycopg()
-        # except Exception as e:
-        #     logger.debug(f"Could not instrument psycopg: {e}")
-        
-        try:
+            # logfire.instrument_psycopg()
             logfire.instrument_httpx(capture_headers=LOGFIRE_CAPTURE_HEADERS)
-        except Exception as e:
-            logger.debug(f"Could not instrument httpx: {e}")
-        
-        try:
-            logfire.instrument_openai()
-        except Exception as e:
-            logger.debug(f"Could not instrument OpenAI: {e}")
-        
-        try:
-            logfire.instrument_anthropic()
+            # logfire.instrument_openai()
+            # logfire.instrument_anthropic()
         except Exception as e:
             logger.debug(f"Could not instrument Anthropic: {e}")
         

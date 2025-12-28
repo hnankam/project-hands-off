@@ -22,6 +22,10 @@ export function useSessionLoadingState(currentSessionId: string | null): UseSess
   const [isSessionReady, setIsSessionReady] = useState(false);
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   
+  // OPTIMIZATION: Track which sessions have already completed their initial hydration
+  // This allows instant switching without re-triggering skeletons
+  const readySessionsRef = useRef<Set<string>>(new Set());
+  
   const sessionReadyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const skeletonStartTimeRef = useRef<number | null>(null);
   // PERFORMANCE FIX: Track timeouts for proper cleanup to prevent state updates on unmounted components
@@ -32,6 +36,12 @@ export function useSessionLoadingState(currentSessionId: string | null): UseSess
   const handleMessagesLoadingChange = useCallback(
     (sessionId: string, isLoading: boolean) => {
       if (sessionId !== currentSessionId) {
+        return;
+      }
+
+      // If this session is already marked as ready in our set, don't show loading again
+      if (readySessionsRef.current.has(sessionId)) {
+        setIsMessagesLoading(false);
         return;
       }
 
@@ -71,6 +81,9 @@ export function useSessionLoadingState(currentSessionId: string | null): UseSess
   // Handle session ready signal
   const handleSessionReady = useCallback(
     (sessionId: string) => {
+      // Mark as ready in our registry immediately
+      readySessionsRef.current.add(sessionId);
+
       if (!currentSessionId || sessionId !== currentSessionId) {
         return;
       }
@@ -118,6 +131,14 @@ export function useSessionLoadingState(currentSessionId: string | null): UseSess
         clearTimeout(sessionReadyTimeoutRef.current);
         sessionReadyTimeoutRef.current = null;
       }
+      setIsSessionReady(true);
+      setIsMessagesLoading(false);
+      skeletonStartTimeRef.current = null;
+      return;
+    }
+
+    // OPTIMIZATION: If session is already ready, skip the loading state
+    if (readySessionsRef.current.has(currentSessionId)) {
       setIsSessionReady(true);
       setIsMessagesLoading(false);
       skeletonStartTimeRef.current = null;

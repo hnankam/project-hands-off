@@ -28,7 +28,7 @@ export type {
 } from './useCopilotChatContext';
 
 // Agent state management
-export { useCopilotAgent } from './useCopilotAgent';
+export { useCopilotAgent, SharedAgentProvider, SharedAgentContext } from './useCopilotAgent';
 export type { CopilotAgentOptions, CopilotAgentState } from './useCopilotAgent';
 
 // Agent event subscriptions (v1.5+ comprehensive event system)
@@ -41,6 +41,9 @@ export type {
   AgentEventSubscriberConfig,
   AgentEventSubscriberResult,
 } from './useAgentEventSubscriber';
+
+// Shared agent context removed - hooks now call useAgent() directly with stable config
+// CopilotKit handles connection deduplication internally
 
 // Convenience hook for error banner display
 export { useAgentWithErrorBanner } from './useAgentWithErrorBanner';

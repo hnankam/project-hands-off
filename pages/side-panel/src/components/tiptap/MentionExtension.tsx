@@ -518,13 +518,6 @@ export const createMentionSuggestion = (
 
       return {
         onStart: (props: SuggestionProps) => {
-          console.log('[MentionExtension] onStart - refs:', {
-            selectedNotes: selectedNotesRef?.current,
-            selectedCredentials: selectedCredentialsRef?.current,
-            selectedFiles: selectedFilesRef?.current,
-            selectedPageURLs: selectedPageURLsRef?.current,
-          });
-          
           component = new ReactRenderer(MentionList, {
             props: {
               ...props,

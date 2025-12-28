@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { cn } from '@extension/ui';
+import { debug } from '@extension/shared';
 import { GraphStateCard, convertToGraphAgentState, type UnifiedAgentState } from '../graph-state';
 import { useCopilotAgent } from '../../hooks/copilotkit/useCopilotAgent';
 
@@ -34,6 +35,19 @@ export const GraphsPanel: React.FC<GraphsPanelProps> = ({
     agentId: 'dynamic_agent',
     initialState: { sessionId, plans: {}, graphs: {} },
   });
+
+  // Debug logging
+  React.useEffect(() => {
+    debug.log('[GraphsPanel] Render:', {
+      isOpen,
+      sessionId: sessionId?.slice(0, 8),
+      graphsCount: graphs ? Object.keys(graphs).length : 0,
+      graphs: graphs,
+      width,
+      hasOnClose: !!onClose,
+      hasOnWidthChange: !!onWidthChange,
+    });
+  }, [isOpen, sessionId, graphs, width, onClose, onWidthChange]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -72,9 +86,27 @@ export const GraphsPanel: React.FC<GraphsPanelProps> = ({
     };
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
-  if (!isOpen) return null;
+  // Debug: Log render decision
+  React.useEffect(() => {
+    debug.log('[GraphsPanel] Render check:', {
+      isOpen,
+      willRender: isOpen,
+      sessionId: sessionId?.slice(0, 8),
+    });
+  }, [isOpen, sessionId]);
+
+  if (!isOpen) {
+    debug.log('[GraphsPanel] Returning null because isOpen is false');
+    return null;
+  }
 
   const graphEntries = graphs ? Object.entries(graphs) : [];
+
+  debug.log('[GraphsPanel] Rendering panel:', {
+    width,
+    graphEntries: graphEntries.length,
+    sessionId: sessionId?.slice(0, 8),
+  });
 
   return (
     <div

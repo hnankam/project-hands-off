@@ -17,7 +17,7 @@
  * ================================================================================
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { sessionStorageDBWrapper, debug } from '@extension/shared';
 import { getCurrentViewMode, getSessionIdFromUrl } from '../utils/windowManager';
 
@@ -82,12 +82,38 @@ export function useSessionUrlSync({
 }: UseSessionUrlSyncProps): void {
   // Track which URL session ID has been applied to prevent re-application
   const urlSessionIdAppliedRef = useRef<string | null>(null);
+  // Track if we've already logged the view mode to reduce duplicate logs
+  const hasLoggedViewModeRef = useRef(false);
+  // Store stable session IDs string for comparison (avoids array reference changes)
+  const sessionsIdsRef = useRef<string>('');
+  // Track last logged values to prevent duplicate logs
+  const lastLoggedValuesRef = useRef<{ urlSessionId: string | null; currentSessionId: string | null }>({
+    urlSessionId: null,
+    currentSessionId: null,
+  });
   
   useEffect(() => {
     const viewMode = getCurrentViewMode();
     const urlSessionId = getSessionIdFromUrl();
     
+    // Create stable sessions ID string for comparison
+    const currentSessionsIds = sessions.map(s => s.id).sort().join(',');
+    const sessionsChanged = sessionsIdsRef.current !== currentSessionsIds;
+    if (sessionsChanged) {
+      sessionsIdsRef.current = currentSessionsIds;
+    }
+    
+    // Only log when values actually change (not just on every render)
+    const valuesChanged = 
+      lastLoggedValuesRef.current.urlSessionId !== urlSessionId ||
+      lastLoggedValuesRef.current.currentSessionId !== currentSessionId ||
+      sessionsChanged;
+    
+    if (!hasLoggedViewModeRef.current || valuesChanged) {
     debug.log('[useSessionUrlSync] View mode:', { viewMode, urlSessionId, currentSessionId });
+      hasLoggedViewModeRef.current = true;
+      lastLoggedValuesRef.current = { urlSessionId, currentSessionId };
+    }
     
     // Only apply URL session ID if:
     // 1. We're in a new tab or popup context

@@ -23,6 +23,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { sessionStorageDBWrapper, debug } from '@extension/shared';
 import type { AgentStepState } from '../components/cards';
+import type { SessionMetadata } from '@extension/shared';
 
 // ============================================================================
 // TYPES
@@ -89,8 +90,6 @@ const DEFAULT_USAGE: UsageTotals = {
   requestCount: 0,
 };
 
-const METADATA_SETTLE_DELAY_MS = 50; // Wait for state updates to settle before allowing saves
-
 // ============================================================================
 // HOOK
 // ============================================================================
@@ -117,7 +116,8 @@ const METADATA_SETTLE_DELAY_MS = 50; // Wait for state updates to settle before 
  */
 export const useSessionData = (
   sessionId: string,
-  isActive: boolean
+  isActive: boolean,
+  initialMetadata?: SessionMetadata | null
 ): UseSessionDataReturn => {
   
   // ============================================================================
@@ -125,8 +125,32 @@ export const useSessionData = (
   // ============================================================================
   
   // Agent/Model selection state
-  const [selectedAgent, setSelectedAgent] = useState('');
-  const [selectedModel, setSelectedModel] = useState('');
+  // OPTIMIZATION: Initialize immediately with initialMetadata if provided
+  const [selections, setSelections] = useState({ 
+    agent: initialMetadata?.selectedAgent ?? '', 
+    model: initialMetadata?.selectedModel ?? '' 
+  });
+  const selectedAgent = selections.agent;
+  const selectedModel = selections.model;
+
+  // Keep selections in sync when sessionId or initialMetadata changes
+  useEffect(() => {
+    if (sessionId) {
+      setSelections({
+        agent: initialMetadata?.selectedAgent ?? '',
+        model: initialMetadata?.selectedModel ?? ''
+      });
+      setIsLoadingMetadata(isActive && !initialMetadata);
+    }
+  }, [sessionId, initialMetadata, isActive]);
+  
+  const setSelectedAgent = useCallback((agent: string) => {
+    setSelections(prev => ({ ...prev, agent }));
+  }, []);
+
+  const setSelectedModel = useCallback((model: string) => {
+    setSelections(prev => ({ ...prev, model }));
+  }, []);
   
   // Usage tracking state
   const [usageCache, setUsageCache] = useState<Record<string, UsageTotals>>({});
@@ -141,7 +165,8 @@ export const useSessionData = (
   });
   
   // Loading flags
-  const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
+  // OPTIMIZATION: If we have initial metadata, we aren't "loading" the basics anymore
+  const [isLoadingMetadata, setIsLoadingMetadata] = useState(isActive && !initialMetadata);
   const isLoadingFromDBRef = useRef(false);
   const lastLoadedSessionRef = useRef<string | null>(null);
   const loadingSessionIdRef = useRef<string | null>(null);
@@ -183,7 +208,14 @@ export const useSessionData = (
    */
   useEffect(() => {
     if (!isActive) {
-      debug.log(`[useSessionData] Session ${sessionId.slice(0, 8)} is not active, skipping metadata load`);
+      return;
+    }
+    
+    // OPTIMIZATION: If we already have metadata from props, we can skip the DB fetch
+    // But we still update the "last loaded" ref to prevent future redundant fetches
+    if (initialMetadata && lastLoadedSessionRef.current !== sessionId) {
+      lastLoadedSessionRef.current = sessionId;
+      setIsLoadingMetadata(false);
       return;
     }
     
@@ -193,12 +225,10 @@ export const useSessionData = (
     }
 
     if (loadingSessionIdRef.current === sessionId) {
-      debug.log(`[useSessionData] Metadata load already in progress for session ${sessionId.slice(0, 8)}`);
       return;
     }
     
     let isCancelled = false;
-    let enableSavesTimeoutId: NodeJS.Timeout | null = null;
     
     // Mark as loading immediately
     loadingSessionIdRef.current = sessionId;
@@ -206,13 +236,10 @@ export const useSessionData = (
     isLoadingFromDBRef.current = true;
 
     const loadSessionMetadata = async () => {
-      debug.log(`[useSessionData] Loading metadata for session ${sessionId.slice(0, 8)}`);
-      
       try {
         const metadata = await sessionStorageDBWrapper.getSession(sessionId);
         
         if (isCancelled) {
-          debug.log(`[useSessionData] Load cancelled for session ${sessionId.slice(0, 8)}`);
           setIsLoadingMetadata(false);
           isLoadingFromDBRef.current = false;
           loadingSessionIdRef.current = null;
@@ -220,38 +247,25 @@ export const useSessionData = (
         }
         
         if (!metadata) {
-          debug.warn(`[useSessionData] No metadata found for session ${sessionId.slice(0, 8)}`);
           setIsLoadingMetadata(false);
           isLoadingFromDBRef.current = false;
           loadingSessionIdRef.current = null;
           return;
         }
 
-        debug.log(`[useSessionData] Loaded metadata for session ${sessionId.slice(0, 8)}:`, {
-          agent: metadata.selectedAgent,
-          model: metadata.selectedModel,
+        // Apply loaded agent/model to state together in a single update
+        // Set isLoadingMetadata to false IMMEDIATELY so CopilotKitProvider can mount
+        // This ensures atomic updates: agent/model and loading flag change together
+        setSelections({
+          agent: metadata.selectedAgent ?? '',
+          model: metadata.selectedModel ?? '',
         });
 
-        // Apply loaded agent/model to state
-        if (metadata.selectedAgent !== undefined) {
-          setSelectedAgent(metadata.selectedAgent);
-        }
-        if (metadata.selectedModel !== undefined) {
-          setSelectedModel(metadata.selectedModel);
-        }
-
-        // Mark session as loaded
+        // Mark session as loaded and clear loading flags ATOMICALLY
         lastLoadedSessionRef.current = sessionId;
         loadingSessionIdRef.current = null;
-        
-        // Wait for state updates to settle before allowing saves
-        enableSavesTimeoutId = setTimeout(() => {
-          if (!isCancelled) {
             setIsLoadingMetadata(false);
             isLoadingFromDBRef.current = false;
-            debug.log(`[useSessionData] Metadata load complete for session ${sessionId.slice(0, 8)}`);
-          }
-        }, METADATA_SETTLE_DELAY_MS);
         
       } catch (error) {
         debug.error(`[useSessionData] Failed to load metadata for session ${sessionId.slice(0, 8)}:`, error);
@@ -266,9 +280,6 @@ export const useSessionData = (
     return () => {
       isCancelled = true;
       loadingSessionIdRef.current = null;
-      if (enableSavesTimeoutId) {
-        clearTimeout(enableSavesTimeoutId);
-      }
       setIsLoadingMetadata(false);
       isLoadingFromDBRef.current = false;
     };
@@ -287,16 +298,11 @@ export const useSessionData = (
 
     const loadStoredData = async () => {
       try {
-        debug.log(`[useSessionData] Loading usage & agent state for session ${sessionId.slice(0, 8)}`);
-        
         // OPTIMIZATION: Load both usage stats and agent state in parallel
         const [storedUsage, storedState] = await Promise.all([
           sessionStorageDBWrapper.getUsageStatsAsync(sessionId),
           sessionStorageDBWrapper.getAgentStepStateAsync(sessionId)
         ]);
-        
-        // Always log what we got from DB
-        debug.log(`[useSessionData] DB returned usage for session ${sessionId.slice(0, 8)}:`, storedUsage);
         
         if (!isCancelled) {
           if (storedUsage) {
@@ -337,7 +343,7 @@ export const useSessionData = (
         
         debug.log(`[useSessionData] DB query result for session ${sessionId.slice(0, 8)}:`, {
           found: !!storedState,
-          planStepsCount: storedState?.plan?.steps?.length ?? 0,
+          plansCount: Object.keys(storedState?.plans ?? {}).length,
         });
         
         if (!isCancelled) {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react';
 import type { FC, CSSProperties } from 'react';
-import { useStorage, sessionStorageDBWrapper, debug } from '@extension/shared';
+import { useStorage, sessionStorageDBWrapper, debug, type SessionMetadata } from '@extension/shared';
 import { preferencesStorage } from '@extension/storage';
 import { StatusBar } from '../layout/StatusBar';
 import { ChatInner } from './ChatInner';
@@ -25,7 +25,7 @@ import { useEnabledFrontendTools } from '../../hooks/useEnabledFrontendTools';
 import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG, ABLY_CONFIG } from '../../constants';
 import { ts } from '../../utils/logging';
 import { useAuth } from '../../context/AuthContext';
-import { CopilotKitProvider, useCopilotChat, useCopilotAgent } from '../../hooks/copilotkit';
+import { CopilotKitProvider, useCopilotChat, useCopilotAgent, SharedAgentProvider } from '../../hooks/copilotkit';
 import { createAllToolRenderers } from '../../actions/copilot/builtinToolActions';
 import { createActivityMessageRenderers } from '../../actions/copilot/activityRenderers';
 import type { UnifiedAgentState } from '../graph-state/types';
@@ -45,6 +45,7 @@ const AgentStateSync: FC<{
   agentStateRef: React.MutableRefObject<{ plans?: Record<string, any>; graphs?: Record<string, any> }>;
 }> = ({ sessionId, agentStateRef }) => {
   // Read live state from CopilotKit agent
+  // Use useCopilotAgent which supports SharedAgentProvider context
   const { state: liveAgentState } = useCopilotAgent<UnifiedAgentState>({
     agentId: 'dynamic_agent',
     initialState: { sessionId, plans: {}, graphs: {} },
@@ -68,13 +69,34 @@ const AgentStateSync: FC<{
  * Also handles session switching by resetting CopilotKit state when sessionId changes.
  * Must be rendered inside CopilotKitProvider.
  */
-const ChatInnerWithSignatureSync: FC<{
+
+// Custom comparison function to ensure ChatInnerWithSignatureSync re-renders when renderChatInner changes
+const chatInnerWithSignatureSyncCompare = (prevProps: any, nextProps: any) => {
+  // Always re-render if renderChatInner function reference changes
+  if (prevProps.renderChatInner !== nextProps.renderChatInner) {
+    return false; // false means props changed, should re-render
+  }
+  
+  // Check if sessionId changed
+  if (prevProps.sessionId !== nextProps.sessionId) {
+    return false;
+  }
+  
+  // For other props, use default shallow comparison
+  return (
+    prevProps.onSignatureChange === nextProps.onSignatureChange &&
+    prevProps.onStreamingChange === nextProps.onStreamingChange &&
+    prevProps.agentStateRef === nextProps.agentStateRef
+  );
+};
+
+const ChatInnerWithSignatureSyncComponent = ({ sessionId, onSignatureChange, onStreamingChange, renderChatInner, agentStateRef }: {
   sessionId: string;
   onSignatureChange: (signature: string) => void;
   onStreamingChange: (isStreaming: boolean) => void;
   renderChatInner: () => React.ReactNode;
   agentStateRef: React.MutableRefObject<{ plans?: Record<string, any>; graphs?: Record<string, any> }>;
-}> = ({ sessionId, onSignatureChange, onStreamingChange, renderChatInner, agentStateRef }) => {
+}) => {
   const { messages, isLoading, reset } = useCopilotChat();
   const prevSessionIdRef = useRef(sessionId);
   // CRITICAL FIX: Stable signature ref to prevent infinite loops
@@ -86,7 +108,6 @@ const ChatInnerWithSignatureSync: FC<{
   // clearing messages on session switch
   useEffect(() => {
     if (prevSessionIdRef.current !== sessionId) {
-      debug.log(`[ChatInnerWithSignatureSync] Session changed: ${prevSessionIdRef.current?.slice(0, 8)} -> ${sessionId.slice(0, 8)}, resetting messages`);
       prevSessionIdRef.current = sessionId;
       // Reset CopilotKit's internal message state
       reset();
@@ -124,18 +145,24 @@ const ChatInnerWithSignatureSync: FC<{
     }
   }, [messages, onSignatureChange]);
 
+  const chatInnerElement = renderChatInner();
+
   return (
     <>
       <AgentStateSync sessionId={sessionId} agentStateRef={agentStateRef} />
-      {renderChatInner()}
+      {chatInnerElement}
     </>
   );
 };
+
+const ChatInnerWithSignatureSync = memo(ChatInnerWithSignatureSyncComponent, chatInnerWithSignatureSyncCompare);
+ChatInnerWithSignatureSync.displayName = 'ChatInnerWithSignatureSync';
 
 interface ChatSessionContainerProps {
   sessionId: string;
   isLight: boolean;
   publicApiKey: string;
+  initialMetadata?: SessionMetadata | null;
   isActive?: boolean;
   contextMenuMessage?: string | null;
   onMessagesCountChange?: (sessionId: string, count: number) => void;
@@ -153,11 +180,65 @@ interface ChatSessionContainerProps {
  * Manages content, tabs, messages, and panel visibility
  * Split from the original ChatSession.tsx for better maintainability
  */
+// ================================================================================
+// MEMOIZED PROVIDER TREE
+// ================================================================================
+/**
+ * A specialized component that memoizes the entire CopilotKit provider tree.
+ * This is CRITICAL to prevent the 20+ parent re-renders from reaching CopilotKit,
+ * which stops the "context pulse" and ensures useAgent is only called once.
+ */
+/**
+ * THE CORE FIX: A separate component for the CopilotKit and SharedAgent providers.
+ * This component is HEAVILY memoized to ensure it NEVER re-renders unless the connection 
+ * parameters (sessionId or headers) actually change.
+ */
+const ChatSessionProviderTree = memo(({ 
+  sessionId, 
+  copilotHeaders, 
+  dynamicAgentStateRef,
+  toolRenderers,
+  activityRenderers,
+  children
+}: any) => {
+  // CRITICAL: Use sessionId as key to ensure CopilotKitProvider only mounts once per session
+  // This prevents it from re-initializing connections when headers change
+  return (
+    <CopilotKitProvider
+      key={`copilot-provider-${sessionId}`}
+      runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
+      headers={copilotHeaders}
+      showDevConsole={false}
+      renderToolCalls={toolRenderers as any}
+      renderActivityMessages={activityRenderers as any}
+    >
+      <SharedAgentProvider key={sessionId} sessionKey={sessionId}>
+        <AgentStateSync sessionId={sessionId} agentStateRef={dynamicAgentStateRef} />
+        {children}
+      </SharedAgentProvider>
+    </CopilotKitProvider>
+  );
+}, (prev, next) => {
+  // Check if children changed - this is critical because ChatInnerWithSignatureSync
+  // receives renderChatInner as a prop, and when selectedPageURLs changes,
+  // renderChatInner is recreated, which should trigger a re-render
+  const childrenChanged = prev.children !== next.children;
+  
+  return (
+    prev.sessionId === next.sessionId &&
+    prev.copilotHeaders === next.copilotHeaders &&
+    prev.toolRenderers === next.toolRenderers &&
+    prev.activityRenderers === next.activityRenderers &&
+    !childrenChanged // Re-render if children changed
+  );
+});
+
 export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   ({
     sessionId,
     isLight,
     publicApiKey,
+    initialMetadata = null,
     isActive = true,
     contextMenuMessage = null,
     onMessagesCountChange,
@@ -167,16 +248,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     onReady,
     onMessagesLoadingChange,
   }) => {
-    // ================================================================================
-    // RENDER TRACKING
-    // ================================================================================
-    const renderCountRef = useRef(0);
-    renderCountRef.current += 1;
-    // debug.log(`[ChatSessionContainer] 🔄 RENDER #${renderCountRef.current} for session ${sessionId.slice(0, 8)}`, {
-    //   isActive,
-    //   timestamp: new Date().toISOString(),
-    // });
-
     // Removed: const { sessions } = useSessionStorageDB();
     // This was causing unnecessary re-renders on every session update.
     // Agent/model loading is now handled by useSessionData hook.
@@ -214,11 +285,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
 
       if (prevSessionIdRef.current && prevSessionIdRef.current !== sessionId) {
-        debug.log(`[ChatSessionContainer] ========== SESSION SWITCHED ==========`);
-        debug.log(`[ChatSessionContainer] From: ${prevSessionIdRef.current.slice(0, 8)}`);
-        debug.log(`[ChatSessionContainer] To: ${sessionId.slice(0, 8)}`);
-        debug.log(`[ChatSessionContainer] Resetting message count and agent state`);
-
         // OPTIMIZATION: Batch state updates using startTransition to reduce re-renders
         React.startTransition(() => {
           setUserMessagesCount(0);
@@ -231,12 +297,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
             graphs: {},
           });
         });
-
-        debug.log(`[ChatSessionContainer] Session switch complete`);
-      } else if (!prevSessionIdRef.current) {
-        debug.log(`[ChatSessionContainer] ========== INITIAL SESSION MOUNT ==========`);
-        debug.log(`[ChatSessionContainer] Session ID: ${sessionId.slice(0, 8)}`);
-        debug.log(`[ChatSessionContainer] isActive: ${isActive}`);
       }
       prevSessionIdRef.current = sessionId;
     }, [sessionId]);
@@ -260,7 +320,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       isLoadingMetadata,
       isLoadingFromDB,
       persistUsageStats,
-    } = useSessionData(sessionId, isActive);
+    } = useSessionData(sessionId, isActive, initialMetadata);
 
     // Ref to hold the setDynamicAgentState from ChatInner (via useAgentStateManagement)
     // This allows activity renderers to update the CopilotKit agent state directly
@@ -270,7 +330,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     // This only updates the container's local state for persistence - it does NOT call setDynamicAgentState
     const handleAgentStepStateChange = useCallback(
       (state: AgentStepState) => {
-        debug.log('[ChatSessionContainer] Agent state changed, updating container state for persistence');
         setCurrentAgentStepStateInternal(state);
       },
       [setCurrentAgentStepStateInternal],
@@ -282,11 +341,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       (state: AgentStepState) => {
         if (setDynamicAgentStateRef.current) {
           // Use the CopilotKit agent state setter from ChatInner
-          debug.log('[ChatSessionContainer] Activity renderer updating state via setDynamicAgentState');
           setDynamicAgentStateRef.current(state);
         } else {
           // Fallback to container state (used during initial hydration)
-          debug.log('[ChatSessionContainer] Fallback to setCurrentAgentStepStateInternal (ref not ready)');
           setCurrentAgentStepStateInternal(state);
         }
       },
@@ -296,7 +353,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     // Wrap setters to maintain existing API
     const setSelectedAgent = useCallback(
       (agent: string) => {
-        debug.log(`[ChatSessionContainer] User changed agent to: ${agent}`);
         setSelectedAgentInternal(agent);
       },
       [setSelectedAgentInternal],
@@ -304,25 +360,15 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
 
     const setSelectedModel = useCallback(
       (model: string) => {
-        debug.log(`[ChatSessionContainer] User changed model to: ${model}`);
         setSelectedModelInternal(model);
       },
       [setSelectedModelInternal],
     );
 
     // Log when agent/model selections change
-    useEffect(() => {
-      debug.log(`[ChatSessionContainer] Agent/Model state for session ${sessionId.slice(0, 8)}:`, {
-        selectedAgent: selectedAgent || '(empty)',
-        selectedModel: selectedModel || '(empty)',
-        isAgentAndModelSelected: selectedAgent !== '' && selectedModel !== '',
-      });
-    }, [selectedAgent, selectedModel, sessionId]);
-
     // Clear agent and model selections when there's no active team
     useEffect(() => {
       if (!organization?.id || !activeTeam) {
-        debug.log(`[ChatSessionContainer] Clearing agent/model for session ${sessionId.slice(0, 8)} - no org/team`);
         setSelectedAgentInternal('');
         setSelectedModelInternal('');
       }
@@ -356,17 +402,37 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const [latestDOMUpdate, setLatestDOMUpdate] = useState<any>(null);
 
     // Multi-page context: Selected pages for agent context
-    const [selectedPageURLs, setSelectedPageURLs] = useState<string[]>([]);
+    const [selectedPageURLs, setSelectedPageURLsState] = useState<string[]>([]);
+    const selectedPageURLsRef = useRef(selectedPageURLs);
+    selectedPageURLsRef.current = selectedPageURLs;
+    
+    const setSelectedPageURLs = useCallback((newSelection: string[] | ((prev: string[]) => string[])) => {
+      setSelectedPageURLsState(newSelection);
+    }, []);
 
     // Workspace context: Selected notes and credentials for agent context
-    const [selectedNotes, setSelectedNotes] = useState<any[]>([]);
-    const [selectedCredentials, setSelectedCredentials] = useState<any[]>([]);
+    const [selectedNotes, setSelectedNotesState] = useState<any[]>([]);
+    const selectedNotesRef = useRef(selectedNotes);
+    selectedNotesRef.current = selectedNotes;
+    
+    const [selectedCredentials, setSelectedCredentialsState] = useState<any[]>([]);
+    const selectedCredentialsRef = useRef(selectedCredentials);
+    selectedCredentialsRef.current = selectedCredentials;
+    
+    const setSelectedNotes = useCallback((newSelection: any[] | ((prev: any[]) => any[])) => {
+      setSelectedNotesState(newSelection);
+    }, []);
+    
+    const setSelectedCredentials = useCallback((newSelection: any[] | ((prev: any[]) => any[])) => {
+      setSelectedCredentialsState(newSelection);
+    }, []);
 
     // Plans and Graphs panels
     const [showPlansPanel, setShowPlansPanel] = useState(false);
     const [showGraphsPanel, setShowGraphsPanel] = useState(false);
     const [panelWidth, setPanelWidth] = useState(384); // Track actual panel width for dynamic resizing
     const dynamicAgentStateRef = useRef<{ plans?: Record<string, any>; graphs?: Record<string, any> }>({ plans: {}, graphs: {} });
+
 
     // Tab management
     const [currentTabId, setCurrentTabId] = useState<number | null>(null);
@@ -428,7 +494,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       isActive,
       onVisibilityChange: isVisible => {
         if (!isVisible) {
-          // debug.log(ts(), '[ChatSessionContainer] Panel hidden, clearing content cache');
           try {
             clearCache();
           } catch {}
@@ -459,7 +524,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           if (shouldSkipFocus) {
             if (!isPanelInteractive) {
               setIsPanelInteractive(true);
-              // debug.log(ts(), '[ChatSessionContainer] User clicked in panel, marking as interactive (no auto-focus)');
             }
             return;
           }
@@ -470,11 +534,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
 
         if (wasInactive) {
           setIsPanelInteractive(true);
-          // debug.log(ts(), '[ChatSessionContainer] User clicked in panel, marking as interactive');
 
           // Trigger content refresh when becoming interactive (handles tab changes while panel was inactive)
           if (currentTabId) {
-            // debug.log(ts(), '[ChatSessionContainer] Triggering content refresh on interaction');
             fetchFreshPageContent(false, currentTabId);
           }
 
@@ -488,44 +550,33 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
             const input = document.querySelector('.copilotKitInput textarea') as HTMLTextAreaElement;
             if (input && input.offsetParent !== null) {
               input.focus();
-              // debug.log(ts(), '[ChatSessionContainer] ✅ Auto-focused chat input');
             }
           }, TIMING_CONSTANTS.AUTO_FOCUS_DELAY);
         }
       },
       onPanelBlur: () => {
-        // debug.log(ts(), '[ChatSessionContainer] Panel lost focus');
       },
     });
 
     // Message persistence
     const {
-      storedMessages,
-      storedFilteredMessagesCount,
-      setStoredMessages,
-      handleSaveMessages,
-      handleLoadMessages,
-      saveMessagesToStorage,
-      isHydrating,
       hydrationCompleted,
     } = useMessagePersistence({
       sessionId,
       isActive,
       isPanelVisible,
-      isStreaming: copilotIsStreaming,
-      saveMessagesRef,
-      restoreMessagesRef,
       resetChatRef,
     });
     const readySignalTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const hasSignaledReadyRef = useRef(false);
 
-    // Notify parent when messages are loading
+    // Notify parent when UI readiness changes (replaces isHydrating)
     useEffect(() => {
       if (onMessagesLoadingChange) {
-        onMessagesLoadingChange(sessionId, isHydrating);
+        // Invert hydrationCompleted: loading = !ready
+        onMessagesLoadingChange(sessionId, !hydrationCompleted);
       }
-    }, [sessionId, isHydrating, onMessagesLoadingChange]);
+    }, [sessionId, hydrationCompleted, onMessagesLoadingChange]);
 
     // Handle session ID changes gracefully without full remount
     useEffect(() => {
@@ -539,30 +590,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
 
         const runtimeHasMessages = Boolean(messagesSignatureRef.current);
 
-        if (isActive) {
-          if (runtimeHasMessages) {
-            debug.log('[ChatSessionContainer] Runtime already has messages, skipping storage reload');
-            // Sync stored messages asynchronously to keep metadata accurate
-            setTimeout(() => {
-              const fn = saveMessagesRef.current;
-              if (!fn) {
-                return;
-              }
-              try {
-                const data = fn();
-                const allMessages = (data?.allMessages ?? []) as any[];
-                if (allMessages.length > 0) {
-                  void saveMessagesToStorage(allMessages as any);
-                }
-              } catch (error) {
-                debug.warn('[ChatSessionContainer] Failed to sync runtime messages to storage', error);
-              }
-            }, 0);
-          } else {
-            debug.log('[ChatSessionContainer] Runtime empty, loading messages from storage');
-            handleLoadMessages();
-          }
-        }
+        // With CopilotKit v1.50, messages are automatically loaded from server
+        // No manual loading/saving needed
 
         // Removed: Duplicate agent/model loading from sessions array
         // This is now handled by useSessionData hook which loads from IndexedDB
@@ -588,8 +617,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       isActive,
       // Removed: sessions (no longer needed, reduces re-renders)
       messagesSignature,
-      handleLoadMessages,
-      saveMessagesToStorage,
     ]);
 
     useEffect(() => {
@@ -600,7 +627,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
 
       if (!hydrationCompleted) {
         debug.log(
-          '[ChatSessionContainer] Runtime signature detected but hydration not complete; waiting before marking counter ready',
+          '[ChatSessionContainer] Runtime signature detected but UI not ready yet; waiting before marking counter ready',
           { sessionId: sessionId.slice(0, 8), signature },
         );
         return;
@@ -609,15 +636,12 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       const awaitingCount = Boolean(onMessagesCountChange) && !hasReportedInitialCountRef.current;
       if (awaitingCount) {
         debug.log(
-          '[ChatSessionContainer] Hydration complete but waiting for message count synchronization before marking ready',
+          '[ChatSessionContainer] UI ready but waiting for message count synchronization before marking ready',
           { sessionId: sessionId.slice(0, 8) },
         );
         return;
       }
 
-      debug.log('[ChatSessionContainer] Hydration complete with runtime signature; marking counter ready', {
-        sessionId: sessionId.slice(0, 8),
-      });
       setIsCounterReady(true);
     }, [messagesSignature, isCounterReady, hydrationCompleted, onMessagesCountChange, sessionId]);
 
@@ -654,6 +678,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
 
       const signalReady = (reason: 'counter' | 'hydration') => {
+      // If session is already ready, skip the signal check
+      // This allows re-signaling when switching between mounted sessions
+      if (hasSignaledReadyRef.current && reason === 'hydration' && hasReportedInitialCountRef.current) {
+        onReady?.(sessionId);
+        return;
+      }
+
         if (hasSignaledReadyRef.current) {
           return;
         }
@@ -678,10 +709,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
 
       if (hydrationCompleted) {
         if (!hydrationReadyTimeoutRef.current) {
+          // If we are already ready and just became active, signal immediately (0ms)
+          // Otherwise use the fallback delay for cold mounts
+          const delay = hasReportedInitialCountRef.current ? 0 : HYDRATION_READY_FALLBACK_DELAY;
           hydrationReadyTimeoutRef.current = setTimeout(() => {
             hydrationReadyTimeoutRef.current = null;
             signalReady('hydration');
-          }, HYDRATION_READY_FALLBACK_DELAY);
+          }, delay);
         }
       } else if (hydrationReadyTimeoutRef.current) {
         clearTimeout(hydrationReadyTimeoutRef.current);
@@ -788,24 +822,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
     }, [embeddingError]);
 
-    // Log embedding worker state changes (only major state changes, not every progress update)
-    useEffect(() => {
-      // Always log initialization state for debugging
-      debug.log(ts(), '[ChatSessionContainer] 📊 Embedding worker state:', {
-        isInitialized: isEmbeddingInitialized,
-        isInitializing: isEmbeddingInitializing,
-        hasError: !!embeddingError,
-      });
-
-      // Only log when initialization state changes or errors occur
-      if (embeddingError) {
-        debug.error(ts(), '❌ [ChatSessionContainer] Embedding Error:', embeddingError.message);
-      } else if (isEmbeddingInitialized && !isEmbeddingInitializing) {
-        debug.log(ts(), '[ChatSessionContainer] ✅ Embedding worker ready and initialized');
-      } else if (isEmbeddingInitializing) {
-        debug.log(ts(), '[ChatSessionContainer] ⏳ Embedding worker initializing...');
-      }
-    }, [isEmbeddingInitialized, isEmbeddingInitializing, embeddingError]);
 
     // Derived state for backward compatibility (moved here to avoid "use before declaration" error)
     const currentPageContent = contentState.current || contentState.previous;
@@ -873,6 +889,15 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       sessionId,
     });
 
+    // Compute mount decision once per render
+    const hasValidSelection = useMemo(() => 
+      selectedAgent && selectedModel && selectedAgent !== '' && selectedModel !== '',
+      [selectedAgent, selectedModel]
+    );
+    const shouldShowLoading = useMemo(() => 
+      isLoadingMetadata || !hasValidSelection,
+      [isLoadingMetadata, hasValidSelection]
+    );
 
     // Enabled frontend tools hook - fetches which frontend tools are enabled for this agent
     const { enabledFrontendTools, isLoading: isLoadingFrontendTools } = useEnabledFrontendTools({
@@ -894,13 +919,11 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
 
     // Memoize agent/model change handlers
     const handleAgentChange = useCallback((agent: string) => {
-      debug.log(`[AGENT_MODEL_SYNC] User changed agent to: ${agent}`);
       isUserInitiatedChange.current = true; // Mark as user-initiated
       setSelectedAgent(agent);
     }, []);
 
     const handleModelChange = useCallback((model: string) => {
-      debug.log(`[AGENT_MODEL_SYNC] User changed model to: ${model}`);
       isUserInitiatedChange.current = true; // Mark as user-initiated
       setSelectedModel(model);
     }, []);
@@ -911,15 +934,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       // ONLY save if this was a user-initiated change
       // DB loads, session switches, and initial mounts should NEVER trigger saves
       if (!isUserInitiatedChange.current) {
-        // Reduced log level to avoid noise for expected behavior
-        // debug.log(`[AGENT_MODEL_SYNC] Skipping save - not a user-initiated change for session ${sessionId}`);
         return;
       }
-
-      debug.log(`[AGENT_MODEL_SYNC] Saving agent/model to DB for session ${sessionId}:`, {
-        agent: selectedAgent,
-        model: selectedModel,
-      });
 
       // Debounce the save operation
       const timeoutId = setTimeout(() => {
@@ -947,8 +963,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
      * Used by the AI agent's refreshPageContent action
      */
     const triggerManualRefreshWithEmbeddingWait = useCallback(async () => {
-      debug.log(ts(), '[ChatSessionContainer] Triggering manual refresh with embedding wait...');
-
       // Trigger the refresh
       await triggerManualRefresh();
 
@@ -965,16 +979,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       const maxFinishWait = 30000;
       const startTime = Date.now();
       while (embeddingActiveRef.current && Date.now() - startTime < maxFinishWait) {
-        debug.log(ts(), '[ChatSessionContainer] Waiting for embeddings to complete...');
         await new Promise(resolve => setTimeout(resolve, 500));
       }
-
-      if (embeddingActiveRef.current) {
-        debug.log(ts(), '[ChatSessionContainer]  Embeddings still processing after timeout');
-      } else {
-        debug.log(ts(), '[ChatSessionContainer] Embeddings finished');
-      }
-    }, [triggerManualRefresh, isEmbedding, isEmbeddingProcessing]);
+    }, [triggerManualRefresh]);
 
     // Auto-refresh content when panel becomes active (visible or user interacts)
     const previousIsPanelVisibleRef = useRef(isPanelVisible);
@@ -1019,8 +1026,12 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           }}
           onUsageClick={() => setIsUsagePopupOpen(true)}
           currentPageUrl={managedTabUrl}
-          onPlansClick={() => setShowPlansPanel(true)}
-          onGraphsClick={() => setShowGraphsPanel(true)}
+          onPlansClick={() => {
+            setShowPlansPanel(true);
+          }}
+          onGraphsClick={() => {
+            setShowGraphsPanel(true);
+          }}
         />
       ),
       [
@@ -1051,14 +1062,12 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const totalMessagesCount = userMessagesCount + assistantMessagesCount;
     
     useEffect(() => {
-      debug.log(`[ChatSessionContainer] Message count effect triggered for session ${sessionId}:`, {
-        userMessagesCount,
-        assistantMessagesCount,
-        totalMessagesCount,
-        hydrationCompleted,
-        hasReportedInitialCount: hasReportedInitialCountRef.current,
-        willReport: hydrationCompleted && !hasReportedInitialCountRef.current,
-      });
+      // Only log when there's an actual change or significant state transition
+      const shouldLog = hydrationCompleted !== (hasReportedInitialCountRef.current || false) ||
+                       totalMessagesCount !== lastReportedCountRef.current;
+      
+      if (shouldLog) {
+      }
 
       if (!onMessagesCountChange) return;
 
@@ -1075,7 +1084,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
 
         // Signal that counter is stable - this will trigger skeleton to hide
         setIsCounterReady(true);
-        debug.log(`[ChatSessionContainer] Counter is stable for session ${sessionId}`);
       } else if (hydrationCompleted && hasReportedInitialCountRef.current) {
         // Grace period: Allow count changes within first 500ms after initial report (during hydration settling)
         const timeSinceInitialReport = Date.now() - initialReportTimeRef.current;
@@ -1084,20 +1092,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         // Special case: Always report when count changes significantly
         // This handles: 1) user deleted all messages (0), 2) force-restore after failed clear
         if (totalMessagesCount !== lastReportedCountRef.current) {
-          debug.log(
-            `[ChatSessionContainer] Reporting count change: ${lastReportedCountRef.current} → ${totalMessagesCount} for session ${sessionId}`,
-          );
           onMessagesCountChange(sessionId, totalMessagesCount);
           lastReportedCountRef.current = totalMessagesCount;
           return;
-        }
-
-        // Only log if count changed significantly AND we're past the grace period
-        const countDiff = Math.abs(totalMessagesCount - (lastReportedCountRef.current || 0));
-        if (countDiff > 5 && !isInGracePeriod) {
-          debug.warn(
-            `[ChatSessionContainer] Significant message count change AFTER initial report (BLOCKED): ${totalMessagesCount} for session ${sessionId.slice(0, 8)} (diff: ${countDiff})`,
-          );
         }
 
         // Update last reported count even during grace period (for future comparisons)
@@ -1123,19 +1120,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       }
     }, [onRegisterResetFunction, sessionId]);
 
-    // Register save function with parent when available
-    useEffect(() => {
-      if (onRegisterSaveFunction && handleSaveMessages) {
-        onRegisterSaveFunction(sessionId, handleSaveMessages);
-      }
-    }, [onRegisterSaveFunction, sessionId, handleSaveMessages]);
-
-    // Register load function with parent when available
-    useEffect(() => {
-      if (onRegisterLoadFunction && handleLoadMessages) {
-        onRegisterLoadFunction(sessionId, handleLoadMessages);
-      }
-    }, [onRegisterLoadFunction, sessionId, handleLoadMessages]);
+    // Note: Save/Load functions removed - CopilotKit v1.50 handles persistence automatically
 
     // Callback to update message counts (user and assistant separately)
     const handleSetMessageCounts = useCallback(
@@ -1165,41 +1150,57 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       [],
     );
 
-    // V2 CopilotKitProvider configuration
-    const copilotHeaders = useMemo(() => ({
-      'x-copilot-agent-type': activeAgent || '',
-      'x-copilot-model-type': activeModel || '',
+    // Consolidation: Track stable headers per session to prevent redundant reconnections
+    const sessionHeadersRef = useRef<Map<string, Record<string, string>>>(new Map());
+    
+    const copilotHeaders = useMemo(() => {
+      if (!sessionId) return {};
+
+      // Prepare basic headers
+      const nextHeaders: Record<string, string> = {
       'x-copilot-thread-id': sessionId,
-      ...(organization?.id ? { 'x-copilot-organization-id': organization.id } : {}),
-      ...(activeTeam ? { 'x-copilot-team-id': activeTeam } : {}),
-    }), [activeAgent, activeModel, sessionId, organization?.id, activeTeam]);
+      };
+      
+      // Only add agent/model when both are selected to avoid intermediate "half-loaded" states
+      if (selectedAgent && selectedModel && selectedAgent !== '' && selectedModel !== '') {
+        nextHeaders['x-copilot-agent-type'] = selectedAgent;
+        nextHeaders['x-copilot-model-type'] = selectedModel;
+      
+        if (organization?.id) nextHeaders['x-copilot-organization-id'] = organization.id;
+        if (activeTeam) nextHeaders['x-copilot-team-id'] = activeTeam;
+      }
+      
+      const cachedHeaders = sessionHeadersRef.current.get(sessionId);
+      
+      // Reference Stability Check: Only update if the CONTENT actually changed
+      const hasChanged = 
+        !cachedHeaders ||
+        Object.keys(nextHeaders).length !== Object.keys(cachedHeaders).length ||
+        Object.entries(nextHeaders).some(([k, v]) => cachedHeaders[k] !== v);
+
+      if (hasChanged) {
+        sessionHeadersRef.current.set(sessionId, nextHeaders);
+        return nextHeaders;
+      }
+      
+      return cachedHeaders;
+    }, [selectedAgent, selectedModel, sessionId, organization?.id, activeTeam]);
 
     // V2: Tool renderers - create once and keep stable
-    // ActionStatus reads theme from storage directly
-    const toolRenderersRef = useRef<ReturnType<typeof createAllToolRenderers> | null>(null);
-    if (!toolRenderersRef.current) {
-      toolRenderersRef.current = createAllToolRenderers({ clipText });
-    }
+    const toolRenderers = useMemo(() => createAllToolRenderers({ clipText }), [/* static */]);
 
     // V2: Activity message renderers - recreate when session changes
-    // Components now read theme from storage directly, so no need to recreate on theme change
-    const lastActivitySessionRef = useRef<string | null>(null);
-    const activityRenderersRef = useRef<ReturnType<typeof createActivityMessageRenderers> | null>(null);
-    
-    // Recreate activity renderers only when session changes
-    if (
-      !activityRenderersRef.current || 
-      lastActivitySessionRef.current !== sessionId
-    ) {
-      activityRenderersRef.current = createActivityMessageRenderers({
+    const activityRenderers = useMemo(() => createActivityMessageRenderers({
         sessionId,
         setDynamicAgentState: setCurrentAgentStepState,
-      });
-      lastActivitySessionRef.current = sessionId;
-    }
+    }), [sessionId]);
 
     const renderChatInner = useCallback(
-      () => (
+      () => {
+        // CRITICAL FIX: Use ref to get the latest selectedPageURLs value
+        // This ensures we always use the current state, not a stale closure value
+        const currentSelectedPageURLs = selectedPageURLsRef.current;
+        return (
         <ChatInner
           // Key only includes session - agent/model changes are handled via props/headers
           // This prevents remounts when switching agents/models
@@ -1207,14 +1208,12 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           sessionId={sessionId}
           currentPageContent={currentPageContent}
           pageContentEmbedding={pageContentEmbeddingRef.current}
-          latestDOMUpdate={latestDOMUpdate}
           dbTotals={dbTotals}
-          selectedPageURLs={selectedPageURLs}
+          selectedPageURLs={currentSelectedPageURLs}
           currentPageURL={currentPageContent?.url || null}
           onPagesChange={setSelectedPageURLs}
           themeColor={themeColor}
           setThemeColor={setThemeColor}
-          saveMessagesToStorage={saveMessagesToStorage}
           setMessageCounts={handleSetMessageCounts}
           saveMessagesRef={saveMessagesRef}
           restoreMessagesRef={restoreMessagesRef}
@@ -1234,12 +1233,13 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           organizationId={organization?.id || undefined}
           teamId={activeTeam || undefined}
           enabledFrontendTools={enabledFrontendTools}
-          selectedNotes={selectedNotes}
-          selectedCredentials={selectedCredentials}
+          selectedNotes={selectedNotesRef.current}
+          selectedCredentials={selectedCredentialsRef.current}
           onNotesChange={setSelectedNotes}
           onCredentialsChange={setSelectedCredentials}
         />
-      ),
+        );
+      },
       [
         activeAgent,
         activeModel,
@@ -1250,9 +1250,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         currentPageContent,
         dbTotals,
         enabledFrontendTools,
-        latestDOMUpdate,
         organization?.id,
-        saveMessagesToStorage,
         selectedAgent,
         selectedModel,
         selectedPageURLs,
@@ -1305,6 +1303,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         )}
 
         {/* Chat container with panels */}
+        {/* Main container with relative positioning for panels */}
         <div className="relative flex flex-1 flex-col overflow-hidden">
           {/* Note: Agent switching modal removed - switching is now instant without remount */}
 
@@ -1318,20 +1317,39 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                 marginRight: (showPlansPanel || showGraphsPanel) ? `${panelWidth}px` : '0px',
               } as CSSProperties
             }>
-            {/* CRITICAL FIX: Always render CopilotKitProvider to prevent unmount/remount cycles
-                Unmounting causes all 9 useAgent() connections to disconnect and reconnect,
-                which can trigger infinite loops and rate limiting (429 errors).
-                Instead, conditionally render children inside the provider. */}
-            <CopilotKitProvider
-              key="copilot-provider-stable"
-              runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
-              headers={copilotHeaders}
-              showDevConsole={false}
-              renderToolCalls={toolRenderersRef.current as any}
-              renderActivityMessages={activityRenderersRef.current as any}
-            >
-              {activeAgent && activeModel ? (
-                <>
+            {/* Defer mounting CopilotKit until metadata is loaded AND we have valid agent/model.
+                This prevents redundant connections during initialization (default -> target agent). */}
+            {shouldShowLoading ? (
+              <div className="relative flex flex-1 flex-col overflow-hidden items-center justify-center">
+                <div className="text-center p-6">
+                  <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                  <p className={isLight ? 'text-gray-600 font-medium' : 'text-gray-300 font-medium'}>
+                    Loading session...
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <ChatSessionProviderTree
+                sessionId={sessionId}
+                copilotHeaders={copilotHeaders}
+                dynamicAgentStateRef={dynamicAgentStateRef}
+                toolRenderers={toolRenderers}
+                activityRenderers={activityRenderers}
+              >
+                <div className="relative flex flex-1 flex-col overflow-hidden h-full">
+                  {/* Selection Overlay - only visible when agent/model not selected */}
+                  {(!selectedAgent || !selectedModel) && (
+                    <div className={`absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm ${isLight ? 'bg-white/80' : 'bg-gray-900/80'}`}>
+                      <div className="text-center p-6">
+                        <p className={isLight ? 'text-gray-600 font-medium' : 'text-gray-300 font-medium'}>
+                          {!selectedAgent || !selectedModel 
+                            ? 'Select an agent and model to continue' 
+                            : 'Loading agent configuration...'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   <ChatInnerWithSignatureSync
                     sessionId={sessionId}
                     onSignatureChange={handleMessagesSignatureChange}
@@ -1339,42 +1357,55 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                     renderChatInner={renderChatInner}
                     agentStateRef={dynamicAgentStateRef}
                   />
+                </div>
+              </ChatSessionProviderTree>
+              )}
+          </div>
                   
-                  {/* Plans and Graphs Panels - positioned absolutely within chat container, inside CopilotKit context */}
+          {/* 
+            Plans and Graphs Panels - Positioned absolutely on the right, OUTSIDE the chat container
+            so they're not affected by its visibility/opacity. They overlay the entire parent container.
+            Using a portal-like approach: panels are siblings to chat container, positioned absolutely.
+          */}
+          {(showPlansPanel || showGraphsPanel) && (
+            <div 
+              className="absolute top-0 bottom-0 right-0 z-50" 
+              style={{ pointerEvents: 'none' }}
+            >
+              <div style={{ pointerEvents: 'auto', height: '100%' }}>
                   <PlansPanel
                     isLight={isLight}
                     isOpen={showPlansPanel}
-                    onClose={() => setShowPlansPanel(false)}
+                  onClose={() => {
+                    setShowPlansPanel(false);
+                  }}
                     plans={dynamicAgentStateRef.current.plans}
                     sessionId={sessionId}
-                    onPlansUpdate={(updatedPlans) => {
+                  onPlansUpdate={(updatedPlans: any) => {
                       dynamicAgentStateRef.current = {
                         ...dynamicAgentStateRef.current,
                         plans: updatedPlans,
                       };
                     }}
-                    onWidthChange={setPanelWidth}
+                  onWidthChange={(newWidth) => {
+                    setPanelWidth(newWidth);
+                  }}
                   />
                   <GraphsPanel
                     isLight={isLight}
                     isOpen={showGraphsPanel}
-                    onClose={() => setShowGraphsPanel(false)}
+                  onClose={() => {
+                    setShowGraphsPanel(false);
+                  }}
                     graphs={dynamicAgentStateRef.current.graphs}
                     sessionId={sessionId}
-                    onWidthChange={setPanelWidth}
-                  />
-                </>
-              ) : (
-                <div className="flex h-full items-center justify-center">
-                  <div className="text-center">
-                    <p className={isLight ? 'text-gray-600' : 'text-gray-400'}>
-                      {!selectedAgent || !selectedModel ? 'Select an agent and model to continue' : 'Loading agent configuration...'}
-                    </p>
+                  onWidthChange={(newWidth) => {
+                    setPanelWidth(newWidth);
+                  }}
+                />
                   </div>
                 </div>
               )}
-            </CopilotKitProvider>
-          </div>
           </div>
 
         {/* Agent and Model Selectors with Settings - Outside chat container so panels don't cover it */}
@@ -1428,13 +1459,15 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   // Custom comparison function to prevent unnecessary re-renders
   (prevProps, nextProps) => {
     // Only re-render if these specific props change
+    // OPTIMIZATION: Compare agent/model from initialMetadata to trigger updates if selection changes externally
     return (
       prevProps.sessionId === nextProps.sessionId &&
       prevProps.isLight === nextProps.isLight &&
       prevProps.publicApiKey === nextProps.publicApiKey &&
       prevProps.isActive === nextProps.isActive &&
-      prevProps.contextMenuMessage === nextProps.contextMenuMessage
-      // Note: We intentionally don't compare callback props as they're stable
+      prevProps.contextMenuMessage === nextProps.contextMenuMessage &&
+      prevProps.initialMetadata?.selectedAgent === nextProps.initialMetadata?.selectedAgent &&
+      prevProps.initialMetadata?.selectedModel === nextProps.initialMetadata?.selectedModel
     );
   },
 );

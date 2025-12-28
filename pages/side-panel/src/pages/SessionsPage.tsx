@@ -13,6 +13,10 @@ import { SessionHeader } from '../components/sessions';
 import { useSessionLoadingState } from '../hooks/useSessionLoadingState';
 import { useSessionActions } from '../hooks/useSessionActions';
 import { useSessionCache } from '../hooks/useSessionCache';
+import { CopilotKitProvider, SharedAgentProvider } from '../hooks/copilotkit';
+import { COPIOLITKIT_CONFIG } from '../constants';
+import { createAllToolRenderers } from '../actions/copilot/builtinToolActions';
+import { createActivityMessageRenderers } from '../actions/copilot/activityRenderers';
 
 // ============================================================================
 // TYPES
@@ -310,6 +314,7 @@ export const SessionsPage: React.FC<SessionsPageProps> = ({
                   sessionId={session.id}
                   isLight={isLight}
                   publicApiKey={publicApiKey}
+                  initialMetadata={session}
                   isActive={isActive}
                   contextMenuMessage={isActive ? contextMenuMessage : null}
                   onMessagesCountChange={handleMessagesCountChange}

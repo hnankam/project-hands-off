@@ -13,8 +13,7 @@
  * ================================================================================
  */
 
-import { useState, useEffect, useRef } from 'react';
-import { debug } from '@extension/shared';
+import { useEffect } from 'react';
 
 interface UseAgentSwitchingParams {
   selectedAgent: string;
@@ -27,54 +26,11 @@ export const useAgentSwitching = ({
   selectedModel,
   sessionId,
 }: UseAgentSwitchingParams) => {
-  // Track the actual agent/model being used by CopilotKit
-  const [activeAgent, setActiveAgent] = useState(selectedAgent);
-  const [activeModel, setActiveModel] = useState(selectedModel);
-
-  // Track previous values to detect changes
-  const previousAgentRef = useRef(selectedAgent);
-  const previousModelRef = useRef(selectedModel);
-  const previousSessionIdRef = useRef(sessionId);
-  const isFirstRenderRef = useRef(true);
-
-  /**
-   * Update active agent/model when selection changes.
-   * Instant update - no visual feedback needed since there's no remount.
-   */
-  useEffect(() => {
-    const agentChanged = previousAgentRef.current !== selectedAgent;
-    const modelChanged = previousModelRef.current !== selectedModel;
-    const sessionChanged = previousSessionIdRef.current !== sessionId;
-
-    // Skip logging on first render
-    if (isFirstRenderRef.current) {
-      isFirstRenderRef.current = false;
-      previousAgentRef.current = selectedAgent;
-      previousModelRef.current = selectedModel;
-      previousSessionIdRef.current = sessionId;
-      setActiveAgent(selectedAgent);
-      setActiveModel(selectedModel);
-      return;
-    }
-
-    // Update refs
-    previousAgentRef.current = selectedAgent;
-    previousModelRef.current = selectedModel;
-    previousSessionIdRef.current = sessionId;
-
-    // Update active state if there's a change
-    if (agentChanged || modelChanged || sessionChanged) {
-      if (agentChanged || modelChanged) {
-        debug.log('[useAgentSwitching] Agent/Model changed:', {
-          agent: selectedAgent,
-          model: selectedModel,
-          sessionChanged,
-        });
-      }
-      setActiveAgent(selectedAgent);
-      setActiveModel(selectedModel);
-    }
-  }, [selectedAgent, selectedModel, sessionId]);
+  // We no longer use internal state here because selectedAgent/selectedModel
+  // from useSessionData are already the source of truth.
+  // Using props directly ensures ZERO lag render cycles.
+  const activeAgent = selectedAgent;
+  const activeModel = selectedModel;
 
   return {
     activeAgent,

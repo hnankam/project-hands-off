@@ -127,29 +127,76 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
   const { messages, setMessages, reloadMessages } = useCopilotChat();
   const sessionId = useChatSessionIdSafe();
   
+  // Stabilize message content for memoization dependencies
+  const messageContentId = useMemo(() => {
+    if (!message?.content) return '';
+    if (typeof message.content === 'string') return message.content;
+    try {
+      // For multimodal content, use a stable string representation of the structure
+      return JSON.stringify(message.content);
+    } catch (e) {
+      return String(message.id || '');
+    }
+  }, [message?.id, message?.content]);
+
   // Extract attachments and text from message content
   const attachments = useMemo(() => {
     return extractAttachments(message?.content);
-  }, [message?.content]);
+  }, [messageContentId]);
   
   const textContent = useMemo(() => {
     return extractTextContent(message?.content);
-  }, [message?.content]);
+  }, [messageContentId]);
   
-  // PERFORMANCE FIX: Move findIndex computation to useMemo instead of render phase
-  // This prevents O(n) array search on every render for every message component
-  const { messageIndex, isLast } = useMemo(() => {
-    if (!messages || !message?.id) {
-      return { messageIndex: -1, isLast: false };
+  // PERFORMANCE FIX: Use ref to track message index and only update when it actually changes
+  // This prevents re-renders when assistant streams tokens (messages array reference changes but our index doesn't)
+  const cachedMessageIndexRef = React.useRef<number>(-1);
+  const cachedIsLastRef = React.useRef<boolean>(false);
+  
+  // Only recalculate index when messages length changes or message ID changes
+  const messagesLengthRef = React.useRef(messages?.length ?? 0);
+  const messageIdRef = React.useRef(message?.id);
+  
+  if (!messages || !message?.id) {
+    // If no messages or ID, we're likely the first message being rendered optimistically
+    if (cachedMessageIndexRef.current !== 0) {
+      cachedMessageIndexRef.current = 0;
+      cachedIsLastRef.current = true;
     }
+  } else {
+    const currentLength = messages.length;
+    const currentId = message.id;
+    const lengthChanged = messagesLengthRef.current !== currentLength;
+    const idChanged = messageIdRef.current !== currentId;
     
-    const index = messages.findIndex(m => m.id === message.id);
-    return {
-      messageIndex: index,
-      isLast: index >= 0 && index === messages.length - 1
-    };
-  }, [messages, message?.id, messages?.length]);
+    if (lengthChanged || idChanged || cachedMessageIndexRef.current === -1) {
+      messagesLengthRef.current = currentLength;
+      messageIdRef.current = currentId;
+      
+      const index = messages.findIndex(m => m.id === message.id);
+      
+      if (index === -1) {
+        cachedMessageIndexRef.current = currentLength;
+        cachedIsLastRef.current = true;
+      } else {
+        cachedMessageIndexRef.current = index;
+        cachedIsLastRef.current = index >= 0 && index === currentLength - 1;
+      }
+    }
+  }
   
+  const messageIndex = cachedMessageIndexRef.current;
+  const isLast = cachedIsLastRef.current;
+  
+  // Stabilize isFirstMessage using ref to prevent callback recreation
+  const isFirstMessageRef = React.useRef(messageIndex === 0);
+  if (messageIndex === 0 && !isFirstMessageRef.current) {
+    isFirstMessageRef.current = true;
+  } else if (messageIndex !== 0 && isFirstMessageRef.current) {
+    isFirstMessageRef.current = false;
+  }
+  const isFirstMessage = isFirstMessageRef.current;
+
   // Handle rerun - regenerate assistant response
   // Use refs to access latest messages without causing rerenders
   const messagesRef = React.useRef(messages);
@@ -271,15 +318,25 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
     setIsEditing(true);
   }, [setEditHistory, setEditedContent, setIsEditing]);
   
-  // Handle save edit
+  // Handle save edit - use refs to stabilize callback
   const editedContentRef = React.useRef(editedContent);
   const restPropsRef = React.useRef(restProps);
+  const setMessagesRef = React.useRef(setMessages);
+  const setIsEditingRef = React.useRef(setIsEditing);
+  const setEditHistoryRef = React.useRef(setEditHistory);
+  const setEditedContentRef = React.useRef(setEditedContent);
+  
   React.useEffect(() => {
     editedContentRef.current = editedContent;
     restPropsRef.current = restProps;
-  }, [editedContent, restProps]);
+    setMessagesRef.current = setMessages;
+    setIsEditingRef.current = setIsEditing;
+    setEditHistoryRef.current = setEditHistory;
+    setEditedContentRef.current = setEditedContent;
+  }, [editedContent, restProps, setMessages, setIsEditing, setEditHistory, setEditedContent]);
   
-  const handleSaveEdit = useCallback(() => {
+  // Create stable handlers that don't recreate on every render
+  const handleSaveEdit = React.useCallback(() => {
     const currentMessages = messagesRef.current;
     const currentMessageIndex = messageIndexRef.current;
     const currentEditedContent = editedContentRef.current;
@@ -316,22 +373,22 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
       ...updatedMessages[currentMessageIndex],
       content: newContent,
     };
-    setMessages(updatedMessages);
-    setIsEditing(false);
+    setMessagesRef.current(updatedMessages);
+    setIsEditingRef.current(false);
     
     // Call onEditMessage callback if provided
     if (currentRestProps.onEditMessage) {
       currentRestProps.onEditMessage({ message: updatedMessages[currentMessageIndex] as UserMessage });
     }
-  }, [setMessages, setIsEditing]); // Include setMessages to use latest version
+  }, []); // Empty deps - all accessed via refs
   
-  // Handle cancel edit
-  const handleCancelEdit = useCallback(() => {
-    setIsEditing(false);
-    setEditedContent('');
+  // Handle cancel edit - stable callback
+  const handleCancelEdit = React.useCallback(() => {
+    setIsEditingRef.current(false);
+    setEditedContentRef.current('');
     // Remove the last edit history entry since we're canceling
-    setEditHistory(prev => prev.slice(0, -1));
-  }, []);
+    setEditHistoryRef.current(prev => prev.slice(0, -1));
+  }, []); // Empty deps - all accessed via refs
   
   // Handle edit message callback - track in history (called after save)
   const handleEditMessage = useCallback((editProps: { message: UserMessage }) => {
@@ -349,8 +406,8 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
     }
   }, [isEditing]);
   
-  // Handle keyboard shortcuts
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  // Handle keyboard shortcuts - stable callback
+  const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       handleSaveEdit();
@@ -358,7 +415,7 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
       e.preventDefault();
       handleCancelEdit();
     }
-  }, [handleSaveEdit, handleCancelEdit]);
+  }, []); // Empty deps - handlers are stable
   
   // Construct className with theme class only (copilotKitUserMessage removed)
   const containerClassName = useMemo(() => {
@@ -410,27 +467,42 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
   // This prevents duplicate buttons since we're manually reordering
   const additionalToolbarItems = null;
   
+  // Stabilize attachments array reference to prevent callback recreation
+  const attachmentsRef = React.useRef(attachments);
+  const isEditingRef = React.useRef(isEditing);
+  const editedContentRefForRenderer = React.useRef(editedContent);
+  
+  React.useEffect(() => {
+    attachmentsRef.current = attachments;
+    isEditingRef.current = isEditing;
+    editedContentRefForRenderer.current = editedContent;
+  }, [attachments, isEditing, editedContent]);
+  
   // Custom message renderer that handles edit mode and attachments
-  const MessageRendererWithEdit = useCallback((rendererProps: { content: string; className?: string }) => {
-    const isFirst = messageIndex === 0;
-    if (isEditing) {
+  // Only recreate when actual content or state changes, not when messages array reference changes
+  const MessageRendererWithEdit = React.useCallback((rendererProps: { content: string; className?: string }) => {
+    const currentIsEditing = isEditingRef.current;
+    const currentAttachments = attachmentsRef.current;
+    const currentEditedContent = editedContentRefForRenderer.current;
+    
+    if (currentIsEditing) {
       return (
         <CustomUserMessageRenderer 
           {...rendererProps}
-          isEditing={isEditing}
-          editedContent={editedContent}
-          onContentChange={setEditedContent}
+          isEditing={currentIsEditing}
+          editedContent={currentEditedContent}
+          onContentChange={(content: string) => setEditedContentRef.current(content)}
           onSave={handleSaveEdit}
           onCancel={handleCancelEdit}
           textareaRef={textareaRef}
           onKeyDown={handleKeyDown}
-          attachments={attachments}
-          isFirstMessage={isFirst}
+          attachments={currentAttachments}
+          isFirstMessage={isFirstMessage}
         />
       );
     }
-    return <CustomUserMessageRenderer {...rendererProps} attachments={attachments} isFirstMessage={isFirst} />;
-  }, [isEditing, editedContent, handleSaveEdit, handleCancelEdit, handleKeyDown, attachments, messageIndex]);
+    return <CustomUserMessageRenderer {...rendererProps} attachments={currentAttachments} isFirstMessage={isFirstMessage} />;
+  }, [isFirstMessage, handleSaveEdit, handleCancelEdit, handleKeyDown]); // Only depend on stable values
   
   // Custom edit button that triggers edit mode
   const CustomEditButtonWithHandler = useCallback((buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>) => {
@@ -506,12 +578,6 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
 /**
  * Export with static properties copied from CopilotChatUserMessage
  * This is required for the V2 slot system to work correctly.
- * 
- * The component must have the same shape as CopilotChatUserMessage
- * including all its sub-components (Container, MessageRenderer, etc.)
- * 
- * Note: Matching CustomAssistantMessageV2 structure exactly for CopilotKit compatibility.
- * Memoization will be applied internally using useMemo/useCallback instead.
  */
 export const CustomUserMessageV2 = Object.assign(
   CustomUserMessageV2ComponentInner,
@@ -527,4 +593,3 @@ export const CustomUserMessageV2 = Object.assign(
 ) as typeof CopilotChatUserMessage;
 
 export default CustomUserMessageV2;
-

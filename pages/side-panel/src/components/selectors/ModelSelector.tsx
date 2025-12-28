@@ -29,6 +29,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
   const textRef = React.useRef<HTMLSpanElement>(null);
   const { organization, activeTeam, isLoading: authLoading } = useAuth();
   
+  // Track last fetch to prevent duplicate requests
+  const lastFetchRef = React.useRef<{ orgId: string | null; teamId: string | null }>({
+    orgId: null,
+    teamId: null,
+  });
+  
   // Get allowed models for the selected agent
   const allowedModels = React.useMemo(() => {
     if (!selectedAgent || !agents) return null;
@@ -71,6 +77,24 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
       }
       return;
     }
+
+    // Prevent duplicate fetches for the same org/team combination
+    // This prevents React StrictMode double-renders and rapid dependency changes
+    const orgId = organization.id;
+    const teamId = activeTeam;
+    const currentFetchKey = `${orgId}:${teamId}`;
+    const lastFetchKey = lastFetchRef.current.orgId && lastFetchRef.current.teamId
+      ? `${lastFetchRef.current.orgId}:${lastFetchRef.current.teamId}`
+      : null;
+    
+    if (currentFetchKey === lastFetchKey) {
+      // Already fetched for this combination, skip duplicate request
+      console.log('[ModelSelector] Skipping duplicate fetch for same org/team');
+      return;
+    }
+
+    // Update last fetch ref before making request
+    lastFetchRef.current = { orgId, teamId };
 
     const controller = new AbortController();
     let isActive = true;
@@ -200,8 +224,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ isLight, selectedM
     return () => {
       isActive = false;
       controller.abort();
+      // Reset last fetch ref on cleanup to allow re-fetch if org/team actually changes
+      // This handles the case where component unmounts and remounts with same org/team
+      lastFetchRef.current = { orgId: null, teamId: null };
     };
-  }, [organization?.id, activeTeam, authLoading, allowedModels]);
+    // Note: allowedModels is intentionally NOT in dependencies - it's only used for filtering,
+    // not for determining which models to fetch. Fetching depends only on org/team context.
+  }, [organization?.id, activeTeam, authLoading]);
 
   // Handle auto-selection when models are loaded and session is not loading
   React.useEffect(() => {

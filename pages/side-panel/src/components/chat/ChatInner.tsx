@@ -191,13 +191,11 @@ export interface ChatInnerProps {
     chunks?: Array<{ text: string; html: string; embedding: number[] }>;
     timestamp: number;
   } | null;
-  latestDOMUpdate: unknown;
   selectedPageURLs: string[];
   currentPageURL: string | null;
   onPagesChange: (urls: string[]) => void;
   themeColor: string;
   setThemeColor: (color: string) => void;
-  saveMessagesToStorage: (messages: unknown[]) => Promise<void>;
   setMessageCounts: (counts: { userCount: number; assistantCount: number }) => void;
   saveMessagesRef: React.MutableRefObject<(() => MessageData) | null>;
   restoreMessagesRef: React.MutableRefObject<((messages: unknown[]) => void) | null>;
@@ -238,13 +236,11 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // Removed: sessionTitle (was never used)
   currentPageContent,
   pageContentEmbedding,
-  latestDOMUpdate,
   selectedPageURLs,
   currentPageURL,
   onPagesChange,
   themeColor,
   setThemeColor,
-  saveMessagesToStorage,
   setMessageCounts,
   saveMessagesRef,
   restoreMessagesRef,
@@ -457,30 +453,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     }
   }, [messages.length]);
 
-  // Persist immediately when messages are removed (e.g., user deletion)
-  // NOTE: All persistence goes through useMessagePersistence.saveMessagesToStorage
-  const previousMessageCountRef = useRef(messages.length);
-
-  useEffect(() => {
-    const previousCount = previousMessageCountRef.current;
-    previousMessageCountRef.current = messages.length;
-
-    if (isLoading || messages.length >= previousCount) {
-      return;
-    }
-
-    try {
-      const data = saveMessagesRef?.current ? saveMessagesRef.current() : null;
-      const sanitizedMessages =
-        (data && Array.isArray(data.allMessages) && data.allMessages.length >= 0 ? data.allMessages : messages) ?? [];
-
-      // Always use saveMessagesToStorage (from useMessagePersistence) for persistence
-      // This ensures consistent data handling and prevents race conditions
-      void saveMessagesToStorage(sanitizedMessages as unknown[]);
-    } catch (error) {
-      debug.warn?.('[ChatInner] Failed to persist messages after deletion:', error);
-    }
-  }, [messages, isLoading, saveMessagesRef, saveMessagesToStorage]);
+  // Note: Message persistence is handled automatically by CopilotKit v1.50 via PostgresAgentRunner
+  // No manual persistence needed when messages are deleted
 
   // Comprehensive ref cleanup on session change
   useEffect(() => {
@@ -489,7 +463,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     cachedSanitizedRef.current = null;
     wasStreamingRef.current = false;
     pageDataRef.current = { embeddings: null, pageContent: null };
-    previousMessageCountRef.current = 0;
 
     debug.log('[ChatInner] Ref cleanup complete');
   }, [sessionId]);
@@ -851,8 +824,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   );
 
   // Scoped Input component - receives InputProps from CopilotChat
-  // NOTE: selectedPageURLs, onPagesChange, currentPageURL are accessed via refs to prevent
-  // component remounting when page selection changes (which would reset PagesSelector's isOpen state)
+  // NOTE: We pass selectedPageURLs directly (not via ref) so ContextSelector receives updates,
+  // but use refs for callbacks to prevent unnecessary remounts
   const ScopedInput = useMemo(() => {
     const Comp = (props: InputProps) => (
       <CustomInput
@@ -864,7 +837,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         showTaskProgress={showProgressBar}
         sessionId={sessionId}
         onToggleTaskProgress={toggleProgressBarFn}
-        selectedPageURLs={selectedPageURLsRef.current}
+        selectedPageURLs={selectedPageURLs}
         onSelectedPageURLsChange={urls => onPagesChangeRef.current?.(urls)}
         currentPageURL={currentPageURLRef.current}
       />
@@ -877,6 +850,7 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     setDynamicAgentState,
     showProgressBar,
     toggleProgressBarFn,
+    selectedPageURLs, // Include selectedPageURLs so ContextSelector receives updates
   ]);
 
   // ================================================================================
@@ -906,22 +880,9 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
       //   debug.warn?.('[ChatInner] onSubmit sanitization skipped:', e);
       // }
 
-      // ACTIVE: Auto-save shortly after submit (without sanitization)
-      setTimeout(() => {
-        try {
-          const fn = saveMessagesRef?.current;
-          if (!fn) return;
-          const data = fn();
-          const all = (data && data.allMessages) || [];
-          if (all.length > 0) {
-            void saveMessagesToStorage(all as unknown[]);
-          }
-        } catch (e) {
-          debug.warn?.('[ChatInner] Auto-save after submit failed:', e);
-        }
-      }, 100);
+      // Note: Message persistence is handled automatically by CopilotKit v1.50
     },
-    [saveMessagesRef, saveMessagesToStorage],
+    [],
   );
 
   /**
@@ -958,17 +919,14 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
           applySanitizationIfChanged(result, currentSignature, setMessages);
         }
 
-        if (all.length > 0) {
-          void saveMessagesToStorage(all as unknown[]);
-        }
+        // Note: Message persistence is handled automatically by CopilotKit v1.50
         // Note: V2 suggestions are generated automatically via useConfigureSuggestions
       } catch (e) {
-        debug.warn?.('[ChatInner] Auto-save on stop failed:', e);
+        debug.warn?.('[ChatInner] Message sanitization on stop failed:', e);
       }
     },
     [
       saveMessagesRef,
-      saveMessagesToStorage,
       cachedSanitizedRef,
       sanitizeMessages,
       setMessages,
@@ -1003,9 +961,9 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     },
   }), []);
 
-  return (
-    <ChatSessionIdProvider sessionId={sessionId}>
-      <PageSelectorProvider value={{
+
+  // Memoize context value to prevent unnecessary re-renders while ensuring updates propagate
+  const pageSelectorContextValue = useMemo(() => ({
         selectedPageURLs,
         onPagesChange,
         currentPageURL,
@@ -1019,7 +977,23 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         onNotesChange,
         onCredentialsChange,
         onFilesChange,
-      }}>
+  }), [
+    selectedPageURLs,
+    onPagesChange,
+    currentPageURL,
+    dynamicAgentState.plans,
+    dynamicAgentState.graphs,
+    selectedNotes,
+    selectedCredentials,
+    selectedFiles,
+    onNotesChange,
+    onCredentialsChange,
+    onFilesChange,
+  ]);
+
+  return (
+    <ChatSessionIdProvider sessionId={sessionId}>
+      <PageSelectorProvider value={pageSelectorContextValue}>
         {/* Conditionally add selected notes to context */}
         {selectedNotes.length > 0 && <SelectedNotesContext notes={selectedNotes} />}
         

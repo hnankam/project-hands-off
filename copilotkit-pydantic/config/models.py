@@ -154,10 +154,21 @@ def _create_model_instance(
         model_instance = GoogleModel(model_name, provider=provider)
         return model_instance, settings
         
-    elif provider_type in {'anthropic', 'anthropic_bedrock'}:
+    elif provider_type == 'anthropic':
+        # Regular Anthropic - filter out extra_headers (already applied to client)
         settings_cfg = {k: v for k, v in per_model_settings_cfg.items() if k != 'extra_headers'}
         
         settings = AnthropicModelSettings(**settings_cfg)
+        from pydantic_ai.models.anthropic import AnthropicModel
+        model_instance = AnthropicModel(model_name, provider=provider)
+        return model_instance, settings
+    
+    elif provider_type == 'anthropic_bedrock':
+        # Bedrock Anthropic - use BedrockModelSettings for Bedrock-specific fields
+        # Filter out extra_headers (already applied to AsyncAnthropicBedrock client)
+        settings_cfg = {k: v for k, v in per_model_settings_cfg.items() if k != 'extra_headers'}
+        
+        settings = BedrockModelSettings(**settings_cfg)
         from pydantic_ai.models.anthropic import AnthropicModel
         model_instance = AnthropicModel(model_name, provider=provider)
         return model_instance, settings
