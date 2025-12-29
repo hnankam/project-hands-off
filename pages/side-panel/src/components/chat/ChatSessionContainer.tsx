@@ -37,13 +37,110 @@ const clipText = (text: string, maxLength: number): string => {
 };
 
 /**
- * Helper component that syncs agent state (plans/graphs) to a ref.
+ * Wrapper component for panels that syncs updates back to CopilotKit agent state.
+ * Must be rendered inside CopilotKitProvider.
+ */
+const PanelsWrapper: FC<{
+  isLight: boolean;
+  showPlansPanel: boolean;
+  showGraphsPanel: boolean;
+  agentPlans: Record<string, any>;
+  agentGraphs: Record<string, any>;
+  sessionId: string;
+  onClosePlans: () => void;
+  onCloseGraphs: () => void;
+  onPlansUpdate: (plans: Record<string, any>) => void;
+  onGraphsUpdate: (graphs: Record<string, any>) => void;
+  onWidthChange: (width: number) => void;
+}> = ({
+  isLight,
+  showPlansPanel,
+  showGraphsPanel,
+  agentPlans,
+  agentGraphs,
+  sessionId,
+  onClosePlans,
+  onCloseGraphs,
+  onPlansUpdate,
+  onGraphsUpdate,
+  onWidthChange,
+}) => {
+  // Get agent setState to sync panel updates back to CopilotKit
+  const { state: currentAgentState, setState: setAgentState } = useCopilotAgent<UnifiedAgentState>({
+    agentId: 'dynamic_agent',
+    initialState: { sessionId, plans: {}, graphs: {} },
+  });
+
+  // Enhanced handlers that sync to both local state and CopilotKit agent state
+  // Use plain objects instead of functional updaters to avoid DataCloneError
+  const handlePlansUpdate = useCallback((updatedPlans: Record<string, any>) => {
+    // Update local state
+    onPlansUpdate(updatedPlans);
+    
+    // Sync back to CopilotKit agent state
+    if (setAgentState) {
+      setAgentState({
+        ...(currentAgentState || {}),
+        sessionId: currentAgentState?.sessionId || sessionId,
+        plans: updatedPlans,
+        graphs: currentAgentState?.graphs || {},
+      });
+    }
+  }, [onPlansUpdate, setAgentState, currentAgentState, sessionId]);
+
+  const handleGraphsUpdate = useCallback((updatedGraphs: Record<string, any>) => {
+    // Update local state
+    onGraphsUpdate(updatedGraphs);
+    
+    // Sync back to CopilotKit agent state
+    if (setAgentState) {
+      setAgentState({
+        ...(currentAgentState || {}),
+        sessionId: currentAgentState?.sessionId || sessionId,
+        plans: currentAgentState?.plans || {},
+        graphs: updatedGraphs,
+      });
+    }
+  }, [onGraphsUpdate, setAgentState, currentAgentState, sessionId]);
+
+  return (
+    <div 
+      className="absolute top-0 bottom-0 right-0 z-50" 
+      style={{ pointerEvents: 'none' }}
+    >
+      <div style={{ pointerEvents: 'auto', height: '100%' }}>
+        <PlansPanel
+          isLight={isLight}
+          isOpen={showPlansPanel}
+          onClose={onClosePlans}
+          plans={agentPlans}
+          sessionId={sessionId}
+          onPlansUpdate={handlePlansUpdate}
+          onWidthChange={onWidthChange}
+        />
+        <GraphsPanel
+          isLight={isLight}
+          isOpen={showGraphsPanel}
+          onClose={onCloseGraphs}
+          graphs={agentGraphs}
+          sessionId={sessionId}
+          onGraphsUpdate={handleGraphsUpdate}
+          onWidthChange={onWidthChange}
+        />
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Helper component that syncs agent state (plans/graphs) to a ref AND triggers parent re-render.
  * Must be rendered inside CopilotKitProvider.
  */
 const AgentStateSync: FC<{
   sessionId: string;
   agentStateRef: React.MutableRefObject<{ plans?: Record<string, any>; graphs?: Record<string, any> }>;
-}> = ({ sessionId, agentStateRef }) => {
+  onStateChange?: (plans: Record<string, any>, graphs: Record<string, any>) => void;
+}> = ({ sessionId, agentStateRef, onStateChange }) => {
   // Read live state from CopilotKit agent
   // Use useCopilotAgent which supports SharedAgentProvider context
   const { state: liveAgentState } = useCopilotAgent<UnifiedAgentState>({
@@ -51,15 +148,53 @@ const AgentStateSync: FC<{
     initialState: { sessionId, plans: {}, graphs: {} },
   });
 
-  // Sync to ref whenever it changes
+  // Track last synced state to prevent unnecessary updates
+  // Store the actual content, not just keys, to detect content changes
+  const lastSyncedPlansRef = useRef<string>('');
+  const lastSyncedGraphsRef = useRef<string>('');
+  
+  // Reset synced refs when session changes
+  useEffect(() => {
+    lastSyncedPlansRef.current = '';
+    lastSyncedGraphsRef.current = '';
+  }, [sessionId]);
+  
+  // Sync to ref whenever it changes AND notify parent
   useEffect(() => {
     if (liveAgentState) {
+      const plans = liveAgentState.plans || {};
+      const graphs = liveAgentState.graphs || {};
+      
+      // Create content signatures to detect actual changes (including nested updates)
+      const plansSignature = JSON.stringify(plans);
+      const graphsSignature = JSON.stringify(graphs);
+      
+      // Check if either plans or graphs actually changed
+      const plansChanged = plansSignature !== lastSyncedPlansRef.current;
+      const graphsChanged = graphsSignature !== lastSyncedGraphsRef.current;
+      
+      // Only update if data actually changed
+      if (!plansChanged && !graphsChanged) {
+        return;
+      }
+      
+      // Update refs with new signatures
+      if (plansChanged) {
+        lastSyncedPlansRef.current = plansSignature;
+      }
+      if (graphsChanged) {
+        lastSyncedGraphsRef.current = graphsSignature;
+      }
+      
       agentStateRef.current = {
-        plans: liveAgentState.plans || {},
-        graphs: liveAgentState.graphs || {},
+        plans,
+        graphs,
       };
+      
+      // Notify parent with the actual data to trigger re-render
+      onStateChange?.(plans, graphs);
     }
-  }, [liveAgentState, agentStateRef]);
+  }, [liveAgentState, agentStateRef, sessionId, onStateChange]);
 
   return null;
 };
@@ -147,12 +282,7 @@ const ChatInnerWithSignatureSyncComponent = ({ sessionId, onSignatureChange, onS
 
   const chatInnerElement = renderChatInner();
 
-  return (
-    <>
-      <AgentStateSync sessionId={sessionId} agentStateRef={agentStateRef} />
-      {chatInnerElement}
-    </>
-  );
+  return chatInnerElement;
 };
 
 const ChatInnerWithSignatureSync = memo(ChatInnerWithSignatureSyncComponent, chatInnerWithSignatureSyncCompare);
@@ -180,59 +310,6 @@ interface ChatSessionContainerProps {
  * Manages content, tabs, messages, and panel visibility
  * Split from the original ChatSession.tsx for better maintainability
  */
-// ================================================================================
-// MEMOIZED PROVIDER TREE
-// ================================================================================
-/**
- * A specialized component that memoizes the entire CopilotKit provider tree.
- * This is CRITICAL to prevent the 20+ parent re-renders from reaching CopilotKit,
- * which stops the "context pulse" and ensures useAgent is only called once.
- */
-/**
- * THE CORE FIX: A separate component for the CopilotKit and SharedAgent providers.
- * This component is HEAVILY memoized to ensure it NEVER re-renders unless the connection 
- * parameters (sessionId or headers) actually change.
- */
-const ChatSessionProviderTree = memo(({ 
-  sessionId, 
-  copilotHeaders, 
-  dynamicAgentStateRef,
-  toolRenderers,
-  activityRenderers,
-  children
-}: any) => {
-  // CRITICAL: Use sessionId as key to ensure CopilotKitProvider only mounts once per session
-  // This prevents it from re-initializing connections when headers change
-  return (
-    <CopilotKitProvider
-      key={`copilot-provider-${sessionId}`}
-      runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
-      headers={copilotHeaders}
-      showDevConsole={false}
-      renderToolCalls={toolRenderers as any}
-      renderActivityMessages={activityRenderers as any}
-    >
-      <SharedAgentProvider key={sessionId} sessionKey={sessionId}>
-        <AgentStateSync sessionId={sessionId} agentStateRef={dynamicAgentStateRef} />
-        {children}
-      </SharedAgentProvider>
-    </CopilotKitProvider>
-  );
-}, (prev, next) => {
-  // Check if children changed - this is critical because ChatInnerWithSignatureSync
-  // receives renderChatInner as a prop, and when selectedPageURLs changes,
-  // renderChatInner is recreated, which should trigger a re-render
-  const childrenChanged = prev.children !== next.children;
-  
-  return (
-    prev.sessionId === next.sessionId &&
-    prev.copilotHeaders === next.copilotHeaders &&
-    prev.toolRenderers === next.toolRenderers &&
-    prev.activityRenderers === next.activityRenderers &&
-    !childrenChanged // Re-render if children changed
-  );
-});
-
 export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
   ({
     sessionId,
@@ -431,7 +508,18 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const [showPlansPanel, setShowPlansPanel] = useState(false);
     const [showGraphsPanel, setShowGraphsPanel] = useState(false);
     const [panelWidth, setPanelWidth] = useState(384); // Track actual panel width for dynamic resizing
+    
+    // State for agent plans/graphs - must be state (not ref) so React re-renders panels when it changes
+    const [agentPlans, setAgentPlans] = useState<Record<string, any>>({});
+    const [agentGraphs, setAgentGraphs] = useState<Record<string, any>>({});
     const dynamicAgentStateRef = useRef<{ plans?: Record<string, any>; graphs?: Record<string, any> }>({ plans: {}, graphs: {} });
+    
+    // Memoized callback to prevent infinite loops - only updates when sessionId changes
+    const handleAgentStateChange = useCallback((plans: Record<string, any>, graphs: Record<string, any>) => {
+      // Update state with new object references to trigger re-renders
+      setAgentPlans({ ...plans }); // Create new object reference
+      setAgentGraphs({ ...graphs }); // Create new object reference
+    }, []); // Empty deps - only create once per component mount
 
 
     // Tab management
@@ -618,32 +706,6 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       // Removed: sessions (no longer needed, reduces re-renders)
       messagesSignature,
     ]);
-
-    useEffect(() => {
-      const signature = messagesSignature;
-      if (!signature || isCounterReady) {
-        return;
-      }
-
-      if (!hydrationCompleted) {
-        debug.log(
-          '[ChatSessionContainer] Runtime signature detected but UI not ready yet; waiting before marking counter ready',
-          { sessionId: sessionId.slice(0, 8), signature },
-        );
-        return;
-      }
-
-      const awaitingCount = Boolean(onMessagesCountChange) && !hasReportedInitialCountRef.current;
-      if (awaitingCount) {
-        debug.log(
-          '[ChatSessionContainer] UI ready but waiting for message count synchronization before marking ready',
-          { sessionId: sessionId.slice(0, 8) },
-        );
-        return;
-      }
-
-      setIsCounterReady(true);
-    }, [messagesSignature, isCounterReady, hydrationCompleted, onMessagesCountChange, sessionId]);
 
     useEffect(() => {
       if (!isActive) {
@@ -1150,40 +1212,24 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       [],
     );
 
-    // Consolidation: Track stable headers per session to prevent redundant reconnections
-    const sessionHeadersRef = useRef<Map<string, Record<string, string>>>(new Map());
-    
+    // Headers for CopilotKit provider - useMemo provides sufficient stability
     const copilotHeaders = useMemo(() => {
       if (!sessionId) return {};
 
-      // Prepare basic headers
-      const nextHeaders: Record<string, string> = {
+      const headers: Record<string, string> = {
       'x-copilot-thread-id': sessionId,
       };
       
       // Only add agent/model when both are selected to avoid intermediate "half-loaded" states
       if (selectedAgent && selectedModel && selectedAgent !== '' && selectedModel !== '') {
-        nextHeaders['x-copilot-agent-type'] = selectedAgent;
-        nextHeaders['x-copilot-model-type'] = selectedModel;
+        headers['x-copilot-agent-type'] = selectedAgent;
+        headers['x-copilot-model-type'] = selectedModel;
       
-        if (organization?.id) nextHeaders['x-copilot-organization-id'] = organization.id;
-        if (activeTeam) nextHeaders['x-copilot-team-id'] = activeTeam;
+        if (organization?.id) headers['x-copilot-organization-id'] = organization.id;
+        if (activeTeam) headers['x-copilot-team-id'] = activeTeam;
       }
       
-      const cachedHeaders = sessionHeadersRef.current.get(sessionId);
-      
-      // Reference Stability Check: Only update if the CONTENT actually changed
-      const hasChanged = 
-        !cachedHeaders ||
-        Object.keys(nextHeaders).length !== Object.keys(cachedHeaders).length ||
-        Object.entries(nextHeaders).some(([k, v]) => cachedHeaders[k] !== v);
-
-      if (hasChanged) {
-        sessionHeadersRef.current.set(sessionId, nextHeaders);
-        return nextHeaders;
-      }
-      
-      return cachedHeaders;
+      return headers;
     }, [selectedAgent, selectedModel, sessionId, organization?.id, activeTeam]);
 
     // V2: Tool renderers - create once and keep stable
@@ -1307,109 +1353,109 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         <div className="relative flex flex-1 flex-col overflow-hidden">
           {/* Note: Agent switching modal removed - switching is now instant without remount */}
 
-          <div
-            className={`copilot-chat-container flex flex-1 flex-col overflow-hidden ${!isLight ? 'dark' : ''} font-size-${chatFontSize} transition-opacity duration-300 transition-all`}
-            style={
-              {
-                '--copilot-kit-primary-color': themeColor,
-                opacity: isCounterReady ? 1 : 0,
-                visibility: isCounterReady ? 'visible' : 'hidden',
-                marginRight: (showPlansPanel || showGraphsPanel) ? `${panelWidth}px` : '0px',
-              } as CSSProperties
-            }>
-            {/* Defer mounting CopilotKit until metadata is loaded AND we have valid agent/model.
-                This prevents redundant connections during initialization (default -> target agent). */}
-            {shouldShowLoading ? (
-              <div className="relative flex flex-1 flex-col overflow-hidden items-center justify-center">
-                <div className="text-center p-6">
-                  <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                  <p className={isLight ? 'text-gray-600 font-medium' : 'text-gray-300 font-medium'}>
-                    Loading session...
-                  </p>
-                </div>
+          {/* Defer mounting CopilotKit until metadata is loaded AND we have valid agent/model.
+              This prevents redundant connections during initialization (default -> target agent). */}
+          {shouldShowLoading ? (
+            <div className="relative flex flex-1 flex-col overflow-hidden items-center justify-center">
+              <div className="text-center p-6">
+                <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <p className={isLight ? 'text-gray-600 font-medium' : 'text-gray-300 font-medium'}>
+                  Loading session...
+                </p>
               </div>
-            ) : (
-              <ChatSessionProviderTree
-                sessionId={sessionId}
-                copilotHeaders={copilotHeaders}
-                dynamicAgentStateRef={dynamicAgentStateRef}
-                toolRenderers={toolRenderers}
-                activityRenderers={activityRenderers}
-              >
-                <div className="relative flex flex-1 flex-col overflow-hidden h-full">
-                  {/* Selection Overlay - only visible when agent/model not selected */}
-                  {(!selectedAgent || !selectedModel) && (
-                    <div className={`absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm ${isLight ? 'bg-white/80' : 'bg-gray-900/80'}`}>
-                      <div className="text-center p-6">
-                        <p className={isLight ? 'text-gray-600 font-medium' : 'text-gray-300 font-medium'}>
-                          {!selectedAgent || !selectedModel 
-                            ? 'Select an agent and model to continue' 
-                            : 'Loading agent configuration...'}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <ChatInnerWithSignatureSync
-                    sessionId={sessionId}
-                    onSignatureChange={handleMessagesSignatureChange}
-                    onStreamingChange={handleStreamingChange}
-                    renderChatInner={renderChatInner}
-                    agentStateRef={dynamicAgentStateRef}
-                  />
-                </div>
-              </ChatSessionProviderTree>
-              )}
-          </div>
-                  
-          {/* 
-            Plans and Graphs Panels - Positioned absolutely on the right, OUTSIDE the chat container
-            so they're not affected by its visibility/opacity. They overlay the entire parent container.
-            Using a portal-like approach: panels are siblings to chat container, positioned absolutely.
-          */}
-          {(showPlansPanel || showGraphsPanel) && (
-            <div 
-              className="absolute top-0 bottom-0 right-0 z-50" 
-              style={{ pointerEvents: 'none' }}
+            </div>
+          ) : (
+            <CopilotKitProvider
+              key={`copilot-provider-${sessionId}`}
+              runtimeUrl={COPIOLITKIT_CONFIG.RUNTIME_URL}
+              headers={copilotHeaders}
+              showDevConsole={false}
+              renderToolCalls={toolRenderers as any}
+              renderActivityMessages={activityRenderers as any}
             >
-              <div style={{ pointerEvents: 'auto', height: '100%' }}>
-                  <PlansPanel
+              <SharedAgentProvider key={sessionId} sessionKey={sessionId}>
+                <AgentStateSync 
+                  sessionId={sessionId} 
+                  agentStateRef={dynamicAgentStateRef}
+                  onStateChange={handleAgentStateChange}
+                />
+                
+                {/* Wrapper for chat container and panels */}
+                <div className="relative flex flex-1 flex-col overflow-hidden h-full">
+                  {/* Chat Container */}
+                  <div
+                    className={`copilot-chat-container flex flex-1 flex-col overflow-hidden ${!isLight ? 'dark' : ''} font-size-${chatFontSize} transition-opacity duration-300 transition-all`}
+                    style={
+                      {
+                        '--copilot-kit-primary-color': themeColor,
+                        opacity: isCounterReady ? 1 : 0,
+                        visibility: isCounterReady ? 'visible' : 'hidden',
+                        marginRight: (showPlansPanel || showGraphsPanel) ? `${panelWidth}px` : '0px',
+                      } as CSSProperties
+                    }>
+                    <div className="relative flex flex-1 flex-col overflow-hidden h-full">
+                      {/* Selection Overlay - only visible when agent/model not selected */}
+                      {(!selectedAgent || !selectedModel) && (
+                        <div className={`absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm ${isLight ? 'bg-white/80' : 'bg-gray-900/80'}`}>
+                          <div className="text-center p-6">
+                            <p className={isLight ? 'text-gray-600 font-medium' : 'text-gray-300 font-medium'}>
+                              {!selectedAgent || !selectedModel 
+                                ? 'Select an agent and model to continue' 
+                                : 'Loading agent configuration...'}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      <ChatInnerWithSignatureSync
+                        sessionId={sessionId}
+                        onSignatureChange={handleMessagesSignatureChange}
+                        onStreamingChange={handleStreamingChange}
+                        renderChatInner={renderChatInner}
+                        agentStateRef={dynamicAgentStateRef}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 
+                  Plans and Graphs Panels - Now INSIDE SharedAgentProvider so they can 
+                  access agent setState for bidirectional sync.
+                */}
+                {(showPlansPanel || showGraphsPanel) && (
+                  <PanelsWrapper
                     isLight={isLight}
-                    isOpen={showPlansPanel}
-                  onClose={() => {
-                    setShowPlansPanel(false);
-                  }}
-                    plans={dynamicAgentStateRef.current.plans}
+                    showPlansPanel={showPlansPanel}
+                    showGraphsPanel={showGraphsPanel}
+                    agentPlans={agentPlans}
+                    agentGraphs={agentGraphs}
                     sessionId={sessionId}
-                  onPlansUpdate={(updatedPlans: any) => {
+                    onClosePlans={() => setShowPlansPanel(false)}
+                    onCloseGraphs={() => setShowGraphsPanel(false)}
+                    onPlansUpdate={(updatedPlans: any) => {
+                      setAgentPlans({ ...updatedPlans });
                       dynamicAgentStateRef.current = {
                         ...dynamicAgentStateRef.current,
                         plans: updatedPlans,
                       };
                     }}
-                  onWidthChange={(newWidth) => {
-                    setPanelWidth(newWidth);
-                  }}
+                    onGraphsUpdate={(updatedGraphs: any) => {
+                      setAgentGraphs({ ...updatedGraphs });
+                      dynamicAgentStateRef.current = {
+                        ...dynamicAgentStateRef.current,
+                        graphs: updatedGraphs,
+                      };
+                    }}
+                    onWidthChange={setPanelWidth}
                   />
-                  <GraphsPanel
-                    isLight={isLight}
-                    isOpen={showGraphsPanel}
-                  onClose={() => {
-                    setShowGraphsPanel(false);
-                  }}
-                    graphs={dynamicAgentStateRef.current.graphs}
-                    sessionId={sessionId}
-                  onWidthChange={(newWidth) => {
-                    setPanelWidth(newWidth);
-                  }}
-                />
-                  </div>
-                </div>
-              )}
-          </div>
+                )}
+              </SharedAgentProvider>
+            </CopilotKitProvider>
+          )}
+        </div>
 
         {/* Agent and Model Selectors with Settings - Outside chat container so panels don't cover it */}
-          <SelectorsBar
+        <SelectorsBar
             isLight={isLight}
             selectedAgent={selectedAgent}
             selectedModel={selectedModel}

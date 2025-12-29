@@ -68,33 +68,28 @@ function useSharedAgentConnection<T>(sessionKey: string): CopilotAgentState<T> {
     return lastMessagesRef.current;
   }, [rawMessages]);
 
-  // 2. Stabilize state object
-  const rawState = agentAny?.state || {};
-  const lastStateRef = useRef<any>({});
-  const state = useMemo(() => {
-    const hasChanged = JSON.stringify(rawState) !== JSON.stringify(lastStateRef.current);
-    if (hasChanged) {
-      lastStateRef.current = rawState;
-      return rawState;
-    }
-    return lastStateRef.current;
-  }, [rawState]);
-
-  // 3. Return a stable interface that pulls from the hook's latest result
-  // We only update if the AGENT INSTANCE or the STABILIZED data changes
-  return useMemo(() => ({
-    name: STABLE_AGENT_CONFIG.agentId,
-    nodeName: agentAny?.nodeName,
-    state,
-    setState: (newState: any) => agentAny?.setState?.(newState),
-    running: agentAny?.isRunning || false,
-    start: () => {},
-    stop: () => agentAny?.stop?.(),
-    run: (hint?: string) => agentAny?.run?.(hint),
-    messages,
-    setMessages: (newMessages: any[]) => agentAny?.setMessages?.(newMessages),
-    agent: agentAny,
-  }), [agentAny, messages, state]); 
+  // Extract state to ensure reactivity to nested changes
+  const agentState = agentAny?.state || {};
+  
+  // Return a stable interface that pulls from the hook's latest result
+  // Include state in dependencies to ensure reactivity to nested changes
+  return useMemo(() => {
+    return {
+      name: STABLE_AGENT_CONFIG.agentId,
+      nodeName: agentAny?.nodeName,
+      state: agentState,
+      setState: (newState: any) => {
+        return agentAny?.setState?.(newState);
+      },
+      running: agentAny?.isRunning || false,
+      start: () => {},
+      stop: () => agentAny?.stop?.(),
+      run: (hint?: string) => agentAny?.run?.(hint),
+      messages,
+      setMessages: (newMessages: any[]) => agentAny?.setMessages?.(newMessages),
+      agent: agentAny,
+    };
+  }, [agentAny, messages, agentState]);
 }
 
 /**
@@ -107,10 +102,13 @@ export const SharedAgentProvider: React.FC<{ children: React.ReactNode; sessionK
   const gateTimerRef = useRef<number | null>(null);
   
   useEffect(() => {
-    // Increased delay to 400ms to ensure the connection is truly stable before children mount
+    // Reset gate when session changes
+    setIsGateOpen(false);
+    
+    // Increased delay to ensure the connection is truly stable before children mount
     gateTimerRef.current = window.setTimeout(() => {
       setIsGateOpen(true);
-    }, 400);
+    }, 350);
     
     return () => {
       if (gateTimerRef.current !== null) {
@@ -123,17 +121,12 @@ export const SharedAgentProvider: React.FC<{ children: React.ReactNode; sessionK
   // Establish the SINGLE connection here
   const agentState = useSharedAgentConnection<any>(sessionKey);
 
-  // RESTORE REACTIVITY: The context value MUST change for consumers to re-render.
-  // Since useSharedAgentConnection uses useMemo with [agentAny, messages, state],
-  // agentState will only change reference when the data actually changes.
-  const contextValue = useMemo(() => agentState, [agentState]);
-
   return React.createElement(
     SharedAgentContext.Provider, 
-    { value: contextValue }, 
+    { value: agentState }, 
     isGateOpen ? children : null
   );
-}, (prev, next) => prev.sessionKey === next.sessionKey);
+}); // Removed custom comparison that was blocking child updates
 
 /**
  * PUBLIC HOOK: Pure consumer of the shared agent.

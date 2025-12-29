@@ -218,7 +218,6 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
     const currentGraph = agentState.graphs?.[graphId];
     
     if (!currentGraph) {
-      console.warn('[GraphStateCard] Graph not found in UnifiedAgentState:', graphId);
       return;
     }
     
@@ -243,7 +242,7 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
     const newState: UnifiedAgentState = {
       ...agentState,
       graphs: {
-        ...agentState.graphs,
+        ...(agentState.graphs || {}),
         [graphId]: updatedGraph,
       },
     };
@@ -428,28 +427,23 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
   };
 
   const handleRunGraph = async () => {
-    console.log('[GraphStateCard] handleRunGraph called', { instanceId, graphName: state.name });
     if (!instanceId) {
-      console.warn('[GraphStateCard] No instanceId, returning');
       return;
     }
     const graphName = state.name || 'Multi-Agent Graph';
     try {
-      console.log('[GraphStateCard] Calling sendMessage');
       await sendMessage({ 
         id: crypto.randomUUID(),
         role: 'user' as const,
         content: `Run graph \`@[Graph]${graphName}\``
       } as any);
-      console.log('[GraphStateCard] sendMessage completed');
     } catch (e) {
-      console.error('[GraphStateCard] Error running graph:', e);
+      // Silently handle errors
     }
   };
 
   const handleConfirmAction = async (confirmed: boolean) => {
     if (!instanceId) {
-      console.warn('[GraphStateCard] No instanceId for confirmation');
       return;
     }
     const graphName = state.name || 'Multi-Agent Graph';
@@ -462,7 +456,7 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
         content: `Run graph \`@[Graph]${graphName}\` with confirmation result: ${confirmationResult}`
       } as any);
     } catch (e) {
-      console.error('[GraphStateCard] Error confirming action:', e);
+      // Silently handle errors
     }
   };
 

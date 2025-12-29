@@ -326,7 +326,6 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
   const handleRunPlan = async () => {
     try {
       if (!sendMessage) {
-        console.error('[PlanStateCard] sendMessage is undefined!');
         return;
       }
       
@@ -339,7 +338,7 @@ export const PlanStateCard: FC<PlanStateCardProps> = ({
       
       await sendMessage(message);
     } catch (e) {
-      console.error('[PlanStateCard] Error in handleRunPlan:', e);
+      // Silently handle errors
     }
   };
 
