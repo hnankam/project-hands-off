@@ -127,7 +127,6 @@ async def create_multi_agent_graph(
             # Initialize tool call tracking for orchestrator
             orchestrator_key = f"Orchestrator:{ctx.state.iteration_count - 1}"
             ctx.state.tool_calls[orchestrator_key] = []
-            ctx.state.tool_calls["Orchestrator"] = []
             current_tool_call: ToolCallInfo | None = None
             
             def capture_result(result):
@@ -151,7 +150,6 @@ async def create_multi_agent_graph(
                                     tool_name = data.get('tool_call_name', 'unknown')
                                     current_tool_call = ToolCallInfo(tool_name=tool_name, status="in_progress")
                                     ctx.state.tool_calls[orchestrator_key].append(current_tool_call)
-                                    ctx.state.tool_calls["Orchestrator"] = ctx.state.tool_calls[orchestrator_key]
                                     logger.info(f"   [Orchestrator] Tool call started: {tool_name}")
                                     # Send snapshot to show tool call started
                                     await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
@@ -182,7 +180,6 @@ async def create_multi_agent_graph(
                                             tc.status = "completed"
                                             logger.info(f"   [Orchestrator] Tool call completed: {tc.tool_name} -> {result_str[:50]}...")
                                             break
-                                    ctx.state.tool_calls["Orchestrator"] = ctx.state.tool_calls[orchestrator_key]
                                     # Send snapshot to show tool call result
                                     await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
                     except json.JSONDecodeError:
@@ -198,10 +195,9 @@ async def create_multi_agent_graph(
                         tc.result = "(completed - no output)"
                     logger.debug(f"   [Orchestrator] Finalized in-progress tool call: {tc.tool_name}")
             
-            # Store orchestrator streaming text
+# Store orchestrator streaming text with indexed key
             if orchestrator_streaming_text:
-                ctx.state.streaming_text["Orchestrator"] = ''.join(orchestrator_streaming_text)
-                logger.debug(f"   [Orchestrator] Captured streaming text: {len(ctx.state.streaming_text.get('Orchestrator', ''))} chars")
+                logger.debug(f"   [Orchestrator] Captured streaming text: {len(ctx.state.streaming_text.get(orchestrator_key, ''))} chars")
             
             # Log tool call summary
             tool_call_count = len(ctx.state.tool_calls.get(orchestrator_key, []))
@@ -241,7 +237,6 @@ async def create_multi_agent_graph(
             if decision.reasoning:
                 thinking_content = f"<think>\n{decision.reasoning}\n</think>"
                 ctx.state.streaming_text[indexed_key] = thinking_content
-                ctx.state.streaming_text["Orchestrator"] = thinking_content
             
             # Track orchestrator in execution history
             ctx.state.execution_history.append(indexed_key)
@@ -319,12 +314,10 @@ async def create_multi_agent_graph(
         
         # Initialize tool call tracking for this step
         ctx.state.tool_calls[indexed_key] = []
-        ctx.state.tool_calls["Confirmation"] = []
         
         # Store the prompt
         action_description = ctx.state.current_task_prompt or "proceed with the next action"
         ctx.state.prompts[indexed_key] = action_description
-        ctx.state.prompts["Confirmation"] = action_description
         
         # Track the tool call in state (for UI display)
         current_tool_call = ToolCallInfo(
@@ -333,12 +326,10 @@ async def create_multi_agent_graph(
             args=json.dumps({"actionDescription": action_description})
         )
         ctx.state.tool_calls[indexed_key].append(current_tool_call)
-        ctx.state.tool_calls["Confirmation"] = ctx.state.tool_calls[indexed_key]
         
         # Mark as waiting for user interaction (no deferred_tool_requests)
         ctx.state.result = f"Waiting for user confirmation: {action_description}"
         ctx.state.streaming_text[indexed_key] = f"Requesting confirmation: {action_description}"
-        ctx.state.streaming_text["Confirmation"] = ctx.state.streaming_text[indexed_key]
         
         # Update state to "waiting"
         await send_graph_state_delta(send_stream, ctx.state, "Confirmation", "waiting", shared_state)

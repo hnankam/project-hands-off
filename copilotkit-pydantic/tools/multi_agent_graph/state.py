@@ -43,6 +43,13 @@ def _serialize_tool_calls(calls: list) -> list:
     return [_serialize_tool_call(tc) for tc in calls] if calls else []
 
 
+def _filter_indexed_keys(data: dict) -> dict:
+    """Filter dictionary to only include indexed keys (containing ':')."""
+    if not data:
+        return {}
+    return {k: v for k, v in data.items() if ':' in k}
+
+
 def _is_orchestrator_entry(entry: str) -> bool:
     """Check if a history entry is an orchestrator entry."""
     return entry.startswith("Orchestrator:")
@@ -76,10 +83,10 @@ def build_graph_agent_state(
     if current_node == "Orchestrator":
         orchestrator_iteration = state.iteration_count - 1 if state.iteration_count > 0 else 0
         indexed_key = f"Orchestrator:{orchestrator_iteration}"
-        orchestrator_streaming = state.streaming_text.get(indexed_key, state.streaming_text.get("Orchestrator", ""))
+        orchestrator_streaming = state.streaming_text.get(indexed_key, "")
         
         # Get orchestrator tool calls
-        orchestrator_tool_calls = state.tool_calls.get(indexed_key, state.tool_calls.get("Orchestrator", []))
+        orchestrator_tool_calls = state.tool_calls.get(indexed_key, [])
         tool_calls_list = _serialize_tool_calls(orchestrator_tool_calls)
         
         steps.append({
@@ -118,11 +125,11 @@ def build_graph_agent_state(
             base_node = _get_base_node(history_entry)
             
             # Look up results using the indexed key
-            result = state.intermediate_results.get(indexed_key, state.intermediate_results.get(base_node, ""))
-            node_errors = [e for e in state.errors if e.get("node") == base_node or e.get("node") == indexed_key]
+            result = state.intermediate_results.get(indexed_key, "")
+            node_errors = [e for e in state.errors if e.get("node") == indexed_key]
             
             # Convert tool calls to serializable format
-            node_tool_calls = state.tool_calls.get(indexed_key, state.tool_calls.get(base_node, []))
+            node_tool_calls = state.tool_calls.get(indexed_key, [])
             tool_calls_list = _serialize_tool_calls(node_tool_calls)
             
             # Determine status
@@ -151,8 +158,8 @@ def build_graph_agent_state(
                 "node": base_node,
                 "status": status,
                 "result": result,
-                "prompt": state.prompts.get(indexed_key, state.prompts.get(base_node, "")),
-                "streaming_text": state.streaming_text.get(indexed_key, state.streaming_text.get(base_node, "")),
+                "prompt": state.prompts.get(indexed_key, ""),
+                "streaming_text": state.streaming_text.get(indexed_key, ""),
                 "tool_calls": tool_calls_list,
                 "timestamp": datetime.now().isoformat(),
             })
@@ -329,12 +336,12 @@ def sync_to_shared_state(
     graph.result = state.result
     graph.query_type = state.query_type
     graph.execution_history = list(state.execution_history)
-    graph.intermediate_results = dict(state.intermediate_results)
-    graph.streaming_text = dict(state.streaming_text)
-    graph.prompts = dict(state.prompts)
+    graph.intermediate_results = _filter_indexed_keys(state.intermediate_results)
+    graph.streaming_text = _filter_indexed_keys(state.streaming_text)
+    graph.prompts = _filter_indexed_keys(state.prompts)
     graph.tool_calls = {
         node: _serialize_tool_calls(calls)
-        for node, calls in state.tool_calls.items()
+        for node, calls in _filter_indexed_keys(state.tool_calls).items()
     }
     graph.errors = list(state.errors)
     graph.last_error_node = state.last_error_node
@@ -543,19 +550,19 @@ async def send_graph_state_delta(
             "name": graph_name or state.query[:50],
             "status": graph_agent_state.get("status", "active"),
             "steps": graph_agent_state.get("steps", []),
-                "query": state.query,
-                "original_query": state.original_query or state.query,
-                "result": state.result,
-                "query_type": state.query_type,
-                "execution_history": list(state.execution_history),
-                "intermediate_results": dict(state.intermediate_results),
-                "streaming_text": dict(state.streaming_text),
-                "prompts": dict(state.prompts),
-                "tool_calls": {
-                    node: _serialize_tool_calls(calls)
-                    for node, calls in state.tool_calls.items()
-                },
-                "errors": list(state.errors),
+            "query": state.query,
+            "original_query": state.original_query or state.query,
+            "result": state.result,
+            "query_type": state.query_type,
+            "execution_history": list(state.execution_history),
+            "intermediate_results": _filter_indexed_keys(state.intermediate_results),
+            "streaming_text": _filter_indexed_keys(state.streaming_text),
+            "prompts": _filter_indexed_keys(state.prompts),
+            "tool_calls": {
+                node: _serialize_tool_calls(calls)
+                for node, calls in _filter_indexed_keys(state.tool_calls).items()
+            },
+            "errors": list(state.errors),
                 "last_error_node": state.last_error_node,
                 "retry_count": state.retry_count,
                 "max_retries": state.max_retries,
@@ -601,33 +608,41 @@ async def send_graph_state_delta(
             )
         )
         
-        # Send ActivityDeltaEvent for UI updates (delta mode)
+        # Send Activity updates for UI (delta or snapshot)
         activity_message_id = f"graph-{graph_id}"
-        activity_patch_ops: list[JSONPatchOp] = []
         
-        # Create patch for activity content (same path structure as state)
         if is_new_graph:
-            activity_patch_ops.append(JSONPatchOp(
-                op='add',
-                path=f'/graphs/{graph_id}',
-                value=graph_instance_data
-            ))
+            # First time for this graph, send a full snapshot to register the messageId
+            # This avoids "No message found with ID to apply patch" errors
+            await send_stream.send(
+                encoder.encode(
+                    ActivitySnapshotEvent(
+                        type=EventType.ACTIVITY_SNAPSHOT,
+                        messageId=activity_message_id,
+                        activityType="agent_state",
+                        content={"graphs": {graph_id: graph_instance_data}},
+                    )
+                )
+            )
+            logger.info(f"   [ActivitySnapshot] Sent new graph {graph_id} with messageId {activity_message_id}")
         else:
-            activity_patch_ops.append(JSONPatchOp(
+            # Existing graph, send a delta update
+            activity_patch_ops = [JSONPatchOp(
                 op='replace',
                 path=f'/graphs/{graph_id}',
                 value=graph_instance_data
-            ))
-        
-        await send_stream.send(
-            encoder.encode(
-                ActivityDeltaEvent(
-                    messageId=activity_message_id,
-                    activityType="agent_state",
-                    patch=[op.model_dump(by_alias=True) for op in activity_patch_ops],
+            )]
+            await send_stream.send(
+                encoder.encode(
+                    ActivityDeltaEvent(
+                        type=EventType.ACTIVITY_DELTA,
+                        messageId=activity_message_id,
+                        activityType="agent_state",
+                        patch=[op.model_dump(by_alias=True) for op in activity_patch_ops],
+                    )
                 )
             )
-        )
+            logger.debug(f"   [ActivityDelta] Updated graph {graph_id} for {current_node}")
         
         # Log success message
         logger.info(f"   [StateDelta] ✓ Sent successfully for {current_node}")
@@ -671,11 +686,28 @@ def build_context_with_previous_results(state: QueryState, task_prompt: str) -> 
     context_parts = [task_prompt]
     
     if state.intermediate_results:
+        # Get the latest result for each node type (highest index)
+        latest_results = {}
+        for key, result in state.intermediate_results.items():
+            # Extract base node name from indexed key (e.g., "WebSearch:0" -> "WebSearch")
+            if ':' in key:
+                base_node, index_str = key.split(':', 1)
+                try:
+                    index = int(index_str)
+                except ValueError:
+                    # If index is not a number, treat as base node
+                    base_node = key
+                    index = 0
+            else:
+                base_node = key
+                index = 0
+            
+            # Keep the result with the highest index for each node type
+            if base_node not in latest_results or index > latest_results[base_node][0]:
+                latest_results[base_node] = (index, result)
+        
         context_parts.append("\n\n--- PREVIOUS RESULTS FROM EARLIER STEPS ---\n")
-        for node, result in state.intermediate_results.items():
-            # Skip indexed keys (e.g., "WebSearch:0") - use the base node results
-            if ':' in node:
-                continue
+        for node, (_, result) in latest_results.items():
             clean_result = strip_thinking_content(str(result))
             context_parts.append(f"\n[{node}]:\n{clean_result}\n")
     

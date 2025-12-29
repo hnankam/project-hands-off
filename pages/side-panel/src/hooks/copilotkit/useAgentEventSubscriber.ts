@@ -29,6 +29,7 @@ import type {
   StateSnapshotEvent,
   MessagesSnapshotEvent,
   ActivitySnapshotEvent,
+  ActivityDeltaEvent,
   Message,
   State,
   RunAgentInput,
@@ -304,7 +305,9 @@ export function useAgentEventSubscriber(
   // ============================================================================
 
   const log = useCallback((...args: any[]) => {
+    // Always log to console if debug is enabled to ensure visibility
     if (debugEnabled) {
+      console.log(LOG_PREFIX, ...args);
       debug.log(LOG_PREFIX, ...args);
     }
   }, [debugEnabled]);
@@ -368,6 +371,7 @@ export function useAgentEventSubscriber(
        * Called when agent run initializes
        */
       onRunInitialized: async ({ messages, state, agent, input }: any) => {
+        console.log(`${LOG_PREFIX} 🚀 Run initialized:`, input.runId);
         log('Run initialized:', input.runId);
         
         setLifecycle({
@@ -449,7 +453,7 @@ export function useAgentEventSubscriber(
        * Called when agent run starts
        */
       onRunStartedEvent: async ({ event, messages, state }: any) => {
-        log('Run started event:', event.runId);
+        log('🚀 Run started event:', event.runId);
         
         setLifecycle({
           phase: 'running',
@@ -644,7 +648,10 @@ export function useAgentEventSubscriber(
       // ========================================================================
 
       onStateChanged: async ({ messages, state }: any) => {
-        log('State changed');
+        log('🔄 State changed');
+        if (debugEnabled) {
+          debug.log(LOG_PREFIX, 'New state keys:', Object.keys(state || {}));
+        }
         
         if (callbacksRef.current.onStateChanged) {
           callbacksRef.current.onStateChanged(state, messages);
@@ -652,7 +659,10 @@ export function useAgentEventSubscriber(
       },
 
       onMessagesChanged: async ({ messages, state }: any) => {
-        log('Messages changed, count:', messages.length);
+        log('📩 Messages changed, count:', messages.length);
+        if (debugEnabled) {
+          debug.log(LOG_PREFIX, 'Latest message:', messages[messages.length - 1]);
+        }
         
         if (callbacksRef.current.onMessagesChanged) {
           callbacksRef.current.onMessagesChanged(messages, state);
@@ -664,7 +674,23 @@ export function useAgentEventSubscriber(
       // ========================================================================
 
       onActivitySnapshotEvent: async ({ event, activityMessage, existingMessage }: any) => {
-        log('Activity snapshot:', event.messageId);
+        console.log(`${LOG_PREFIX} 📊 Activity snapshot received:`, event.messageId, event);
+        log('📊 Activity snapshot received:', event.messageId);
+        
+        if (callbacksRef.current.onActivityUpdate) {
+          callbacksRef.current.onActivityUpdate(event);
+        }
+      },
+
+      /**
+       * Called when ACTIVITY_DELTA event is received
+       */
+      onActivityDeltaEvent: async ({ event }: any) => {
+        console.log(`${LOG_PREFIX} 📈 Activity delta received:`, event.messageId, 'Patch ops:', event.patch?.length || 0, event);
+        log('📈 Activity delta received:', event.messageId, 'Patch ops:', event.patch?.length || 0);
+        if (debugEnabled && event.patch) {
+          debug.log(LOG_PREFIX, 'Activity delta patch:', event.patch);
+        }
         
         if (callbacksRef.current.onActivityUpdate) {
           callbacksRef.current.onActivityUpdate(event);

@@ -261,7 +261,7 @@ async def run_worker_step(
         logger.info(f"   [{node_name}] Processed {event_count} events")
         
         # Log streaming text for debugging
-        streaming_text = state.streaming_text.get(indexed_key, state.streaming_text.get(node_name, ""))
+        streaming_text = state.streaming_text.get(indexed_key, "")
         has_think_tag = '<think' in streaming_text.lower()
         logger.debug(f"   [{node_name}] Streaming text: {len(streaming_text)} chars, has <think>: {has_think_tag}")
         
@@ -276,9 +276,8 @@ async def run_worker_step(
         else:
             node_result = _default_result_extractor(final_result, node_name)
         
-        # Store with indexed key and non-indexed for backwards compatibility
+        # Store with indexed key to track multiple runs of the same node
         state.intermediate_results[indexed_key] = str(node_result)
-        state.intermediate_results[node_name] = str(node_result)
         state.result = str(node_result)
         
         logger.info(f"   [{node_name}] ✓ Complete")
@@ -419,7 +418,7 @@ def extract_code_result(final_result: Any, state: QueryState) -> str:
             return str(raw_output)
     
     # Fallback to streaming text if no structured output
-    streaming_text = state.streaming_text.get(indexed_key, state.streaming_text.get("CodeExecution", ""))
+    streaming_text = state.streaming_text.get(indexed_key, "")
     if streaming_text:
         return streaming_text
     

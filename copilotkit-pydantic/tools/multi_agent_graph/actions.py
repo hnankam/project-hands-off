@@ -232,6 +232,11 @@ async def resume_graph(
                 logger.info(f"   Found confirmAction result: confirmed={user_confirmed}")
                 break
     
+    # Helper function to filter out non-indexed keys
+    def _filter_indexed_keys(data: dict) -> dict:
+        """Filter dictionary to only include indexed keys (containing ':')."""
+        return {k: v for k, v in data.items() if ':' in k}
+    
     # Create QueryState from existing graph_instance
     state = QueryState(
         query=graph_instance.query or query,
@@ -239,10 +244,10 @@ async def resume_graph(
         max_iterations=graph_instance.max_iterations or max_iterations,
         iteration_count=graph_instance.iteration_count or 0,
         execution_history=list(graph_instance.execution_history or []),
-        intermediate_results=dict(graph_instance.intermediate_results or {}),
-        streaming_text=dict(graph_instance.streaming_text or {}),
-        prompts=dict(graph_instance.prompts or {}),
-        tool_calls=dict(graph_instance.tool_calls or {}),
+        intermediate_results=_filter_indexed_keys(graph_instance.intermediate_results or {}),
+        streaming_text=_filter_indexed_keys(graph_instance.streaming_text or {}),
+        prompts=_filter_indexed_keys(graph_instance.prompts or {}),
+        tool_calls=_filter_indexed_keys(graph_instance.tool_calls or {}),
         errors=list(graph_instance.errors or []),
         result=graph_instance.result or "",
         should_continue=user_confirmed,  # Only continue if user confirmed
@@ -271,7 +276,6 @@ async def resume_graph(
                 logger.info(f"   Updated {confirmation_key} tool calls to completed (confirmed={user_confirmed})")
             # Also update the base "Confirmation" key
             if "Confirmation" in state.tool_calls:
-                for tc in state.tool_calls["Confirmation"]:
                     if isinstance(tc, dict):
                         tc["status"] = "completed"
                         tc["result"] = confirmation_result
@@ -281,8 +285,6 @@ async def resume_graph(
             # Update streaming text
             if confirmation_key in state.streaming_text:
                 state.streaming_text[confirmation_key] = confirmation_text
-            if "Confirmation" in state.streaming_text:
-                state.streaming_text["Confirmation"] = confirmation_text
     
     # Clear the result from waiting state since we're continuing
     if state.result and "Waiting for user interaction" in state.result:

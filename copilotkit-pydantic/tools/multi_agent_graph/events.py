@@ -59,11 +59,6 @@ async def process_sub_agent_events(
     state.tool_calls[indexed_key] = []
     state.prompts[indexed_key] = prompt
     
-    # Also keep non-indexed versions for backwards compatibility
-    state.streaming_text[node_name] = ""
-    state.tool_calls[node_name] = []
-    state.prompts[node_name] = prompt
-    
     # Track current tool call being built
     current_tool_call: ToolCallInfo | None = None
     
@@ -87,7 +82,6 @@ async def process_sub_agent_events(
             if 'TEXT_MESSAGE_CONTENT' in event_type:
                 if hasattr(event, 'delta') and event.delta:
                     state.streaming_text[indexed_key] += event.delta
-                    state.streaming_text[node_name] = state.streaming_text[indexed_key]
                     
                     # Log when thinking tags are detected
                     if '<think' in event.delta.lower():
@@ -103,7 +97,6 @@ async def process_sub_agent_events(
                 tool_name = getattr(event, 'tool_call_name', 'unknown')
                 current_tool_call = ToolCallInfo(tool_name=tool_name, status="in_progress")
                 state.tool_calls[indexed_key].append(current_tool_call)
-                state.tool_calls[node_name] = state.tool_calls[indexed_key]
                 should_send_snapshot = True
                 logger.debug(f"   [{node_name}] Tool call started: {tool_name}")
             
@@ -133,7 +126,6 @@ async def process_sub_agent_events(
                         tc.result = result_str
                         tc.status = "completed"
                         break
-                state.tool_calls[node_name] = state.tool_calls[indexed_key]
                 
                 should_send_snapshot = True
                 logger.debug(f"   [{node_name}] Tool result received: {result_str[:50]}...")
@@ -152,7 +144,7 @@ async def process_sub_agent_events(
                         snapshot_disabled = True
     
     # Ensure all tool calls are marked as completed
-    for tc in state.tool_calls.get(node_name, []):
+    for tc in state.tool_calls.get(indexed_key, []):
         if tc.status == "in_progress":
             tc.status = "completed"
             if not tc.result:

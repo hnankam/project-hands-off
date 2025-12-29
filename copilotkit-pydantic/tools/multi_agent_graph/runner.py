@@ -26,6 +26,11 @@ from .state import sync_to_shared_state
 from .actions import create_graph, resume_graph
 from core.models import UnifiedDeps
 
+
+def _filter_indexed_keys(data: dict) -> dict:
+    """Filter dictionary to only include indexed keys (containing ':')."""
+    return {k: v for k, v in data.items() if ':' in k}
+
 if TYPE_CHECKING:
     from anyio.streams.memory import MemoryObjectSendStream
 
@@ -197,10 +202,10 @@ async def run_multi_agent_graph(
                 max_iterations=graph_instance.max_iterations or max_iterations,
                 iteration_count=graph_instance.iteration_count or 0,
                 execution_history=list(graph_instance.execution_history or []),
-                intermediate_results=dict(graph_instance.intermediate_results or {}),
-                streaming_text=dict(graph_instance.streaming_text or {}),
-                prompts=dict(graph_instance.prompts or {}),
-                tool_calls=dict(graph_instance.tool_calls or {}),
+                intermediate_results=_filter_indexed_keys(graph_instance.intermediate_results or {}),
+                streaming_text=_filter_indexed_keys(graph_instance.streaming_text or {}),
+                prompts=_filter_indexed_keys(graph_instance.prompts or {}),
+                tool_calls=_filter_indexed_keys(graph_instance.tool_calls or {}),
                 errors=list(graph_instance.errors or []),
                 result=graph_instance.result or "",
                 should_continue=graph_instance.should_continue,
@@ -216,10 +221,10 @@ async def run_multi_agent_graph(
                 max_iterations=graph_instance.max_iterations or max_iterations,
                 iteration_count=graph_instance.iteration_count or 0,
                 execution_history=list(graph_instance.execution_history or []),
-                intermediate_results=dict(graph_instance.intermediate_results or {}),
-                streaming_text=dict(graph_instance.streaming_text or {}),
-                prompts=dict(graph_instance.prompts or {}),
-                tool_calls=dict(graph_instance.tool_calls or {}),
+                intermediate_results=_filter_indexed_keys(graph_instance.intermediate_results or {}),
+                streaming_text=_filter_indexed_keys(graph_instance.streaming_text or {}),
+                prompts=_filter_indexed_keys(graph_instance.prompts or {}),
+                tool_calls=_filter_indexed_keys(graph_instance.tool_calls or {}),
                 errors=list(graph_instance.errors or []),
                 result=graph_instance.result or "",
                 should_continue=True,  # Reset to continue execution
