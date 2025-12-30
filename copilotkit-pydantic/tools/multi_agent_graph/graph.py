@@ -86,7 +86,9 @@ async def create_multi_agent_graph(
         
         send_stream = ctx.deps.send_stream if ctx.deps else None
         shared_state = ctx.deps.state if ctx.deps else None
-        await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
+        graph_id = ctx.deps.graph_id if ctx.deps else None
+        graph_name = ctx.deps.graph_name if ctx.deps else None
+        await send_graph_state_delta(send_stream, ctx.state, graph_id, graph_name, "Orchestrator", "in_progress", shared_state)
         
         # Check iteration limit
         if ctx.state.iteration_count > ctx.state.max_iterations:
@@ -96,7 +98,7 @@ async def create_multi_agent_graph(
                 "error": f"Max iterations ({ctx.state.max_iterations}) reached",
                 "timestamp": datetime.now().isoformat()
             })
-            await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "error", shared_state)
+            await send_graph_state_delta(send_stream, ctx.state, graph_id, graph_name, "Orchestrator", "error", shared_state)
             return "end"
         
         # Build context
@@ -152,7 +154,7 @@ async def create_multi_agent_graph(
                                     ctx.state.tool_calls[orchestrator_key].append(current_tool_call)
                                     logger.info(f"   [Orchestrator] Tool call started: {tool_name}")
                                     # Send snapshot to show tool call started
-                                    await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
+                                    await send_graph_state_delta(send_stream, ctx.state, graph_id, graph_name, "Orchestrator", "in_progress", shared_state)
                                 
                                 # Handle TOOL_CALL_ARGS - tool arguments streaming
                                 elif event_type == 'TOOL_CALL_ARGS':
@@ -181,7 +183,7 @@ async def create_multi_agent_graph(
                                             logger.info(f"   [Orchestrator] Tool call completed: {tc.tool_name} -> {result_str[:50]}...")
                                             break
                                     # Send snapshot to show tool call result
-                                    await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "in_progress", shared_state)
+                                    await send_graph_state_delta(send_stream, ctx.state, graph_id, graph_name, "Orchestrator", "in_progress", shared_state)
                     except json.JSONDecodeError:
                         pass
                     except Exception as e:
@@ -256,7 +258,7 @@ async def create_multi_agent_graph(
             ctx.state.should_continue = decision.needs_followup
             ctx.state.next_action = decision.next_task_type.lower()
             
-            await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "completed", shared_state)
+            await send_graph_state_delta(send_stream, ctx.state, graph_id, graph_name, "Orchestrator", "completed", shared_state)
             
             return decision.next_task_type.lower()  # type: ignore
             
@@ -267,7 +269,7 @@ async def create_multi_agent_graph(
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             })
-            await send_graph_state_delta(send_stream, ctx.state, "Orchestrator", "error", shared_state)
+            await send_graph_state_delta(send_stream, ctx.state, graph_id, graph_name, "Orchestrator", "error", shared_state)
             return "end"
     
     # ==================== CONFIRMATION STEP ====================
@@ -311,6 +313,8 @@ async def create_multi_agent_graph(
         
         send_stream = ctx.deps.send_stream if ctx.deps else None
         shared_state = ctx.deps.state if ctx.deps else None
+        graph_id = ctx.deps.graph_id if ctx.deps else None
+        graph_name = ctx.deps.graph_name if ctx.deps else None
         
         # Initialize tool call tracking for this step
         ctx.state.tool_calls[indexed_key] = []
@@ -332,7 +336,7 @@ async def create_multi_agent_graph(
         ctx.state.streaming_text[indexed_key] = f"Requesting confirmation: {action_description}"
         
         # Update state to "waiting"
-        await send_graph_state_delta(send_stream, ctx.state, "Confirmation", "waiting", shared_state)
+        await send_graph_state_delta(send_stream, ctx.state, graph_id, graph_name, "Confirmation", "waiting", shared_state)
         
         logger.info(f"   [Confirmation] Waiting for user confirmation: {action_description[:100]}...")
         
@@ -404,6 +408,8 @@ async def create_multi_agent_graph(
         
         send_stream = ctx.deps.send_stream if ctx.deps else None
         shared_state = ctx.deps.state if ctx.deps else None
+        graph_id = ctx.deps.graph_id if ctx.deps else None
+        graph_name = ctx.deps.graph_name if ctx.deps else None
         
         final_result = ctx.state.result if ctx.state.result else "Task completed."
         
@@ -415,7 +421,7 @@ async def create_multi_agent_graph(
         ctx.state.should_continue = False
         
         logger.info(f"   [Finalize] Sending final snapshot with status={final_status}, result length={len(final_result)}")
-        await send_graph_state_delta(send_stream, ctx.state, "", final_status, shared_state)
+        await send_graph_state_delta(send_stream, ctx.state, graph_id, graph_name, "", final_status, shared_state)
         
         return final_result
     

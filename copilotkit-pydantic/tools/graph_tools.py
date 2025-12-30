@@ -508,15 +508,15 @@ async def run_graph(
         logger.info(f"   [run_graph] Graph {graph_id} was cancelled, resetting to active")
     elif graph_instance.status == 'waiting':
         logger.info(f"   [run_graph] Resuming waiting graph {graph_id}")
-        
+    
     # Update status to active for execution
-        graph_instance.status = 'active'
-        graph_instance.should_continue = True
-        graph_instance.updated_at = datetime.now().isoformat()
-        
+    graph_instance.status = 'active'
+    graph_instance.should_continue = True
+    graph_instance.updated_at = datetime.now().isoformat()
+    
     # Clear deferred_tool_requests if any
-        if graph_instance.deferred_tool_requests:
-            graph_instance.deferred_tool_requests = None
+    if graph_instance.deferred_tool_requests:
+        graph_instance.deferred_tool_requests = None
     
     # Get query and other properties from the graph instance
     query = graph_instance.query

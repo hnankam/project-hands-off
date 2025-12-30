@@ -517,11 +517,24 @@ interface GraphStepItemProps {
   graphId?: string;
   graphName?: string;
   onConfirm?: (confirmed: boolean) => Promise<void>;
+  errors?: Array<{ node?: string; error?: string; details?: string; timestamp?: string }>; // Errors from parent state
 }
 
-export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLast, controls, graphId, graphName, onConfirm }) => {
+export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLast, controls, graphId, graphName, onConfirm, errors }) => {
   // Create stable cache key based on step node and timestamp
   const stepCacheKey = `${step.node}-${step.timestamp || ''}`;
+  
+  // Filter errors for this specific node
+  const nodeErrors = useMemo(() => {
+    if (!errors || errors.length === 0) return [];
+    // Match errors by node name (handle both "NodeName" and "NodeName:0" formats)
+    const nodeName = step.node.split(':')[0]; // Extract base node name
+    return errors.filter(err => {
+      if (!err.node) return false;
+      const errorNodeName = err.node.split(':')[0];
+      return errorNodeName === nodeName;
+    });
+  }, [errors, step.node]);
   
   // Initialize from cache or defaults
   const [isResultExpanded, setIsResultExpanded] = useState(() => {
@@ -811,6 +824,42 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Error messages for this node */}
+          {nodeErrors.length > 0 && (
+            <div className={`mt-2 p-3 rounded-md border ${
+              isLight 
+                ? 'bg-red-50 border-red-200' 
+                : 'bg-red-900/20 border-red-800/40'
+            }`}>
+              <div className="flex items-start gap-2 mb-2">
+                <ErrorIcon className="h-4 w-4 flex-shrink-0 mt-0.5" color={isLight ? '#dc2626' : '#f87171'} />
+                <span className={`text-sm font-semibold ${isLight ? 'text-red-900' : 'text-red-400'}`}>
+                  {nodeErrors.length === 1 ? 'Error' : `${nodeErrors.length} Errors`}
+                </span>
+              </div>
+              
+              <div className="space-y-2">
+                {nodeErrors.map((error, index) => (
+                  <div 
+                    key={`${error.timestamp}-${index}`}
+                    className={`p-2 rounded text-sm font-mono whitespace-pre-wrap break-words ${
+                      isLight ? 'bg-white text-red-900' : 'bg-gray-900/50 text-red-200'
+                    }`}
+                  >
+                    {error.error}
+                    {error.details && (
+                      <div className={`mt-1 pt-1 border-t text-xs ${
+                        isLight ? 'border-red-200 text-red-700' : 'border-red-800/30 text-red-300'
+                      }`}>
+                        {error.details}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           )}

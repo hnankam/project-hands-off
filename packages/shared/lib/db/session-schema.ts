@@ -35,15 +35,6 @@ export async function initializeSessionSchema(worker: DBWorkerClient): Promise<v
       DEFINE INDEX IF NOT EXISTS idx_session_timestamp ON session_metadata FIELDS timestamp;
       DEFINE INDEX IF NOT EXISTS idx_session_createdAt ON session_metadata FIELDS createdAt;
 
-      -- Session Messages Table (heavy data, rarely accessed all at once)
-      DEFINE TABLE IF NOT EXISTS session_messages SCHEMALESS;
-      DEFINE FIELD IF NOT EXISTS sessionId ON session_messages TYPE string;
-      DEFINE FIELD IF NOT EXISTS messages ON session_messages TYPE array;
-      DEFINE FIELD IF NOT EXISTS version ON session_messages TYPE number DEFAULT 0;
-      DEFINE FIELD IF NOT EXISTS lastModified ON session_messages TYPE option<number>;
-      DEFINE INDEX IF NOT EXISTS idx_messages_session ON session_messages FIELDS sessionId;
-      DEFINE INDEX IF NOT EXISTS idx_messages_version ON session_messages FIELDS version;
-
       -- Session Usage Stats Table (separate from metadata for performance)
       DEFINE TABLE IF NOT EXISTS session_usage SCHEMALESS;
       DEFINE FIELD IF NOT EXISTS sessionId ON session_usage TYPE string;
@@ -87,13 +78,6 @@ export interface SessionMetadata {
   selectedAgent?: string;
   selectedModel?: string;
   planExpanded?: boolean; // Task progress card expanded state
-}
-
-export interface SessionMessages {
-  sessionId: string;
-  messages: any[]; // CopilotMessage[]
-  version?: number; // Optimistic locking version
-  lastModified?: number; // Last modification timestamp
 }
 
 export interface SessionUsageLastRecord {

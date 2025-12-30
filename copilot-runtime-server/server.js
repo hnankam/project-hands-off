@@ -293,7 +293,7 @@ async function createCopilotKitRuntime() {
       ttl: 86400000,        // 24 hours
       cleanupInterval: 3600000, // 1 hour
       persistEventsImmediately: true, // Persist events immediately for data durability
-      maxHistoricRuns: parseInt(process.env.AGENT_RUNNER_MAX_HISTORIC_RUNS) || 1000,  // Max runs to load on connect (default: 10)
+      maxHistoricRuns: parseInt(process.env.AGENT_RUNNER_MAX_HISTORIC_RUNS) || 1000,  // Max runs to load (safety limit, set to 0/null to load all - matches SQLite)
       debug: DEBUG,         // Verbose logging in development only
     });
 
@@ -811,6 +811,124 @@ const app = express();
 
     app.use(express.json({ limit: `${BODY_LIMIT_MB}mb` }));
     app.use(express.urlencoded({ extended: true, limit: `${BODY_LIMIT_MB}mb` }));
+
+    // ========================================================================
+    // Message Deletion Endpoints (AFTER body parsing middleware)
+    // ========================================================================
+
+    /**
+     * DELETE /api/messages/:threadId/:messageId
+     * Delete a single message from a thread
+     */
+    app.delete('/api/messages/:threadId/:messageId', async (req, res) => {
+      try {
+        const { threadId, messageId } = req.params;
+        
+        if (!threadId || !messageId) {
+          return res.status(400).json({ error: 'Thread ID and Message ID are required' });
+        }
+        
+        // Only PostgresAgentRunner supports deletion
+        if (USE_SQLITE_RUNNER || !runner || typeof runner.deleteMessage !== 'function') {
+          return res.status(501).json({ error: 'Message deletion not supported with current runner' });
+        }
+        
+        await runner.deleteMessage(threadId, messageId);
+        
+        res.json({ success: true, messageId });
+      } catch (error) {
+        log(`Error deleting message: ${error.message}`, res.locals.reqId);
+        res.status(500).json({ error: 'Failed to delete message', message: error.message });
+      }
+    });
+
+    /**
+     * DELETE /api/messages/:threadId
+     * Delete all messages in a thread (reset thread)
+     */
+    app.delete('/api/messages/:threadId', async (req, res) => {
+      try {
+        const { threadId } = req.params;
+        
+        if (!threadId) {
+          return res.status(400).json({ error: 'Thread ID is required' });
+        }
+        
+        // Only PostgresAgentRunner supports deletion
+        if (USE_SQLITE_RUNNER || !runner || typeof runner.deleteAllMessages !== 'function') {
+          return res.status(501).json({ error: 'Message deletion not supported with current runner' });
+        }
+        
+        await runner.deleteAllMessages(threadId);
+        
+        res.json({ success: true, threadId });
+      } catch (error) {
+        log(`Error deleting all messages: ${error.message}`, res.locals.reqId);
+        res.status(500).json({ error: 'Failed to delete messages', message: error.message });
+      }
+    });
+
+    /**
+     * POST /api/messages/:threadId/bulk-delete
+     * Delete multiple messages from a thread
+     */
+    app.post('/api/messages/:threadId/bulk-delete', async (req, res) => {
+      try {
+        const { threadId } = req.params;
+        const { messageIds } = req.body;
+        
+        if (!threadId) {
+          return res.status(400).json({ error: 'Thread ID is required' });
+        }
+        
+        if (!Array.isArray(messageIds) || messageIds.length === 0) {
+          return res.status(400).json({ error: 'messageIds must be a non-empty array' });
+        }
+        
+        // Only PostgresAgentRunner supports deletion
+        if (USE_SQLITE_RUNNER || !runner || typeof runner.deleteMessages !== 'function') {
+          return res.status(501).json({ error: 'Message deletion not supported with current runner' });
+        }
+        
+        await runner.deleteMessages(threadId, messageIds);
+        
+        res.json({ success: true, deletedCount: messageIds.length });
+      } catch (error) {
+        log(`Error bulk deleting messages: ${error.message}`, res.locals.reqId);
+        res.status(500).json({ error: 'Failed to delete messages', message: error.message });
+      }
+    });
+
+    /**
+     * DELETE /api/threads/:threadId
+     * Delete a thread and all associated data (hard delete with cascade)
+     * This will cascade delete all runs, messages, and deleted message records
+     */
+    app.delete('/api/threads/:threadId', async (req, res) => {
+      try {
+        const { threadId } = req.params;
+        
+        if (!threadId) {
+          return res.status(400).json({ error: 'Thread ID is required' });
+        }
+        
+        // Only PostgresAgentRunner supports thread deletion
+        if (USE_SQLITE_RUNNER || !runner || typeof runner.deleteThread !== 'function') {
+          return res.status(501).json({ error: 'Thread deletion not supported with current runner' });
+        }
+        
+        const deleted = await runner.deleteThread(threadId);
+        
+        if (!deleted) {
+          return res.status(404).json({ error: 'Thread not found' });
+        }
+        
+        res.json({ success: true, threadId });
+      } catch (error) {
+        log(`Error deleting thread: ${error.message}`, res.locals.reqId);
+        res.status(500).json({ error: 'Failed to delete thread', message: error.message });
+      }
+    });
 
     // ========================================================================
     // Admin API Routes

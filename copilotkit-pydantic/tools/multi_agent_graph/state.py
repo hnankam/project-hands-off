@@ -477,6 +477,8 @@ def sync_to_shared_state(
 async def send_graph_state_delta(
     send_stream: MemoryObjectSendStream[str] | None,
     state: QueryState,
+    graph_id: str,
+    graph_name: str | None = None,
     current_node: str = "",
     step_status: str = "in_progress",
     shared_state: Any = None,
@@ -491,6 +493,8 @@ async def send_graph_state_delta(
     Args:
         send_stream: The stream to send events to
         state: Current QueryState
+        graph_id: The graph ID (required, provided by runner)
+        graph_name: Optional graph name for display
         current_node: Node currently being executed
         step_status: Status of current step ("in_progress", "completed", "error")
         shared_state: Optional AgentState for syncing with session
@@ -498,31 +502,29 @@ async def send_graph_state_delta(
     Returns:
         True if update was sent successfully, False otherwise
     """
-    logger.debug(f"   [GraphState] Called for node={current_node}, status={step_status}")
+    logger.debug(f"   [GraphState] Called for graph_id={graph_id}, node={current_node}, status={step_status}")
     
     if not send_stream:
         logger.warning(f"   [StateDelta] No send_stream available for {current_node}")
         return False
     
+    if not graph_id:
+        logger.error(f"   [StateDelta] graph_id is required")
+        return False
+    
     try:
         encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
         
-        # Get or generate graph_id
-        graph_id = None
-        graph_name = None
+        # Check if this graph already exists in shared_state
         is_new_graph = True
+        if shared_state and hasattr(shared_state, 'graphs') and graph_id in shared_state.graphs:
+            is_new_graph = False
+            # Get graph name from shared state if not provided
+            if not graph_name:
+                graph_name = shared_state.graphs[graph_id].name
         
         # Check if this is the first graph (before any syncing)
         is_first_graph = not shared_state or not hasattr(shared_state, 'graphs') or len(shared_state.graphs) == 0
-        
-        if shared_state and hasattr(shared_state, 'graphs'):
-            # Try to find existing graph for this query
-            for gid, graph in shared_state.graphs.items():
-                if graph.original_query == (state.original_query or state.query):
-                    graph_id = gid
-                    graph_name = graph.name
-                    is_new_graph = False
-                    break
         
         # Remember if this was a new graph BEFORE sync
         # (sync will add it to shared_state, so we need to check before that)

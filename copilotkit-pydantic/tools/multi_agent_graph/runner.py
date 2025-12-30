@@ -15,7 +15,8 @@ from datetime import datetime
 
 from pydantic_ai import Agent
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
-from ag_ui.core import RunAgentInput, UserMessage
+from ag_ui.core import RunAgentInput, UserMessage, ActivitySnapshotEvent
+from ag_ui.encoder import EventEncoder
 
 from config import logger
 
@@ -262,6 +263,8 @@ async def run_multi_agent_graph(
         send_stream=send_stream,
         adapter=ag_ui_adapter,
         state=shared_state,
+        graph_id=graph_id,
+        graph_name=graph_name,
         session_id=session_id,
         user_id=user_id,
         organization_id=organization_id,
@@ -272,6 +275,39 @@ async def run_multi_agent_graph(
         model_id=model_id,
         agui_context=agui_context,
     )
+    
+    # ==================== STEP 5.5: Send ActivitySnapshotEvent ====================
+    # Send ActivitySnapshotEvent to re-register the ActivityMessage in the current run's context
+    # This is necessary when the graph was created in a previous run, as the runtime server
+    # needs the ActivityMessage in its current run's message store to apply subsequent deltas
+    
+    if send_stream and graph_id:
+        try:
+            encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+            activity_message_id = f"graph-{graph_id}"
+            session_id_str = session_id or "default"
+            
+            # Get current graph instance for the snapshot
+            if shared_state and graph_id in shared_state.graphs:
+                graph_instance = shared_state.graphs[graph_id]
+                activity_content = {
+                    "graphs": {graph_id: graph_instance.model_dump()},
+                    "sessionId": session_id_str,
+                }
+                
+                await send_stream.send(
+                    encoder.encode(
+                        ActivitySnapshotEvent(
+                            messageId=activity_message_id,
+                            activityType="agent_state",
+                            content=activity_content,
+                        )
+                    )
+                )
+                logger.info(f"   [run_multi_agent_graph] Sent ActivitySnapshotEvent to re-register graph {graph_id} in current run")
+        except Exception as e:
+            logger.warning(f"   [run_multi_agent_graph] Failed to send ActivitySnapshotEvent: {e}")
+            # Continue execution even if snapshot send fails
     
     # ==================== STEP 6: Execute the graph ====================
     

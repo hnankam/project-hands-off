@@ -16,7 +16,7 @@
 // =============================================================================
 
 // Chat functionality
-export { useCopilotChat } from './useCopilotChat';
+export { useCopilotChat, deleteMessagesFromBackend } from './useCopilotChat';
 export type { CopilotChatState } from './useCopilotChat';
 
 // Chat context (labels, icons, modal state)

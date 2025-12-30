@@ -30,6 +30,10 @@ class UnifiedDeps:
     send_stream: Any = None  # MemoryObjectSendStream[str]
     adapter: Any = None  # AGUIAdapter
     
+    # Graph metadata (for multi-agent graph nodes)
+    graph_id: str | None = None  # Graph ID for tracking ActivityMessages
+    graph_name: str | None = None  # Graph name for display
+    
     # Agent context for auxiliary agents
     organization_id: str | None = None
     team_id: str | None = None

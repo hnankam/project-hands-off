@@ -15,7 +15,7 @@ export interface CustomUserMessageRendererProps {
   className?: string;
   isEditing?: boolean;
   editedContent?: string;
-  onContentChange?: (content: string) => void;
+  onContentChange?: (content: string, cursorPos?: number) => void;
   onSave?: () => void;
   onCancel?: () => void;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
@@ -96,7 +96,11 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
         <textarea
           ref={textareaRef}
           value={editedContent}
-          onChange={(e) => onContentChange?.(e.target.value)}
+          onChange={(e) => {
+            // Pass cursor position (after the change) to preserve it
+            const cursorPos = e.target.selectionStart;
+            onContentChange?.(e.target.value, cursorPos);
+          }}
           onKeyDown={onKeyDown}
           style={{
             width: '100%',

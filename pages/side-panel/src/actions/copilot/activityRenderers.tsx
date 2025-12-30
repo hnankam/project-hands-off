@@ -77,6 +77,7 @@ const graphInstanceSchema = z.object({
   errors: z.array(z.object({
     node: z.string().optional(),
     error: z.string().optional(),
+    details: z.string().optional(),
     timestamp: z.string().optional(),
   })),
   last_error_node: z.string(),

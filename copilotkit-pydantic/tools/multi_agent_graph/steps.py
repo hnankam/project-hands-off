@@ -217,9 +217,11 @@ async def run_worker_step(
     
     send_stream = deps.send_stream
     shared_state = deps.state
+    graph_id = deps.graph_id
+    graph_name = deps.graph_name
     
     # Send state delta - step started
-    await send_graph_state_delta(send_stream, state, node_name, "in_progress", shared_state)
+    await send_graph_state_delta(send_stream, state, graph_id, graph_name, node_name, "in_progress", shared_state)
     
     try:
         # Build the prompt - use custom builder or default
@@ -255,6 +257,7 @@ async def run_worker_step(
         # Process all events
         event_count = await process_sub_agent_events(
             event_stream, state, node_name, send_stream, shared_state,
+            graph_id=graph_id, graph_name=graph_name,
             prompt=task_prompt, run_index=run_index
         )
         
@@ -283,7 +286,7 @@ async def run_worker_step(
         logger.info(f"   [{node_name}] ✓ Complete")
         
         # Send state delta - step completed
-        await send_graph_state_delta(send_stream, state, node_name, "completed", shared_state)
+        await send_graph_state_delta(send_stream, state, graph_id, graph_name, node_name, "completed", shared_state)
         
         return "continue" if state.should_continue else "end"
         
@@ -296,7 +299,7 @@ async def run_worker_step(
         logger.exception(f"{node_name} error: {e}")
         
         # Send state delta - step error
-        await send_graph_state_delta(send_stream, state, node_name, "error", shared_state)
+        await send_graph_state_delta(send_stream, state, graph_id, graph_name, node_name, "error", shared_state)
         
         return "error"
 

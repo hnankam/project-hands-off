@@ -8,6 +8,7 @@ import { useState, useCallback, useRef } from 'react';
 import { sessionStorageDBWrapper, generateSessionName, persistenceLock, debug } from '@extension/shared';
 import type { SessionMetadata } from '@extension/shared';
 import { exportSessionAsMarkdown, exportSessionAsHTML } from '../utils/sessionExport';
+import { API_CONFIG } from '../constants';
 
 export interface UseSessionActionsReturn {
   // Session actions
@@ -16,8 +17,8 @@ export interface UseSessionActionsReturn {
   handleSaveMessages: () => void;
   handleLoadMessages: () => void;
   handleCopySessionId: (e: React.MouseEvent) => Promise<void>;
-  handleExportAsMarkdown: () => Promise<void>;
-  handleExportAsHTML: () => Promise<void>;
+  handleExportAsMarkdown: (messages?: any[]) => Promise<void>;
+  handleExportAsHTML: (messages?: any[]) => Promise<void>;
   
   // Reset session
   handleResetSession: () => void;
@@ -107,15 +108,15 @@ export function useSessionActions(
   }, [currentSessionId]);
 
   // Export handlers
-  const handleExportAsMarkdown = useCallback(async () => {
+  const handleExportAsMarkdown = useCallback(async (messages?: any[]) => {
     if (currentSessionId) {
-      await exportSessionAsMarkdown(currentSessionId, sessions);
+      await exportSessionAsMarkdown(currentSessionId, sessions, messages || []);
     }
   }, [currentSessionId, sessions]);
 
-  const handleExportAsHTML = useCallback(async () => {
+  const handleExportAsHTML = useCallback(async (messages?: any[]) => {
     if (currentSessionId) {
-      await exportSessionAsHTML(currentSessionId, sessions);
+      await exportSessionAsHTML(currentSessionId, sessions, messages);
     }
   }, [currentSessionId, sessions]);
 
@@ -126,25 +127,42 @@ export function useSessionActions(
     setTimeout(() => setResetSessionConfirmOpen(true), 60);
   }, [currentSessionId, sessionMessageCounts]);
 
-  const handleConfirmResetSession = useCallback(() => {
+  const handleConfirmResetSession = useCallback(async () => {
     if (!currentSessionId) {
       console.error('[SessionActions] No current session to reset');
       return;
     }
 
     try {
+      // Call API to delete all messages in the thread
+      const response = await fetch(
+        `${API_CONFIG.BASE_URL}/api/messages/${currentSessionId}`,
+        {
+          method: 'DELETE',
+          credentials: 'include',
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Failed to reset session' }));
+        throw new Error(error.error || `Failed to reset session: ${response.status}`);
+      }
+
       persistenceLock.setManualReset(currentSessionId, true);
       debug.log('[SessionActions] Marked manual reset for session:', currentSessionId);
-    } catch (e) {
-      debug.warn?.('[SessionActions] Failed to mark manual reset flag:', e);
-    }
 
+      // Call registered reset function to update UI state
     const resetFn = resetFunctionsRef.current[currentSessionId];
     if (resetFn) {
       resetFn();
       setResetSessionConfirmOpen(false);
     } else {
       console.error('[SessionActions] No reset function found for session:', currentSessionId);
+        setResetSessionConfirmOpen(false);
+      }
+    } catch (error) {
+      console.error('[SessionActions] Failed to reset session:', error);
+      setResetSessionConfirmOpen(false);
     }
   }, [currentSessionId]);
 
@@ -161,10 +179,26 @@ export function useSessionActions(
         console.error('[SessionActions] No current session to clear messages from');
         return;
       }
-      await sessionStorageDBWrapper.updateAllMessages(currentSessionId, []);
+
+      // Call API to delete all messages in the thread
+      const response = await fetch(
+        `${API_CONFIG.BASE_URL}/api/messages/${currentSessionId}`,
+        {
+          method: 'DELETE',
+          credentials: 'include',
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Failed to clear messages' }));
+        throw new Error(error.error || `Failed to clear messages: ${response.status}`);
+      }
+
+      // Reload to refresh UI with updated messages
       window.location.reload();
     } catch (error) {
       console.error('[SessionActions] Failed to clear messages:', error);
+      setClearMessagesConfirmOpen(false);
     }
   }, [currentSessionId]);
 
@@ -177,7 +211,8 @@ export function useSessionActions(
     try {
       const sessionIds = sessions.map(s => s.id);
       for (const id of sessionIds) {
-        await sessionStorageDBWrapper.deleteSession(id);
+        // Pass API base URL to delete backend thread (hard delete with cascade)
+        await sessionStorageDBWrapper.deleteSession(id, API_CONFIG.BASE_URL);
       }
 
       try {

@@ -836,6 +836,7 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
                         graphId={graphId}
                         graphName={graphName}
                         onConfirm={handleConfirmAction}
+                        errors={state.errors}
                       />
                     ) : (
                       /* Editing overlay - replaces GraphStepItem when editing */
@@ -1039,6 +1040,81 @@ export const GraphStateCard: FC<GraphStateCardProps> = ({
               </div>
             )}
           </div>
+
+          {/* Error messages section */}
+          {state.errors && state.errors.length > 0 && (
+            <div className={`mt-4 p-4 rounded-lg border-2 ${
+              isLight 
+                ? 'bg-red-50 border-red-200' 
+                : 'bg-red-900/20 border-red-800/40'
+            }`}>
+              <div className="flex items-start gap-2 mb-3">
+                <ErrorIcon className="h-5 w-5 flex-shrink-0 mt-0.5" color={isLight ? '#dc2626' : '#f87171'} />
+                <div>
+                  <h4 className={`text-sm font-semibold ${isLight ? 'text-red-900' : 'text-red-400'}`}>
+                    {state.errors.length === 1 ? 'Error Occurred' : `${state.errors.length} Errors Occurred`}
+                  </h4>
+                  <p className={`text-xs mt-0.5 ${isLight ? 'text-red-700' : 'text-red-300'}`}>
+                    The following errors were encountered during graph execution:
+                  </p>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                {state.errors.map((error, index) => (
+                  <div 
+                    key={`${error.node}-${error.timestamp}-${index}`}
+                    className={`p-3 rounded-lg ${
+                      isLight 
+                        ? 'bg-white border border-red-200' 
+                        : 'bg-gray-900/50 border border-red-800/30'
+                    }`}
+                  >
+                    {/* Error header with node and timestamp */}
+                    <div className="flex items-center justify-between mb-2">
+                      {error.node && (
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                            isLight 
+                              ? 'bg-red-100 text-red-800' 
+                              : 'bg-red-900/40 text-red-300'
+                          }`}>
+                            {error.node}
+                          </span>
+                        </div>
+                      )}
+                      {error.timestamp && (
+                        <span className={`text-xs ${isLight ? 'text-red-600' : 'text-red-400'}`}>
+                          {new Date(error.timestamp).toLocaleTimeString()}
+                        </span>
+                      )}
+                    </div>
+                    
+                    {/* Error message */}
+                    {error.error && (
+                      <div className={`text-sm font-mono whitespace-pre-wrap break-words ${
+                        isLight ? 'text-red-900' : 'text-red-200'
+                      }`}>
+                        {error.error}
+                      </div>
+                    )}
+                    
+                    {/* Error details if present */}
+                    {(error as any).details && (
+                      <div className={`mt-2 pt-2 border-t text-xs font-mono whitespace-pre-wrap break-words ${
+                        isLight 
+                          ? 'border-red-200 text-red-700' 
+                          : 'border-red-800/30 text-red-300'
+                      }`}>
+                        <span className="font-semibold">Details: </span>
+                        {(error as any).details}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Final result */}
           {computedStatus === 'completed' && state.final_result && (

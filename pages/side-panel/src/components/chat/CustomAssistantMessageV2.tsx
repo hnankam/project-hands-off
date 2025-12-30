@@ -5,7 +5,7 @@
  * and styled toolbar buttons matching user message design (right-aligned, no gradient).
  */
 import React, { useMemo, useCallback, useState } from 'react';
-import { CopilotChatAssistantMessage } from '../../hooks/copilotkit';
+import { CopilotChatAssistantMessage, useCopilotChat } from '../../hooks/copilotkit';
 import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
 import { 
   CustomCopyButton,
@@ -81,9 +81,49 @@ type AssistantMessageProps = React.ComponentProps<typeof CopilotChatAssistantMes
  */
 const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (props) => {
   const [copied, setCopied] = useState(false);
+  const { reloadMessages } = useCopilotChat();
   const [isHovered, setIsHovered] = useState(false);
   const { message, messages, isRunning } = props;
   const { isLight } = useStorage(themeStorage);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const prevShouldShowToolbarRef = React.useRef<boolean | null>(null);
+  const prevMessageIdRef = React.useRef<string | undefined>(undefined);
+  
+  // Reset hover state when message changes (for messages loaded from history)
+  // This ensures hover state is properly initialized for each message
+  React.useEffect(() => {
+    console.log('[CustomAssistantMessageV2] Message changed, resetting hover state', {
+      messageId: message?.id,
+      messageRole: message?.role,
+      timestamp: new Date().toISOString(),
+    });
+    setIsHovered(false);
+  }, [message?.id]);
+  
+  // Debug: Log hover state changes
+  React.useEffect(() => {
+    console.log('[CustomAssistantMessageV2] Hover state changed', {
+      messageId: message?.id,
+      isHovered,
+      timestamp: new Date().toISOString(),
+    });
+  }, [isHovered, message?.id]);
+  
+  // Debug: Check if container element exists and can receive mouse events
+  React.useEffect(() => {
+    if (containerRef.current) {
+      const element = containerRef.current;
+      const computedStyle = window.getComputedStyle(element);
+      console.log('[CustomAssistantMessageV2] Container element styles', {
+        messageId: message?.id,
+        pointerEvents: computedStyle.pointerEvents,
+        zIndex: computedStyle.zIndex,
+        position: computedStyle.position,
+        display: computedStyle.display,
+        visibility: computedStyle.visibility,
+      });
+    }
+  }, [message?.id]);
   
   // Helper function to extract text from message content
   // Excludes <think> and <thinking> tags and their content
@@ -215,6 +255,36 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
     }
   }, [aggregatedSeriesContent, message, extractTextFromMessage]);
   
+  // Custom regenerate handler that filters messages correctly
+  const handleRegenerate = useCallback(() => {
+    if (!message?.id || !messages) return;
+    
+    // For assistant messages: find the user message that triggered this assistant response
+    // Then reload from that user message (which will exclude this assistant response and subsequent messages)
+    const messageIndex = messages.findIndex((m: any) => m.id === message.id);
+    if (messageIndex === -1) return;
+    
+    // Find the previous user message before this assistant message
+    let userMessageIndex = -1;
+    for (let i = messageIndex - 1; i >= 0; i--) {
+      const role = (messages[i] as any)?.role;
+      if (role === 'user') {
+        userMessageIndex = i;
+        break;
+      }
+    }
+    
+    if (userMessageIndex !== -1) {
+      const userMessage = messages[userMessageIndex];
+      if (userMessage?.id) {
+        reloadMessages(userMessage.id);
+      }
+    } else {
+      // Fallback: reload from this assistant message (will find user message in reloadMessages)
+      reloadMessages(message.id);
+    }
+  }, [message, messages, reloadMessages]);
+  
   return (
     <CopilotChatAssistantMessage
       {...props}
@@ -224,6 +294,7 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
       thumbsUpButton={CustomThumbsUpButton}
       thumbsDownButton={CustomThumbsDownButton}
       readAloudButton={CustomReadAloudButton}
+      onRegenerate={handleRegenerate}
     >
       {({ 
         markdownRenderer, 
@@ -242,11 +313,36 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         onReadAloud,
         onRegenerate,
       }) => {
-        // Use isRunning from either props or render context (whichever is true)
-        const effectiveIsRunning = isRunning || renderIsRunning;
-        
         // Use renderMessage from render context for accurate role checking
         const currentMessage = renderMessage || message;
+        
+        // Check if this message is truly the LAST message in the entire conversation
+        // Not just the last in a series between user messages
+        const messagesToCheck = renderMessages || messages;
+        const isActuallyLastMessage = messagesToCheck && messagesToCheck.length > 0 && 
+                                      currentMessage?.id === messagesToCheck[messagesToCheck.length - 1]?.id;
+        
+        // Use isRunning from either props or render context (whichever is true)
+        // BUT: For old messages loaded from history, isRunning should be false
+        // Only the ACTUAL last message in the entire conversation should potentially be running
+        // CopilotKit incorrectly marks all messages as running when loading history
+        // So we MUST check if this is the actual last message
+        const effectiveIsRunning = Boolean((isRunning || renderIsRunning) && isActuallyLastMessage);
+        
+        // Debug: Log isRunning values when they're true (to verify fix)
+        if (isRunning || renderIsRunning) {
+          console.log('[CustomAssistantMessageV2] isRunning check', {
+            messageId: currentMessage?.id,
+            isRunning,
+            renderIsRunning,
+            isLastInSeries,
+            isActuallyLastMessage,
+            totalMessages: messagesToCheck?.length,
+            lastMessageId: messagesToCheck?.[messagesToCheck.length - 1]?.id,
+            effectiveIsRunning,
+            timestamp: new Date().toISOString(),
+          });
+        }
         
         // Check if we should render toolbar at all (only for pure assistant messages with content)
         // Explicitly exclude:
@@ -264,12 +360,36 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
                                    isLastInSeries;
         
         // Determine toolbar visibility - always show on hover only (simplified logic)
-        const shouldShowToolbar = !effectiveIsRunning && 
+        const shouldShowToolbar = Boolean(!effectiveIsRunning && 
                                   shouldRenderToolbar &&
-                                  isHovered;
+                                  isHovered);
 
-        // Control toolbar visibility with opacity (only when toolbar should be rendered)
+        // Debug: Log toolbar visibility conditions (only when conditions change or hover state changes)
+        const messageIdChanged = prevMessageIdRef.current !== currentMessage?.id;
+        if (messageIdChanged) {
+          prevMessageIdRef.current = currentMessage?.id;
+          prevShouldShowToolbarRef.current = null; // Reset on message change
+        }
+        
+        if (prevShouldShowToolbarRef.current !== shouldShowToolbar || isHovered || messageIdChanged) {
+          console.log('[CustomAssistantMessageV2] Toolbar visibility check', {
+            messageId: currentMessage?.id,
+            effectiveIsRunning,
+            isPureAssistantMessage,
+            hasContent,
+            isLastInSeries,
+            shouldRenderToolbar,
+            isHovered,
+            shouldShowToolbar,
+            timestamp: new Date().toISOString(),
+          });
+          prevShouldShowToolbarRef.current = shouldShowToolbar;
+        }
+
+        // Control toolbar visibility with opacity and visibility (only when toolbar should be rendered)
+        // Use both opacity and visibility to ensure proper hiding/showing
         const toolbarOpacity = shouldShowToolbar ? 1 : 0;
+        const toolbarVisibility = shouldShowToolbar ? 'visible' : 'hidden';
         const toolbarPointerEvents = shouldShowToolbar ? 'auto' : 'none';
 
         // Clone copy button with custom onClick handler and copied state
@@ -281,20 +401,38 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
             })
           : copyButton;
         
+        // Clone regenerate button with custom onClick handler
+        // This ensures we filter messages correctly before regenerating
+        const customRegenerateButton = React.isValidElement(regenerateButton)
+          ? React.cloneElement(regenerateButton as React.ReactElement<any>, {
+              onClick: (e: React.MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleRegenerate();
+              },
+            })
+          : regenerateButton;
+        
         // Reorder buttons: Regenerate, ThumbsUp, ThumbsDown, ReadAloud, Copy (rightmost)
         // Only render toolbar for assistant messages with content
         const reorderedToolbar = shouldRenderToolbar ? (
-          <div style={{ 
+          <div 
+            style={{ 
             display: 'flex', 
             justifyContent: 'flex-end', 
             width: '100%',
             gap: '0.25rem',
             opacity: toolbarOpacity,
+              visibility: toolbarVisibility,
             pointerEvents: toolbarPointerEvents,
-            transition: 'opacity 0.2s ease-in-out',
-          }}>
+              transition: 'opacity 0.2s ease-in-out, visibility 0.2s ease-in-out',
+            }}
+            data-toolbar-opacity={toolbarOpacity}
+            data-toolbar-visibility={toolbarVisibility}
+            data-toolbar-should-show={shouldShowToolbar}
+          >
             {/* Regenerate Button */}
-            {regenerateButton}
+            {customRegenerateButton}
             
             {/* Thumbs Up Button */}
             {thumbsUpButton}
@@ -312,10 +450,49 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         
         return (
           <div 
-            style={{ color: isLight ? '#374151' : '#d1d5db', paddingLeft: '12px', paddingRight: '12px' }} // , paddingTop: '12px'
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
+            ref={containerRef}
+            style={{ 
+              color: isLight ? '#374151' : '#d1d5db', 
+              paddingLeft: '12px', 
+              paddingRight: '12px',
+              position: 'relative', // Ensure proper stacking context
+              zIndex: 1, // Ensure hover area is above other elements
+            }}
+            onMouseEnter={(e) => {
+              console.log('[CustomAssistantMessageV2] onMouseEnter fired', {
+                messageId: currentMessage?.id,
+                currentHoverState: isHovered,
+                target: e.target,
+                currentTarget: e.currentTarget,
+                timestamp: new Date().toISOString(),
+              });
+              e.stopPropagation();
+              setIsHovered(true);
+            }}
+            onMouseLeave={(e) => {
+              console.log('[CustomAssistantMessageV2] onMouseLeave fired', {
+                messageId: currentMessage?.id,
+                currentHoverState: isHovered,
+                target: e.target,
+                currentTarget: e.currentTarget,
+                timestamp: new Date().toISOString(),
+              });
+              e.stopPropagation();
+              setIsHovered(false);
+            }}
+            onMouseMove={(e) => {
+              // Ensure hover state is set on mouse move (handles edge cases)
+              if (!isHovered) {
+                console.log('[CustomAssistantMessageV2] onMouseMove setting hover (fallback)', {
+                  messageId: currentMessage?.id,
+                  timestamp: new Date().toISOString(),
+                });
+                setIsHovered(true);
+              }
+            }}
             data-message-role="assistant"
+            data-message-id={currentMessage?.id}
+            data-is-hovered={isHovered}
           >
             {markdownRenderer}
             {toolCallsView}

@@ -71,7 +71,7 @@ export interface GraphInstance {
   streaming_text: Record<string, string>;
   prompts: Record<string, string>;
   tool_calls: Record<string, GraphToolCall[]>;
-  errors: Array<{ node?: string; error?: string; timestamp?: string }>;
+  errors: Array<{ node?: string; error?: string; details?: string; timestamp?: string }>;
   last_error_node: string;
   retry_count: number;
   max_retries: number;

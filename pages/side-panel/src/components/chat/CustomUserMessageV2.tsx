@@ -18,7 +18,7 @@
  */
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { CopilotChatUserMessage, useCopilotChat } from '../../hooks/copilotkit';
+import { CopilotChatUserMessage, useCopilotChat, deleteMessagesFromBackend } from '../../hooks/copilotkit';
 import { useStorage, persistenceLock } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { useChatSessionIdSafe } from '../../context/ChatSessionIdContext';
@@ -220,30 +220,13 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
     const currentMessage = messageRef.current;
     if (!currentMessages || !currentMessage || currentMessageIndex === -1) return;
     
-    // Find the next assistant message after this user message
-    const following = currentMessages.slice(currentMessageIndex + 1).find(m => {
-      const role = (m as any)?.role;
-      return role === 'assistant' && typeof role === 'string';
-    });
-    
-    if (following?.id) {
-      // Refresh state before reloading
-      const refreshedMessages = currentMessages.map(m => ({ ...m }));
-      setMessages(refreshedMessages);
-      
-      setTimeout(() => {
-        reloadMessages(following.id);
-      }, 50);
-    } else if (currentMessage.id) {
-      // Fallback: reload from this user message
-      const refreshedMessages = currentMessages.map(m => ({ ...m }));
-      setMessages(refreshedMessages);
-      
-      setTimeout(() => {
+    // For refresh response: filter messages to include only up to and including this user message
+    // This excludes the assistant response and any subsequent messages
+    // Then trigger a new agent run
+    if (currentMessage.id) {
         reloadMessages(currentMessage.id);
-      }, 50);
     }
-  }, [setMessages, reloadMessages]); // Include setMessages and reloadMessages to use latest versions
+  }, [reloadMessages]);
   
   // Handle undo - restore previous edit
   const editHistoryRef = React.useRef(editHistory);
@@ -273,13 +256,51 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
     sessionIdRef.current = sessionId;
   }, [sessionId]);
   
-  const handleDelete = useCallback((type: 'this' | 'above' | 'below') => {
+  const handleDelete = useCallback(async (type: 'this' | 'above' | 'below') => {
     const currentMessages = messagesRef.current;
     const currentMessageIndex = messageIndexRef.current;
     const currentSessionId = sessionIdRef.current;
     
-    if (!currentMessages || currentMessageIndex === -1) return;
+    if (!currentMessages || currentMessageIndex === -1 || !currentSessionId) return;
     
+    const currentMessage = currentMessages[currentMessageIndex];
+    if (!currentMessage?.id) {
+      console.error('[CustomUserMessageV2] Cannot delete message without ID');
+      return;
+    }
+    
+    try {
+      let messageIdsToDelete: string[] = [];
+      
+      switch (type) {
+        case 'this':
+          messageIdsToDelete = [currentMessage.id];
+          break;
+        case 'above':
+          // Delete all messages from index 0 to current index (inclusive)
+          messageIdsToDelete = currentMessages
+            .slice(0, currentMessageIndex + 1)
+            .map(msg => msg.id)
+            .filter((id): id is string => Boolean(id));
+          break;
+        case 'below':
+          // Delete all messages from current index to end (inclusive)
+          messageIdsToDelete = currentMessages
+            .slice(currentMessageIndex)
+            .map(msg => msg.id)
+            .filter((id): id is string => Boolean(id));
+          break;
+      }
+      
+      if (messageIdsToDelete.length === 0) {
+        console.warn('[CustomUserMessageV2] No message IDs to delete');
+        return;
+      }
+      
+      // Call API to delete messages (reuses same helper as reloadMessages)
+      await deleteMessagesFromBackend(currentSessionId, messageIdsToDelete);
+      
+      // Update local state after successful API call
     let updatedMessages: typeof currentMessages;
     switch (type) {
       case 'this':
@@ -294,12 +315,16 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
     }
     
     // Signal intentional delete if empty
-    if (currentSessionId && updatedMessages.length === 0) {
+      if (updatedMessages.length === 0) {
       persistenceLock.setManualReset(currentSessionId, true);
     }
     
     // Call setMessages directly (not through ref) to ensure we use the latest agent reference
     setMessages(updatedMessages);
+    } catch (error) {
+      console.error('[CustomUserMessageV2] Error deleting message:', error);
+      // Optionally show user-facing error notification here
+    }
   }, [setMessages]);
   
   // Handle edit button click - enter edit mode
@@ -467,42 +492,72 @@ const CustomUserMessageV2ComponentInner: React.FC<UserMessageProps> = (props) =>
   // This prevents duplicate buttons since we're manually reordering
   const additionalToolbarItems = null;
   
-  // Stabilize attachments array reference to prevent callback recreation
-  const attachmentsRef = React.useRef(attachments);
-  const isEditingRef = React.useRef(isEditing);
-  const editedContentRefForRenderer = React.useRef(editedContent);
-  
-  React.useEffect(() => {
-    attachmentsRef.current = attachments;
-    isEditingRef.current = isEditing;
-    editedContentRefForRenderer.current = editedContent;
-  }, [attachments, isEditing, editedContent]);
-  
-  // Custom message renderer that handles edit mode and attachments
-  // Only recreate when actual content or state changes, not when messages array reference changes
+  // Custom message renderer callback
+  // Include editedContent in deps so renderer receives updated props
+  // Use stable key to prevent unmounting, and restore focus if lost
   const MessageRendererWithEdit = React.useCallback((rendererProps: { content: string; className?: string }) => {
-    const currentIsEditing = isEditingRef.current;
-    const currentAttachments = attachmentsRef.current;
-    const currentEditedContent = editedContentRefForRenderer.current;
-    
-    if (currentIsEditing) {
+    if (isEditing) {
       return (
         <CustomUserMessageRenderer 
+          key={`edit-${message.id}`} // Stable key - same key prevents unmounting
           {...rendererProps}
-          isEditing={currentIsEditing}
-          editedContent={currentEditedContent}
-          onContentChange={(content: string) => setEditedContentRef.current(content)}
+          isEditing={isEditing}
+          editedContent={editedContent}
+          onContentChange={handleContentChangeWithCursor}
           onSave={handleSaveEdit}
           onCancel={handleCancelEdit}
           textareaRef={textareaRef}
           onKeyDown={handleKeyDown}
-          attachments={currentAttachments}
+          attachments={attachments}
           isFirstMessage={isFirstMessage}
         />
       );
     }
-    return <CustomUserMessageRenderer {...rendererProps} attachments={currentAttachments} isFirstMessage={isFirstMessage} />;
-  }, [isFirstMessage, handleSaveEdit, handleCancelEdit, handleKeyDown]); // Only depend on stable values
+    return (
+      <CustomUserMessageRenderer 
+        key={`view-${message.id}`}
+        {...rendererProps}
+        attachments={attachments}
+        isFirstMessage={isFirstMessage}
+      />
+    );
+  }, [isFirstMessage, handleSaveEdit, handleCancelEdit, handleKeyDown, isEditing, editedContent, attachments, message.id]);
+  
+  // Store cursor position to restore it after re-render
+  const cursorPositionRef = React.useRef<number | null>(null);
+  
+  // Track cursor position when typing - receives content and cursor position
+  const handleContentChangeWithCursor = React.useCallback((content: string, cursorPos?: number) => {
+    // Save cursor position if provided, otherwise try to get it from textarea
+    if (cursorPos !== undefined) {
+      cursorPositionRef.current = cursorPos;
+    } else if (textareaRef.current) {
+      cursorPositionRef.current = textareaRef.current.selectionStart;
+    }
+    setEditedContent(content);
+  }, []);
+  
+  // Restore focus and cursor position after render if it was lost
+  // This handles cases where CopilotKit re-renders and focus is lost
+  React.useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      // Use requestAnimationFrame to ensure DOM has updated
+      requestAnimationFrame(() => {
+        if (textareaRef.current) {
+          const wasFocused = document.activeElement === textareaRef.current;
+          if (!wasFocused) {
+            textareaRef.current.focus();
+          }
+          // Restore cursor position if we have one saved
+          if (cursorPositionRef.current !== null) {
+            const pos = Math.min(cursorPositionRef.current, textareaRef.current.value.length);
+            textareaRef.current.setSelectionRange(pos, pos);
+            cursorPositionRef.current = null; // Clear after restoring
+          }
+        }
+      });
+    }
+  }, [isEditing, editedContent]); // Re-run when content changes to restore focus
   
   // Custom edit button that triggers edit mode
   const CustomEditButtonWithHandler = useCallback((buttonProps: React.ButtonHTMLAttributes<HTMLButtonElement>) => {

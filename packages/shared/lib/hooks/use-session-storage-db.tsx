@@ -389,9 +389,11 @@ export const sessionStorageDBWrapper = {
 
   /**
    * Delete a session
+   * @param {string} sessionId - Session ID (also used as threadId for backend)
+   * @param {string} [apiBaseUrl] - Optional API base URL for backend thread deletion
    */
-  async deleteSession(sessionId: string): Promise<void> {
-    await sessionStorageDB.deleteSession(sessionId);
+  async deleteSession(sessionId: string, apiBaseUrl?: string): Promise<void> {
+    await sessionStorageDB.deleteSession(sessionId, apiBaseUrl);
   },
 
   /**
@@ -413,40 +415,6 @@ export const sessionStorageDBWrapper = {
    */
   async updateSessionPlanExpanded(sessionId: string, planExpanded: boolean): Promise<void> {
     await sessionStorageDB.updateSessionPlanExpanded(sessionId, planExpanded);
-  },
-
-  /**
-   * Update messages for a session
-   */
-  async updateAllMessages(sessionId: string, messages: any[]): Promise<void> {
-    await sessionStorageDB.updateMessages(sessionId, messages);
-  },
-
-  /**
-   * Get all messages for a session
-   */
-  async getAllMessagesAsync(sessionId: string): Promise<any[]> {
-    return await sessionStorageDB.getMessages(sessionId);
-  },
-
-  /**
-   * Get current version for a session's messages
-   */
-  async getMessagesVersion(sessionId: string): Promise<number> {
-    return await sessionStorageDB.getMessagesVersion(sessionId);
-  },
-
-  /**
-   * Update messages with optimistic locking
-   * Returns success status and current version
-   */
-  async updateMessagesWithVersion(
-    sessionId: string,
-    messages: any[],
-    expectedVersion?: number,
-    isStreaming?: boolean
-  ): Promise<{ success: boolean; currentVersion?: number; error?: string }> {
-    return await sessionStorageDB.updateMessagesWithVersion(sessionId, messages, expectedVersion, isStreaming);
   },
 
   /**

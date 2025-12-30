@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 from typing import Any, TYPE_CHECKING
+from datetime import datetime
 
 from config import logger
 from .types import QueryState, ToolCallInfo
@@ -23,6 +24,8 @@ async def process_sub_agent_events(
     node_name: str,
     send_stream: MemoryObjectSendStream[str] | None,
     shared_state: Any,
+    graph_id: str | None = None,
+    graph_name: str | None = None,
     prompt: str = "",
     snapshot_interval: float = 0.3,
     run_index: int = 0,
@@ -35,6 +38,7 @@ async def process_sub_agent_events(
     - TOOL_CALL_ARGS: Tool arguments streaming  
     - TOOL_CALL_END: Tool call arguments complete
     - TOOL_CALL_RESULT: Tool execution result
+    - RUN_ERROR: Run-level errors from the agent
     
     Ref: https://docs.ag-ui.com/sdk/python/core/events
     
@@ -44,6 +48,8 @@ async def process_sub_agent_events(
         node_name: Name of the current node (e.g., "WebSearch")
         send_stream: Stream to send StateSnapshot updates
         shared_state: Optional AgentState for syncing
+        graph_id: Graph ID for tracking ActivityMessages
+        graph_name: Graph name for display
         prompt: The prompt sent to the sub-agent
         snapshot_interval: Minimum seconds between snapshot sends
         run_index: The run index for this step (0 for first run, 1 for second, etc.)
@@ -130,10 +136,43 @@ async def process_sub_agent_events(
                 should_send_snapshot = True
                 logger.debug(f"   [{node_name}] Tool result received: {result_str[:50]}...")
             
+            # Handle RUN_ERROR - agent run encountered an error
+            elif 'RUN_ERROR' in event_type or 'ERROR' in event_type:
+                error_message = getattr(event, 'message', '') or getattr(event, 'error', '') or str(event)
+                error_details = getattr(event, 'details', None)
+                
+                # Truncate long error messages
+                if isinstance(error_message, str) and len(error_message) > 500:
+                    error_message = error_message[:500] + "..."
+                
+                # Add to state errors
+                state.errors.append({
+                    "node": node_name,
+                    "error": str(error_message),
+                    "details": str(error_details) if error_details else None,
+                    "timestamp": datetime.now().isoformat()
+                })
+                
+                # Mark any in-progress tool calls as failed
+                for tc in state.tool_calls.get(indexed_key, []):
+                    if tc.status == "in_progress":
+                        tc.status = "error"
+                        tc.result = f"Error: {error_message}"
+                
+                logger.error(f"   [{node_name}] RUN_ERROR event: {error_message}")
+                
+                # Send error state to frontend immediately
+                await send_graph_state_delta(
+                    send_stream, state, graph_id, graph_name, node_name, "error", shared_state
+                )
+                
+                # Don't continue processing after error
+                break
+            
             # Send delta if needed (with failure protection)
             if should_send_snapshot and not snapshot_disabled:
                 success = await send_graph_state_delta(
-                    send_stream, state, node_name, "in_progress", shared_state
+                    send_stream, state, graph_id, graph_name, node_name, "in_progress", shared_state
                 )
                 if success:
                     consecutive_failures = 0

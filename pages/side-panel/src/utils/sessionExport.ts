@@ -2,9 +2,11 @@
  * Session Export Utilities
  * 
  * Functions for exporting chat sessions to various formats.
+ * 
+ * Note: Messages are now managed by the runtime server, so they must be
+ * passed as a parameter from the React component state.
  */
 
-import { sessionStorageDBWrapper } from '@extension/shared';
 import type { SessionMetadata } from '@extension/shared';
 
 // ============================================================================
@@ -121,21 +123,29 @@ const parseAttachments = (
 
 /**
  * Exports a session as Markdown
+ * 
+ * @param sessionId - Session/thread ID
+ * @param sessions - Array of session metadata
+ * @param messages - Array of messages from React state (required, no longer fetched from IndexedDB)
  */
 export const exportSessionAsMarkdown = async (
   sessionId: string,
-  sessions: SessionMetadata[]
+  sessions: SessionMetadata[],
+  messages: any[] = []
 ): Promise<void> => {
   if (!sessionId) {
     console.warn('[SessionExport] No session ID provided');
     return;
   }
 
+  if (!messages || messages.length === 0) {
+    console.warn('[SessionExport] No messages provided - messages must be passed from React state');
+    return;
+  }
+
   const session = sessions.find(s => s.id === sessionId);
   const title = session?.title || 'Session';
   const safeFilename = createSafeFilename(title);
-
-  const messages = (await sessionStorageDBWrapper.getAllMessagesAsync(sessionId)) || [];
 
   // Build markdown content
   const lines: string[] = [];
@@ -281,10 +291,15 @@ const renderMarkdownToHtml = (src: string): string => {
 
 /**
  * Exports a session as HTML
+ * 
+ * @param sessionId - Session/thread ID
+ * @param sessions - Array of session metadata
+ * @param messages - Array of messages from React state (optional, will use DOM if not provided)
  */
 export const exportSessionAsHTML = async (
   sessionId: string,
-  sessions: SessionMetadata[]
+  sessions: SessionMetadata[],
+  messages?: any[]
 ): Promise<void> => {
   if (!sessionId) {
     console.warn('[SessionExport] No session ID provided');
@@ -392,9 +407,8 @@ export const exportSessionAsHTML = async (
     }
   }
 
-  // Fallback: Build from stored messages
-  if (!exportedInnerHTML || exportedInnerHTML.replace(/\s+/g, '').length < 20) {
-    const messages = (await sessionStorageDBWrapper.getAllMessagesAsync(sessionId)) || [];
+  // Fallback: Build from provided messages (or empty array if not provided)
+  if ((!exportedInnerHTML || exportedInnerHTML.replace(/\s+/g, '').length < 20) && messages && messages.length > 0) {
 
     const renderMessageContent = (message: ExportMessage): string => {
       let content = extractMessageContent(message);

@@ -49,8 +49,12 @@ export const SessionList = ({ className, isLight = true }: SessionListProps) => 
     if (sessionToDelete) {
       const sessionId = sessionToDelete.id; // Capture sessionId before clearing state
       try {
+        // Get API base URL from environment or use default
+        // @ts-ignore - Vite-specific import.meta.env
+        const apiBaseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || 'http://localhost:3001';
         // Perform deletion first, then close modal
-        await sessionStorageDBWrapper.deleteSession(sessionId);
+        // This will delete backend thread (hard delete with cascade) and frontend session
+        await sessionStorageDBWrapper.deleteSession(sessionId, apiBaseUrl);
       } catch (error) {
         console.error('[SessionList] Failed to delete session:', error);
         // Don't close modal on error so user can retry

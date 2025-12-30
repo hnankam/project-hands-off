@@ -108,7 +108,7 @@ export const SharedAgentProvider: React.FC<{ children: React.ReactNode; sessionK
     // Increased delay to ensure the connection is truly stable before children mount
     gateTimerRef.current = window.setTimeout(() => {
       setIsGateOpen(true);
-    }, 350);
+    }, 600);
     
     return () => {
       if (gateTimerRef.current !== null) {
