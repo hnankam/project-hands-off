@@ -163,14 +163,21 @@ const SelectedNotesContext: React.FC<{ notes: any[] }> = ({ notes }) => {
 const SelectedCredentialsContext: React.FC<{ credentials: any[] }> = ({ credentials }) => {
   useCopilotReadableData({
     description:
-      'User-selected credentials (API keys, passwords, tokens). These are sensitive credentials the user explicitly selected to add as context for API calls or authentication. Handle with care.',
+      `Available credentials for API calls. The user has explicitly selected these credentials for use in this session.
+      
+      IMPORTANT SECURITY NOTES:
+      - You can see credential metadata (ID, name, type, key identifier) but NOT the actual passwords/secrets
+      - Never ask the user for credential values - they are securely stored server-side
+      - The backend will handle authentication automatically when you use the credential
+      
+      The 'key' field contains public identifiers only (like username, API key ID) - never the actual secret.`,
     value: {
       selectedCredentials: credentials.map(cred => ({
         id: cred.id,
         name: cred.name,
         type: cred.type,
-        key: cred.key,
-        password: cred.password,
+        key: cred.key, // Public identifier only (username, API key ID, etc.)
+        // ✅ SECURITY: password/secret field removed - never sent to LLM
       })),
     },
   });

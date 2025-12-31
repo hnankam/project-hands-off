@@ -993,7 +993,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                   currentFiles.every(f => selectedFiles.has(f.id)) &&
                   currentFolders.every(f => selectedFolders.has(f.path)) &&
                   (currentFiles.length + currentFolders.length) > 0
-                    ? 'bg-blue-600/60 opacity-100'
+                    ? 'bg-blue-600/80 opacity-100'
                     : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500'),
                 )}>
                 {currentFiles.every(f => selectedFiles.has(f.id)) &&

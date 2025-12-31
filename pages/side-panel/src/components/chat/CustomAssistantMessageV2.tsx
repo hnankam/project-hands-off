@@ -86,43 +86,11 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
   const { message, messages, isRunning } = props;
   const { isLight } = useStorage(themeStorage);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const prevShouldShowToolbarRef = React.useRef<boolean | null>(null);
-  const prevMessageIdRef = React.useRef<string | undefined>(undefined);
   
   // Reset hover state when message changes (for messages loaded from history)
   // This ensures hover state is properly initialized for each message
   React.useEffect(() => {
-    console.log('[CustomAssistantMessageV2] Message changed, resetting hover state', {
-      messageId: message?.id,
-      messageRole: message?.role,
-      timestamp: new Date().toISOString(),
-    });
     setIsHovered(false);
-  }, [message?.id]);
-  
-  // Debug: Log hover state changes
-  React.useEffect(() => {
-    console.log('[CustomAssistantMessageV2] Hover state changed', {
-      messageId: message?.id,
-      isHovered,
-      timestamp: new Date().toISOString(),
-    });
-  }, [isHovered, message?.id]);
-  
-  // Debug: Check if container element exists and can receive mouse events
-  React.useEffect(() => {
-    if (containerRef.current) {
-      const element = containerRef.current;
-      const computedStyle = window.getComputedStyle(element);
-      console.log('[CustomAssistantMessageV2] Container element styles', {
-        messageId: message?.id,
-        pointerEvents: computedStyle.pointerEvents,
-        zIndex: computedStyle.zIndex,
-        position: computedStyle.position,
-        display: computedStyle.display,
-        visibility: computedStyle.visibility,
-      });
-    }
   }, [message?.id]);
   
   // Helper function to extract text from message content
@@ -329,21 +297,6 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         // So we MUST check if this is the actual last message
         const effectiveIsRunning = Boolean((isRunning || renderIsRunning) && isActuallyLastMessage);
         
-        // Debug: Log isRunning values when they're true (to verify fix)
-        if (isRunning || renderIsRunning) {
-          console.log('[CustomAssistantMessageV2] isRunning check', {
-            messageId: currentMessage?.id,
-            isRunning,
-            renderIsRunning,
-            isLastInSeries,
-            isActuallyLastMessage,
-            totalMessages: messagesToCheck?.length,
-            lastMessageId: messagesToCheck?.[messagesToCheck.length - 1]?.id,
-            effectiveIsRunning,
-            timestamp: new Date().toISOString(),
-          });
-        }
-        
         // Check if we should render toolbar at all (only for pure assistant messages with content)
         // Explicitly exclude:
         // - Non-assistant messages (user, tool, system, etc.)
@@ -363,28 +316,6 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
         const shouldShowToolbar = Boolean(!effectiveIsRunning && 
                                   shouldRenderToolbar &&
                                   isHovered);
-
-        // Debug: Log toolbar visibility conditions (only when conditions change or hover state changes)
-        const messageIdChanged = prevMessageIdRef.current !== currentMessage?.id;
-        if (messageIdChanged) {
-          prevMessageIdRef.current = currentMessage?.id;
-          prevShouldShowToolbarRef.current = null; // Reset on message change
-        }
-        
-        if (prevShouldShowToolbarRef.current !== shouldShowToolbar || isHovered || messageIdChanged) {
-          console.log('[CustomAssistantMessageV2] Toolbar visibility check', {
-            messageId: currentMessage?.id,
-            effectiveIsRunning,
-            isPureAssistantMessage,
-            hasContent,
-            isLastInSeries,
-            shouldRenderToolbar,
-            isHovered,
-            shouldShowToolbar,
-            timestamp: new Date().toISOString(),
-          });
-          prevShouldShowToolbarRef.current = shouldShowToolbar;
-        }
 
         // Control toolbar visibility with opacity and visibility (only when toolbar should be rendered)
         // Use both opacity and visibility to ensure proper hiding/showing
@@ -459,34 +390,16 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
               zIndex: 1, // Ensure hover area is above other elements
             }}
             onMouseEnter={(e) => {
-              console.log('[CustomAssistantMessageV2] onMouseEnter fired', {
-                messageId: currentMessage?.id,
-                currentHoverState: isHovered,
-                target: e.target,
-                currentTarget: e.currentTarget,
-                timestamp: new Date().toISOString(),
-              });
               e.stopPropagation();
               setIsHovered(true);
             }}
             onMouseLeave={(e) => {
-              console.log('[CustomAssistantMessageV2] onMouseLeave fired', {
-                messageId: currentMessage?.id,
-                currentHoverState: isHovered,
-                target: e.target,
-                currentTarget: e.currentTarget,
-                timestamp: new Date().toISOString(),
-              });
               e.stopPropagation();
               setIsHovered(false);
             }}
             onMouseMove={(e) => {
               // Ensure hover state is set on mouse move (handles edge cases)
               if (!isHovered) {
-                console.log('[CustomAssistantMessageV2] onMouseMove setting hover (fallback)', {
-                  messageId: currentMessage?.id,
-                  timestamp: new Date().toISOString(),
-                });
                 setIsHovered(true);
               }
             }}

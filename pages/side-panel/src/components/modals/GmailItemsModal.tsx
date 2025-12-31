@@ -465,7 +465,7 @@ export const GmailItemsModal: React.FC<GmailItemsModalProps> = ({
                     className={cn(
                       'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
                       selectedEmailIds.size === emails.length && emails.length > 0
-                        ? 'bg-blue-600/60 opacity-100'
+                        ? 'bg-blue-600/80 opacity-100'
                         : cn('border opacity-100', isLight ? 'border-gray-400' : 'border-gray-500'),
                     )}>
                     {selectedEmailIds.size === emails.length && emails.length > 0 && (
@@ -563,7 +563,7 @@ export const GmailItemsModal: React.FC<GmailItemsModalProps> = ({
                             className={cn(
                               'mt-0.5 mr-3 flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
                               isSelected
-                                ? 'bg-blue-600/60 opacity-100'
+                                ? 'bg-blue-600/80 opacity-100'
                                 : cn('border opacity-100', isLight ? 'border-gray-400' : 'border-gray-500'),
                             )}
                             onClick={e => {

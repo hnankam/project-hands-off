@@ -400,8 +400,8 @@ async def list_folders(user_id: str, parent_folder: Optional[str] = None) -> Lis
                             SELECT COUNT(DISTINCT f2.folder)
                             FROM workspace_files f2
                             WHERE f2.user_id = %s
-                              AND f2.folder LIKE f1.folder || '/%'
-                              AND f2.folder NOT LIKE f1.folder || '/%/%'
+                              AND f2.folder LIKE f1.folder || '/%%'
+                              AND f2.folder NOT LIKE f1.folder || '/%%/%%'
                         ), 0) as folder_count,
                         MIN(f1.created_at) as created
                     FROM workspace_files f1
@@ -422,8 +422,8 @@ async def list_folders(user_id: str, parent_folder: Optional[str] = None) -> Lis
                             SELECT COUNT(DISTINCT f2.folder)
                             FROM workspace_files f2
                             WHERE f2.user_id = %s
-                              AND f2.folder LIKE f1.folder || '/%'
-                              AND f2.folder NOT LIKE f1.folder || '/%/%'
+                              AND f2.folder LIKE f1.folder || '/%%'
+                              AND f2.folder NOT LIKE f1.folder || '/%%/%%'
                         ), 0) as folder_count,
                         MIN(f1.created_at) as created
                     FROM workspace_files f1

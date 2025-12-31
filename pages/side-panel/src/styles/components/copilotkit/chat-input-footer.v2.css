@@ -238,12 +238,12 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
   text-align: center !important;
   font-size: 10px !important;
   /* line-height: 1.4 !important; */
-  /* Text color matches user message with 50% opacity (gray-700) */
-  color: rgba(55, 65, 81, 0.5) !important;
+  color: var(--color-gray-600) !important;
   padding: 4px 16px !important;
   max-width: 48rem !important;
   margin-left: auto !important;
   margin-right: auto !important;
+  opacity: 0.8 !important;
 }
 
 .dark .chat-disclaimer,
@@ -255,7 +255,7 @@ body.hide-copilot-suggestions .copilotKitMessagesFooter [class*="suggestion"] {
 .copilot-chat-container.dark.font-size-large div.chat-disclaimer,
 .copilot-chat-container.dark.font-size-large div.chat-disclaimer:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]) {
   /* Text color matches user message with 50% opacity in dark mode (gray-300) */
-  color: rgba(209, 213, 219, 0.5) !important;
+  color: var(--color-gray-500) !important;
 }
 
 /* Hide disclaimer when skeleton is loading */

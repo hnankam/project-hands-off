@@ -202,13 +202,13 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   
   // Workspace context state - use context if available, otherwise local state
   const [localNotesWithContent, setLocalNotesWithContent] = useState<any[]>([]);
-  const [localCredentialsWithSecrets, setLocalCredentialsWithSecrets] = useState<any[]>([]);
+  const [localCredentialsMetadata, setLocalCredentialsMetadata] = useState<any[]>([]); // ✅ SECURITY: Changed from localCredentialsWithSecrets
   const [localFilesWithDetails, setLocalFilesWithDetails] = useState<any[]>([]);
   
   const selectedNotes = pageSelectorCtx?.selectedNotes ?? localNotesWithContent;
   const setSelectedNotes = pageSelectorCtx?.onNotesChange ?? setLocalNotesWithContent;
-  const selectedCredentials = pageSelectorCtx?.selectedCredentials ?? localCredentialsWithSecrets;
-  const setSelectedCredentials = pageSelectorCtx?.onCredentialsChange ?? setLocalCredentialsWithSecrets;
+  const selectedCredentials = pageSelectorCtx?.selectedCredentials ?? localCredentialsMetadata; // ✅ SECURITY: No secrets
+  const setSelectedCredentials = pageSelectorCtx?.onCredentialsChange ?? setLocalCredentialsMetadata;
   // For files, prefer whichever has content (context or local)
   const selectedFiles = (pageSelectorCtx?.selectedFiles && pageSelectorCtx.selectedFiles.length > 0) 
     ? pageSelectorCtx.selectedFiles 
@@ -2139,7 +2139,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                       onNotesChange={setSelectedNoteIds}
                       onCredentialsChange={setSelectedCredentialIds}
                       onNotesWithContentChange={setSelectedNotes}
-                      onCredentialsWithSecretsChange={setSelectedCredentials}
+                      onCredentialsWithMetadataChange={setSelectedCredentials} // ✅ SECURITY: Changed from onCredentialsWithSecretsChange
                     />
                   </div>
                 

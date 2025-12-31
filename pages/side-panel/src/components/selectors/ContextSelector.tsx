@@ -77,9 +77,9 @@ interface Credential {
   updated_at: string;
 }
 
-interface CredentialWithSecret extends Credential {
-  password?: string | null; // The decrypted secret/password from encrypted_data column
-}
+// ✅ SECURITY: Removed CredentialWithSecret interface
+// Credentials should never include passwords in frontend context
+// Passwords are only accessed server-side via the use_credential action
 
 type ViewMode = 'all' | 'indexed' | 'tabs' | 'workspace';
 type SortOption = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc';
@@ -112,7 +112,7 @@ interface ContextSelectorProps {
   onNotesChange?: (noteIds: string[]) => void;
   onCredentialsChange?: (credentialIds: string[]) => void;
   onNotesWithContentChange?: (notes: WorkspaceNote[]) => void; // Callback with full note content
-  onCredentialsWithSecretsChange?: (credentials: CredentialWithSecret[]) => void; // Callback with full credential data including secrets
+  onCredentialsWithMetadataChange?: (credentials: Credential[]) => void; // ✅ SECURITY: Callback with metadata only (no secrets)
 }
 
 export const ContextSelector: React.FC<ContextSelectorProps> = ({
@@ -129,7 +129,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
   onNotesChange,
   onCredentialsChange,
   onNotesWithContentChange,
-  onCredentialsWithSecretsChange,
+  onCredentialsWithMetadataChange, // ✅ SECURITY: Changed from onCredentialsWithSecretsChange
 }) => {
   // ============================================================================
   // STATE - Existing
@@ -1133,11 +1133,12 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
         : [...selectedCredentialIds, credentialId];
       onCredentialsChange(newSelection);
 
-      // If callback for full credentials is provided, fetch secrets
-      if (onCredentialsWithSecretsChange && newSelection.length > 0) {
+      // ✅ SECURITY: Fetch metadata only (no secrets/passwords)
+      if (onCredentialsWithMetadataChange && newSelection.length > 0) {
         try {
           const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-          const response = await fetch(`${baseURL}/api/workspace/credentials/bulk`, {
+          // Changed endpoint from /bulk to /metadata
+          const response = await fetch(`${baseURL}/api/workspace/credentials/metadata`, {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -1148,18 +1149,18 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
 
           if (response.ok) {
             const data = await response.json();
-            onCredentialsWithSecretsChange(data.credentials || []);
-            debug.log('[ContextSelector] Fetched', data.credentials?.length || 0, 'credentials with secrets');
+            onCredentialsWithMetadataChange(data.credentials || []);
+            debug.log('[ContextSelector] Fetched', data.credentials?.length || 0, 'credentials (metadata only)');
           }
         } catch (error) {
-          debug.error('[ContextSelector] Failed to fetch credential secrets:', error);
+          debug.error('[ContextSelector] Failed to fetch credential metadata:', error);
         }
-      } else if (onCredentialsWithSecretsChange && newSelection.length === 0) {
+      } else if (onCredentialsWithMetadataChange && newSelection.length === 0) {
         // Clear credentials if nothing selected
-        onCredentialsWithSecretsChange([]);
+        onCredentialsWithMetadataChange([]);
       }
     },
-    [selectedCredentialIds, onCredentialsChange, onCredentialsWithSecretsChange],
+    [selectedCredentialIds, onCredentialsChange, onCredentialsWithMetadataChange],
   );
 
   // ============================================================================
@@ -1700,7 +1701,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                                     className={cn(
                                       'flex h-3.5 w-3.5 items-center justify-center rounded transition-opacity',
                                       isSelected
-                                        ? 'bg-blue-600/60 opacity-100'
+                                        ? 'bg-blue-600/80 opacity-100'
                                         : cn(
                                             'border opacity-0 group-hover:opacity-100',
                                             isLight ? 'border-gray-400' : 'border-gray-500',
@@ -2033,7 +2034,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                                       className={cn(
                                         'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
                                         isSelected
-                                          ? 'bg-blue-600/60 opacity-100'
+                                          ? 'bg-blue-600/80 opacity-100'
                                           : cn(
                                               'border opacity-0 group-hover:opacity-100',
                                               isLight ? 'border-gray-400' : 'border-gray-500',
@@ -2114,7 +2115,7 @@ export const ContextSelector: React.FC<ContextSelectorProps> = ({
                                       className={cn(
                                         'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
                                         isSelected
-                                          ? 'bg-blue-600/60 opacity-100'
+                                          ? 'bg-blue-600/80 opacity-100'
                                           : cn(
                                               'border opacity-0 group-hover:opacity-100',
                                               isLight ? 'border-gray-400' : 'border-gray-500',
@@ -2401,7 +2402,7 @@ const TabItem: React.FC<TabItemProps> = ({
           className={cn(
             'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
             isSelected
-              ? 'bg-blue-600/60 opacity-100'
+              ? 'bg-blue-600/80 opacity-100'
               : cn('border opacity-0 group-hover:opacity-100', isLight ? 'border-gray-400' : 'border-gray-500'),
           )}>
           {isSelected && (

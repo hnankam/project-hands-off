@@ -207,26 +207,6 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
   // Initialize userClosed from cache
   const userClosedRef = useRef(userClosedCache.get(cacheKey) ?? false);
   
-  // LOG: Component inputs/props
-  useEffect(() => {
-    console.log('[FileManagementCard] 📥 PROPS RECEIVED:', {
-      fileName,
-      folder,
-      status,
-      operation,
-      instanceId,
-      contentSize,
-      hasResult: !!result,
-      resultType: typeof result,
-      resultPreview: result ? (typeof result === 'string' ? result.substring(0, 100) : JSON.stringify(result).substring(0, 100)) : null,
-      hasError: !!error,
-      errorType: typeof error,
-      errorValue: error,
-      hasContent: !!content,
-      contentLength: content?.length || 0,
-    });
-  }, [fileName, folder, status, result, error, content, contentSize, instanceId, operation]);
-  
   // Sync expanded state to cache whenever it changes
   useEffect(() => {
     expandedStateCache.set(cacheKey, isExpanded);
@@ -254,25 +234,12 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
   let fileInfo: { file_id?: string; file_path?: string; size_bytes?: number } = {};
   let validationError: { partial_data?: any; error_message?: string; raw_response?: string } | null = null;
   
-  console.log('[FileManagementCard] 🔍 PARSING RESULT:', {
-    hasResult: !!result,
-    resultType: typeof result,
-    resultLength: typeof result === 'string' ? result.length : 'N/A',
-  });
-  
   if (result && typeof result === 'string') {
     try {
       // Try normal JSON parse first
-      console.log('[FileManagementCard] 📝 Attempting normal JSON parse...');
       fileInfo = JSON.parse(result);
-      console.log('[FileManagementCard] ✅ JSON parse successful:', Object.keys(fileInfo));
     } catch (parseError) {
       // JSON parsing failed - TEMPORARILY NOT REPAIRING TO SEE RAW RESPONSE
-      console.log('[FileManagementCard] ❌ Initial JSON parse failed (repair disabled for debugging)');
-      console.log('[FileManagementCard] Parse error:', parseError instanceof Error ? parseError.message : parseError);
-      console.log('[FileManagementCard] Response preview (first 300 chars):', result.substring(0, 300));
-      console.log('[FileManagementCard] Response full length:', result.length);
-      console.log('[FileManagementCard] RAW RESPONSE:', result);
       
       // TEMPORARILY COMMENTED OUT: Repair logic to see raw response
       // try {
@@ -325,39 +292,13 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
       };
     }
   } else if (result && typeof result === 'object') {
-    console.log('[FileManagementCard] 📦 Result is already an object:', Object.keys(result));
     fileInfo = result;
   }
-  
-  // LOG: Final parsed state
-  console.log('[FileManagementCard] 📊 FINAL PARSED STATE:', {
-    hasFileInfo: Object.keys(fileInfo).length > 0,
-    fileInfoKeys: Object.keys(fileInfo),
-    fileInfo,
-    hasValidationError: !!validationError,
-    validationError: validationError ? {
-      hasPartialData: !!validationError.partial_data,
-      partialDataKeys: validationError.partial_data ? Object.keys(validationError.partial_data) : [],
-      errorMessage: validationError.error_message,
-      rawResponseLength: validationError.raw_response?.length,
-    } : null,
-  });
   
   const isWorking = status === 'inProgress' || status === 'executing';
   // Treat validation errors as failures
   const isComplete = status === 'complete' && !validationError;
   const hasError = !!error || !!validationError;
-  
-  // LOG: Component render state
-  console.log('[FileManagementCard] 🎨 RENDER STATE:', {
-    fileName,
-    operation,
-    status,
-    isWorking,
-    isComplete,
-    hasError,
-    willRender: isWorking || isComplete || hasError,
-  });
 
   // Card styling matching ImageGalleryCard
   const cardBackground = isLight ? 'rgba(249, 250, 251, 0.5)' : 'rgba(21, 28, 36, 0.4)';
@@ -555,6 +496,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
               </span>
               <span style={{ color: mutedTextColor }}>|</span>
               <span
+                className="gallery-prompt"
                 style={{
                   fontSize: '10px',
                   fontWeight: 300,
@@ -575,6 +517,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
             {/* File size - show if available */}
             {displaySize > 0 && (
               <div
+                className="gallery-count"
                 style={{
                   fontSize: '11px',
                   color: mutedTextColor,
@@ -589,7 +532,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
         </div>
 
         {/* Skeleton Content - with streaming preview */}
-        <div style={{ padding: '8px' }}>
+        <div className="gallery-carousel" style={{ padding: '8px' }}>
           {/* If we have content, show it streaming; otherwise show shimmer */}
           {displayContent ? (
             <div
@@ -613,7 +556,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                 }}
               >
                 <span className="copilot-action-sparkle-text" style={{ color: textColor }}>✨ Writing File</span>
-                <span style={{ marginLeft: 'auto', opacity: 0.7, color: textColor }}>
+                <span className="gallery-count" style={{ marginLeft: 'auto', opacity: 0.7, color: textColor }}>
                   {formatSize(displayContent.length)} • {fileType.language}
                 </span>
               </div>
@@ -696,11 +639,8 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
 
   // Don't render if not complete and no error
   if (!isComplete && !hasError) {
-    console.log('[FileManagementCard] ⏭️ SKIPPING RENDER (not complete and no error):', { fileName, status });
     return null;
   }
-  
-  console.log('[FileManagementCard] ✅ RENDERING CARD:', { fileName, operation, status, hasError });
 
   // File icon
   const fileIcon = (
@@ -816,6 +756,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
             </span>
             <span style={{ color: mutedTextColor }}>|</span>
             <span
+              className="gallery-prompt"
               style={{
                 fontSize: '10px',
                 fontWeight: 300,
@@ -835,6 +776,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
           {/* File size */}
           {displaySize > 0 && !hasError && (
             <div
+              className="gallery-count"
               style={{
                 fontSize: '11px',
                 color: mutedTextColor,
@@ -857,7 +799,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
           transition: 'max-height 0.3s ease-in-out, opacity 0.3s ease-in-out',
         }}
       >
-        <div style={{ padding: '8px' }}>
+        <div className="gallery-carousel" style={{ padding: '8px' }}>
           {/* File path */}
           <div style={{ marginBottom: 8 }}>
             <div
@@ -1015,7 +957,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
-                    padding: '8px 10px',
+                    padding: '6px',
                     fontSize: 11,
                     fontWeight: 600,
                     color: validationError ? '#ef4444' : textColor,
@@ -1056,8 +998,8 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                   >
                     <polyline points="9 18 15 12 9 6" />
                   </svg>
-                  <span>{showPreview ? 'Hide' : 'Show'} {validationError ? 'Recovered' : ''} Content Preview</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.7 }}>
+                  <span className="gallery-prompt">{showPreview ? 'Hide' : 'Show'} {validationError ? 'Recovered' : ''} Content Preview</span>
+                  <span className="gallery-count" style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.7 }}>
                     {formatSize(displayContent.length)} • {fileType.language}
                   </span>
                 </button>
@@ -1088,7 +1030,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                       }}
                     >
                       <span className="copilot-action-sparkle-text" style={{ color: textColor }}>✨ Writing File</span>
-                      <span style={{ marginLeft: 'auto', opacity: 0.7, color: textColor }}>
+                      <span className="gallery-count" style={{ marginLeft: 'auto', opacity: 0.7, color: textColor }}>
                         {formatSize(displayContent.length)} • {fileType.language}
                       </span>
                     </div>

@@ -1319,11 +1319,61 @@ router.delete('/credentials/:id', requireAuth, async (req, res) => {
 });
 
 /**
- * Fetch multiple credentials with secrets (bulk)
+ * Fetch multiple credentials metadata (WITHOUT secrets) - SECURE
+ * POST /api/workspace/credentials/metadata
+ * Body: { ids: string[] }
+ * 
+ * ✅ SECURITY: This endpoint returns only public metadata, never the password/secret.
+ * Used for agent context where agent needs to know ABOUT credentials but not access them.
+ * To actually use credentials, the agent must call server-side actions.
+ */
+router.post('/credentials/metadata', requireAuth, async (req, res) => {
+  try {
+    const userId = req.auth.user.id;
+    const { ids } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.json({ credentials: [] });
+    }
+    
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT id, name, type, key, created_at, updated_at
+       FROM workspace_credentials
+       WHERE user_id = $1 AND id = ANY($2::uuid[])
+       ORDER BY updated_at DESC`,
+      [userId, ids]
+    );
+    
+    // ✅ SECURITY: Never include encrypted_data or decrypt passwords
+    // Agent receives only metadata - actual secrets accessed server-side only
+    res.json({ credentials: rows });
+  } catch (error) {
+    console.error('[Workspace] Error fetching credentials metadata:', error);
+    res.status(500).json({ error: 'Failed to fetch credentials metadata' });
+  }
+});
+
+/**
+ * Fetch multiple credentials with secrets (bulk) - DEPRECATED
  * POST /api/workspace/credentials/bulk
  * Body: { ids: string[] }
+ * 
+ * ⚠️ SECURITY WARNING: This endpoint returns decrypted passwords.
+ * It should only be used server-side, never from frontend/agent context.
+ * Consider removing this endpoint or adding additional authorization.
  */
 router.post('/credentials/bulk', requireAuth, async (req, res) => {
+  // ⚠️ SECURITY: Log warning when this endpoint is accessed
+  console.warn('[SECURITY] /credentials/bulk endpoint accessed by user:', req.auth.user.id);
+  console.warn('[SECURITY] Consider migrating to /credentials/metadata endpoint');
+  
+  // Optional: Disable this endpoint entirely for security
+  // return res.status(403).json({ 
+  //   error: 'Direct credential access not allowed. Use server-side actions instead.',
+  //   suggestion: 'Use /api/workspace/credentials/metadata for metadata only'
+  // });
+  
   try {
     const userId = req.auth.user.id;
     const { ids } = req.body;

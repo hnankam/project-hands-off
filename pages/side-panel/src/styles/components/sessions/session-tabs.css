@@ -64,8 +64,8 @@
 
 /* Ensure close button icon is properly sized */
 .session-tabs-scroll [data-session-id] button svg {
-  width: 10px;
-  height: 8px;
+  width: 13px;
+  height: 13px;
   stroke: currentColor;
   fill: none;
 }

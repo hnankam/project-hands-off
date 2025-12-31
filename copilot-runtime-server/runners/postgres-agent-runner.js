@@ -734,7 +734,7 @@ export class PostgresAgentRunner extends AgentRunner {
             } else if (this.debug && (event.type === 'TEXT_MESSAGE_START' || event.type === 'TEXT_MESSAGE_CONTENT' || event.type === 'TEXT_MESSAGE_END')) {
               // Debug: Log assistant messages that are NOT being filtered
               console.log(`[PostgresAgentRunner] NOT filtering event ${event.type} with messageId ${event.messageId} (not in deleted set) in loadAndStreamHistory`);
-            }
+        }
           }
           
           // Filter tool call events (START, ARGS, END, RESULT) if:
@@ -1395,12 +1395,12 @@ export class PostgresAgentRunner extends AgentRunner {
   buildDeletedToolCallIds(completeRuns, toolCallIdToMessageId, deletedMessageIds, context = '') {
     const contextStr = context ? ` (${context})` : '';
     
-    // Build a set of toolCallIds that have TOOL_CALL_RESULT events (completed tool calls)
-    const completedToolCallIds = new Set();
+    // Build a map of toolCallId -> tool result message ID from TOOL_CALL_RESULT events
+    const toolCallIdToResultMessageId = new Map();
     for (const run of completeRuns) {
       for (const event of run.events || []) {
-        if (event.type === 'TOOL_CALL_RESULT' && event.toolCallId) {
-          completedToolCallIds.add(event.toolCallId);
+        if (event.type === 'TOOL_CALL_RESULT' && event.toolCallId && event.messageId) {
+          toolCallIdToResultMessageId.set(event.toolCallId, event.messageId);
         }
       }
     }
@@ -1408,7 +1408,8 @@ export class PostgresAgentRunner extends AgentRunner {
     // Build set of deleted toolCallIds
     // A tool call should be filtered if:
     // 1. The message that initiated it is deleted, OR
-    // 2. The tool call is incomplete (no TOOL_CALL_RESULT event)
+    // 2. The tool call is incomplete (no TOOL_CALL_RESULT event), OR
+    // 3. The tool result message is deleted
     const deletedToolCallIds = new Set();
     
     // Filter tool calls whose initiating message was deleted
@@ -1416,23 +1417,52 @@ export class PostgresAgentRunner extends AgentRunner {
       if (deletedMessageIds.has(messageId)) {
         deletedToolCallIds.add(toolCallId);
         if (this.debug) {
-          console.log(`[PostgresAgentRunner]${contextStr} Marking toolCallId ${toolCallId} as deleted (associated message ${messageId} is deleted)`);
+          console.log(`[PostgresAgentRunner]${contextStr} Marking toolCallId ${toolCallId} as deleted (initiating message ${messageId} is deleted)`);
         }
       }
     }
     
-    // Filter incomplete tool calls (those without TOOL_CALL_RESULT)
+    // Filter incomplete tool calls (those without TOOL_CALL_RESULT) 
+    // OR tool calls whose result message is deleted
     for (const [toolCallId, messageId] of toolCallIdToMessageId.entries()) {
-      if (!completedToolCallIds.has(toolCallId)) {
-        deletedToolCallIds.add(toolCallId);
-        if (this.debug) {
-          console.log(`[PostgresAgentRunner]${contextStr} Marking toolCallId ${toolCallId} as incomplete (no TOOL_CALL_RESULT event)`);
+      if (!toolCallIdToResultMessageId.has(toolCallId)) {
+        // No TOOL_CALL_RESULT event exists
+        if (!deletedToolCallIds.has(toolCallId)) {
+          deletedToolCallIds.add(toolCallId);
+          if (this.debug) {
+            console.log(`[PostgresAgentRunner]${contextStr} Marking toolCallId ${toolCallId} as incomplete (no TOOL_CALL_RESULT event)`);
+          }
+        }
+      } else {
+        // TOOL_CALL_RESULT exists, but check if its message is deleted
+        const resultMessageId = toolCallIdToResultMessageId.get(toolCallId);
+        if (resultMessageId && deletedMessageIds.has(resultMessageId)) {
+          if (!deletedToolCallIds.has(toolCallId)) {
+            deletedToolCallIds.add(toolCallId);
+            if (this.debug) {
+              console.log(`[PostgresAgentRunner]${contextStr} Marking toolCallId ${toolCallId} as deleted (tool result message ${resultMessageId} is deleted)`);
+            }
+          }
         }
       }
     }
     
     if (this.debug && deletedToolCallIds.size > 0) {
-      console.log(`[PostgresAgentRunner]${contextStr} Found ${deletedToolCallIds.size} tool calls to filter out (deleted: ${Array.from(deletedToolCallIds).filter(id => deletedMessageIds.has(toolCallIdToMessageId.get(id) || '')).length}, incomplete: ${Array.from(deletedToolCallIds).filter(id => !completedToolCallIds.has(id)).length})`);
+      const deletedInitiating = Array.from(deletedToolCallIds).filter(id => {
+        const initiatingMessageId = toolCallIdToMessageId.get(id);
+        return initiatingMessageId && deletedMessageIds.has(initiatingMessageId);
+      }).length;
+      
+      const incomplete = Array.from(deletedToolCallIds).filter(id => 
+        !toolCallIdToResultMessageId.has(id)
+      ).length;
+      
+      const deletedResult = Array.from(deletedToolCallIds).filter(id => {
+        const resultMessageId = toolCallIdToResultMessageId.get(id);
+        return resultMessageId && deletedMessageIds.has(resultMessageId);
+      }).length;
+      
+      console.log(`[PostgresAgentRunner]${contextStr} Found ${deletedToolCallIds.size} tool calls to filter out (initiating deleted: ${deletedInitiating}, incomplete: ${incomplete}, result deleted: ${deletedResult})`);
     }
     
     return deletedToolCallIds;
