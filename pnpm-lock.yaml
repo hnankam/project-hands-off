@@ -10,13 +10,13 @@ importers:
     dependencies:
       '@better-auth/sso':
         specifier: ^1.4.5
-        version: 1.4.6(better-auth@1.4.5(react-dom@19.2.1(react@19.2.1))(react@19.2.1))
+        version: 1.4.6(better-auth@1.4.10(better-sqlite3@12.5.0)(pg@8.16.3)(react-dom@19.2.1(react@19.2.1))(react@19.2.1))
       '@copilotkit/react-core':
-        specifier: ^1.50.1-next.1
-        version: 1.50.1-next.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@4.1.12)
+        specifier: ^1.50.1
+        version: 1.50.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@4.3.5)
       '@copilotkit/react-ui':
-        specifier: ^1.50.1-next.1
-        version: 1.50.1-next.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@4.1.12)
+        specifier: ^1.50.1
+        version: 1.50.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@4.3.5)
       '@huggingface/transformers':
         specifier: ^3.7.5
         version: 3.8.1
@@ -25,7 +25,7 @@ importers:
         version: 1.4.1(surrealdb@1.3.2(tslib@2.8.1)(typescript@5.9.3)(ws@8.18.3))
       '@themaximalist/vectordb.js':
         specifier: ^0.1.2
-        version: 0.1.2(@xenova/transformers@2.17.2)(ws@8.18.3)(zod@4.1.12)
+        version: 0.1.2(@xenova/transformers@2.17.2)(ws@8.18.3)(zod@4.3.5)
       '@tiptap/core':
         specifier: ^3.10.7
         version: 3.13.0(@tiptap/pm@3.13.0)
@@ -651,14 +651,14 @@ importers:
         specifier: ^6.1.3
         version: 6.1.3
       '@copilotkit/react-core':
-        specifier: 1.50.1-next.1
-        version: 1.50.1-next.1(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@3.25.76)
+        specifier: ^1.50.1
+        version: 1.50.1(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@3.25.76)
       '@copilotkit/react-ui':
-        specifier: 1.50.1-next.1
-        version: 1.50.1-next.1(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@3.25.76)
+        specifier: ^1.50.1
+        version: 1.50.1(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@3.25.76)
       '@copilotkit/shared':
-        specifier: 1.50.1-next.1
-        version: 1.50.1-next.1
+        specifier: ^1.50.1
+        version: 1.50.1
       '@copilotkitnext/core':
         specifier: ^0.0.27
         version: 0.0.27
@@ -832,6 +832,16 @@ packages:
     resolution: {integrity: sha512-1x3D2xEk2fRo3PAhwQwu5UubzgiVWSXTBfWpVd2Mx2AzRqJuDJCsgaDVZ7HB5iGzDW1Hl1sWN2mFyKjmR9uAog==}
     engines: {node: '>=6.9.0'}
 
+  '@better-auth/core@1.4.10':
+    resolution: {integrity: sha512-AThrfb6CpG80wqkanfrbN2/fGOYzhGladHFf3JhaWt/3/Vtf4h084T6PJLrDE7M/vCCGYvDI1DkvP3P1OB2HAg==}
+    peerDependencies:
+      '@better-auth/utils': 0.3.0
+      '@better-fetch/fetch': 1.1.21
+      better-call: 1.1.7
+      jose: ^6.1.0
+      kysely: ^0.28.5
+      nanostores: ^1.0.1
+
   '@better-auth/core@1.4.5':
     resolution: {integrity: sha512-dQ3hZOkUJzeBXfVEPTm2LVbzmWwka1nqd9KyWmB2OMlMfjr7IdUeBX4T7qJctF67d7QDhlX95jMoxu6JG0Eucw==}
     peerDependencies:
@@ -847,6 +857,11 @@ packages:
     peerDependencies:
       better-auth: 1.4.6
 
+  '@better-auth/telemetry@1.4.10':
+    resolution: {integrity: sha512-Dq4XJX6EKsUu0h3jpRagX739p/VMOTcnJYWRrLtDYkqtZFg+sFiFsSWVcfapZoWpRSUGYX9iKwl6nDHn6Ju2oQ==}
+    peerDependencies:
+      '@better-auth/core': 1.4.10
+
   '@better-auth/telemetry@1.4.5':
     resolution: {integrity: sha512-r3NyksbaBYA10SC86JA6QwmZfHwFutkUGcphgWGfu6MVx1zutYmZehIeC8LxTjOWZqqF9FI8vLjglWBHvPQeTg==}
     peerDependencies:
@@ -858,14 +873,17 @@ packages:
   '@better-fetch/fetch@1.1.18':
     resolution: {integrity: sha512-rEFOE1MYIsBmoMJtQbl32PGHHXuG2hDxvEd7rUHE0vCBoFQVSDqaVs9hkZEtHCxRoY+CljXKFCOuJ8uxqw1LcA==}
 
+  '@better-fetch/fetch@1.1.21':
+    resolution: {integrity: sha512-/ImESw0sskqlVR94jB+5+Pxjf+xBwDZF/N5+y2/q4EqD7IARUTSpPfIo8uf39SYpCxyOCtbyYpUrZ3F/k0zT4A==}
+
   '@braintree/sanitize-url@6.0.4':
     resolution: {integrity: sha512-s3jaWicZd0pkP0jf5ysyHUI/RE7MHos6qlToFcGWXVp+ykHOy77OUMrfbgJ9it2C5bow7OIQwYYaHjk9XlBQ2A==}
 
   '@braintree/sanitize-url@7.1.1':
     resolution: {integrity: sha512-i1L7noDNxtFyL5DmZafWy1wRVhGehQmzZaz1HiN5e7iylJMSZR7ekOV7NsIqa5qBldlLrsKv4HbgFUVlQrz8Mw==}
 
-  '@bufbuild/protobuf@2.10.1':
-    resolution: {integrity: sha512-ckS3+vyJb5qGpEYv/s1OebUHDi/xSNtfgw1wqKZo7MR9F2z+qXr0q5XagafAG/9O0QPVIUfST0smluYSTpYFkg==}
+  '@bufbuild/protobuf@2.10.2':
+    resolution: {integrity: sha512-uFsRXwIGyu+r6AMdz+XijIIZJYpoWeYzILt5yZ2d3mCjQrWUTVpVD9WL/jZAbvp+Ed04rOhrsk7FiTcEDseB5A==}
 
   '@chevrotain/cst-dts-gen@11.0.3':
     resolution: {integrity: sha512-BvIKpRLeS/8UbfxXxgC33xOumsacaeCKAjAeLyOn7Pcp95HiRbrpl14S+9vaZLolnbssPIUuiUd8IvgkRyt6NQ==}
@@ -909,32 +927,32 @@ packages:
   '@codemirror/view@6.38.7':
     resolution: {integrity: sha512-+b0imJTgzehmMToqT9DWPBdeRj7/qDsJj7MzQ+1+do2KK2UkxKuLaHlUVeZk855wO6my6cfbF1c+Qozs8B3YqA==}
 
-  '@copilotkit/react-core@1.50.1-next.1':
-    resolution: {integrity: sha512-da1NB1j5hgdmcAbHge1Fq8ojpJ5pU9gAVNuQxyZlsRAc0DTUwHPf3WBHCJ/PzFoCmr4mjf2Q9V5H4rDquxuaHQ==}
+  '@copilotkit/react-core@1.50.1':
+    resolution: {integrity: sha512-L7WdesE1PAP+Ks5kY0NXT+/sZfmx/Vj5t7l4eMQzzLDSvwgLDqvrQCZLJq/PtSLKidrX+z8zDyLJad7YR3L6dQ==}
     peerDependencies:
       react: ^18 || ^19 || ^19.0.0-rc
       react-dom: ^18 || ^19 || ^19.0.0-rc
       zod: '>=3.0.0'
 
-  '@copilotkit/react-ui@1.50.1-next.1':
-    resolution: {integrity: sha512-qg6eDA0EQfaubKzRRNAJOS5Cshg0QZY7XtAdWW8Sd6v1oyRrQ283UbhsAPMZ2nxWGO/YPeJb6PRdzYJDl6HnGA==}
+  '@copilotkit/react-ui@1.50.1':
+    resolution: {integrity: sha512-JO6Nf3GTqFWjB3WR0ClSgnf8284QUJxVh/djcUOUZ24NkjglZAYORAMzvwIBJlcOZFxMk1AkvRAU56HWNCUZ5Q==}
     peerDependencies:
       react: ^18 || ^19 || ^19.0.0-rc
 
-  '@copilotkit/runtime-client-gql@1.50.1-next.1':
-    resolution: {integrity: sha512-aOL2P++1ScSQ6RaCazl9fWNp22SWKS8gGqAzG8Fw0lNPbPkPYULPeAaqTy8f5G+XcBmBEOgrTt6k/97oI0JX+A==}
+  '@copilotkit/runtime-client-gql@1.50.1':
+    resolution: {integrity: sha512-J8TXi2wq4xqoZAPECht4AbD8kxrjn38LEulgCAXXCUm6wsT8Uyt8WVnFT6bODIYee5K4MsXTrITTeH/Y7jviMw==}
     peerDependencies:
       react: ^18 || ^19 || ^19.0.0-rc
 
-  '@copilotkit/shared@1.50.1-next.1':
-    resolution: {integrity: sha512-ej3nPszhRCXReEonZ6wC2TEnfRV9Ex9g7KohSNQ4wNI8lNYv68HW7GVo3Y9B1CwJL9+GU8sy/ZoCGlzLXsLVjg==}
+  '@copilotkit/shared@1.50.1':
+    resolution: {integrity: sha512-Nk4saaXxVRq3VCTXfmE5hi46hmNkHZGCtb8H38LjZEFDR6lv0b2cnOWEhfkGzSjUwfY+XcZmwrGef7mMl/XI/w==}
 
   '@copilotkitnext/core@0.0.27':
     resolution: {integrity: sha512-8dI+k10KOvdAlMbWdN4p3JeV8+m0w9gS9gxeTP9FL6sDCubcp6ZVcRXe0kSIkIMIWnxVsInmfx9l8Q8XPAm/SA==}
     engines: {node: '>=18'}
 
-  '@copilotkitnext/core@0.0.31':
-    resolution: {integrity: sha512-nlXZ9bDR4rMSJcLiNk2W83JcRRwDOQCON1G0tP2dhs/TtpQTbuTvQj8Lm29M8ibulfhiFU3EBNKPNnkbANJANQ==}
+  '@copilotkitnext/core@0.0.33':
+    resolution: {integrity: sha512-uD+hYatV9JeDS0BMVL1YyFuFiISYjTKfYk4Mfc9Zmb7DfN2RD9ASvpWG/zQ2WJrrdQtj/pCfjPKil07Pv7cRMg==}
     engines: {node: '>=18'}
 
   '@copilotkitnext/react@0.0.27':
@@ -944,8 +962,8 @@ packages:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
 
-  '@copilotkitnext/react@0.0.31':
-    resolution: {integrity: sha512-w3eD3Xvv6qh3rKIEcQY74MMAFgAecP1piaF+a03mv5/7NbJk5Imv0moAXloL4ugsPToqf845oseG/qNgR2SAGQ==}
+  '@copilotkitnext/react@0.0.33':
+    resolution: {integrity: sha512-7opH+B9SLmN6fv8b5w0OCdk3xIQmNjhPM6lcgU5kWlqCSbAwCe4HPxyT5Xhc6KzvX1zj/+ec2yQkh09A9BlsWQ==}
     engines: {node: '>=18'}
     peerDependencies:
       react: '>=16.8.0'
@@ -955,16 +973,16 @@ packages:
     resolution: {integrity: sha512-ubKc7TPtVTxgtVElCT0JmuW6/dk/lTPYaXX/VQIpwb6JmQTTzsKgvok25tnr/7dCAonktDBEdZ3YNlhQ0dHvgw==}
     engines: {node: '>=18'}
 
-  '@copilotkitnext/shared@0.0.31':
-    resolution: {integrity: sha512-YjrTV6hGnmD9IGau0bCjw5KwqvBuGU//kQOUeKyEEK2/C6PaZclpNiTwiFV9yPDRuS3p3CEQMwj/dc5enZ5pag==}
+  '@copilotkitnext/shared@0.0.33':
+    resolution: {integrity: sha512-tcWCk0izP+rr6eLKXP+z3j6A8+VcA09uGwgy+TS1yRd6eRdvR5SISqAOOQM8t4WBXGg0z+QWbJNXiVq6cPtukQ==}
     engines: {node: '>=18'}
 
   '@copilotkitnext/web-inspector@0.0.27':
     resolution: {integrity: sha512-RtHO5UV+ywAOqjfBakva4QZoCYKlRbETcGKkzSe2JCIpuwrVRpMYLKDlhqSI2HFWH6kIj8tzXAtQwROz00fQnw==}
     engines: {node: '>=18'}
 
-  '@copilotkitnext/web-inspector@0.0.31':
-    resolution: {integrity: sha512-C3+eM0jGVGrGXA4nJMtW6FhKiV7XQWtuZkWB1xlfYpbYcHCi//7T8qAY0v+XkxMrSawoEc4BZw+pNsoC9PHimQ==}
+  '@copilotkitnext/web-inspector@0.0.33':
+    resolution: {integrity: sha512-6XkkigbkhSkcFrzWEqiW6P98y9rCv4+Q/YGlvS9KNfeYOoyt1Z9Ug1VVy7BC6qIhytbrraJizo24g8v3nCWVqQ==}
     engines: {node: '>=18'}
 
   '@cspotcode/source-map-support@0.8.1':
@@ -2182,6 +2200,10 @@ packages:
     resolution: {integrity: sha512-xHK3XHPUW8DTAobU+G0XT+/w+JLM7/8k1UFdB5xg/zTFPnFCobhftzw8wl4Lw2aq/Rvir5pxfZV5fEazmeCJ2g==}
     engines: {node: '>= 20.19.0'}
 
+  '@noble/ciphers@2.1.1':
+    resolution: {integrity: sha512-bysYuiVfhxNJuldNXlFEitTVdNnYUc+XNJZd7Qm2a5j1vZHgY+fazadNFWFaMK/2vye0JVlxV3gHmC0WDfAOQw==}
+    engines: {node: '>= 20.19.0'}
+
   '@noble/curves@1.9.1':
     resolution: {integrity: sha512-k11yZxZg+t+gWvBbIswW0yoJlu8cHOC7dhunwOzoWH/mXGBiYyR4YY6hAEK/3EUs4UpB8la1RfdRpeGsFHkWsA==}
     engines: {node: ^14.21.3 || >=16}
@@ -2992,6 +3014,9 @@ packages:
   '@standard-schema/spec@1.0.0':
     resolution: {integrity: sha512-m2bOd0f2RT9k8QJx1JN85cZYyH1RqFBdlwtkSlf4tBDYLCiiZnv1fIIwacK6cqwXavOydf0NPToMQgpKq+dVlA==}
 
+  '@standard-schema/spec@1.1.0':
+    resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
   '@standard-schema/utils@0.3.0':
     resolution: {integrity: sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g==}
 
@@ -3601,8 +3626,14 @@ packages:
   '@types/node@20.19.26':
     resolution: {integrity: sha512-0l6cjgF0XnihUpndDhk+nyD3exio3iKaYROSgvh/qSevPXax3L8p5DBRFjbvalnwatGgHEQn2R88y2fA3g4irg==}
 
+  '@types/node@20.19.27':
+    resolution: {integrity: sha512-N2clP5pJhB2YnZJ3PIHFk5RkygRX5WO/5f0WC08tp0wd+sv0rsJk3MqWn3CbNmT2J505a5336jaQj4ph1AdMug==}
+
   '@types/node@22.19.2':
     resolution: {integrity: sha512-LPM2G3Syo1GLzXLGJAKdqoU35XvrWzGJ21/7sgZTUpbkBaOasTj8tjwn6w+hCkqaa1TfJ/w67rJSwYItlJ2mYw==}
+
+  '@types/node@22.19.3':
+    resolution: {integrity: sha512-1N9SBnWYOJTrNZCdh/yJE+t910Y128BoyY+zBLWhL3r0TYzlTmFdXrPwHL9DyFZmlEXNQQolTZh3KHV31QDhyA==}
 
   '@types/node@24.10.2':
     resolution: {integrity: sha512-WOhQTZ4G8xZ1tjJTvKOpyEVSGgOTvJAfDK3FNFgELyaTpzhdgHVHeqW8V+UJvzF5BT+/B54T/1S2K6gd9c7bbA==}
@@ -4271,6 +4302,65 @@ packages:
     resolution: {integrity: sha512-4Bcg1P8xhUuqcii/S0Z9wiHIrQVPMermM1any+MX5GeGD7faD3/msQUDGLol9wOcz4/jbg/WJnGqoJF6LiBdtg==}
     engines: {node: '>=10.0.0'}
 
+  better-auth@1.4.10:
+    resolution: {integrity: sha512-0kqwEBJLe8eyFzbUspRG/htOriCf9uMLlnpe34dlIJGdmDfPuQISd4shShvUrvIVhPxsY1dSTXdXPLpqISYOYg==}
+    peerDependencies:
+      '@lynx-js/react': '*'
+      '@prisma/client': ^5.0.0 || ^6.0.0 || ^7.0.0
+      '@sveltejs/kit': ^2.0.0
+      '@tanstack/react-start': ^1.0.0
+      better-sqlite3: ^12.0.0
+      drizzle-kit: '>=0.31.4'
+      drizzle-orm: '>=0.41.0'
+      mongodb: ^6.0.0 || ^7.0.0
+      mysql2: ^3.0.0
+      next: ^14.0.0 || ^15.0.0 || ^16.0.0
+      pg: ^8.0.0
+      prisma: ^5.0.0 || ^6.0.0 || ^7.0.0
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+      solid-js: ^1.0.0
+      svelte: ^4.0.0 || ^5.0.0
+      vitest: ^2.0.0 || ^3.0.0 || ^4.0.0
+      vue: ^3.0.0
+    peerDependenciesMeta:
+      '@lynx-js/react':
+        optional: true
+      '@prisma/client':
+        optional: true
+      '@sveltejs/kit':
+        optional: true
+      '@tanstack/react-start':
+        optional: true
+      better-sqlite3:
+        optional: true
+      drizzle-kit:
+        optional: true
+      drizzle-orm:
+        optional: true
+      mongodb:
+        optional: true
+      mysql2:
+        optional: true
+      next:
+        optional: true
+      pg:
+        optional: true
+      prisma:
+        optional: true
+      react:
+        optional: true
+      react-dom:
+        optional: true
+      solid-js:
+        optional: true
+      svelte:
+        optional: true
+      vitest:
+        optional: true
+      vue:
+        optional: true
+
   better-auth@1.4.5:
     resolution: {integrity: sha512-pHV2YE0OogRHvoA6pndHXCei4pcep/mjY7psSaHVrRgjBtumVI68SV1g9U9XPRZ4KkoGca9jfwuv+bB2UILiFw==}
     peerDependencies:
@@ -4310,6 +4400,18 @@ packages:
     peerDependenciesMeta:
       zod:
         optional: true
+
+  better-call@1.1.7:
+    resolution: {integrity: sha512-6gaJe1bBIEgVebQu/7q9saahVzvBsGaByEnE8aDVncZEDiJO7sdNB28ot9I6iXSbR25egGmmZ6aIURXyQHRraQ==}
+    peerDependencies:
+      zod: ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
+  better-sqlite3@12.5.0:
+    resolution: {integrity: sha512-WwCZ/5Diz7rsF29o27o0Gcc1Du+l7Zsv7SYtVPG0X3G/uUI1LqdxrQI7c9Hs2FWpqXXERjW9hp6g3/tH7DlVKg==}
+    engines: {node: 20.x || 22.x || 23.x || 24.x || 25.x}
 
   binary-extensions@2.3.0:
     resolution: {integrity: sha512-Ceh+7ox5qe7LJuLHoY0feh3pHuUDHAcRUeyL2VYghZwfpkNIy/+8Ocg0a3UuSoYzavmylwuLWQOf3hl0jjMMIw==}
@@ -5597,8 +5699,8 @@ packages:
   form-data-encoder@1.7.2:
     resolution: {integrity: sha512-qfqtYan3rxrnCk1VYaA4H+Ms9xdpPqvLZa6xmMgFvhO32x7/3J/ExcTd6qpxM0vH2GdMI+poehyBZvqfMTto8A==}
 
-  form-data@4.0.4:
-    resolution: {integrity: sha512-KrGhL9Q4zjj0kiUt5OO4Mr/A/jlI2jDYs5eHBpYHPcBEVSiipAvn2Ko2HnPe20rmcuuvMHNdZFp+4IlGTMF0Ow==}
+  form-data@4.0.5:
+    resolution: {integrity: sha512-8RipRLol37bNs2bhoV67fiTEvdTrbMUYcFTiy3+wuuOnUog2QBHCZWXDRijWQfAkhBj2Uf5UnVaiWwA5vdd82w==}
     engines: {node: '>= 6'}
 
   format@0.2.2:
@@ -6274,6 +6376,9 @@ packages:
   jose@6.1.0:
     resolution: {integrity: sha512-TTQJyoEoKcC1lscpVDCSsVgYzUDg/0Bt3WE//WiTPK6uOCQC2KZS4MpugbMWt/zyjkopgZoXhZuCi00gLudfUA==}
 
+  jose@6.1.3:
+    resolution: {integrity: sha512-0TpaTfihd4QMNwrz/ob2Bp7X04yuxJkjRGi4aKmOqwhov54i6u79oCv7T+C7lo70MKH6BesI3vscD1yb/yzKXQ==}
+
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
@@ -6334,6 +6439,10 @@ packages:
 
   kysely@0.28.8:
     resolution: {integrity: sha512-QUOgl5ZrS9IRuhq5FvOKFSsD/3+IA6MLE81/bOOTRA/YQpKDza2sFdN5g6JCB9BOpqMJDGefLCQ9F12hRS13TA==}
+    engines: {node: '>=20.0.0'}
+
+  kysely@0.28.9:
+    resolution: {integrity: sha512-3BeXMoiOhpOwu62CiVpO6lxfq4eS6KMYfQdMsN/2kUCRNuF2YiEr7u0HLHaQU+O4Xu8YXE3bHVkwaQ85i72EuA==}
     engines: {node: '>=20.0.0'}
 
   langium@3.3.1:
@@ -7014,6 +7123,10 @@ packages:
     resolution: {integrity: sha512-kNZ9xnoJYKg/AfxjrVL4SS0fKX++4awQReGqWnwTRHxeHGZ1FJFVgTqr/eMrNQdp0Tz7M7tG/TDaX8QfHDwVCw==}
     engines: {node: ^20.0.0 || >=22.0.0}
 
+  nanostores@1.1.0:
+    resolution: {integrity: sha512-yJBmDJr18xy47dbNVlHcgdPrulSn1nhSE6Ns9vTG+Nx9VPT6iV1MD6aQFp/t52zpf82FhLLTXAXr30NuCnxvwA==}
+    engines: {node: ^20.0.0 || >=22.0.0}
+
   napi-build-utils@2.0.0:
     resolution: {integrity: sha512-GEbrYkbfF7MoNaoh2iGG84Mnf/WZfB0GdGEsM8wz7Expx/LlWf5U8t9nvJKXSp3qr5IsEbK04cBGhol/KwOsWA==}
 
@@ -7344,6 +7457,40 @@ packages:
   pend@1.2.0:
     resolution: {integrity: sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg==}
 
+  pg-cloudflare@1.2.7:
+    resolution: {integrity: sha512-YgCtzMH0ptvZJslLM1ffsY4EuGaU0cx4XSdXLRFae8bPP4dS5xL1tNB3k2o/N64cHJpwU7dxKli/nZ2lUa5fLg==}
+
+  pg-connection-string@2.9.1:
+    resolution: {integrity: sha512-nkc6NpDcvPVpZXxrreI/FOtX3XemeLl8E0qFr6F2Lrm/I8WOnaWNhIPK2Z7OHpw7gh5XJThi6j6ppgNoaT1w4w==}
+
+  pg-int8@1.0.1:
+    resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
+    engines: {node: '>=4.0.0'}
+
+  pg-pool@3.10.1:
+    resolution: {integrity: sha512-Tu8jMlcX+9d8+QVzKIvM/uJtp07PKr82IUOYEphaWcoBhIYkoHpLXN3qO59nAI11ripznDsEzEv8nUxBVWajGg==}
+    peerDependencies:
+      pg: '>=8.0'
+
+  pg-protocol@1.10.3:
+    resolution: {integrity: sha512-6DIBgBQaTKDJyxnXaLiLR8wBpQQcGWuAESkRBX/t6OwA8YsqP+iVSiond2EDy6Y/dsGk8rh/jtax3js5NeV7JQ==}
+
+  pg-types@2.2.0:
+    resolution: {integrity: sha512-qTAAlrEsl8s4OiEQY69wDvcMIdQN6wdz5ojQiOy6YRMuynxenON0O5oCpJI6lshc6scgAY8qvJ2On/p+CXY0GA==}
+    engines: {node: '>=4'}
+
+  pg@8.16.3:
+    resolution: {integrity: sha512-enxc1h0jA/aq5oSDMvqyW3q89ra6XIIDZgCX9vkMrnz5DFTw/Ny3Li2lFQ+pt3L6MCgm/5o2o8HW9hiJji+xvw==}
+    engines: {node: '>= 16.0.0'}
+    peerDependencies:
+      pg-native: '>=3.0.1'
+    peerDependenciesMeta:
+      pg-native:
+        optional: true
+
+  pgpass@1.0.5:
+    resolution: {integrity: sha512-FdW9r/jQZhSeohs1Z3sI1yxFQNFvMcnmfuj4WBMUTxOrAyLMaTcE1aAMBiTlbMNaXvBCQuVi0R7hd8udDSP7ug==}
+
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
@@ -7421,6 +7568,22 @@ packages:
   postcss@8.5.6:
     resolution: {integrity: sha512-3Ybi1tAuwAP9s0r1UQ2J4n5Y0G05bJkpUIO0/bI9MhwmD70S5aTWbXGBwxHrelT+XM1k6dM0pk+SwNkpTRN7Pg==}
     engines: {node: ^10 || ^12 || >=14}
+
+  postgres-array@2.0.0:
+    resolution: {integrity: sha512-VpZrUqU5A69eQyW2c5CA1jtLecCsN2U/bD6VilrFDWq5+5UIEVO7nazS3TEcHf1zuPYO/sqGvUvW62g86RXZuA==}
+    engines: {node: '>=4'}
+
+  postgres-bytea@1.0.1:
+    resolution: {integrity: sha512-5+5HqXnsZPE65IJZSMkZtURARZelel2oXUEO8rH83VS/hxH5vv1uHquPg5wZs8yMAfdv971IU+kcPUczi7NVBQ==}
+    engines: {node: '>=0.10.0'}
+
+  postgres-date@1.0.7:
+    resolution: {integrity: sha512-suDmjLVQg78nMK2UZ454hAG+OAW+HQPZ6n++TNDUX+L0+uUlLywnoxJKDou51Zm+zTCjrCl0Nq6J9C5hP9vK/Q==}
+    engines: {node: '>=0.10.0'}
+
+  postgres-interval@1.2.0:
+    resolution: {integrity: sha512-9ZhXKM/rw350N1ovuWHbGxnGh/SNJ4cnxHiM0rxE4VN41wsg8P8zWn9hv/buK00RP4WvlOyr/RBDiptyxVbkZQ==}
+    engines: {node: '>=0.10.0'}
 
   prebuild-install@7.1.3:
     resolution: {integrity: sha512-8Mf2cbV7x1cXPUILADGI3wuhfqWvtiLA1iclTDbFRZkgRQS0NqsPZphna9V+HyTEadheuPmjaJMsbzKQFOzLug==}
@@ -7970,6 +8133,9 @@ packages:
   rou3@0.7.10:
     resolution: {integrity: sha512-aoFj6f7MJZ5muJ+Of79nrhs9N3oLGqi2VEMe94Zbkjb6Wupha46EuoYgpWSOZlXww3bbd8ojgXTAA2mzimX5Ww==}
 
+  rou3@0.7.12:
+    resolution: {integrity: sha512-iFE4hLDuloSWcD7mjdCDhx2bKcIsYbtOTpfH5MHHLSKMOUyjqQXTeZVa289uuwEGEKFoE/BAPbhaU4B774nceg==}
+
   roughjs@4.6.6:
     resolution: {integrity: sha512-ZUz/69+SYpFN/g/lUlo2FXcIjRkSu3nDarreVdGGndHEBJ6cXPdKguS8JGxwj5HA5xIbVKSmLgr5b3AWxtRfvQ==}
 
@@ -8320,6 +8486,9 @@ packages:
 
   strnum@2.1.1:
     resolution: {integrity: sha512-7ZvoFTiCnGxBtDqJ//Cu6fWtZtc7Y3x+QOirG15wztbdngGSkht27o2pyGWrVy0b4WAy3jbKmnoK6g5VlVNUUw==}
+
+  strnum@2.1.2:
+    resolution: {integrity: sha512-l63NF9y/cLROq/yqKXSLtcMeeyOfnSQlfMSlzFt/K73oIaD8DGaQWd7Z34X9GPiKqP5rbSh84Hl4bOlLcjiSrQ==}
 
   style-mod@4.1.3:
     resolution: {integrity: sha512-i/n8VsZydrugj3Iuzll8+x/00GH2vnYsk1eomD8QiRrSAeW6ItbCQDtfXCeJHd0iwiNagqjQkvpvREEPtW3IoQ==}
@@ -9182,6 +9351,9 @@ packages:
   zod@4.1.12:
     resolution: {integrity: sha512-JInaHOamG8pt5+Ey8kGmdcAcg3OL9reK8ltczgHTAwNhMys/6ThXHityHxVV2p3fkw/c+MAvBHFVYHFZDmjMCQ==}
 
+  zod@4.3.5:
+    resolution: {integrity: sha512-k7Nwx6vuWx1IJ9Bjuf4Zt1PEllcwe7cls3VNzm4CQ1/hgtFUK2bRNG3rvnpPUhFjmqJKAKtjV576KnUkHocg/g==}
+
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
@@ -9221,7 +9393,7 @@ snapshots:
   '@ag-ui/proto@0.0.42':
     dependencies:
       '@ag-ui/core': 0.0.42
-      '@bufbuild/protobuf': 2.10.1
+      '@bufbuild/protobuf': 2.10.2
       '@protobuf-ts/protoc': 2.11.1
 
   '@alloc/quick-lru@5.2.0': {}
@@ -9262,6 +9434,17 @@ snapshots:
 
   '@babel/runtime@7.27.1': {}
 
+  '@better-auth/core@1.4.10(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.7(zod@4.3.5))(jose@6.1.3)(kysely@0.28.9)(nanostores@1.1.0)':
+    dependencies:
+      '@better-auth/utils': 0.3.0
+      '@better-fetch/fetch': 1.1.21
+      '@standard-schema/spec': 1.1.0
+      better-call: 1.1.7(zod@4.3.5)
+      jose: 6.1.3
+      kysely: 0.28.9
+      nanostores: 1.1.0
+      zod: 4.3.5
+
   '@better-auth/core@1.4.5(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.18)(better-call@1.1.4(zod@4.1.12))(jose@6.1.0)(kysely@0.28.8)(nanostores@1.0.1)':
     dependencies:
       '@better-auth/utils': 0.3.0
@@ -9273,6 +9456,15 @@ snapshots:
       nanostores: 1.0.1
       zod: 4.1.12
 
+  '@better-auth/sso@1.4.6(better-auth@1.4.10(better-sqlite3@12.5.0)(pg@8.16.3)(react-dom@19.2.1(react@19.2.1))(react@19.2.1))':
+    dependencies:
+      '@better-fetch/fetch': 1.1.18
+      better-auth: 1.4.10(better-sqlite3@12.5.0)(pg@8.16.3)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
+      fast-xml-parser: 5.2.5
+      jose: 6.1.0
+      samlify: 2.10.2
+      zod: 4.1.12
+
   '@better-auth/sso@1.4.6(better-auth@1.4.5(react-dom@19.2.1(react@19.2.1))(react@19.2.1))':
     dependencies:
       '@better-fetch/fetch': 1.1.18
@@ -9281,6 +9473,12 @@ snapshots:
       jose: 6.1.0
       samlify: 2.10.2
       zod: 4.1.12
+
+  '@better-auth/telemetry@1.4.10(@better-auth/core@1.4.10(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.7(zod@4.3.5))(jose@6.1.3)(kysely@0.28.9)(nanostores@1.1.0))':
+    dependencies:
+      '@better-auth/core': 1.4.10(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.7(zod@4.3.5))(jose@6.1.3)(kysely@0.28.9)(nanostores@1.1.0)
+      '@better-auth/utils': 0.3.0
+      '@better-fetch/fetch': 1.1.21
 
   '@better-auth/telemetry@1.4.5(@better-auth/core@1.4.5(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.18)(better-call@1.1.4(zod@4.1.12))(jose@6.1.0)(kysely@0.28.8)(nanostores@1.0.1))':
     dependencies:
@@ -9292,11 +9490,13 @@ snapshots:
 
   '@better-fetch/fetch@1.1.18': {}
 
+  '@better-fetch/fetch@1.1.21': {}
+
   '@braintree/sanitize-url@6.0.4': {}
 
   '@braintree/sanitize-url@7.1.1': {}
 
-  '@bufbuild/protobuf@2.10.1': {}
+  '@bufbuild/protobuf@2.10.2': {}
 
   '@chevrotain/cst-dts-gen@11.0.3':
     dependencies:
@@ -9373,13 +9573,13 @@ snapshots:
       style-mod: 4.1.3
       w3c-keyname: 2.2.8
 
-  '@copilotkit/react-core@1.50.1-next.1(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@3.25.76)':
+  '@copilotkit/react-core@1.50.1(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@3.25.76)':
     dependencies:
       '@ag-ui/client': 0.0.42
-      '@copilotkit/runtime-client-gql': 1.50.1-next.1(graphql@16.12.0)(react@19.2.1)
-      '@copilotkit/shared': 1.50.1-next.1
-      '@copilotkitnext/core': 0.0.31
-      '@copilotkitnext/react': 0.0.31(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
+      '@copilotkit/runtime-client-gql': 1.50.1(graphql@16.12.0)(react@19.2.1)
+      '@copilotkit/shared': 1.50.1
+      '@copilotkitnext/core': 0.0.33
+      '@copilotkitnext/react': 0.0.33(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       '@scarf/scarf': 1.4.0
       react: 19.2.1
       react-dom: 19.2.1(react@19.2.1)
@@ -9396,19 +9596,19 @@ snapshots:
       - micromark-util-types
       - supports-color
 
-  '@copilotkit/react-core@1.50.1-next.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@4.1.12)':
+  '@copilotkit/react-core@1.50.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@4.3.5)':
     dependencies:
       '@ag-ui/client': 0.0.42
-      '@copilotkit/runtime-client-gql': 1.50.1-next.1(graphql@16.12.0)(react@19.2.1)
-      '@copilotkit/shared': 1.50.1-next.1
-      '@copilotkitnext/core': 0.0.31
-      '@copilotkitnext/react': 0.0.31(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
+      '@copilotkit/runtime-client-gql': 1.50.1(graphql@16.12.0)(react@19.2.1)
+      '@copilotkit/shared': 1.50.1
+      '@copilotkitnext/core': 0.0.33
+      '@copilotkitnext/react': 0.0.33(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       '@scarf/scarf': 1.4.0
       react: 19.2.1
       react-dom: 19.2.1(react@19.2.1)
       react-markdown: 8.0.7(@types/react@19.2.7)(react@19.2.1)
       untruncate-json: 0.0.1
-      zod: 4.1.12
+      zod: 4.3.5
     transitivePeerDependencies:
       - '@types/mdast'
       - '@types/react'
@@ -9419,11 +9619,11 @@ snapshots:
       - micromark-util-types
       - supports-color
 
-  '@copilotkit/react-ui@1.50.1-next.1(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@3.25.76)':
+  '@copilotkit/react-ui@1.50.1(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@3.25.76)':
     dependencies:
-      '@copilotkit/react-core': 1.50.1-next.1(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@3.25.76)
-      '@copilotkit/runtime-client-gql': 1.50.1-next.1(graphql@16.12.0)(react@19.2.1)
-      '@copilotkit/shared': 1.50.1-next.1
+      '@copilotkit/react-core': 1.50.1(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@3.25.76)
+      '@copilotkit/runtime-client-gql': 1.50.1(graphql@16.12.0)(react@19.2.1)
+      '@copilotkit/shared': 1.50.1
       '@headlessui/react': 2.2.9(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       react: 19.2.1
       react-markdown: 10.1.0(@types/react@19.2.7)(react@19.2.1)
@@ -9443,11 +9643,11 @@ snapshots:
       - supports-color
       - zod
 
-  '@copilotkit/react-ui@1.50.1-next.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@4.1.12)':
+  '@copilotkit/react-ui@1.50.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@4.3.5)':
     dependencies:
-      '@copilotkit/react-core': 1.50.1-next.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@4.1.12)
-      '@copilotkit/runtime-client-gql': 1.50.1-next.1(graphql@16.12.0)(react@19.2.1)
-      '@copilotkit/shared': 1.50.1-next.1
+      '@copilotkit/react-core': 1.50.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(graphql@16.12.0)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)(zod@4.3.5)
+      '@copilotkit/runtime-client-gql': 1.50.1(graphql@16.12.0)(react@19.2.1)
+      '@copilotkit/shared': 1.50.1
       '@headlessui/react': 2.2.9(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       react: 19.2.1
       react-markdown: 10.1.0(@types/react@19.2.7)(react@19.2.1)
@@ -9467,9 +9667,9 @@ snapshots:
       - supports-color
       - zod
 
-  '@copilotkit/runtime-client-gql@1.50.1-next.1(graphql@16.12.0)(react@19.2.1)':
+  '@copilotkit/runtime-client-gql@1.50.1(graphql@16.12.0)(react@19.2.1)':
     dependencies:
-      '@copilotkit/shared': 1.50.1-next.1
+      '@copilotkit/shared': 1.50.1
       '@urql/core': 5.2.0(graphql@16.12.0)
       react: 19.2.1
       untruncate-json: 0.0.1
@@ -9478,7 +9678,7 @@ snapshots:
       - encoding
       - graphql
 
-  '@copilotkit/shared@1.50.1-next.1':
+  '@copilotkit/shared@1.50.1':
     dependencies:
       '@ag-ui/core': 0.0.42
       '@segment/analytics-node': 2.3.0
@@ -9497,10 +9697,10 @@ snapshots:
       zod: 3.25.76
       zod-to-json-schema: 3.24.6(zod@3.25.76)
 
-  '@copilotkitnext/core@0.0.31':
+  '@copilotkitnext/core@0.0.33':
     dependencies:
       '@ag-ui/client': 0.0.42
-      '@copilotkitnext/shared': 0.0.31
+      '@copilotkitnext/shared': 0.0.33
       rxjs: 7.8.1
       zod: 3.25.76
       zod-to-json-schema: 3.25.0(zod@3.25.76)
@@ -9536,13 +9736,13 @@ snapshots:
       - micromark-util-types
       - supports-color
 
-  '@copilotkitnext/react@0.0.31(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)':
+  '@copilotkitnext/react@0.0.33(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)':
     dependencies:
       '@ag-ui/client': 0.0.42
       '@ag-ui/core': 0.0.42
-      '@copilotkitnext/core': 0.0.31
-      '@copilotkitnext/shared': 0.0.31
-      '@copilotkitnext/web-inspector': 0.0.31
+      '@copilotkitnext/core': 0.0.33
+      '@copilotkitnext/shared': 0.0.33
+      '@copilotkitnext/web-inspector': 0.0.33
       '@lit-labs/react': 2.1.3(@types/react@19.2.7)
       '@radix-ui/react-dropdown-menu': 2.1.16(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
       '@radix-ui/react-slot': 1.2.4(@types/react@19.2.7)(react@19.2.1)
@@ -9573,7 +9773,7 @@ snapshots:
       partial-json: 0.1.7
       uuid: 11.1.0
 
-  '@copilotkitnext/shared@0.0.31':
+  '@copilotkitnext/shared@0.0.33':
     dependencies:
       '@ag-ui/client': 0.0.42
       partial-json: 0.1.7
@@ -9586,10 +9786,10 @@ snapshots:
       lit: 3.3.1
       lucide: 0.525.0
 
-  '@copilotkitnext/web-inspector@0.0.31':
+  '@copilotkitnext/web-inspector@0.0.33':
     dependencies:
       '@ag-ui/client': 0.0.42
-      '@copilotkitnext/core': 0.0.31
+      '@copilotkitnext/core': 0.0.33
       lit: 3.3.1
       lucide: 0.525.0
       marked: 12.0.2
@@ -10680,6 +10880,8 @@ snapshots:
 
   '@noble/ciphers@2.0.1': {}
 
+  '@noble/ciphers@2.1.1': {}
+
   '@noble/curves@1.9.1':
     dependencies:
       '@noble/hashes': 1.8.0
@@ -11376,6 +11578,8 @@ snapshots:
 
   '@standard-schema/spec@1.0.0': {}
 
+  '@standard-schema/spec@1.1.0': {}
+
   '@standard-schema/utils@0.3.0': {}
 
   '@surrealdb/wasm@1.4.1(surrealdb@1.3.2(tslib@2.8.1)(typescript@5.9.3)(ws@8.18.3))':
@@ -11520,10 +11724,10 @@ snapshots:
 
   '@tanstack/virtual-core@3.13.13': {}
 
-  '@themaximalist/embeddings.js@0.1.3(@xenova/transformers@2.17.2)(ws@8.18.3)(zod@4.1.12)':
+  '@themaximalist/embeddings.js@0.1.3(@xenova/transformers@2.17.2)(ws@8.18.3)(zod@4.3.5)':
     dependencies:
       node-fetch: 3.3.2
-      openai: 4.104.0(ws@8.18.3)(zod@4.1.12)
+      openai: 4.104.0(ws@8.18.3)(zod@4.3.5)
     optionalDependencies:
       '@xenova/transformers': 2.17.2
     transitivePeerDependencies:
@@ -11531,9 +11735,9 @@ snapshots:
       - ws
       - zod
 
-  '@themaximalist/vectordb.js@0.1.2(@xenova/transformers@2.17.2)(ws@8.18.3)(zod@4.1.12)':
+  '@themaximalist/vectordb.js@0.1.2(@xenova/transformers@2.17.2)(ws@8.18.3)(zod@4.3.5)':
     dependencies:
-      '@themaximalist/embeddings.js': 0.1.3(@xenova/transformers@2.17.2)(ws@8.18.3)(zod@4.1.12)
+      '@themaximalist/embeddings.js': 0.1.3(@xenova/transformers@2.17.2)(ws@8.18.3)(zod@4.3.5)
       debug: 4.4.1(supports-color@8.1.1)
       hnswlib-node: 2.1.1
       mocha: 10.8.2
@@ -12000,8 +12204,8 @@ snapshots:
 
   '@types/node-fetch@2.6.13':
     dependencies:
-      '@types/node': 22.19.2
-      form-data: 4.0.4
+      '@types/node': 20.19.27
+      form-data: 4.0.5
 
   '@types/node@18.19.130':
     dependencies:
@@ -12011,7 +12215,15 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/node@20.19.27':
+    dependencies:
+      undici-types: 6.21.0
+
   '@types/node@22.19.2':
+    dependencies:
+      undici-types: 6.21.0
+
+  '@types/node@22.19.3':
     dependencies:
       undici-types: 6.21.0
 
@@ -12852,6 +13064,26 @@ snapshots:
 
   basic-ftp@5.0.5: {}
 
+  better-auth@1.4.10(better-sqlite3@12.5.0)(pg@8.16.3)(react-dom@19.2.1(react@19.2.1))(react@19.2.1):
+    dependencies:
+      '@better-auth/core': 1.4.10(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.7(zod@4.3.5))(jose@6.1.3)(kysely@0.28.9)(nanostores@1.1.0)
+      '@better-auth/telemetry': 1.4.10(@better-auth/core@1.4.10(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.21)(better-call@1.1.7(zod@4.3.5))(jose@6.1.3)(kysely@0.28.9)(nanostores@1.1.0))
+      '@better-auth/utils': 0.3.0
+      '@better-fetch/fetch': 1.1.21
+      '@noble/ciphers': 2.1.1
+      '@noble/hashes': 2.0.1
+      better-call: 1.1.7(zod@4.3.5)
+      defu: 6.1.4
+      jose: 6.1.3
+      kysely: 0.28.9
+      nanostores: 1.1.0
+      zod: 4.3.5
+    optionalDependencies:
+      better-sqlite3: 12.5.0
+      pg: 8.16.3
+      react: 19.2.1
+      react-dom: 19.2.1(react@19.2.1)
+
   better-auth@1.4.5(react-dom@19.2.1(react@19.2.1))(react@19.2.1):
     dependencies:
       '@better-auth/core': 1.4.5(@better-auth/utils@0.3.0)(@better-fetch/fetch@1.1.18)(better-call@1.1.4(zod@4.1.12))(jose@6.1.0)(kysely@0.28.8)(nanostores@1.0.1)
@@ -12879,6 +13111,21 @@ snapshots:
       set-cookie-parser: 2.7.2
     optionalDependencies:
       zod: 3.25.76
+
+  better-call@1.1.7(zod@4.3.5):
+    dependencies:
+      '@better-auth/utils': 0.3.0
+      '@better-fetch/fetch': 1.1.21
+      rou3: 0.7.12
+      set-cookie-parser: 2.7.2
+    optionalDependencies:
+      zod: 4.3.5
+
+  better-sqlite3@12.5.0:
+    dependencies:
+      bindings: 1.5.0
+      prebuild-install: 7.1.3
+    optional: true
 
   binary-extensions@2.3.0: {}
 
@@ -14420,7 +14667,7 @@ snapshots:
 
   fast-xml-parser@5.2.5:
     dependencies:
-      strnum: 2.1.1
+      strnum: 2.1.2
 
   fast-xml-parser@5.3.2:
     dependencies:
@@ -14552,7 +14799,7 @@ snapshots:
 
   form-data-encoder@1.7.2: {}
 
-  form-data@4.0.4:
+  form-data@4.0.5:
     dependencies:
       asynckit: 0.4.0
       combined-stream: 1.0.8
@@ -14764,7 +15011,7 @@ snapshots:
 
   happy-dom@20.0.10:
     dependencies:
-      '@types/node': 20.19.26
+      '@types/node': 20.19.27
       '@types/whatwg-mimetype': 3.0.2
       whatwg-mimetype: 3.0.0
 
@@ -15336,7 +15583,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 22.19.2
+      '@types/node': 22.19.3
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
@@ -15345,6 +15592,8 @@ snapshots:
   jose@5.10.0: {}
 
   jose@6.1.0: {}
+
+  jose@6.1.3: {}
 
   js-tokens@4.0.0: {}
 
@@ -15402,6 +15651,8 @@ snapshots:
   kleur@4.1.5: {}
 
   kysely@0.28.8: {}
+
+  kysely@0.28.9: {}
 
   langium@3.3.1:
     dependencies:
@@ -16424,6 +16675,8 @@ snapshots:
 
   nanostores@1.0.1: {}
 
+  nanostores@1.1.0: {}
+
   napi-build-utils@2.0.0:
     optional: true
 
@@ -16651,7 +16904,7 @@ snapshots:
       platform: 1.3.6
       protobufjs: 7.5.4
 
-  openai@4.104.0(ws@8.18.3)(zod@4.1.12):
+  openai@4.104.0(ws@8.18.3)(zod@4.3.5):
     dependencies:
       '@types/node': 18.19.130
       '@types/node-fetch': 2.6.13
@@ -16662,7 +16915,7 @@ snapshots:
       node-fetch: 2.7.0
     optionalDependencies:
       ws: 8.18.3
-      zod: 4.1.12
+      zod: 4.3.5
     transitivePeerDependencies:
       - encoding
 
@@ -16824,6 +17077,48 @@ snapshots:
 
   pend@1.2.0: {}
 
+  pg-cloudflare@1.2.7:
+    optional: true
+
+  pg-connection-string@2.9.1:
+    optional: true
+
+  pg-int8@1.0.1:
+    optional: true
+
+  pg-pool@3.10.1(pg@8.16.3):
+    dependencies:
+      pg: 8.16.3
+    optional: true
+
+  pg-protocol@1.10.3:
+    optional: true
+
+  pg-types@2.2.0:
+    dependencies:
+      pg-int8: 1.0.1
+      postgres-array: 2.0.0
+      postgres-bytea: 1.0.1
+      postgres-date: 1.0.7
+      postgres-interval: 1.2.0
+    optional: true
+
+  pg@8.16.3:
+    dependencies:
+      pg-connection-string: 2.9.1
+      pg-pool: 3.10.1(pg@8.16.3)
+      pg-protocol: 1.10.3
+      pg-types: 2.2.0
+      pgpass: 1.0.5
+    optionalDependencies:
+      pg-cloudflare: 1.2.7
+    optional: true
+
+  pgpass@1.0.5:
+    dependencies:
+      split2: 4.2.0
+    optional: true
+
   picocolors@1.1.1: {}
 
   picomatch@2.3.1: {}
@@ -16879,6 +17174,20 @@ snapshots:
       nanoid: 3.3.11
       picocolors: 1.1.1
       source-map-js: 1.2.1
+
+  postgres-array@2.0.0:
+    optional: true
+
+  postgres-bytea@1.0.1:
+    optional: true
+
+  postgres-date@1.0.7:
+    optional: true
+
+  postgres-interval@1.2.0:
+    dependencies:
+      xtend: 4.0.2
+    optional: true
 
   prebuild-install@7.1.3:
     dependencies:
@@ -17062,7 +17371,7 @@ snapshots:
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.0
       '@types/long': 4.0.2
-      '@types/node': 22.19.2
+      '@types/node': 22.19.3
       long: 4.0.0
     optional: true
 
@@ -17617,6 +17926,8 @@ snapshots:
 
   rou3@0.7.10: {}
 
+  rou3@0.7.12: {}
+
   roughjs@4.6.6:
     dependencies:
       hachure-fill: 0.5.2
@@ -18106,6 +18417,8 @@ snapshots:
   strip-json-comments@3.1.1: {}
 
   strnum@2.1.1: {}
+
+  strnum@2.1.2: {}
 
   style-mod@4.1.3: {}
 
@@ -19105,5 +19418,7 @@ snapshots:
   zod@3.25.76: {}
 
   zod@4.1.12: {}
+
+  zod@4.3.5: {}
 
   zwitch@2.0.4: {}

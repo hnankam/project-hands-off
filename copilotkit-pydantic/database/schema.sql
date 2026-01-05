@@ -94,29 +94,12 @@ CREATE INDEX idx_agent_model_agent_id ON agent_model_mappings(agent_id);
 CREATE INDEX idx_agent_model_model_id ON agent_model_mappings(model_id);
 
 -- ============================================================================
--- BASE INSTRUCTIONS (Reusable prompt components)
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS base_instructions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    instruction_key VARCHAR(100) NOT NULL UNIQUE,
-    instruction_value TEXT NOT NULL,
-    description TEXT,
-    organization_id TEXT REFERENCES organization(id) ON DELETE SET NULL,
-    team_id TEXT REFERENCES team(id) ON DELETE SET NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_base_instructions_key ON base_instructions(instruction_key);
-
--- ============================================================================
 -- CONFIGURATION VERSIONS (For rollback and audit)
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS config_versions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    config_type VARCHAR(50) NOT NULL CHECK (config_type IN ('provider', 'model', 'agent', 'base_instruction')),
+    config_type VARCHAR(50) NOT NULL CHECK (config_type IN ('provider', 'model', 'agent')),
     config_id UUID NOT NULL,
     version_number INTEGER NOT NULL,
     config_data JSONB NOT NULL,
@@ -202,9 +185,6 @@ CREATE TRIGGER update_models_updated_at BEFORE UPDATE ON models
 CREATE TRIGGER update_agents_updated_at BEFORE UPDATE ON agents
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_base_instructions_updated_at BEFORE UPDATE ON base_instructions
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
 -- ============================================================================
 -- COMMENTS
 -- ============================================================================
@@ -212,7 +192,6 @@ CREATE TRIGGER update_base_instructions_updated_at BEFORE UPDATE ON base_instruc
 COMMENT ON TABLE providers IS 'AI provider configurations (Google, Anthropic, OpenAI, etc.)';
 COMMENT ON TABLE models IS 'AI models available in the system';
 COMMENT ON TABLE agents IS 'Agent types and prompts';
-COMMENT ON TABLE base_instructions IS 'Reusable prompt components';
 COMMENT ON TABLE config_versions IS 'Version history for configurations';
 COMMENT ON TABLE usage IS 'Track API usage and costs';
 COMMENT ON TABLE audit_logs IS 'Audit trail for all configuration changes';

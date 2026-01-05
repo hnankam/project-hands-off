@@ -1571,18 +1571,23 @@ async function safeDecryptOAuthTokens(encryptedCredentials, userId, connectionId
       console.error('[Workspace] Failed to check connection update time:', checkError);
     }
     
-    // Mark connection as invalid in database
+    // Don't mark connection as invalid - keep it active so user can easily re-authenticate
+    // Set needs_reauth metadata instead
     try {
       await pool.query(
         `UPDATE workspace_connections 
-         SET status = 'invalid', 
-             updated_at = CURRENT_TIMESTAMP 
+         SET metadata = jsonb_set(
+           COALESCE(metadata, '{}'::jsonb), 
+           '{needs_reauth}', 
+           'true'::jsonb
+         ),
+         updated_at = CURRENT_TIMESTAMP 
          WHERE id = $1`,
         [connectionId]
       );
-      console.log(`[Workspace] Marked connection ${connectionId} as invalid due to decryption failure`);
+      console.log(`[Workspace] Connection ${connectionId} needs re-authentication due to decryption failure`);
     } catch (updateError) {
-      console.error('[Workspace] Failed to mark connection as invalid:', updateError);
+      console.error('[Workspace] Failed to update connection metadata:', updateError);
     }
     
     return null;
@@ -1795,31 +1800,39 @@ router.get('/connections/:connectionId/gmail/emails', requireAuth, async (req, r
             retryError.message.includes('No refresh token')
           );
           
+          // Don't mark connection as invalid - keep it active so user can easily re-authenticate
+          // The connection is still valid, just needs fresh tokens
           if (isRefreshTokenError) {
-            // Refresh token is invalid, connection needs to be recreated
+            console.log(`[Workspace] Connection ${connectionId} needs re-authentication (refresh token expired/revoked)`);
+            console.log(`[Workspace] Connection remains ACTIVE - user should re-authenticate to get fresh tokens`);
+            
+            // Update metadata to indicate re-auth is needed, but keep status as 'active'
             try {
               await pool.query(
                 `UPDATE workspace_connections 
-                 SET status = 'invalid', 
-                     updated_at = CURRENT_TIMESTAMP 
+                 SET metadata = jsonb_set(
+                   COALESCE(metadata, '{}'::jsonb), 
+                   '{needs_reauth}', 
+                   'true'::jsonb
+                 ),
+                 updated_at = CURRENT_TIMESTAMP 
                  WHERE id = $1`,
                 [connectionId]
               );
-              console.log(`[Workspace] Marked connection ${connectionId} as invalid due to invalid refresh token`);
             } catch (updateError) {
-              console.error('[Workspace] Failed to mark connection as invalid:', updateError);
+              console.error('[Workspace] Failed to update connection metadata:', updateError);
             }
           } else {
-            // Token refresh succeeded but API call failed - don't mark as invalid
-            // This could be a temporary API issue, rate limit, etc.
+            // Token refresh succeeded but API call failed - this could be a temporary API issue
             console.log('[Workspace] Token refresh succeeded but API call failed - connection remains active');
           }
           
           return res.status(401).json({ 
             error: isRefreshTokenError 
-              ? 'Authentication expired. Please reconnect your Gmail account.'
+              ? 'Your Gmail session has expired. Please click "Reconnect" to refresh your authentication.'
               : 'Failed to fetch emails after token refresh. Please try again.',
-            action: isRefreshTokenError ? 'reconnect_required' : undefined,
+            action: isRefreshTokenError ? 'reconnect_required' : 'retry',
+            connectionId,
             details: retryError.message 
           });
         }
@@ -2132,22 +2145,36 @@ router.get('/connections/:connectionId/slack/conversations', requireAuth, async 
         } catch (retryError) {
           console.error('[Workspace] Failed after token refresh:', retryError);
           
-          // Only mark as invalid if refresh token itself is invalid
           const isRefreshTokenError = retryError.message && (
             retryError.message.includes('refresh token') ||
             retryError.message.includes('invalid_grant') ||
             retryError.message.includes('No refresh token')
           );
           
+          // Don't mark connection as invalid - keep it active so user can easily re-authenticate
           if (isRefreshTokenError) {
-            await pool.query(
-              `UPDATE workspace_connections SET status = 'invalid' WHERE id = $1`,
-              [connectionId]
-            );
+            console.log(`[Workspace] Slack connection ${connectionId} needs re-authentication`);
+            try {
+              await pool.query(
+                `UPDATE workspace_connections 
+                 SET metadata = jsonb_set(
+                   COALESCE(metadata, '{}'::jsonb), 
+                   '{needs_reauth}', 
+                   'true'::jsonb
+                 ),
+                 updated_at = CURRENT_TIMESTAMP 
+                 WHERE id = $1`,
+                [connectionId]
+              );
+            } catch (updateError) {
+              console.error('[Workspace] Failed to update connection metadata:', updateError);
+            }
           }
           
           return res.status(401).json({ 
-            error: 'Authentication failed. Please reconnect your Slack account.',
+            error: 'Your Slack session has expired. Please click "Reconnect" to refresh your authentication.',
+            action: 'reconnect_required',
+            connectionId,
             details: retryError.message 
           });
         }
@@ -2259,22 +2286,36 @@ router.get('/connections/:connectionId/slack/messages', requireAuth, async (req,
         } catch (retryError) {
           console.error('[Workspace] Failed after token refresh:', retryError);
           
-          // Only mark as invalid if refresh token itself is invalid
           const isRefreshTokenError = retryError.message && (
             retryError.message.includes('refresh token') ||
             retryError.message.includes('invalid_grant') ||
             retryError.message.includes('No refresh token')
           );
           
+          // Don't mark connection as invalid - keep it active so user can easily re-authenticate
           if (isRefreshTokenError) {
-            await pool.query(
-              `UPDATE workspace_connections SET status = 'invalid' WHERE id = $1`,
-              [connectionId]
-            );
+            console.log(`[Workspace] Slack connection ${connectionId} needs re-authentication`);
+            try {
+              await pool.query(
+                `UPDATE workspace_connections 
+                 SET metadata = jsonb_set(
+                   COALESCE(metadata, '{}'::jsonb), 
+                   '{needs_reauth}', 
+                   'true'::jsonb
+                 ),
+                 updated_at = CURRENT_TIMESTAMP 
+                 WHERE id = $1`,
+                [connectionId]
+              );
+            } catch (updateError) {
+              console.error('[Workspace] Failed to update connection metadata:', updateError);
+            }
           }
           
           return res.status(401).json({ 
-            error: 'Authentication failed. Please reconnect your Slack account.',
+            error: 'Your Slack session has expired. Please click "Reconnect" to refresh your authentication.',
+            action: 'reconnect_required',
+            connectionId,
             details: retryError.message 
           });
         }
@@ -2392,22 +2433,36 @@ router.get('/connections/:connectionId/slack/channel/:channelId/messages', requi
         } catch (retryError) {
           console.error('[Workspace] Failed after token refresh:', retryError);
           
-          // Only mark as invalid if refresh token itself is invalid
           const isRefreshTokenError = retryError.message && (
             retryError.message.includes('refresh token') ||
             retryError.message.includes('invalid_grant') ||
             retryError.message.includes('No refresh token')
           );
           
+          // Don't mark connection as invalid - keep it active so user can easily re-authenticate
           if (isRefreshTokenError) {
-            await pool.query(
-              `UPDATE workspace_connections SET status = 'invalid' WHERE id = $1`,
-              [connectionId]
-            );
+            console.log(`[Workspace] Slack connection ${connectionId} needs re-authentication`);
+            try {
+              await pool.query(
+                `UPDATE workspace_connections 
+                 SET metadata = jsonb_set(
+                   COALESCE(metadata, '{}'::jsonb), 
+                   '{needs_reauth}', 
+                   'true'::jsonb
+                 ),
+                 updated_at = CURRENT_TIMESTAMP 
+                 WHERE id = $1`,
+                [connectionId]
+              );
+            } catch (updateError) {
+              console.error('[Workspace] Failed to update connection metadata:', updateError);
+            }
           }
           
           return res.status(401).json({ 
-            error: 'Authentication failed. Please reconnect your Slack account.',
+            error: 'Your Slack session has expired. Please click "Reconnect" to refresh your authentication.',
+            action: 'reconnect_required',
+            connectionId,
             details: retryError.message 
           });
         }

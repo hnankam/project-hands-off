@@ -366,13 +366,13 @@ const CustomAssistantMessageV2Component: React.FC<AssistantMessageProps> = (prop
             {customRegenerateButton}
             
             {/* Thumbs Up Button */}
-            {thumbsUpButton}
+            {/* {thumbsUpButton} */}
             
             {/* Thumbs Down Button */}
-            {thumbsDownButton}
+            {/* {thumbsDownButton} */}
             
             {/* Read Aloud Button */}
-            {readAloudButton}
+            {/* {readAloudButton} */}
             
             {/* Copy Button (rightmost) - with aggregated content */}
             {customCopyButton}

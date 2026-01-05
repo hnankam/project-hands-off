@@ -2145,10 +2145,10 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
                 
                 {/* Right side: Send button */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  {audioRecorder}
+                  {/* {audioRecorder}
                   <div className="custom-input-hover-button">{cancelTranscribeButton}</div>
                   <div className="custom-input-hover-button">{finishTranscribeButton}</div>
-                  <div className="custom-input-hover-button">{startTranscribeButton}</div>
+                  <div className="custom-input-hover-button">{startTranscribeButton}</div> */}
                   {styledSendButton}
                 </div>
               </div>

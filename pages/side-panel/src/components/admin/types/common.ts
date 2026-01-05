@@ -45,18 +45,3 @@ export interface BaseTabProps extends ThemeProps {
   onSuccess: (message: string) => void;
 }
 
-/**
- * Base instruction interface
- */
-export interface BaseInstruction {
-  id: string;
-  instructionKey: string;
-  instructionValue: string;
-  description: string | null;
-  organizationId: string;
-  teamId: string | null;
-  teamName: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-

@@ -231,34 +231,26 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
         teamsCache.teams = data.teams || [];
         setTeams(data.teams || []);
         
-        // If we have teams and an active team, update the name
+        // If we have teams and an active team, update the display name
         if (data.teams && activeTeam) {
           const currentTeam = data.teams.find((t: Team) => t.id === activeTeam);
           
           if (currentTeam) {
             setActiveTeamName(currentTeam.name);
           } else {
-            // Active team doesn't belong to this organization
-            // AuthContext should handle this, but as a fallback, auto-select the first member team
-            const memberTeams = data.teams.filter((t: Team) => t.isMember);
-            if (memberTeams.length > 0) {
-              try {
-                const result = await setActiveTeam(memberTeams[0].id);
-                if (result.success) {
-                  setActiveTeamName(memberTeams[0].name);
-                  manuallySetNameRef.current = null;
-                }
-              } catch (err) {
-                console.error('[TeamSelector] Error setting fallback team:', err);
-              }
-            } else {
-              setActiveTeamName(null);
-            }
+            // Active team doesn't belong to this organization's teams
+            // DON'T auto-select here - the activeTeam might be a valid preference
+            // that AuthContext will handle, or the user will select manually
+            console.log('[TeamSelector] activeTeam not in loaded teams, keeping current value');
+            // Just clear the display name since we can't find the team
+            setActiveTeamName(null);
           }
         } else if (!activeTeam && data.teams.length > 0) {
           // No active team at all, but we have teams - auto-select the first one
+          // This is the ONLY case where we should auto-select in loadTeams
           const memberTeams = data.teams.filter((t: Team) => t.isMember);
           if (memberTeams.length > 0) {
+            console.log('[TeamSelector] No activeTeam, auto-selecting first member team');
             try {
               const result = await setActiveTeam(memberTeams[0].id);
               if (result.success) {
@@ -369,7 +361,15 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
       return;
     }
 
+    // Don't auto-select while still loading teams
     if (isLoading) return;
+    
+    // Don't auto-select if teams haven't been loaded yet (empty array from initial state)
+    // This prevents overwriting a valid activeTeam from preferences before teams are fetched
+    if (teams.length === 0) {
+      autoSelectingTeamRef.current = false;
+      return;
+    }
 
     const memberTeams = teams.filter((t) => t.isMember);
     if (memberTeams.length === 0) {
@@ -383,6 +383,19 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
       return;
     }
 
+    // ONLY auto-select if activeTeam is explicitly null (not set at all)
+    // If activeTeam has a value but isn't in the list, it might be from a different org
+    // or the teams list might be stale - let the user or AuthContext handle it
+    if (activeTeam !== null) {
+      // activeTeam is set but not in current memberTeams - this could be:
+      // 1. A valid team from preferences that just hasn't been validated yet
+      // 2. A team from a different org (which AuthContext will handle)
+      // Don't auto-select, let the existing value stand until explicitly changed
+      console.log('[TeamSelector] activeTeam set but not in memberTeams, skipping auto-select');
+      autoSelectingTeamRef.current = false;
+      return;
+    }
+
     if (autoSelectingTeamRef.current) {
       return;
     }
@@ -392,6 +405,7 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
       return;
     }
 
+    console.log('[TeamSelector] No activeTeam set, auto-selecting first team');
     autoSelectingTeamRef.current = true;
     (async () => {
       try {

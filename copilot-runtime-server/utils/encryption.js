@@ -140,13 +140,27 @@ function decryptCredential(encryptedData, organizationId) {
  * @returns {Object} Encrypted tokens and metadata
  */
 function encryptOAuthTokens(tokens, organizationId) {
+  // Calculate expires_at timestamp if expires_in is provided
+  // Accept both expires_at (timestamp) and expires_in (seconds) for flexibility
+  let expiresAt = tokens.expires_at || null;
+  if (!expiresAt && tokens.expires_in) {
+    expiresAt = Math.floor(Date.now() / 1000) + tokens.expires_in;
+  }
+  
   const tokenData = {
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token || null,
-    expires_in: tokens.expires_in || null,
+    expires_at: expiresAt,  // Store as timestamp for consistent checking
+    expires_in: tokens.expires_in || null,  // Keep for backwards compatibility
     scopes: tokens.scopes || tokens.scope?.split(' ') || [],
     encrypted_at: new Date().toISOString()
   };
+  
+  // Debug logging for token storage
+  console.log('[Encryption] Storing OAuth tokens:');
+  console.log('[Encryption]   - access_token present:', !!tokenData.access_token);
+  console.log('[Encryption]   - refresh_token present:', !!tokenData.refresh_token);
+  console.log('[Encryption]   - expires_at:', tokenData.expires_at ? new Date(tokenData.expires_at * 1000).toISOString() : 'not set');
   
   return encryptCredential(tokenData, organizationId);
 }
@@ -160,7 +174,21 @@ function encryptOAuthTokens(tokens, organizationId) {
  */
 function decryptOAuthTokens(encryptedData, organizationId) {
   const decrypted = decryptCredential(encryptedData, organizationId);
-  return JSON.parse(decrypted);
+  const tokens = JSON.parse(decrypted);
+  
+  // Debug logging for token retrieval
+  console.log('[Encryption] Retrieved OAuth tokens:');
+  console.log('[Encryption]   - access_token present:', !!tokens.access_token);
+  console.log('[Encryption]   - refresh_token present:', !!tokens.refresh_token);
+  console.log('[Encryption]   - expires_at:', tokens.expires_at ? new Date(tokens.expires_at * 1000).toISOString() : 'not set');
+  
+  // Warn if refresh token is missing - this will cause issues when access token expires
+  if (!tokens.refresh_token) {
+    console.warn('[Encryption] WARNING: No refresh_token stored! Token refresh will fail when access_token expires.');
+    console.warn('[Encryption] The user may need to re-authenticate to get a new refresh token.');
+  }
+  
+  return tokens;
 }
 
 /**

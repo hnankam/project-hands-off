@@ -36,11 +36,7 @@ def _load_config() -> Dict[str, Any]:
 
 
 def _build_agent_prompts(config: Dict[str, Any]) -> tuple[Dict[str, str], List[str], Dict[str, Dict[str, Any]]]:
-    """Build agent prompts and metadata from configuration with substitution."""
-
-    base_instructions = config.get('base_instructions', {})
-    general_instruction = base_instructions.get('general_instruction', '')
-    planning_instruction = base_instructions.get('planning_instruction', '')
+    """Build agent prompts and metadata from configuration."""
 
     prompts: Dict[str, str] = {}
     agent_types: List[str] = []
@@ -51,11 +47,7 @@ def _build_agent_prompts(config: Dict[str, Any]) -> tuple[Dict[str, str], List[s
         is_enabled = agent_cfg.get('enabled', True)
         
         # Build prompt for all agents (needed for auxiliary agent creation, even if disabled)
-        prompt_template = agent_cfg['prompt']
-        prompt = prompt_template.format(
-            general_instruction=general_instruction,
-            planning_instruction=planning_instruction,
-        )
+        prompt = agent_cfg['prompt']
         prompts[agent_type] = prompt.strip()
         
         # Always add to agent_info (needed for auxiliary agent lookups, even if disabled)

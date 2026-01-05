@@ -314,7 +314,6 @@ async def drop_all_tables():
     DROP TABLE IF EXISTS audit_logs CASCADE;
     DROP TABLE IF EXISTS usage CASCADE;
     DROP TABLE IF EXISTS config_versions CASCADE;
-    DROP TABLE IF EXISTS base_instructions CASCADE;
     DROP TABLE IF EXISTS agents CASCADE;
     DROP TABLE IF EXISTS models CASCADE;
     DROP TABLE IF EXISTS providers CASCADE;

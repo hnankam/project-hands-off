@@ -42,22 +42,7 @@ async def seed_database(
     
     async with await psycopg.AsyncConnection.connect(get_connection_string()) as conn:
         async with conn.cursor() as cur:
-            # 1. Seed base instructions
-            logger.info("Seeding base instructions...")
-            base_instructions = agents_config.get('base_instructions', {})
-            for key, value in base_instructions.items():
-                await cur.execute(
-                    """
-                    INSERT INTO base_instructions (instruction_key, instruction_value, description)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (instruction_key) DO UPDATE SET
-                        instruction_value = EXCLUDED.instruction_value
-                    """,
-                    (key, value, f"Base instruction: {key}")
-                )
-            logger.info(f"Seeded {len(base_instructions)} base instructions")
-            
-            # 2. Seed providers
+            # Seed providers
             logger.info("Seeding providers...")
             providers = models_config.get('providers', {})
             provider_ids = {}
@@ -89,7 +74,7 @@ async def seed_database(
             
             logger.info(f"Seeded {len(providers)} providers")
             
-            # 3. Seed models
+            # Seed models
             logger.info("Seeding models...")
             models = models_config.get('models', [])
             
@@ -124,7 +109,7 @@ async def seed_database(
             
             logger.info(f"Seeded {len(models)} models")
             
-            # 4. Seed agents
+            # Seed agents
             logger.info("Seeding agents...")
             agents = agents_config.get('agents', [])
             
@@ -167,22 +152,17 @@ async def seed_database(
             await cur.execute("SELECT COUNT(*) FROM agents")
             agent_count = (await cur.fetchone())[0]
             
-            await cur.execute("SELECT COUNT(*) FROM base_instructions")
-            instruction_count = (await cur.fetchone())[0]
-            
             logger.info("=" * 60)
             logger.info("SEEDING SUMMARY")
             logger.info("=" * 60)
             logger.info(f"Providers: {provider_count}")
             logger.info(f"Models: {model_count}")
             logger.info(f"Agents: {agent_count}")
-            logger.info(f"Base Instructions: {instruction_count}")
             logger.info("=" * 60)
     
     return {
         'providers': provider_count,
         'models': model_count,
         'agents': agent_count,
-        'base_instructions': instruction_count
     }
 

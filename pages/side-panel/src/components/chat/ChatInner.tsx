@@ -36,7 +36,6 @@ import {
   // Components
   CopilotChat,
   // Types
-  type InputProps,
   type MessagesProps,
   // Hooks
   useCopilotChat,
@@ -56,10 +55,7 @@ import { cn } from '@extension/ui';
 // UI Components
 import type { AgentStepState } from '../cards';
 // Note: Graph state rendering is handled by renderActivityMessages at Provider level
-// Custom components available for future use after V2 styles import:
-// import { CustomUserMessage } from './CustomUserMessage';
-// import { CustomAssistantMessage } from './CustomAssistantMessage';
-import { CustomInput } from './CustomInput';
+// V2 components are used via chatView slots below
 import { CustomMessages } from './CustomMessages';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MermaidBlock } from './MermaidBlock';
@@ -366,20 +362,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // AUTH CONTEXT
   // ================================================================================
   const { user, organization, member } = useAuth();
-
-  // ================================================================================
-  // REFS FOR STABLE COMPONENT IDENTITY
-  // ================================================================================
-  // These refs prevent ScopedInput from being recreated when page selection changes,
-  // which would cause PagesSelector to remount and lose its isOpen state
-  const selectedPageURLsRef = useRef(selectedPageURLs);
-  const currentPageURLRef = useRef(currentPageURL);
-  const onPagesChangeRef = useRef(onPagesChange);
-
-  // Keep refs updated with latest values
-  selectedPageURLsRef.current = selectedPageURLs;
-  currentPageURLRef.current = currentPageURL;
-  onPagesChangeRef.current = onPagesChange;
 
   // ================================================================================
   // STATE MANAGEMENT
@@ -829,36 +811,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     }),
     [showThoughtBlocks],
   );
-
-  // Scoped Input component - receives InputProps from CopilotChat
-  // NOTE: We pass selectedPageURLs directly (not via ref) so ContextSelector receives updates,
-  // but use refs for callbacks to prevent unnecessary remounts
-  const ScopedInput = useMemo(() => {
-    const Comp = (props: InputProps) => (
-      <CustomInput
-        {...props}
-        listenSessionId={sessionId}
-        isAgentAndModelSelected={isAgentAndModelSelected}
-        taskProgressState={dynamicAgentState}
-        onTaskProgressStateChange={setDynamicAgentState}
-        showTaskProgress={showProgressBar}
-        sessionId={sessionId}
-        onToggleTaskProgress={toggleProgressBarFn}
-        selectedPageURLs={selectedPageURLs}
-        onSelectedPageURLsChange={urls => onPagesChangeRef.current?.(urls)}
-        currentPageURL={currentPageURLRef.current}
-      />
-    );
-    return Comp;
-  }, [
-    sessionId,
-    isAgentAndModelSelected,
-    dynamicAgentState,
-    setDynamicAgentState,
-    showProgressBar,
-    toggleProgressBarFn,
-    selectedPageURLs, // Include selectedPageURLs so ContextSelector receives updates
-  ]);
 
   // ================================================================================
   // EVENT HANDLERS

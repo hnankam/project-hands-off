@@ -104,7 +104,6 @@ import {
   providersRouter,
   modelsRouter,
   agentsRouter,
-  baseInstructionsRouter,
   usageRouter,
   toolsRouter,
   workspaceRouter,
@@ -937,7 +936,6 @@ const app = express();
     app.use('/api/admin/providers', providersRouter);
     app.use('/api/admin/models', modelsRouter);
     app.use('/api/admin/agents', agentsRouter);
-    app.use('/api/admin/base-instructions', baseInstructionsRouter);
     app.use('/api/admin/tools', toolsRouter);
     app.use('/api/admin/usage', usageRouter);
 

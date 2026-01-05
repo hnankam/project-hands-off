@@ -122,7 +122,6 @@ async def _refresh_context(
                 team_id,
                 {
                     'agents': bundle.agents,
-                    'base_instructions': bundle.base_instructions,
                 },
             )
             store_tools_for_context(

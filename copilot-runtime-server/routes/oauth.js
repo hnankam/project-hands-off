@@ -234,6 +234,19 @@ router.get('/:service/callback', async (req, res) => {
     }
     
     console.log(`[OAuth] Successfully obtained ${service} tokens`);
+    console.log(`[OAuth] Access token received: ${accessToken ? 'YES' : 'NO'}`);
+    console.log(`[OAuth] Refresh token received: ${refreshToken ? 'YES' : 'NO'}`);
+    console.log(`[OAuth] Expires in: ${expiresIn || 'not specified'} seconds`);
+    
+    // Warn if no refresh token is returned - this could indicate the app needs re-authorization
+    // or Google's app is in "Testing" mode (refresh tokens expire after 7 days in testing mode)
+    if (!refreshToken && (service === 'gmail' || service === 'google-drive')) {
+      console.warn(`[OAuth] WARNING: No refresh token received for ${service}!`);
+      console.warn(`[OAuth] This may happen if:`);
+      console.warn(`[OAuth]   1. The user previously authorized the app (use prompt=consent to force new consent)`);
+      console.warn(`[OAuth]   2. The app doesn't have access_type=offline set`);
+      console.warn(`[OAuth] Note: If your Google Cloud app is in "Testing" mode, refresh tokens expire after 7 days.`);
+    }
     
     // Encrypt tokens
     const { encrypted } = encryptOAuthTokens({
@@ -249,6 +262,7 @@ router.get('/:service/callback', async (req, res) => {
       : null;
     
     // Store connection in database
+    // Clear any needs_reauth flag and set fresh metadata on successful (re)authentication
     const pool = getPool();
     await pool.query(
       `INSERT INTO workspace_connections 
@@ -261,6 +275,7 @@ router.get('/:service/callback', async (req, res) => {
          token_expires_at = EXCLUDED.token_expires_at,
          scopes = EXCLUDED.scopes,
          status = EXCLUDED.status,
+         metadata = EXCLUDED.metadata,
          updated_at = CURRENT_TIMESTAMP`,
       [
         userId,
@@ -271,7 +286,10 @@ router.get('/:service/callback', async (req, res) => {
         expiresAt,
         config.scopes,
         'active',
-        JSON.stringify({ connected_at: new Date().toISOString() })
+        JSON.stringify({ 
+          connected_at: new Date().toISOString(),
+          needs_reauth: false  // Clear any previous re-auth flag
+        })
       ]
     );
     

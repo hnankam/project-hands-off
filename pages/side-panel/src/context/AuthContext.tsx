@@ -4,11 +4,12 @@
  * Provides authentication state and methods throughout the application.
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import { authClient, Session, User, Organization, Member } from '../lib/auth-client';
 import { API_CONFIG } from '../constants';
 import { sessionStorageDBWrapper, debug } from '@extension/shared';
+import { preferencesStorage } from '@extension/storage';
 
 interface AuthContextType {
   // State
@@ -115,6 +116,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [member, setMember] = useState<Member | null>(null);
   const [activeTeam, setActiveTeamState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Track the last user ID to detect user switches
+  const lastUserIdRef = useRef<string | null>(null);
 
   const updateSessionContext = useCallback((updates: Partial<{ activeOrganizationId: string | null; activeTeamId: string | null }>) => {
     setSession((prev: Session | null) => {
@@ -158,6 +162,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /**
    * Load session and user data
+   * 
+   * This function handles loading the user's session and restoring their
+   * org/team selections from localStorage if they're not in the session.
+   * This ensures preferences persist across sign-outs and user switches.
    */
   const loadSession = useCallback(async () => {
     try {
@@ -170,43 +178,101 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Prepare state updates to be applied together
         const user = sessionResult.data.user;
         const sessionData = sessionResult.data.session as any;
-        const activeOrgId = sessionData?.activeOrganizationId;
-        const activeTeamId = sessionData?.activeTeamId || null;
+        let activeOrgId = sessionData?.activeOrganizationId;
+        let activeTeamId = sessionData?.activeTeamId || null;
         const currentUserId = user?.id || null;
         
-        debug.log('[AuthContext] loadSession - data ready:', {
-          activeOrgId: activeOrgId?.slice(0, 8),
-          activeTeamId: activeTeamId?.slice(0, 8),
+        debug.log('[AuthContext] loadSession - session data:', {
+          activeOrgId: activeOrgId?.slice(0, 8) || 'none',
+          activeTeamId: activeTeamId?.slice(0, 8) || 'none',
           userId: currentUserId?.slice(0, 8)
         });
         
         // Set userId for session storage immediately
         if (currentUserId) {
           sessionStorageDBWrapper.setCurrentUserId(currentUserId);
+          
+          // Check if this is a different user than last time
+          const userChanged = await preferencesStorage.hasUserChanged(currentUserId);
+          if (userChanged) {
+            debug.log('[AuthContext] User has changed, will restore their preferences');
+          }
+          
+          // Update the last user ID tracker
+          await preferencesStorage.setLastUserId(currentUserId);
+          lastUserIdRef.current = currentUserId;
+          
+          // ALWAYS check user preferences - they take precedence over session values
+          // because they represent the user's last explicit choice (which may be more
+          // recent than what's in the backend session)
+          const savedPrefs = await preferencesStorage.getUserOrgTeamPrefs(currentUserId);
+          if (savedPrefs) {
+            debug.log('[AuthContext] Found saved preferences:', {
+              savedOrgId: savedPrefs.lastSelectedOrgId?.slice(0, 8) || 'none',
+              savedTeamId: savedPrefs.lastSelectedTeamId?.slice(0, 8) || 'none',
+              sessionOrgId: activeOrgId?.slice(0, 8) || 'none',
+              sessionTeamId: activeTeamId?.slice(0, 8) || 'none',
+            });
+            
+            // Use saved org (preference takes precedence over session)
+            if (savedPrefs.lastSelectedOrgId) {
+              if (activeOrgId !== savedPrefs.lastSelectedOrgId) {
+                debug.log('[AuthContext] Using saved org preference:', savedPrefs.lastSelectedOrgId.slice(0, 8));
+              }
+              activeOrgId = savedPrefs.lastSelectedOrgId;
+            }
+            
+            // Use saved team (preference takes precedence over session)
+            if (savedPrefs.lastSelectedTeamId) {
+              if (activeTeamId !== savedPrefs.lastSelectedTeamId) {
+                debug.log('[AuthContext] Using saved team preference:', savedPrefs.lastSelectedTeamId.slice(0, 8));
+              }
+              activeTeamId = savedPrefs.lastSelectedTeamId;
+            }
+          }
         } else {
           sessionStorageDBWrapper.setCurrentUserId(null);
+          await preferencesStorage.setLastUserId(null);
+          lastUserIdRef.current = null;
         }
 
         let orgToSet: Organization | null = null;
         let teamIdToSet: string | null = activeTeamId;
+        let availableOrgs: Organization[] = [];
 
-        // If we have an active org, fetch its details
-        if (activeOrgId) {
-          try {
-            const orgsResult = await authClient.organization.list();
-            orgToSet = orgsResult.data?.find((org: any) => org.id === activeOrgId) || null;
-          } catch (e) {
-            debug.error('[AuthContext] Error fetching org details:', e);
-          }
-        } else {
-          // Auto-select first org
-          try {
-            const orgsResult = await authClient.organization.list();
-            const firstOrg = orgsResult.data?.[0];
-            if (firstOrg) {
-              await authClient.organization.setActive({ organizationId: firstOrg.id });
-              orgToSet = firstOrg;
+        // Fetch all available organizations first
+        try {
+          const orgsResult = await authClient.organization.list();
+          availableOrgs = orgsResult.data || [];
+        } catch (e) {
+          debug.error('[AuthContext] Error fetching organizations:', e);
+        }
+
+        // If we have an active org (from session or preferences), verify and use it
+        if (activeOrgId && availableOrgs.length > 0) {
+          orgToSet = availableOrgs.find((org: any) => org.id === activeOrgId) || null;
+          
+          if (orgToSet) {
+            debug.log('[AuthContext] Found valid org:', orgToSet.name);
+            // Set it as active on the backend if not already
+            try {
+              await authClient.organization.setActive({ organizationId: orgToSet.id });
+            } catch (e) {
+              debug.error('[AuthContext] Error setting active org:', e);
             }
+          } else {
+            debug.log('[AuthContext] Saved org not found in available orgs, will auto-select');
+            activeOrgId = null; // Reset so we auto-select below
+          }
+        }
+
+        // If still no org, auto-select the first available one
+        if (!orgToSet && availableOrgs.length > 0) {
+          const firstOrg = availableOrgs[0];
+          debug.log('[AuthContext] Auto-selecting first org:', firstOrg.name);
+          try {
+            await authClient.organization.setActive({ organizationId: firstOrg.id });
+            orgToSet = firstOrg;
           } catch (e) {
             debug.error('[AuthContext] Error auto-selecting org:', e);
           }
@@ -219,8 +285,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setOrganization(orgToSet);
           
           if (orgToSet && !teamIdToSet) {
-            // Team will be auto-selected by autoSelectFirstTeam effect or call
-            // but we can at least set the rest of the state now
+            // Team will be auto-selected below or by autoSelectFirstTeam
           } else {
             setActiveTeamState(teamIdToSet);
           }
@@ -228,30 +293,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Finalize member and team info
         if (orgToSet) {
-          if (!teamIdToSet) {
+          // If we have a saved team ID, try to set it
+          if (teamIdToSet) {
+            // Verify the team exists and set it as active
+            try {
+              const response = await fetch(`${API_CONFIG.BASE_URL}/api/auth/set-active-team`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ teamId: teamIdToSet }),
+              });
+              
+              if (response.ok) {
+                debug.log('[AuthContext] Successfully set saved team as active');
+                setActiveTeamState(teamIdToSet);
+                updateSessionContext({ activeTeamId: teamIdToSet });
+              } else {
+                debug.log('[AuthContext] Saved team invalid, auto-selecting');
+                await autoSelectFirstTeam(setActiveTeamState, updateSessionContext);
+              }
+            } catch (e) {
+              debug.error('[AuthContext] Error setting saved team:', e);
               await autoSelectFirstTeam(setActiveTeamState, updateSessionContext);
+            }
+          } else {
+            await autoSelectFirstTeam(setActiveTeamState, updateSessionContext);
           }
           await fetchAndSetMember(orgToSet.id, currentUserId);
         }
         
       } else {
         unstable_batchedUpdates(() => {
+          setSession(null);
+          setUser(null);
+          setOrganization(null);
+          setMember(null);
+          setActiveTeamState(null);
+        });
+        sessionStorageDBWrapper.setCurrentUserId(null);
+        // Don't update lastUserId here - keep it so we can detect user changes on next login
+      }
+    } catch (error) {
+      debug.error('[AuthContext] Error loading session:', error);
+      unstable_batchedUpdates(() => {
         setSession(null);
         setUser(null);
         setOrganization(null);
         setMember(null);
         setActiveTeamState(null);
-        });
-        sessionStorageDBWrapper.setCurrentUserId(null);
-      }
-    } catch (error) {
-      debug.error('[AuthContext] Error loading session:', error);
-      unstable_batchedUpdates(() => {
-      setSession(null);
-      setUser(null);
-      setOrganization(null);
-      setMember(null);
-      setActiveTeamState(null);
       });
       sessionStorageDBWrapper.setCurrentUserId(null);
     } finally {
@@ -329,6 +418,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /**
    * Set active organization and auto-select first team
+   * Also saves the selection to user preferences for persistence
    */
   const setActiveOrganization = async (organizationId: string) => {
     try {
@@ -355,6 +445,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (orgError) {
         debug.error('[AuthContext] Error fetching new organization:', orgError);
+      }
+      
+      // Save the org selection to user preferences (team will be saved after auto-select)
+      const currentUserId = user?.id;
+      if (currentUserId) {
+        await preferencesStorage.setLastSelectedOrg(currentUserId, organizationId);
+        // Clear team preference since we're changing orgs
+        await preferencesStorage.setLastSelectedTeam(currentUserId, null);
       }
       
       // After setting organization, auto-select the first team
@@ -399,6 +497,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setActiveTeamState(updatedTeamId);
       updateSessionContext({ activeTeamId: updatedTeamId });
       debug.log('[AuthContext] Local activeTeam state updated');
+      
+      // Save the team selection to user preferences
+      const currentUserId = user?.id;
+      if (currentUserId) {
+        await preferencesStorage.setLastSelectedTeam(currentUserId, updatedTeamId);
+      }
 
       await fetchAndSetMember(organization?.id ?? null, user?.id || null);
 

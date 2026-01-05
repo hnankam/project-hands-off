@@ -5,8 +5,7 @@ import { OrganizationSelector, TeamSelector, TeamMultiSelector, ModelMultiSelect
 import { Radio, Checkbox } from './form-controls';
 import { RichTextEditor, CodeMirrorJsonEditor } from './editors';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
-import { AdminConfirmDialog, SaveTemplateDialog } from './modals';
-import type { TemplateFormData } from './modals';
+import { AdminConfirmDialog } from './modals';
 import type { AuxiliaryAgentType } from './types';
 
 interface Organization {
@@ -46,18 +45,6 @@ interface ToolSummary {
     displayName: string;
     transport: string;
   } | null;
-}
-
-interface BaseInstruction {
-  id: string;
-  instructionKey: string;
-  instructionValue: string;
-  description: string | null;
-  organizationId: string;
-  teamId: string | null;
-  teamName: string | null;
-  createdAt: string;
-  updatedAt: string;
 }
 
 interface AgentRecord {
@@ -196,100 +183,6 @@ const stringifyJson = (value: Record<string, any> | null | undefined, fallback =
   }
 };
 
-interface InstructionTemplateSelectorProps {
-  isLight: boolean;
-  instructions: BaseInstruction[];
-  onSelect: (instruction: BaseInstruction) => void;
-  onSave: () => void;
-}
-
-const InstructionTemplateSelector: React.FC<InstructionTemplateSelectorProps> = ({ isLight, instructions, onSelect, onSave }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-    return undefined;
-  }, [isOpen]);
-
-  return (
-    <div className="flex items-center gap-1">
-      <div className="relative" ref={dropdownRef}>
-        <button
-          type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className={cn(
-            'p-1 rounded transition-colors',
-            isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-700',
-          )}
-          title="Load template"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-          </svg>
-        </button>
-
-        {isOpen && instructions.length > 0 && (
-          <div
-            className={cn(
-              'absolute top-full right-0 mt-1 w-64 rounded-md border shadow-lg z-[9999] max-h-[280px] overflow-y-auto',
-              isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
-            )}
-          >
-            {instructions.map(instruction => (
-              <button
-                type="button"
-                key={instruction.id}
-                onClick={() => {
-                  onSelect(instruction);
-                  setIsOpen(false);
-                }}
-                className={cn(
-                  'w-full px-3 py-2 text-left transition-colors',
-                  isLight ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-200 hover:bg-gray-700',
-                )}
-              >
-                <div className="text-xs font-medium">{instruction.instructionKey}</div>
-                {instruction.description && (
-                  <div className={cn('text-[11px] mt-0.5', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                    {instruction.description}
-                  </div>
-                )}
-                <div className={cn('text-[10px] mt-1', isLight ? 'text-gray-400' : 'text-gray-500')}>
-                  {instruction.teamName ? `Team: ${instruction.teamName}` : 'Organization'}
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <button
-        type="button"
-        onClick={onSave}
-        className={cn(
-          'p-1 rounded transition-colors',
-          isLight ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-700',
-        )}
-        title="Save as template"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-        </svg>
-      </button>
-    </div>
-  );
-};
-
 const ModelIcon = () => (
   <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 3l7 4-7 4-7-4 7-4z" />
@@ -335,8 +228,6 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   }, []);
 
   const [agents, setAgents] = useState<AgentRecord[]>([]);
-  const [baseInstructions, setBaseInstructions] = useState<BaseInstruction[]>([]);
-  const [instructionsLoading, setInstructionsLoading] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [teamsLoading, setTeamsLoading] = useState(false);
   const [selectedOrgId, setSelectedOrgId] = useState(preselectedOrgId || '');
@@ -359,9 +250,6 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   const [editForm, setEditForm] = useState<AgentFormState | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; agentType: string } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [saveTemplateDialogOpen, setSaveTemplateDialogOpen] = useState(false);
-  const [saveTemplateFor, setSaveTemplateFor] = useState<'create' | 'edit' | null>(null);
-  const [templateForm, setTemplateForm] = useState<TemplateFormData>({ key: '', description: '', scope: 'organization', teamIds: [] });
   const [expandedInstructions, setExpandedInstructions] = useState<Set<string>>(new Set());
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [expandedAuxAgents, setExpandedAuxAgents] = useState<Set<string>>(new Set());
@@ -750,54 +638,6 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     [fetchTools],
   );
 
-  const fetchBaseInstructions = useCallback(
-    async (orgId: string, teamId: string | null, signal?: AbortSignal): Promise<BaseInstruction[]> => {
-      const params = new URLSearchParams({ organizationId: orgId });
-      if (teamId) {
-        params.append('teamId', teamId);
-      }
-
-      const response = await fetch(`${baseURL}/api/admin/base-instructions?${params.toString()}`, {
-        credentials: 'include',
-        signal,
-      });
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({}));
-        throw new Error(errorPayload?.error || `Failed to fetch base instructions (${response.status})`);
-      }
-
-      const data = await response.json();
-      return data.instructions || [];
-    },
-    [baseURL],
-  );
-
-  const refreshBaseInstructions = useCallback(
-    async (orgId: string, teamId: string | null) => {
-      setInstructionsLoading(true);
-      const controller = new AbortController();
-
-      try {
-        const fetched = await fetchBaseInstructions(orgId, teamId, controller.signal);
-        if (!controller.signal.aborted) {
-          setBaseInstructions(fetched);
-        }
-      } catch (err: any) {
-        if (err.name !== 'AbortError' && !controller.signal.aborted) {
-          console.error('[AgentsTab] Failed to fetch base instructions:', err);
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setInstructionsLoading(false);
-        }
-      }
-
-      return controller;
-    },
-    [fetchBaseInstructions],
-  );
-
   useEffect(() => {
     if (!selectedOrgId) {
       setAgents([]);
@@ -826,8 +666,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         const toolsController = await refreshTools(selectedOrgId);
         const activeTeamId = teamFilterIdsRef.current[0] || null;
         const agentsController = await refreshAgents(selectedOrgId, activeTeamId, { suppressLoading: true });
-        const instructionsController = await refreshBaseInstructions(selectedOrgId, activeTeamId);
-        controllers.push(modelsController, toolsController, agentsController, instructionsController);
+        controllers.push(modelsController, toolsController, agentsController);
 
         if (!aborted) {
           initialLoadCompleteRef.current = true;
@@ -850,7 +689,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       aborted = true;
       controllers.forEach(ctrl => ctrl.abort());
     };
-  }, [selectedOrgId, loadTeams, refreshAgents, refreshModels, refreshBaseInstructions, refreshTools]);
+  }, [selectedOrgId, loadTeams, refreshAgents, refreshModels, refreshTools]);
 
   useEffect(() => {
     if (!selectedOrgId || !initialLoadCompleteRef.current) {
@@ -1139,12 +978,6 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
     }
   };
 
-  const openSaveTemplateDialog = (source: 'create' | 'edit') => {
-    setSaveTemplateFor(source);
-    setTemplateForm({ key: '', description: '', scope: 'organization', teamIds: [] });
-    setSaveTemplateDialogOpen(true);
-  };
-
   const toggleInstructions = (agentId: string) => {
     setExpandedInstructions(prev => {
       const newSet = new Set(prev);
@@ -1191,57 +1024,6 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       }
       return newSet;
     });
-  };
-
-  const handleSaveTemplate = async () => {
-    if (!selectedOrgId) return;
-
-    if (!templateForm.key.trim()) {
-      onError('Template key is required');
-      return;
-    }
-
-    const instructionValue = saveTemplateFor === 'create' ? createForm.promptTemplate : editForm?.promptTemplate || '';
-
-    if (!instructionValue.trim()) {
-      onError('Cannot save empty instructions as template');
-      return;
-    }
-
-    if (templateForm.scope === 'team' && templateForm.teamIds.length === 0) {
-      onError('Select at least one team for team-scoped templates');
-      return;
-    }
-
-    try {
-      const payload = {
-        organizationId: selectedOrgId,
-        teamIds: templateForm.scope === 'team' ? templateForm.teamIds : [],
-        instructionKey: templateForm.key.trim(),
-        instructionValue: instructionValue.trim(),
-        description: templateForm.description.trim() || null,
-      };
-
-      const response = await fetch(`${baseURL}/api/admin/base-instructions`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({}));
-        throw new Error(errorPayload?.error || 'Failed to save template');
-      }
-
-      onSuccess(`Template "${templateForm.key}" saved successfully`);
-      setSaveTemplateDialogOpen(false);
-      const activeTeamId = teamFilterIds[0] || null;
-      await refreshBaseInstructions(selectedOrgId, activeTeamId);
-    } catch (err: any) {
-      console.error('[AgentsTab] Failed to save template:', err);
-      onError(err.message || 'Failed to save template');
-    }
   };
 
   const renderScopeBadge = (agent: AgentRecord) => {
@@ -1521,17 +1303,9 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                    Base Instructions
-                  </label>
-                  <InstructionTemplateSelector
-                    isLight={isLight}
-                    instructions={baseInstructions}
-                    onSelect={instruction => setCreateForm(prev => ({ ...prev, promptTemplate: instruction.instructionValue }))}
-                    onSave={() => openSaveTemplateDialog('create')}
-                  />
-                </div>
+                <label className={cn('text-xs font-medium mb-1 block', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                  Prompt Template
+                </label>
                 <RichTextEditor
                   value={createForm.promptTemplate}
                   onChange={value => setCreateForm(prev => ({ ...prev, promptTemplate: value }))}
@@ -1933,17 +1707,9 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                         </div>
 
                         <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
-                              Base Instructions
-                            </label>
-                            <InstructionTemplateSelector
-                              isLight={isLight}
-                              instructions={baseInstructions}
-                              onSelect={instruction => setEditForm(prev => (prev ? { ...prev, promptTemplate: instruction.instructionValue } : prev))}
-                              onSave={() => openSaveTemplateDialog('edit')}
-                            />
-                          </div>
+                          <label className={cn('text-xs font-medium mb-1 block', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                            Prompt Template
+                          </label>
                           <RichTextEditor
                             value={editForm.promptTemplate}
                             onChange={value => setEditForm(prev => (prev ? { ...prev, promptTemplate: value } : prev))}
@@ -2526,7 +2292,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                               'flex items-center justify-between w-full text-xs font-medium mb-1 transition-colors',
                               isLight ? 'text-gray-700 hover:text-gray-900' : 'text-gray-300 hover:text-gray-100'
                             )}>
-                            <span>Base Instructions</span>
+                            <span>Prompt Template</span>
                             <svg
                               width="16"
                               height="16"
@@ -2720,17 +2486,6 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
         }
         confirmText="Delete"
         variant="danger"
-        isLight={isLight}
-      />
-
-      {/* Save Template Dialog */}
-      <SaveTemplateDialog
-        isOpen={saveTemplateDialogOpen}
-        onClose={() => setSaveTemplateDialogOpen(false)}
-        onSave={handleSaveTemplate}
-        formData={templateForm}
-        onFormChange={setTemplateForm}
-        teams={teams}
         isLight={isLight}
       />
     </div>

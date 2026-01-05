@@ -143,20 +143,6 @@ const prettifyLabel = (value?: string | null): string => {
     .replace(/\b\w/g, char => char.toUpperCase());
 };
 
-const PRODUCTIVITY_TIPS: Array<{ title: string; description: string }> = [
-  {
-    title: 'Pin important workstreams',
-    description: 'Use the Sessions tab to keep your priority conversations open and ready when you return.',
-  },
-  {
-    title: 'Capture quick wins',
-    description: 'Drop highlights into the Notes view after each session so your team always has the latest context.',
-  },
-  {
-    title: 'Bring teammates in early',
-    description: 'Share session transcripts or invite collaborators directly from the Admin area to avoid rework later.',
-  },
-];
 
 // ============================================================================
 // HOME PAGE COMPONENT
@@ -181,14 +167,13 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const [lastMetricsRefresh, setLastMetricsRefresh] = useState<number | null>(null);
   const [activeTeamName, setActiveTeamName] = useState<string | null>(null);
   const [teamsRefreshKey, setTeamsRefreshKey] = useState(0);
-  const [currentTipIndex, setCurrentTipIndex] = useState(0);
   const [sessionsPage, setSessionsPage] = useState(1);
   
   // Initialize activeHomeTab from localStorage
-  const [activeHomeTab, setActiveHomeTab] = useState<'workspace' | 'sessions' | 'usage' | 'insights'>(() => {
+  const [activeHomeTab, setActiveHomeTab] = useState<'workspace' | 'sessions' | 'usage'>(() => {
     try {
       const stored = localStorage.getItem('homePageActiveTab');
-      if (stored === 'workspace' || stored === 'sessions' || stored === 'usage' || stored === 'insights') {
+      if (stored === 'workspace' || stored === 'sessions' || stored === 'usage') {
         return stored;
       }
     } catch (error) {
@@ -763,7 +748,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                   : 'rounded-lg'
                 )}>
               <div className="flex items-center gap-1">
-                {(['workspace', 'sessions', 'usage', 'insights'] as const).map(tab => (
+                {(['workspace', 'sessions', 'usage'] as const).map(tab => (
                   <button
                     key={tab}
                     onClick={() => setActiveHomeTab(tab)}
@@ -777,7 +762,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-700'
                         : 'text-gray-400 hover:bg-gray-800 hover:text-[#bcc1c7]',
                     )}>
-                    {tab === 'insights' ? 'Insights & Highlights' : tab}
+                    {tab}
               </button>
                 ))}
               </div>
@@ -1115,155 +1100,6 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                         </div>
                         <div className={cn('text-[11px]', isLight ? 'text-gray-600' : 'text-gray-400')}>
                           Last synced {lastMetricsRefresh ? formatRelativeTime(lastMetricsRefresh) : 'just now'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeHomeTab === 'insights' && (
-              <div className="space-y-4 animate-fadeIn max-w-4xl mx-auto">
-                {/* Insights */}
-                <div
-                  className={cn(
-                    'rounded-xl border',
-                    isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
-                  )}
-                >
-                  <div
-                    className={cn(
-                      'border-b px-4 py-3',
-                      isLight ? 'border-gray-200' : 'border-gray-700'
-                    )}
-                  >
-                    <h3 className={cn('text-sm font-semibold', mainTextColor)}>
-                      Insights & Highlights
-                    </h3>
-                    <p className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                      Where your team is spending the most time.
-                    </p>
-          </div>
-                  <div className="space-y-3 px-4 py-3 text-xs">
-                    <div className="max-w-lg mx-auto">
-                      <div className={cn('mb-1 text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                        Top Agents
-        </div>
-                      {uniqueAgents.length > 0 ? (
-                        <ul className="space-y-1.5">
-                          {uniqueAgents.slice(0, 3).map(([agent, count]) => (
-                            <li key={agent} className="flex items-center justify-between">
-                              <span className={mainTextColor}>
-                                {prettifyLabel(agent)}
-                              </span>
-                              <span className={cn('font-mono', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                                {count} session{count === 1 ? '' : 's'}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                          Run a session to see which agents get the most traction.
-                        </div>
-                      )}
-                    </div>
-                    <div className="max-w-lg mx-auto">
-                      <div className={cn('mb-1 text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                        Frequently Used Models
-                      </div>
-                      {uniqueModels.length > 0 ? (
-                        <ul className="space-y-1.5">
-                          {uniqueModels.slice(0, 3).map(([model, count]) => (
-                            <li key={model} className="flex items-center justify-between">
-                              <span className={mainTextColor}>
-                                {prettifyLabel(model)}
-                              </span>
-                              <span className={cn('font-mono', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                                {count} run{count === 1 ? '' : 's'}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className={cn('text-[11px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                          Switch models from a session to start collecting insights.
-                        </div>
-                      )}
-                    </div>
-                    <div className="max-w-lg mx-auto">
-                      <div className={cn('mb-2 text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                        Productivity Tips
-                      </div>
-                      <div className="relative">
-                        <div className="flex items-center gap-3">
-                          {/* Left Arrow */}
-                          <button
-                            type="button"
-                            onClick={() => setCurrentTipIndex((prev) => (prev === 0 ? PRODUCTIVITY_TIPS.length - 1 : prev - 1))}
-                            className={cn(
-                              'flex items-center justify-center w-10 h-10 rounded transition-colors flex-shrink-0',
-                              isLight
-                                ? 'text-gray-700 hover:bg-gray-100'
-                                : 'text-gray-300 hover:bg-gray-800'
-                            )}
-                            title="Previous tip"
-                          >
-                            <svg className="w-6 h-6" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                              <path d="M12 6l-4 4 4 4" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          </button>
-
-                          {/* Tip Content */}
-                          <div
-                            className={cn(
-                              'flex-1 rounded-lg px-3 py-2',
-                              isLight ? 'bg-gray-50' : 'bg-[#0B121C]'
-                            )}
-                          >
-                            <div className={cn('text-[11px] font-semibold uppercase tracking-wide', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                              {PRODUCTIVITY_TIPS[currentTipIndex].title}
-                            </div>
-                            <div className={cn('mt-1 text-xs leading-snug', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                              {PRODUCTIVITY_TIPS[currentTipIndex].description}
-                            </div>
-                          </div>
-
-                          {/* Right Arrow */}
-                          <button
-                            type="button"
-                            onClick={() => setCurrentTipIndex((prev) => (prev === PRODUCTIVITY_TIPS.length - 1 ? 0 : prev + 1))}
-                            className={cn(
-                              'flex items-center justify-center w-10 h-10 rounded transition-colors flex-shrink-0',
-                              isLight
-                                ? 'text-gray-700 hover:bg-gray-100'
-                                : 'text-gray-300 hover:bg-gray-800'
-                            )}
-                            title="Next tip"
-                          >
-                            <svg className="w-6 h-6" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2.5}>
-                              <path d="M8 6l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          </button>
-                        </div>
-                        
-                        {/* Dot Indicators */}
-                        <div className="flex items-center justify-center gap-1 mt-2">
-                          {PRODUCTIVITY_TIPS.map((_, index) => (
-                            <button
-                              key={index}
-                              type="button"
-                              onClick={() => setCurrentTipIndex(index)}
-                              className={cn(
-                                'w-1.5 h-1.5 rounded-full transition-all',
-                                index === currentTipIndex
-                                  ? isLight ? 'bg-blue-500 w-4' : 'bg-blue-400 w-4'
-                                  : isLight ? 'bg-gray-300' : 'bg-gray-600'
-                              )}
-                              title={`Tip ${index + 1}`}
-                            />
-                          ))}
                         </div>
                       </div>
                     </div>

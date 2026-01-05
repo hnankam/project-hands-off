@@ -32,7 +32,6 @@ class ContextBundle:
     providers: Dict[str, Dict[str, Any]]
     models: List[Dict[str, Any]]
     agents: List[Dict[str, Any]]
-    base_instructions: Dict[str, str]
     tools: Dict[str, Dict[str, Any]]
     mcp_servers: Dict[str, Dict[str, Any]]
     version: Optional[datetime]
@@ -588,74 +587,6 @@ async def _fetch_tools(
     raise RuntimeError("Unreachable code")
 
 
-async def _fetch_instructions(
-    organization_id: Optional[str], max_retries: int = 3
-) -> Tuple[Dict[str, str], Dict[str, int], Optional[datetime]]:
-    """Fetch instructions with retry logic and connection throttling."""
-    
-    async with _db_semaphore:  # Throttle concurrent operations
-        for attempt in range(max_retries):
-            try:
-                instructions_map = {}
-                instruction_ranks = {}
-                max_version = None
-                
-                async with get_db_connection() as conn:
-                    async with conn.cursor() as cur:
-                        params = {}
-                        if organization_id:
-                            params['organization_id'] = organization_id
-
-                        org_condition = "organization_id = %(organization_id)s" if organization_id else "organization_id IS NULL"
-                        
-                        await cur.execute(
-                            f"""
-                            SELECT instruction_key,
-                                   instruction_value,
-                                   organization_id,
-                                   updated_at,
-                                   created_at
-                              FROM base_instructions
-                             WHERE {org_condition}
-                             ORDER BY instruction_key
-                            """,
-                            params,
-                        )
-                        rows = await cur.fetchall()
-                        for row in rows:
-                            rank = 1 if row['organization_id'] == organization_id else 2
-                            existing_rank = instruction_ranks.get(row['instruction_key'])
-                            if existing_rank is None or rank < existing_rank:
-                                instructions_map[row['instruction_key']] = {
-                                    'key': row['instruction_key'],
-                                    'value': row['instruction_value'],
-                                }
-                                instruction_ranks[row['instruction_key']] = rank
-                            max_version = _max_timestamp(max_version, row.get('updated_at') or row.get('created_at'))
-                        
-                # Convert map to simple dict
-                final_map = {k: v['value'] for k, v in instructions_map.items()}
-                return final_map, instruction_ranks, max_version
-                
-            except psycopg.OperationalError as exc:
-                if attempt < max_retries - 1:
-                    wait_time = (0.5 * (2 ** attempt)) + (random.random() * 0.5)
-                    logger.debug(
-                        f"_fetch_instructions: Retry {attempt + 1}/{max_retries} after {wait_time:.1f}s "
-                        f"(org={organization_id[:8] if organization_id else 'global'})"
-                    )
-                    await asyncio.sleep(wait_time)
-                    continue
-                
-                logger.error(
-                    f"_fetch_instructions: Failed after {max_retries} attempts "
-                    f"(org={organization_id[:8] if organization_id else 'global'}): {exc}"
-                )
-                raise
-    
-    raise RuntimeError("Unreachable code")
-
-
 async def fetch_context_bundle(
     organization_id: Optional[str],
     team_id: Optional[str],
@@ -679,7 +610,6 @@ async def fetch_context_bundle(
             _fetch_agents(organization_id, team_id),
             _fetch_mcp_servers(organization_id, team_id),
             _fetch_tools(organization_id, team_id),
-            _fetch_instructions(organization_id),
         )
         
         (providers, _, v1) = results[0]
@@ -687,11 +617,10 @@ async def fetch_context_bundle(
         (agents_map, _, v3) = results[2]
         (servers_map, v4) = results[3]
         (tools_map, _, v5) = results[4]
-        (base_instructions, _, v6) = results[5]
         
         # Compute global max version
         max_version = None
-        for v in [v1, v2, v3, v4, v5, v6]:
+        for v in [v1, v2, v3, v4, v5]:
             max_version = _max_timestamp(max_version, v)
 
         # Post-process: Add MCP server info to tools
@@ -715,7 +644,6 @@ async def fetch_context_bundle(
             providers=providers,
             models=list(models_map.values()),
             agents=list(agents_map.values()),
-            base_instructions=base_instructions,
             tools=tools_map,
             mcp_servers=servers_map,
             version=max_version,

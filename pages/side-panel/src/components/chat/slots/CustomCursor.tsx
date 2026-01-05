@@ -38,7 +38,7 @@ export function CustomCursor({
   
   // Adaptive margin: larger when no messages (initial state), smaller when continuing conversation
   const hasMessages = messages.length > 0;
-  const marginTop = hasMessages ? '0' : '0.75rem';
+  const marginTop = hasMessages ? '0' : '0.5rem';
   
   return (
     <div

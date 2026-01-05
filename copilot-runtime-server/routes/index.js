@@ -20,7 +20,6 @@
  *    - providers: LLM provider config
  *    - models: Model config
  *    - agents: Agent config
- *    - baseInstructions: System prompts
  *    - tools: Tool config
  * 
  * 4. Monitoring:
@@ -50,7 +49,6 @@ export { default as invitationsRouter } from './invitations.js';
 export { default as providersRouter } from './providers.js';
 export { default as modelsRouter } from './models.js';
 export { default as agentsRouter } from './agents.js';
-export { default as baseInstructionsRouter } from './base-instructions.js';
 export { default as toolsRouter } from './tools.js';
 
 // ============================================================================
