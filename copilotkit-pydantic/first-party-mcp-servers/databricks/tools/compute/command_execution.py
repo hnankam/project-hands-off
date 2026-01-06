@@ -63,8 +63,8 @@ def _convert_context_status_to_model(context_status) -> ContextStatusModel:
 # ============================================================================
 
 def create_execution_context(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
     language: str = "python",
 ) -> CreateExecutionContextResponse:
@@ -75,7 +75,7 @@ def create_execution_context(
     maintains state between command executions, allowing for interactive workflows.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         cluster_id: ID of running cluster
         language: Language for the context ("python", "sql", "scala", "r")
@@ -105,7 +105,7 @@ def create_execution_context(
         # - Imports and configuration carry over
         # - Database connections remain open
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.compute import Language
     
@@ -121,8 +121,8 @@ def create_execution_context(
 
 
 def get_context_status(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
     context_id: str,
 ) -> ContextStatusModel:
@@ -133,7 +133,7 @@ def get_context_status(
     ready to accept commands.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         cluster_id: ID of cluster
         context_id: ID of execution context
@@ -158,7 +158,7 @@ def get_context_status(
         elif status.status == "Error":
             print("Context failed to start")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     context_status = client.command_execution.context_status(
         cluster_id=cluster_id,
@@ -169,8 +169,8 @@ def get_context_status(
 
 
 def destroy_execution_context(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
     context_id: str,
 ) -> DestroyContextResponse:
@@ -181,7 +181,7 @@ def destroy_execution_context(
     when done with command execution to clean up.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         cluster_id: ID of cluster
         context_id: ID of execution context
@@ -208,7 +208,7 @@ def destroy_execution_context(
         # 3. Clean up
         destroy_execution_context(host, token, cluster_id, context.context.id)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.command_execution.destroy(
         cluster_id=cluster_id,
@@ -226,8 +226,8 @@ def destroy_execution_context(
 # ============================================================================
 
 def execute_command(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
     context_id: str,
     command: str,
@@ -240,7 +240,7 @@ def execute_command(
     This is a synchronous operation that waits for command completion.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         cluster_id: ID of cluster
         context_id: ID of execution context
@@ -289,7 +289,7 @@ def execute_command(
             "display(result)", "python")
         print(result.command.results.data)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.compute import Language
     
@@ -307,8 +307,8 @@ def execute_command(
 
 
 def get_command_status(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
     context_id: str,
     command_id: str,
@@ -320,7 +320,7 @@ def get_command_status(
     results if the command has finished.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         cluster_id: ID of cluster
         context_id: ID of execution context
@@ -362,7 +362,7 @@ def get_command_status(
                 print("Columns:", [col['name'] for col in status.results.table_schema])
                 print("Rows:", status.results.data)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     command_status = client.command_execution.command_status(
         cluster_id=cluster_id,
@@ -374,8 +374,8 @@ def get_command_status(
 
 
 def cancel_command(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
     context_id: str,
     command_id: str,
@@ -387,7 +387,7 @@ def cancel_command(
     queries or computations.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         cluster_id: ID of cluster
         context_id: ID of execution context
@@ -429,7 +429,7 @@ def cancel_command(
                 break
             time.sleep(1)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Wait for cancellation to complete
     command_status = client.command_execution.cancel_and_wait(

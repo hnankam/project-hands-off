@@ -25,8 +25,8 @@ from models import (
 # ============================================================================
 
 def list_secret_scopes(
-    host: str,
-    token: str
+    host_credential_key: str,
+    token_credential_key: str
 ) -> ListSecretScopesResponse:
     """
     List all secret scopes in the workspace.
@@ -35,8 +35,8 @@ def list_secret_scopes(
     like API keys, passwords, and tokens for external data sources.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
     
     Returns:
         ListSecretScopesResponse with all scopes
@@ -48,7 +48,7 @@ def list_secret_scopes(
         for scope in response.scopes:
             print(f"{scope.name} ({scope.backend_type})")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     scopes = []
     for scope in client.secrets.list_scopes():
@@ -66,8 +66,8 @@ def list_secret_scopes(
 
 
 def create_secret_scope(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     scope: str,
     backend_type: Optional[str] = "DATABRICKS",
     initial_manage_principal: Optional[str] = None
@@ -79,8 +79,8 @@ def create_secret_scope(
     alphanumeric characters, dashes, underscores, and periods (max 128 characters).
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         scope: Scope name (unique, alphanumeric with -_. allowed, max 128 chars)
         backend_type: Backend type (DATABRICKS or AZURE_KEYVAULT, default: DATABRICKS)
         initial_manage_principal: Initial principal with MANAGE permission (e.g., "users")
@@ -103,7 +103,7 @@ def create_secret_scope(
             scope="prod-api-keys"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.secrets.create_scope(
         scope=scope,
@@ -119,8 +119,8 @@ def create_secret_scope(
 
 
 def delete_secret_scope(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     scope: str
 ) -> DeleteSecretScopeResponse:
     """
@@ -130,8 +130,8 @@ def delete_secret_scope(
     Use with caution - this cannot be undone.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         scope: Name of the scope to delete
     
     Returns:
@@ -142,7 +142,7 @@ def delete_secret_scope(
         response = delete_secret_scope(host, token, "temp-credentials")
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     client.secrets.delete_scope(scope=scope)
     
     return DeleteSecretScopeResponse(
@@ -156,8 +156,8 @@ def delete_secret_scope(
 # ============================================================================
 
 def list_secrets(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     scope: str
 ) -> ListSecretsResponse:
     """
@@ -167,8 +167,8 @@ def list_secrets(
     Secret values cannot be retrieved via this API (only from DBUtils in notebooks).
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         scope: Scope name to list secrets from
     
     Returns:
@@ -181,7 +181,7 @@ def list_secrets(
         for secret in response.secrets:
             print(f"{secret.key} (last updated: {secret.last_updated_timestamp})")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     secrets = []
     for secret in client.secrets.list_secrets(scope=scope):
@@ -199,8 +199,8 @@ def list_secrets(
 
 
 def put_secret(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     scope: str,
     key: str,
     string_value: Optional[str] = None,
@@ -213,8 +213,8 @@ def put_secret(
     before storing it. Max 128 characters for key, 128 KB for value, 1000 secrets per scope.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         scope: Scope name
         key: Secret key (alphanumeric with -_. allowed, max 128 chars)
         string_value: String value to store (use this OR bytes_value, not both)
@@ -243,7 +243,7 @@ def put_secret(
         # Reference in SQL (executed on cluster):
         # ${secrets/jdbc-credentials/db-password}
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     if not string_value and not bytes_value:
         raise ValueError("Either string_value or bytes_value must be provided")
@@ -265,8 +265,8 @@ def put_secret(
 
 
 def delete_secret(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     scope: str,
     key: str
 ) -> DeleteSecretResponse:
@@ -276,8 +276,8 @@ def delete_secret(
     Permanently removes the secret. Cannot be undone.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         scope: Scope name
         key: Secret key to delete
     
@@ -293,7 +293,7 @@ def delete_secret(
         )
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     client.secrets.delete_secret(scope=scope, key=key)
     
     return DeleteSecretResponse(
@@ -308,8 +308,8 @@ def delete_secret(
 # ============================================================================
 
 def list_secret_acls(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     scope: str
 ) -> ListAclsResponse:
     """
@@ -318,8 +318,8 @@ def list_secret_acls(
     Shows which principals (users/groups) have what permissions on the scope.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         scope: Scope name
     
     Returns:
@@ -332,7 +332,7 @@ def list_secret_acls(
         for acl in response.acls:
             print(f"{acl.principal}: {acl.permission}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     acls = []
     for acl in client.secrets.list_acls(scope=scope):
@@ -350,8 +350,8 @@ def list_secret_acls(
 
 
 def get_secret_acl(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     scope: str,
     principal: str
 ) -> AclInfo:
@@ -359,8 +359,8 @@ def get_secret_acl(
     Get ACL for a specific principal on a scope.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         scope: Scope name
         principal: Principal (user or group name)
     
@@ -376,7 +376,7 @@ def get_secret_acl(
         )
         print(f"Permission: {acl.permission}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     acl = client.secrets.get_acl(scope=scope, principal=principal)
     acl_dict = acl.as_dict()
     
@@ -387,8 +387,8 @@ def get_secret_acl(
 
 
 def put_secret_acl(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     scope: str,
     principal: str,
     permission: str
@@ -402,8 +402,8 @@ def put_secret_acl(
     - READ: Read secrets only
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         scope: Scope name
         principal: Principal (user or group name)
         permission: Permission level (MANAGE, WRITE, READ)
@@ -428,7 +428,7 @@ def put_secret_acl(
             permission="MANAGE"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.secrets.put_acl(
         scope=scope,
@@ -445,8 +445,8 @@ def put_secret_acl(
 
 
 def delete_secret_acl(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     scope: str,
     principal: str
 ) -> DeleteAclResponse:
@@ -456,8 +456,8 @@ def delete_secret_acl(
     Removes all permissions for the specified principal.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         scope: Scope name
         principal: Principal (user or group name)
     
@@ -473,7 +473,7 @@ def delete_secret_acl(
         )
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     client.secrets.delete_acl(scope=scope, principal=principal)
     
     return DeleteAclResponse(

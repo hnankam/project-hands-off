@@ -35,8 +35,8 @@ from models import (
 # ============================================================================
 
 def list_jobs(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     limit: Optional[int] = None,
     name: Optional[str] = None,
     expand_tasks: Optional[bool] = None,
@@ -49,7 +49,7 @@ def list_jobs(
     and pagination.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         limit: Maximum number of jobs to return
         name: Filter by job name (exact match)
@@ -69,7 +69,7 @@ def list_jobs(
         # List with pagination
         jobs = list_jobs(host, token, limit=50, page_token="...")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     jobs_list = []
     iterator = client.jobs.list(
@@ -148,8 +148,8 @@ def list_jobs(
 
 
 def get_job(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     job_id: int,
 ) -> JobInfo:
     """
@@ -159,7 +159,7 @@ def get_job(
     and task configurations.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         job_id: Job ID
         
@@ -171,7 +171,7 @@ def get_job(
         print(f"Job: {job.name}")
         print(f"Tasks: {len(job.settings.tasks) if job.settings else 0}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     job = client.jobs.get(job_id=job_id)
     
@@ -229,8 +229,8 @@ def get_job(
 
 
 def create_job(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     tasks: List[Dict[str, Any]],
     schedule: Optional[Dict[str, Any]] = None,
@@ -253,7 +253,7 @@ def create_job(
     to create complex workflows.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Job name
         tasks: List of task configurations
@@ -311,7 +311,7 @@ def create_job(
             ]
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import Task, CronSchedule, JobEmailNotifications, WebhookNotifications, JobNotificationSettings, JobRunAs, GitSource, JobCluster
     
@@ -349,8 +349,8 @@ def create_job(
 
 
 def update_job(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     job_id: int,
     new_settings: Optional[Dict[str, Any]] = None,
     fields_to_remove: Optional[List[str]] = None,
@@ -362,7 +362,7 @@ def update_job(
     arrays are merged. Use fields_to_remove to delete settings.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         job_id: Job ID
         new_settings: New job settings (partial update)
@@ -389,7 +389,7 @@ def update_job(
             fields_to_remove=["schedule"]
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import JobSettings
     
@@ -405,8 +405,8 @@ def update_job(
 
 
 def reset_job(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     job_id: int,
     new_settings: Dict[str, Any],
 ) -> UpdateJobResponse:
@@ -417,7 +417,7 @@ def reset_job(
     partial updates.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         job_id: Job ID
         new_settings: Complete new job settings
@@ -436,7 +436,7 @@ def reset_job(
             }
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import JobSettings
     
@@ -451,8 +451,8 @@ def reset_job(
 
 
 def delete_job(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     job_id: int,
 ) -> DeleteJobResponse:
     """
@@ -461,7 +461,7 @@ def delete_job(
     Deletes a job. Active runs are canceled.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         job_id: Job ID
         
@@ -471,7 +471,7 @@ def delete_job(
     Example:
         delete_job(host, token, job_id=12345)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.jobs.delete(job_id=job_id)
     
@@ -483,8 +483,8 @@ def delete_job(
 # ============================================================================
 
 def run_now(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     job_id: int,
     notebook_params: Optional[Dict[str, str]] = None,
     jar_params: Optional[List[str]] = None,
@@ -502,7 +502,7 @@ def run_now(
     prevent duplicate runs.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         job_id: Job ID
         notebook_params: Notebook parameters
@@ -533,7 +533,7 @@ def run_now(
             idempotency_token="run-2024-01-01"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     response = client.jobs.run_now(
         job_id=job_id,
@@ -554,8 +554,8 @@ def run_now(
 
 
 def submit_run(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_name: str,
     tasks: List[Dict[str, Any]],
     git_source: Optional[Dict[str, Any]] = None,
@@ -573,7 +573,7 @@ def submit_run(
     analysis or one-time data processing tasks.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_name: Run name
         tasks: List of task configurations
@@ -601,7 +601,7 @@ def submit_run(
         )
         print(f"Submitted run {run.run_id}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import SubmitTask, GitSource, JobEmailNotifications, WebhookNotifications, JobNotificationSettings, JobRunAs
     
@@ -628,8 +628,8 @@ def submit_run(
 
 
 def get_run(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: int,
     include_history: Optional[bool] = None,
 ) -> RunInfo:
@@ -640,7 +640,7 @@ def get_run(
     task execution details, and timing information.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: Run ID
         include_history: Whether to include repair history
@@ -654,7 +654,7 @@ def get_run(
         print(f"Result: {run.state.result_state}")
         print(f"Duration: {run.execution_duration}ms")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     run = client.jobs.get_run(
         run_id=run_id,
@@ -718,8 +718,8 @@ def get_run(
 
 
 def list_runs(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     job_id: Optional[int] = None,
     active_only: Optional[bool] = None,
     completed_only: Optional[bool] = None,
@@ -736,7 +736,7 @@ def list_runs(
     filtering by state and time range.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         job_id: Filter by job ID
         active_only: Only return active runs
@@ -765,7 +765,7 @@ def list_runs(
             start_time_to=1704153600000     # 2024-01-02
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     runs_list = []
     iterator = client.jobs.list_runs(
@@ -840,8 +840,8 @@ def list_runs(
 
 
 def cancel_run(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: int,
 ) -> CancelRunResponse:
     """
@@ -851,7 +851,7 @@ def cancel_run(
     still be running when this request completes.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: Run ID
         
@@ -861,7 +861,7 @@ def cancel_run(
     Example:
         cancel_run(host, token, run_id=67890)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.jobs.cancel_run(run_id=run_id)
     
@@ -869,8 +869,8 @@ def cancel_run(
 
 
 def cancel_all_runs(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     job_id: Optional[int] = None,
     all_queued_runs: Optional[bool] = None,
 ) -> Dict[str, Any]:
@@ -880,7 +880,7 @@ def cancel_all_runs(
     Cancels all active runs of a job. The cancellations are asynchronous.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         job_id: Job ID (if omitted, cancels all queued runs in workspace)
         all_queued_runs: Cancel all queued runs
@@ -895,7 +895,7 @@ def cancel_all_runs(
         # Cancel all queued runs in workspace
         cancel_all_runs(host, token, all_queued_runs=True)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.jobs.cancel_all_runs(
         job_id=job_id,
@@ -909,8 +909,8 @@ def cancel_all_runs(
 
 
 def delete_run(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: int,
 ) -> DeleteRunResponse:
     """
@@ -919,7 +919,7 @@ def delete_run(
     Deletes a non-active run. Active runs must be canceled first.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: Run ID
         
@@ -929,7 +929,7 @@ def delete_run(
     Example:
         delete_run(host, token, run_id=67890)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.jobs.delete_run(run_id=run_id)
     
@@ -937,8 +937,8 @@ def delete_run(
 
 
 def repair_run(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: int,
     rerun_tasks: Optional[List[str]] = None,
     rerun_all_failed_tasks: Optional[bool] = None,
@@ -958,7 +958,7 @@ def repair_run(
     for recovering from transient failures or data quality issues.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: Run ID to repair
         rerun_tasks: List of specific task keys to rerun
@@ -992,7 +992,7 @@ def repair_run(
             rerun_dependent_tasks=True
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     response = client.jobs.repair_run(
         run_id=run_id,
@@ -1015,8 +1015,8 @@ def repair_run(
 
 
 def get_run_output(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: int,
 ) -> RunOutputInfo:
     """
@@ -1026,7 +1026,7 @@ def get_run_output(
     and error information.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: Run ID
         
@@ -1040,7 +1040,7 @@ def get_run_output(
         elif output.notebook_output:
             print(f"Result: {output.notebook_output}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     output = client.jobs.get_run_output(run_id=run_id)
     
@@ -1076,8 +1076,8 @@ def get_run_output(
 
 
 def export_run(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: int,
     views_to_export: Optional[str] = None,
 ) -> ExportRunResponse:
@@ -1087,7 +1087,7 @@ def export_run(
     Exports views (code, dashboards, etc.) from a run for download or backup.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: Run ID
         views_to_export: Views to export (CODE, DASHBOARDS, ALL)
@@ -1101,7 +1101,7 @@ def export_run(
         for view in export.views:
             print(f"{view.name}: {view.type}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import ViewsToExport
     
@@ -1131,8 +1131,8 @@ def export_run(
 # ============================================================================
 
 def get_job_permissions(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     job_id: str,
 ) -> Dict[str, Any]:
     """
@@ -1141,7 +1141,7 @@ def get_job_permissions(
     Gets the permissions of a job including ACLs.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         job_id: Job ID (as string)
         
@@ -1155,7 +1155,7 @@ def get_job_permissions(
             perms = [p['permission_level'] for p in acl['all_permissions']]
             print(f"{principal}: {perms}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     permissions = client.jobs.get_permissions(job_id=job_id)
     
@@ -1163,8 +1163,8 @@ def get_job_permissions(
 
 
 def set_job_permissions(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     job_id: str,
     access_control_list: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -1174,7 +1174,7 @@ def set_job_permissions(
     Sets permissions on a job, replacing existing permissions if they exist.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         job_id: Job ID (as string)
         access_control_list: List of ACL entries
@@ -1201,7 +1201,7 @@ def set_job_permissions(
         ]
         set_job_permissions(host, token, job_id="12345", access_control_list=acls)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import JobAccessControlRequest
     
@@ -1216,8 +1216,8 @@ def set_job_permissions(
 
 
 def update_job_permissions(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     job_id: str,
     access_control_list: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -1227,7 +1227,7 @@ def update_job_permissions(
     Updates the permissions on a job without replacing all existing permissions.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         job_id: Job ID (as string)
         access_control_list: List of ACL entries to update
@@ -1241,7 +1241,7 @@ def update_job_permissions(
         ]
         update_job_permissions(host, token, job_id="12345", access_control_list=acls)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import JobAccessControlRequest
     
@@ -1256,8 +1256,8 @@ def update_job_permissions(
 
 
 def get_job_permission_levels(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     job_id: str,
 ) -> Dict[str, Any]:
     """
@@ -1266,7 +1266,7 @@ def get_job_permission_levels(
     Gets the permission levels that a user can have on a job.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         job_id: Job ID (as string)
         
@@ -1278,7 +1278,7 @@ def get_job_permission_levels(
         for level in levels['permission_levels']:
             print(f"{level['permission_level']}: {level['description']}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     levels = client.jobs.get_permission_levels(job_id=job_id)
     

@@ -3,6 +3,9 @@ Postgres Management Tools
 
 This module provides tools for managing Databricks Postgres database projects, branches, 
 and endpoints via REST API.
+
+All credential parameters use credential keys (globally unique identifiers) that are resolved
+server-side from the workspace_credentials table.
 """
 
 from typing import Optional, Dict, Any
@@ -94,8 +97,8 @@ def _convert_operation_to_model(operation) -> PostgresOperationModel:
 # ============================================================================
 
 def list_postgres_projects(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     page_size: Optional[int] = None,
     page_token: Optional[str] = None,
 ) -> ListPostgresProjectsResponse:
@@ -105,7 +108,7 @@ def list_postgres_projects(
     Lists all Postgres database projects in the workspace.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         page_size: Maximum number of projects to return
         page_token: Pagination token for next page
@@ -125,7 +128,7 @@ def list_postgres_projects(
         projects = list_postgres_projects(host, token, page_size=10)
         print(f"Found {projects.count} projects")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     projects_list = []
     
@@ -143,8 +146,8 @@ def list_postgres_projects(
 
 
 def get_postgres_project(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> PostgresProjectModel:
     """
@@ -153,7 +156,7 @@ def get_postgres_project(
     Retrieves detailed information about a specific Postgres project.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Project name (format: projects/{project_id})
         
@@ -171,7 +174,7 @@ def get_postgres_project(
         print(f"Created: {project.create_time}")
         print(f"Storage: {project.synthetic_storage_size_bytes} bytes")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     project = client.postgres.get_project(name=name)
     
@@ -179,8 +182,8 @@ def get_postgres_project(
 
 
 def create_postgres_project(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     project_id: Optional[str] = None,
     display_name: Optional[str] = None,
     pg_version: Optional[int] = None,
@@ -192,7 +195,7 @@ def create_postgres_project(
     Creates a new Postgres database project. This is a long-running operation.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         project_id: Project ID (4-63 chars, a-z0-9-)
         display_name: User-defined display name
@@ -222,7 +225,7 @@ def create_postgres_project(
             settings={"max_connections": 100}
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.postgres import Project, ProjectSettings
     
@@ -243,8 +246,8 @@ def create_postgres_project(
 
 
 def update_postgres_project(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     update_mask: str,
     display_name: Optional[str] = None,
@@ -257,7 +260,7 @@ def update_postgres_project(
     Updates the specified Postgres project. This is a long-running operation.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Project name (format: projects/{project_id})
         update_mask: Fields to update (comma-separated, e.g. "display_name,settings")
@@ -285,7 +288,7 @@ def update_postgres_project(
             settings={"max_connections": 200}
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.postgres import Project, ProjectSettings, FieldMask
     
@@ -308,8 +311,8 @@ def update_postgres_project(
 
 
 def delete_postgres_project(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> DeletePostgresResponse:
     """
@@ -318,7 +321,7 @@ def delete_postgres_project(
     Deletes the specified Postgres project and all its branches and endpoints.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Project name (format: projects/{project_id})
         
@@ -333,7 +336,7 @@ def delete_postgres_project(
         )
         print(result.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.postgres.delete_project(name=name)
     
@@ -345,8 +348,8 @@ def delete_postgres_project(
 # ============================================================================
 
 def list_postgres_branches(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     parent: str,
     page_size: Optional[int] = None,
     page_token: Optional[str] = None,
@@ -357,7 +360,7 @@ def list_postgres_branches(
     Lists all branches within a Postgres project.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         parent: Parent project name (format: projects/{project_id})
         page_size: Maximum number of branches to return
@@ -378,7 +381,7 @@ def list_postgres_branches(
             print(f"  Size: {branch.logical_size_bytes} bytes")
             print(f"  State: {branch.current_state}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     branches_list = []
     
@@ -397,8 +400,8 @@ def list_postgres_branches(
 
 
 def get_postgres_branch(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> PostgresBranchModel:
     """
@@ -407,7 +410,7 @@ def get_postgres_branch(
     Retrieves detailed information about a specific branch.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Branch name (format: projects/{project_id}/branches/{branch_id})
         
@@ -425,7 +428,7 @@ def get_postgres_branch(
         print(f"Protected: {branch.is_protected}")
         print(f"Size: {branch.logical_size_bytes} bytes")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     branch = client.postgres.get_branch(name=name)
     
@@ -433,8 +436,8 @@ def get_postgres_branch(
 
 
 def create_postgres_branch(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     parent: str,
     branch_id: Optional[str] = None,
     is_protected: Optional[bool] = None,
@@ -446,7 +449,7 @@ def create_postgres_branch(
     Creates a new branch in a Postgres project. This is a long-running operation.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         parent: Parent project name (format: projects/{project_id})
         branch_id: Branch ID (4-63 chars, a-z0-9-)
@@ -473,7 +476,7 @@ def create_postgres_branch(
             source_branch="projects/my-db/branches/main"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.postgres import Branch
     
@@ -495,8 +498,8 @@ def create_postgres_branch(
 
 
 def update_postgres_branch(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     update_mask: str,
     is_protected: Optional[bool] = None,
@@ -507,7 +510,7 @@ def update_postgres_branch(
     Updates the specified branch. This is a long-running operation.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Branch name (format: projects/{project_id}/branches/{branch_id})
         update_mask: Fields to update (e.g. "is_protected")
@@ -533,7 +536,7 @@ def update_postgres_branch(
             is_protected=False
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.postgres import Branch, FieldMask
     
@@ -554,8 +557,8 @@ def update_postgres_branch(
 
 
 def delete_postgres_branch(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> DeletePostgresResponse:
     """
@@ -564,7 +567,7 @@ def delete_postgres_branch(
     Deletes the specified branch and all its endpoints.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Branch name (format: projects/{project_id}/branches/{branch_id})
         
@@ -579,7 +582,7 @@ def delete_postgres_branch(
         )
         print(result.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.postgres.delete_branch(name=name)
     
@@ -591,8 +594,8 @@ def delete_postgres_branch(
 # ============================================================================
 
 def list_postgres_endpoints(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     parent: str,
     page_size: Optional[int] = None,
     page_token: Optional[str] = None,
@@ -603,7 +606,7 @@ def list_postgres_endpoints(
     Lists all endpoints within a branch.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         parent: Parent branch name (format: projects/{project_id}/branches/{branch_id})
         page_size: Maximum number of endpoints to return
@@ -624,7 +627,7 @@ def list_postgres_endpoints(
             print(f"  Type: {endpoint.endpoint_type}")
             print(f"  State: {endpoint.current_state}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     endpoints_list = []
     
@@ -643,8 +646,8 @@ def list_postgres_endpoints(
 
 
 def get_postgres_endpoint(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> PostgresEndpointModel:
     """
@@ -653,7 +656,7 @@ def get_postgres_endpoint(
     Retrieves detailed information about a specific endpoint.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Endpoint name (format: projects/{project_id}/branches/{branch_id}/endpoints/{endpoint_id})
         
@@ -672,7 +675,7 @@ def get_postgres_endpoint(
         print(f"Min CU: {endpoint.autoscaling_limit_min_cu}")
         print(f"Max CU: {endpoint.autoscaling_limit_max_cu}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     endpoint = client.postgres.get_endpoint(name=name)
     
@@ -680,8 +683,8 @@ def get_postgres_endpoint(
 
 
 def create_postgres_endpoint(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     parent: str,
     endpoint_type: str,
     endpoint_id: Optional[str] = None,
@@ -696,7 +699,7 @@ def create_postgres_endpoint(
     Creates a new endpoint in a branch. This is a long-running operation.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         parent: Parent branch name (format: projects/{project_id}/branches/{branch_id})
         endpoint_type: Endpoint type ("READ_WRITE" or "READ_ONLY")
@@ -731,7 +734,7 @@ def create_postgres_endpoint(
             autoscaling_limit_max_cu=1.0
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.postgres import Endpoint, EndpointType, EndpointPoolerMode
     
@@ -756,8 +759,8 @@ def create_postgres_endpoint(
 
 
 def update_postgres_endpoint(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     update_mask: str,
     autoscaling_limit_min_cu: Optional[float] = None,
@@ -771,7 +774,7 @@ def update_postgres_endpoint(
     Updates the specified endpoint. This is a long-running operation.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Endpoint name (format: projects/{project_id}/branches/{branch_id}/endpoints/{endpoint_id})
         update_mask: Fields to update (comma-separated)
@@ -801,7 +804,7 @@ def update_postgres_endpoint(
             disabled=True
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.postgres import Endpoint, EndpointPoolerMode, FieldMask
     
@@ -826,8 +829,8 @@ def update_postgres_endpoint(
 
 
 def delete_postgres_endpoint(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> DeletePostgresResponse:
     """
@@ -836,7 +839,7 @@ def delete_postgres_endpoint(
     Deletes the specified endpoint.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Endpoint name (format: projects/{project_id}/branches/{branch_id}/endpoints/{endpoint_id})
         
@@ -851,7 +854,7 @@ def delete_postgres_endpoint(
         )
         print(result.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.postgres.delete_endpoint(name=name)
     
@@ -863,8 +866,8 @@ def delete_postgres_endpoint(
 # ============================================================================
 
 def get_postgres_operation(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> PostgresOperationModel:
     """
@@ -873,7 +876,7 @@ def get_postgres_operation(
     Retrieves the status of a long-running operation.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Operation name
         
@@ -892,7 +895,7 @@ def get_postgres_operation(
         elif operation.response:
             print(f"Result: {operation.response}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     operation = client.postgres.get_operation(name=name)
     

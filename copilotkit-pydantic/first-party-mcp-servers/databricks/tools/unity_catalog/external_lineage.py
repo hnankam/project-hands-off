@@ -120,8 +120,8 @@ def _object_to_string(obj_dict: Dict[str, Any]) -> str:
 # ============================================================================
 
 def list_external_lineage(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     object_info: Dict[str, Any],
     lineage_direction: str,
     page_size: Optional[int] = None,
@@ -134,7 +134,7 @@ def list_external_lineage(
     metadata given a supplied direction (upstream or downstream).
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         object_info: Object to query lineage for (dict with 'table', 'path', 'model_version', or 'external_metadata')
         lineage_direction: Direction to query ("UPSTREAM" or "DOWNSTREAM")
@@ -171,7 +171,7 @@ def list_external_lineage(
             lineage_direction="UPSTREAM"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import LineageDirection
     
@@ -203,8 +203,8 @@ def list_external_lineage(
 # ============================================================================
 
 def create_external_lineage(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     source: Dict[str, Any],
     target: Dict[str, Any],
     id: Optional[str] = None,
@@ -218,7 +218,7 @@ def create_external_lineage(
     object and another external metadata object. Supports column-level lineage.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         source: Source object (dict with 'table', 'path', 'model_version', or 'external_metadata')
         target: Target object (dict with 'table', 'path', 'model_version', or 'external_metadata')
@@ -260,7 +260,7 @@ def create_external_lineage(
             properties={"training_date": "2024-01-15", "framework": "sklearn"}
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import (
         CreateRequestExternalLineage,
@@ -298,8 +298,8 @@ def create_external_lineage(
 
 
 def delete_external_lineage(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     source: Dict[str, Any],
     target: Dict[str, Any],
     id: Optional[str] = None,
@@ -311,7 +311,7 @@ def delete_external_lineage(
     object and another external metadata object.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         source: Source object (dict with 'table', 'path', 'model_version', or 'external_metadata')
         target: Target object (dict with 'table', 'path', 'model_version', or 'external_metadata')
@@ -344,7 +344,7 @@ def delete_external_lineage(
             target={"model_version": {"name": "fraud_detector", "version": "1"}}
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import DeleteRequestExternalLineage
     
@@ -370,8 +370,8 @@ def delete_external_lineage(
 
 
 def update_external_lineage(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     source: Dict[str, Any],
     target: Dict[str, Any],
     update_mask: str,
@@ -386,7 +386,7 @@ def update_external_lineage(
     object and another external metadata object.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         source: Source object (dict with 'table', 'path', 'model_version', or 'external_metadata')
         target: Target object (dict with 'table', 'path', 'model_version', or 'external_metadata')
@@ -437,7 +437,7 @@ def update_external_lineage(
             properties={"sync_frequency": "hourly", "last_sync": "2024-01-15"}
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import (
         UpdateRequestExternalLineage,

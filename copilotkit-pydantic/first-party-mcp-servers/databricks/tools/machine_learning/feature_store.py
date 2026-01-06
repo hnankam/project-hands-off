@@ -41,8 +41,8 @@ def _convert_to_online_store(store) -> OnlineStoreModel:
 # ============================================================================
 
 def list_online_stores(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     page_size: int = 100,
     page_token: Optional[str] = None,
 ) -> ListOnlineStoresResponse:
@@ -53,7 +53,7 @@ def list_online_stores(
     low-latency feature lookup for real-time model inference.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         page_size: Maximum results per page (default: 100)
         page_token: Pagination token
@@ -70,7 +70,7 @@ def list_online_stores(
             print(f"  Region: {store.region}")
             print(f"  Status: {store.status}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     stores = []
     next_token = None
@@ -88,8 +88,8 @@ def list_online_stores(
 
 
 def get_online_store(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> OnlineStoreModel:
     """
@@ -98,7 +98,7 @@ def get_online_store(
     Retrieves detailed information about a specific online feature store.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Online store name
         
@@ -113,7 +113,7 @@ def get_online_store(
         print(f"Region: {store.region}")
         print(f"Status: {store.status}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     store = client.feature_store.get_online_store(name=name)
     
@@ -121,8 +121,8 @@ def get_online_store(
 
 
 def create_online_store(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     storage_type: str,
     region: Optional[str] = None,
@@ -136,7 +136,7 @@ def create_online_store(
     real-time applications.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Unique name for the online store
         storage_type: Storage backend type
@@ -163,7 +163,7 @@ def create_online_store(
             region="us-west-2"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Create OnlineStore object
     from databricks.sdk.service.ml import OnlineStore
@@ -189,8 +189,8 @@ def create_online_store(
 
 
 def update_online_store(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     update_mask: str,
     storage_type: Optional[str] = None,
@@ -203,7 +203,7 @@ def update_online_store(
     Updates the configuration of an existing online feature store.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Online store name
         update_mask: Comma-separated list of fields to update
@@ -223,7 +223,7 @@ def update_online_store(
             region="us-east-1"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Create OnlineStore object with updates
     from databricks.sdk.service.ml import OnlineStore
@@ -251,8 +251,8 @@ def update_online_store(
 
 
 def delete_online_store(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> DeleteOnlineStoreResponse:
     """
@@ -262,7 +262,7 @@ def delete_online_store(
     This operation is irreversible.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Online store name
         
@@ -274,7 +274,7 @@ def delete_online_store(
         response = delete_online_store(host, token, "old-features")
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.feature_store.delete_online_store(name=name)
     
@@ -288,8 +288,8 @@ def delete_online_store(
 # ============================================================================
 
 def publish_table(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     source_table_name: str,
     online_table_name: str,
     primary_keys: list[str],
@@ -303,7 +303,7 @@ def publish_table(
     feature lookup. The online table is continuously synchronized with the source.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         source_table_name: Source Unity Catalog table (catalog.schema.table)
         online_table_name: Target online table name (catalog.schema.table)
@@ -345,7 +345,7 @@ def publish_table(
             primary_keys=["customer_id"]
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Create PublishSpec
     from databricks.sdk.service.ml import PublishSpec
@@ -368,8 +368,8 @@ def publish_table(
 
 
 def delete_online_table(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     online_table_name: str,
 ) -> DeleteOnlineTableResponse:
     """
@@ -379,7 +379,7 @@ def delete_online_table(
     source table and removes the online table data.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         online_table_name: Full online table name (catalog.schema.table)
         
@@ -394,7 +394,7 @@ def delete_online_table(
         )
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.feature_store.delete_online_table(
         online_table_name=online_table_name

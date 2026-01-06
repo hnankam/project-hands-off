@@ -62,8 +62,8 @@ def _convert_to_mini_vector_index(index) -> MiniVectorIndexModel:
 # ============================================================================
 
 def list_vector_search_indexes(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     endpoint_name: str,
     page_token: Optional[str] = None,
 ) -> ListIndexesResponse:
@@ -73,7 +73,7 @@ def list_vector_search_indexes(
     Retrieves all vector search indexes hosted on a specific endpoint.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         endpoint_name: Endpoint name to list indexes from
         page_token: Pagination token (optional)
@@ -92,7 +92,7 @@ def list_vector_search_indexes(
             print(f"  Type: {index.index_type}")
             print(f"  Primary Key: {index.primary_key}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     indexes = []
     next_token = None
@@ -110,8 +110,8 @@ def list_vector_search_indexes(
 
 
 def get_vector_search_index(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     index_name: str,
     ensure_reranker_compatible: Optional[bool] = None,
 ) -> VectorIndexModel:
@@ -121,7 +121,7 @@ def get_vector_search_index(
     Retrieves detailed information about a specific vector search index.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         index_name: Full index name (catalog.schema.index_name)
         ensure_reranker_compatible: Ensure URL is reranker-compatible (optional)
@@ -141,7 +141,7 @@ def get_vector_search_index(
         print(f"Endpoint: {index.endpoint_name}")
         print(f"Primary Key: {index.primary_key}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     index = client.vector_search_indexes.get_index(
         index_name=index_name,
@@ -152,8 +152,8 @@ def get_vector_search_index(
 
 
 def create_vector_search_index(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     endpoint_name: str,
     primary_key: str,
@@ -169,7 +169,7 @@ def create_vector_search_index(
     - Direct Vector Access Index: Direct read/write via API
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Full index name (catalog.schema.index_name)
         endpoint_name: Endpoint to host the index
@@ -228,7 +228,7 @@ def create_vector_search_index(
             }
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.vectorsearch import (
         VectorIndexType,
@@ -267,8 +267,8 @@ def create_vector_search_index(
 
 
 def delete_vector_search_index(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     index_name: str,
 ) -> DeleteIndexResponse:
     """
@@ -277,7 +277,7 @@ def delete_vector_search_index(
     Deletes a vector search index. This operation is irreversible.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         index_name: Full index name to delete
         
@@ -297,7 +297,7 @@ def delete_vector_search_index(
         - The underlying Delta Table (for Delta Sync) is not deleted
         - Index deletion may take several minutes
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.vector_search_indexes.delete_index(index_name=index_name)
     
@@ -311,8 +311,8 @@ def delete_vector_search_index(
 # ============================================================================
 
 def query_vector_search_index(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     index_name: str,
     columns: List[str],
     query_text: Optional[str] = None,
@@ -329,7 +329,7 @@ def query_vector_search_index(
     (for Delta Sync with model endpoint) or vector embeddings.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         index_name: Full index name to query
         columns: List of columns to return in results
@@ -386,7 +386,7 @@ def query_vector_search_index(
             num_results=20
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.vector_search_indexes.query_index(
         index_name=index_name,
@@ -425,8 +425,8 @@ def query_vector_search_index(
 
 
 def query_vector_search_next_page(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     index_name: str,
     page_token: str,
     endpoint_name: Optional[str] = None,
@@ -438,7 +438,7 @@ def query_vector_search_next_page(
     page token returned.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         index_name: Full index name
         page_token: Page token from previous query
@@ -465,7 +465,7 @@ def query_vector_search_next_page(
                 page_token=response.next_page_token
             )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.vector_search_indexes.query_next_page(
         index_name=index_name,
@@ -497,8 +497,8 @@ def query_vector_search_next_page(
 
 
 def scan_vector_search_index(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     index_name: str,
     num_results: int = 10,
     last_primary_key: Optional[str] = None,
@@ -510,7 +510,7 @@ def scan_vector_search_index(
     through all vectors in the index.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         index_name: Full index name to scan
         num_results: Number of results to return (default: 10)
@@ -538,7 +538,7 @@ def scan_vector_search_index(
                 last_primary_key=response.last_primary_key
             )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.vector_search_indexes.scan_index(
         index_name=index_name,
@@ -568,8 +568,8 @@ def scan_vector_search_index(
 # ============================================================================
 
 def upsert_vector_search_data(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     index_name: str,
     inputs_json: str,
 ) -> UpsertDataResponse:
@@ -580,7 +580,7 @@ def upsert_vector_search_data(
     This operation is only available for Direct Access indexes.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         index_name: Full index name (must be Direct Access type)
         inputs_json: JSON string with vectors and metadata
@@ -618,7 +618,7 @@ def upsert_vector_search_data(
         - Primary key values are used for upsert logic
         - Existing records with same primary key are updated
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.vector_search_indexes.upsert_data_vector_index(
         index_name=index_name,
@@ -634,8 +634,8 @@ def upsert_vector_search_data(
 
 
 def delete_vector_search_data(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     index_name: str,
     primary_keys: List[str],
 ) -> DeleteDataResponse:
@@ -646,7 +646,7 @@ def delete_vector_search_data(
     This operation is only available for Direct Access indexes.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         index_name: Full index name (must be Direct Access type)
         primary_keys: List of primary key values to delete
@@ -668,7 +668,7 @@ def delete_vector_search_data(
         - Non-existent primary keys are silently ignored
         - Deletion is permanent and cannot be undone
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.vector_search_indexes.delete_data_vector_index(
         index_name=index_name,
@@ -688,8 +688,8 @@ def delete_vector_search_data(
 # ============================================================================
 
 def sync_vector_search_index(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     index_name: str,
 ) -> SyncIndexResponse:
     """
@@ -699,7 +699,7 @@ def sync_vector_search_index(
     index with the latest data from the source Delta Table.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         index_name: Full index name (must be Delta Sync type)
         
@@ -725,7 +725,7 @@ def sync_vector_search_index(
         - For CONTINUOUS pipeline type, sync happens automatically
         - Sync process may take several minutes depending on data size
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.vector_search_indexes.sync_index(index_name=index_name)
     

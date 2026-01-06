@@ -57,8 +57,8 @@ def _convert_to_refresh(refresh) -> DataQualityRefreshModel:
 # ============================================================================
 
 def create_data_quality_monitor(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     object_type: str,
     object_id: str,
     monitor_config: Dict[str, Any],
@@ -71,7 +71,7 @@ def create_data_quality_monitor(
     anomaly_detection_config.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         object_type: Object type ("schema" or "table")
         object_id: Object ID (schema_id or table_id)
@@ -113,7 +113,7 @@ def create_data_quality_monitor(
             }
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.dataquality import Monitor
     
@@ -128,8 +128,8 @@ def create_data_quality_monitor(
 
 
 def get_data_quality_monitor(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     object_type: str,
     object_id: str,
 ) -> DataQualityMonitorModel:
@@ -139,7 +139,7 @@ def get_data_quality_monitor(
     Retrieves detailed information about a data quality monitor.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         object_type: Object type ("schema" or "table")
         object_id: Object ID (schema_id or table_id)
@@ -166,7 +166,7 @@ def get_data_quality_monitor(
             object_id="xyz-456-uvw"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     monitor = client.data_quality.get_monitor(
         object_type=object_type,
@@ -177,8 +177,8 @@ def get_data_quality_monitor(
 
 
 def update_data_quality_monitor(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     object_type: str,
     object_id: str,
     update_mask: str,
@@ -190,7 +190,7 @@ def update_data_quality_monitor(
     Updates the configuration of an existing data quality monitor.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         object_type: Object type ("schema" or "table")
         object_id: Object ID (schema_id or table_id)
@@ -235,7 +235,7 @@ def update_data_quality_monitor(
             }
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.dataquality import Monitor
     
@@ -255,8 +255,8 @@ def update_data_quality_monitor(
 
 
 def delete_data_quality_monitor(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     object_type: str,
     object_id: str,
 ) -> DeleteMonitorResponse:
@@ -267,7 +267,7 @@ def delete_data_quality_monitor(
     are not automatically deleted and must be cleaned up manually if desired.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         object_type: Object type ("schema" or "table")
         object_id: Object ID (schema_id or table_id)
@@ -289,7 +289,7 @@ def delete_data_quality_monitor(
         - Dashboard is NOT deleted
         - Manual cleanup required if desired
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.data_quality.delete_monitor(
         object_type=object_type,
@@ -303,8 +303,8 @@ def delete_data_quality_monitor(
 
 
 def list_data_quality_monitors(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     page_size: Optional[int] = None,
     page_token: Optional[str] = None,
 ) -> ListMonitorsResponse:
@@ -314,7 +314,7 @@ def list_data_quality_monitors(
     Retrieves all data quality monitors in the workspace.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         page_size: Maximum results per page (optional)
         page_token: Pagination token (optional)
@@ -333,7 +333,7 @@ def list_data_quality_monitors(
     Note:
         This operation may be unimplemented in some SDK versions.
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     monitors = []
     next_token = None
@@ -359,8 +359,8 @@ def list_data_quality_monitors(
 # ============================================================================
 
 def create_data_quality_refresh(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     object_type: str,
     object_id: str,
     refresh_config: Optional[Dict[str, Any]] = None,
@@ -372,7 +372,7 @@ def create_data_quality_refresh(
     supported for table monitors.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         object_type: Object type ("table")
         object_id: Object ID (table_id)
@@ -400,7 +400,7 @@ def create_data_quality_refresh(
         )
         print(f"Status: {refresh.status}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.dataquality import Refresh
     
@@ -422,8 +422,8 @@ def create_data_quality_refresh(
 
 
 def get_data_quality_refresh(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     object_type: str,
     object_id: str,
     refresh_id: int,
@@ -434,7 +434,7 @@ def get_data_quality_refresh(
     Retrieves information about a specific refresh operation.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         object_type: Object type ("table" or "schema")
         object_id: Object ID
@@ -455,7 +455,7 @@ def get_data_quality_refresh(
         print(f"Start time: {refresh.start_time}")
         print(f"End time: {refresh.end_time}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     refresh = client.data_quality.get_refresh(
         object_type=object_type,
@@ -467,8 +467,8 @@ def get_data_quality_refresh(
 
 
 def list_data_quality_refreshes(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     object_type: str,
     object_id: str,
     page_size: Optional[int] = None,
@@ -480,7 +480,7 @@ def list_data_quality_refreshes(
     Retrieves all refresh operations for a monitored object.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         object_type: Object type ("table" or "schema")
         object_id: Object ID
@@ -503,7 +503,7 @@ def list_data_quality_refreshes(
             print(f"  Start: {refresh.start_time}")
             print(f"  End: {refresh.end_time}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     refreshes = []
     next_token = None
@@ -523,8 +523,8 @@ def list_data_quality_refreshes(
 
 
 def cancel_data_quality_refresh(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     object_type: str,
     object_id: str,
     refresh_id: int,
@@ -536,7 +536,7 @@ def cancel_data_quality_refresh(
     for table monitors.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         object_type: Object type ("table")
         object_id: Object ID (table_id)
@@ -573,7 +573,7 @@ def cancel_data_quality_refresh(
             refresh_id=refresh_response.refresh.refresh_id
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.data_quality.cancel_refresh(
         object_type=object_type,

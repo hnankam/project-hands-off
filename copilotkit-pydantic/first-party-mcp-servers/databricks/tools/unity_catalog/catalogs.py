@@ -54,8 +54,8 @@ def _convert_catalog_to_model(catalog) -> CatalogInfoModel:
 # ============================================================================
 
 def list_catalogs(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     max_results: Optional[int] = None,
     page_token: Optional[str] = None,
     include_browse: Optional[bool] = None,
@@ -69,7 +69,7 @@ def list_catalogs(
     be retrieved.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         max_results: Maximum number of catalogs to return (0 for server default)
         page_token: Opaque token for next page of results
@@ -100,7 +100,7 @@ def list_catalogs(
                 page_token=catalogs.next_page_token
             )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     catalogs_list = []
     next_token = None
@@ -120,8 +120,8 @@ def list_catalogs(
 
 
 def get_catalog(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     include_browse: Optional[bool] = None,
 ) -> CatalogInfoModel:
@@ -132,7 +132,7 @@ def get_catalog(
     configuration, and isolation settings.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Name of the catalog
         include_browse: Include catalogs with browse-only access
@@ -157,7 +157,7 @@ def get_catalog(
             for key, value in catalog.properties.items():
                 print(f"  {key}: {value}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     catalog = client.catalogs.get(
         name=name,
@@ -172,8 +172,8 @@ def get_catalog(
 # ============================================================================
 
 def create_catalog(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     comment: Optional[str] = None,
     properties: Optional[Dict[str, str]] = None,
@@ -190,7 +190,7 @@ def create_catalog(
     be a metastore admin or have the CREATE_CATALOG privilege.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Name of catalog
         comment: User-provided free-form text description
@@ -243,7 +243,7 @@ def create_catalog(
             share_name="my_share"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     catalog = client.catalogs.create(
         name=name,
@@ -262,8 +262,8 @@ def create_catalog(
 
 
 def delete_catalog(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     force: Optional[bool] = None,
 ) -> DeleteCatalogResponse:
@@ -274,7 +274,7 @@ def delete_catalog(
     a metastore admin or the owner of the catalog.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Name of the catalog
         force: Force deletion even if the catalog is not empty
@@ -303,7 +303,7 @@ def delete_catalog(
         except Exception as e:
             print(f"Catalog not found or cannot be deleted: {e}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.catalogs.delete(
         name=name,
@@ -314,8 +314,8 @@ def delete_catalog(
 
 
 def update_catalog(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     new_name: Optional[str] = None,
     comment: Optional[str] = None,
@@ -333,7 +333,7 @@ def update_catalog(
     owner field of the catalog).
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Name of the catalog
         new_name: New name for the catalog
@@ -398,7 +398,7 @@ def update_catalog(
             enable_predictive_optimization="ENABLE"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert string parameters to enums if provided
     isolation_mode_obj = None

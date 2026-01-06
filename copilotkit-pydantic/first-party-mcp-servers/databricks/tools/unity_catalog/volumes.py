@@ -55,8 +55,8 @@ def _convert_volume_to_model(volume) -> VolumeInfoModel:
 # ============================================================================
 
 def list_volumes(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     catalog_name: str,
     schema_name: str,
     max_results: Optional[int] = None,
@@ -71,7 +71,7 @@ def list_volumes(
     calling user.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         catalog_name: Name of parent catalog
         schema_name: Parent schema of volumes
@@ -109,7 +109,7 @@ def list_volumes(
         managed = [v for v in volumes.volumes if v.volume_type == "MANAGED"]
         print(f"Managed volumes: {len(managed)}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     volumes_list = []
     next_token = None
@@ -131,8 +131,8 @@ def list_volumes(
 
 
 def get_volume(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     include_browse: Optional[bool] = None,
 ) -> VolumeInfoModel:
@@ -143,7 +143,7 @@ def get_volume(
     including storage location, type, owner, and metadata.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Full name of the volume (catalog.schema.volume)
         include_browse: Include volumes with browse-only access
@@ -170,7 +170,7 @@ def get_volume(
         elif vol.volume_type == "EXTERNAL":
             print(f"External volume at: {vol.storage_location}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     volume = client.volumes.read(
         name=name,
@@ -185,8 +185,8 @@ def get_volume(
 # ============================================================================
 
 def create_volume(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     catalog_name: str,
     schema_name: str,
     name: str,
@@ -202,7 +202,7 @@ def create_volume(
     on the parent schema.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         catalog_name: Name of parent catalog
         schema_name: Name of parent schema
@@ -249,7 +249,7 @@ def create_volume(
             comment="Image data for computer vision"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import VolumeType
     
@@ -268,8 +268,8 @@ def create_volume(
 
 
 def delete_volume(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> DeleteVolumeResponse:
     """
@@ -279,7 +279,7 @@ def delete_volume(
     must be a metastore admin or owner of the volume.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Full name of the volume (catalog.schema.volume)
         
@@ -307,7 +307,7 @@ def delete_volume(
                 delete_volume(host, token, vol.full_name)
                 print(f"Deleted: {vol.full_name}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.volumes.delete(name=name)
     
@@ -315,8 +315,8 @@ def delete_volume(
 
 
 def update_volume(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     new_name: Optional[str] = None,
     comment: Optional[str] = None,
@@ -329,7 +329,7 @@ def update_volume(
     Currently only the name, owner, or comment can be updated.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Full name of the volume (catalog.schema.volume)
         new_name: New name for the volume (not full name)
@@ -376,7 +376,7 @@ def update_volume(
                 )
                 print(f"Transferred {vol.full_name}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     volume = client.volumes.update(
         name=name,

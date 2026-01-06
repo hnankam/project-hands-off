@@ -3,6 +3,9 @@ Cluster Management Tools
 
 This module provides comprehensive cluster lifecycle management including
 creation, configuration, state management, and permission control.
+
+All credential parameters use credential keys (globally unique identifiers) that are resolved
+server-side from the workspace_credentials table.
 """
 
 from typing import Optional, List, Dict, Any
@@ -25,8 +28,8 @@ from models import (
 # ============================================================================
 
 def list_clusters(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
 ) -> ListClustersResponse:
     """
     List all clusters.
@@ -34,18 +37,18 @@ def list_clusters(
     Lists all clusters in the workspace that the user has access to.
     
     Args:
-        host: Databricks workspace URL
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
+        token_credential_key: Globally unique key for the credential containing authentication token
         
     Returns:
         ListClustersResponse with list of clusters
         
     Example:
-        clusters = list_clusters(host, token)
+        clusters = list_clusters(host_credential_key, token_credential_key)
         for cluster in clusters.clusters:
             print(f"{cluster.cluster_name} ({cluster.cluster_id}): {cluster.state.state if cluster.state else 'UNKNOWN'}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     clusters_list = []
     for cluster in client.clusters.list():
@@ -115,8 +118,8 @@ def list_clusters(
 
 
 def get_cluster(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
 ) -> ClusterInfo:
     """
@@ -126,22 +129,22 @@ def get_cluster(
     configuration, and resource usage.
     
     Args:
-        host: Databricks workspace URL
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
+        token_credential_key: Globally unique key for the credential containing authentication token
         cluster_id: Cluster ID
         
     Returns:
         ClusterInfo with complete cluster details
         
     Example:
-        cluster = get_cluster(host, token, cluster_id="1234-567890-abc123")
+        cluster = get_cluster(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
         print(f"Cluster: {cluster.cluster_name}")
         print(f"State: {cluster.state.state if cluster.state else 'UNKNOWN'}")
         print(f"Workers: {cluster.num_workers}")
         print(f"Cores: {cluster.cluster_cores}")
         print(f"Memory: {cluster.cluster_memory_mb} MB")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     cluster = client.clusters.get(cluster_id=cluster_id)
     
@@ -204,8 +207,8 @@ def get_cluster(
 
 
 def create_cluster(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     spark_version: str,
     node_type_id: Optional[str] = None,
     num_workers: Optional[int] = None,
@@ -240,8 +243,8 @@ def create_cluster(
     can be manually started, stopped, and terminated.
     
     Args:
-        host: Databricks workspace URL
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
+        token_credential_key: Globally unique key for the credential containing authentication token
         spark_version: Spark version (e.g., "13.3.x-scala2.12")
         node_type_id: Node type ID (e.g., "i3.xlarge")
         num_workers: Number of worker nodes (use 0 for single-node)
@@ -275,7 +278,7 @@ def create_cluster(
     Example:
         # Create standard cluster
         cluster = create_cluster(
-            host, token,
+            host_credential_key, token_credential_key,
             spark_version="13.3.x-scala2.12",
             node_type_id="i3.xlarge",
             num_workers=2,
@@ -283,44 +286,8 @@ def create_cluster(
             autotermination_minutes=30
         )
         print(f"Created cluster {cluster.cluster_id}")
-        
-        # Create auto-scaling cluster
-        cluster = create_cluster(
-            host, token,
-            spark_version="13.3.x-scala2.12",
-            node_type_id="i3.xlarge",
-            cluster_name="Auto-scaling Cluster",
-            autoscale={"min_workers": 2, "max_workers": 8},
-            autotermination_minutes=60
-        )
-        
-        # Create single-node cluster
-        cluster = create_cluster(
-            host, token,
-            spark_version="13.3.x-scala2.12",
-            node_type_id="i3.xlarge",
-            num_workers=0,
-            cluster_name="Single Node Cluster",
-            is_single_node=True
-        )
-        
-        # Create cluster with custom Spark config
-        cluster = create_cluster(
-            host, token,
-            spark_version="13.3.x-scala2.12",
-            node_type_id="i3.xlarge",
-            num_workers=4,
-            cluster_name="Custom Config Cluster",
-            spark_conf={
-                "spark.sql.adaptive.enabled": "true",
-                "spark.databricks.delta.optimizeWrite.enabled": "true"
-            },
-            spark_env_vars={
-                "PYSPARK_PYTHON": "/databricks/python3/bin/python3"
-            }
-        )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.compute import (
         AutoScale, InitScriptInfo, DockerImage, DataSecurityMode, RuntimeEngine,
@@ -390,8 +357,8 @@ def create_cluster(
 
 
 def edit_cluster(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
     spark_version: str,
     node_type_id: Optional[str] = None,
@@ -427,8 +394,8 @@ def edit_cluster(
     it will be restarted to apply changes. If terminated, changes apply on next start.
     
     Args:
-        host: Databricks workspace URL
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
+        token_credential_key: Globally unique key for the credential containing authentication token
         cluster_id: Cluster ID
         spark_version: Spark version (REQUIRED)
         [... same parameters as create_cluster ...]
@@ -439,23 +406,14 @@ def edit_cluster(
     Example:
         # Change number of workers
         edit_cluster(
-            host, token,
+            host_credential_key, token_credential_key,
             cluster_id="1234-567890-abc123",
             spark_version="13.3.x-scala2.12",
             node_type_id="i3.xlarge",
             num_workers=4
         )
-        
-        # Enable auto-scaling
-        edit_cluster(
-            host, token,
-            cluster_id="1234-567890-abc123",
-            spark_version="13.3.x-scala2.12",
-            node_type_id="i3.xlarge",
-            autoscale={"min_workers": 2, "max_workers": 10}
-        )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.compute import (
         AutoScale, InitScriptInfo, DockerImage, DataSecurityMode, RuntimeEngine,
@@ -511,8 +469,8 @@ def edit_cluster(
 
 
 def delete_cluster(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
 ) -> DeleteClusterResponse:
     """
@@ -522,17 +480,17 @@ def delete_cluster(
     for deletion. Configuration is retained for 30 days unless permanently deleted.
     
     Args:
-        host: Databricks workspace URL
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
+        token_credential_key: Globally unique key for the credential containing authentication token
         cluster_id: Cluster ID
         
     Returns:
         DeleteClusterResponse confirming deletion
         
     Example:
-        delete_cluster(host, token, cluster_id="1234-567890-abc123")
+        delete_cluster(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.clusters.delete(cluster_id=cluster_id)
     
@@ -540,8 +498,8 @@ def delete_cluster(
 
 
 def permanent_delete_cluster(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
 ) -> DeleteClusterResponse:
     """
@@ -551,8 +509,8 @@ def permanent_delete_cluster(
     The cluster must be terminated first.
     
     Args:
-        host: Databricks workspace URL
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
+        token_credential_key: Globally unique key for the credential containing authentication token
         cluster_id: Cluster ID
         
     Returns:
@@ -560,12 +518,12 @@ def permanent_delete_cluster(
         
     Example:
         # First terminate the cluster
-        delete_cluster(host, token, cluster_id="1234-567890-abc123")
+        delete_cluster(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
         
         # Then permanently delete
-        permanent_delete_cluster(host, token, cluster_id="1234-567890-abc123")
+        permanent_delete_cluster(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.clusters.permanent_delete(cluster_id=cluster_id)
     
@@ -576,8 +534,8 @@ def permanent_delete_cluster(
 
 
 def start_cluster(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
 ) -> StartClusterResponse:
     """
@@ -587,29 +545,18 @@ def start_cluster(
     configuration and ID.
     
     Args:
-        host: Databricks workspace URL
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
+        token_credential_key: Globally unique key for the credential containing authentication token
         cluster_id: Cluster ID
         
     Returns:
         StartClusterResponse confirming start initiated
         
     Example:
-        start = start_cluster(host, token, cluster_id="1234-567890-abc123")
+        start = start_cluster(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
         print(start.message)
-        
-        # Poll for status
-        import time
-        while True:
-            cluster = get_cluster(host, token, cluster_id="1234-567890-abc123")
-            state = cluster.state.state if cluster.state else "UNKNOWN"
-            if state == "RUNNING":
-                print("Cluster is running")
-                break
-            print(f"Cluster state: {state}")
-            time.sleep(10)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.clusters.start(cluster_id=cluster_id).result()  # Wait for start
     
@@ -617,8 +564,8 @@ def start_cluster(
 
 
 def restart_cluster(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
 ) -> RestartClusterResponse:
     """
@@ -628,18 +575,18 @@ def restart_cluster(
     This is useful for applying configuration changes or recovering from issues.
     
     Args:
-        host: Databricks workspace URL
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
+        token_credential_key: Globally unique key for the credential containing authentication token
         cluster_id: Cluster ID
         
     Returns:
         RestartClusterResponse confirming restart initiated
         
     Example:
-        restart = restart_cluster(host, token, cluster_id="1234-567890-abc123")
+        restart = restart_cluster(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
         print(restart.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.clusters.restart(cluster_id=cluster_id).result()  # Wait for restart
     
@@ -651,8 +598,8 @@ def restart_cluster(
 # ============================================================================
 
 def get_cluster_permissions(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
 ) -> Dict[str, Any]:
     """
@@ -661,21 +608,21 @@ def get_cluster_permissions(
     Gets the permissions of a cluster including ACLs.
     
     Args:
-        host: Databricks workspace URL
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
+        token_credential_key: Globally unique key for the credential containing authentication token
         cluster_id: Cluster ID
         
     Returns:
         Dict with permission details
         
     Example:
-        permissions = get_cluster_permissions(host, token, cluster_id="1234-567890-abc123")
+        permissions = get_cluster_permissions(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
         for acl in permissions['access_control_list']:
             principal = acl.get('user_name') or acl.get('group_name')
             perms = [p['permission_level'] for p in acl['all_permissions']]
             print(f"{principal}: {perms}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     permissions = client.clusters.get_permissions(cluster_id=cluster_id)
     
@@ -683,8 +630,8 @@ def get_cluster_permissions(
 
 
 def set_cluster_permissions(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
     access_control_list: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -694,8 +641,8 @@ def set_cluster_permissions(
     Sets permissions on a cluster, replacing existing permissions if they exist.
     
     Args:
-        host: Databricks workspace URL
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
+        token_credential_key: Globally unique key for the credential containing authentication token
         cluster_id: Cluster ID
         access_control_list: List of ACL entries
         
@@ -719,9 +666,9 @@ def set_cluster_permissions(
             {"group_name": "data-engineers", "permission_level": "CAN_RESTART"},
             {"group_name": "analysts", "permission_level": "CAN_ATTACH_TO"}
         ]
-        set_cluster_permissions(host, token, cluster_id="1234-567890-abc123", access_control_list=acls)
+        set_cluster_permissions(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123", access_control_list=acls)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.compute import ClusterAccessControlRequest
     
@@ -736,8 +683,8 @@ def set_cluster_permissions(
 
 
 def update_cluster_permissions(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
     access_control_list: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -747,8 +694,8 @@ def update_cluster_permissions(
     Updates the permissions on a cluster without replacing all existing permissions.
     
     Args:
-        host: Databricks workspace URL
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
+        token_credential_key: Globally unique key for the credential containing authentication token
         cluster_id: Cluster ID
         access_control_list: List of ACL entries to update
         
@@ -759,9 +706,9 @@ def update_cluster_permissions(
         acls = [
             {"user_name": "new-user@company.com", "permission_level": "CAN_ATTACH_TO"}
         ]
-        update_cluster_permissions(host, token, cluster_id="1234-567890-abc123", access_control_list=acls)
+        update_cluster_permissions(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123", access_control_list=acls)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.compute import ClusterAccessControlRequest
     
@@ -776,8 +723,8 @@ def update_cluster_permissions(
 
 
 def get_cluster_permission_levels(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     cluster_id: str,
 ) -> Dict[str, Any]:
     """
@@ -786,19 +733,19 @@ def get_cluster_permission_levels(
     Gets the permission levels that a user can have on a cluster.
     
     Args:
-        host: Databricks workspace URL
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
+        token_credential_key: Globally unique key for the credential containing authentication token
         cluster_id: Cluster ID
         
     Returns:
         Dict with available permission levels
         
     Example:
-        levels = get_cluster_permission_levels(host, token, cluster_id="1234-567890-abc123")
+        levels = get_cluster_permission_levels(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
         for level in levels['permission_levels']:
             print(f"{level['permission_level']}: {level['description']}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     levels = client.clusters.get_permission_levels(cluster_id=cluster_id)
     

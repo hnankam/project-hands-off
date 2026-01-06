@@ -45,8 +45,8 @@ def _convert_to_endpoint_info(endpoint) -> EndpointInfoModel:
 # ============================================================================
 
 def list_vector_search_endpoints(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     page_token: Optional[str] = None,
 ) -> ListEndpointsResponse:
     """
@@ -57,7 +57,7 @@ def list_vector_search_endpoints(
     for semantic search and similarity matching.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         page_token: Pagination token (optional)
         
@@ -73,7 +73,7 @@ def list_vector_search_endpoints(
             print(f"  Status: {endpoint.endpoint_status}")
             print(f"  Indexes: {endpoint.num_indexes}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     endpoints = []
     next_token = None
@@ -90,8 +90,8 @@ def list_vector_search_endpoints(
 
 
 def get_vector_search_endpoint(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     endpoint_name: str,
 ) -> EndpointInfoModel:
     """
@@ -100,7 +100,7 @@ def get_vector_search_endpoint(
     Retrieves detailed information about a specific vector search endpoint.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         endpoint_name: Vector search endpoint name
         
@@ -119,7 +119,7 @@ def get_vector_search_endpoint(
         print(f"Creator: {endpoint.creator}")
         print(f"Number of indexes: {endpoint.num_indexes}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     endpoint = client.vector_search_endpoints.get_endpoint(
         endpoint_name=endpoint_name
@@ -129,8 +129,8 @@ def get_vector_search_endpoint(
 
 
 def create_vector_search_endpoint(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     endpoint_type: str,
     budget_policy_id: Optional[str] = None,
@@ -143,7 +143,7 @@ def create_vector_search_endpoint(
     similarity matching operations.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Unique endpoint name
         endpoint_type: Endpoint type (e.g., "STANDARD")
@@ -175,7 +175,7 @@ def create_vector_search_endpoint(
         - Monitor endpoint_status to check when it's ONLINE
         - Once ONLINE, you can create vector search indexes on this endpoint
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.vectorsearch import EndpointType
     
@@ -198,8 +198,8 @@ def create_vector_search_endpoint(
 
 
 def delete_vector_search_endpoint(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     endpoint_name: str,
 ) -> DeleteEndpointResponse:
     """
@@ -209,7 +209,7 @@ def delete_vector_search_endpoint(
     must be deleted first.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         endpoint_name: Endpoint name to delete
         
@@ -229,7 +229,7 @@ def delete_vector_search_endpoint(
         - This operation is irreversible
         - Endpoint deletion may take several minutes
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.vector_search_endpoints.delete_endpoint(
         endpoint_name=endpoint_name
@@ -241,8 +241,8 @@ def delete_vector_search_endpoint(
 
 
 def update_endpoint_budget_policy(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     endpoint_name: str,
     budget_policy_id: str,
 ) -> UpdateEndpointBudgetPolicyResponse:
@@ -253,7 +253,7 @@ def update_endpoint_budget_policy(
     compute costs.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         endpoint_name: Endpoint name
         budget_policy_id: New budget policy ID
@@ -277,7 +277,7 @@ def update_endpoint_budget_policy(
             budget_policy_id="budget-policy-dev"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.vector_search_endpoints.update_endpoint_budget_policy(
         endpoint_name=endpoint_name,
@@ -291,8 +291,8 @@ def update_endpoint_budget_policy(
 
 
 def update_endpoint_custom_tags(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     endpoint_name: str,
     custom_tags: List[dict],
 ) -> UpdateEndpointCustomTagsResponse:
@@ -303,7 +303,7 @@ def update_endpoint_custom_tags(
     cost tracking purposes.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         endpoint_name: Endpoint name
         custom_tags: List of custom tags, each with 'key' and 'value'
@@ -334,7 +334,7 @@ def update_endpoint_custom_tags(
             ]
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.vectorsearch import CustomTag
     
@@ -356,8 +356,8 @@ def update_endpoint_custom_tags(
 
 
 def retrieve_endpoint_metrics(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     endpoint_name: str,
     start_time: Optional[str] = None,
     end_time: Optional[str] = None,
@@ -372,7 +372,7 @@ def retrieve_endpoint_metrics(
     query latency, throughput, and resource utilization.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         endpoint_name: Endpoint name
         start_time: Start time (ISO 8601 format, optional)
@@ -410,7 +410,7 @@ def retrieve_endpoint_metrics(
         - Common metrics: query_latency, throughput, cpu_utilization
         - Time range is limited based on retention policy
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.vectorsearch import Metric
     

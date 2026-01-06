@@ -1,4 +1,8 @@
-"""SQL Statement Execution tools for running queries and fetching results."""
+"""SQL Statement Execution tools for running queries and fetching results.
+
+All credential parameters use credential keys (globally unique identifiers) that are resolved
+server-side from the workspace_credentials table.
+"""
 
 from typing import Optional, List
 from databricks.sdk import WorkspaceClient
@@ -26,8 +30,8 @@ from models import (
 
 
 def execute_statement(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     statement: str,
     warehouse_id: str,
     wait_timeout: Optional[str] = "10s",
@@ -48,8 +52,8 @@ def execute_statement(
     or hybrid (wait then fallback to async).
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         statement: SQL statement to execute
         warehouse_id: SQL warehouse ID to execute on
         wait_timeout: Wait time ("0s" for async, "5s"-"50s" for sync, default: "10s")
@@ -104,7 +108,7 @@ def execute_statement(
             format="ARROW_STREAM"  # High-performance format
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert parameters to SDK format
     sdk_parameters = None
@@ -138,8 +142,8 @@ def execute_statement(
 
 
 def get_statement(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     statement_id: str
 ) -> StatementResponse:
     """
@@ -153,8 +157,8 @@ def get_statement(
     Results are available for 1 hour after completion.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         statement_id: Statement ID from execute_statement
     
     Returns:
@@ -184,14 +188,14 @@ def get_statement(
             
             time.sleep(2)  # Poll every 2 seconds
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     response = client.statement_execution.get_statement(statement_id=statement_id)
     return _convert_statement_response(response)
 
 
 def get_statement_result_chunk(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     statement_id: str,
     chunk_index: int
 ) -> ResultData:
@@ -202,8 +206,8 @@ def get_statement_result_chunk(
     first one. Chunks can be fetched in any order and in parallel for high throughput.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         statement_id: Statement ID from execute_statement
         chunk_index: Zero-based chunk index to fetch
     
@@ -233,7 +237,7 @@ def get_statement_result_chunk(
                 )
                 print(f"Chunk {chunk_idx}: {len(chunk.data_array)} rows")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     result = client.statement_execution.get_statement_result_chunk_n(
         statement_id=statement_id,
         chunk_index=chunk_index
@@ -242,8 +246,8 @@ def get_statement_result_chunk(
 
 
 def cancel_execution(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     statement_id: str
 ) -> CancelExecutionResponse:
     """
@@ -256,8 +260,8 @@ def cancel_execution(
     Note: Cancellation might silently fail if the statement has already completed.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         statement_id: Statement ID to cancel
     
     Returns:
@@ -285,7 +289,7 @@ def cancel_execution(
                 break
             time.sleep(1)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     client.statement_execution.cancel_execution(statement_id=statement_id)
     
     return CancelExecutionResponse(

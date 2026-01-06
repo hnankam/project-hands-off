@@ -4,6 +4,9 @@ Account Metastores Tools
 This module provides tools for managing Unity Catalog metastores at the account level.
 Metastores contain catalogs that can be associated with workspaces. These are account-level
 operations that require AccountClient authentication.
+
+All credential parameters use credential keys (globally unique identifiers) that are resolved
+server-side from the workspace_credentials table.
 """
 
 from typing import Optional, Dict, Any
@@ -47,9 +50,9 @@ def _convert_to_metastore_info(metastore) -> AccountMetastoreInfoModel:
 # ============================================================================
 
 def create_account_metastore(
-    host: str,
-    account_id: str,
-    token: str,
+    host_credential_key: str,
+    account_id_credential_key: str,
+    token_credential_key: str,
     metastore_config: Dict[str, Any],
 ) -> CreateAccountMetastoreResponse:
     """
@@ -59,9 +62,9 @@ def create_account_metastore(
     contain catalogs that can be associated with workspaces.
     
     Args:
-        host: Databricks account console URL (e.g., "https://accounts.cloud.databricks.com")
-        account_id: Databricks account ID
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks account console URL
+        account_id_credential_key: Globally unique key for the credential containing Databricks account ID
+        token_credential_key: Globally unique key for the credential containing authentication token
         metastore_config: Metastore configuration dictionary
         
     Returns:
@@ -70,9 +73,9 @@ def create_account_metastore(
     Example:
         # Create a new metastore
         response = create_account_metastore(
-            host="https://accounts.cloud.databricks.com",
-            account_id="abc-123-def",
-            token="dapi...",
+            host_credential_key=host_credential_key,
+            account_id_credential_key=account_id_credential_key,
+            token_credential_key=token_credential_key,
             metastore_config={
                 "name": "my-metastore",
                 "storage_root": "s3://my-bucket/metastore",
@@ -80,15 +83,13 @@ def create_account_metastore(
             }
         )
         print(f"Created metastore: {response.metastore.metastore_id}")
-        print(f"Name: {response.metastore.name}")
-        print(f"Region: {response.metastore.region}")
         
     Note:
         - Metastore names must be unique within an account
         - Storage root must be a valid cloud storage path
         - Region must match the cloud provider region format
     """
-    client = get_account_client(host, account_id, token)
+    client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import CreateAccountsMetastore
     
@@ -107,9 +108,9 @@ def create_account_metastore(
 
 
 def get_account_metastore(
-    host: str,
-    account_id: str,
-    token: str,
+    host_credential_key: str,
+    account_id_credential_key: str,
+    token_credential_key: str,
     metastore_id: str,
 ) -> GetAccountMetastoreResponse:
     """
@@ -118,29 +119,24 @@ def get_account_metastore(
     Retrieves detailed information about a specific metastore.
     
     Args:
-        host: Databricks account console URL
-        account_id: Databricks account ID
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks account console URL
+        account_id_credential_key: Globally unique key for the credential containing Databricks account ID
+        token_credential_key: Globally unique key for the credential containing authentication token
         metastore_id: Unity Catalog metastore ID
         
     Returns:
         GetAccountMetastoreResponse with metastore details
         
     Example:
-        # Get metastore details
         response = get_account_metastore(
-            host="https://accounts.cloud.databricks.com",
-            account_id="abc-123-def",
-            token="dapi...",
+            host_credential_key=host_credential_key,
+            account_id_credential_key=account_id_credential_key,
+            token_credential_key=token_credential_key,
             metastore_id="metastore-123"
         )
         print(f"Metastore: {response.metastore.name}")
-        print(f"Storage root: {response.metastore.storage_root}")
-        print(f"Region: {response.metastore.region}")
-        print(f"Owner: {response.metastore.owner}")
-        print(f"Created: {response.metastore.created_at}")
     """
-    client = get_account_client(host, account_id, token)
+    client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
     # Get the metastore
     response = client.metastores.get(metastore_id=metastore_id)
@@ -154,9 +150,9 @@ def get_account_metastore(
 
 
 def list_account_metastores(
-    host: str,
-    account_id: str,
-    token: str,
+    host_credential_key: str,
+    account_id_credential_key: str,
+    token_credential_key: str,
 ) -> ListAccountMetastoresResponse:
     """
     List all Unity Catalog metastores.
@@ -164,31 +160,25 @@ def list_account_metastores(
     Retrieves all metastores associated with the account.
     
     Args:
-        host: Databricks account console URL
-        account_id: Databricks account ID
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks account console URL
+        account_id_credential_key: Globally unique key for the credential containing Databricks account ID
+        token_credential_key: Globally unique key for the credential containing authentication token
         
     Returns:
         ListAccountMetastoresResponse with list of metastores
         
     Example:
-        # List all metastores in the account
         response = list_account_metastores(
-            host="https://accounts.cloud.databricks.com",
-            account_id="abc-123-def",
-            token="dapi..."
+            host_credential_key=host_credential_key,
+            account_id_credential_key=account_id_credential_key,
+            token_credential_key=token_credential_key
         )
         
         print(f"Total metastores: {len(response.metastores)}")
         for metastore in response.metastores:
-            print(f"\nMetastore: {metastore.name}")
-            print(f"  ID: {metastore.metastore_id}")
-            print(f"  Region: {metastore.region}")
-            print(f"  Cloud: {metastore.cloud}")
-            print(f"  Storage: {metastore.storage_root}")
-            print(f"  Owner: {metastore.owner}")
+            print(f"Metastore: {metastore.name} ({metastore.metastore_id})")
     """
-    client = get_account_client(host, account_id, token)
+    client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
     # List all metastores
     metastores = []
@@ -201,9 +191,9 @@ def list_account_metastores(
 
 
 def update_account_metastore(
-    host: str,
-    account_id: str,
-    token: str,
+    host_credential_key: str,
+    account_id_credential_key: str,
+    token_credential_key: str,
     metastore_id: str,
     metastore_config: Dict[str, Any],
 ) -> UpdateAccountMetastoreResponse:
@@ -213,9 +203,9 @@ def update_account_metastore(
     Updates properties of an existing metastore.
     
     Args:
-        host: Databricks account console URL
-        account_id: Databricks account ID
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks account console URL
+        account_id_credential_key: Globally unique key for the credential containing Databricks account ID
+        token_credential_key: Globally unique key for the credential containing authentication token
         metastore_id: Unity Catalog metastore ID
         metastore_config: Properties to update
         
@@ -223,11 +213,10 @@ def update_account_metastore(
         UpdateAccountMetastoreResponse with updated metastore info
         
     Example:
-        # Update metastore name and owner
         response = update_account_metastore(
-            host="https://accounts.cloud.databricks.com",
-            account_id="abc-123-def",
-            token="dapi...",
+            host_credential_key=host_credential_key,
+            account_id_credential_key=account_id_credential_key,
+            token_credential_key=token_credential_key,
             metastore_id="metastore-123",
             metastore_config={
                 "name": "updated-metastore-name",
@@ -235,33 +224,8 @@ def update_account_metastore(
             }
         )
         print(f"Updated: {response.metastore.name}")
-        print(f"New owner: {response.metastore.owner}")
-        
-        # Update storage root
-        response = update_account_metastore(
-            host="https://accounts.cloud.databricks.com",
-            account_id="abc-123-def",
-            token="dapi...",
-            metastore_id="metastore-123",
-            metastore_config={
-                "storage_root": "s3://new-bucket/metastore"
-            }
-        )
-        
-        # Update Delta Sharing configuration
-        response = update_account_metastore(
-            host="https://accounts.cloud.databricks.com",
-            account_id="abc-123-def",
-            token="dapi...",
-            metastore_id="metastore-123",
-            metastore_config={
-                "delta_sharing_scope": "INTERNAL",
-                "delta_sharing_recipient_token_lifetime_in_seconds": 86400,
-                "delta_sharing_organization_name": "my-org"
-            }
-        )
     """
-    client = get_account_client(host, account_id, token)
+    client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import UpdateAccountsMetastore
     
@@ -283,9 +247,9 @@ def update_account_metastore(
 
 
 def delete_account_metastore(
-    host: str,
-    account_id: str,
-    token: str,
+    host_credential_key: str,
+    account_id_credential_key: str,
+    token_credential_key: str,
     metastore_id: str,
     force: Optional[bool] = False,
 ) -> DeleteAccountMetastoreResponse:
@@ -295,9 +259,9 @@ def delete_account_metastore(
     Deletes a metastore. Use with caution as this is a destructive operation.
     
     Args:
-        host: Databricks account console URL
-        account_id: Databricks account ID
-        token: Authentication token
+        host_credential_key: Globally unique key for the credential containing Databricks account console URL
+        account_id_credential_key: Globally unique key for the credential containing Databricks account ID
+        token_credential_key: Globally unique key for the credential containing authentication token
         metastore_id: Unity Catalog metastore ID
         force: Force deletion even if not empty (default: False)
         
@@ -305,33 +269,22 @@ def delete_account_metastore(
         DeleteAccountMetastoreResponse confirming deletion
         
     Example:
-        # Delete an empty metastore
         response = delete_account_metastore(
-            host="https://accounts.cloud.databricks.com",
-            account_id="abc-123-def",
-            token="dapi...",
+            host_credential_key=host_credential_key,
+            account_id_credential_key=account_id_credential_key,
+            token_credential_key=token_credential_key,
             metastore_id="metastore-123",
             force=False
         )
         print(response.message)
-        
-        # Force delete a non-empty metastore (USE WITH CAUTION)
-        response = delete_account_metastore(
-            host="https://accounts.cloud.databricks.com",
-            account_id="abc-123-def",
-            token="dapi...",
-            metastore_id="metastore-123",
-            force=True
-        )
         
     Warning:
         - This is a destructive operation
         - Set force=True to delete non-empty metastores
         - All catalogs, schemas, and tables in the metastore will be deleted
         - This operation cannot be undone
-        - Ensure you have backups before proceeding
     """
-    client = get_account_client(host, account_id, token)
+    client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
     # Delete the metastore
     client.metastores.delete(
@@ -342,4 +295,3 @@ def delete_account_metastore(
     return DeleteAccountMetastoreResponse(
         metastore_id=metastore_id,
     )
-

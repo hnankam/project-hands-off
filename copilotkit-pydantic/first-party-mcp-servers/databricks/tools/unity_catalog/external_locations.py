@@ -46,8 +46,8 @@ def _convert_to_external_location_model(external_location) -> ExternalLocationIn
 # ============================================================================
 
 def list_external_locations(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     include_browse: bool = False,
     include_unbound: bool = False,
     max_results: int = 0,
@@ -61,7 +61,7 @@ def list_external_locations(
     privilege on the external location.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         include_browse: Whether to include locations with selective metadata access
         include_unbound: Whether to include locations not bound to workspace
@@ -92,7 +92,7 @@ def list_external_locations(
                 page_token=response.next_page_token
             )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     locations = []
     next_token = None
@@ -112,8 +112,8 @@ def list_external_locations(
 
 
 def get_external_location(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     include_browse: bool = False,
 ) -> ExternalLocationInfoModel:
@@ -125,7 +125,7 @@ def get_external_location(
     privilege on the external location.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Name of the external location
         include_browse: Whether to include selective metadata if limited access
@@ -144,7 +144,7 @@ def get_external_location(
         print(f"Read-only: {location.read_only}")
         print(f"Owner: {location.owner}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     location = client.external_locations.get(
         name=name,
@@ -155,8 +155,8 @@ def get_external_location(
 
 
 def create_external_location(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     url: str,
     credential_name: str,
@@ -174,7 +174,7 @@ def create_external_location(
     metastore and the associated storage credential.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Name of the external location
         url: Path URL of the external location (e.g., s3://bucket/path)
@@ -210,7 +210,7 @@ def create_external_location(
             read_only=True
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     location = client.external_locations.create(
         name=name,
@@ -229,8 +229,8 @@ def create_external_location(
 
 
 def update_external_location(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     new_name: Optional[str] = None,
     url: Optional[str] = None,
@@ -250,7 +250,7 @@ def update_external_location(
     the external location, or be a metastore admin. Admins can only update the name.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Current name of the external location
         new_name: New name for the external location
@@ -291,7 +291,7 @@ def update_external_location(
             new_name="new-name"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     location = client.external_locations.update(
         name=name,
@@ -313,8 +313,8 @@ def update_external_location(
 
 
 def delete_external_location(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     force: bool = False,
 ) -> DeleteExternalLocationResponse:
@@ -325,7 +325,7 @@ def delete_external_location(
     the owner of the external location.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Name of the external location
         force: Force deletion even if there are dependent external tables or mounts
@@ -348,7 +348,7 @@ def delete_external_location(
             force=True
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.external_locations.delete(
         name=name,

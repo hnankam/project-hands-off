@@ -11,9 +11,9 @@ from models import BillableUsageDownloadResponse
 
 
 def download_billable_usage(
-    host: str,
-    account_id: str,
-    token: str,
+    host_credential_key: str,
+    account_id_credential_key: str,
+    token_credential_key: str,
     start_month: str,
     end_month: str,
     personal_data: Optional[bool] = False,
@@ -26,8 +26,8 @@ def download_billable_usage(
     workspaces in the account.
     
     Args:
-        host: Databricks account console URL (e.g., "https://accounts.cloud.databricks.com")
-        account_id: Databricks account ID
+        host_credential_key: Credential key for account console URL (e.g., "https://accounts.cloud.databricks.com")
+        account_id_credential_key: Credential key for Databricks account ID
         token: Authentication token (PAT or OAuth token)
         start_month: Start month in YYYY-MM format (e.g., "2024-08")
         end_month: End month in YYYY-MM format (e.g., "2024-09")
@@ -69,7 +69,7 @@ def download_billable_usage(
         - Handle personal_data=True responses with care (contains PII)
     
     CSV Schema (common fields):
-        - account_id: Databricks account ID
+        - account_id_credential_key: Credential key for Databricks account ID
         - workspace_id: Workspace identifier
         - sku_name: SKU/product name
         - cloud: Cloud provider (AWS, Azure, GCP)
@@ -89,7 +89,7 @@ def download_billable_usage(
         - cluster_creator_email: Email of cluster creator
         - job_creator_email: Email of job creator
     """
-    client = get_account_client(host, account_id, token)
+    client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
     # Download billable usage (returns DownloadResponse with CSV content)
     response = client.billable_usage.download(

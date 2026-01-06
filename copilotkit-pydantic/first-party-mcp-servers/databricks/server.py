@@ -1,8 +1,35 @@
 """Databricks MCP Server using FastMCP.
 
-This server accepts credentials (host + token) as parameters in each tool call,
-allowing agents to interact with user-specific Databricks workspaces.
+This server accepts credential keys (globally unique identifiers) as parameters
+in each tool call. The server resolves these keys to actual credentials from the
+workspace_credentials table and uses them to interact with user-specific 
+Databricks workspaces.
+
+Security: Credential values are never exposed to the agent. The agent only provides
+credential keys (e.g., "my_databricks_host", "my_databricks_token"), and the server
+fetches and decrypts the actual values server-side.
 """
+
+from pathlib import Path
+import os
+
+# Load .env file before anything else
+try:
+    from dotenv import load_dotenv
+    
+    env_paths = [
+        Path(__file__).parent.parent.parent / '.env',  # copilotkit-pydantic/.env
+        Path(__file__).parent.parent / '.env',          # first-party-mcp-servers/.env
+        Path(__file__).parent / '.env',                 # databricks/.env
+    ]
+    
+    for env_path in env_paths:
+        if env_path.exists():
+            load_dotenv(env_path)
+            print(f"[Databricks MCP] Loaded environment from: {env_path}")
+            break
+except ImportError:
+    print("[Databricks MCP] Warning: python-dotenv not installed, using system env vars")
 
 from fastmcp import FastMCP
 import logging

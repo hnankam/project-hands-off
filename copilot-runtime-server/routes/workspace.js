@@ -1581,7 +1581,7 @@ async function safeDecryptOAuthTokens(encryptedCredentials, userId, connectionId
            '{needs_reauth}', 
            'true'::jsonb
          ),
-         updated_at = CURRENT_TIMESTAMP 
+             updated_at = CURRENT_TIMESTAMP 
          WHERE id = $1`,
         [connectionId]
       );
@@ -1815,7 +1815,7 @@ router.get('/connections/:connectionId/gmail/emails', requireAuth, async (req, r
                    '{needs_reauth}', 
                    'true'::jsonb
                  ),
-                 updated_at = CURRENT_TIMESTAMP 
+                     updated_at = CURRENT_TIMESTAMP 
                  WHERE id = $1`,
                 [connectionId]
               );
@@ -2155,7 +2155,7 @@ router.get('/connections/:connectionId/slack/conversations', requireAuth, async 
           if (isRefreshTokenError) {
             console.log(`[Workspace] Slack connection ${connectionId} needs re-authentication`);
             try {
-              await pool.query(
+            await pool.query(
                 `UPDATE workspace_connections 
                  SET metadata = jsonb_set(
                    COALESCE(metadata, '{}'::jsonb), 
@@ -2164,8 +2164,8 @@ router.get('/connections/:connectionId/slack/conversations', requireAuth, async 
                  ),
                  updated_at = CURRENT_TIMESTAMP 
                  WHERE id = $1`,
-                [connectionId]
-              );
+              [connectionId]
+            );
             } catch (updateError) {
               console.error('[Workspace] Failed to update connection metadata:', updateError);
             }
@@ -2296,7 +2296,7 @@ router.get('/connections/:connectionId/slack/messages', requireAuth, async (req,
           if (isRefreshTokenError) {
             console.log(`[Workspace] Slack connection ${connectionId} needs re-authentication`);
             try {
-              await pool.query(
+            await pool.query(
                 `UPDATE workspace_connections 
                  SET metadata = jsonb_set(
                    COALESCE(metadata, '{}'::jsonb), 
@@ -2305,8 +2305,8 @@ router.get('/connections/:connectionId/slack/messages', requireAuth, async (req,
                  ),
                  updated_at = CURRENT_TIMESTAMP 
                  WHERE id = $1`,
-                [connectionId]
-              );
+              [connectionId]
+            );
             } catch (updateError) {
               console.error('[Workspace] Failed to update connection metadata:', updateError);
             }
@@ -2443,7 +2443,7 @@ router.get('/connections/:connectionId/slack/channel/:channelId/messages', requi
           if (isRefreshTokenError) {
             console.log(`[Workspace] Slack connection ${connectionId} needs re-authentication`);
             try {
-              await pool.query(
+            await pool.query(
                 `UPDATE workspace_connections 
                  SET metadata = jsonb_set(
                    COALESCE(metadata, '{}'::jsonb), 
@@ -2452,8 +2452,8 @@ router.get('/connections/:connectionId/slack/channel/:channelId/messages', requi
                  ),
                  updated_at = CURRENT_TIMESTAMP 
                  WHERE id = $1`,
-                [connectionId]
-              );
+              [connectionId]
+            );
             } catch (updateError) {
               console.error('[Workspace] Failed to update connection metadata:', updateError);
             }

@@ -6,19 +6,19 @@ from databricks.sdk.service.workspace import ObjectInfo
 from cache import get_workspace_client
 
 
-def list_workspace_files(host: str, token: str, path: str = "/") -> list[dict[str, Any]]:
+def list_workspace_files(host_credential_key: str, token_credential_key: str, path: str = "/") -> list[dict[str, Any]]:
     """
     List files and folders in a workspace path.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: Workspace path to list (default: '/')
     
     Returns:
         List of workspace objects with path, type, language, etc.
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     files = []
     for item in client.workspace.list(path):

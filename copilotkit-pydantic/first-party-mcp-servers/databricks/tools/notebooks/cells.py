@@ -21,19 +21,19 @@ from models import (
 )
 
 
-def get_notebook_cells(host: str, token: str, path: str) -> NotebookCellsResponse:
+def get_notebook_cells(host_credential_key: str, token_credential_key: str, path: str) -> NotebookCellsResponse:
     """
     Get all cells from a notebook.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to the notebook
     
     Returns:
         NotebookCellsResponse with all cells and metadata
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Export notebook as JUPYTER format
     response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
@@ -74,13 +74,13 @@ def get_notebook_cells(host: str, token: str, path: str) -> NotebookCellsRespons
     )
 
 
-def get_notebook_cell(host: str, token: str, path: str, cell_index: int) -> NotebookCell:
+def get_notebook_cell(host_credential_key: str, token_credential_key: str, path: str, cell_index: int) -> NotebookCell:
     """
     Get a specific cell from a notebook by index.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to the notebook
         cell_index: Index of the cell to retrieve (0-based)
     
@@ -96,8 +96,8 @@ def get_notebook_cell(host: str, token: str, path: str, cell_index: int) -> Note
 
 
 def search_notebook_cells(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str,
     pattern: str,
     cell_type: str | None = None,
@@ -107,8 +107,8 @@ def search_notebook_cells(
     Search for cells containing a specific pattern.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to the notebook
         pattern: Text or regex pattern to search for
         cell_type: Filter by cell type (code, markdown, raw) - optional
@@ -160,8 +160,8 @@ def search_notebook_cells(
 
 
 def insert_notebook_cell(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str,
     cell_index: int,
     cell_content: str,
@@ -172,8 +172,8 @@ def insert_notebook_cell(
     Insert a new cell at the specified position.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to the notebook
         cell_index: Index where the cell should be inserted (0-based)
         cell_content: Content of the new cell
@@ -183,7 +183,7 @@ def insert_notebook_cell(
     Returns:
         CellOperationResponse with operation status
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Export notebook
     response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
@@ -237,8 +237,8 @@ def insert_notebook_cell(
 
 
 def update_notebook_cell(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str,
     cell_index: int,
     cell_content: str
@@ -247,8 +247,8 @@ def update_notebook_cell(
     Update the content of an existing cell.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to the notebook
         cell_index: Index of the cell to update (0-based)
         cell_content: New content for the cell
@@ -256,7 +256,7 @@ def update_notebook_cell(
     Returns:
         CellOperationResponse with operation status
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Export notebook
     response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
@@ -301,8 +301,8 @@ def update_notebook_cell(
 
 
 def delete_notebook_cell(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str,
     cell_index: int
 ) -> CellOperationResponse:
@@ -310,15 +310,15 @@ def delete_notebook_cell(
     Delete a cell from the notebook.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to the notebook
         cell_index: Index of the cell to delete (0-based)
     
     Returns:
         CellOperationResponse with operation status
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Export notebook
     response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)
@@ -356,8 +356,8 @@ def delete_notebook_cell(
 
 
 def reorder_notebook_cells(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str,
     from_index: int,
     to_index: int
@@ -366,8 +366,8 @@ def reorder_notebook_cells(
     Move a cell from one position to another.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to the notebook
         from_index: Current index of the cell to move (0-based)
         to_index: Target index for the cell (0-based)
@@ -375,7 +375,7 @@ def reorder_notebook_cells(
     Returns:
         CellOperationResponse with operation status
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Export notebook
     response = client.workspace.export(path=path, format=ExportFormat.JUPYTER)

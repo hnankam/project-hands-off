@@ -1,10 +1,23 @@
-"""WorkspaceClient and AccountClient connection pooling with TTL-based cache."""
+"""WorkspaceClient and AccountClient connection pooling with TTL-based cache.
+
+Credentials are resolved from credential keys at runtime.
+The cache keys are based on credential keys, not the resolved values.
+"""
+
+import sys
+from pathlib import Path
 
 from databricks.sdk import WorkspaceClient, AccountClient
 from cachetools import TTLCache
-import hashlib
 from threading import Lock
 import logging
+
+# Add parent directory to path to import shared module
+parent_path = Path(__file__).parent.parent
+if str(parent_path) not in sys.path:
+    sys.path.insert(0, str(parent_path))
+
+from shared.credential_resolver import resolve_credential  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -15,29 +28,34 @@ workspace_client_cache = TTLCache(maxsize=1000, ttl=3600)
 account_client_cache = TTLCache(maxsize=1000, ttl=3600)
 cache_lock = Lock()
 
-def get_workspace_client(host: str, token: str) -> WorkspaceClient:
+
+def get_workspace_client(host_credential_key: str, token_credential_key: str) -> WorkspaceClient:
     """
     Get cached WorkspaceClient or create new one.
     
-    Caches clients by hash of (host + token) to reuse connections
-    for the same user/workspace combination.
+    Caches clients by credential keys. Credentials are resolved from the database
+    using the shared credential_resolver module.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Globally unique key for the Databricks workspace URL credential
+        token_credential_key: Globally unique key for the Personal Access Token credential
     
     Returns:
         WorkspaceClient instance (cached or new)
     """
-    # Create stable cache key from credentials
-    cache_key = hashlib.sha256(f"{host}:{token}".encode()).hexdigest()
+    # Cache key is based on credential keys (stable and readable)
+    cache_key = f"ws:{host_credential_key}:{token_credential_key}"
     
     with cache_lock:
         if cache_key in workspace_client_cache:
-            logger.debug(f"Cache HIT for workspace: {host}")
+            logger.debug(f"Cache HIT for workspace client (host_key: {host_credential_key})")
             return workspace_client_cache[cache_key]
         
-        logger.info(f"Cache MISS - creating new client for workspace: {host}")
+        logger.info(f"Cache MISS - creating new workspace client (host_key: {host_credential_key})")
+        
+        # Resolve credential keys to actual values
+        host = resolve_credential(host_credential_key)
+        token = resolve_credential(token_credential_key)
         
         # Create new client (no network call until first API request)
         client = WorkspaceClient(host=host, token=token)
@@ -48,30 +66,39 @@ def get_workspace_client(host: str, token: str) -> WorkspaceClient:
         return client
 
 
-def get_account_client(host: str, account_id: str, token: str) -> AccountClient:
+def get_account_client(
+    host_credential_key: str, 
+    account_id_credential_key: str, 
+    token_credential_key: str
+) -> AccountClient:
     """
     Get cached AccountClient or create new one.
     
-    Caches clients by hash of (host + account_id + token) to reuse connections
-    for the same user/account combination.
+    Caches clients by credential keys. Credentials are resolved from the database
+    using the shared credential_resolver module.
     
     Args:
-        host: Databricks account console URL
-        account_id: Databricks account ID
-        token: Personal Access Token or OAuth token
+        host_credential_key: Globally unique key for the Databricks account console URL credential
+        account_id_credential_key: Globally unique key for the Databricks account ID credential
+        token_credential_key: Globally unique key for the Personal Access Token credential
     
     Returns:
         AccountClient instance (cached or new)
     """
-    # Create stable cache key from credentials
-    cache_key = hashlib.sha256(f"{host}:{account_id}:{token}".encode()).hexdigest()
+    # Cache key is based on credential keys (stable and readable)
+    cache_key = f"ac:{host_credential_key}:{account_id_credential_key}:{token_credential_key}"
     
     with cache_lock:
         if cache_key in account_client_cache:
-            logger.debug(f"Cache HIT for account: {account_id}")
+            logger.debug(f"Cache HIT for account client (account_key: {account_id_credential_key})")
             return account_client_cache[cache_key]
         
-        logger.info(f"Cache MISS - creating new client for account: {account_id}")
+        logger.info(f"Cache MISS - creating new account client (account_key: {account_id_credential_key})")
+        
+        # Resolve credential keys to actual values
+        host = resolve_credential(host_credential_key)
+        account_id = resolve_credential(account_id_credential_key)
+        token = resolve_credential(token_credential_key)
         
         # Create new client (no network call until first API request)
         client = AccountClient(host=host, account_id=account_id, token=token)
@@ -105,4 +132,3 @@ def get_cache_info():
                 "ttl": account_client_cache.ttl
             }
         }
-

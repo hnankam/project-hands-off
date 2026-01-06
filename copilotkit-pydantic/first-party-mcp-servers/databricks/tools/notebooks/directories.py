@@ -25,8 +25,8 @@ from models import (
 # ============================================================================
 
 def list_directories(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str = "/"
 ) -> ListDirectoriesResponse:
     """
@@ -36,14 +36,14 @@ def list_directories(
     For recursive traversal, the agent should call this function for each subdirectory.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to list from (default: /)
     
     Returns:
         ListDirectoriesResponse containing list of all workspace items with metadata
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     items_list = []
     try:
@@ -83,8 +83,8 @@ def list_directories(
 
 
 def create_directory(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str
 ) -> DirectoryCreateResponse:
     """
@@ -92,14 +92,14 @@ def create_directory(
     Automatically creates parent directories if they don't exist.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path where directory should be created
     
     Returns:
         DirectoryCreateResponse indicating success
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # mkdirs automatically creates parent directories
     client.workspace.mkdirs(path=path)
@@ -111,8 +111,8 @@ def create_directory(
 
 
 def delete_directory(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str,
     recursive: bool = False
 ) -> DirectoryDeleteResponse:
@@ -120,15 +120,15 @@ def delete_directory(
     Delete a directory from the workspace.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to delete
         recursive: If true, delete all contents recursively (default: False)
     
     Returns:
         DirectoryDeleteResponse indicating success
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.workspace.delete(path=path, recursive=recursive)
     
@@ -140,22 +140,22 @@ def delete_directory(
 
 
 def get_directory_info(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str
 ) -> DirectoryInfoResponse:
     """
     Get metadata about a directory.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to get info for
     
     Returns:
         DirectoryInfoResponse with directory metadata
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     status = client.workspace.get_status(path=path)
     status_dict = status.as_dict()
@@ -175,8 +175,8 @@ def get_directory_info(
 # ============================================================================
 
 def get_directory_tree(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str = "/",
     max_depth: int = 3
 ) -> DirectoryTreeResponse:
@@ -184,15 +184,15 @@ def get_directory_tree(
     Get hierarchical tree structure of a directory.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The root path to build tree from (default: /)
         max_depth: Maximum depth to traverse (default: 3)
     
     Returns:
         DirectoryTreeResponse with nested tree structure
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     def build_tree(current_path: str, current_depth: int) -> DirectoryTreeNode:
         """Recursively build directory tree."""
@@ -249,8 +249,8 @@ def get_directory_tree(
 
 
 def get_directory_stats(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str = "/"
 ) -> DirectoryStatsResponse:
     """
@@ -260,14 +260,14 @@ def get_directory_stats(
     the agent should aggregate results from multiple calls.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to analyze (default: /)
     
     Returns:
         DirectoryStatsResponse with counts and breakdowns for current level
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     total_notebooks = 0
     total_directories = 0
@@ -320,8 +320,8 @@ def get_directory_stats(
 
 
 def search_directories(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str = "/",
     pattern: str = ".*",
     case_sensitive: bool = False
@@ -332,8 +332,8 @@ def search_directories(
     For recursive search, the agent should call this function for each subdirectory.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The path to search in (default: /)
         pattern: Regex pattern to match directory names (default: .*)
         case_sensitive: Whether search is case-sensitive (default: False)
@@ -341,7 +341,7 @@ def search_directories(
     Returns:
         DirectorySearchResponse with matching directories at current level
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Compile regex pattern
     flags = 0 if case_sensitive else re.IGNORECASE

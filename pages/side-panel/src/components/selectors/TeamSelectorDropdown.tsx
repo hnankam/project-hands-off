@@ -243,7 +243,7 @@ export default function TeamSelectorDropdown({ isLight = true }: TeamSelectorDro
             // that AuthContext will handle, or the user will select manually
             console.log('[TeamSelector] activeTeam not in loaded teams, keeping current value');
             // Just clear the display name since we can't find the team
-            setActiveTeamName(null);
+              setActiveTeamName(null);
           }
         } else if (!activeTeam && data.teams.length > 0) {
           // No active team at all, but we have teams - auto-select the first one

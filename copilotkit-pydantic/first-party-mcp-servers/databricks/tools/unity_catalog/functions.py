@@ -98,8 +98,8 @@ def _convert_function_to_model(function) -> FunctionInfoModel:
 # ============================================================================
 
 def list_functions(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     catalog_name: str,
     schema_name: str,
     max_results: Optional[int] = None,
@@ -115,7 +115,7 @@ def list_functions(
     privilege on the schema.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         catalog_name: Name of parent catalog
         schema_name: Parent schema of functions
@@ -148,7 +148,7 @@ def list_functions(
         )
         print(f"Found {functions.count} functions")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     functions_list = []
     next_token = None
@@ -170,8 +170,8 @@ def list_functions(
 
 
 def get_function(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     include_browse: Optional[bool] = None,
 ) -> FunctionInfoModel:
@@ -182,7 +182,7 @@ def get_function(
     return type, and implementation.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Full name of the function (catalog.schema.function)
         include_browse: Include functions with browse-only access
@@ -208,7 +208,7 @@ def get_function(
             for param in func.input_params:
                 print(f"  {param.name}: {param.type_text}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     function = client.functions.get(
         name=name,
@@ -223,8 +223,8 @@ def get_function(
 # ============================================================================
 
 def create_function(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     catalog_name: str,
     schema_name: str,
@@ -254,7 +254,7 @@ def create_function(
     CREATE_FUNCTION privileges on the parent schema.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Name of function, relative to parent schema
         catalog_name: Name of parent catalog
@@ -327,7 +327,7 @@ def create_function(
             comment="Converts string to uppercase"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import (
         CreateFunction, FunctionParameterInfos, FunctionParameterInfo,
@@ -398,8 +398,8 @@ def create_function(
 
 
 def delete_function(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     force: Optional[bool] = None,
 ) -> DeleteFunctionResponse:
@@ -411,7 +411,7 @@ def delete_function(
     privileges.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Full name of the function (catalog.schema.function)
         force: Force deletion even if the function is not empty
@@ -434,7 +434,7 @@ def delete_function(
             force=True
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.functions.delete(
         name=name,
@@ -445,8 +445,8 @@ def delete_function(
 
 
 def update_function_owner(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     owner: str,
 ) -> UpdateFunctionResponse:
@@ -457,7 +457,7 @@ def update_function_owner(
     must be a metastore admin or meet specific privilege requirements.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Full name of the function (catalog.schema.function)
         owner: New owner username
@@ -486,7 +486,7 @@ def update_function_owner(
                 )
                 print(f"Transferred {func.full_name}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     function = client.functions.update(
         name=name,

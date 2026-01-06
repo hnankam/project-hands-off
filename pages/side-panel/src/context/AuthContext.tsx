@@ -241,8 +241,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         let availableOrgs: Organization[] = [];
 
         // Fetch all available organizations first
-        try {
-          const orgsResult = await authClient.organization.list();
+          try {
+            const orgsResult = await authClient.organization.list();
           availableOrgs = orgsResult.data || [];
         } catch (e) {
           debug.error('[AuthContext] Error fetching organizations:', e);
@@ -257,10 +257,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Set it as active on the backend if not already
             try {
               await authClient.organization.setActive({ organizationId: orgToSet.id });
-            } catch (e) {
+          } catch (e) {
               debug.error('[AuthContext] Error setting active org:', e);
-            }
-          } else {
+          }
+        } else {
             debug.log('[AuthContext] Saved org not found in available orgs, will auto-select');
             activeOrgId = null; // Reset so we auto-select below
           }
@@ -271,8 +271,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const firstOrg = availableOrgs[0];
           debug.log('[AuthContext] Auto-selecting first org:', firstOrg.name);
           try {
-            await authClient.organization.setActive({ organizationId: firstOrg.id });
-            orgToSet = firstOrg;
+              await authClient.organization.setActive({ organizationId: firstOrg.id });
+              orgToSet = firstOrg;
           } catch (e) {
             debug.error('[AuthContext] Error auto-selecting org:', e);
           }
@@ -317,18 +317,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               await autoSelectFirstTeam(setActiveTeamState, updateSessionContext);
             }
           } else {
-            await autoSelectFirstTeam(setActiveTeamState, updateSessionContext);
+              await autoSelectFirstTeam(setActiveTeamState, updateSessionContext);
           }
           await fetchAndSetMember(orgToSet.id, currentUserId);
         }
         
       } else {
         unstable_batchedUpdates(() => {
-          setSession(null);
-          setUser(null);
-          setOrganization(null);
-          setMember(null);
-          setActiveTeamState(null);
+        setSession(null);
+        setUser(null);
+        setOrganization(null);
+        setMember(null);
+        setActiveTeamState(null);
         });
         sessionStorageDBWrapper.setCurrentUserId(null);
         // Don't update lastUserId here - keep it so we can detect user changes on next login
@@ -336,11 +336,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       debug.error('[AuthContext] Error loading session:', error);
       unstable_batchedUpdates(() => {
-        setSession(null);
-        setUser(null);
-        setOrganization(null);
-        setMember(null);
-        setActiveTeamState(null);
+      setSession(null);
+      setUser(null);
+      setOrganization(null);
+      setMember(null);
+      setActiveTeamState(null);
       });
       sessionStorageDBWrapper.setCurrentUserId(null);
     } finally {

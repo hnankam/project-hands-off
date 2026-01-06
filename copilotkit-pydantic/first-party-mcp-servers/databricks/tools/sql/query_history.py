@@ -14,8 +14,8 @@ from models import (
 
 
 def list_query_history(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     filter_by: Optional[QueryFilter] = None,
     include_metrics: Optional[bool] = False,
     max_results: Optional[int] = 100,
@@ -28,8 +28,8 @@ def list_query_history(
     debug failures, track usage patterns, and analyze execution metrics.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         filter_by: Optional filter criteria (time range, user IDs, warehouse IDs, statuses)
         include_metrics: Whether to include detailed query metrics (default: False)
         max_results: Maximum number of results per page (max 1000, default 100)
@@ -58,7 +58,7 @@ def list_query_history(
             max_results=50
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert Pydantic filter to SDK filter
     sdk_filter = None

@@ -49,8 +49,8 @@ def _convert_schema_to_model(schema) -> SchemaInfoModel:
 # ============================================================================
 
 def list_schemas(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     catalog_name: str,
     max_results: Optional[int] = None,
     page_token: Optional[str] = None,
@@ -65,7 +65,7 @@ def list_schemas(
     the caller has the USE_SCHEMA privilege) will be retrieved.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         catalog_name: Parent catalog for schemas
         max_results: Maximum number of schemas to return (0 for server default)
@@ -101,7 +101,7 @@ def list_schemas(
                 page_token=schemas.next_page_token
             )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     schemas_list = []
     next_token = None
@@ -122,8 +122,8 @@ def list_schemas(
 
 
 def get_schema(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     full_name: str,
     include_browse: Optional[bool] = None,
 ) -> SchemaInfoModel:
@@ -134,7 +134,7 @@ def get_schema(
     and configuration.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         full_name: Full name of the schema (catalog.schema)
         include_browse: Include schemas with browse-only access
@@ -161,7 +161,7 @@ def get_schema(
             for key, value in schema.properties.items():
                 print(f"  {key}: {value}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     schema = client.schemas.get(
         full_name=full_name,
@@ -176,8 +176,8 @@ def get_schema(
 # ============================================================================
 
 def create_schema(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     catalog_name: str,
     comment: Optional[str] = None,
@@ -192,7 +192,7 @@ def create_schema(
     parent catalog.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Name of schema, relative to parent catalog
         catalog_name: Name of parent catalog
@@ -236,7 +236,7 @@ def create_schema(
         )
         print(f"Schema {result.schema_info.full_name} created with properties")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     schema = client.schemas.create(
         name=name,
@@ -252,8 +252,8 @@ def create_schema(
 
 
 def delete_schema(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     full_name: str,
     force: Optional[bool] = None,
 ) -> DeleteSchemaResponse:
@@ -264,7 +264,7 @@ def delete_schema(
     the owner of the schema or an owner of the parent catalog.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         full_name: Full name of the schema (catalog.schema)
         force: Force deletion even if the schema is not empty
@@ -296,7 +296,7 @@ def delete_schema(
         except Exception as e:
             print(f"Schema not found or cannot be deleted: {e}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.schemas.delete(
         full_name=full_name,
@@ -307,8 +307,8 @@ def delete_schema(
 
 
 def update_schema(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     full_name: str,
     new_name: Optional[str] = None,
     comment: Optional[str] = None,
@@ -325,7 +325,7 @@ def update_schema(
     be a metastore admin or have the CREATE_SCHEMA privilege on the parent catalog.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         full_name: Full name of the schema (catalog.schema)
         new_name: New name for the schema
@@ -380,7 +380,7 @@ def update_schema(
             enable_predictive_optimization="ENABLE"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert enable_predictive_optimization string to enum if provided
     enable_pred_opt = None

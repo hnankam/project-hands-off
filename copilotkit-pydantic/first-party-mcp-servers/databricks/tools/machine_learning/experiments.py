@@ -103,8 +103,8 @@ def _convert_to_run_model(run) -> RunModel:
 # ============================================================================
 
 def list_experiments(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     max_results: Optional[int] = None,
     page_token: Optional[str] = None,
 ) -> ListExperimentsResponse:
@@ -115,7 +115,7 @@ def list_experiments(
     of organization in MLflow; all runs belong to an experiment.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         max_results: Maximum number of experiments to return
         page_token: Pagination token for next page
@@ -131,7 +131,7 @@ def list_experiments(
             print(f"  Location: {exp.artifact_location}")
             print(f"  Created: {exp.creation_time}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     experiments = []
     next_token = None
@@ -149,8 +149,8 @@ def list_experiments(
 
 
 def get_experiment(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     experiment_id: str,
 ) -> ExperimentModel:
     """
@@ -160,7 +160,7 @@ def get_experiment(
     tags, and storage location.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         experiment_id: ID of the experiment
         
@@ -174,7 +174,7 @@ def get_experiment(
         print(f"Artifact location: {experiment.artifact_location}")
         print(f"Stage: {experiment.lifecycle_stage}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     experiment = client.experiments.get_experiment(experiment_id=experiment_id)
     
@@ -182,8 +182,8 @@ def get_experiment(
 
 
 def get_experiment_by_name(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     experiment_name: str,
 ) -> ExperimentModel:
     """
@@ -192,7 +192,7 @@ def get_experiment_by_name(
     Retrieves experiment metadata using the experiment's name instead of ID.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         experiment_name: Name of the experiment
         
@@ -207,7 +207,7 @@ def get_experiment_by_name(
         )
         print(f"Experiment ID: {experiment.experiment_id}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     experiment = client.experiments.get_experiment_by_name(
         experiment_name=experiment_name
@@ -217,8 +217,8 @@ def get_experiment_by_name(
 
 
 def create_experiment(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     artifact_location: Optional[str] = None,
     tags: Optional[Dict[str, str]] = None,
@@ -230,7 +230,7 @@ def create_experiment(
     and track multiple ML runs. The experiment name must be unique.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Experiment name (must be unique)
         artifact_location: Location for storing artifacts (optional)
@@ -254,7 +254,7 @@ def create_experiment(
             tags={"team": "ml", "project": "recommendations"}
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert tags dictionary to list of ExperimentTag
     tag_list = None
@@ -274,8 +274,8 @@ def create_experiment(
 
 
 def update_experiment(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     experiment_id: str,
     new_name: str,
 ) -> UpdateExperimentResponse:
@@ -286,7 +286,7 @@ def update_experiment(
     The new name must be unique.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         experiment_id: ID of the experiment
         new_name: New name for the experiment (must be unique)
@@ -302,7 +302,7 @@ def update_experiment(
             new_name="/Users/me/fraud-detection-v2"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.update_experiment(
         experiment_id=experiment_id,
@@ -313,8 +313,8 @@ def update_experiment(
 
 
 def delete_experiment(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     experiment_id: str,
 ) -> DeleteExperimentResponse:
     """
@@ -324,7 +324,7 @@ def delete_experiment(
     If using FileStore, artifacts are also deleted.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         experiment_id: ID of the experiment to delete
         
@@ -336,7 +336,7 @@ def delete_experiment(
         response = delete_experiment(host, token, "12345")
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.delete_experiment(experiment_id=experiment_id)
     
@@ -346,8 +346,8 @@ def delete_experiment(
 
 
 def restore_experiment(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     experiment_id: str,
 ) -> UpdateExperimentResponse:
     """
@@ -356,7 +356,7 @@ def restore_experiment(
     Restores an experiment that was previously marked for deletion.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         experiment_id: ID of the experiment to restore
         
@@ -368,7 +368,7 @@ def restore_experiment(
         response = restore_experiment(host, token, "12345")
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.restore_experiment(experiment_id=experiment_id)
     
@@ -378,8 +378,8 @@ def restore_experiment(
 
 
 def search_experiments(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     filter: Optional[str] = None,
     max_results: Optional[int] = None,
     order_by: Optional[List[str]] = None,
@@ -392,7 +392,7 @@ def search_experiments(
     Supports filtering by name, tags, and other attributes.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         filter: Filter expression (e.g., "name LIKE '/Users/me/%'")
         max_results: Maximum results to return
@@ -416,7 +416,7 @@ def search_experiments(
             order_by=["creation_time DESC"]
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     experiments = []
     next_token = None
@@ -440,8 +440,8 @@ def search_experiments(
 # ============================================================================
 
 def create_experiment_run(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     experiment_id: str,
     run_name: Optional[str] = None,
     start_time: Optional[int] = None,
@@ -454,7 +454,7 @@ def create_experiment_run(
     and artifacts for a single execution of ML code.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         experiment_id: ID of the experiment
         run_name: Name for the run (optional)
@@ -480,7 +480,7 @@ def create_experiment_run(
             tags={"model_type": "random_forest", "version": "1.0"}
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert tags dictionary to list of RunTag
     tag_list = None
@@ -501,8 +501,8 @@ def create_experiment_run(
 
 
 def get_experiment_run(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: str,
 ) -> RunModel:
     """
@@ -511,7 +511,7 @@ def get_experiment_run(
     Retrieves metadata, metrics, parameters, and tags for a specific run.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: ID of the run
         
@@ -527,7 +527,7 @@ def get_experiment_run(
             print(f"Metrics: {run.data.metrics}")
             print(f"Parameters: {run.data.params}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     run = client.experiments.get_run(run_id=run_id)
     
@@ -535,8 +535,8 @@ def get_experiment_run(
 
 
 def update_experiment_run(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: str,
     status: Optional[str] = None,
     run_name: Optional[str] = None,
@@ -548,7 +548,7 @@ def update_experiment_run(
     Updates run metadata including status, name, and end time.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: ID of the run
         status: New status (RUNNING, FINISHED, FAILED, KILLED)
@@ -575,7 +575,7 @@ def update_experiment_run(
             end_time=int(time.time() * 1000)
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert status string to enum if provided
     status_enum = None
@@ -596,8 +596,8 @@ def update_experiment_run(
 
 
 def delete_experiment_run(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: str,
 ) -> DeleteRunResponse:
     """
@@ -607,7 +607,7 @@ def delete_experiment_run(
     removed from the system.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: ID of the run to delete
         
@@ -619,7 +619,7 @@ def delete_experiment_run(
         response = delete_run(host, token, "abc123")
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.delete_run(run_id=run_id)
     
@@ -629,8 +629,8 @@ def delete_experiment_run(
 
 
 def restore_experiment_run(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: str,
 ) -> UpdateRunResponse:
     """
@@ -639,7 +639,7 @@ def restore_experiment_run(
     Restores a run that was previously marked for deletion.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: ID of the run to restore
         
@@ -651,7 +651,7 @@ def restore_experiment_run(
         response = restore_run(host, token, "abc123")
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.restore_run(run_id=run_id)
     
@@ -661,8 +661,8 @@ def restore_experiment_run(
 
 
 def search_experiment_runs(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     experiment_ids: Optional[List[str]] = None,
     filter: Optional[str] = None,
     max_results: int = 1000,
@@ -676,7 +676,7 @@ def search_experiment_runs(
     parameters, tags, and run attributes.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         experiment_ids: List of experiment IDs to search
         filter: Filter expression (e.g., "metrics.accuracy > 0.9")
@@ -702,7 +702,7 @@ def search_experiment_runs(
             order_by=["metrics.accuracy DESC"]
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     runs = []
     next_token = None
@@ -727,8 +727,8 @@ def search_experiment_runs(
 # ============================================================================
 
 def log_metric(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: str,
     key: str,
     value: float,
@@ -742,7 +742,7 @@ def log_metric(
     performance (e.g., accuracy, loss, RMSE).
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: ID of the run
         key: Metric name
@@ -771,7 +771,7 @@ def log_metric(
             step=100
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.log_metric(
         run_id=run_id,
@@ -785,8 +785,8 @@ def log_metric(
 
 
 def log_param(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: str,
     key: str,
     value: str,
@@ -798,7 +798,7 @@ def log_param(
     (e.g., learning_rate, max_depth, n_estimators).
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: ID of the run
         key: Parameter name
@@ -813,7 +813,7 @@ def log_param(
         log_param(host, token, run_id="abc123", key="max_depth", value="10")
         log_param(host, token, run_id="abc123", key="n_estimators", value="100")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.log_param(
         run_id=run_id,
@@ -829,8 +829,8 @@ def log_param(
 # ============================================================================
 
 def set_experiment_tag(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     experiment_id: str,
     key: str,
     value: str,
@@ -842,7 +842,7 @@ def set_experiment_tag(
     and filtering experiments.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         experiment_id: ID of the experiment
         key: Tag key (up to 250 bytes)
@@ -857,7 +857,7 @@ def set_experiment_tag(
         set_experiment_tag(host, token, "12345", "project", "fraud-detection")
         set_experiment_tag(host, token, "12345", "version", "v2")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.set_experiment_tag(
         experiment_id=experiment_id,
@@ -869,8 +869,8 @@ def set_experiment_tag(
 
 
 def set_run_tag(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: str,
     key: str,
     value: str,
@@ -882,7 +882,7 @@ def set_run_tag(
     or after a run completes.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: ID of the run
         key: Tag key (up to 250 bytes)
@@ -897,7 +897,7 @@ def set_run_tag(
         set_run_tag(host, token, "abc123", "production", "true")
         set_run_tag(host, token, "abc123", "reviewer", "data-scientist@company.com")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.set_tag(
         run_id=run_id,
@@ -909,8 +909,8 @@ def set_run_tag(
 
 
 def delete_run_tag(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     run_id: str,
     key: str,
 ) -> SetRunTagResponse:
@@ -921,7 +921,7 @@ def delete_run_tag(
     incorrect tags.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         run_id: ID of the run
         key: Tag key to delete
@@ -934,7 +934,7 @@ def delete_run_tag(
         response = delete_run_tag(host, token, "abc123", "outdated_tag")
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.delete_tag(
         run_id=run_id,

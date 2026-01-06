@@ -91,8 +91,8 @@ def _convert_to_update_info(update) -> UpdateInfoModel:
 # ============================================================================
 
 def list_pipelines(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     filter: Optional[str] = None,
     max_results: int = 25,
     page_token: Optional[str] = None,
@@ -104,7 +104,7 @@ def list_pipelines(
     and pagination for efficient querying.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         filter: Optional filter string (e.g., "name LIKE 'prod%'")
         max_results: Maximum number of results per page (default: 25)
@@ -135,7 +135,7 @@ def list_pipelines(
                 page_token=response.next_page_token
             )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     pipelines = []
     next_token = None
@@ -154,8 +154,8 @@ def list_pipelines(
 
 
 def get_pipeline(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     pipeline_id: str,
 ) -> PipelineInfoModel:
     """
@@ -165,7 +165,7 @@ def get_pipeline(
     specification, current state, and update history.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         pipeline_id: ID of the pipeline
         
@@ -181,7 +181,7 @@ def get_pipeline(
         print(f"Continuous: {pipeline.spec.continuous}")
         print(f"Serverless: {pipeline.spec.serverless}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     pipeline = client.pipelines.get(pipeline_id=pipeline_id)
     
@@ -189,8 +189,8 @@ def get_pipeline(
 
 
 def create_pipeline(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     storage: str,
     configuration: Optional[Dict[str, str]] = None,
@@ -213,7 +213,7 @@ def create_pipeline(
     defines data transformations and manages execution, monitoring, and quality.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Friendly name for the pipeline
         storage: DBFS path for storing checkpoints and tables
@@ -259,7 +259,7 @@ def create_pipeline(
             }]
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.pipelines import PipelineLibrary, NotebookLibrary, PipelineCluster
     
@@ -304,8 +304,8 @@ def create_pipeline(
 
 
 def update_pipeline(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     pipeline_id: str,
     name: Optional[str] = None,
     configuration: Optional[Dict[str, str]] = None,
@@ -328,7 +328,7 @@ def update_pipeline(
     take effect on the next pipeline update/run.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         pipeline_id: ID of the pipeline to update
         name: New name for the pipeline
@@ -366,7 +366,7 @@ def update_pipeline(
             photon=True
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert libraries if provided
     lib_objects = None
@@ -408,8 +408,8 @@ def update_pipeline(
 
 
 def delete_pipeline(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     pipeline_id: str,
 ) -> DeletePipelineResponse:
     """
@@ -419,7 +419,7 @@ def delete_pipeline(
     data produced by the pipeline.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         pipeline_id: ID of the pipeline to delete
         
@@ -431,7 +431,7 @@ def delete_pipeline(
         response = delete_pipeline(host, token, "abc123")
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.pipelines.delete(pipeline_id=pipeline_id)
     
@@ -445,8 +445,8 @@ def delete_pipeline(
 # ============================================================================
 
 def start_pipeline_update(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     pipeline_id: str,
     full_refresh: bool = False,
     full_refresh_selection: Optional[list[str]] = None,
@@ -459,7 +459,7 @@ def start_pipeline_update(
     pipeline definition. Can do full refresh or incremental updates.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         pipeline_id: ID of the pipeline
         full_refresh: Reset all tables before running (default: False)
@@ -488,7 +488,7 @@ def start_pipeline_update(
             refresh_selection=["orders", "customers"]
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     update = client.pipelines.start_update(
         pipeline_id=pipeline_id,
@@ -503,8 +503,8 @@ def start_pipeline_update(
 
 
 def stop_pipeline(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     pipeline_id: str,
 ) -> StopPipelineResponse:
     """
@@ -514,7 +514,7 @@ def stop_pipeline(
     update, this is a no-op.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         pipeline_id: ID of the pipeline
         
@@ -526,7 +526,7 @@ def stop_pipeline(
         response = stop_pipeline(host, token, "abc123")
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.pipelines.stop(pipeline_id=pipeline_id)
     
@@ -536,8 +536,8 @@ def stop_pipeline(
 
 
 def reset_pipeline(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     pipeline_id: str,
 ) -> ResetPipelineResponse:
     """
@@ -547,7 +547,7 @@ def reset_pipeline(
     next update. This clears all state and checkpoints.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         pipeline_id: ID of the pipeline
         
@@ -563,7 +563,7 @@ def reset_pipeline(
         reset_pipeline(host, token, "abc123")
         start_pipeline_update(host, token, "abc123", full_refresh=True)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.pipelines.reset(pipeline_id=pipeline_id)
     
@@ -577,8 +577,8 @@ def reset_pipeline(
 # ============================================================================
 
 def list_pipeline_updates(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     pipeline_id: str,
     max_results: int = 25,
     page_token: Optional[str] = None,
@@ -590,7 +590,7 @@ def list_pipeline_updates(
     information for each update.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         pipeline_id: ID of the pipeline
         max_results: Maximum results per page (default: 25)
@@ -607,7 +607,7 @@ def list_pipeline_updates(
             print(f"  Created: {update.creation_time}")
             print(f"  Full Refresh: {update.full_refresh}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     updates = []
     next_token = None
@@ -626,8 +626,8 @@ def list_pipeline_updates(
 
 
 def get_pipeline_update(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     pipeline_id: str,
     update_id: str,
 ) -> UpdateInfoModel:
@@ -638,7 +638,7 @@ def get_pipeline_update(
     its current state and execution details.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         pipeline_id: ID of the pipeline
         update_id: ID of the update
@@ -656,7 +656,7 @@ def get_pipeline_update(
         print(f"State: {update.state}")
         print(f"Full Refresh: {update.full_refresh}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     update = client.pipelines.get_update(
         pipeline_id=pipeline_id,

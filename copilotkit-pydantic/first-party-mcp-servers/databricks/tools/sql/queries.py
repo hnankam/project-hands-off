@@ -16,8 +16,8 @@ from models import (
 
 
 def list_queries(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     page_size: Optional[int] = None,
     page_token: Optional[str] = None
 ) -> ListQueriesResponse:
@@ -28,15 +28,15 @@ def list_queries(
     throttling, service degradation, or a temporary ban.
     
     Args:
-        host: Databricks workspace URL (e.g., https://my-workspace.cloud.databricks.com)
-        token: Personal Access Token (starts with 'dapi')
+        host_credential_key: Globally unique credential key for Databricks workspace URL (e.g., "my_databricks_host")
+        token_credential_key: Globally unique credential key for Personal Access Token (e.g., "my_databricks_token")
         page_size: Optional maximum number of queries to return per page
         page_token: Optional page token from a previous request for pagination
     
     Returns:
         ListQueriesResponse containing list of queries with metadata
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     queries = []
     for query in client.queries.list(page_size=page_size, page_token=page_token):
@@ -74,19 +74,19 @@ def list_queries(
     )
 
 
-def get_query(host: str, token: str, query_id: str) -> QueryInfo:
+def get_query(host_credential_key: str, token_credential_key: str, query_id: str) -> QueryInfo:
     """
     Get details of a specific SQL query.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         query_id: ID of the query to retrieve
     
     Returns:
         QueryInfo with complete query details including SQL text, metadata, and tags
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     query = client.queries.get(id=query_id)
     query_dict = query.as_dict()
     
@@ -117,8 +117,8 @@ def get_query(host: str, token: str, query_id: str) -> QueryInfo:
 
 
 def create_query(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     display_name: str,
     warehouse_id: str,
     query_text: str,
@@ -134,8 +134,8 @@ def create_query(
     Create a new SQL query.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         display_name: Query display name
         warehouse_id: SQL warehouse ID to run the query on
         query_text: The SQL query text
@@ -150,7 +150,7 @@ def create_query(
     Returns:
         CreateQueryResponse with the created query details
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     query_request = CreateQueryRequestQuery(
         display_name=display_name,
@@ -177,8 +177,8 @@ def create_query(
 
 
 def update_query(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     query_id: str,
     display_name: Optional[str] = None,
     query_text: Optional[str] = None,
@@ -194,8 +194,8 @@ def update_query(
     Update an existing SQL query.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         query_id: ID of the query to update
         display_name: Optional new display name
         query_text: Optional new SQL query text
@@ -210,7 +210,7 @@ def update_query(
     Returns:
         UpdateQueryResponse with the updated query details
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Build update mask based on provided parameters
     update_fields = []
@@ -265,7 +265,7 @@ def update_query(
     )
 
 
-def delete_query(host: str, token: str, query_id: str) -> DeleteQueryResponse:
+def delete_query(host_credential_key: str, token_credential_key: str, query_id: str) -> DeleteQueryResponse:
     """
     Delete a SQL query (moves to trash).
     
@@ -274,14 +274,14 @@ def delete_query(host: str, token: str, query_id: str) -> DeleteQueryResponse:
     after 30 days and can be restored through the UI before then.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         query_id: ID of the query to delete
     
     Returns:
         DeleteQueryResponse confirming the deletion
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.queries.delete(id=query_id)
     
@@ -292,22 +292,22 @@ def delete_query(host: str, token: str, query_id: str) -> DeleteQueryResponse:
 
 
 def list_query_visualizations(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     query_id: str
 ) -> ListVisualizationsResponse:
     """
     List all visualizations for a specific query.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         query_id: ID of the query
     
     Returns:
         ListVisualizationsResponse with all visualizations for the query
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     visualizations = []
     for viz in client.queries.list_visualizations(id=query_id):

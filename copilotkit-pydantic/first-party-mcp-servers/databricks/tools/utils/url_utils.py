@@ -6,7 +6,7 @@ from cache import get_workspace_client
 from models import NotebookPathInfo
 
 
-def resolve_notebook_from_url(host: str, token: str, url: str) -> NotebookPathInfo:
+def resolve_notebook_from_url(host_credential_key: str, token_credential_key: str, url: str) -> NotebookPathInfo:
     """
     Resolve notebook workspace path from a Databricks URL.
     
@@ -20,8 +20,8 @@ def resolve_notebook_from_url(host: str, token: str, url: str) -> NotebookPathIn
     large workspaces (uses SDK's built-in recursive listing).
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         url: Databricks notebook URL (any format)
     
     Returns:
@@ -31,7 +31,7 @@ def resolve_notebook_from_url(host: str, token: str, url: str) -> NotebookPathIn
         URL: https://adb-xxx.azuredatabricks.net/editor/notebooks/1191853414493128
         Returns: NotebookPathInfo with path="/Workspace/Users/user@company.com/General"
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Try to extract notebook ID from URL (modern format)
     notebook_id = _extract_notebook_id_from_url(url)
@@ -43,7 +43,7 @@ def resolve_notebook_from_url(host: str, token: str, url: str) -> NotebookPathIn
         logger = logging.getLogger(__name__)
         
         # Import here to avoid circular dependency
-        from .notebooks import list_notebooks
+        from tools.notebooks.notebooks import list_notebooks
         
         logger.info(f"Searching workspace for notebook ID: {notebook_id}")
         
@@ -52,7 +52,7 @@ def resolve_notebook_from_url(host: str, token: str, url: str) -> NotebookPathIn
             logger.info(f"Searching workspace recursively for notebook ID: {notebook_id}")
             
             # List all notebooks recursively from root using SDK's built-in recursive listing
-            response = list_notebooks(host, token, path="/", recursive=True)
+            response = list_notebooks(host_credential_key, token_credential_key, path="/", recursive=True)
             
             # Find notebook with matching object_id or resource_id
             for notebook in response.notebooks:

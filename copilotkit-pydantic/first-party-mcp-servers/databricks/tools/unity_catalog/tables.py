@@ -24,8 +24,8 @@ from models import (
 # ============================================================================
 
 def list_tables(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     catalog_name: str,
     schema_name: str,
     max_results: Optional[int] = None,
@@ -44,7 +44,7 @@ def list_tables(
     (or have the SELECT privilege on) the table.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         catalog_name: Name of parent catalog for tables
         schema_name: Parent schema of tables
@@ -95,7 +95,7 @@ def list_tables(
             omit_properties=True
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     tables_list = []
     next_token = None
@@ -177,8 +177,8 @@ def list_tables(
 
 
 def list_table_summaries(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     catalog_name: str,
     schema_name_pattern: Optional[str] = None,
     table_name_pattern: Optional[str] = None,
@@ -193,7 +193,7 @@ def list_table_summaries(
     efficient than list_tables when you only need basic information.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         catalog_name: Name of parent catalog
         schema_name_pattern: SQL LIKE pattern for schema names (e.g., "prod_%")
@@ -229,7 +229,7 @@ def list_table_summaries(
         )
         print(f"Found {summaries.count} tables")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     summaries_list = []
     next_token = None
@@ -256,8 +256,8 @@ def list_table_summaries(
 
 
 def get_table(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     full_name: str,
     include_delta_metadata: Optional[bool] = None,
     include_browse: Optional[bool] = None,
@@ -269,7 +269,7 @@ def get_table(
     metadata, and configuration.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         full_name: Full name of the table (catalog.schema.table)
         include_delta_metadata: Whether delta metadata should be included
@@ -300,7 +300,7 @@ def get_table(
         if table.delta_runtime_properties_kvpairs:
             print(f"Delta properties: {table.delta_runtime_properties_kvpairs}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     table = client.tables.get(
         full_name=full_name,
@@ -366,8 +366,8 @@ def get_table(
 
 
 def table_exists(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     full_name: str,
 ) -> TableExistsResponseModel:
     """
@@ -377,7 +377,7 @@ def table_exists(
     This is more efficient than get_table when you only need to verify existence.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         full_name: Full name of the table (catalog.schema.table)
         
@@ -405,7 +405,7 @@ def table_exists(
             # Create table first
             pass
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     response = client.tables.exists(full_name=full_name)
     
@@ -420,8 +420,8 @@ def table_exists(
 # ============================================================================
 
 def delete_table(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     full_name: str,
 ) -> DeleteTableResponse:
     """
@@ -434,7 +434,7 @@ def delete_table(
     catalog and the USE_SCHEMA privilege on the parent schema.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         full_name: Full name of the table (catalog.schema.table)
         
@@ -454,7 +454,7 @@ def delete_table(
             delete_table(host, token, full_name="main.default.old_data")
             print("Old data table deleted")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.tables.delete(full_name=full_name)
     
@@ -462,8 +462,8 @@ def delete_table(
 
 
 def update_table_owner(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     full_name: str,
     owner: str,
 ) -> UpdateTableResponse:
@@ -477,7 +477,7 @@ def update_table_owner(
     on the parent schema.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         full_name: Full name of the table (catalog.schema.table)
         owner: New owner username
@@ -501,7 +501,7 @@ def update_table_owner(
             update_table_owner(host, token, full_name=table, owner=new_owner)
             print(f"Updated owner for {table}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.tables.update(
         full_name=full_name,

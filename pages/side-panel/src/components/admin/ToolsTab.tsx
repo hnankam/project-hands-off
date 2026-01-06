@@ -1036,12 +1036,16 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
     return (
       <div
         className={cn(
-          'rounded-lg border transition-all duration-200 overflow-hidden relative',
+          'rounded-lg border transition-all duration-200 relative',
           isLight
             ? 'bg-white border-gray-200 hover:border-gray-300'
             : 'bg-[#151C24] border-gray-700 hover:border-gray-600',
           isExpanded && (isLight ? 'shadow-sm' : 'shadow-[0_6px_20px_rgba(0,0,0,0.35)]'),
         )}
+        style={{ 
+          overflow: 'hidden',
+          contain: isExpanded ? 'layout style' : 'layout style paint',
+        }}
       >
         <div className="flex items-center px-4 py-3">
           <button
@@ -1116,7 +1120,6 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
           className={cn(
             'transition-all ease-in-out',
             isExpanded ? 'max-h-[400px] opacity-100 duration-500' : 'max-h-0 opacity-0 duration-300 overflow-hidden',
-            isExpanded && 'overflow-visible',
           )}
         >
           <div
@@ -1130,7 +1133,11 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                 'max-h-60 w-full overflow-auto tools-tab-scrollbar transition-opacity ease-in-out',
                 isExpanded ? 'opacity-100 duration-400 delay-150' : 'opacity-0 duration-150',
               )}
-              style={{ '--table-scroll-bg': isLight ? '#FFFFFF' : '#151C24' } as React.CSSProperties}
+              style={{ 
+                '--table-scroll-bg': isLight ? '#FFFFFF' : '#151C24',
+                transform: 'translateZ(0)',
+                willChange: isExpanded ? 'transform' : 'auto',
+              } as React.CSSProperties}
             >
               <table className="min-w-full border-collapse text-left text-xs">
                 <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50 text-gray-600' : 'bg-[#111820] text-gray-400')}>

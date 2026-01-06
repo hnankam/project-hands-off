@@ -16,8 +16,8 @@ from models import (
 
 
 def list_repos(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path_prefix: Optional[str] = None,
     next_page_token: Optional[str] = None,
 ) -> ListReposResponse:
@@ -28,7 +28,7 @@ def list_repos(
     to iterate through additional pages.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         path_prefix: Filter repos by path prefix (e.g., "/Repos/team")
         next_page_token: Token for pagination
@@ -43,7 +43,7 @@ def list_repos(
         # List repos in specific path
         repos = list_repos(host, token, path_prefix="/Repos/team")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     repos_list = []
     iterator = client.repos.list(
@@ -72,8 +72,8 @@ def list_repos(
 
 
 def get_repo(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     repo_id: int,
 ) -> RepoInfo:
     """
@@ -82,7 +82,7 @@ def get_repo(
     Returns information about a specific Git repository by its ID.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         repo_id: Repository ID
         
@@ -93,7 +93,7 @@ def get_repo(
         repo = get_repo(host, token, repo_id=12345)
         print(f"Repo at {repo.path} on branch {repo.branch}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     repo = client.repos.get(repo_id=repo_id)
     
@@ -109,8 +109,8 @@ def get_repo(
 
 
 def create_repo(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     url: str,
     provider: str,
     path: Optional[str] = None,
@@ -122,7 +122,7 @@ def create_repo(
     Note that repos created programmatically must be linked to a remote Git repo.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         url: URL of the Git repository to be linked
         provider: Git provider (github, gitlab, bitbucket, etc.)
@@ -151,7 +151,7 @@ def create_repo(
         )
         print(f"Created repo {repo.id} at {repo.path}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     repo = client.repos.create(
         url=url,
@@ -169,8 +169,8 @@ def create_repo(
 
 
 def update_repo(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     repo_id: int,
     branch: Optional[str] = None,
     tag: Optional[str] = None,
@@ -182,7 +182,7 @@ def update_repo(
     latest commit on the same branch. Specify either branch OR tag, not both.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         repo_id: Repository ID
         branch: Branch to check out
@@ -207,7 +207,7 @@ def update_repo(
         # Check out specific tag
         update_repo(host, token, repo_id=12345, tag="v1.0.0")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.repos.update(
         repo_id=repo_id,
@@ -227,8 +227,8 @@ def update_repo(
 
 
 def delete_repo(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     repo_id: int,
 ) -> DeleteRepoResponse:
     """
@@ -238,7 +238,7 @@ def delete_repo(
     delete the remote Git repository, only the workspace link.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         repo_id: Repository ID
         
@@ -248,7 +248,7 @@ def delete_repo(
     Example:
         delete_repo(host, token, repo_id=12345)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.repos.delete(repo_id=repo_id)
     
@@ -256,8 +256,8 @@ def delete_repo(
 
 
 def get_repo_permissions(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     repo_id: str,
 ) -> Dict[str, Any]:
     """
@@ -267,7 +267,7 @@ def get_repo_permissions(
     root object.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         repo_id: Repository ID (as string)
         
@@ -279,7 +279,7 @@ def get_repo_permissions(
         for acl in permissions.access_control_list:
             print(f"{acl.user_name}: {acl.all_permissions}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     permissions = client.repos.get_permissions(repo_id=repo_id)
     
@@ -287,8 +287,8 @@ def get_repo_permissions(
 
 
 def set_repo_permissions(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     repo_id: str,
     access_control_list: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -299,7 +299,7 @@ def set_repo_permissions(
     Deletes all direct permissions if none are specified.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         repo_id: Repository ID (as string)
         access_control_list: List of ACL entries
@@ -320,7 +320,7 @@ def set_repo_permissions(
         ]
         set_repo_permissions(host, token, repo_id="12345", access_control_list=acls)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.workspace import RepoAccessControlRequest
     
@@ -338,8 +338,8 @@ def set_repo_permissions(
 
 
 def update_repo_permissions(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     repo_id: str,
     access_control_list: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -350,7 +350,7 @@ def update_repo_permissions(
     their root object.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         repo_id: Repository ID (as string)
         access_control_list: List of ACL entries to update
@@ -364,7 +364,7 @@ def update_repo_permissions(
         ]
         update_repo_permissions(host, token, repo_id="12345", access_control_list=acls)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.workspace import RepoAccessControlRequest
     
@@ -382,8 +382,8 @@ def update_repo_permissions(
 
 
 def get_repo_permission_levels(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     repo_id: str,
 ) -> Dict[str, Any]:
     """
@@ -392,7 +392,7 @@ def get_repo_permission_levels(
     Gets the permission levels that a user can have on a repo.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         repo_id: Repository ID (as string)
         
@@ -404,7 +404,7 @@ def get_repo_permission_levels(
         for level in levels.permission_levels:
             print(f"{level.permission_level}: {level.description}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     levels = client.repos.get_permission_levels(repo_id=repo_id)
     

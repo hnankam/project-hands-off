@@ -131,8 +131,8 @@ def _convert_to_webhook(webhook) -> WebhookModel:
 # ============================================================================
 
 def list_registry_models(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     max_results: int = 100,
     page_token: Optional[str] = None,
 ) -> ListModelsResponse:
@@ -143,7 +143,7 @@ def list_registry_models(
     large model catalogs.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         max_results: Maximum results per page (default: 100)
         page_token: Pagination token
@@ -159,7 +159,7 @@ def list_registry_models(
             print(f"  Created: {model.creation_timestamp}")
             print(f"  Description: {model.description}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     models = []
     next_token = None
@@ -177,8 +177,8 @@ def list_registry_models(
 
 
 def get_registry_model(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> RegisteredModelModel:
     """
@@ -187,7 +187,7 @@ def get_registry_model(
     Retrieves detailed information about a specific registered model.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         
@@ -201,7 +201,7 @@ def get_registry_model(
         print(f"Description: {model.description}")
         print(f"Tags: {model.tags}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     model = client.model_registry.get_model(name=name)
     
@@ -209,8 +209,8 @@ def get_registry_model(
 
 
 def create_registry_model(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     description: Optional[str] = None,
     tags: Optional[Dict[str, str]] = None,
@@ -222,7 +222,7 @@ def create_registry_model(
     be unique across the workspace.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Unique model name
         description: Optional model description
@@ -247,7 +247,7 @@ def create_registry_model(
             tags={"team": "ml", "use_case": "recommendations"}
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert tags dictionary to list of ModelTag
     tag_list = None
@@ -267,8 +267,8 @@ def create_registry_model(
 
 
 def update_registry_model(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     description: str,
 ) -> UpdateModelResponse:
@@ -278,7 +278,7 @@ def update_registry_model(
     Updates the description of a registered model.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         description: New description
@@ -294,7 +294,7 @@ def update_registry_model(
             description="Updated fraud detection model v2"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.update_model(
         name=name,
@@ -305,8 +305,8 @@ def update_registry_model(
 
 
 def delete_registry_model(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> DeleteModelResponse:
     """
@@ -315,7 +315,7 @@ def delete_registry_model(
     Deletes a registered model and all its versions from the registry.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         
@@ -327,7 +327,7 @@ def delete_registry_model(
         response = delete_registry_model(host, token, "old-model")
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.delete_model(name=name)
     
@@ -341,8 +341,8 @@ def delete_registry_model(
 # ============================================================================
 
 def create_model_version(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     source: str,
     run_id: Optional[str] = None,
@@ -356,7 +356,7 @@ def create_model_version(
     valid MLflow model artifact location.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         source: URI of model artifacts (e.g., dbfs:/path, s3://bucket/path)
@@ -386,7 +386,7 @@ def create_model_version(
             tags={"validated": "true"}
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert tags dictionary to list of ModelVersionTag
     tag_list = None
@@ -408,8 +408,8 @@ def create_model_version(
 
 
 def get_model_version(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     version: str,
 ) -> ModelVersionModel:
@@ -419,7 +419,7 @@ def get_model_version(
     Retrieves detailed information about a specific model version.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         version: Version number
@@ -435,7 +435,7 @@ def get_model_version(
         print(f"Source: {version.source}")
         print(f"Status: {version.status}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     version = client.model_registry.get_model_version(
         name=name,
@@ -446,8 +446,8 @@ def get_model_version(
 
 
 def update_model_version(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     version: str,
     description: str,
@@ -458,7 +458,7 @@ def update_model_version(
     Updates the description of a model version.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         version: Version number
@@ -476,7 +476,7 @@ def update_model_version(
             description="Production-ready model with 95% accuracy"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.update_model_version(
         name=name,
@@ -488,8 +488,8 @@ def update_model_version(
 
 
 def delete_model_version(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     version: str,
 ) -> DeleteModelVersionResponse:
@@ -499,7 +499,7 @@ def delete_model_version(
     Deletes a specific version of a model from the registry.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         version: Version number
@@ -515,7 +515,7 @@ def delete_model_version(
             version="1"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.delete_model_version(
         name=name,
@@ -529,8 +529,8 @@ def delete_model_version(
 
 
 def search_model_versions(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     filter: Optional[str] = None,
     max_results: int = 100,
     order_by: Optional[List[str]] = None,
@@ -543,7 +543,7 @@ def search_model_versions(
     by name, run_id, source_path, and other attributes.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         filter: Filter expression (e.g., "name = 'my-model'")
         max_results: Maximum results per page (default: 100)
@@ -567,7 +567,7 @@ def search_model_versions(
             order_by=["version DESC"]
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     versions = []
     next_token = None
@@ -587,8 +587,8 @@ def search_model_versions(
 
 
 def get_latest_model_versions(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     stages: Optional[List[str]] = None,
 ) -> ListModelVersionsResponse:
@@ -598,7 +598,7 @@ def get_latest_model_versions(
     Retrieves the latest versions of a model, optionally filtered by stage.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         stages: Optional list of stages (None, Staging, Production, Archived)
@@ -620,7 +620,7 @@ def get_latest_model_versions(
             stages=["Production"]
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     versions = client.model_registry.get_latest_versions(
         name=name,
@@ -639,8 +639,8 @@ def get_latest_model_versions(
 # ============================================================================
 
 def transition_model_stage(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     version: str,
     stage: str,
@@ -654,7 +654,7 @@ def transition_model_stage(
     Stages: None → Staging → Production → Archived.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         version: Version number
@@ -685,7 +685,7 @@ def transition_model_stage(
             comment="Passed all tests, deploying to prod"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.model_registry.transition_stage(
         name=name,
@@ -701,8 +701,8 @@ def transition_model_stage(
 
 
 def create_transition_request(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     version: str,
     stage: str,
@@ -715,7 +715,7 @@ def create_transition_request(
     enables approval workflows for production deployments.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         version: Version number
@@ -735,7 +735,7 @@ def create_transition_request(
             comment="Model shows 96% accuracy in staging tests"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.model_registry.create_transition_request(
         name=name,
@@ -750,8 +750,8 @@ def create_transition_request(
 
 
 def approve_transition_request(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     version: str,
     stage: str,
@@ -765,7 +765,7 @@ def approve_transition_request(
     requested stage.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         version: Version number
@@ -787,7 +787,7 @@ def approve_transition_request(
             comment="Approved after review"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.approve_transition_request(
         name=name,
@@ -801,8 +801,8 @@ def approve_transition_request(
 
 
 def reject_transition_request(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     version: str,
     stage: str,
@@ -814,7 +814,7 @@ def reject_transition_request(
     Rejects a pending transition request, preventing the stage change.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         version: Version number
@@ -834,7 +834,7 @@ def reject_transition_request(
             comment="Performance metrics not met"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.reject_transition_request(
         name=name,
@@ -853,8 +853,8 @@ def reject_transition_request(
 # ============================================================================
 
 def create_model_comment(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     version: str,
     comment: str,
@@ -866,7 +866,7 @@ def create_model_comment(
     deployment information.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         version: Version number
@@ -884,7 +884,7 @@ def create_model_comment(
             comment="Tested with 10k samples. Accuracy: 95.3%"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.model_registry.create_comment(
         name=name,
@@ -898,8 +898,8 @@ def create_model_comment(
 
 
 def update_model_comment(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     comment_id: str,
     comment: str,
 ) -> UpdateCommentResponse:
@@ -909,7 +909,7 @@ def update_model_comment(
     Edits an existing comment on a model version.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         comment_id: Comment ID
         comment: Updated comment text
@@ -925,7 +925,7 @@ def update_model_comment(
             comment="Updated: Accuracy improved to 96.1%"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.update_comment(
         id=comment_id,
@@ -936,8 +936,8 @@ def update_model_comment(
 
 
 def delete_model_comment(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     comment_id: str,
 ) -> DeleteCommentResponse:
     """
@@ -946,7 +946,7 @@ def delete_model_comment(
     Removes a comment from a model version.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         comment_id: Comment ID
         
@@ -957,7 +957,7 @@ def delete_model_comment(
         # Delete comment
         response = delete_model_comment(host, token, "abc123")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.delete_comment(id=comment_id)
     
@@ -971,8 +971,8 @@ def delete_model_comment(
 # ============================================================================
 
 def set_model_tag(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     key: str,
     value: str,
@@ -983,7 +983,7 @@ def set_model_tag(
     Adds or updates a tag on a registered model for organization and filtering.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         key: Tag key (max 250 bytes)
@@ -997,7 +997,7 @@ def set_model_tag(
         set_model_tag(host, token, "my-model", "team", "ml-team")
         set_model_tag(host, token, "my-model", "use_case", "fraud_detection")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.set_model_tag(
         name=name,
@@ -1009,8 +1009,8 @@ def set_model_tag(
 
 
 def delete_model_tag(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     key: str,
 ) -> DeleteTagResponse:
@@ -1020,7 +1020,7 @@ def delete_model_tag(
     Removes a tag from a registered model.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         key: Tag key to delete
@@ -1032,7 +1032,7 @@ def delete_model_tag(
         # Delete tag
         response = delete_model_tag(host, token, "my-model", "old_tag")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.delete_model_tag(
         name=name,
@@ -1043,8 +1043,8 @@ def delete_model_tag(
 
 
 def set_model_version_tag(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     version: str,
     key: str,
@@ -1056,7 +1056,7 @@ def set_model_version_tag(
     Adds or updates a tag on a specific model version.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         version: Version number
@@ -1076,7 +1076,7 @@ def set_model_version_tag(
             value="true"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.set_model_version_tag(
         name=name,
@@ -1089,8 +1089,8 @@ def set_model_version_tag(
 
 
 def delete_model_version_tag(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     version: str,
     key: str,
@@ -1101,7 +1101,7 @@ def delete_model_version_tag(
     Removes a tag from a specific model version.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Model name
         version: Version number
@@ -1119,7 +1119,7 @@ def delete_model_version_tag(
             key="old_tag"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.delete_model_version_tag(
         name=name,
@@ -1135,8 +1135,8 @@ def delete_model_version_tag(
 # ============================================================================
 
 def create_registry_webhook(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     events: List[str],
     http_url: Optional[str] = None,
     job_id: Optional[str] = None,
@@ -1151,7 +1151,7 @@ def create_registry_webhook(
     endpoints or Databricks jobs.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         events: List of events (e.g., ["MODEL_VERSION_CREATED"])
         http_url: Optional HTTP endpoint URL
@@ -1181,7 +1181,7 @@ def create_registry_webhook(
             description="Deploy on production promotion"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert events to enum
     from databricks.sdk.service.ml import RegistryWebhookEvent, HttpUrlSpec, JobSpec, RegistryWebhookStatus
@@ -1208,8 +1208,8 @@ def create_registry_webhook(
 
 
 def update_registry_webhook(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     webhook_id: str,
     events: Optional[List[str]] = None,
     http_url: Optional[str] = None,
@@ -1223,7 +1223,7 @@ def update_registry_webhook(
     Updates the configuration of an existing webhook.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         webhook_id: Webhook ID
         events: Optional updated events list
@@ -1244,7 +1244,7 @@ def update_registry_webhook(
             status="ACTIVE"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert optional parameters
     event_enums = None
@@ -1280,8 +1280,8 @@ def update_registry_webhook(
 
 
 def delete_registry_webhook(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     webhook_id: str,
 ) -> DeleteWebhookResponse:
     """
@@ -1290,7 +1290,7 @@ def delete_registry_webhook(
     Removes a webhook from the model registry.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         webhook_id: Webhook ID
         
@@ -1301,7 +1301,7 @@ def delete_registry_webhook(
         # Delete webhook
         response = delete_registry_webhook(host, token, "abc123")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.delete_webhook(id=webhook_id)
     
@@ -1311,8 +1311,8 @@ def delete_registry_webhook(
 
 
 def list_registry_webhooks(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     model_name: Optional[str] = None,
     page_token: Optional[str] = None,
 ) -> ListWebhooksResponse:
@@ -1322,7 +1322,7 @@ def list_registry_webhooks(
     Retrieves all webhooks, optionally filtered by model name.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         model_name: Optional model name filter
         page_token: Optional pagination token
@@ -1342,7 +1342,7 @@ def list_registry_webhooks(
             model_name="fraud-detection-model"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     webhooks = []
     next_token = None

@@ -1305,7 +1305,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
               <div>
                 <label className={cn('text-xs font-medium mb-1 block', isLight ? 'text-gray-700' : 'text-gray-300')}>
                   Prompt Template
-                </label>
+                  </label>
                 <RichTextEditor
                   value={createForm.promptTemplate}
                   onChange={value => setCreateForm(prev => ({ ...prev, promptTemplate: value }))}
@@ -1709,7 +1709,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                         <div>
                           <label className={cn('text-xs font-medium mb-1 block', isLight ? 'text-gray-700' : 'text-gray-300')}>
                             Prompt Template
-                          </label>
+                            </label>
                           <RichTextEditor
                             value={editForm.promptTemplate}
                             onChange={value => setEditForm(prev => (prev ? { ...prev, promptTemplate: value } : prev))}

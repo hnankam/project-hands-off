@@ -47,7 +47,9 @@ python server.py
 ### SSE Mode (HTTP)
 
 ```bash
-fastmcp run server.py --sse
+fastmcp run server.py --transport sse
+# or shorthand:
+fastmcp run server.py -t sse
 ```
 
 ### Development Mode
@@ -65,18 +67,20 @@ FastMCP automatically provides MCP protocol support. The server can be used via:
 
 ### Calling Tools
 
-Tools expect credentials as parameters:
+Tools expect **credential keys** (not raw credential values) as parameters:
 
 ```python
-# Example tool call
+# Example tool call using credential keys
 result = await client.call_tool(
     "list_queries",
     arguments={
-        "host": "https://my-workspace.cloud.databricks.com",
-        "token": "dapi1234567890..."
+        "host_credential_key": "my_databricks_host",
+        "token_credential_key": "my_databricks_token"
     }
 )
 ```
+
+**Security Note**: The agent never receives actual credential values. It only provides credential keys (globally unique identifiers from the `workspace_credentials` table), and the server fetches and decrypts the actual values server-side.
 
 ## Registering with Your Application
 
@@ -122,32 +126,34 @@ result = await client.call_tool(
 
 ## Available Tools
 
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `list_queries` | List SQL queries | `host`, `token`, `page_size` (optional), `page_token` (optional) |
-| `get_query` | Get query details | `host`, `token`, `query_id` |
-| `create_query` | Create new SQL query | `host`, `token`, `display_name`, `warehouse_id`, `query_text`, `description` (optional), etc. |
-| `update_query` | Update existing query | `host`, `token`, `query_id`, `display_name` (optional), `query_text` (optional), etc. |
-| `delete_query` | Delete query (move to trash) | `host`, `token`, `query_id` |
-| `list_query_visualizations` | List query visualizations | `host`, `token`, `query_id` |
-| `list_query_history` | List query execution history | `host`, `token`, `filter_by` (optional), `include_metrics` (optional), `max_results` (optional), `page_token` (optional) |
-| `execute_statement` | Execute SQL and get results | `host`, `token`, `statement`, `warehouse_id`, `wait_timeout` (optional), `format` (optional), `disposition` (optional), etc. |
-| `get_statement` | Poll statement status/results | `host`, `token`, `statement_id` |
-| `get_statement_result_chunk` | Fetch specific result chunk | `host`, `token`, `statement_id`, `chunk_index` |
-| `cancel_execution` | Cancel running statement | `host`, `token`, `statement_id` |
-| `list_warehouses` | List SQL warehouses | `host`, `token` |
-| `get_warehouse` | Get warehouse details | `host`, `token`, `warehouse_id` |
-| `create_warehouse` | Create new SQL warehouse | `host`, `token`, `name`, `cluster_size` (optional), etc. |
-| `update_warehouse` | Update warehouse config | `host`, `token`, `warehouse_id`, `cluster_size` (optional), etc. |
-| `delete_warehouse` | Delete SQL warehouse | `host`, `token`, `warehouse_id` |
-| `start_warehouse` | Start stopped warehouse | `host`, `token`, `warehouse_id` |
-| `stop_warehouse` | Stop running warehouse | `host`, `token`, `warehouse_id` |
-| `list_secret_scopes` | List secret scopes | `host`, `token` |
-| `create_secret_scope` | Create secret scope | `host`, `token`, `scope`, `backend_type` (optional), `initial_manage_principal` (optional) |
-| `delete_secret_scope` | Delete secret scope | `host`, `token`, `scope` |
-| `list_secrets` | List secrets in scope | `host`, `token`, `scope` |
-| `put_secret` | Store/update secret | `host`, `token`, `scope`, `key`, `string_value` or `bytes_value` |
-| `delete_secret` | Delete secret | `host`, `token`, `scope`, `key` |
+**Note**: All tools require `host_credential_key` and `token_credential_key` parameters (credential keys from the `workspace_credentials` table).
+
+| Tool | Description | Additional Parameters |
+|------|-------------|----------------------|
+| `list_queries` | List SQL queries | `page_size` (optional), `page_token` (optional) |
+| `get_query` | Get query details | `query_id` |
+| `create_query` | Create new SQL query | `display_name`, `warehouse_id`, `query_text`, `description` (optional), etc. |
+| `update_query` | Update existing query | `query_id`, `display_name` (optional), `query_text` (optional), etc. |
+| `delete_query` | Delete query (move to trash) | `query_id` |
+| `list_query_visualizations` | List query visualizations | `query_id` |
+| `list_query_history` | List query execution history | `filter_by` (optional), `include_metrics` (optional), `max_results` (optional), `page_token` (optional) |
+| `execute_statement` | Execute SQL and get results | `statement`, `warehouse_id`, `wait_timeout` (optional), `format` (optional), `disposition` (optional), etc. |
+| `get_statement` | Poll statement status/results | `statement_id` |
+| `get_statement_result_chunk` | Fetch specific result chunk | `statement_id`, `chunk_index` |
+| `cancel_execution` | Cancel running statement | `statement_id` |
+| `list_warehouses` | List SQL warehouses | - |
+| `get_warehouse` | Get warehouse details | `warehouse_id` |
+| `create_warehouse` | Create new SQL warehouse | `name`, `cluster_size` (optional), etc. |
+| `update_warehouse` | Update warehouse config | `warehouse_id`, `cluster_size` (optional), etc. |
+| `delete_warehouse` | Delete SQL warehouse | `warehouse_id` |
+| `start_warehouse` | Start stopped warehouse | `warehouse_id` |
+| `stop_warehouse` | Stop running warehouse | `warehouse_id` |
+| `list_secret_scopes` | List secret scopes | - |
+| `create_secret_scope` | Create secret scope | `scope`, `backend_type` (optional), `initial_manage_principal` (optional) |
+| `delete_secret_scope` | Delete secret scope | `scope` |
+| `list_secrets` | List secrets in scope | `scope` |
+| `put_secret` | Store/update secret | `scope`, `key`, `string_value` or `bytes_value` |
+| `delete_secret` | Delete secret | `scope`, `key` |
 | `list_secret_acls` | List ACLs on scope | `host`, `token`, `scope` |
 | `get_secret_acl` | Get ACL for principal | `host`, `token`, `scope`, `principal` |
 | `put_secret_acl` | Set ACL | `host`, `token`, `scope`, `principal`, `permission` |

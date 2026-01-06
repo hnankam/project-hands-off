@@ -26,8 +26,8 @@ from models import (
 
 
 def list_warehouses(
-    host: str,
-    token: str
+    host_credential_key: str,
+    token_credential_key: str
 ) -> ListWarehousesResponse:
     """
     List all SQL warehouses that the user has access to.
@@ -36,8 +36,8 @@ def list_warehouses(
     Essential for agents to find warehouses before executing statements.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
     
     Returns:
         ListWarehousesResponse with warehouse information
@@ -52,7 +52,7 @@ def list_warehouses(
             print(f"  Active sessions: {wh.num_active_sessions}")
             print(f"  Clusters: {wh.num_clusters}/{wh.max_num_clusters}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     warehouses = []
     for endpoint in client.warehouses.list():
@@ -66,8 +66,8 @@ def list_warehouses(
 
 
 def get_warehouse(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     warehouse_id: str
 ) -> WarehouseInfo:
     """
@@ -77,8 +77,8 @@ def get_warehouse(
     executing statements.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         warehouse_id: ID of the SQL warehouse
     
     Returns:
@@ -95,14 +95,14 @@ def get_warehouse(
             print(f"Warehouse ready! {warehouse.num_active_sessions} active sessions")
             print(f"Health: {warehouse.health.status}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     response = client.warehouses.get(id=warehouse_id)
     return _convert_warehouse_info(response.as_dict())
 
 
 def create_warehouse(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     cluster_size: str = "2X-Small",
     min_num_clusters: int = 1,
@@ -121,8 +121,8 @@ def create_warehouse(
     to provision dedicated warehouses for specific workloads.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         name: Unique warehouse name
         cluster_size: Cluster size (2X-Small, X-Small, Small, Medium, Large, X-Large, 2X-Large, 3X-Large, 4X-Large)
         min_num_clusters: Minimum number of clusters (default: 1)
@@ -163,7 +163,7 @@ def create_warehouse(
             ]
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert tags
     sdk_tags = None
@@ -195,8 +195,8 @@ def create_warehouse(
 
 
 def update_warehouse(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     warehouse_id: str,
     name: Optional[str] = None,
     cluster_size: Optional[str] = None,
@@ -214,8 +214,8 @@ def update_warehouse(
     The warehouse will restart if configuration changes require it.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         warehouse_id: ID of the warehouse to update
         name: New warehouse name
         cluster_size: New cluster size
@@ -245,7 +245,7 @@ def update_warehouse(
             auto_stop_mins=5  # Stop after 5 mins idle
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert tags if provided
     sdk_tags = None
@@ -276,8 +276,8 @@ def update_warehouse(
 
 
 def delete_warehouse(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     warehouse_id: str
 ) -> DeleteWarehouseResponse:
     """
@@ -287,8 +287,8 @@ def delete_warehouse(
     Use with caution - this cannot be undone.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         warehouse_id: ID of the warehouse to delete
     
     Returns:
@@ -299,7 +299,7 @@ def delete_warehouse(
         response = delete_warehouse(host, token, "temp-warehouse-123")
         print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     client.warehouses.delete(id=warehouse_id)
     
     return DeleteWarehouseResponse(
@@ -309,8 +309,8 @@ def delete_warehouse(
 
 
 def start_warehouse(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     warehouse_id: str
 ) -> StartWarehouseResponse:
     """
@@ -322,8 +322,8 @@ def start_warehouse(
     Essential for agents to ensure warehouses are ready before executing statements.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         warehouse_id: ID of the warehouse to start
     
     Returns:
@@ -341,7 +341,7 @@ def start_warehouse(
         # Now execute statement
         execute_statement(host, token, "SELECT * FROM table", warehouse.id)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Start warehouse and wait for RUNNING state
     started = client.warehouses.start(id=warehouse_id).result()
@@ -354,8 +354,8 @@ def start_warehouse(
 
 
 def stop_warehouse(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     warehouse_id: str
 ) -> StopWarehouseResponse:
     """
@@ -367,8 +367,8 @@ def stop_warehouse(
     Useful for agents to optimize costs by stopping idle warehouses.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         warehouse_id: ID of the warehouse to stop
     
     Returns:
@@ -384,7 +384,7 @@ def stop_warehouse(
                 response = stop_warehouse(host, token, wh.id)
                 print(response.message)
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Stop warehouse and wait for STOPPED state
     stopped = client.warehouses.stop(id=warehouse_id).result()

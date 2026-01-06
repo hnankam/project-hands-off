@@ -17,8 +17,8 @@ from models import (
 
 
 def list_notebooks(
-    host: str, 
-    token: str, 
+    host_credential_key: str, 
+    token_credential_key: str, 
     path: str = "/",
     recursive: bool = False
 ) -> ListNotebooksResponse:
@@ -26,15 +26,15 @@ def list_notebooks(
     List all notebooks in a workspace directory.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to list notebooks from (default: /)
         recursive: Whether to recursively list notebooks in subdirectories (default: False)
     
     Returns:
         ListNotebooksResponse containing list of notebooks with their metadata
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     notebooks = []
     try:
@@ -67,20 +67,20 @@ def list_notebooks(
     )
 
 
-def get_notebook(host: str, token: str, path: str, format: str = "SOURCE") -> NotebookExportResponse:
+def get_notebook(host_credential_key: str, token_credential_key: str, path: str, format: str = "SOURCE") -> NotebookExportResponse:
     """
     Export and retrieve notebook content.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to the notebook
         format: Export format - SOURCE, HTML, JUPYTER, or DBC (default: SOURCE)
     
     Returns:
         NotebookExportResponse with decoded content as string and metadata
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Map string format to ExportFormat enum
     format_map = {
@@ -121,8 +121,8 @@ def get_notebook(host: str, token: str, path: str, format: str = "SOURCE") -> No
 
 
 def import_notebook(
-    host: str, 
-    token: str, 
+    host_credential_key: str, 
+    token_credential_key: str, 
     path: str, 
     content: str,
     language: str = "PYTHON",
@@ -133,8 +133,8 @@ def import_notebook(
     Import a notebook into the workspace.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path where the notebook should be imported
         content: Notebook content as a string (will be base64-encoded internally)
         language: Notebook language - PYTHON, SCALA, SQL, or R (default: PYTHON)
@@ -144,7 +144,7 @@ def import_notebook(
     Returns:
         NotebookImportResponse with import status and metadata
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Map string language to Language enum
     language_map = {
@@ -187,20 +187,20 @@ def import_notebook(
     )
 
 
-def delete_notebook(host: str, token: str, path: str, recursive: bool = False) -> NotebookDeleteResponse:
+def delete_notebook(host_credential_key: str, token_credential_key: str, path: str, recursive: bool = False) -> NotebookDeleteResponse:
     """
     Delete a notebook from the workspace.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to the notebook to delete
         recursive: Whether to recursively delete (for directories, default: False)
     
     Returns:
         NotebookDeleteResponse with deletion status
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.workspace.delete(path=path, recursive=recursive)
     
@@ -212,8 +212,8 @@ def delete_notebook(host: str, token: str, path: str, recursive: bool = False) -
 
 
 def create_notebook(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     path: str,
     language: str = "PYTHON"
 ) -> NotebookCreateResponse:
@@ -221,15 +221,15 @@ def create_notebook(
     Create a new empty notebook in the workspace.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path where the notebook should be created
         language: Notebook language - PYTHON, SCALA, SQL, or R (default: PYTHON)
     
     Returns:
         NotebookCreateResponse with creation status
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Map string language to Language enum
     language_map = {
@@ -257,19 +257,19 @@ def create_notebook(
     )
 
 
-def get_notebook_status(host: str, token: str, path: str) -> NotebookStatusResponse:
+def get_notebook_status(host_credential_key: str, token_credential_key: str, path: str) -> NotebookStatusResponse:
     """
     Get the status/metadata of a notebook.
     
     Args:
-        host: Databricks workspace URL
-        token: Personal Access Token
+        host_credential_key: Credential key for workspace URL
+        token_credential_key: Credential key for access token
         path: The workspace path to the notebook
     
     Returns:
         NotebookStatusResponse with notebook metadata
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     status = client.workspace.get_status(path=path)
     status_dict = status.as_dict()

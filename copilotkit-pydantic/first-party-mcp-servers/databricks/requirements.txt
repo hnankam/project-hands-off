@@ -9,3 +9,13 @@ pydantic>=2.0.0
 
 # Caching
 cachetools>=5.3.0
+
+# Database (for credential resolver)
+psycopg>=3.1.0
+psycopg-pool>=3.1.0
+
+# Cryptography (for credential decryption)
+cryptography>=41.0.0
+
+# Environment variables
+python-dotenv>=1.0.0

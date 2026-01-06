@@ -78,8 +78,8 @@ def _convert_to_materialized_feature(mat_feature) -> MaterializedFeatureModel:
 # ============================================================================
 
 def list_features(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     page_size: Optional[int] = None,
     page_token: Optional[str] = None,
 ) -> ListFeaturesResponse:
@@ -89,7 +89,7 @@ def list_features(
     Retrieves all feature definitions in the workspace.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         page_size: Maximum results per page
         page_token: Pagination token
@@ -105,7 +105,7 @@ def list_features(
             print(f"  Type: {feature.feature_type}")
             print(f"  Data Type: {feature.data_type}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     features = []
     next_token = None
@@ -123,8 +123,8 @@ def list_features(
 
 
 def get_feature(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     full_name: str,
 ) -> FeatureModel:
     """
@@ -133,7 +133,7 @@ def get_feature(
     Retrieves detailed information about a specific feature.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         full_name: Full feature name (catalog.schema.table.column)
         
@@ -150,7 +150,7 @@ def get_feature(
         print(f"Type: {feature.feature_type}")
         print(f"Description: {feature.description}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     feature = client.feature_engineering.get_feature(full_name=full_name)
     
@@ -158,8 +158,8 @@ def get_feature(
 
 
 def create_feature(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     full_name: str,
     feature_type: str,
     data_type: str,
@@ -174,7 +174,7 @@ def create_feature(
     tables or streaming Kafka sources.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         full_name: Full feature name (catalog.schema.table.column)
         feature_type: Feature type (BATCH or STREAMING)
@@ -206,7 +206,7 @@ def create_feature(
             description="Real-time click count"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import Feature
     
@@ -230,8 +230,8 @@ def create_feature(
 
 
 def update_feature(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     full_name: str,
     update_mask: str,
     description: Optional[str] = None,
@@ -243,7 +243,7 @@ def update_feature(
     Updates feature metadata such as description.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         full_name: Full feature name
         update_mask: Comma-separated list of fields to update
@@ -262,7 +262,7 @@ def update_feature(
             description="User age in years"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import Feature
     
@@ -287,8 +287,8 @@ def update_feature(
 
 
 def delete_feature(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     full_name: str,
 ) -> DeleteFeatureResponse:
     """
@@ -297,7 +297,7 @@ def delete_feature(
     Deletes a feature definition. This does not delete the underlying data.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         full_name: Full feature name
         
@@ -311,7 +311,7 @@ def delete_feature(
             full_name="main.ml_features.user_features.deprecated_feature"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.feature_engineering.delete_feature(full_name=full_name)
     
@@ -325,8 +325,8 @@ def delete_feature(
 # ============================================================================
 
 def list_kafka_configs(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     page_size: Optional[int] = None,
     page_token: Optional[str] = None,
 ) -> ListKafkaConfigsResponse:
@@ -336,7 +336,7 @@ def list_kafka_configs(
     Retrieves all Kafka configurations for streaming features.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         page_size: Maximum results per page
         page_token: Pagination token
@@ -352,7 +352,7 @@ def list_kafka_configs(
             print(f"  Topic: {config.topic}")
             print(f"  Servers: {config.bootstrap_servers}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     configs = []
     next_token = None
@@ -370,8 +370,8 @@ def list_kafka_configs(
 
 
 def get_kafka_config(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> KafkaConfigModel:
     """
@@ -380,7 +380,7 @@ def get_kafka_config(
     Retrieves detailed information about a Kafka configuration.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Kafka config name
         
@@ -393,7 +393,7 @@ def get_kafka_config(
         print(f"Topic: {config.topic}")
         print(f"Bootstrap servers: {config.bootstrap_servers}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     config = client.feature_engineering.get_kafka_config(name=name)
     
@@ -401,8 +401,8 @@ def get_kafka_config(
 
 
 def create_kafka_config(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     topic: str,
     bootstrap_servers: str,
@@ -417,7 +417,7 @@ def create_kafka_config(
     referenced by streaming features to consume data from Kafka topics.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Unique config name
         topic: Kafka topic name
@@ -440,7 +440,7 @@ def create_kafka_config(
             sasl_mechanism="PLAIN"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import KafkaConfig
     
@@ -466,8 +466,8 @@ def create_kafka_config(
 
 
 def update_kafka_config(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
     update_mask: List[str],
     topic: Optional[str] = None,
@@ -482,7 +482,7 @@ def update_kafka_config(
     Updates Kafka configuration settings.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Kafka config name
         update_mask: List of fields to update
@@ -504,7 +504,7 @@ def update_kafka_config(
             bootstrap_servers="new-kafka1.example.com:9092"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import KafkaConfig, FieldMask
     
@@ -534,8 +534,8 @@ def update_kafka_config(
 
 
 def delete_kafka_config(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     name: str,
 ) -> DeleteKafkaConfigResponse:
     """
@@ -544,7 +544,7 @@ def delete_kafka_config(
     Deletes a Kafka configuration. Features using this config must be deleted first.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         name: Kafka config name
         
@@ -555,7 +555,7 @@ def delete_kafka_config(
         # Delete Kafka config
         response = delete_kafka_config(host, token, "old_kafka_config")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.feature_engineering.delete_kafka_config(name=name)
     
@@ -569,8 +569,8 @@ def delete_kafka_config(
 # ============================================================================
 
 def list_materialized_features(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     feature_name: Optional[str] = None,
     page_size: Optional[int] = None,
     page_token: Optional[str] = None,
@@ -581,7 +581,7 @@ def list_materialized_features(
     Retrieves materialized features, optionally filtered by source feature.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         feature_name: Filter by source feature name (optional)
         page_size: Maximum results per page
@@ -604,7 +604,7 @@ def list_materialized_features(
             feature_name="main.ml_features.user_features.age"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     mat_features = []
     next_token = None
@@ -623,8 +623,8 @@ def list_materialized_features(
 
 
 def get_materialized_feature(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     materialized_feature_id: str,
 ) -> MaterializedFeatureModel:
     """
@@ -633,7 +633,7 @@ def get_materialized_feature(
     Retrieves detailed information about a materialized feature.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         materialized_feature_id: Materialized feature ID
         
@@ -646,7 +646,7 @@ def get_materialized_feature(
         print(f"Source: {mat_feature.feature_name}")
         print(f"State: {mat_feature.pipeline_state}")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     mat_feature = client.feature_engineering.get_materialized_feature(
         materialized_feature_id=materialized_feature_id
@@ -656,8 +656,8 @@ def get_materialized_feature(
 
 
 def create_materialized_feature(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     feature_name: str,
     destination_table: str,
     schedule: Optional[str] = None,
@@ -671,7 +671,7 @@ def create_materialized_feature(
     for efficient serving.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         feature_name: Source feature name
         destination_table: Destination table for materialized values
@@ -692,7 +692,7 @@ def create_materialized_feature(
             pipeline_state="ACTIVE"
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import MaterializedFeature
     
@@ -717,8 +717,8 @@ def create_materialized_feature(
 
 
 def batch_create_materialized_features(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     requests: List[Dict[str, Any]],
 ) -> BatchCreateMaterializedFeaturesResponse:
     """
@@ -727,7 +727,7 @@ def batch_create_materialized_features(
     Creates multiple materialized features in a single operation.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         requests: List of materialized feature requests, each containing:
             - feature_name: Source feature name
@@ -756,7 +756,7 @@ def batch_create_materialized_features(
             ]
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import CreateMaterializedFeatureRequest
     
@@ -779,8 +779,8 @@ def batch_create_materialized_features(
 
 
 def update_materialized_feature(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     materialized_feature_id: str,
     update_mask: str,
     pipeline_state: Optional[str] = None,
@@ -794,7 +794,7 @@ def update_materialized_feature(
     the materialization pipeline.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         materialized_feature_id: Materialized feature ID
         update_mask: Comma-separated list of fields to update
@@ -823,7 +823,7 @@ def update_materialized_feature(
             schedule="0 */12 * * *"  # Every 12 hours
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import MaterializedFeature
     
@@ -849,8 +849,8 @@ def update_materialized_feature(
 
 
 def delete_materialized_feature(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     materialized_feature_id: str,
 ) -> DeleteMaterializedFeatureResponse:
     """
@@ -859,7 +859,7 @@ def delete_materialized_feature(
     Deletes a materialized feature pipeline. The destination table is not deleted.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         materialized_feature_id: Materialized feature ID
         
@@ -870,7 +870,7 @@ def delete_materialized_feature(
         # Delete materialized feature
         response = delete_materialized_feature(host, token, "mat-123")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.feature_engineering.delete_materialized_feature(
         materialized_feature_id=materialized_feature_id

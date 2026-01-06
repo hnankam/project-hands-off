@@ -45,8 +45,8 @@ def _convert_to_forecasting_experiment(experiment) -> ForecastingExperimentModel
 # ============================================================================
 
 def create_forecasting_experiment(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     train_data_path: str,
     target_column: str,
     time_column: str,
@@ -73,7 +73,7 @@ def create_forecasting_experiment(
     models and selects the best one. Supports Prophet, ARIMA, and DeepAR frameworks.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         train_data_path: Unity Catalog table path (catalog.schema.table)
         target_column: Column to predict
@@ -139,7 +139,7 @@ def create_forecasting_experiment(
             wait_for_completion=True
         )
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     if wait_for_completion:
         # Use the blocking version that waits for completion
@@ -192,8 +192,8 @@ def create_forecasting_experiment(
 
 
 def get_forecasting_experiment(
-    host: str,
-    token: str,
+    host_credential_key: str,
+    token_credential_key: str,
     experiment_id: str,
 ) -> ForecastingExperimentModel:
     """
@@ -203,7 +203,7 @@ def get_forecasting_experiment(
     its state, configuration, and results.
     
     Args:
-        host: Databricks workspace URL
+        host_credential_key: Credential key for workspace URL
         token: Authentication token
         experiment_id: Experiment ID
         
@@ -229,7 +229,7 @@ def get_forecasting_experiment(
         elif experiment.state in ["PENDING", "RUNNING"]:
             print("Experiment still in progress...")
     """
-    client = get_workspace_client(host, token)
+    client = get_workspace_client(host_credential_key, token_credential_key)
     
     experiment = client.forecasting.get_experiment(experiment_id=experiment_id)
     
