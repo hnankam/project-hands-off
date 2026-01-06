@@ -16,6 +16,7 @@ import { themeStorage } from '@extension/storage';
 export interface TableProps {
   children: React.ReactNode;
   isLight: boolean;
+  hideToolbar?: boolean;
 }
 
 /**
@@ -23,7 +24,7 @@ export interface TableProps {
  * 
  * Uses inline styles to ensure consistent rendering across contexts
  */
-export const Table: React.FC<TableProps> = ({ children, isLight }) => {
+export const Table: React.FC<TableProps> = ({ children, isLight, hideToolbar = false }) => {
   const [copied, setCopied] = useState(false);
   const tableId = useMemo(() => `custom-table-${Math.random().toString(36).substr(2, 9)}`, []);
   const tableRef = useRef<HTMLTableElement>(null);
@@ -106,6 +107,7 @@ export const Table: React.FC<TableProps> = ({ children, isLight }) => {
       }}
     >
       {/* Toolbar */}
+      {!hideToolbar && (
       <div
         style={{
           display: 'flex',
@@ -190,6 +192,7 @@ export const Table: React.FC<TableProps> = ({ children, isLight }) => {
           </button>
         </div>
       </div>
+      )}
       {/* Table Content */}
       <div
         style={{
@@ -407,6 +410,7 @@ interface CustomTableWrapperProps {
   children?: React.ReactNode;
   className?: string;
   node?: any;
+  hideToolbars?: boolean;
   [key: string]: any;
 }
 
@@ -419,6 +423,7 @@ interface CustomTableWrapperProps {
 export const CustomTableWrapper: React.FC<CustomTableWrapperProps> = ({
   children,
   className,
+  hideToolbars = false,
   ...props
 }) => {
   const themeState = useStorage(themeStorage);
@@ -426,7 +431,7 @@ export const CustomTableWrapper: React.FC<CustomTableWrapperProps> = ({
 
   return (
     <div className="custom-table-wrapper">
-      <Table isLight={isLight}>
+      <Table isLight={isLight} hideToolbar={hideToolbars}>
         {children}
       </Table>
     </div>

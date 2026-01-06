@@ -792,7 +792,8 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
                             >
                               <CustomMarkdownRenderer 
                                 content={formatToolArgsAsMarkdown(tc.tool_name, tc.args)} 
-                                isLight={isLight} 
+                                isLight={isLight}
+                                hideToolbars={true}
                               />
                             </AutoScrollDiv>
                           )}
@@ -808,7 +809,7 @@ export const GraphStepItem: FC<GraphStepItemProps> = memo(({ step, isLight, isLa
                                 style={{ color: isLight ? '#374151' : '#d1d5db' }}
                                 className="text-xs max-h-60 overflow-y-auto"
                               >
-                                <CustomMarkdownRenderer content={formatToolResultAsMarkdown(tc.tool_name, tc.result)} isLight={isLight} />
+                                <CustomMarkdownRenderer content={formatToolResultAsMarkdown(tc.tool_name, tc.result)} isLight={isLight} hideToolbars={true} />
                               </AutoScrollDiv>
                             </div>
                           )}

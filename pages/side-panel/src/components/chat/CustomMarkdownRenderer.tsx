@@ -26,6 +26,8 @@ interface CustomMarkdownRendererProps {
   customTagRenderers?: Record<string, React.ComponentType<{ children?: React.ReactNode; isComplete?: boolean; instanceId?: string }>>;
   /** Whether to use light theme (for backward compatibility, but components read from storage) */
   isLight?: boolean;
+  /** Whether to hide toolbars on code blocks and tables (for document viewing) */
+  hideToolbars?: boolean;
 }
 
 /**
@@ -121,6 +123,7 @@ export const CustomMarkdownRenderer: React.FC<CustomMarkdownRendererProps> = ({
   className,
   customTagRenderers,
   isLight, // For backward compatibility, but not used (components read from storage)
+  hideToolbars = false,
   ...props
 }) => {
   // Preprocess content to ensure proper markdown formatting
@@ -139,11 +142,12 @@ export const CustomMarkdownRenderer: React.FC<CustomMarkdownRendererProps> = ({
   }, [customTagRenderers]);
   
   // Memoize Streamdown component config to prevent recreation
+  // Pass hideToolbars prop to code block and table wrappers
   const streamdownComponents = useMemo(() => ({
-    pre: CustomCodeBlockWrapper,
-    table: CustomTableWrapper,
+    pre: (props: any) => <CustomCodeBlockWrapper {...props} hideToolbars={hideToolbars} />,
+    table: (props: any) => <CustomTableWrapper {...props} hideToolbars={hideToolbars} />,
     a: CustomLinkWrapper,  // Custom link component with chip styling
-  }), []);
+  }), [hideToolbars]);
   
   // Track instance IDs for stable keys (prevents remounting during streaming)
   const instanceIdRef = useRef<Map<string, string>>(new Map());
@@ -363,13 +367,14 @@ export const CustomMarkdownRenderer: React.FC<CustomMarkdownRendererProps> = ({
           content={contentParts.after}
           className={className}
           customTagRenderers={customTagRenderers}
+          hideToolbars={hideToolbars}
           {...props}
         />
       );
     }
     
     return <>{parts}</>;
-  }, [contentParts, className, allTagRenderers, customTagRenderers, streamdownComponents, getStableInstanceId, processedContent, props]);
+  }, [contentParts, className, allTagRenderers, customTagRenderers, streamdownComponents, getStableInstanceId, processedContent, hideToolbars, props]);
 
   return <div className={className}>{renderContent}</div>;
 };

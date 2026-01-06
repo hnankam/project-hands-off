@@ -60,6 +60,7 @@ export interface CodeBlockProps {
   language: string;
   code: string;
   isLight: boolean;
+  hideToolbar?: boolean;
 }
 
 /**
@@ -69,7 +70,7 @@ export interface CodeBlockProps {
  * - CustomCodeBlockWrapper (for CopilotKit V2 chat)
  * - MarkdownRenderer (for graph card and other markdown rendering)
  */
-export const CodeBlock: React.FC<CodeBlockProps> = memo(({ language, code, isLight }) => {
+export const CodeBlock: React.FC<CodeBlockProps> = memo(({ language, code, isLight, hideToolbar = false }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -107,6 +108,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = memo(({ language, code, isLig
       }}
     >
       {/* Toolbar */}
+      {!hideToolbar && (
       <div
         style={{
           display: 'flex',
@@ -191,6 +193,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = memo(({ language, code, isLig
           </button>
         </div>
       </div>
+      )}
       {/* Code Content with Syntax Highlighting */}
       <SyntaxHighlighter
         style={isLight ? oneLight : oneDark}
@@ -198,7 +201,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = memo(({ language, code, isLig
         PreTag="div"
         customStyle={{
           margin: 0,
-          padding: '12px 14px',
+          padding: hideToolbar ? '12px 14px' : '12px 14px',
           borderRadius: 0,
           backgroundColor: isLight ? '#ffffff' : '#0d1117',
           fontSize: '13px',
@@ -211,12 +214,17 @@ export const CodeBlock: React.FC<CodeBlockProps> = memo(({ language, code, isLig
             fontSize: '13px',
             fontWeight: 'normal',
             fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+            display: 'block',
           }
         }}
         lineProps={{
           style: {
-            backgroundColor: isLight ? '#ffffff' : '#0d1117',
+            backgroundColor: 'transparent',
+            display: 'block',
           }
+        }}
+        lineNumberStyle={{
+          display: 'none',
         }}
       >
         {code.replace(/\n$/, '')}
@@ -235,6 +243,7 @@ interface CustomCodeBlockWrapperProps {
   children?: React.ReactNode;
   className?: string;
   node?: any;
+  hideToolbars?: boolean;
   [key: string]: any;
 }
 
@@ -298,6 +307,7 @@ function extractCodeInfo(children: React.ReactNode): { code: string; language: s
 export const CustomCodeBlockWrapper: React.FC<CustomCodeBlockWrapperProps> = memo(({
   children,
   className,
+  hideToolbars = false,
   ...props
 }) => {
   const themeState = useStorage(themeStorage);
@@ -316,7 +326,7 @@ export const CustomCodeBlockWrapper: React.FC<CustomCodeBlockWrapperProps> = mem
   }
 
   // Handle all other code with syntax highlighting
-  return <CodeBlock language={language} code={code} isLight={isLight} />;
+  return <CodeBlock language={language} code={code} isLight={isLight} hideToolbar={hideToolbars} />;
 });
 
 CustomCodeBlockWrapper.displayName = 'CustomCodeBlockWrapper';

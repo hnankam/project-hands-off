@@ -170,7 +170,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
           file_type: file.type,
           file_size: file.size,
           storage_url: storageUrl,
-          folder: currentFolder || undefined,
+          folder: currentFolder ?? null,
         }),
       });
 
@@ -642,6 +642,66 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     }
   };
 
+  const handleDownloadFile = async (file: WorkspaceFile) => {
+    try {
+      console.log('[Workspace] Downloading file:', file.file_name);
+      
+      let fileBlob: Blob;
+      
+      // Check if storage_url is a data URI (placeholder) - fetch full content from API
+      if (file.storage_url.startsWith('data:')) {
+        console.log('[Workspace] Storage URL is a data URI, fetching full content from API');
+        
+        // Fetch full content from the API endpoint
+        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${baseURL}/api/workspace/files/${file.id}/content`, {
+          credentials: 'include',
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch file content from API');
+        }
+        
+        const data = await response.json();
+        const content = data.content || '';
+        
+        // Create blob from text content
+        fileBlob = new Blob([content], { type: file.file_type || 'text/plain' });
+      } else {
+        // Fetch the file from Firebase Storage or other URL
+        console.log('[Workspace] Fetching from storage URL');
+        const response = await fetch(file.storage_url);
+        
+        if (!response.ok) {
+          throw new Error(`Failed to download file: ${response.status}`);
+        }
+        
+        // Get the blob
+        const blob = await response.blob();
+        
+        // Create a blob with the correct MIME type
+        fileBlob = new Blob([blob], { type: file.file_type || 'application/octet-stream' });
+      }
+      
+      // Create object URL and trigger download
+      const url = URL.createObjectURL(fileBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.file_name;
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      console.log('[Workspace] File downloaded successfully:', file.file_name);
+    } catch (error) {
+      console.error('[Workspace] Error downloading file:', error);
+      alert('Failed to download file. Please try again.');
+    }
+  };
+
   const getFileType = (fileName: string): { language: string; isMarkdown: boolean; isImage: boolean; isPdf: boolean } => {
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
 
@@ -705,10 +765,21 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
     // For PDFs, we don't need to load content - just show the iframe
     if (fileType.isPdf) {
+      // PDFs should always have Firebase Storage URLs, not data URIs
+      const pdfUrl = file.storage_url.startsWith('data:') ? null : file.storage_url;
+      
+      if (!pdfUrl) {
+        return (
+          <div className={cn('flex items-center justify-center py-8', isLight ? 'text-gray-500' : 'text-gray-400')}>
+            <div className="text-xs">PDF preview not available. Please download the file.</div>
+          </div>
+        );
+      }
+      
       return (
         <div className="flex flex-col items-center justify-center py-4 px-4">
           <iframe
-            src={file.storage_url}
+            src={pdfUrl}
             className="w-full rounded border"
             style={{
               height: '600px',
@@ -717,7 +788,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
             title={file.file_name}
           />
           <a
-            href={file.storage_url}
+            href={pdfUrl}
             target="_blank"
             rel="noopener noreferrer"
             className={cn(
@@ -755,16 +826,37 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
 
     // Render image
     if (fileType.isImage) {
+      // Images should always have Firebase Storage URLs, not data URIs
+      const imageUrl = file.storage_url.startsWith('data:') ? null : file.storage_url;
+      
+      if (!imageUrl) {
+        return (
+          <div className={cn('flex items-center justify-center py-8', isLight ? 'text-gray-500' : 'text-gray-400')}>
+            <div className="text-xs">Image preview not available. Please download the file.</div>
+          </div>
+        );
+      }
+      
       return (
-        <div className="flex items-center justify-center py-4">
+        <div className="flex items-center justify-center py-4 px-4">
           <img
-            src={file.storage_url}
+            src={imageUrl}
             alt={file.file_name}
             className="max-h-96 max-w-full rounded border"
             style={{
               borderColor: isLight ? '#e5e7eb' : '#374151',
             }}
             referrerPolicy="no-referrer"
+            onError={(e) => {
+              console.error('[Workspace] Failed to load image:', file.storage_url);
+              const target = e.currentTarget;
+              target.style.display = 'none';
+              const errorDiv = document.createElement('div');
+              errorDiv.className = isLight ? 'text-gray-500' : 'text-gray-400';
+              errorDiv.textContent = 'Failed to load image';
+              errorDiv.className += ' text-xs';
+              target.parentElement?.appendChild(errorDiv);
+            }}
           />
         </div>
       );
@@ -773,8 +865,8 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     // Render markdown
     if (fileType.isMarkdown) {
       return (
-        <div className={cn('px-4 py-3', isLight ? 'bg-white' : 'bg-[#0d1117]')}>
-          <CustomMarkdownRenderer content={fileData.content} isLight={isLight} />
+        <div className={cn('px-4 py-3', isLight ? 'bg-gray-50' : 'bg-[#0d1117]')}>
+          <CustomMarkdownRenderer content={fileData.content} isLight={isLight} hideToolbars={true} />
         </div>
       );
     }
@@ -782,7 +874,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     // Render code/text
     return (
       <div className="overflow-auto" style={{ maxHeight: '400px' }}>
-        <CodeBlock language={fileType.language} code={fileData.content} isLight={isLight} />
+        <CodeBlock language={fileType.language} code={fileData.content} isLight={isLight} hideToolbar={true}/>
       </div>
     );
   };
@@ -1274,11 +1366,11 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                             <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                           </svg>
                         </button>
-                        <a
-                          href={file.storage_url}
-                          download={file.file_name}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadFile(file);
+                          }}
                           className={cn(
                             'rounded p-1 transition-colors',
                             isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400',
@@ -1287,7 +1379,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                           </svg>
-                        </a>
+                        </button>
                         <button
                           onClick={() => openDeleteDialog(file.id, file.file_name)}
                           disabled={renamingFileId !== null}
@@ -1319,8 +1411,8 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                       <td colSpan={bulkSelectMode ? 5 : 4}>
                         <div
                           className={cn(
-                            'border-l-2 ml-3',
-                            isLight ? 'border-blue-200' : 'border-blue-800',
+                            'ml-3',
+                            isLight ? 'bg-gray-50' : 'bg-[#0d1117]',
                           )}
                           style={{
                             maxHeight: '500px',

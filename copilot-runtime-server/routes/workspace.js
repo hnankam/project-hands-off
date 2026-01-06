@@ -564,10 +564,15 @@ router.post('/files/register', requireAuth, express.json(), async (req, res) => 
       storage_url, 
       extracted_text = null,
       page_count = null,
-      folder = 'chat-uploads', 
+      folder, 
       tags = [], 
       description = '' 
     } = req.body;
+    
+    // Default to 'chat-uploads' only if folder is not provided (undefined)
+    // If folder is null, it means root (explicitly set)
+    // If folder is a string, use that folder name
+    const finalFolder = folder === undefined ? 'chat-uploads' : folder;
     
     if (!file_name || !file_type || !file_size || !storage_url) {
       return res.status(400).json({ error: 'Missing required fields: file_name, file_type, file_size, storage_url' });
@@ -587,7 +592,7 @@ router.post('/files/register', requireAuth, express.json(), async (req, res) => 
         storage_url,
         extracted_text,
         page_count,
-        folder,
+        finalFolder,
         Array.isArray(tags) ? tags : (tags ? tags.split(',').map(t => t.trim()) : []),
         description
       ]

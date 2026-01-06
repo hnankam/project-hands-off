@@ -1751,6 +1751,7 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
           ? React.cloneElement(sendButton as React.ReactElement<any>, {
               style: {
                 ...((sendButton as any).props?.style || {}),
+                marginBottom: '5px',
                 // Different background colors based on state
                 backgroundColor: isEnabled
                   ? (isLight 

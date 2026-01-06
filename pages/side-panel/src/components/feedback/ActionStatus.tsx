@@ -356,11 +356,11 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
                       maxHeight: 200,
                     }}
                   >
-                    <CustomMarkdownRenderer content={content} isLight={isLight} />
+                    <CustomMarkdownRenderer content={content} isLight={isLight} hideToolbars={true} />
                   </div>
                 ) : (
                   <div ref={inputScrollRef as any} style={{ maxHeight: 200, overflow: 'auto' }}>
-                    <CodeBlock language={language || 'text'} code={content} isLight={isLight} />
+                    <CodeBlock language={language || 'text'} code={content} isLight={isLight} hideToolbar={true} />
                   </div>
                 )}
               </div>
@@ -391,11 +391,11 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
                       maxHeight: 200,
                     }}
                   >
-                    <CustomMarkdownRenderer content={content} isLight={isLight} />
+                    <CustomMarkdownRenderer content={content} isLight={isLight} hideToolbars={true} />
                   </div>
                 ) : (
                   <div ref={outputScrollRef as any} style={{ maxHeight: 200, overflow: 'auto' }}>
-                    <CodeBlock language={language || 'text'} code={content} isLight={isLight} />
+                    <CodeBlock language={language || 'text'} code={content} isLight={isLight} hideToolbar={true} />
                   </div>
                 )}
               </div>
@@ -428,7 +428,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
                       paddingLeft: 8,
                     }}
                   >
-                    <CustomMarkdownRenderer content={content} isLight={isLight} />
+                    <CustomMarkdownRenderer content={content} isLight={isLight} hideToolbars={true} />
                   </div>
                 ) : (
                   <div 
@@ -440,7 +440,7 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
                       paddingLeft: 8,
                     }}
                   >
-                    <CodeBlock language={language || 'text'} code={content} isLight={isLight} />
+                    <CodeBlock language={language || 'text'} code={content} isLight={isLight} hideToolbar={true} />
                   </div>
                 )}
               </div>

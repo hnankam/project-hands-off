@@ -570,10 +570,10 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                     padding: 12,
                     maxHeight: 400,
                     overflow: 'auto',
-                    backgroundColor: isLight ? 'rgba(255, 255, 255, 0.5)' : 'rgba(13, 17, 23, 0.5)',
+                    backgroundColor: isLight ? 'rgba(249, 250, 251, 0.5)' : 'rgba(13, 17, 23, 0.5)',
                   }}
                 >
-                  <CustomMarkdownRenderer content={displayContent} isLight={isLight} />
+                  <CustomMarkdownRenderer content={displayContent} isLight={isLight} hideToolbars={true} />
                 </AutoScrollDiv>
               ) : (
                 <AutoScrollDiv
@@ -1060,10 +1060,10 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                         padding: 12,
                         maxHeight: 400,
                         overflow: 'auto',
-                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.5)' : 'rgba(13, 17, 23, 0.5)',
+                        backgroundColor: isLight ? 'rgba(249, 250, 251, 0.5)' : 'rgba(13, 17, 23, 0.5)',
                       }}
                     >
-                      <CustomMarkdownRenderer content={displayContent} isLight={isLight} />
+                      <CustomMarkdownRenderer content={displayContent} isLight={isLight} hideToolbars={true} />
                     </AutoScrollDiv>
                   ) : (
                     <AutoScrollDiv
