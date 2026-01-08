@@ -7,6 +7,7 @@
 import React from 'react';
 import { cn } from '@extension/ui';
 import type { AlertState } from '../../hooks/useAlerts';
+import { Z_INDEX } from '../../constants/ui';
 
 export interface AlertBannerProps {
   /** Alert state from useAlerts hook */
@@ -19,6 +20,8 @@ export interface AlertBannerProps {
   onDismiss: () => void;
   /** Additional className */
   className?: string;
+  /** Stack index for multiple alerts (0-based) */
+  stackIndex?: number;
 }
 
 const getAlertStyles = (type: AlertBannerProps['type'], isLight: boolean) => {
@@ -89,23 +92,31 @@ export const AlertBanner: React.FC<AlertBannerProps> = ({
   isLight,
   onDismiss,
   className,
+  stackIndex = 0,
 }) => {
   if (!alert.message || !alert.visible) {
     return null;
   }
 
   const styles = getAlertStyles(type, isLight);
+  // Stack alerts vertically: each alert is offset by its index * (height + gap)
+  // Approximate height: ~60px per alert + 12px gap = ~72px per alert
+  const topOffset = stackIndex * 72; // Offset per alert
 
   return (
     <div
       className={cn(
-        'mb-4 p-3 rounded-lg text-sm flex items-start justify-between gap-3',
+        'w-full p-3 rounded-lg text-sm flex items-start justify-between gap-3',
         'transform transition-all duration-300 ease-out',
         styles.bg,
         styles.text,
-        alert.closing ? 'opacity-0 scale-95' : 'opacity-100 scale-100',
+        alert.closing ? 'opacity-0 scale-95 translate-y-[-10px]' : 'opacity-100 scale-100 translate-y-0',
         className,
       )}
+      style={{ 
+        zIndex: Z_INDEX.toast + stackIndex,
+        marginTop: stackIndex > 0 ? `${topOffset}px` : '0',
+      }}
     >
       <div className="flex-1 flex items-start gap-2">
         <AlertIcon type={type} />

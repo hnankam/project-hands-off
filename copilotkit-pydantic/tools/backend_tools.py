@@ -39,6 +39,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, BinaryImage, ToolReturn
 from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
 from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, CustomEvent, RunAgentInput, UserMessage, BaseEvent, ActivitySnapshotEvent, ActivityDeltaEvent
+from ag_ui.encoder import EventEncoder
 
 from core.models import AgentState, Step, StepStatus, UnifiedDeps, PlanInstance, GraphInstance
 
@@ -50,7 +51,7 @@ from config import logger
 from utils.firebase_storage import upload_binary_image_to_storage
 
 # Import auxiliary agent factory
-from tools.auxiliary_agents import get_auxiliary_agent
+from tools.auxiliary_agents import get_auxiliary_agent, get_custom_auxiliary_agent, get_custom_auxiliary_agents_config
 
 # Multi-agent graph tools moved to graph_tools.py
 
@@ -860,6 +861,94 @@ def _get_agent_context(ctx: RunContext[Any]) -> tuple[str | None, str | None, st
     )
 
 
+async def run_aux_agent_streaming(
+    aux_agent: Agent,
+    user_message: str,
+    send_stream: Any,
+    run_input: RunAgentInput,
+    aux_type: str = "",
+) -> Any:
+    """Run auxiliary agent with streaming events forwarded to frontend.
+    
+    Only tool call events are forwarded to avoid interfering with 
+    the parent agent's run lifecycle and message stream.
+    
+    Args:
+        aux_agent: The auxiliary agent to run
+        user_message: Message to send to the agent
+        send_stream: Stream to forward events to (can be None)
+        run_input: RunAgentInput from parent (ensures thread_id matches)
+        aux_type: Type of auxiliary agent (e.g., 'image_generation', 'web_search')
+        
+    Returns:
+        The final result from the agent run
+    """
+    # Known auxiliary types that should NOT inherit parent tools
+    NO_TOOLS_AUX_TYPES = {'image_generation', 'web_search', 'code_execution', 'url_context'}
+    
+    # Inherit tools from parent only for unknown aux types
+    tools = [] if aux_type in NO_TOOLS_AUX_TYPES else (run_input.tools or [])
+    
+    # Create a sub-agent run_input that inherits thread_id from parent
+    sub_run_input = RunAgentInput(
+        thread_id=run_input.thread_id,  # Inherit thread_id from parent
+        run_id=str(uuid.uuid4()),  # New run_id for this sub-agent
+        messages=[UserMessage(id=str(uuid.uuid4()), content=user_message)],
+        state=run_input.state or {},
+        context=run_input.context or [],
+        tools=tools,
+        forwarded_props=run_input.forwarded_props or None,
+    )
+    
+    # Create adapter for streaming
+    adapter = AGUIAdapter(
+        agent=aux_agent,
+        run_input=sub_run_input,
+        accept=SSE_CONTENT_TYPE
+    )
+    
+    # Create encoder for event serialization
+    encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+    
+    # Only forward tool call events from aux agent
+    ALLOWED_EVENT_TYPES = {
+        'TOOL_CALL_START',
+        'TOOL_CALL_ARGS', 
+        'TOOL_CALL_END',
+        'TOOL_CALL_RESULT',
+    }
+    
+    # Capture result via callback
+    result_holder = [None]
+    def capture_result(result):
+        result_holder[0] = result
+    
+    # Stream events - only forward tool call events to frontend
+    async for event in adapter.run_stream(on_complete=capture_result):
+        print(f"Auxiliary Agent Event: {event}")
+        if send_stream is not None:
+            try:
+                # Check event type
+                event_type = None
+                if hasattr(event, 'type'):
+                    event_type = event.type.value if hasattr(event.type, 'value') else str(event.type)
+                
+                # Only send allowed event types (tool calls)
+                if event_type not in ALLOWED_EVENT_TYPES:
+                    logger.debug("Skipping aux agent event: %s", event_type)
+                    continue
+                
+                # Encode and send event object
+                if not isinstance(event, str):
+                    encoded = encoder.encode(event)
+                    await send_stream.send(encoded)
+            except Exception as e:
+                # Stream might be closed, log and continue
+                logger.debug("Failed to send event to stream: %s", e)
+    
+    return result_holder[0]
+
+
 # ========== Image Generation Tools ==========
 
 async def generate_images(
@@ -916,7 +1005,25 @@ async def generate_images(
         
         logger.info("Running auxiliary agent for image generation with prompt: %s", prompt[:100])
         
-        result = await aux_agent.run(user_message)
+        # Get send_stream and run_input from deps for streaming events to frontend
+        deps = ctx.deps
+        send_stream = getattr(deps, 'send_stream', None) if deps else None
+        adapter = getattr(deps, 'adapter', None) if deps else None
+        run_input = adapter.run_input if adapter else None
+        
+        if run_input is None:
+            error_msg = "No run_input available in deps - streaming requires run_input from adapter"
+            logger.error(error_msg)
+            return [error_msg]  # Return list since this function returns list[str]
+
+        # Run with streaming - events are forwarded to frontend
+        result = await run_aux_agent_streaming(
+            aux_agent=aux_agent,
+            user_message=user_message,
+            send_stream=send_stream,
+            run_input=run_input,
+            aux_type='image_generation',
+        )
                 
         # Upload each BinaryImage to Firebase Storage
         uploaded_urls = []
@@ -1069,8 +1176,29 @@ async def web_search(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
         return error_msg  # Return string since this function returns str
     
     try:
-        result = await aux_agent.run(prompt)
-        return result.response.text
+        logger.info("Running auxiliary agent for web search with prompt: %s", prompt[:100])
+        
+        # Get send_stream and run_input from deps for streaming events to frontend
+        deps = ctx.deps
+        send_stream = getattr(deps, 'send_stream', None) if deps else None
+        adapter = getattr(deps, 'adapter', None) if deps else None
+        run_input = adapter.run_input if adapter else None
+        
+        if run_input is None:
+            error_msg = "No run_input available in deps - streaming requires run_input from adapter"
+            logger.error(error_msg)
+            return error_msg  # Return string since this function returns str
+
+        # Run with streaming - events are forwarded to frontend
+        result = await run_aux_agent_streaming(
+            aux_agent=aux_agent,
+            user_message=prompt,
+            send_stream=send_stream,
+            run_input=run_input,
+            aux_type='web_search',
+        )
+        
+        return result.response.text if result and result.response else "Web search completed (no results)"
     except Exception as e:
         error_msg = f"Web search failed: {str(e)}"
         logger.exception("Web search failed: %s", e)
@@ -1120,8 +1248,31 @@ async def code_execution(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
         return error_msg  # Return string since this function returns str
     
     try:
-        result = await aux_agent.run(f"Execute this code and return the result: {prompt}")
-        return result.response.text
+        user_message = f"Execute this code and return the result: {prompt}"
+        
+        logger.info("Running auxiliary agent for code execution with prompt: %s", prompt[:100])
+        
+        # Get send_stream and run_input from deps for streaming events to frontend
+        deps = ctx.deps
+        send_stream = getattr(deps, 'send_stream', None) if deps else None
+        adapter = getattr(deps, 'adapter', None) if deps else None
+        run_input = adapter.run_input if adapter else None
+        
+        if run_input is None:
+            error_msg = "No run_input available in deps - streaming requires run_input from adapter"
+            logger.error(error_msg)
+            return error_msg  # Return string since this function returns str
+
+        # Run with streaming - events are forwarded to frontend
+        result = await run_aux_agent_streaming(
+            aux_agent=aux_agent,
+            user_message=user_message,
+            send_stream=send_stream,
+            run_input=run_input,
+            aux_type='code_execution',
+        )
+        
+        return result.response.text if result and result.response else "Code execution completed (no output)"
     except Exception as e:
         error_msg = f"Code execution failed: {str(e)}"
         logger.exception("Code execution failed: %s", e)
@@ -1173,12 +1324,133 @@ async def url_context(ctx: RunContext[UnifiedDeps], urls: list[str]) -> str:
     try:
         # Format URLs as a prompt
         urls_text = "\n".join(urls)
-        result = await aux_agent.run(f"Load content from these URLs:\n{urls_text}")
-        return result.response.text
+        user_message = f"Load content from these URLs:\n{urls_text}"
+        
+        logger.info("Running auxiliary agent for URL context with %d URLs", len(urls))
+        
+        # Get send_stream and run_input from deps for streaming events to frontend
+        deps = ctx.deps
+        send_stream = getattr(deps, 'send_stream', None) if deps else None
+        adapter = getattr(deps, 'adapter', None) if deps else None
+        run_input = adapter.run_input if adapter else None
+        
+        if run_input is None:
+            error_msg = "No run_input available in deps - streaming requires run_input from adapter"
+            logger.error(error_msg)
+            return error_msg  # Return string since this function returns str
+
+        # Run with streaming - events are forwarded to frontend
+        result = await run_aux_agent_streaming(
+            aux_agent=aux_agent,
+            user_message=user_message,
+            send_stream=send_stream,
+            run_input=run_input,
+            aux_type='url_context',
+        )
+        
+        return result.response.text if result and result.response else "URL context loaded (no content)"
     except Exception as e:
         error_msg = f"URL context failed: {str(e)}"
         logger.exception("URL context failed: %s", e)
         return error_msg  # Return string since this function returns str
+
+
+# ========== Custom Auxiliary Agent Tool ==========
+
+async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) -> str:
+    """Call a custom auxiliary agent with a specific prompt.
+    
+    This tool allows you to delegate tasks to specialized auxiliary agents
+    that have been configured for this agent. Each auxiliary agent has
+    specific capabilities described in the agent instructions.
+    
+    Unlike built-in auxiliary agents (image_generation, web_search, etc.),
+    custom auxiliary agents are user-defined and can handle any specialized task.
+    
+    Args:
+        agent_key: The unique key of the auxiliary agent to call (e.g., "research_assistant")
+        prompt: The prompt/task to send to the auxiliary agent
+        
+    Returns:
+        Response from the auxiliary agent, or an error message if the agent is not available
+        
+    Example:
+        call_agent(agent_key="research_assistant", prompt="Find papers on transformer architectures")
+    """
+    # Get agent context
+    organization_id, team_id, agent_type, agent_info = _get_agent_context(ctx)
+    
+    # Validate that custom auxiliary agents are configured
+    custom_agents = get_custom_auxiliary_agents_config(agent_info.get('metadata', {}))
+    if not custom_agents:
+        return (
+            f"No custom auxiliary agents are configured for agent '{agent_type}'. "
+            "Configure them in the agent's metadata under auxiliary_agents.custom."
+        )
+    
+    # Check if the requested agent_key exists
+    agent_keys = [a['key'] for a in custom_agents]
+    if agent_key not in agent_keys:
+        return (
+            f"Custom auxiliary agent '{agent_key}' not found. "
+            f"Available agents: {', '.join(agent_keys)}"
+        )
+    
+    # Get the custom auxiliary agent
+    aux_agent = await get_custom_auxiliary_agent(
+        agent_key=agent_key,
+        main_agent_type=agent_type or 'unknown',
+        main_agent_metadata=agent_info.get('metadata', {}),
+        organization_id=organization_id,
+        team_id=team_id,
+    )
+    
+    if aux_agent is None:
+        return (
+            f"Custom auxiliary agent '{agent_key}' could not be loaded. "
+            "The agent may have been deleted or is not properly configured."
+        )
+    
+    try:
+        logger.info(
+            "Running custom auxiliary agent '%s' for main agent '%s' with prompt: %s",
+            agent_key,
+            agent_type,
+            prompt[:100],
+        )
+        
+        # Get send_stream and run_input from deps for streaming events to frontend
+        deps = ctx.deps
+        send_stream = getattr(deps, 'send_stream', None) if deps else None
+        adapter = getattr(deps, 'adapter', None) if deps else None
+        run_input = adapter.run_input if adapter else None
+        
+        if run_input is None:
+            error_msg = "No run_input available in deps - streaming requires run_input from adapter"
+            logger.error(error_msg)
+            return error_msg
+        
+        # Run with streaming - events are forwarded to frontend
+        # Custom aux agents can inherit parent tools (unlike built-in types)
+        result = await run_aux_agent_streaming(
+            aux_agent=aux_agent,
+            user_message=prompt,
+            send_stream=send_stream,
+            run_input=run_input,
+            aux_type=f"custom:{agent_key}",  # Use custom: prefix to allow tool inheritance
+        )
+        
+        response_text = result.response.text if result and result.response else ""
+        
+        if not response_text:
+            return f"Custom auxiliary agent '{agent_key}' completed but returned no response."
+        
+        return response_text
+        
+    except Exception as e:
+        error_msg = f"Custom auxiliary agent '{agent_key}' failed: {str(e)}"
+        logger.exception("Custom auxiliary agent '%s' failed: %s", agent_key, e)
+        return error_msg
 
 
 # Multi-agent graph tools moved to graph_tools.py
@@ -1201,11 +1473,13 @@ BACKEND_TOOLS = {
     'delete_plan': delete_plan,
     # Graph management (multi-instance with names)
     **GRAPH_TOOLS,
-    # Auxiliary agents
+    # Auxiliary agents (built-in types)
     'generate_images': generate_images,
     'web_search': web_search,
     'code_execution': code_execution,
     'url_context': url_context,
+    # Custom auxiliary agents
+    'call_agent': call_agent,
     # Workspace tools (personal resources) - lazy loaded
     'search_workspace_files': None,
     'get_file_content': None,

@@ -32,6 +32,8 @@ export const ToolMultiSelector: React.FC<ToolMultiSelectorProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategories, setExpandedCategories] = useState<Set<ToolType>>(new Set());
   const [expandedMcpServers, setExpandedMcpServers] = useState<Set<string>>(new Set());
+  const [expandedSelectedCategories, setExpandedSelectedCategories] = useState<Set<ToolType>>(new Set());
+  const [expandedSelectedMcpServers, setExpandedSelectedMcpServers] = useState<Set<string>>(new Set());
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -183,6 +185,61 @@ export const ToolMultiSelector: React.FC<ToolMultiSelectorProps> = ({
   const allFilteredSelected = Array.from(filteredToolIds).every(id => selectedToolIds.includes(id));
   const hasFilteredTools = filteredToolIds.size > 0;
 
+  // Group selected tools by category and MCP server for accordion display
+  const selectedToolsGrouped = useMemo(() => {
+    const grouped: Record<ToolType, ToolOption[]> = {
+      frontend: [],
+      backend: [],
+      builtin: [],
+      mcp: [],
+    };
+    const mcpServers: Record<string, { server: NonNullable<ToolOption['mcpServer']>; tools: ToolOption[] }> = {};
+
+    selectedTools.forEach(tool => {
+      const type = tool.type as ToolType;
+      if (grouped[type]) {
+        grouped[type].push(tool);
+        
+        if (type === 'mcp' && tool.mcpServer) {
+          const serverId = tool.mcpServer.id;
+          if (!mcpServers[serverId]) {
+            mcpServers[serverId] = {
+              server: tool.mcpServer,
+              tools: [],
+            };
+          }
+          mcpServers[serverId].tools.push(tool);
+        }
+      }
+    });
+
+    return { grouped, mcpServers };
+  }, [selectedTools]);
+
+  const toggleSelectedCategory = (type: ToolType) => {
+    setExpandedSelectedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectedMcpServer = (serverId: string) => {
+    setExpandedSelectedMcpServers(prev => {
+      const next = new Set(prev);
+      if (next.has(serverId)) {
+        next.delete(serverId);
+      } else {
+        next.add(serverId);
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="relative" ref={dropdownRef}>
       <button
@@ -192,40 +249,177 @@ export const ToolMultiSelector: React.FC<ToolMultiSelectorProps> = ({
         className={cn(
           'flex items-start gap-1.5 px-2 py-1.5 text-xs rounded-md min-h-[32px] min-w-0 w-full border',
           isLight
-            ? 'text-gray-700 hover:bg-gray-100 border-gray-300 bg-white'
-            : 'text-gray-200 hover:bg-gray-700 border-gray-600 bg-[#151C24]',
+            ? 'text-gray-700 hover:bg-gray-50 border-gray-300 bg-white'
+            : 'text-gray-200 hover:bg-gray-800/50 border-gray-600 bg-[#151C24]',
         )}
+        style={{ height: 'auto' }}
       >
         <span className="flex-shrink-0 mt-0.5">
           <ToolIcon />
         </span>
 
         {selectedTools.length > 0 ? (
-          <div className="flex flex-wrap gap-1 flex-1 min-w-0">
-            {selectedTools.map(tool => (
-              <span
-                key={tool.id}
-                className={cn(
-                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
-                  isLight
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'bg-blue-900/30 text-blue-400'
-                )}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {tool.name}
-                <button
-                  type="button"
-                  onClick={(e) => removeTool(tool.id, e)}
-                  className={cn(
-                    'hover:bg-black/10 rounded-full p-0.5 transition-colors',
-                    isLight ? 'text-blue-600' : 'text-blue-300'
+          <div className="flex-1 min-w-0 text-left">
+            {(['frontend', 'builtin', 'backend', 'mcp'] as ToolType[]).map(type => {
+              const categoryTools = selectedToolsGrouped.grouped[type] || [];
+              if (categoryTools.length === 0) return null;
+
+              const isExpanded = expandedSelectedCategories.has(type);
+              const isMcp = type === 'mcp';
+
+              return (
+                <div key={type} className="mb-1 last:mb-0">
+                  {!isMcp ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelectedCategory(type);
+                        }}
+                        className={cn(
+                          'flex items-center gap-1 text-xs font-medium transition-colors',
+                          isLight ? 'text-gray-600 hover:text-gray-800' : 'text-gray-400 hover:text-gray-300'
+                        )}
+                      >
+                        <svg
+                          className={cn('w-2.5 h-2.5 transition-transform', isExpanded && 'rotate-90')}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          strokeWidth={2.5}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                        <span>{getToolTypeLabel(type)} ({categoryTools.length})</span>
+                      </button>
+                      {isExpanded && (
+                        <div className="ml-3 mt-0.5 flex flex-wrap gap-1">
+                          {categoryTools.map(tool => (
+                            <span
+                              key={tool.id}
+                              className={cn(
+                                'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
+                                isLight
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : 'bg-blue-900/30 text-blue-400'
+                              )}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {tool.name}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeTool(tool.id, e);
+                                }}
+                                className={cn(
+                                  'hover:bg-black/10 rounded-full p-0.5 transition-colors',
+                                  isLight ? 'text-blue-600' : 'text-blue-300'
+                                )}
+                              >
+                                <CloseIcon size={8} strokeWidth={3} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelectedCategory(type);
+                        }}
+                        className={cn(
+                          'flex items-center gap-1 text-xs font-medium transition-colors',
+                          isLight ? 'text-gray-600 hover:text-gray-800' : 'text-gray-400 hover:text-gray-300'
+                        )}
+                      >
+                        <svg
+                          className={cn('w-2.5 h-2.5 transition-transform', isExpanded && 'rotate-90')}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          strokeWidth={2.5}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                        <span>MCP ({categoryTools.length})</span>
+                      </button>
+                      {isExpanded && (
+                        <div className="ml-3 mt-0.5 space-y-1">
+                          {Object.values(selectedToolsGrouped.mcpServers).map(({ server, tools: serverTools }) => {
+                            if (serverTools.length === 0) return null;
+                            const isServerExpanded = expandedSelectedMcpServers.has(server.id);
+
+                            return (
+                              <div key={server.id}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleSelectedMcpServer(server.id);
+                                  }}
+                                  className={cn(
+                                    'flex items-center gap-1 text-xs font-medium transition-colors',
+                                    isLight ? 'text-gray-500 hover:text-gray-700' : 'text-gray-500 hover:text-gray-400'
+                                  )}
+                                >
+                                  <svg
+                                    className={cn('w-2.5 h-2.5 transition-transform', isServerExpanded && 'rotate-90')}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                    strokeWidth={2.5}
+                                  >
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                  </svg>
+                                  <span>{server.displayName} ({serverTools.length})</span>
+                                </button>
+                                {isServerExpanded && (
+                                  <div className="ml-4 mt-0.5 flex flex-wrap gap-1">
+                                    {serverTools.map(tool => (
+                                      <span
+                                        key={tool.id}
+                                        className={cn(
+                                          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
+                                          isLight
+                                            ? 'bg-blue-100 text-blue-700'
+                                            : 'bg-blue-900/30 text-blue-400'
+                                        )}
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        {tool.name}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            removeTool(tool.id, e);
+                                          }}
+                                          className={cn(
+                                            'hover:bg-black/10 rounded-full p-0.5 transition-colors',
+                                            isLight ? 'text-blue-600' : 'text-blue-300'
+                                          )}
+                                        >
+                                          <CloseIcon size={8} strokeWidth={3} />
+                                        </button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
                   )}
-                >
-                  <CloseIcon size={10} strokeWidth={3} />
-                </button>
-              </span>
-            ))}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <span className={cn('flex-1 min-w-0 text-left', isLight ? 'text-gray-500' : 'text-gray-400')}>

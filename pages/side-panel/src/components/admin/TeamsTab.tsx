@@ -2,7 +2,7 @@
  * Teams Tab Component for Admin Page
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { authClient } from '../../lib/auth-client';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '@extension/ui';
@@ -86,6 +86,9 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
   const [canManageTeams, setCanManageTeams] = useState(false);
   const [userTeamIds, setUserTeamIds] = useState<Set<string>>(new Set()); // Track teams user is member of
   const [teamsLoading, setTeamsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-select organization if there's only one
   useEffect(() => {
@@ -167,13 +170,21 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
           }
         }
         
-        setTeams(userTeams);
+        // Sort teams alphabetically by name
+        const sortedUserTeams = userTeams.sort((a, b) => 
+          (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+        );
+        setTeams(sortedUserTeams);
         setUserTeamIds(userTeamIdsSet);
       } else {
         // Owner and admin can see all teams and access all team members
-        setTeams(allTeams || []);
+        // Sort teams alphabetically by name
+        const sortedAllTeams = (allTeams || []).sort((a: Team, b: Team) => 
+          (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+        );
+        setTeams(sortedAllTeams);
         // Owners/admins can access all team members, so we set all team IDs
-        const allTeamIdsSet = new Set<string>((allTeams || []).map((team: Team) => team.id));
+        const allTeamIdsSet = new Set<string>(sortedAllTeams.map((team: Team) => team.id));
         setUserTeamIds(allTeamIdsSet);
       }
     } catch (err: any) {
@@ -383,6 +394,18 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
 
   return (
     <div>
+      <style>{`
+        @keyframes fadeInScale {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+      `}</style>
       {/* Organization Selector */}
       <div className="mb-4">
         <label className={cn('block text-xs font-medium mb-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -399,16 +422,86 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
 
       {selectedOrgForTeam && (
         <>
-          {/* Header with Icon, Count, and New Button */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
+          {/* Header with Icon, Count, Search, and New Button */}
+          <div className="flex items-center justify-between mb-3 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-shrink">
               <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
               <h3 className={cn('text-sm font-semibold', mainTextColor)}>
-                Teams <span className={cn('text-xs font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>({teams.length})</span>
+                Teams <span className={cn('text-xs font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                  ({searchQuery ? teams.filter(team => 
+                    team.name.toLowerCase().includes(searchQuery.toLowerCase())
+                  ).length : teams.length})
+                </span>
               </h3>
             </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {/* Search Button/Input */}
+              {isSearchOpen ? (
+                <div className="relative flex-shrink-0">
+                  <svg
+                    className={cn(
+                      'absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2',
+                      isLight ? 'text-gray-400' : 'text-gray-500',
+                    )}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search teams..."
+                    className={cn(
+                      'w-[200px] rounded py-1 pr-8 pl-7 text-xs transition-all duration-200 outline-none',
+                      isLight
+                        ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-100'
+                        : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800',
+                    )}
+                    style={{
+                      animation: 'fadeInScale 0.2s ease-out',
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      setIsSearchOpen(false);
+                      setSearchQuery('');
+                    }}
+                    className={cn(
+                      'absolute top-1/2 right-1 -translate-y-1/2 p-1 rounded transition-colors',
+                      isLight
+                        ? 'text-gray-400 hover:text-gray-600'
+                        : 'text-gray-500 hover:text-gray-300',
+                    )}
+                    title="Close search">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setIsSearchOpen(true);
+                    setTimeout(() => searchInputRef.current?.focus(), 10);
+                  }}
+                  className={cn(
+                    'p-1 rounded transition-colors flex-shrink-0',
+                    isLight
+                      ? 'text-gray-400 hover:text-gray-600'
+                      : 'text-gray-500 hover:text-gray-300',
+                  )}
+                  title="Search teams">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </button>
+              )}
             {canManageTeams && !showCreateTeamForm && (
               <button
                 onClick={() => setShowCreateTeamForm(true)}
@@ -424,6 +517,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                 Add Team
               </button>
             )}
+            </div>
           </div>
 
           {/* Create Form - Compact Card */}
@@ -484,7 +578,29 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
               ))
             ) : (
               <>
-            {teams.map(team => (
+            {(() => {
+              const filteredTeams = teams.filter(team => 
+                !searchQuery || 
+                team.name.toLowerCase().includes(searchQuery.toLowerCase())
+              );
+              
+              if (filteredTeams.length === 0) {
+                if (teams.length === 0) {
+                  return null; // Will show "No teams yet" below
+                } else {
+                  // Items exist but don't match filter
+                  return (
+                    <div className={cn(
+                      'text-center py-8 text-xs rounded-lg border',
+                      isLight ? 'text-gray-500 border-gray-200 bg-gray-50' : 'text-gray-400 border-gray-700 bg-[#151C24]',
+                    )}>
+                      <p>No teams match the current filter.</p>
+                    </div>
+                  );
+                }
+              }
+              
+              return filteredTeams.map(team => (
               <div
                 key={team.id}
                 className={cn(
@@ -534,7 +650,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                   <div className="p-3">
                     {/* Row 1: Name + Actions */}
                     <div className="flex items-center justify-between gap-2 mb-1">
-                      <h4 className={cn('font-semibold text-xs truncate', mainTextColor)}>
+                      <h4 className={cn('font-medium text-[11px] truncate uppercase', mainTextColor)}>
                         {team.name}
                       </h4>
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -714,7 +830,8 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                   </div>
                 )}
               </div>
-            ))}
+            ));
+            })()}
             {teams.length === 0 && !showCreateTeamForm && (
               <div className={cn(
                 'text-center py-8 text-xs rounded-lg border',

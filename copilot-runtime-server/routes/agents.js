@@ -117,7 +117,8 @@ const validateModelIds = async (pool, organizationId, teamIds, modelIds) => {
         ) AS teams
       FROM models m
       WHERE m.id = ANY($1::uuid[])
-        AND m.organization_id = $2`,
+        AND m.organization_id = $2
+        AND m.deleted_at IS NULL`,
     [modelIds, organizationId],
   );
 
@@ -395,7 +396,7 @@ async function fetchAgentById(pool, id, organizationId) {
          '{}'::text[]
        ) AS tool_ids
      FROM agents a
-     WHERE a.id = $1 AND a.organization_id = $2`,
+     WHERE a.id = $1 AND a.organization_id = $2 AND a.deleted_at IS NULL`,
     [id, organizationId],
   );
 
@@ -484,8 +485,9 @@ router.get('/', async (req, res, next) => {
          ) AS tool_ids
        FROM agents a
        WHERE a.organization_id = $1
+         AND a.deleted_at IS NULL
          ${teamFilter}
-       ORDER BY a.created_at DESC`,
+       ORDER BY COALESCE(a.agent_name, a.agent_type) ASC`,
       params,
     );
 
@@ -585,7 +587,7 @@ router.post('/', async (req, res, next) => {
 
     // Check for duplicate agent_type in organization
     const duplicateCheck = await pool.query(
-      'SELECT id FROM agents WHERE agent_type = $1 AND organization_id = $2',
+      'SELECT id FROM agents WHERE agent_type = $1 AND organization_id = $2 AND deleted_at IS NULL',
       [agentType.trim(), organizationId],
     );
 
@@ -750,7 +752,7 @@ router.put('/:agentId', async (req, res, next) => {
     // Check for duplicate agent_type if it's being changed
     if (agentType && agentType.trim() !== existingAgent.agentType) {
       const duplicateCheck = await pool.query(
-        'SELECT id FROM agents WHERE agent_type = $1 AND organization_id = $2 AND id != $3',
+        'SELECT id FROM agents WHERE agent_type = $1 AND organization_id = $2 AND id != $3 AND deleted_at IS NULL',
         [agentType.trim(), organizationId, agentId],
       );
 
@@ -856,7 +858,11 @@ router.delete('/:agentId', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    const { rowCount } = await pool.query('DELETE FROM agents WHERE id = $1 AND organization_id = $2', [agentId, organizationId]);
+    // Soft delete: set deleted_at timestamp instead of hard delete
+    const { rowCount } = await pool.query(
+      'UPDATE agents SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL',
+      [agentId, organizationId]
+    );
 
     if (rowCount === 0) {
       return res.status(404).json({ error: 'Agent not found' });

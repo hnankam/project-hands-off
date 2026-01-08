@@ -279,7 +279,7 @@ export const CustomUserMessageRenderer: React.FC<CustomUserMessageRendererProps>
           overflowX: 'visible' as const,
         }}
       >
-        <CustomMarkdownRenderer content={content} isLight={isLight} />
+        <CustomMarkdownRenderer content={content} isLight={isLight} hideToolbars={true} />
       </div>
     </div>
   );

@@ -536,7 +536,7 @@ router.get('/org-members-with-status', async (req, res) => {
       FROM member m
       JOIN "user" u ON m."userId" = u.id
       WHERE m."organizationId" = $1
-      ORDER BY m."createdAt" ASC
+      ORDER BY COALESCE(u.name, u.email) ASC
     `, [organizationId]);
     
     // Transform the flat result into nested structure
@@ -801,11 +801,12 @@ router.get('/list-sso-providers', async (req, res) => {
         "createdAt",
         "updatedAt"
       FROM "ssoProvider"
+      WHERE deleted_at IS NULL
     `;
     const params = [];
     
     if (organizationId) {
-      query += ` WHERE "organizationId" = $1`;
+      query += ` AND "organizationId" = $1`;
       params.push(organizationId);
     }
     
@@ -838,14 +839,14 @@ router.get('/debug-sso-provider', async (req, res) => {
     const { providerId, domain } = req.query;
     const pool = getPool();
     
-    let query = 'SELECT * FROM "ssoProvider"';
+    let query = 'SELECT * FROM "ssoProvider" WHERE deleted_at IS NULL';
     const params = [];
     
     if (providerId) {
-      query += ' WHERE "providerId" = $1';
+      query += ' AND "providerId" = $1';
       params.push(providerId);
     } else if (domain) {
-      query += ' WHERE domain = $1';
+      query += ' AND domain = $1';
       params.push(domain);
     }
     
@@ -889,7 +890,7 @@ router.post('/delete-sso-provider', express.json(), async (req, res) => {
     console.log('[SSO] Deleting provider:', providerId);
     
     const result = await pool.query(
-      'DELETE FROM "ssoProvider" WHERE "providerId" = $1 RETURNING id',
+      'UPDATE "ssoProvider" SET deleted_at = CURRENT_TIMESTAMP WHERE "providerId" = $1 AND deleted_at IS NULL RETURNING id',
       [providerId]
     );
     

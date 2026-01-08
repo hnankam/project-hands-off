@@ -217,6 +217,7 @@ router.get('/', async (req, res, next) => {
         LEFT JOIN mcp_servers ms ON ms.id = t.mcp_server_id
         LEFT JOIN organization_tool_settings ots ON ots.tool_id = t.id AND ots.organization_id = $1
         WHERE (t.organization_id IS NULL OR t.organization_id = $1)
+          AND t.deleted_at IS NULL
           ${teamFilter}
         ORDER BY
           CASE t.tool_type
@@ -226,7 +227,11 @@ router.get('/', async (req, res, next) => {
             WHEN 'mcp' THEN 4
             ELSE 5
           END,
-          t.tool_key
+          CASE 
+            WHEN t.tool_type = 'mcp' THEN COALESCE(ms.display_name, ms.server_key, '')
+            ELSE ''
+          END ASC,
+          COALESCE(t.tool_name, t.tool_key) ASC
       `,
       params,
     );
@@ -318,6 +323,7 @@ router.post('/', async (req, res, next) => {
         FROM tools
         WHERE tool_key = $1
           AND COALESCE(organization_id, 'global') = COALESCE($2, 'global')
+          AND deleted_at IS NULL
         LIMIT 1
       `,
       [toolKey.trim(), organizationId || null],
@@ -385,7 +391,7 @@ router.post('/', async (req, res, next) => {
           ) as teams
         FROM tools t
         LEFT JOIN mcp_servers ms ON ms.id = t.mcp_server_id
-        WHERE t.id = $1
+        WHERE t.id = $1 AND t.deleted_at IS NULL
       `,
       [toolId],
     );
@@ -447,7 +453,7 @@ router.put('/:toolId', async (req, res, next) => {
     
     // Check if the tool exists first to determine if it's global
     const toolCheckResult = await pool.query(
-      'SELECT organization_id, tool_type, readonly FROM tools WHERE id = $1',
+      'SELECT organization_id, tool_type, readonly FROM tools WHERE id = $1 AND deleted_at IS NULL',
       [toolId]
     );
 
@@ -479,7 +485,7 @@ router.put('/:toolId', async (req, res, next) => {
           ) as teams
         FROM tools t
         LEFT JOIN mcp_servers ms ON ms.id = t.mcp_server_id
-        WHERE t.id = $1
+        WHERE t.id = $1 AND t.deleted_at IS NULL
           AND COALESCE(t.organization_id, 'global') = COALESCE($2, 'global')
       `,
       [toolId, isGlobalTool ? null : (organizationId || null)],
@@ -662,7 +668,7 @@ router.put('/:toolId', async (req, res, next) => {
         FROM tools t
         LEFT JOIN mcp_servers ms ON ms.id = t.mcp_server_id
         LEFT JOIN organization_tool_settings ots ON ots.tool_id = t.id AND ots.organization_id = $2
-        WHERE t.id = $1
+        WHERE t.id = $1 AND t.deleted_at IS NULL
       `,
       [toolId, organizationId],
     );
@@ -740,7 +746,7 @@ router.put('/bulk/scope', async (req, res, next) => {
       for (const toolId of toolIds) {
         // Check if tool exists and get its MCP server info
         const toolCheckResult = await client.query(
-          'SELECT organization_id, readonly, tool_type, mcp_server_id FROM tools WHERE id = $1',
+          'SELECT organization_id, readonly, tool_type, mcp_server_id FROM tools WHERE id = $1 AND deleted_at IS NULL',
           [toolId]
         );
 
@@ -844,6 +850,7 @@ router.delete('/:toolId', async (req, res, next) => {
         FROM tools
         WHERE id = $1
           AND COALESCE(organization_id, 'global') = COALESCE($2, 'global')
+          AND deleted_at IS NULL
       `,
       [toolId, organizationId || null],
     );
@@ -872,7 +879,11 @@ router.delete('/:toolId', async (req, res, next) => {
       return res.status(400).json({ error: 'Tool is assigned to one or more agents' });
     }
 
-    await pool.query('DELETE FROM tools WHERE id = $1', [toolId]);
+    // Soft delete: set deleted_at timestamp instead of hard delete
+    await pool.query(
+      'UPDATE tools SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL',
+      [toolId]
+    );
 
     invalidateConfigCaches();
 
@@ -944,8 +955,9 @@ router.get('/mcp-servers', async (req, res, next) => {
           ) as teams
         FROM mcp_servers s
         WHERE s.organization_id = $1
+          AND s.deleted_at IS NULL
           ${teamFilter}
-        ORDER BY s.server_key
+        ORDER BY COALESCE(s.display_name, s.server_key) ASC
       `,
       params,
     );
@@ -1031,6 +1043,7 @@ router.post('/mcp-servers', async (req, res, next) => {
       `SELECT 1 FROM mcp_servers
         WHERE server_key = $1
          AND organization_id = $2
+         AND deleted_at IS NULL
        LIMIT 1`,
       [serverKey.trim(), organizationId],
     );
@@ -1083,7 +1096,7 @@ router.post('/mcp-servers', async (req, res, next) => {
     invalidateConfigCaches();
 
     // Get created server with teams
-    const created = await pool.query('SELECT * FROM mcp_servers_with_teams WHERE id = $1', [serverId]);
+    const created = await pool.query('SELECT * FROM mcp_servers_with_teams WHERE id = $1 AND deleted_at IS NULL', [serverId]);
 
     res.status(201).json({ server: toCamelServer(created.rows[0]) });
   } catch (err) {
@@ -1150,7 +1163,7 @@ router.put('/mcp-servers/:serverId', async (req, res, next) => {
 
     const existingResult = await pool.query(
       `SELECT * FROM mcp_servers
-       WHERE id = $1 AND organization_id = $2`,
+       WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL`,
       [serverId, organizationId],
     );
 
@@ -1204,7 +1217,7 @@ router.put('/mcp-servers/:serverId', async (req, res, next) => {
     invalidateConfigCaches();
 
     // Get updated server with teams
-    const updated = await pool.query('SELECT * FROM mcp_servers_with_teams WHERE id = $1', [serverId]);
+    const updated = await pool.query('SELECT * FROM mcp_servers_with_teams WHERE id = $1 AND deleted_at IS NULL', [serverId]);
     res.json({ server: toCamelServer(updated.rows[0]) });
   } catch (err) {
     if (err instanceof ValidationError) {
@@ -1241,7 +1254,7 @@ router.delete('/mcp-servers/:serverId', async (req, res, next) => {
 
     const existingResult = await pool.query(
       `SELECT id FROM mcp_servers
-       WHERE id = $1 AND organization_id = $2`,
+       WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL`,
       [serverId, organizationId],
     );
 
@@ -1250,7 +1263,7 @@ router.delete('/mcp-servers/:serverId', async (req, res, next) => {
     }
 
     const toolCheck = await pool.query(
-      'SELECT 1 FROM tools WHERE mcp_server_id = $1 LIMIT 1',
+      'SELECT 1 FROM tools WHERE mcp_server_id = $1 AND deleted_at IS NULL LIMIT 1',
       [serverId],
     );
 
@@ -1258,7 +1271,11 @@ router.delete('/mcp-servers/:serverId', async (req, res, next) => {
       return res.status(400).json({ error: 'MCP server still has tools assigned' });
     }
 
-    await pool.query('DELETE FROM mcp_servers WHERE id = $1', [serverId]);
+    // Soft delete: set deleted_at timestamp instead of hard delete
+    await pool.query(
+      'UPDATE mcp_servers SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL',
+      [serverId]
+    );
 
     invalidateConfigCaches();
 
@@ -1308,7 +1325,8 @@ router.post('/mcp-servers/:serverId/load-tools', async (req, res, next) => {
               ) as teams
        FROM mcp_servers ms
        WHERE ms.id = $1 
-       AND (ms.organization_id IS NULL OR ms.organization_id = $2)`,
+       AND (ms.organization_id IS NULL OR ms.organization_id = $2)
+       AND ms.deleted_at IS NULL`,
       [serverId, organizationId]
     );
 
@@ -1585,7 +1603,8 @@ router.post('/mcp-servers/:serverId/test', async (req, res, next) => {
               ) as teams
        FROM mcp_servers ms
        WHERE ms.id = $1 
-       AND (ms.organization_id IS NULL OR ms.organization_id = $2)`,
+       AND (ms.organization_id IS NULL OR ms.organization_id = $2)
+       AND ms.deleted_at IS NULL`,
       [serverId, organizationId]
     );
 

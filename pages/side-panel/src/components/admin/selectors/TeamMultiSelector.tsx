@@ -32,7 +32,7 @@ export const TeamMultiSelector: React.FC<TeamMultiSelectorProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  useClickOutside(dropdownRef, () => setIsOpen(false), isOpen);
+  useClickOutside(dropdownRef as React.RefObject<HTMLElement>, () => setIsOpen(false), isOpen);
 
   if (loading) {
     return <SelectorSkeleton isLight={isLight} />;
@@ -97,7 +97,7 @@ export const TeamMultiSelector: React.FC<TeamMultiSelectorProps> = ({
               <span
                 key={team.id}
                 className={cn(
-                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
+                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium uppercase',
                   isLight
                     ? 'bg-blue-50 text-blue-700'
                     : 'bg-blue-900/20 text-blue-400'
@@ -224,7 +224,7 @@ export const TeamMultiSelector: React.FC<TeamMultiSelectorProps> = ({
                       )}
                     </div>
                     <TeamIcon />
-                    <span className="truncate flex-1 font-medium">{team.name}</span>
+                    <span className="truncate flex-1 font-medium text-[11px] uppercase">{team.name}</span>
                   </button>
                 );
               })

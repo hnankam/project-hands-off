@@ -800,6 +800,10 @@ export class SessionStorageDB {
       return;
     }
 
+    // Check if there's actual new activity (usage increased)
+    const existingRequestCount = existingRecord?.requestCount ?? 0;
+    const hasNewActivity = incomingTotal > existingTotal || stats.requestCount > existingRequestCount;
+
     const payload = {
       req: stats.request,
       res: stats.response,
@@ -843,11 +847,14 @@ export class SessionStorageDB {
       }
     }
 
-    // Update session timestamp to reflect latest activity
+    // Only update session timestamp when there's actual new activity (message sent/received)
+    // This prevents timestamp updates when re-saving hydrated data on session open
+    if (hasNewActivity) {
     await worker.query(
       'UPDATE session_metadata SET timestamp = $timestamp WHERE sessionId = $id OR id = $id;',
       { id: sessionId, timestamp: Date.now() }
     );
+    }
 
     this.notify({ type: 'sessionsUpdated' });
   }

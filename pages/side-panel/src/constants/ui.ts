@@ -7,6 +7,7 @@ export const Z_INDEX = {
   dropdown: 9999,
   modalBackdrop: 10000,
   modal: 10001,
+  toast: 10002,
   skeletonOverlay: 20,
   skeletonTransition: 15,
 } as const;

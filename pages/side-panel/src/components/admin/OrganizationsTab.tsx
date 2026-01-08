@@ -3,7 +3,7 @@
  * Includes SSO (Single Sign-On) provider management
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { authClient, listSSOProviders, registerSSOProvider, deleteSSOProvider, requestDomainVerification, verifyDomain, type SSOProvider, type OIDCConfig } from '../../lib/auth-client';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '@extension/ui';
@@ -86,6 +86,9 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userTeamIds, setUserTeamIds] = useState<Record<string, Set<string>>>({}); // orgId -> Set of teamIds user belongs to
   const [listLoading, setListLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // SSO State
   const [orgSSOProviders, setOrgSSOProviders] = useState<Record<string, SSOProvider[]>>({}); // orgId -> SSO providers
@@ -161,7 +164,12 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
         }
       }
 
-      setOrganizations(userOrganizations);
+      // Sort organizations alphabetically by name
+      const sortedOrganizations = userOrganizations.sort((a, b) => 
+        (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+      );
+
+      setOrganizations(sortedOrganizations);
       setUserRoles(roles);
       setHasOwnerRole(hasOwner);
     } catch (err: any) {
@@ -533,16 +541,99 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
 
   return (
     <div>
-      {/* Header with Icon, Count, and New Button */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+      <style>{`
+        @keyframes fadeInScale {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+      `}</style>
+      {/* Header with Icon, Count, Search, and New Button */}
+      <div className="flex items-center justify-between mb-4 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-shrink">
           <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
           </svg>
           <h2 className={cn('text-base font-semibold', mainTextColor)}>
-            Organizations <span className={cn('text-sm font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>({organizations.length})</span>
+            Organizations <span className={cn('text-sm font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>
+              ({searchQuery ? organizations.filter(org => 
+                org.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                org.slug.toLowerCase().includes(searchQuery.toLowerCase())
+              ).length : organizations.length})
+            </span>
           </h2>
         </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Search Button/Input */}
+          {isSearchOpen ? (
+            <div className="relative flex-shrink-0">
+              <svg
+                className={cn(
+                  'absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2',
+                  isLight ? 'text-gray-400' : 'text-gray-500',
+                )}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search organizations..."
+                  className={cn(
+                    'w-[200px] rounded py-1 pr-8 pl-7 text-xs transition-all duration-200 outline-none',
+                  isLight
+                    ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-100'
+                    : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800',
+                )}
+                style={{
+                  animation: 'fadeInScale 0.2s ease-out',
+                }}
+              />
+              <button
+                onClick={() => {
+                  setIsSearchOpen(false);
+                  setSearchQuery('');
+                }}
+                className={cn(
+                  'absolute top-1/2 right-1 -translate-y-1/2 p-1 rounded transition-colors',
+                  isLight
+                    ? 'text-gray-400 hover:text-gray-600'
+                    : 'text-gray-500 hover:text-gray-300',
+                )}
+                title="Close search">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setIsSearchOpen(true);
+                setTimeout(() => searchInputRef.current?.focus(), 10);
+              }}
+              className={cn(
+                'p-1 rounded transition-colors flex-shrink-0',
+                isLight
+                  ? 'text-gray-400 hover:text-gray-600'
+                  : 'text-gray-500 hover:text-gray-300',
+              )}
+              title="Search organizations">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+          )}
         {hasOwnerRole && !showCreateForm && (
           <button
             onClick={() => setShowCreateForm(true)}
@@ -558,6 +649,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
             Add Organization
           </button>
         )}
+        </div>
       </div>
 
       {/* Create Form - Compact Card */}
@@ -634,7 +726,30 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
           ))
         ) : (
           <>
-        {organizations.map(org => (
+        {(() => {
+          const filteredOrgs = organizations.filter(org => 
+            !searchQuery || 
+            org.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            org.slug.toLowerCase().includes(searchQuery.toLowerCase())
+          );
+          
+          if (filteredOrgs.length === 0) {
+            if (organizations.length === 0) {
+              return null; // Will show "No organizations yet" below
+            } else {
+              // Items exist but don't match filter
+              return (
+                <div className={cn(
+                  'text-center py-8 text-xs rounded-lg border',
+                  isLight ? 'text-gray-500 border-gray-200 bg-gray-50' : 'text-gray-400 border-gray-700 bg-[#151C24]',
+                )}>
+                  <p>No organizations match the current filter.</p>
+                </div>
+              );
+            }
+          }
+          
+          return filteredOrgs.map(org => (
           <div
             key={org.id}
             className={cn(
@@ -698,7 +813,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
               <div className="p-3">
                 {/* Row 1: Name + Actions */}
                 <div className="flex items-center justify-between gap-2 mb-1">
-                  <h4 className={cn('font-semibold text-xs truncate', mainTextColor)}>
+                  <h4 className={cn('font-medium text-xs truncate uppercase', mainTextColor)}>
                     {org.name}
                   </h4>
                   <div className="flex items-center gap-1 flex-shrink-0">
@@ -751,7 +866,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
                   </div>
                 </div>
                 {/* Row 2: Slug | Date */}
-                <div className={cn('text-[11px] flex items-center gap-2', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                <div className={cn('text-xs flex items-center gap-2', isLight ? 'text-gray-500' : 'text-gray-400')}>
                   <span className="truncate">{org.slug}</span>
                   <span className="text-gray-500">|</span>
                   <span className="whitespace-nowrap">
@@ -1138,7 +1253,8 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
               </div>
             )}
           </div>
-        ))}
+        ));
+        })()}
         {organizations.length === 0 && !showCreateForm && (
           <div className={cn(
             'text-center py-8 text-xs rounded-lg border',

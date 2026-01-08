@@ -2,7 +2,7 @@
  * Users Tab Component for Admin Page
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { authClient, adminResetPassword, banUser, unbanUser } from '../../lib/auth-client';
 import { cn } from '@extension/ui';
@@ -127,6 +127,9 @@ export function UsersTab({ isLight, organizations, preselectedOrgId, onError, on
   const [openMenuMemberId, setOpenMenuMemberId] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [copiedInvitationId, setCopiedInvitationId] = useState<string | null>(null);
 
   // Auto-select organization if there's only one
@@ -407,19 +410,32 @@ useEffect(() => {
     return currentUserRole.includes('owner') || currentUserRole.includes('admin');
   }, [currentUserRole]);
 
-  // Filter members based on selected teams
+  // Filter members based on selected teams and search query
   const filteredMembers = useMemo(() => {
-    if (selectedTeamIds.length === 0) {
-      return members; // Show all members when no teams selected
-    }
+    let result = members;
+    
+    // Filter by selected teams
+    if (selectedTeamIds.length > 0) {
     // Show members that belong to ANY of the selected teams
     const selectedTeamUserIds = new Set<string>();
     selectedTeamIds.forEach(teamId => {
       const userIds = teamMembers[teamId] || [];
       userIds.forEach(userId => selectedTeamUserIds.add(userId));
     });
-    return members.filter(member => selectedTeamUserIds.has(member.userId));
-  }, [members, selectedTeamIds, teamMembers]);
+      result = members.filter(member => selectedTeamUserIds.has(member.userId));
+    }
+    
+    // Filter by search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(member => 
+        member.user.name?.toLowerCase().includes(query) ||
+        member.user.email?.toLowerCase().includes(query)
+      );
+    }
+    
+    return result;
+  }, [members, selectedTeamIds, teamMembers, searchQuery]);
 
   // Filter invitations based on selected teams
   // Invitations are organization-level, so when teams are selected, hide them
@@ -726,6 +742,18 @@ useEffect(() => {
 
   return (
     <div>
+      <style>{`
+        @keyframes fadeInScale {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+      `}</style>
       {/* Organization and Team Selectors */}
       <div className="mb-4 grid grid-cols-2 gap-3">
         <div>
@@ -769,9 +797,9 @@ useEffect(() => {
 
       {selectedOrgForUsers && (
         <>
-          {/* Header with Icon, Count, and Invite Button */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
+          {/* Header with Icon, Count, Search, and Invite Button */}
+          <div className="flex items-center justify-between mb-3 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-shrink">
               <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
@@ -779,6 +807,72 @@ useEffect(() => {
                 Users <span className={cn('text-xs font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>({totalUsersCount})</span>
               </h3>
             </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {/* Search Button/Input */}
+              {isSearchOpen ? (
+                <div className="relative flex-shrink-0">
+                  <svg
+                    className={cn(
+                      'absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2',
+                      isLight ? 'text-gray-400' : 'text-gray-500',
+                    )}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search users..."
+                    className={cn(
+                      'w-[200px] rounded py-1 pr-8 pl-7 text-xs transition-all duration-200 outline-none',
+                      isLight
+                        ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-100'
+                        : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800',
+                    )}
+                    style={{
+                      animation: 'fadeInScale 0.2s ease-out',
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      setIsSearchOpen(false);
+                      setSearchQuery('');
+                    }}
+                    className={cn(
+                      'absolute top-1/2 right-1 -translate-y-1/2 p-1 rounded transition-colors',
+                      isLight
+                        ? 'text-gray-400 hover:text-gray-600'
+                        : 'text-gray-500 hover:text-gray-300',
+                    )}
+                    title="Close search">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setIsSearchOpen(true);
+                    setTimeout(() => searchInputRef.current?.focus(), 10);
+                  }}
+                  className={cn(
+                    'p-1 rounded transition-colors flex-shrink-0',
+                    isLight
+                      ? 'text-gray-400 hover:text-gray-600'
+                      : 'text-gray-500 hover:text-gray-300',
+                  )}
+                  title="Search users">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </button>
+              )}
             {canManageUsers && !showInviteForm && (
             <button
               onClick={() => setShowInviteForm(true)}
@@ -794,6 +888,7 @@ useEffect(() => {
               Invite User
             </button>
             )}
+            </div>
           </div>
 
           {/* Invite User Form */}
@@ -886,29 +981,16 @@ useEffect(() => {
               Array.from({ length: 4 }).map((_, idx) => (
                 <UserSkeletonCard key={`user-skeleton-${idx}`} isLight={isLight} />
               ))
-            ) : filteredMembers.length === 0 && invitations.length === 0 ? (
+            ) : filteredMembers.length === 0 && filteredInvitations.length === 0 ? (
               <div
                 className={cn(
-                  'p-8 rounded-lg border-2 border-dashed text-center',
-                  isLight ? 'border-gray-300 bg-gray-50' : 'border-gray-700 bg-[#151C24]/50',
+                  'text-center py-8 text-xs rounded-lg border',
+                  isLight ? 'text-gray-500 border-gray-200 bg-gray-50' : 'text-gray-400 border-gray-700 bg-[#151C24]',
                 )}>
-                <svg
-                  className={cn('w-12 h-12 mx-auto mb-3', isLight ? 'text-gray-400' : 'text-gray-600')}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-                  />
-                </svg>
-                <p className={cn('text-sm font-medium', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                  No users in this organization
-                </p>
-                <p className={cn('text-xs mt-1', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                  Invite users to get started
+                <p>
+                  {members.length === 0 && invitations.length === 0
+                    ? 'No users in this organization'
+                    : 'No users match the current filter'}
                 </p>
               </div>
             ) : (
@@ -1135,7 +1217,7 @@ useEffect(() => {
                                       <span
                                         key={teamId}
                                         className={cn(
-                                          'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                          'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium uppercase',
                                           isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
                                         )}>
                                         {team.name}
@@ -1239,7 +1321,7 @@ useEffect(() => {
                                   <span
                                     key={teamId}
                                     className={cn(
-                                      'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                      'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium uppercase',
                                       isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300',
                                     )}>
                                     {team.name}

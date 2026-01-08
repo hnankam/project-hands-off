@@ -200,6 +200,23 @@ async def create_agent(
     mcp_servers = get_mcp_servers_for_context(organization_id, team_id)
     agent_info = get_agent_info_for_context(agent_type, organization_id, team_id) or {}
 
+    # Build custom auxiliary agents instructions and append to base instructions
+    # This is done at agent creation time (static) since aux agents config doesn't change per-run
+    # Import here to avoid circular import
+    from tools.auxiliary_agents import build_custom_auxiliary_agents_instructions
+    agent_metadata = agent_info.get('metadata', {})
+    custom_aux_instructions = build_custom_auxiliary_agents_instructions(
+        agent_metadata,
+        organization_id,
+        team_id,
+    )
+    if custom_aux_instructions:
+        instructions = instructions + "\n" + custom_aux_instructions
+        logger.debug(
+            "Appended custom auxiliary agents instructions to agent '%s'",
+            agent_type,
+        )
+
     # Resolve allowed tools
     allowed_tool_keys = _resolve_allowed_tool_keys(agent_type, agent_info, tool_definitions)
 

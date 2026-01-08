@@ -911,6 +911,8 @@ router.get('/', async (req, res, next) => {
             MAX(COALESCE(t.name, 'Organization')) AS team_label,
             MAX(COALESCE(u2.name, u2.email, u.user_id::text)) AS user_label,
             COUNT(*) as request_count,
+            SUM(COALESCE(u.request_tokens, 0)) AS request_tokens,
+            SUM(COALESCE(u.response_tokens, 0)) AS response_tokens,
             SUM(COALESCE(u.request_tokens, 0) + COALESCE(u.response_tokens, 0)) AS total_tokens,
             SUM(u.cost) as cost
           FROM usage u
@@ -1274,6 +1276,8 @@ router.get('/', async (req, res, next) => {
               team: row.team_label,
               user: row.user_label,
               requestCount: Number(row.request_count) || 0,
+              requestTokens: Number(row.request_tokens) || 0,
+              responseTokens: Number(row.response_tokens) || 0,
               totalTokens: Number(row.total_tokens) || 0,
               cost: row.cost != null ? Number(row.cost) : null,
             };

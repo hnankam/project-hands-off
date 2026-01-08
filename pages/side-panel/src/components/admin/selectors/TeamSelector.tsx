@@ -64,7 +64,7 @@ export const TeamSelector: React.FC<TeamSelectorProps> = ({
               <span
                 key={team.id}
                 className={cn(
-                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
+                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium uppercase',
                   isLight
                     ? 'bg-blue-100 text-blue-700'
                     : 'bg-blue-900/30 text-blue-400'
@@ -130,7 +130,7 @@ export const TeamSelector: React.FC<TeamSelectorProps> = ({
                   )}
                 </div>
                 <TeamIcon />
-                <span className="truncate flex-1 text-left">{team.name}</span>
+                <span className="truncate flex-1 text-left text-[11px] uppercase">{team.name}</span>
               </button>
             );
           })}
@@ -207,7 +207,7 @@ export const SingleTeamSelector: React.FC<SingleTeamSelectorProps> = ({
             : 'text-gray-200 hover:bg-gray-700 border-gray-600 bg-[#151C24]',
         )}
       >
-        <span className="font-medium truncate flex-1 min-w-0 text-left">
+        <span className={cn('font-medium truncate flex-1 min-w-0 text-left', selectedTeam && 'text-[11px] uppercase')}>
           {selectedTeam ? selectedTeam.name : placeholder}
         </span>
         <ChevronDownIcon isOpen={isOpen} className="flex-shrink-0 mt-0.5" />
@@ -258,7 +258,7 @@ export const SingleTeamSelector: React.FC<SingleTeamSelectorProps> = ({
                     : 'text-gray-200 hover:bg-gray-700',
               )}
             >
-              <span className="truncate flex-1 text-left">{team.name}</span>
+              <span className="truncate flex-1 text-left text-[11px] uppercase">{team.name}</span>
               {selectedTeamId === team.id && (
                 <CheckIcon className="ml-auto flex-shrink-0" />
               )}

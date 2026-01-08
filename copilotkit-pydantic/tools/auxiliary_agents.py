@@ -3,27 +3,44 @@
 This module manages auxiliary agents that are used by backend tools for
 specialized tasks like image generation, web search, code execution, etc.
 
-Auxiliary agents are configured in the main agent's metadata field:
+There are two types of auxiliary agents:
 
+1. **Built-in Types**: Fixed types that use specific built-in tools
+   - image_generation, web_search, code_execution, url_context, memory
+   - These have dedicated backend tools (generate_images, web_search, etc.)
+
+2. **Custom Auxiliary Agents**: User-defined agents that can be called via call_agent tool
+   - Configured with a unique key, agent_id, and description
+   - The main agent learns about them and can call them dynamically
+
+Example metadata structure:
 {
     "auxiliary_agents": {
+        // Built-in types
         "image_generation": {
-            "agent_type": "image-gen-agent"
+            "agent_id": "550e8400-e29b-41d4-a716-446655440000"
         },
         "web_search": {
-            "agent_type": "web-search-agent"
+            "agent_id": "550e8400-e29b-41d4-a716-446655440001"
         },
-        "code_execution": {
-            "agent_type": "code-exec-agent"
+        // Custom auxiliary agents
+        "custom": [
+            {
+                "key": "research_assistant",
+                "agent_id": "550e8400-e29b-41d4-a716-446655440004",
+                "description": "Searches and summarizes academic research papers"
         },
-        "url_context": {
-            "agent_type": "url-context-agent"
-        },
-        "memory": {
-            "agent_type": "memory-agent"
+            {
+                "key": "code_reviewer",
+                "agent_id": "550e8400-e29b-41d4-a716-446655440005",
+                "description": "Reviews code for bugs, security issues, and best practices"
         }
+        ]
     }
 }
+
+Using agent_id (database UUID) ensures configurations won't break when 
+agent names are changed.
 """
 
 from __future__ import annotations
@@ -118,7 +135,7 @@ async def get_auxiliary_agent(
         {
             "auxiliary_agents": {
                 "image_generation": {
-                    "agent_type": "my-image-agent"
+                    "agent_id": "550e8400-e29b-41d4-a716-446655440000"
                 }
             }
         }
@@ -150,10 +167,43 @@ async def get_auxiliary_agent(
         )
         return None
     
-    aux_agent_type = aux_config.get('agent_type')
+    # Import config functions
+    from config.prompts import get_agent_info_by_id_for_context
+    
+    # Get agent_id (required)
+    aux_agent_id = aux_config.get('agent_id')
+    if not aux_agent_id:
+        logger.warning(
+            "Auxiliary agent config for '%s' missing 'agent_id' in main agent '%s'. "
+            "Configure using: {\"auxiliary_agents\": {\"%s\": {\"agent_id\": \"<uuid>\"}}}",
+            aux_type,
+            main_agent_type,
+            aux_type,
+        )
+        return None
+    
+    # Lookup by stable database ID
+    aux_agent_info = get_agent_info_by_id_for_context(aux_agent_id, organization_id, team_id)
+    if not aux_agent_info:
+        logger.warning(
+            "Auxiliary agent ID '%s' not found for '%s' in main agent '%s'. "
+            "The agent may have been deleted.",
+            aux_agent_id[:8] if aux_agent_id else 'None',
+            aux_type,
+            main_agent_type,
+        )
+        return None
+    
+    aux_agent_type = aux_agent_info.get('type')
+    logger.debug(
+        "Resolved auxiliary agent by ID: %s -> type=%s",
+        aux_agent_id[:8],
+        aux_agent_type,
+    )
+    
     if not aux_agent_type:
         logger.warning(
-            "Auxiliary agent config for '%s' missing 'agent_type' field in main agent '%s'",
+            "Could not resolve auxiliary agent type for '%s' in main agent '%s'",
             aux_type,
             main_agent_type,
         )
@@ -176,10 +226,8 @@ async def get_auxiliary_agent(
     try:
         from core.agent_factory import get_agent
         from config.models import get_models_for_context
-        from config.prompts import get_agent_info_for_context
         
-        # Get the auxiliary agent's own configuration to find its allowed models
-        aux_agent_info = get_agent_info_for_context(aux_agent_type, organization_id, team_id)
+        # aux_agent_info was already fetched above
         
         # Get available models for context
         models = get_models_for_context(organization_id, team_id)
@@ -294,7 +342,7 @@ def get_auxiliary_agent_config(
 def list_configured_auxiliary_agents(
     main_agent_metadata: Dict[str, Any],
 ) -> list[str]:
-    """List all auxiliary agent types configured in metadata.
+    """List all built-in auxiliary agent types configured in metadata.
     
     Args:
         main_agent_metadata: The main agent's metadata
@@ -305,6 +353,290 @@ def list_configured_auxiliary_agents(
     aux_agents_config = main_agent_metadata.get('auxiliary_agents', {})
     return [
         aux_type for aux_type in AUXILIARY_AGENT_TYPES
-        if aux_type in aux_agents_config and aux_agents_config[aux_type].get('agent_type')
+        if aux_type in aux_agents_config and aux_agents_config[aux_type].get('agent_id')
     ]
+
+
+# ========== Custom Auxiliary Agents ==========
+
+def get_custom_auxiliary_agents_config(
+    main_agent_metadata: Dict[str, Any],
+) -> list[Dict[str, Any]]:
+    """Get the list of custom auxiliary agent configurations.
+    
+    Args:
+        main_agent_metadata: The main agent's metadata
+        
+    Returns:
+        List of custom auxiliary agent configs, each with 'key', 'agent_id', 'description'
+    """
+    aux_agents_config = main_agent_metadata.get('auxiliary_agents', {})
+    custom_agents = aux_agents_config.get('custom', [])
+    
+    # Validate and filter to only valid configs
+    valid_configs = []
+    for config in custom_agents:
+        if isinstance(config, dict) and config.get('key') and config.get('agent_id'):
+            valid_configs.append({
+                'key': config['key'],
+                'agent_id': config['agent_id'],
+                'description': config.get('description', ''),
+            })
+    
+    return valid_configs
+
+
+def get_custom_auxiliary_agent_by_key(
+    agent_key: str,
+    main_agent_metadata: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Get a custom auxiliary agent config by its key.
+    
+    Args:
+        agent_key: The unique key for the custom auxiliary agent
+        main_agent_metadata: The main agent's metadata
+        
+    Returns:
+        The config dict with 'key', 'agent_id', 'description', or None if not found
+    """
+    custom_agents = get_custom_auxiliary_agents_config(main_agent_metadata)
+    for config in custom_agents:
+        if config['key'] == agent_key:
+            return config
+    return None
+
+
+async def get_custom_auxiliary_agent(
+    agent_key: str,
+    main_agent_type: str,
+    main_agent_metadata: Dict[str, Any],
+    organization_id: str | None,
+    team_id: str | None,
+) -> Optional[Agent]:
+    """Get or create a cached custom auxiliary agent by its key.
+    
+    Custom auxiliary agents are different from built-in types (image_generation, etc.)
+    in that they are user-defined and called via the generic call_agent tool.
+    
+    Args:
+        agent_key: The unique key for the custom auxiliary agent
+        main_agent_type: The main agent's type (for cache key)
+        main_agent_metadata: The main agent's metadata containing auxiliary_agents.custom config
+        organization_id: Organization context
+        team_id: Team context
+        
+    Returns:
+        Configured Agent instance, or None if not configured
+    """
+    # Get the custom agent config
+    custom_config = get_custom_auxiliary_agent_by_key(agent_key, main_agent_metadata)
+    if not custom_config:
+        logger.debug(
+            "Custom auxiliary agent '%s' not configured for main agent '%s'",
+            agent_key,
+            main_agent_type,
+        )
+        return None
+    
+    aux_agent_id = custom_config['agent_id']
+    
+    # Import config functions
+    from config.prompts import get_agent_info_by_id_for_context
+    
+    # Lookup by stable database ID
+    aux_agent_info = get_agent_info_by_id_for_context(aux_agent_id, organization_id, team_id)
+    if not aux_agent_info:
+        logger.warning(
+            "Custom auxiliary agent ID '%s' (key='%s') not found for main agent '%s'. "
+            "The agent may have been deleted.",
+            aux_agent_id[:8] if aux_agent_id else 'None',
+            agent_key,
+            main_agent_type,
+        )
+        return None
+    
+    aux_agent_type = aux_agent_info.get('type')
+    logger.debug(
+        "Resolved custom auxiliary agent by key '%s': id=%s -> type=%s",
+        agent_key,
+        aux_agent_id[:8],
+        aux_agent_type,
+    )
+    
+    if not aux_agent_type:
+        logger.warning(
+            "Could not resolve agent type for custom auxiliary agent '%s' in main agent '%s'",
+            agent_key,
+            main_agent_type,
+        )
+        return None
+    
+    # Build cache key (using 'custom:' prefix to distinguish from built-in types)
+    org_token, team_token = context_tuple(organization_id, team_id)
+    cache_key = (org_token, team_token, main_agent_type, f"custom:{agent_key}")
+    
+    # Check cache
+    if cache_key in _auxiliary_agent_cache:
+        logger.debug(
+            "Using cached custom auxiliary agent '%s' for main agent '%s'",
+            agent_key,
+            main_agent_type,
+        )
+        return _auxiliary_agent_cache[cache_key]
+    
+    # Create auxiliary agent using the agent factory
+    try:
+        from core.agent_factory import get_agent
+        from config.models import get_models_for_context
+        
+        # Get available models for context
+        models = get_models_for_context(organization_id, team_id)
+        if not models:
+            logger.error(
+                "No models available for custom auxiliary agent '%s' in org=%s team=%s",
+                agent_key,
+                organization_id,
+                team_id,
+            )
+            return None
+        
+        # Custom auxiliary agent MUST have allowed_models configured
+        allowed_models = aux_agent_info.get('allowed_models')
+        if not allowed_models:
+            logger.error(
+                "Custom auxiliary agent '%s' (type=%s) has no models configured. "
+                "Please configure at least one model for the auxiliary agent.",
+                agent_key,
+                aux_agent_type,
+            )
+            return None
+        
+        # Find the first allowed model that's actually available in context
+        model_name = None
+        for allowed_model in allowed_models:
+            if allowed_model in models:
+                model_name = allowed_model
+                logger.debug(
+                    "Using model '%s' for custom auxiliary agent '%s'",
+                    model_name,
+                    agent_key,
+                )
+                break
+        
+        if model_name is None:
+            logger.error(
+                "None of custom auxiliary agent '%s' allowed_models %s are available in context. "
+                "Available models: %s",
+                agent_key,
+                allowed_models,
+                list(models.keys()),
+            )
+            return None
+        
+        # Create the agent
+        agent = await get_agent(
+            agent_type=aux_agent_type,
+            model_name=model_name,
+            organization_id=organization_id,
+            team_id=team_id,
+        )
+        
+        # Cache the agent
+        _auxiliary_agent_cache[cache_key] = agent
+        
+        logger.info(
+            "Created and cached custom auxiliary agent '%s' (type=%s, model=%s) for main agent '%s'",
+            agent_key,
+            aux_agent_type,
+            model_name,
+            main_agent_type,
+        )
+        
+        return agent
+        
+    except KeyError as e:
+        logger.error(
+            "Failed to create custom auxiliary agent '%s' (type=%s): Agent type not found - %s",
+            agent_key,
+            aux_agent_type,
+            str(e),
+        )
+        return None
+    except Exception as e:
+        logger.error(
+            "Failed to create custom auxiliary agent '%s' (type=%s): %s",
+            agent_key,
+            aux_agent_type,
+            str(e),
+        )
+        return None
+
+
+def build_custom_auxiliary_agents_instructions(
+    main_agent_metadata: Dict[str, Any],
+    organization_id: str | None,
+    team_id: str | None,
+) -> str:
+    """Build instruction text describing available custom auxiliary agents.
+    
+    This is used to inform the main agent about which custom auxiliary agents
+    are available and what they do, so it can use the call_agent tool appropriately.
+    
+    Args:
+        main_agent_metadata: The main agent's metadata
+        organization_id: Organization context (for resolving agent names)
+        team_id: Team context (for resolving agent names)
+        
+    Returns:
+        Instruction text to append to agent's base instructions, or empty string
+    """
+    custom_agents = get_custom_auxiliary_agents_config(main_agent_metadata)
+    
+    if not custom_agents:
+        return ""
+    
+    # Import config functions for resolving agent names
+    from config.prompts import get_agent_info_by_id_for_context
+    
+    # Build the instruction text
+    lines = [
+        "",
+        "=== Custom Auxiliary Agents ===",
+        "",
+        "You have access to specialized auxiliary agents that you can call using the `call_agent` tool.",
+        "Use these agents to delegate specialized tasks. Each agent has specific capabilities:",
+        "",
+    ]
+    
+    valid_agents = []
+    for config in custom_agents:
+        agent_key = config['key']
+        agent_id = config['agent_id']
+        description = config.get('description', 'No description provided')
+        
+        # Try to resolve agent name from ID
+        agent_info = get_agent_info_by_id_for_context(agent_id, organization_id, team_id)
+        if agent_info:
+            agent_name = agent_info.get('name', agent_key)
+            valid_agents.append({
+                'key': agent_key,
+                'name': agent_name,
+                'description': description,
+            })
+        else:
+            logger.debug(
+                "Custom auxiliary agent '%s' (id=%s) not found in context, skipping from instructions",
+                agent_key,
+                agent_id[:8] if agent_id else 'None',
+            )
+    
+    if not valid_agents:
+        return ""
+    
+    for agent in valid_agents:
+        lines.append(f"agent_key: {agent['key']}")
+        lines.append(f"description: {agent['description']}")
+        lines.append("")
+    
+    return "\n".join(lines)
 

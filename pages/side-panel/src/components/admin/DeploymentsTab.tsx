@@ -234,6 +234,9 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
   const [teamFilterIds, setTeamFilterIds] = useState<string[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
   const [expandedEntitySections, setExpandedEntitySections] = useState<Record<string, Record<string, boolean>>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const autoRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   const teamCacheRef = useRef<Record<string, Record<string, string>>>({});
   const isMountedRef = useRef<boolean>(false);
@@ -480,8 +483,47 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
       filtered = filtered.filter(dep => dep.status === statusFilter);
     }
     
-    return filtered;
-  }, [deployments, selectedOrgId, teamFilterIds, statusFilter]);
+    // Helper functions for getting names
+    const getOrgName = (orgIdRaw: string | null | undefined) => {
+      const orgId = normalizeContextValue(orgIdRaw ?? null);
+      if (!orgId) return 'Global';
+      return organizationNameById[orgId] || orgId;
+    };
+    
+    const getTeamName = (orgIdRaw: string | null | undefined, teamIdRaw: string | null | undefined) => {
+      const orgId = normalizeContextValue(orgIdRaw ?? null);
+      const teamId = normalizeContextValue(teamIdRaw ?? null);
+      if (!teamId) {
+        return orgId ? 'Organization-wide' : 'Global';
+      }
+      if (orgId && teamCacheRef.current[orgId]?.[teamId]) {
+        return teamCacheRef.current[orgId][teamId];
+      }
+      return teamId;
+    };
+    
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(dep => {
+        const orgName = getOrgName(dep.context?.organization_id ?? null).toLowerCase();
+        const teamName = getTeamName(dep.context?.organization_id ?? null, dep.context?.team_id ?? null).toLowerCase();
+        return orgName.includes(query) || teamName.includes(query);
+      });
+    }
+    
+    // Sort alphabetically by organization name, then team name
+    return filtered.sort((a, b) => {
+      const orgA = getOrgName(a.context?.organization_id ?? null);
+      const orgB = getOrgName(b.context?.organization_id ?? null);
+      const orgCompare = orgA.localeCompare(orgB, undefined, { sensitivity: 'base' });
+      if (orgCompare !== 0) return orgCompare;
+      
+      const teamA = getTeamName(a.context?.organization_id ?? null, a.context?.team_id ?? null);
+      const teamB = getTeamName(b.context?.organization_id ?? null, b.context?.team_id ?? null);
+      return teamA.localeCompare(teamB, undefined, { sensitivity: 'base' });
+    });
+  }, [deployments, selectedOrgId, teamFilterIds, statusFilter, organizationNameById, searchQuery]);
 
   const filteredEndpoints = useMemo(() => {
     let filtered = endpoints;
@@ -519,8 +561,61 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
       filtered = filtered.filter(ep => selectedModelKeys.includes(ep.model.key));
     }
     
-    return filtered;
-  }, [endpoints, selectedOrgId, teamFilterIds, statusFilter, selectedAgentTypes, selectedModelKeys]);
+    // Helper functions for getting names
+    const getOrgName = (orgIdRaw: string | null | undefined) => {
+      const orgId = normalizeContextValue(orgIdRaw ?? null);
+      if (!orgId) return 'Global';
+      return organizationNameById[orgId] || orgId;
+    };
+    
+    const getTeamName = (orgIdRaw: string | null | undefined, teamIdRaw: string | null | undefined) => {
+      const orgId = normalizeContextValue(orgIdRaw ?? null);
+      const teamId = normalizeContextValue(teamIdRaw ?? null);
+      if (!teamId) {
+        return orgId ? 'Organization-wide' : 'Global';
+      }
+      if (orgId && teamCacheRef.current[orgId]?.[teamId]) {
+        return teamCacheRef.current[orgId][teamId];
+      }
+      return teamId;
+    };
+    
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(ep => {
+        const orgName = getOrgName(ep.context?.organization_id ?? null).toLowerCase();
+        const teamName = getTeamName(ep.context?.organization_id ?? null, ep.context?.team_id ?? null).toLowerCase();
+        const agentName = (ep.agent.name || ep.agent.type || '').toLowerCase();
+        const modelName = (ep.model.display_name || ep.model.key || '').toLowerCase();
+        const endpoint = (ep.endpoint || '').toLowerCase();
+        return orgName.includes(query) || teamName.includes(query) || agentName.includes(query) || modelName.includes(query) || endpoint.includes(query);
+      });
+    }
+    
+    // Sort alphabetically by organization name, then team name, then agent name, then model name
+    
+    return filtered.sort((a, b) => {
+      const orgA = getOrgName(a.context?.organization_id ?? null);
+      const orgB = getOrgName(b.context?.organization_id ?? null);
+      const orgCompare = orgA.localeCompare(orgB, undefined, { sensitivity: 'base' });
+      if (orgCompare !== 0) return orgCompare;
+      
+      const teamA = getTeamName(a.context?.organization_id ?? null, a.context?.team_id ?? null);
+      const teamB = getTeamName(b.context?.organization_id ?? null, b.context?.team_id ?? null);
+      const teamCompare = teamA.localeCompare(teamB, undefined, { sensitivity: 'base' });
+      if (teamCompare !== 0) return teamCompare;
+      
+      const agentA = a.agent.name || a.agent.type;
+      const agentB = b.agent.name || b.agent.type;
+      const agentCompare = agentA.localeCompare(agentB, undefined, { sensitivity: 'base' });
+      if (agentCompare !== 0) return agentCompare;
+      
+      const modelA = a.model.display_name || a.model.key;
+      const modelB = b.model.display_name || b.model.key;
+      return modelA.localeCompare(modelB, undefined, { sensitivity: 'base' });
+    });
+  }, [endpoints, selectedOrgId, teamFilterIds, statusFilter, selectedAgentTypes, selectedModelKeys, organizationNameById, searchQuery]);
 
   const stats = useMemo(() => {
     if (viewMode === 'endpoints') {
@@ -1111,6 +1206,18 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
 
   return (
     <div className="space-y-4">
+      <style>{`
+        @keyframes fadeInScale {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+      `}</style>
       {/* Organization and Team Filters */}
       <div className="grid grid-cols-2 gap-3">
           <div>
@@ -1206,6 +1313,71 @@ export const DeploymentsTab: React.FC<DeploymentsTabProps> = ({ isLight, organiz
           </div>
 
         <div className="flex items-center gap-2">
+          {/* Search Button/Input */}
+          {isSearchOpen ? (
+            <div className="relative flex-shrink-0">
+              <svg
+                className={cn(
+                  'absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2',
+                  isLight ? 'text-gray-400' : 'text-gray-500',
+                )}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={viewMode === 'endpoints' ? 'Search endpoints...' : 'Search contexts...'}
+                className={cn(
+                  'w-[200px] rounded py-1 pr-8 pl-7 text-xs transition-all duration-200 outline-none',
+                  isLight
+                    ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-100'
+                    : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800',
+                )}
+                style={{
+                  animation: 'fadeInScale 0.2s ease-out',
+                }}
+              />
+              <button
+                onClick={() => {
+                  setIsSearchOpen(false);
+                  setSearchQuery('');
+                }}
+                className={cn(
+                  'absolute top-1/2 right-1 -translate-y-1/2 p-1 rounded transition-colors',
+                  isLight
+                    ? 'text-gray-400 hover:text-gray-600'
+                    : 'text-gray-500 hover:text-gray-300',
+                )}
+                title="Close search">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setIsSearchOpen(true);
+                setTimeout(() => searchInputRef.current?.focus(), 10);
+              }}
+              className={cn(
+                'p-1 rounded transition-colors flex-shrink-0',
+                isLight
+                  ? 'text-gray-400 hover:text-gray-600'
+                  : 'text-gray-500 hover:text-gray-300',
+              )}
+              title={viewMode === 'endpoints' ? 'Search endpoints' : 'Search contexts'}>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+          )}
           <div className={cn('flex items-center gap-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
             <label className="flex items-center gap-1 cursor-pointer">
               <input

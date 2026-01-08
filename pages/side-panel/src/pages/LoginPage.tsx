@@ -222,10 +222,10 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
   return (
     <div
       className={cn(
-        'min-h-screen flex flex-col overflow-hidden transition-colors duration-300',
+        'h-screen flex flex-col overflow-hidden transition-colors duration-300',
         isLight ? 'bg-gray-100' : 'bg-[#151C24]',
       )}>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         <div className="mx-auto flex min-h-full max-w-6xl items-start justify-center px-4 pt-24 pb-10 sm:pt-24 sm:pb-16">
           <div
             className={cn(

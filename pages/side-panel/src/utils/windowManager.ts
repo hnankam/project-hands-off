@@ -18,7 +18,7 @@
 
 const SIDE_PANEL_HTML = 'side-panel/index.html';
 const DEFAULT_POPUP_WIDTH = 1200;
-const DEFAULT_POPUP_HEIGHT = 800;
+const DEFAULT_POPUP_HEIGHT = 900;
 const DEFAULT_ROUTE = '#/sessions';
 
 // Window dimension constraints

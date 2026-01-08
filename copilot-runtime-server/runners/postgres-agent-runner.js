@@ -40,6 +40,7 @@ export class PostgresAgentRunner extends AgentRunner {
    * @param {number} [options.maxHistoricRuns=null] - Max runs to load on connect (null/0 = load all, matches SQLite behavior)
    * @param {Object} [options.redis] - Optional Redis client for caching
    * @param {number} [options.cacheTTL=300] - Cache TTL in seconds (5 minutes)
+   * @param {boolean} [options.transformErrors=false] - If true, transform RUN_ERROR to RUN_FINISHED (shows failed runs in history); if false, filter out error runs entirely
    */
   constructor(options = {}) {
     super();
@@ -57,6 +58,8 @@ export class PostgresAgentRunner extends AgentRunner {
     this.redis = options.redis || null;
     this.cacheTTL = options.cacheTTL || 300; // 5 minutes
     this.debug = options.debug || false; // Enable verbose debug logging
+    // transformErrors: false = filter out error runs (default), true = transform RUN_ERROR to RUN_FINISHED
+    this.transformErrors = options.transformErrors || false;
     
     // In-memory cache for active runs (subjects only)
     this.activeSubjects = new Map(); // threadId -> { threadSubject, runSubject, agent }
@@ -83,6 +86,7 @@ export class PostgresAgentRunner extends AgentRunner {
       maxHistoricRuns: this.maxHistoricRuns,
       redis: this.redis ? 'enabled' : 'disabled',
       debug: this.debug,
+      transformErrors: this.transformErrors,
     });
   }
   
@@ -144,90 +148,9 @@ export class PostgresAgentRunner extends AgentRunner {
       // Step 3: Load historic data for message deduplication
       const historicRuns = await this.getHistoricRuns(threadId);
       
-      /* ========================================================================
-       * TRANSFORMATION CODE (COMMENTED OUT FOR LATER REUSE)
-       * ========================================================================
-       * This code transforms RUN_ERROR events to RUN_FINISHED to show failed
-       * runs in history. Currently disabled - we just filter them out.
-       * 
-       * To re-enable: Uncomment this block and remove the simple filter below.
-       * ========================================================================
-       *
-      const completeRuns = historicRuns.map(run => {
-        const events = run.events || [];
-        const hasRunStarted = events.some(e => e.type === 'RUN_STARTED');
-        const hasRunFinished = events.some(e => e.type === 'RUN_FINISHED');
-        const hasRunError = events.some(e => e.type === 'RUN_ERROR');
-        
-        // Always process events to remove RUN_ERROR
-        if (hasRunError) {
-          let transformedEvents;
-          
-          if (hasRunFinished) {
-            // Run already has RUN_FINISHED, just filter out RUN_ERROR events
-            transformedEvents = events.filter(event => {
-              if (event.type === 'RUN_ERROR') {
-                if (this.debug) {
-                  console.log(`[PostgresAgentRunner] Filtering out RUN_ERROR for complete run ${run.runId}`);
-                }
-                return false; // Remove RUN_ERROR
-              }
-              return true; // Keep all other events
-            });
-          } else {
-            // No RUN_FINISHED, transform RUN_ERROR to RUN_FINISHED
-            transformedEvents = events.map(event => {
-              if (event.type === 'RUN_ERROR') {
-                if (this.debug) {
-                  console.log(`[PostgresAgentRunner] Transforming RUN_ERROR to RUN_FINISHED for run ${run.runId}`);
-                }
-                // Ensure required fields are present
-                const runStartedEvent = events.find(e => e.type === 'RUN_STARTED');
-                return {
-                  ...event,
-                  type: 'RUN_FINISHED',
-                  threadId: event.threadId || runStartedEvent?.threadId || threadId,
-                  runId: event.runId || run.runId,
-                  // Preserve error info in metadata
-                  metadata: {
-                    ...event.metadata,
-                    originalType: 'RUN_ERROR',
-                    error: event.error
-                  }
-                };
-              }
-              return event;
-            });
-            
-            // If still no RUN_FINISHED after transformation, add synthetic one
-            const nowHasFinished = transformedEvents.some(e => e.type === 'RUN_FINISHED');
-            if (!nowHasFinished && hasRunStarted) {
-              if (this.debug) {
-                console.log(`[PostgresAgentRunner] Adding synthetic RUN_FINISHED for incomplete run ${run.runId}`);
-              }
-              const runStartedEvent = transformedEvents.find(e => e.type === 'RUN_STARTED');
-              transformedEvents.push({
-                type: 'RUN_FINISHED',
-                threadId: runStartedEvent?.threadId || threadId,
-                runId: run.runId,
-                metadata: {
-                  synthetic: true,
-                  reason: 'incomplete_run'
-                }
-              });
-            }
-          }
-          
-          return { ...run, events: transformedEvents };
-        }
-        
-        return run;
-      });
-       *
-       * ======================================================================== */
-      
-      // Filter out runs with RUN_ERROR events and add synthetic RUN_FINISHED to incomplete runs
-      const completeRuns = this.filterAndCompleteRuns(historicRuns, threadId, 'in executeRun');
+      // Process runs: filter out error runs (default) or transform errors to RUN_FINISHED
+      // Controlled by this.transformErrors (set via AGENT_RUNNER_TRANSFORM_ERRORS env var)
+      const completeRuns = this.filterAndCompleteRuns(historicRuns, threadId, 'in executeRun', this.transformErrors);
       
       // Get deleted message IDs for this thread
       const deletedMessageIds = await this.getDeletedMessageIds(threadId);
@@ -557,95 +480,12 @@ export class PostgresAgentRunner extends AgentRunner {
         return;
       }
       
-      // REQUIREMENT 1: Filter out runs with RUN_ERROR events and add synthetic RUN_FINISHED to incomplete runs
+      // Process runs: filter out error runs (default) or transform errors to RUN_FINISHED
       // This ensures:
-      // - Error runs don't affect new runs
+      // - Error runs don't affect new runs (filter mode)
       // - All runs have RUN_FINISHED to prevent "run still active" errors
-      
-      /* ========================================================================
-       * TRANSFORMATION CODE (COMMENTED OUT FOR LATER REUSE)
-       * ========================================================================
-       * This code transforms RUN_ERROR events to RUN_FINISHED to show failed
-       * runs in history. Currently disabled - we just filter them out.
-       * 
-       * To re-enable: Uncomment this block and remove the simple filter below.
-       * ========================================================================
-       *
-      const completeRuns = historicRuns.map(run => {
-        const events = run.events || [];
-        const hasRunStarted = events.some(e => e.type === 'RUN_STARTED');
-        const hasRunFinished = events.some(e => e.type === 'RUN_FINISHED');
-        const hasRunError = events.some(e => e.type === 'RUN_ERROR');
-        
-        // Always process events to remove RUN_ERROR
-        if (hasRunError) {
-          let transformedEvents;
-          
-          if (hasRunFinished) {
-            // Run already has RUN_FINISHED, just filter out RUN_ERROR events
-            transformedEvents = events.filter(event => {
-              if (event.type === 'RUN_ERROR') {
-                if (this.debug) {
-                  console.log(`[PostgresAgentRunner] Filtering out RUN_ERROR for complete run ${run.runId}`);
-                }
-                return false; // Remove RUN_ERROR
-              }
-              return true; // Keep all other events
-            });
-          } else {
-            // No RUN_FINISHED, transform RUN_ERROR to RUN_FINISHED
-            transformedEvents = events.map(event => {
-              if (event.type === 'RUN_ERROR') {
-                if (this.debug) {
-                  console.log(`[PostgresAgentRunner] Transforming RUN_ERROR to RUN_FINISHED for run ${run.runId}`);
-                }
-                // Ensure required fields are present
-                const runStartedEvent = events.find(e => e.type === 'RUN_STARTED');
-                return {
-                  ...event,
-                  type: 'RUN_FINISHED',
-                  threadId: event.threadId || runStartedEvent?.threadId || threadId,
-                  runId: event.runId || run.runId,
-                  // Preserve error info in metadata
-                  metadata: {
-                    ...event.metadata,
-                    originalType: 'RUN_ERROR',
-                    error: event.error
-                  }
-                };
-              }
-              return event;
-            });
-            
-            // If still no RUN_FINISHED after transformation, add synthetic one
-            const nowHasFinished = transformedEvents.some(e => e.type === 'RUN_FINISHED');
-            if (!nowHasFinished && hasRunStarted) {
-              if (this.debug) {
-                console.log(`[PostgresAgentRunner] Adding synthetic RUN_FINISHED for incomplete run ${run.runId}`);
-              }
-              const runStartedEvent = transformedEvents.find(e => e.type === 'RUN_STARTED');
-              transformedEvents.push({
-                type: 'RUN_FINISHED',
-                threadId: runStartedEvent?.threadId || threadId,
-                runId: run.runId,
-                metadata: {
-                  synthetic: true,
-                  reason: 'incomplete_run'
-                }
-              });
-            }
-          }
-          
-          return { ...run, events: transformedEvents };
-        }
-        
-        return run;
-      });
-       *
-       * ======================================================================== */
-      
-      // Filter out runs with RUN_ERROR events and add synthetic RUN_FINISHED to incomplete runs
-      const completeRuns = this.filterAndCompleteRuns(historicRuns, threadId, 'in loadAndStreamHistory');
+      // Controlled by this.transformErrors (set via AGENT_RUNNER_TRANSFORM_ERRORS env var)
+      const completeRuns = this.filterAndCompleteRuns(historicRuns, threadId, 'in loadAndStreamHistory', this.transformErrors);
       
       // REQUIREMENT 2: Filter deleted messages and their associated tool calls
       // When a user deletes messages (e.g., "delete all below"), we need to:
@@ -1144,6 +984,13 @@ export class PostgresAgentRunner extends AgentRunner {
     // If maxHistoricRuns is set, load the MOST RECENT N runs (not the oldest)
     const params = [threadId];
     
+    // Determine which statuses to include:
+    // - Always include 'completed' and 'stopped'
+    // - Include 'error' only when transformErrors is enabled (to show failed runs in history)
+    const statusList = this.transformErrors 
+      ? "('completed', 'stopped', 'error')" 
+      : "('completed', 'stopped')";
+    
     let query;
     if (this.maxHistoricRuns && this.maxHistoricRuns > 0) {
       // Load most recent N runs by wrapping the CTE and applying LIMIT to DESC ordered results
@@ -1153,7 +1000,7 @@ export class PostgresAgentRunner extends AgentRunner {
           SELECT run_id, parent_run_id, events, created_at, completed_at
        FROM agent_runs 
           WHERE thread_id = $1 
-            AND status IN ('completed', 'stopped')
+            AND status IN ${statusList}
             AND parent_run_id IS NULL
           
           UNION ALL
@@ -1163,7 +1010,7 @@ export class PostgresAgentRunner extends AgentRunner {
           FROM agent_runs ar
           INNER JOIN run_chain rc ON ar.parent_run_id = rc.run_id
           WHERE ar.thread_id = $1 
-            AND ar.status IN ('completed', 'stopped')
+            AND ar.status IN ${statusList}
         ),
         recent_runs AS (
           -- Select the most recent N runs
@@ -1178,7 +1025,7 @@ export class PostgresAgentRunner extends AgentRunner {
       params.push(this.maxHistoricRuns);
       
       if (this.debug) {
-        console.log(`[PostgresAgentRunner] Loading most recent ${this.maxHistoricRuns} runs for thread ${threadId}`);
+        console.log(`[PostgresAgentRunner] Loading most recent ${this.maxHistoricRuns} runs for thread ${threadId} (statuses: ${statusList})`);
       }
     } else {
       // Load all runs (no limit)
@@ -1188,7 +1035,7 @@ export class PostgresAgentRunner extends AgentRunner {
           SELECT run_id, parent_run_id, events, created_at, completed_at
           FROM agent_runs 
           WHERE thread_id = $1 
-            AND status IN ('completed', 'stopped')
+            AND status IN ${statusList}
             AND parent_run_id IS NULL
           
           UNION ALL
@@ -1198,14 +1045,14 @@ export class PostgresAgentRunner extends AgentRunner {
           FROM agent_runs ar
           INNER JOIN run_chain rc ON ar.parent_run_id = rc.run_id
           WHERE ar.thread_id = $1 
-            AND ar.status IN ('completed', 'stopped')
+            AND ar.status IN ${statusList}
         )
         SELECT * FROM run_chain
         ORDER BY created_at ASC
       `;
       
       if (this.debug) {
-        console.log(`[PostgresAgentRunner] Loading all runs for thread ${threadId} (no limit)`);
+        console.log(`[PostgresAgentRunner] Loading all runs for thread ${threadId} (no limit, statuses: ${statusList})`);
       }
     }
     
@@ -1233,68 +1080,180 @@ export class PostgresAgentRunner extends AgentRunner {
   }
   
   /**
-   * Filter out runs with RUN_ERROR events and add synthetic RUN_FINISHED to incomplete runs
-   * This prevents errors from previous runs affecting new runs
-   * and ensures all runs have RUN_FINISHED to prevent "run still active" errors
+   * Process runs with RUN_ERROR events and ensure all runs have RUN_FINISHED
+   * 
+   * Two modes of operation controlled by `transformErrors` flag:
+   * 
+   * 1. FILTER MODE (transformErrors = false, default):
+   *    - Completely removes runs that have RUN_ERROR events
+   *    - Failed runs won't appear in history at all
+   *    - Use when you want clean history without any trace of errors
+   * 
+   * 2. TRANSFORM MODE (transformErrors = true):
+   *    - Keeps runs with errors but transforms RUN_ERROR to RUN_FINISHED
+   *    - Error info is preserved in metadata (originalType, error)
+   *    - Use when you want failed runs to appear in history
+   * 
+   * Both modes add synthetic RUN_FINISHED to incomplete runs (those with
+   * RUN_STARTED but no RUN_FINISHED) to prevent "run still active" errors.
+   * 
    * @private
    * @param {Array} historicRuns - Array of historic runs to process
    * @param {string} threadId - Thread identifier (for synthetic RUN_FINISHED events)
    * @param {string} [context=''] - Context string for debug logging (e.g., 'in executeRun')
-   * @returns {Array} Filtered and completed runs
+   * @param {boolean} [transformErrors=false] - If true, transform RUN_ERROR to RUN_FINISHED; if false, filter out error runs
+   * @returns {Array} Processed runs (filtered or transformed based on flag)
    */
-  filterAndCompleteRuns(historicRuns, threadId, context = '') {
+  filterAndCompleteRuns(historicRuns, threadId, context = '', transformErrors = false) {
     const contextStr = context ? ` ${context}` : '';
-    const filteredOutRuns = [];
     
-    // Filter out runs with RUN_ERROR events
-    const runsWithoutErrors = historicRuns.filter(run => {
-      const hasError = (run.events || []).some(e => e.type === 'RUN_ERROR');
-      if (hasError) {
-        filteredOutRuns.push({
-          runId: run.runId,
-          status: run.status,
-          eventCount: (run.events || []).length,
-          createdAt: run.createdAt
-        });
+    // Helper: Analyze events in a single pass (O(n) instead of O(4n))
+    const analyzeEvents = (events) => {
+      let runStartedEvent = null;
+      let hasRunFinished = false;
+      let hasRunError = false;
+      
+      for (const event of events) {
+        if (event.type === 'RUN_STARTED' && !runStartedEvent) {
+          runStartedEvent = event;
+        } else if (event.type === 'RUN_FINISHED') {
+          hasRunFinished = true;
+        } else if (event.type === 'RUN_ERROR') {
+          hasRunError = true;
+        }
+        // Early exit if we found everything we need
+        if (runStartedEvent && hasRunFinished && hasRunError) break;
       }
-      return !hasError; // Only keep runs without errors
+      
+      return { runStartedEvent, hasRunFinished, hasRunError };
+    };
+    
+    // Helper: Create synthetic RUN_FINISHED event
+    const createSyntheticFinished = (run, runStartedEvent, reason) => ({
+      type: 'RUN_FINISHED',
+      threadId: runStartedEvent?.threadId || threadId,
+          runId: run.runId,
+      metadata: {
+        synthetic: true,
+        reason
+      }
     });
     
-    // Log filtered runs summary
-    if (filteredOutRuns.length > 0 && this.debug) {
-      console.log(`[PostgresAgentRunner] Filtering out ${filteredOutRuns.length} runs with RUN_ERROR${contextStr}:`);
-      filteredOutRuns.forEach(run => {
-        console.log(`[PostgresAgentRunner]   - Run ${run.runId} (status: ${run.status}, events: ${run.eventCount})`);
-      });
-    }
+    // Helper: Add synthetic RUN_FINISHED to incomplete run (shared logic)
+    const ensureRunFinished = (run, events, analysis, reason) => {
+      if (analysis.runStartedEvent && !analysis.hasRunFinished) {
+        if (this.debug) {
+          console.log(`[PostgresAgentRunner] Adding synthetic RUN_FINISHED to incomplete run ${run.runId}${contextStr}`);
+        }
+        return { 
+          ...run, 
+          events: [...events, createSyntheticFinished(run, analysis.runStartedEvent, reason)] 
+        };
+      }
+      return run;
+    };
     
-    // Add synthetic RUN_FINISHED to incomplete runs
-    return runsWithoutErrors.map(run => {
+    if (transformErrors) {
+      // =======================================================================
+      // TRANSFORM MODE: Convert RUN_ERROR to RUN_FINISHED, keep runs in history
+      // =======================================================================
+      return historicRuns.map(run => {
         const events = run.events || [];
-        const hasRunStarted = events.some(e => e.type === 'RUN_STARTED');
-        const hasRunFinished = events.some(e => e.type === 'RUN_FINISHED');
+        const analysis = analyzeEvents(events);
         
-        // Add synthetic RUN_FINISHED if run has RUN_STARTED but no RUN_FINISHED
-        if (hasRunStarted && !hasRunFinished) {
+        // Process runs with RUN_ERROR events
+        if (analysis.hasRunError) {
+          let transformedEvents;
+          
+          if (analysis.hasRunFinished) {
+            // Run already has RUN_FINISHED, just filter out RUN_ERROR events
+            transformedEvents = events.filter(event => {
+              if (event.type === 'RUN_ERROR') {
           if (this.debug) {
-            const contextStr = context ? ` ${context}` : '';
-            console.log(`[PostgresAgentRunner] Adding synthetic RUN_FINISHED to incomplete run ${run.runId}${contextStr}`);
+                  console.log(`[PostgresAgentRunner] Filtering out RUN_ERROR for complete run ${run.runId}${contextStr}`);
           }
-          const runStartedEvent = events.find(e => e.type === 'RUN_STARTED');
-          const syntheticFinished = {
+                return false;
+              }
+              return true;
+            });
+          } else {
+            // No RUN_FINISHED, transform RUN_ERROR to RUN_FINISHED
+            let transformedToFinished = false;
+            transformedEvents = events.map(event => {
+              if (event.type === 'RUN_ERROR') {
+                transformedToFinished = true;
+                if (this.debug) {
+                  console.log(`[PostgresAgentRunner] Transforming RUN_ERROR to RUN_FINISHED for run ${run.runId}${contextStr}`);
+                }
+                return {
+                  ...event,
             type: 'RUN_FINISHED',
-            threadId: runStartedEvent?.threadId || threadId,
-            runId: run.runId,
+                  threadId: event.threadId || analysis.runStartedEvent?.threadId || threadId,
+                  runId: event.runId || run.runId,
             metadata: {
-              synthetic: true,
-              reason: 'incomplete_run_no_finish'
+                    ...event.metadata,
+                    originalType: 'RUN_ERROR',
+                    error: event.error
+                  }
+                };
+              }
+              return event;
+            });
+            
+            // If transformation didn't produce RUN_FINISHED (edge case), add synthetic
+            if (!transformedToFinished && analysis.runStartedEvent) {
+              if (this.debug) {
+                console.log(`[PostgresAgentRunner] Adding synthetic RUN_FINISHED for incomplete error run ${run.runId}${contextStr}`);
+              }
+              transformedEvents.push(createSyntheticFinished(run, analysis.runStartedEvent, 'incomplete_run_with_error'));
             }
-          };
-          return { ...run, events: [...events, syntheticFinished] };
+          }
+          
+          return { ...run, events: transformedEvents };
         }
         
-        return run;
+        // For runs without errors, ensure they have RUN_FINISHED
+        return ensureRunFinished(run, events, analysis, 'incomplete_run_no_finish');
       });
+    } else {
+      // =======================================================================
+      // FILTER MODE: Remove runs with errors entirely from history
+      // =======================================================================
+      const filteredOutRuns = this.debug ? [] : null; // Only allocate if debugging
+      
+      // Filter and process in a single pass using reduce (avoids filter + map)
+      const processedRuns = historicRuns.reduce((acc, run) => {
+        const events = run.events || [];
+        const analysis = analyzeEvents(events);
+        
+        // Skip runs with errors
+        if (analysis.hasRunError) {
+          if (this.debug) {
+            filteredOutRuns.push({
+              runId: run.runId,
+              status: run.status,
+              eventCount: events.length,
+              createdAt: run.createdAt
+            });
+          }
+          return acc; // Don't include this run
+        }
+        
+        // Add run (with synthetic RUN_FINISHED if needed)
+        acc.push(ensureRunFinished(run, events, analysis, 'incomplete_run_no_finish'));
+        return acc;
+      }, []);
+      
+      // Log filtered runs summary
+      if (this.debug && filteredOutRuns && filteredOutRuns.length > 0) {
+        console.log(`[PostgresAgentRunner] Filtering out ${filteredOutRuns.length} runs with RUN_ERROR${contextStr}:`);
+        filteredOutRuns.forEach(run => {
+          console.log(`[PostgresAgentRunner]   - Run ${run.runId} (status: ${run.status}, events: ${run.eventCount})`);
+        });
+        }
+        
+      return processedRuns;
+    }
   }
   
   /**

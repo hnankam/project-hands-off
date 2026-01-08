@@ -53,6 +53,10 @@ export const HEADERS_TIMEOUT_MS = headersTimeout > 0 ? headersTimeout : 310_000;
 // Trust proxy (for rate-limit + IPs behind proxies)
 export const TRUST_PROXY = parseBoolean(process.env.TRUST_PROXY, false);
 
+// Agent Runner configuration
+// transformErrors: false = filter out error runs (default), true = transform RUN_ERROR to RUN_FINISHED (shows failed runs in history)
+export const AGENT_RUNNER_TRANSFORM_ERRORS = parseBoolean(process.env.AGENT_RUNNER_TRANSFORM_ERRORS, false);
+
 // Validation: Log warnings for misconfigured values
 if (IS_DEVELOPMENT && DEBUG) {
   if (bodyLimitInput > 100) {

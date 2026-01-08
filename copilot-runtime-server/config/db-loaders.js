@@ -99,7 +99,8 @@ export async function loadProvidersFromDb({ organizationId = null, teamId = null
         '[]'::json
       ) as teams
     FROM providers p
-    ${whereClause} ${teamClause}
+    ${whereClause ? whereClause + ' AND' : 'WHERE'} p.deleted_at IS NULL
+    ${teamClause}
     ORDER BY p.enabled DESC, p.provider_key
     `,
     params,
@@ -162,6 +163,7 @@ export async function loadModelsFromDb() {
       ) as teams
     FROM models m
     JOIN providers p ON m.provider_id = p.id
+    WHERE m.deleted_at IS NULL AND p.deleted_at IS NULL
     ORDER BY m.enabled DESC, m.model_key
   `);
   
@@ -214,9 +216,10 @@ export async function loadAgentsFromDb() {
       ) as teams
     FROM agents a
     LEFT JOIN agent_model_mappings amm ON amm.agent_id = a.id
-    LEFT JOIN models m ON m.id = amm.model_id
+    LEFT JOIN models m ON m.id = amm.model_id AND m.deleted_at IS NULL
     LEFT JOIN agent_tool_mappings atm ON atm.agent_id = a.id
-    LEFT JOIN tools tl ON tl.id = atm.tool_id
+    LEFT JOIN tools tl ON tl.id = atm.tool_id AND tl.deleted_at IS NULL
+    WHERE a.deleted_at IS NULL
     GROUP BY
       a.id,
       a.agent_type,
@@ -254,11 +257,11 @@ export async function loadDefaultsFromDb() {
   // Try to get defaults from a settings table (can be added later)
   // For now, use first enabled agent and model
   const agentResult = await query(`
-    SELECT agent_type FROM agents WHERE enabled = true ORDER BY agent_type LIMIT 1
+    SELECT agent_type FROM agents WHERE enabled = true AND deleted_at IS NULL ORDER BY agent_type LIMIT 1
   `);
   
   const modelResult = await query(`
-    SELECT model_key FROM models WHERE enabled = true ORDER BY model_key LIMIT 1
+    SELECT model_key FROM models WHERE enabled = true AND deleted_at IS NULL ORDER BY model_key LIMIT 1
   `);
   
   return {
@@ -304,7 +307,8 @@ export async function getModelsConfigFromDb({ organizationId = null, teamId = nu
         ) as teams
       FROM models m
       JOIN providers p ON m.provider_id = p.id
-      ${whereClause} ${teamClause}
+      ${whereClause ? whereClause + ' AND' : 'WHERE'} m.deleted_at IS NULL AND p.deleted_at IS NULL
+      ${teamClause}
       ORDER BY m.enabled DESC, m.model_key
       `,
       params,
@@ -393,10 +397,11 @@ export async function getAgentsConfigFromDb({ organizationId = null, teamId = nu
         ) as teams
       FROM agents a
       LEFT JOIN agent_model_mappings amm ON amm.agent_id = a.id
-      LEFT JOIN models m ON m.id = amm.model_id
+      LEFT JOIN models m ON m.id = amm.model_id AND m.deleted_at IS NULL
       LEFT JOIN agent_tool_mappings atm ON atm.agent_id = a.id
-      LEFT JOIN tools tl ON tl.id = atm.tool_id
-      ${whereClause} ${teamClause}
+      LEFT JOIN tools tl ON tl.id = atm.tool_id AND tl.deleted_at IS NULL
+      ${whereClause ? whereClause + ' AND' : 'WHERE'} a.deleted_at IS NULL
+      ${teamClause}
       GROUP BY
         a.id,
         a.agent_type,

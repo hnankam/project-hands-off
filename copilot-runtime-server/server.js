@@ -55,7 +55,8 @@ import {
   REQUEST_TIMEOUT_MS, 
   HEADERS_TIMEOUT_MS, 
   TRUST_PROXY,
-  DEBUG
+  DEBUG,
+  AGENT_RUNNER_TRANSFORM_ERRORS
 } from './config/index.js';
 
 // Runner configuration
@@ -294,6 +295,7 @@ async function createCopilotKitRuntime() {
       persistEventsImmediately: true, // Persist events immediately for data durability
       maxHistoricRuns: parseInt(process.env.AGENT_RUNNER_MAX_HISTORIC_RUNS) || 1000,  // Max runs to load (safety limit, set to 0/null to load all - matches SQLite)
       debug: DEBUG,         // Verbose logging in development only
+      transformErrors: AGENT_RUNNER_TRANSFORM_ERRORS, // false = filter out error runs, true = transform RUN_ERROR to RUN_FINISHED
     });
 
     // Recover any stalled runs from previous server instance (PostgreSQL only)

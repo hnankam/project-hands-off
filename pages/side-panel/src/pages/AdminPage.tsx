@@ -185,13 +185,39 @@ export function AdminPage({ onGoHome, onGoToSessions, initialTab = 'organization
         />
       )}
 
+      {/* Floating Alerts - fixed position below tabs bar, not affected by scroll */}
+      {(success.visible || error.visible) && (
+        <div className="fixed top-[65px] left-0 right-0 z-[10002] px-4 pt-4 pointer-events-none">
+          <div className="max-w-4xl mx-auto relative">
+            {success.visible && (
+              <div className="pointer-events-auto">
+                <AlertBanner 
+                  alert={success} 
+                  type="success" 
+                  isLight={isLight} 
+                  onDismiss={dismissSuccess}
+                  stackIndex={error.visible ? 1 : 0}
+                />
+              </div>
+            )}
+            {error.visible && (
+              <div className="pointer-events-auto">
+                <AlertBanner 
+                  alert={error} 
+                  type="error" 
+                  isLight={isLight} 
+                  onDismiss={dismissError}
+                  stackIndex={success.visible ? 2 : 0}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Content Area */}
       <div className="flex-1 min-h-0 overflow-y-auto admin-page-scroll relative isolate">
         <div className="p-4 max-w-4xl mx-auto relative">
-          {/* Alerts */}
-          <AlertBanner alert={error} type="error" isLight={isLight} onDismiss={dismissError} />
-          <AlertBanner alert={success} type="success" isLight={isLight} onDismiss={dismissSuccess} />
-
         {/* Tab Content */}
         {activeTab === 'organizations' && (
           <div className="animate-fadeIn">

@@ -310,6 +310,9 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
   }, [teamFilterIds]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [createForm, setCreateForm] = useState<ProviderFormState>(INITIAL_FORM);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -536,18 +539,32 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
   }, [teamFilterIds, teamMap]);
 
   const filteredProviders = useMemo(() => {
-    if (teamFilterIds.length === 0) {
-      return providers;
-    }
+    let result = providers;
+    
+    // Filter by team
+    if (teamFilterIds.length > 0) {
     const activeTeamIds = teamFilterIds.filter(id => teamMap.has(id));
     if (activeTeamIds.length === 0) {
-      return providers.filter(provider => provider.teams.length === 0);
-    }
-    return providers.filter(
+        result = providers.filter(provider => provider.teams.length === 0);
+      } else {
+        result = providers.filter(
       provider =>
         provider.teams.length === 0 || provider.teams.some(t => activeTeamIds.includes(t.id))
     );
-  }, [providers, teamFilterIds, teamMap]);
+      }
+    }
+    
+    // Filter by search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(provider => 
+        provider.providerKey.toLowerCase().includes(query) ||
+        provider.providerType.toLowerCase().includes(query)
+      );
+    }
+    
+    return result;
+  }, [providers, teamFilterIds, teamMap, searchQuery]);
 
   const maskedEditCredentials = useMemo(() => {
     if (!editForm) {
@@ -950,6 +967,18 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
 
   return (
     <div className="space-y-4">
+      <style>{`
+        @keyframes fadeInScale {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+      `}</style>
       {/* Organization and Team Filters */}
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -996,8 +1025,8 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
       {selectedOrgId && (
         <>
           {/* Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-shrink">
               <svg
                 className={cn('w-5 h-5', isLight ? 'text-blue-500' : 'text-blue-400')}
                 fill="none"
@@ -1018,7 +1047,72 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                 </span>
               </h3>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {/* Search Button/Input */}
+              {isSearchOpen ? (
+                <div className="relative flex-shrink-0">
+                  <svg
+                    className={cn(
+                      'absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2',
+                      isLight ? 'text-gray-400' : 'text-gray-500',
+                    )}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search providers..."
+                    className={cn(
+                      'w-[200px] rounded py-1 pr-8 pl-7 text-xs transition-all duration-200 outline-none',
+                      isLight
+                        ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-100'
+                        : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800',
+                    )}
+                    style={{
+                      animation: 'fadeInScale 0.2s ease-out',
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      setIsSearchOpen(false);
+                      setSearchQuery('');
+                    }}
+                    className={cn(
+                      'absolute top-1/2 right-1 -translate-y-1/2 p-1 rounded transition-colors',
+                      isLight
+                        ? 'text-gray-400 hover:text-gray-600'
+                        : 'text-gray-500 hover:text-gray-300',
+                    )}
+                    title="Close search">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setIsSearchOpen(true);
+                    setTimeout(() => searchInputRef.current?.focus(), 10);
+                  }}
+                  className={cn(
+                    'p-1 rounded transition-colors flex-shrink-0',
+                    isLight
+                      ? 'text-gray-400 hover:text-gray-600'
+                      : 'text-gray-500 hover:text-gray-300',
+                  )}
+                  title="Search providers">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </button>
+              )}
               {!showCreateForm && (
                 <button
                   onClick={() => {
@@ -1300,28 +1394,13 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
             ) : filteredProviders.length === 0 ? (
               <div
                 className={cn(
-                  'p-8 rounded-lg border-2 border-dashed text-center',
-                  isLight ? 'border-gray-300 bg-gray-50' : 'border-gray-700 bg-[#151C24]/50',
-                )}
-              >
-                <svg
-                  className={cn('w-12 h-12 mx-auto mb-3', isLight ? 'text-gray-400' : 'text-gray-600')}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M9 8h.01M15 8h.01M12 8h.01M9 12h6m-6 4h6"
-                  />
-                </svg>
-                <p className={cn('text-sm font-medium', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                  No providers configured
-                </p>
-                <p className={cn('text-xs mt-1', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                  Add a provider to enable model access for this organization or team.
+                  'text-center py-8 text-xs rounded-lg border',
+                  isLight ? 'text-gray-500 border-gray-200 bg-gray-50' : 'text-gray-400 border-gray-700 bg-[#151C24]',
+                )}>
+                <p>
+                  {providers.length === 0
+                    ? 'No providers configured'
+                    : 'No providers match the current filter'}
                 </p>
               </div>
             ) : (

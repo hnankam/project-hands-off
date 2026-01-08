@@ -21,7 +21,18 @@ USE_SQLITE_RUNNER=false  # or omit this variable
 
 # PostgreSQL connection (required)
 DATABASE_URL=postgresql://user:password@localhost:5432/copilotkit
+
+# Optional: Control error handling behavior
+AGENT_RUNNER_MAX_HISTORIC_RUNS=1000  # Max runs to load (safety limit, 0 = load all)
+AGENT_RUNNER_TRANSFORM_ERRORS=false  # false = filter out error runs, true = show failed runs in history
 ```
+
+**Error Handling Modes (AGENT_RUNNER_TRANSFORM_ERRORS):**
+
+| Value | Behavior |
+|-------|----------|
+| `false` (default) | Completely removes runs with RUN_ERROR from history. Failed runs won't appear at all. |
+| `true` | Transforms RUN_ERROR to RUN_FINISHED. Failed runs appear in history with error info preserved in metadata (`metadata.originalType`, `metadata.error`). |
 
 ### 2. SqliteAgentRunner
 **Lightweight, file-based, no database setup required**
@@ -92,6 +103,7 @@ if (USE_SQLITE_RUNNER) {
     persistEventsImmediately: true,
     maxHistoricRuns: 1000,
     debug: DEBUG,
+    transformErrors: AGENT_RUNNER_TRANSFORM_ERRORS, // false = filter out, true = transform to RUN_FINISHED
   });
 }
 ```

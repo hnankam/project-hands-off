@@ -14,6 +14,7 @@ import type { CumulativeUsage } from '../hooks/useUsageStream';
 import { API_CONFIG } from '../constants';
 import { Z_INDEX, POLLING_INTERVALS } from '../constants/ui';
 import { teamsCache } from '../components/selectors/TeamSelectorDropdown';
+import { AdminConfirmDialog } from '../components/admin/modals/AdminConfirmDialog';
 
 // ============================================================================
 // TYPES
@@ -169,6 +170,21 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
   const [teamsRefreshKey, setTeamsRefreshKey] = useState(0);
   const [sessionsPage, setSessionsPage] = useState(1);
   
+  // Bulk selection state
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  
+  // Individual session deletion state
+  const [sessionToDelete, setSessionToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [individualDeleteDialogOpen, setIndividualDeleteDialogOpen] = useState(false);
+  
+  // Rename state
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = React.useRef<HTMLInputElement>(null);
+  
   // Initialize activeHomeTab from localStorage
   const [activeHomeTab, setActiveHomeTab] = useState<'workspace' | 'sessions' | 'usage'>(() => {
     try {
@@ -275,19 +291,18 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     };
   }, [activeTeam, activeTeamName]);
 
-  // Calculate 7-day window
-  const sevenDaysAgo = useMemo(() => Date.now() - (7 * 24 * 60 * 60 * 1000), []);
-
-  // Filter sessions from last 7 days
-  const recentSessionsForUsage = useMemo(() => {
-    return sessions.filter(session => (session.timestamp || 0) >= sevenDaysAgo);
-  }, [sessions, sevenDaysAgo]);
+  // Fetch aggregated usage stats from backend database (7-day range)
+  // This provides accurate, authoritative usage data from the server for the Usage tab
+  const [aggregatedUsage, setAggregatedUsage] = useState<UsageSnapshot>(createEmptyUsage());
+  const [sessionsWithUsageCount, setSessionsWithUsageCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
 
-    if (!recentSessionsForUsage || recentSessionsForUsage.length === 0) {
-      setUsageBySession({});
+    // Don't fetch if user is not authenticated
+    if (!user?.id || !organization?.id) {
+      setAggregatedUsage(createEmptyUsage());
+      setSessionsWithUsageCount(0);
       setLastMetricsRefresh(Date.now());
       setUsageLoading(false);
       return;
@@ -297,35 +312,48 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
 
     (async () => {
       try {
-        const usageEntries = await Promise.all(
-          recentSessionsForUsage.map(async session => {
-            try {
-              const stats = await sessionStorageDBWrapper.getUsageStatsAsync(session.id);
-              return { sessionId: session.id, stats };
-            } catch (error) {
-              console.error('[HomePage] Failed to load usage stats for session', session.id, error);
-              return { sessionId: session.id, stats: null };
-            }
-          }),
-        );
+        // Fetch 7-day usage from backend database
+        const response = await fetch(`${API_CONFIG.BASE_URL}/api/admin/usage?range=7d`, {
+          credentials: 'include',
+        });
 
         if (cancelled) {
           return;
         }
 
-        const usageMap: Record<string, UsageSnapshot> = {};
-        usageEntries.forEach(({ sessionId, stats }) => {
-          if (!stats) return;
-          usageMap[sessionId] = {
-            request: stats.request ?? 0,
-            response: stats.response ?? 0,
-            total: stats.total ?? 0,
-            requestCount: stats.requestCount ?? 0,
-          };
-        });
+        if (!response.ok) {
+          console.error('[HomePage] Failed to fetch usage from API:', response.status);
+          setAggregatedUsage(createEmptyUsage());
+          setSessionsWithUsageCount(0);
+          setLastMetricsRefresh(Date.now());
+          return;
+        }
 
-        setUsageBySession(usageMap);
+        const data = await response.json();
+
+        if (cancelled) {
+          return;
+        }
+
+        // Extract summary from API response
+        const summary = data.summary || data.totals || {};
+        const newAggregatedUsage: UsageSnapshot = {
+          request: summary.requestTokens || 0,
+          response: summary.responseTokens || 0,
+          total: summary.totalTokens || 0,
+          requestCount: summary.callCount || 0,
+        };
+
+        // Get session count from summary
+        const sessionCount = summary.sessionCount || 0;
+
+        setAggregatedUsage(newAggregatedUsage);
+        setSessionsWithUsageCount(sessionCount);
         setLastMetricsRefresh(Date.now());
+      } catch (error) {
+        console.error('[HomePage] Error fetching usage from API:', error);
+        setAggregatedUsage(createEmptyUsage());
+        setSessionsWithUsageCount(0);
       } finally {
         if (!cancelled) {
           setUsageLoading(false);
@@ -336,18 +364,91 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     return () => {
       cancelled = true;
     };
-  }, [recentSessionsForUsage, metricsRefreshKey]);
+  }, [user?.id, organization?.id, metricsRefreshKey]);
 
-  const aggregatedUsage = useMemo(() => {
-    return Object.values(usageBySession).reduce<UsageSnapshot>((acc, stats) => ({
-      request: acc.request + stats.request,
-      response: acc.response + stats.response,
-      total: acc.total + stats.total,
-      requestCount: acc.requestCount + stats.requestCount,
-    }), createEmptyUsage());
-  }, [usageBySession]);
+  // Fetch per-session usage from backend database for the sessions table display
+  // Uses metric=sessions to get aggregated data per session
+  useEffect(() => {
+    let cancelled = false;
 
-  const sessionsWithUsageCount = useMemo(() => Object.keys(usageBySession).length, [usageBySession]);
+    // Don't fetch if user is not authenticated
+    if (!user?.id || !organization?.id) {
+      setUsageBySession({});
+      return;
+    }
+
+    (async () => {
+      try {
+        // Fetch session-level aggregated data from backend
+        // Using metric=sessions groups data by session and provides per-session totals
+        // Using range=all to get all-time stats for each session
+        // Using limit=1000 to get a large number of sessions (adjust as needed)
+        const response = await fetch(
+          `${API_CONFIG.BASE_URL}/api/admin/usage?metric=sessions&range=all&limit=1000`,
+          { credentials: 'include' }
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok) {
+          console.error('[HomePage] Failed to fetch per-session usage from API:', response.status);
+          setUsageBySession({});
+          return;
+        }
+
+        const data = await response.json();
+
+        if (cancelled) {
+          return;
+        }
+
+        // Map API response to usageBySession format
+        // The API returns recent.data with sessionId and token counts
+        const usageMap: Record<string, UsageSnapshot> = {};
+        
+        if (data.recent?.data && Array.isArray(data.recent.data)) {
+          data.recent.data.forEach((row: {
+            sessionId: string;
+            requestTokens?: number;
+            responseTokens?: number;
+            totalTokens?: number;
+            requestCount?: number;
+          }) => {
+            if (!row.sessionId) return;
+            
+            // Aggregate if same sessionId appears multiple times (e.g., different days)
+            const existing = usageMap[row.sessionId];
+            if (existing) {
+              usageMap[row.sessionId] = {
+                request: existing.request + (row.requestTokens || 0),
+                response: existing.response + (row.responseTokens || 0),
+                total: existing.total + (row.totalTokens || 0),
+                requestCount: existing.requestCount + (row.requestCount || 0),
+              };
+            } else {
+              usageMap[row.sessionId] = {
+                request: row.requestTokens || 0,
+                response: row.responseTokens || 0,
+                total: row.totalTokens || 0,
+                requestCount: row.requestCount || 0,
+              };
+            }
+          });
+        }
+
+        setUsageBySession(usageMap);
+      } catch (error) {
+        console.error('[HomePage] Error fetching per-session usage from API:', error);
+        setUsageBySession({});
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, organization?.id, metricsRefreshKey]);
 
   const sortedSessions = useMemo(() => {
     return [...sessions].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -436,8 +537,139 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
     }
   }, [creatingSession, onGoToSessions]);
 
+  // Bulk selection handlers
+  const toggleBulkSelectMode = useCallback(() => {
+    setBulkSelectMode(prev => {
+      if (prev) {
+        // Exiting bulk select mode - clear selections
+        setSelectedSessions(new Set());
+      }
+      return !prev;
+    });
+  }, []);
+
+  const toggleSessionSelection = useCallback((sessionId: string) => {
+    setSelectedSessions(prev => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) {
+        next.delete(sessionId);
+      } else {
+        next.add(sessionId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    const allSelected = paginatedSessions.length > 0 && paginatedSessions.every(s => selectedSessions.has(s.id));
+    if (allSelected) {
+      setSelectedSessions(new Set());
+    } else {
+      setSelectedSessions(new Set(paginatedSessions.map(s => s.id)));
+    }
+  }, [paginatedSessions, selectedSessions]);
+
+  const openBulkDeleteDialog = useCallback(() => {
+    if (selectedSessions.size === 0) return;
+    setBulkDeleteDialogOpen(true);
+  }, [selectedSessions.size]);
+
+  const confirmBulkDelete = useCallback(async () => {
+    if (selectedSessions.size === 0) return;
+    
+    setDeleting(true);
+    try {
+      const sessionIds = Array.from(selectedSessions);
+      for (const sessionId of sessionIds) {
+        await sessionStorageDBWrapper.deleteSession(sessionId, API_CONFIG.BASE_URL);
+      }
+      
+      setSelectedSessions(new Set());
+      setBulkSelectMode(false);
+      setBulkDeleteDialogOpen(false);
+      setMetricsRefreshKey(prev => prev + 1); // Refresh metrics
+    } catch (error) {
+      console.error('[HomePage] Failed to bulk delete sessions:', error);
+      setActionMessage({
+        type: 'error',
+        text: 'Failed to delete sessions. Please try again.',
+      });
+    } finally {
+      setDeleting(false);
+    }
+  }, [selectedSessions]);
+
+  const handleStartRename = useCallback((session: { id: string; title?: string | null }) => {
+    setRenamingSessionId(session.id);
+    setRenameValue(session.title || 'Untitled session');
+  }, []);
+
+  const handleCancelRename = useCallback(() => {
+    setRenamingSessionId(null);
+    setRenameValue('');
+  }, []);
+
+  const handleSaveRename = useCallback(async (sessionId: string) => {
+    if (!renameValue.trim() || renameValue === sortedSessions.find(s => s.id === sessionId)?.title) {
+      handleCancelRename();
+      return;
+    }
+
+    try {
+      await sessionStorageDBWrapper.updateSessionTitle(sessionId, renameValue.trim());
+      handleCancelRename();
+      setMetricsRefreshKey(prev => prev + 1); // Refresh metrics
+    } catch (error) {
+      console.error('[HomePage] Failed to rename session:', error);
+      setActionMessage({
+        type: 'error',
+        text: 'Failed to rename session. Please try again.',
+      });
+      handleCancelRename();
+    }
+  }, [renameValue, sortedSessions, handleCancelRename]);
+
+  // Focus rename input when renaming starts
+  useEffect(() => {
+    if (renamingSessionId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingSessionId]);
+
+  const handleDeleteSession = useCallback((sessionId: string, sessionTitle: string) => {
+    setSessionToDelete({ id: sessionId, title: sessionTitle });
+    setIndividualDeleteDialogOpen(true);
+  }, []);
+
+  const confirmIndividualDelete = useCallback(async () => {
+    if (!sessionToDelete) return;
+    
+    setDeleting(true);
+    try {
+      await sessionStorageDBWrapper.deleteSession(sessionToDelete.id, API_CONFIG.BASE_URL);
+      setIndividualDeleteDialogOpen(false);
+      setSessionToDelete(null);
+      setMetricsRefreshKey(prev => prev + 1); // Refresh metrics
+    } catch (error) {
+      console.error('[HomePage] Failed to delete session:', error);
+      setActionMessage({
+        type: 'error',
+        text: 'Failed to delete session. Please try again.',
+      });
+    } finally {
+      setDeleting(false);
+    }
+  }, [sessionToDelete]);
+
   const handleGoToSession = useCallback(async (sessionId: string) => {
     if (!canAccessSessions) {
+      return;
+    }
+
+    // Don't navigate if in bulk select mode
+    if (bulkSelectMode) {
+      toggleSessionSelection(sessionId);
       return;
     }
 
@@ -446,9 +678,9 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
       onGoToSessions();
     } catch (error) {
       console.error('[HomePage] Failed to switch to session:', error);
-      setActionMessage({ type: 'error', text: 'Failed to open session. Please try again.' });
+      setActionMessage({ type: 'error', text: 'Failed to open session. Please try again.'       });
     }
-  }, [canAccessSessions, onGoToSessions]);
+  }, [canAccessSessions, onGoToSessions, bulkSelectMode, toggleSessionSelection]);
 
   const handleRefreshMetrics = useCallback(() => {
     setMetricsRefreshKey(previous => previous + 1);
@@ -836,9 +1068,49 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                       </button>
                     </div>
                     
-                    {/* Pagination Row */}
+                    {/* Pagination Row with Bulk Selection Controls */}
                     {sortedSessions.length > 0 && (
-                      <div className={cn('flex items-center justify-end gap-3 px-4 pb-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                      <div className={cn('flex items-center justify-between px-4 pb-2', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                        <div className="flex items-center gap-2">
+                          {bulkSelectMode && (
+                            <button
+                              onClick={openBulkDeleteDialog}
+                              disabled={selectedSessions.size === 0}
+                              className={cn(
+                                'flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-medium transition-colors',
+                                selectedSessions.size === 0
+                                  ? 'cursor-not-allowed opacity-50'
+                                  : isLight
+                                    ? 'border-red-300 text-red-600 hover:bg-red-50'
+                                    : 'border-red-700 text-red-400 hover:bg-red-900/20',
+                              )}
+                              title="Delete selected">
+                              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                              DELETE ({selectedSessions.size})
+                            </button>
+                          )}
+                          <button
+                            onClick={toggleBulkSelectMode}
+                            className={cn(
+                              'flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-medium transition-colors',
+                              bulkSelectMode
+                                ? isLight
+                                  ? 'border-blue-300 bg-blue-50 text-blue-600'
+                                  : 'border-blue-700 bg-blue-900/20 text-blue-400'
+                                : isLight
+                                  ? 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                                  : 'border-gray-700 text-gray-300 hover:bg-gray-800',
+                            )}
+                            title={bulkSelectMode ? 'Exit select mode' : 'Select multiple items'}>
+                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                            </svg>
+                            {bulkSelectMode ? 'DONE' : 'SELECT'}
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-3">
                         <span className={cn('text-xs', isLight ? 'text-gray-500' : 'text-gray-400')}>
                           {sortedSessions.length === 0
                             ? 'No sessions'
@@ -885,6 +1157,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                             </svg>
                           </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -909,6 +1182,32 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                       <table className={cn('min-w-full w-full border-collapse divide-y text-xs', isLight ? 'divide-gray-200' : 'divide-gray-700')}>
                         <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
                           <tr>
+                            {bulkSelectMode && (
+                              <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>
+                                <div
+                                  className="flex cursor-pointer items-center gap-2"
+                                  onClick={toggleSelectAll}>
+                                  <div
+                                    className={cn(
+                                      'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
+                                      paginatedSessions.length > 0 && paginatedSessions.every(s => selectedSessions.has(s.id))
+                                        ? 'bg-blue-600/80 opacity-100'
+                                        : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500'),
+                                    )}>
+                                    {paginatedSessions.length > 0 && paginatedSessions.every(s => selectedSessions.has(s.id)) && (
+                                      <svg
+                                        className="h-2 w-2 text-white"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        strokeWidth={3}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                </div>
+                              </th>
+                            )}
                             <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Session</th>
                             <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Agent</th>
                             <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Model</th>
@@ -916,6 +1215,7 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                             <th className={cn('px-3 py-2 text-right text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Response</th>
                             <th className={cn('px-3 py-2 text-right text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Status</th>
                             <th className={cn('px-3 py-2 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Updated</th>
+                            <th className={cn('px-3 py-2 text-right text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Actions</th>
                           </tr>
                         </thead>
                         <tbody className={cn('divide-y', isLight ? 'divide-gray-100' : 'divide-gray-700')}>
@@ -927,14 +1227,73 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                               <tr
                                 key={session.id}
                                 className={cn(
-                                  'transition-colors',
-                                  isLight ? 'hover:bg-gray-50' : 'hover:bg-gray-900/40'
+                                  'group transition-colors',
+                                  isLight ? 'hover:bg-gray-50' : 'hover:bg-gray-900/40',
+                                  bulkSelectMode && selectedSessions.has(session.id) && (isLight ? 'bg-blue-50' : 'bg-blue-900/20')
                                 )}
+                                onClick={() => {
+                                  if (bulkSelectMode) {
+                                    toggleSessionSelection(session.id);
+                                  }
+                                }}
                               >
+                                {bulkSelectMode && (
+                                  <td className="px-3 py-2">
+                                    <div
+                                      className={cn(
+                                        'flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded transition-opacity',
+                                        selectedSessions.has(session.id)
+                                          ? 'bg-blue-600/80 opacity-100'
+                                          : cn('opacity-100 border', isLight ? 'border-gray-400' : 'border-gray-500'),
+                                      )}
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        toggleSessionSelection(session.id);
+                                      }}>
+                                      {selectedSessions.has(session.id) && (
+                                        <svg
+                                          className="h-2 w-2 text-white"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          viewBox="0 0 24 24"
+                                          strokeWidth={3}>
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      )}
+                                    </div>
+                                  </td>
+                                )}
                                 <td className={cn('px-3 py-2 truncate max-w-[200px]')}>
                                     <div className="flex items-center gap-2">
+                                      {renamingSessionId === session.id ? (
+                                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                                          <input
+                                            ref={renameInputRef}
+                                            type="text"
+                                            value={renameValue}
+                                            onChange={e => setRenameValue(e.target.value)}
+                                            onKeyDown={e => {
+                                              if (e.key === 'Enter') {
+                                                handleSaveRename(session.id);
+                                              } else if (e.key === 'Escape') {
+                                                handleCancelRename();
+                                              }
+                                            }}
+                                            onBlur={() => handleSaveRename(session.id)}
+                                            onClick={e => e.stopPropagation()}
+                                            className={cn(
+                                              'flex-1 rounded border px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500 min-w-0',
+                                              isLight ? 'border-gray-300 bg-white text-gray-900' : 'border-gray-600 bg-[#1a1f28] text-white',
+                                            )}
+                                          />
+                                        </div>
+                                      ) : (
+                                        <>
                                     <button
-                                      onClick={() => handleGoToSession(session.id)}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleGoToSession(session.id);
+                                            }}
                                       className={cn(
                                         'truncate text-left hover:underline cursor-pointer',
                                         isLight ? 'text-blue-600 hover:text-blue-700' : 'text-blue-400 hover:text-blue-300'
@@ -942,10 +1301,33 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                                     >
                                         {session.title || 'Untitled session'}
                                       </button>
+                                          {!bulkSelectMode && (
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleStartRename(session);
+                                              }}
+                                              disabled={renamingSessionId !== null}
+                                              className={cn(
+                                                'rounded p-0.5 opacity-0 transition-all group-hover:opacity-100',
+                                                renamingSessionId !== null
+                                                  ? 'cursor-not-allowed'
+                                                  : isLight
+                                                    ? 'text-gray-400 hover:bg-blue-50 hover:text-blue-600'
+                                                    : 'text-gray-500 hover:bg-blue-900/20 hover:text-blue-400',
+                                              )}
+                                              title="Rename session">
+                                              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                              </svg>
+                                            </button>
+                                          )}
                                       {session.id === currentSessionId && (
                                       <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold flex-shrink-0', isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-900/30 text-blue-300')}>
                                           Current
                                         </span>
+                                          )}
+                                        </>
                                       )}
                                   </div>
                                 </td>
@@ -974,6 +1356,24 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
                                 </td>
                                 <td className={cn('px-3 py-2 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
                                   {formatRelativeTime(session.timestamp)}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteSession(session.id, session.title || 'Untitled session');
+                                    }}
+                                    className={cn(
+                                      'rounded p-1 transition-colors',
+                                      isLight
+                                        ? 'text-gray-400 hover:text-red-600'
+                                        : 'text-gray-500 hover:text-red-400',
+                                    )}
+                                    title="Delete session">
+                                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                  </button>
                                 </td>
                               </tr>
                             );
@@ -1277,6 +1677,57 @@ export const HomePage: React.FC<HomePageProps> = ({ isLight, onGoToSessions, onG
           </div>
         </>
       )}
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AdminConfirmDialog
+        isOpen={bulkDeleteDialogOpen}
+        onClose={() => setBulkDeleteDialogOpen(false)}
+        onConfirm={confirmBulkDelete}
+        title="Delete Selected Sessions"
+        message={
+          <span>
+            Permanently delete <strong>{selectedSessions.size}</strong> {selectedSessions.size === 1 ? 'session' : 'sessions'}?<br/><br/>
+            This will remove the selected sessions and their messages from storage and cannot be undone.
+          </span>
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        isLight={isLight}
+        isLoading={deleting}
+      />
+
+      {/* Individual Delete Confirmation Dialog */}
+      <AdminConfirmDialog
+        isOpen={individualDeleteDialogOpen}
+        onClose={() => {
+          setIndividualDeleteDialogOpen(false);
+          setSessionToDelete(null);
+        }}
+        onConfirm={confirmIndividualDelete}
+        title="Delete Session"
+        message={
+          <div className="flex items-start gap-3">
+            <div className={cn('flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full', isLight ? 'bg-red-100' : 'bg-red-900/30')}>
+              <svg className={cn('h-3.5 w-3.5', isLight ? 'text-red-600' : 'text-red-400')} fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className={cn('text-sm font-medium', mainTextColor)}>
+                Permanently delete "{sessionToDelete?.title || 'Untitled session'}"?
+              </p>
+              <p className={cn('mt-1 text-xs', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                This session and all its messages will be permanently deleted and cannot be recovered.
+              </p>
+            </div>
+          </div>
+        }
+        confirmText="Delete Session"
+        variant="danger"
+        isLight={isLight}
+        isLoading={deleting}
+      />
 
     </>
   );

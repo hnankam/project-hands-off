@@ -16,12 +16,30 @@ export type AuxiliaryAgentType =
   | 'url_context'
   | 'memory';
 
+/** Configuration for a built-in auxiliary agent type */
+export interface BuiltinAuxiliaryAgentConfig {
+  agent_id: string;
+}
+
+/** Configuration for a custom auxiliary agent */
+export interface CustomAuxiliaryAgent {
+  /** Unique key for this custom agent (e.g., "research_assistant") */
+  key: string;
+  /** Database ID of the agent to use */
+  agent_id: string;
+  /** Description of what this agent does (shown to the main agent) */
+  description: string;
+}
+
 export interface AuxiliaryAgentsConfig {
-  image_generation?: { agent_type: string };
-  web_search?: { agent_type: string };
-  code_execution?: { agent_type: string };
-  url_context?: { agent_type: string };
-  memory?: { agent_type: string };
+  // Built-in auxiliary agent types
+  image_generation?: BuiltinAuxiliaryAgentConfig;
+  web_search?: BuiltinAuxiliaryAgentConfig;
+  code_execution?: BuiltinAuxiliaryAgentConfig;
+  url_context?: BuiltinAuxiliaryAgentConfig;
+  memory?: BuiltinAuxiliaryAgentConfig;
+  // Custom auxiliary agents
+  custom?: CustomAuxiliaryAgent[];
 }
 
 export const AUX_TYPE_LABELS: Record<AuxiliaryAgentType, { label: string; description: string }> = {

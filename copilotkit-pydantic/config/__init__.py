@@ -28,6 +28,7 @@ from .prompts import (
     get_agent_prompts_for_context,
     get_agent_types_for_context,
     get_agent_info_for_context,
+    get_agent_info_by_id_for_context,
     store_prompts_for_context,
     clear_context_prompts,
 )
@@ -76,6 +77,7 @@ __all__ = [
     'get_agent_prompts_for_context',
     'get_agent_types_for_context',
     'get_agent_info_for_context',
+    'get_agent_info_by_id_for_context',
     'store_prompts_for_context',
     'clear_context_prompts',
     'get_tools_for_context',

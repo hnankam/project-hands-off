@@ -126,21 +126,27 @@ export const AdminConfirmDialog: React.FC<AdminConfirmDialogProps> = ({
           </div>
 
           {/* Content */}
-          <div className="space-y-3 px-3 py-4">
+          <div className="px-3 py-4">
             <div className={cn('text-xs', mutedTextColor)}>
               {message}
             </div>
+            </div>
 
-            {/* Actions */}
-            <div className="flex justify-end gap-2 pt-2">
+          {/* Footer */}
+          <div
+            className={cn(
+              'flex items-center justify-end gap-2 border-t px-3 py-2',
+              isLight ? 'border-gray-200' : 'border-gray-700',
+            )}
+          >
               <button
                 onClick={onClose}
                 disabled={isLoading}
                 className={cn(
                   'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
                   isLight
-                    ? 'text-gray-700 hover:bg-gray-200 border border-gray-300'
-                    : 'text-gray-300 hover:bg-gray-700 border border-gray-600',
+                  ? 'bg-gray-200 text-gray-900 hover:bg-gray-300'
+                  : 'bg-gray-700 text-gray-100 hover:bg-gray-600',
                   'disabled:opacity-50',
                 )}
               >
@@ -175,7 +181,6 @@ export const AdminConfirmDialog: React.FC<AdminConfirmDialogProps> = ({
                   confirmText
                 )}
               </button>
-            </div>
           </div>
         </div>
       </div>

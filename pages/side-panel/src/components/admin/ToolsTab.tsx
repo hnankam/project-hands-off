@@ -240,6 +240,12 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
   const [showAddServerForm, setShowAddServerForm] = useState(false);
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [expandedServerArgs, setExpandedServerArgs] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [serverSearchQuery, setServerSearchQuery] = useState('');
+  const [isServerSearchOpen, setIsServerSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const serverSearchInputRef = useRef<HTMLInputElement>(null);
   const [testStatus, setTestStatus] = useState<{
     state: 'idle' | 'loading' | 'success' | 'error';
     message?: string;
@@ -418,6 +424,26 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
     loadServers();
   }, [loadTools, loadServers]);
 
+  const filteredTools = useMemo(() => {
+    if (!searchQuery) return tools;
+    const query = searchQuery.toLowerCase();
+    return tools.filter(tool => 
+      tool.toolName.toLowerCase().includes(query) ||
+      tool.toolKey.toLowerCase().includes(query) ||
+      (tool.description && tool.description.toLowerCase().includes(query)) ||
+      (tool.mcpServer?.displayName && tool.mcpServer.displayName.toLowerCase().includes(query))
+    );
+  }, [tools, searchQuery]);
+
+  const filteredServers = useMemo(() => {
+    if (!serverSearchQuery) return servers;
+    const query = serverSearchQuery.toLowerCase();
+    return servers.filter(server => 
+      server.serverKey.toLowerCase().includes(query) ||
+      server.displayName.toLowerCase().includes(query)
+    );
+  }, [servers, serverSearchQuery]);
+
   const groupedTools = useMemo(() => {
     const groups: Record<ToolType, ToolRecord[]> = {
       frontend: [],
@@ -425,13 +451,13 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
       builtin: [],
       mcp: [],
     };
-    for (const tool of tools) {
+    for (const tool of filteredTools) {
       if (groups[tool.toolType]) {
         groups[tool.toolType].push(tool);
       }
     }
     return groups;
-  }, [tools]);
+  }, [filteredTools]);
 
   const renderToolScopeBadge = (tool: ToolRecord) => {
     if (tool.teams && tool.teams.length > 0) {
@@ -1181,7 +1207,13 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
               {items.length === 0 ? (
                 <tr>
                       <td colSpan={5} className={cn('px-4 py-6 text-center text-xs italic', isLight ? 'text-gray-400' : 'text-gray-500')}>
-                    No tools configured for this category.
+                    {(() => {
+                      // Check if there are tools in this category before filtering
+                      const categoryTools = tools.filter(t => t.toolType === type);
+                      return categoryTools.length === 0
+                        ? 'No tools configured for this category.'
+                        : 'No tools match the current filter.';
+                    })()}
                   </td>
                 </tr>
               ) : (
@@ -1364,6 +1396,18 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
 
   return (
     <div className="space-y-4">
+      <style>{`
+        @keyframes fadeInScale {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+      `}</style>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={cn('block text-xs font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -1427,8 +1471,8 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
         )}
 
         <div className="mt-6 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-shrink">
               <svg
                 className={cn('w-5 h-5', isLight ? 'text-blue-500' : 'text-blue-400')}
                 fill="none"
@@ -1441,10 +1485,76 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
               <h3 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
                 MCP Servers{' '}
                 <span className={cn('text-xs font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                  ({servers.length})
+                  ({filteredServers.length})
             </span>
               </h3>
           </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {/* Search Button/Input */}
+              {isServerSearchOpen ? (
+                <div className="relative flex-shrink-0">
+                  <svg
+                    className={cn(
+                      'absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2',
+                      isLight ? 'text-gray-400' : 'text-gray-500',
+                    )}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    ref={serverSearchInputRef}
+                    type="text"
+                    value={serverSearchQuery}
+                    onChange={(e) => setServerSearchQuery(e.target.value)}
+                    placeholder="Search servers..."
+                    className={cn(
+                      'w-[200px] rounded py-1 pr-8 pl-7 text-xs transition-all duration-200 outline-none',
+                      isLight
+                        ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-100'
+                        : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800',
+                    )}
+                    style={{
+                      animation: 'fadeInScale 0.2s ease-out',
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      setIsServerSearchOpen(false);
+                      setServerSearchQuery('');
+                    }}
+                    className={cn(
+                      'absolute top-1/2 right-1 -translate-y-1/2 p-1 rounded transition-colors',
+                      isLight
+                        ? 'text-gray-400 hover:text-gray-600'
+                        : 'text-gray-500 hover:text-gray-300',
+                    )}
+                    title="Close search">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setIsServerSearchOpen(true);
+                    setTimeout(() => serverSearchInputRef.current?.focus(), 10);
+                  }}
+                  className={cn(
+                    'p-1 rounded transition-colors flex-shrink-0',
+                    isLight
+                      ? 'text-gray-400 hover:text-gray-600'
+                      : 'text-gray-500 hover:text-gray-300',
+                  )}
+                  title="Search servers">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </button>
+              )}
             {!showAddServerForm && (
               <button
                 onClick={() => {
@@ -1465,6 +1575,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                 Add Server
               </button>
             )}
+            </div>
           </div>
 
           {showAddServerForm && (
@@ -1779,35 +1890,20 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                   </div>
                 </div>
               ))
-            ) : servers.length === 0 ? (
+            ) : filteredServers.length === 0 ? (
               <div
                 className={cn(
-                  'p-8 rounded-lg border-2 border-dashed text-center',
-                  isLight ? 'border-gray-300 bg-gray-50' : 'border-gray-700 bg-[#151C24]/50',
-                )}
-              >
-                <svg
-                  className={cn('w-12 h-12 mx-auto mb-3', isLight ? 'text-gray-400' : 'text-gray-600')}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"
-                  />
-                </svg>
-                <p className={cn('text-sm font-medium', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                  No MCP servers configured
-                </p>
-                <p className={cn('text-xs mt-1', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                  {!showAddServerForm && 'Click "+ Add Server" to get started.'}
+                  'text-center py-8 text-xs rounded-lg border',
+                  isLight ? 'text-gray-500 border-gray-200 bg-gray-50' : 'text-gray-400 border-gray-700 bg-[#151C24]',
+                )}>
+                <p>
+                  {servers.length === 0
+                    ? 'No MCP servers configured'
+                    : 'No MCP servers match the current filter'}
             </p>
           </div>
             ) : (
-              servers.map(server => {
+              filteredServers.map(server => {
                 const isEditing = editingServerId === server.id;
                 const serverToolCount = tools.filter(t => t.mcpServerId === server.id).length;
                 

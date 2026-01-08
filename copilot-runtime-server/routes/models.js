@@ -418,7 +418,7 @@ async function fetchModelById(pool, id, organizationId) {
     `SELECT m.*, p.provider_key, p.provider_type
      FROM models_with_teams m
      JOIN providers p ON m.provider_id = p.id
-     WHERE m.id = $1 AND m.organization_id = $2`,
+     WHERE m.id = $1 AND m.organization_id = $2 AND m.deleted_at IS NULL`,
     [id, organizationId],
   );
 
@@ -508,8 +508,9 @@ router.get('/', async (req, res, next) => {
        FROM models m
        JOIN providers p ON m.provider_id = p.id
        WHERE m.organization_id = $1
+         AND m.deleted_at IS NULL
          ${teamFilter}
-       ORDER BY m.created_at DESC`,
+       ORDER BY COALESCE(m.display_name, m.model_name) ASC`,
       params,
     );
 
@@ -875,7 +876,7 @@ router.post('/:modelId/test', async (req, res, next) => {
               ) as provider_teams
          FROM models m
          JOIN providers p ON m.provider_id = p.id
-        WHERE m.id = $1 AND m.organization_id = $2`,
+        WHERE m.id = $1 AND m.organization_id = $2 AND m.deleted_at IS NULL`,
       [modelId, organizationId],
     );
 
@@ -1120,7 +1121,11 @@ router.delete('/:modelId', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
-    const { rowCount } = await pool.query('DELETE FROM models WHERE id = $1 AND organization_id = $2', [modelId, organizationId]);
+    // Soft delete: set deleted_at timestamp instead of hard delete
+    const { rowCount } = await pool.query(
+      'UPDATE models SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL',
+      [modelId, organizationId]
+    );
 
     if (rowCount === 0) {
       return res.status(404).json({ error: 'Model not found' });

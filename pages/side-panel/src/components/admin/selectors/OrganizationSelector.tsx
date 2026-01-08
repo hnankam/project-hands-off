@@ -22,7 +22,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  useClickOutside(dropdownRef, () => setIsOpen(false), isOpen);
+  useClickOutside(dropdownRef as React.RefObject<HTMLElement>, () => setIsOpen(false), isOpen);
 
   const selectedOrg = organizations.find(org => org.id === selectedOrgId);
 
@@ -56,7 +56,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
         <span className="flex-shrink-0 mt-0.5">
           <OrgIcon />
         </span>
-        <span className="font-medium truncate flex-1 min-w-0 text-left">
+        <span className={cn('font-medium truncate flex-1 min-w-0 text-left', selectedOrg && 'uppercase')}>
           {selectedOrg ? selectedOrg.name : placeholder}
         </span>
         <ChevronDownIcon isOpen={isOpen} className="flex-shrink-0 mt-0.5" />
@@ -91,7 +91,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
               )}
             >
               <OrgIcon />
-              <span className="truncate flex-1 text-left">{org.name}</span>
+              <span className="truncate flex-1 text-left uppercase">{org.name}</span>
               {selectedOrgId === org.id && (
                 <CheckIcon className="ml-auto flex-shrink-0" />
               )}

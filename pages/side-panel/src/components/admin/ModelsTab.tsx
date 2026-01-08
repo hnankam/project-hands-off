@@ -346,6 +346,9 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createForm, setCreateForm] = useState<ModelFormState>(INITIAL_FORM);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<ModelFormState | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; modelKey: string } | null>(null);
@@ -613,18 +616,33 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
   }, [teamFilterIds, teamMap]);
 
   const filteredModels = useMemo(() => {
-    if (teamFilterIds.length === 0) {
-      return models;
-    }
+    let result = models;
+    
+    // Filter by team
+    if (teamFilterIds.length > 0) {
     const activeTeamIds = teamFilterIds.filter(id => teamMap.has(id));
     if (activeTeamIds.length === 0) {
-      return models.filter(model => model.teams.length === 0);
-    }
-    return models.filter(
+        result = models.filter(model => model.teams.length === 0);
+      } else {
+        result = models.filter(
       model =>
         model.teams.length === 0 || model.teams.some(t => activeTeamIds.includes(t.id))
     );
-  }, [models, teamFilterIds, teamMap]);
+      }
+    }
+    
+    // Filter by search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(model => 
+        model.modelKey.toLowerCase().includes(query) ||
+        model.modelName.toLowerCase().includes(query) ||
+        (model.displayName && model.displayName.toLowerCase().includes(query))
+      );
+    }
+    
+    return result;
+  }, [models, teamFilterIds, teamMap, searchQuery]);
 
   const providerOptionsForForm = (scope: ModelScope, teamIds: string[]) => {
     if (scope === 'organization') {
@@ -1070,6 +1088,18 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
 
   return (
     <div className="space-y-4">
+      <style>{`
+        @keyframes fadeInScale {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+      `}</style>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={cn('block text-xs font-medium mb-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
@@ -1114,8 +1144,8 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
 
       {selectedOrgId && (
         <>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-shrink">
               <svg
                 className={cn('w-5 h-5', isLight ? 'text-blue-500' : 'text-blue-400')}
                 fill="none"
@@ -1136,6 +1166,72 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                 </span>
               </h3>
             </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {/* Search Button/Input */}
+              {isSearchOpen ? (
+                <div className="relative flex-shrink-0">
+                  <svg
+                    className={cn(
+                      'absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2',
+                      isLight ? 'text-gray-400' : 'text-gray-500',
+                    )}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search models..."
+                    className={cn(
+                      'w-[200px] rounded py-1 pr-8 pl-7 text-xs transition-all duration-200 outline-none',
+                      isLight
+                        ? 'bg-gray-100 text-gray-700 placeholder-gray-400 focus:bg-gray-100'
+                        : 'bg-gray-800/60 text-[#bcc1c7] placeholder-gray-500 focus:bg-gray-800',
+                    )}
+                    style={{
+                      animation: 'fadeInScale 0.2s ease-out',
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      setIsSearchOpen(false);
+                      setSearchQuery('');
+                    }}
+                    className={cn(
+                      'absolute top-1/2 right-1 -translate-y-1/2 p-1 rounded transition-colors',
+                      isLight
+                        ? 'text-gray-400 hover:text-gray-600'
+                        : 'text-gray-500 hover:text-gray-300',
+                    )}
+                    title="Close search">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setIsSearchOpen(true);
+                    setTimeout(() => searchInputRef.current?.focus(), 10);
+                  }}
+                  className={cn(
+                    'p-1 rounded transition-colors flex-shrink-0',
+                    isLight
+                      ? 'text-gray-400 hover:text-gray-600'
+                      : 'text-gray-500 hover:text-gray-300',
+                  )}
+                  title="Search models">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </button>
+              )}
             {!showCreateForm && (
               <button
                 onClick={() => {
@@ -1156,6 +1252,7 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
                 Add Model
               </button>
             )}
+            </div>
           </div>
 
           {showCreateForm && (
@@ -1447,28 +1544,13 @@ export function ModelsTab({ isLight, organizations, preselectedOrgId, onError, o
             ) : filteredModels.length === 0 ? (
               <div
                 className={cn(
-                  'p-8 rounded-lg border-2 border-dashed text-center',
-                  isLight ? 'border-gray-300 bg-gray-50' : 'border-gray-700 bg-[#151C24]/50',
-                )}
-              >
-                <svg
-                  className={cn('w-12 h-12 mx-auto mb-3', isLight ? 'text-gray-400' : 'text-gray-600')}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
-                  <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-                  <line x1="12" y1="22.08" x2="12" y2="12" />
-                </svg>
-                <p className={cn('text-sm font-medium', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                  No models configured
-                </p>
-                <p className={cn('text-xs mt-1', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                  Add a model to control availability for this organization or team.
+                  'text-center py-8 text-xs rounded-lg border',
+                  isLight ? 'text-gray-500 border-gray-200 bg-gray-50' : 'text-gray-400 border-gray-700 bg-[#151C24]',
+                )}>
+                <p>
+                  {models.length === 0
+                    ? 'No models configured'
+                    : 'No models match the current filter'}
                 </p>
               </div>
             ) : (

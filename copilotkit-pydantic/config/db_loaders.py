@@ -317,6 +317,7 @@ async def _fetch_agents(
                               LEFT JOIN tools t ON t.id = atm.tool_id
                              WHERE {org_condition}
                                {team_condition}
+                               AND a.deleted_at IS NULL
                              GROUP BY a.id,
                                       a.agent_type,
                                       a.agent_name,

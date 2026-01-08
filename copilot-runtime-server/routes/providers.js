@@ -453,8 +453,9 @@ router.get('/', async (req, res, next) => {
          ) as teams
        FROM providers p
        WHERE p.organization_id = $1
+         AND p.deleted_at IS NULL
          ${teamFilter}
-       ORDER BY p.created_at DESC`,
+       ORDER BY p.provider_key ASC`,
       params,
     );
 
@@ -572,7 +573,7 @@ router.post('/', async (req, res, next) => {
     }
 
     // Fetch the created provider with teams
-    const { rows } = await pool.query('SELECT * FROM providers_with_teams WHERE id = $1', [providerId]);
+    const { rows } = await pool.query('SELECT * FROM providers_with_teams WHERE id = $1 AND deleted_at IS NULL', [providerId]);
     const provider = toCamelProvider(rows[0]);
     
     log('[Providers API] Created provider', { providerId: provider.id, providerKey });
@@ -657,7 +658,7 @@ router.put('/:providerId', async (req, res, next) => {
     }
 
     const existingResult = await pool.query(
-      'SELECT * FROM providers WHERE id = $1 AND organization_id = $2',
+      'SELECT * FROM providers WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL',
       [providerId, organizationId],
     );
 
@@ -714,7 +715,7 @@ router.put('/:providerId', async (req, res, next) => {
     }
 
     // Fetch the updated provider with teams
-    const { rows } = await pool.query('SELECT * FROM providers_with_teams WHERE id = $1', [providerId]);
+    const { rows } = await pool.query('SELECT * FROM providers_with_teams WHERE id = $1 AND deleted_at IS NULL', [providerId]);
     const provider = toCamelProvider(rows[0]);
     
     log('[Providers API] Updated provider', { providerId });
@@ -798,7 +799,7 @@ router.post('/:providerId/test', async (req, res, next) => {
     }
 
     const existingResult = await pool.query(
-      'SELECT * FROM providers WHERE id = $1 AND organization_id = $2',
+      'SELECT * FROM providers WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL',
       [providerId, organizationId],
     );
 
@@ -991,8 +992,9 @@ router.delete('/:providerId', async (req, res, next) => {
     const roles = await ensureOrgAdmin(pool, organizationId, session.user.id, res);
     if (!roles) return;
 
+    // Soft delete: set deleted_at timestamp instead of hard delete
     const deleteResult = await pool.query(
-      'DELETE FROM providers WHERE id = $1 AND organization_id = $2 RETURNING provider_key',
+      'UPDATE providers SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL RETURNING provider_key',
       [providerId, organizationId],
     );
 
