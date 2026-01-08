@@ -13,35 +13,6 @@ import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { CodeBlock } from '../chat/slots/CustomCodeBlock';
 import type { ActionPhase } from './ActionStatus';
 
-// JSON repair utility - uses untruncate-json to fix truncated JSON, then parses
-// TEMPORARILY COMMENTED OUT TO SEE RAW RESPONSE
-// const repairAndParseJson = (jsonString: string): any => {
-//   console.log('[FileManagementCard] 🔧 INPUT:', {
-//     length: jsonString.length,
-//     preview: jsonString.substring(0, 200),
-//   });
-//   
-//   try {
-//     const fixed = untruncateJson(jsonString);
-//     console.log('[FileManagementCard] 🔧 FIXED JSON:', {
-//       originalLength: jsonString.length,
-//       fixedLength: fixed.length,
-//       wasModified: fixed !== jsonString,
-//       fixedPreview: fixed.substring(0, 200),
-//     });
-//     
-//     const parsed = JSON.parse(fixed);
-//     console.log('[FileManagementCard] ✅ PARSED OUTPUT:', {
-//       keys: Object.keys(parsed),
-//       data: parsed,
-//     });
-//     return parsed;
-//   } catch (error) {
-//     console.error('[FileManagementCard] ❌ REPAIR FAILED:', error);
-//     return null;
-//   }
-// };
-
 // ========== Auto-Scroll Component ==========
 
 interface AutoScrollDivProps {
@@ -239,50 +210,6 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
       // Try normal JSON parse first
       fileInfo = JSON.parse(result);
     } catch (parseError) {
-      // JSON parsing failed - TEMPORARILY NOT REPAIRING TO SEE RAW RESPONSE
-      
-      // TEMPORARILY COMMENTED OUT: Repair logic to see raw response
-      // try {
-      //   // Attempt to repair the JSON using untruncate-json
-      //   console.log('[FileManagementCard] 🔧 Attempting JSON repair with untruncate-json...');
-      //   const repairedData = repairAndParseJson(result);
-      //   
-      //   if (repairedData) {
-      //     console.log('[FileManagementCard] ✅ Successfully repaired incomplete JSON:', {
-      //       fields: Object.keys(repairedData),
-      //       data: repairedData,
-      //     });
-      //     
-      //     validationError = {
-      //       partial_data: repairedData,
-      //       error_message: 'AI response was incomplete but recovered. File information extracted and displayed below.',
-      //       raw_response: result, // Store the incomplete response
-      //     };
-      //     
-      //     // Use repaired data
-      //     fileInfo = {
-      //       ...repairedData,
-      //       _incomplete: true,
-      //     };
-      //   } else {
-      //     console.log('[FileManagementCard] ❌ Repair failed, response may not be JSON');
-      //     
-      //     // Store the failed response for debugging
-      //     validationError = {
-      //       partial_data: {},
-      //       error_message: 'Could not parse AI response. The response may be incomplete or malformed.',
-      //       raw_response: result,
-      //     };
-      //   }
-      // } catch (repairError) {
-      //   console.error('[FileManagementCard] 💥 Error during JSON repair:', repairError);
-      //   
-      //   validationError = {
-      //     partial_data: {},
-      //     error_message: 'Failed to parse or repair AI response.',
-      //     raw_response: result,
-      //   };
-      // }
       
       // Store the failed response for debugging (without repair)
       validationError = {
@@ -509,7 +436,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                 }}
               >
                 <span className={isWorking ? 'copilot-action-sparkle-text' : ''} style={{ color: mutedTextColor }}>
-                  {fileName}
+                  {filePath}
                 </span>
               </span>
             </div>
@@ -555,7 +482,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                   gap: 6,
                 }}
               >
-                <span className="copilot-action-sparkle-text" style={{ color: textColor }}>✨ Writing File</span>
+                <span className="copilot-action-sparkle-text" style={{ color: textColor }}>Writing File</span>
                 <span className="gallery-count" style={{ marginLeft: 'auto', opacity: 0.7, color: textColor }}>
                   {formatSize(displayContent.length)} • {fileType.language}
                 </span>
@@ -769,7 +696,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                 whiteSpace: 'nowrap',
               }}
             >
-              {fileName}
+              {filePath}
             </span>
           </div>
 
@@ -799,10 +726,10 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
           transition: 'max-height 0.3s ease-in-out, opacity 0.3s ease-in-out',
         }}
       >
-        <div className="gallery-carousel" style={{ padding: '8px' }}>
+        <div className="gallery-content" style={{ padding: '8px' }}>
           {/* File path */}
           <div style={{ marginBottom: 8 }}>
-            <div
+            <div className="gallery-content"
               style={{
                 fontSize: 11,
                 fontWeight: 600,
@@ -812,7 +739,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
             >
               Location:
             </div>
-            <div
+            <div className="gallery-content"
               style={{
                 fontSize: 11,
                 fontFamily: 'monospace',
@@ -831,7 +758,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
           {/* File ID (if available) */}
           {fileInfo.file_id && !hasError && (
             <div style={{ marginBottom: 8 }}>
-              <div
+              <div className="gallery-content"
                 style={{
                   fontSize: 11,
                   fontWeight: 600,
@@ -841,7 +768,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
               >
                 File ID:
               </div>
-              <div
+              <div className="gallery-content"
                 style={{
                   fontSize: 10,
                   fontFamily: 'monospace',

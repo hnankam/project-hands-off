@@ -16,11 +16,11 @@ from pydantic_ai.messages import (
 from pydantic_ai.ag_ui import StateDeps
 
 from config import logger
-from core.models import AgentState
+from core.models import AgentState, UnifiedDeps
 
 
 async def keep_recent_messages(
-    ctx: RunContext[StateDeps[AgentState]], 
+    ctx: RunContext[UnifiedDeps], 
     messages: list[ModelMessage]
 ) -> list[ModelMessage]:
     """Keep only recent messages while preserving AI model message ordering rules.
@@ -46,7 +46,10 @@ async def keep_recent_messages(
     Reference: https://github.com/pydantic/pydantic-ai/issues/2050
     """
 
+    current_tokens = ctx.usage.total_tokens
+
     logger.info(f"Message History Usage: {ctx.usage.total_tokens} = {ctx.usage.input_tokens} + {ctx.usage.output_tokens}")
+    logger.info(f"Current Tokens: {current_tokens}")
 
     # --- Pre-sanitization: trim oversized tool results and drop duplicates within a message ---
     def _truncate_text(text: str, limit: int = 2000, keep: int = 1800) -> str:

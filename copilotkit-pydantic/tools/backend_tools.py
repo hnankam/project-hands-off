@@ -921,12 +921,28 @@ async def run_aux_agent_streaming(
         agui_context=agui_context,  # Pass context for @agent.instructions decorator
     )
     
-    # Only forward tool call events from aux agent
-    ALLOWED_EVENT_TYPES = {
+    # Create encoder for activity events
+    encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
+    
+    # Event types to forward directly (tool calls)
+    FORWARD_EVENT_TYPES = {
         'TOOL_CALL_START',
         'TOOL_CALL_ARGS', 
         'TOOL_CALL_END',
         'TOOL_CALL_RESULT',
+    }
+    
+    # Message event types to convert to activity events
+    MESSAGE_EVENT_TYPES = {
+        'TEXT_MESSAGE_START',
+        'TEXT_MESSAGE_CONTENT',
+        'TEXT_MESSAGE_END',
+    }
+    
+    # Run lifecycle events to convert to activity events
+    RUN_LIFECYCLE_EVENT_TYPES = {
+        'RUN_FINISHED',
+        'RUN_ERROR',
     }
     
     # Capture result via callback
@@ -941,25 +957,56 @@ async def run_aux_agent_streaming(
         deps=sub_deps,
         on_complete=capture_result,
     ):
+        logger.info(f"Event: {event}")
         if send_stream is not None:
             try:
+                import json
+                
                 # Parse the SSE event to check type
                 event_type = None
+                event_data = None
                 if event.startswith('data:'):
                     try:
-                        import json
-                        data = json.loads(event[5:].strip())
-                        event_type = data.get('type')
+                        event_data = json.loads(event[5:].strip())
+                        event_type = event_data.get('type')
                     except (json.JSONDecodeError, ValueError):
                         pass
                 
-                # Only send allowed event types (tool calls)
-                if event_type and event_type not in ALLOWED_EVENT_TYPES:
-                    logger.debug("Skipping aux agent event: %s", event_type)
-                    continue
+                # Forward tool call events directly
+                if event_type in FORWARD_EVENT_TYPES:
+                    await send_stream.send(event)
                 
-                # Forward the raw SSE event string
-                await send_stream.send(event)
+                # Convert message events to activity events
+                elif event_type == 'TEXT_MESSAGE_START' and event_data:
+                    message_id = event_data.get('messageId', '')
+                    activity_id = f"aux-{aux_type}-{message_id}"
+                    await send_stream.send(encoder.encode(ActivitySnapshotEvent(
+                        messageId=activity_id,
+                        activityType="aux_agent_message",
+                        content={"agent_key": aux_type, "status": "streaming", "text": []},
+                    )))
+                
+                elif event_type == 'TEXT_MESSAGE_CONTENT' and event_data:
+                    message_id = event_data.get('messageId', '')
+                    activity_id = f"aux-{aux_type}-{message_id}"
+                    delta = event_data.get('delta', '')
+                    if delta:
+                        # Append to text array via JSON patch
+                        await send_stream.send(encoder.encode(ActivityDeltaEvent(
+                            messageId=activity_id,
+                            activityType="aux_agent_message",
+                            patch=[{"op": "add", "path": "/text/-", "value": delta}],
+                        )))
+                
+                elif event_type == 'TEXT_MESSAGE_END' and event_data:
+                    message_id = event_data.get('messageId', '')
+                    activity_id = f"aux-{aux_type}-{message_id}"
+                    await send_stream.send(encoder.encode(ActivityDeltaEvent(
+                        messageId=activity_id,
+                        activityType="aux_agent_message",
+                        patch=[{"op": "replace", "path": "/status", "value": "completed"}],
+                    )))
+                
             except Exception as e:
                 # Stream might be closed, log and continue
                 logger.debug("Failed to send event to stream: %s", e)
