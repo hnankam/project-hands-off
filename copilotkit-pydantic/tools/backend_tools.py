@@ -37,7 +37,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, BinaryImage, ToolReturn
-from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter
+from pydantic_ai.ag_ui import SSE_CONTENT_TYPE, AGUIAdapter, run_ag_ui
 from ag_ui.core import EventType, StateSnapshotEvent, StateDeltaEvent, CustomEvent, RunAgentInput, UserMessage, BaseEvent, ActivitySnapshotEvent, ActivityDeltaEvent
 from ag_ui.encoder import EventEncoder
 
@@ -867,6 +867,7 @@ async def run_aux_agent_streaming(
     send_stream: Any,
     run_input: RunAgentInput,
     aux_type: str = "",
+    agui_context: list[dict] | None = None,
 ) -> Any:
     """Run auxiliary agent with streaming events forwarded to frontend.
     
@@ -879,6 +880,7 @@ async def run_aux_agent_streaming(
         send_stream: Stream to forward events to (can be None)
         run_input: RunAgentInput from parent (ensures thread_id matches)
         aux_type: Type of auxiliary agent (e.g., 'image_generation', 'web_search')
+        agui_context: AGUI context from parent agent's deps (useCopilotReadableData)
         
     Returns:
         The final result from the agent run
@@ -889,26 +891,35 @@ async def run_aux_agent_streaming(
     # Inherit tools from parent only for unknown aux types
     tools = [] if aux_type in NO_TOOLS_AUX_TYPES else (run_input.tools or [])
     
-    # Create a sub-agent run_input that inherits thread_id from parent
+    # Convert agui_context dicts to Context items for RunAgentInput
+    from ag_ui.core import Context
+    context_items = []
+    if agui_context:
+        for item in agui_context:
+            try:
+                context_items.append(Context(**item))
+            except Exception:
+                # If it can't be converted to Context, skip
+                pass
+
     sub_run_input = RunAgentInput(
         thread_id=run_input.thread_id,  # Inherit thread_id from parent
         run_id=str(uuid.uuid4()),  # New run_id for this sub-agent
         messages=[UserMessage(id=str(uuid.uuid4()), content=user_message)],
         state=run_input.state or {},
-        context=run_input.context or [],
+        context=context_items,  # Context items for RunAgentInput
         tools=tools,
         forwarded_props=run_input.forwarded_props or None,
     )
     
-    # Create adapter for streaming
-    adapter = AGUIAdapter(
-        agent=aux_agent,
-        run_input=sub_run_input,
-        accept=SSE_CONTENT_TYPE
+    # Create deps with agui_context so @agent.instructions can access it
+    # This is critical for inject_agui_context to work in auxiliary agents
+    sub_deps = UnifiedDeps(
+        state=AgentState(),
+        send_stream=None,  # Don't use send_stream in deps (we handle it ourselves)
+        adapter=None,
+        agui_context=agui_context,  # Pass context for @agent.instructions decorator
     )
-    
-    # Create encoder for event serialization
-    encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
     
     # Only forward tool call events from aux agent
     ALLOWED_EVENT_TYPES = {
@@ -923,25 +934,32 @@ async def run_aux_agent_streaming(
     def capture_result(result):
         result_holder[0] = result
     
-    # Stream events - only forward tool call events to frontend
-    async for event in adapter.run_stream(on_complete=capture_result):
-        print(f"Auxiliary Agent Event: {event}")
+    # Use run_ag_ui to run agent with deps (enables @agent.instructions to access agui_context)
+    async for event in run_ag_ui(
+        agent=aux_agent,
+        run_input=sub_run_input,
+        deps=sub_deps,
+        on_complete=capture_result,
+    ):
         if send_stream is not None:
             try:
-                # Check event type
+                # Parse the SSE event to check type
                 event_type = None
-                if hasattr(event, 'type'):
-                    event_type = event.type.value if hasattr(event.type, 'value') else str(event.type)
+                if event.startswith('data:'):
+                    try:
+                        import json
+                        data = json.loads(event[5:].strip())
+                        event_type = data.get('type')
+                    except (json.JSONDecodeError, ValueError):
+                        pass
                 
                 # Only send allowed event types (tool calls)
-                if event_type not in ALLOWED_EVENT_TYPES:
+                if event_type and event_type not in ALLOWED_EVENT_TYPES:
                     logger.debug("Skipping aux agent event: %s", event_type)
                     continue
                 
-                # Encode and send event object
-                if not isinstance(event, str):
-                    encoded = encoder.encode(event)
-                    await send_stream.send(encoded)
+                # Forward the raw SSE event string
+                await send_stream.send(event)
             except Exception as e:
                 # Stream might be closed, log and continue
                 logger.debug("Failed to send event to stream: %s", e)
@@ -1010,6 +1028,7 @@ async def generate_images(
         send_stream = getattr(deps, 'send_stream', None) if deps else None
         adapter = getattr(deps, 'adapter', None) if deps else None
         run_input = adapter.run_input if adapter else None
+        agui_context = getattr(deps, 'agui_context', None) if deps else None
         
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
@@ -1023,6 +1042,7 @@ async def generate_images(
             send_stream=send_stream,
             run_input=run_input,
             aux_type='image_generation',
+            agui_context=agui_context,
         )
                 
         # Upload each BinaryImage to Firebase Storage
@@ -1183,6 +1203,7 @@ async def web_search(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
         send_stream = getattr(deps, 'send_stream', None) if deps else None
         adapter = getattr(deps, 'adapter', None) if deps else None
         run_input = adapter.run_input if adapter else None
+        agui_context = getattr(deps, 'agui_context', None) if deps else None
         
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
@@ -1196,6 +1217,7 @@ async def web_search(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
             send_stream=send_stream,
             run_input=run_input,
             aux_type='web_search',
+            agui_context=agui_context,
         )
         
         return result.response.text if result and result.response else "Web search completed (no results)"
@@ -1257,6 +1279,7 @@ async def code_execution(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
         send_stream = getattr(deps, 'send_stream', None) if deps else None
         adapter = getattr(deps, 'adapter', None) if deps else None
         run_input = adapter.run_input if adapter else None
+        agui_context = getattr(deps, 'agui_context', None) if deps else None
         
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
@@ -1270,6 +1293,7 @@ async def code_execution(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
             send_stream=send_stream,
             run_input=run_input,
             aux_type='code_execution',
+            agui_context=agui_context,
         )
         
         return result.response.text if result and result.response else "Code execution completed (no output)"
@@ -1333,6 +1357,7 @@ async def url_context(ctx: RunContext[UnifiedDeps], urls: list[str]) -> str:
         send_stream = getattr(deps, 'send_stream', None) if deps else None
         adapter = getattr(deps, 'adapter', None) if deps else None
         run_input = adapter.run_input if adapter else None
+        agui_context = getattr(deps, 'agui_context', None) if deps else None
         
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
@@ -1346,6 +1371,7 @@ async def url_context(ctx: RunContext[UnifiedDeps], urls: list[str]) -> str:
             send_stream=send_stream,
             run_input=run_input,
             aux_type='url_context',
+            agui_context=agui_context,
         )
         
         return result.response.text if result and result.response else "URL context loaded (no content)"
@@ -1424,6 +1450,7 @@ async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) 
         send_stream = getattr(deps, 'send_stream', None) if deps else None
         adapter = getattr(deps, 'adapter', None) if deps else None
         run_input = adapter.run_input if adapter else None
+        agui_context = getattr(deps, 'agui_context', None) if deps else None
         
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
@@ -1438,6 +1465,7 @@ async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) 
             send_stream=send_stream,
             run_input=run_input,
             aux_type=f"custom:{agent_key}",  # Use custom: prefix to allow tool inheritance
+            agui_context=agui_context,
         )
         
         response_text = result.response.text if result and result.response else ""

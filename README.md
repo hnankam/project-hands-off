@@ -1,641 +1,688 @@
 # Project Hands-Off
 
-> AI-Powered Browser Assistant with Multi-Tenant Organization & Team Management
+> **AI-Powered Browser Assistant with Multi-Tenant Organization & Team Management**
+
+A sophisticated browser extension that integrates AI capabilities directly into your browsing experience, featuring multi-tenant architecture, dynamic agent selection, and seamless workspace management.
 
 ![](https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=black)
-![](https://img.shields.io/badge/Typescript-3178C6?style=flat-square&logo=typescript&logoColor=black)
+![](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white)
 ![](https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=node.js&logoColor=white)
+![](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 ![](https://badges.aleen42.com/src/vitejs.svg)
+
+---
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Development](#development)
-- [Authentication & Authorization](#authentication--authorization)
-- [Project Structure](#project-structure)
-- [Configuration](#configuration)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
+- [Overview](#-overview)
+- [Key Features](#-key-features)
+- [System Architecture](#-system-architecture)
+- [Technology Stack](#-technology-stack)
+- [Quick Start](#-quick-start)
+- [Project Structure](#-project-structure)
+- [Configuration](#-configuration)
+- [Development](#-development)
+- [Authentication & Authorization](#-authentication--authorization)
+- [Troubleshooting](#-troubleshooting)
+- [Documentation](#-documentation)
+- [License](#-license)
+
+---
 
 ## 🎯 Overview
 
-Project Hands-Off is an intelligent browser extension that integrates AI capabilities directly into your browsing experience. It combines a React-based Chrome extension with a sophisticated backend infrastructure featuring:
+Project Hands-Off is an enterprise-grade browser extension that brings powerful AI capabilities to your fingertips. The system consists of three main components:
 
-- **Multi-tenant organization and team management** with role-based access control
-- **CopilotKit-powered AI agents** with dynamic model selection (Claude, GPT-4, Gemini)
-- **Semantic search** using vector embeddings for intelligent content discovery
-- **Session-based chat** with message history and context preservation
-- **Invitation system** for team collaboration
+| Component | Description | Technology |
+|-----------|-------------|------------|
+| **Chrome Extension** | User interface with side panel, chat UI, and browser integration | React, TypeScript, Vite |
+| **CopilotKit Runtime Server** | Gateway server handling auth, sessions, and message persistence | Node.js, Express, Hono |
+| **Pydantic AI Server** | AI agent execution with multi-model support and tool integrations | Python, FastAPI, Pydantic AI |
 
-## ✨ Features
+### What Makes It Special
+
+- **Multi-Tenant Architecture**: Organizations and teams with role-based access control
+- **Dynamic Agent System**: Switch between specialized AI agents on-the-fly
+- **Persistent Conversations**: PostgreSQL-backed message storage with crash recovery
+- **Workspace Management**: Personal files, notes, and encrypted credentials
+- **OAuth Integrations**: Gmail, Slack, Google Drive, OneDrive, and more
+- **MCP Server Support**: Extensible tool system via Model Context Protocol
+
+---
+
+## ✨ Key Features
 
 ### 🤖 AI & Intelligence
-- **Multiple AI Providers**: Claude (Anthropic), GPT-4 (OpenAI), Gemini (Google)
-- **Dynamic Agent System**: Switch between specialized agents on-the-fly
-- **Semantic Search**: Vector embeddings with Transformers.js (Xenova/all-MiniLM-L6-v2)
-- **Context-Aware Chat**: Maintains conversation history with intelligent compaction
-- **Browser Integration**: Direct interaction with web pages and forms
+
+| Feature | Description |
+|---------|-------------|
+| **Multiple AI Providers** | Claude (Anthropic), GPT-4 (OpenAI/Azure), Gemini (Google), with Bedrock support |
+| **Dynamic Agent System** | General, Wiki, Code, and custom agents with specialized capabilities |
+| **Tool Ecosystem** | 50+ backend tools including web search, code execution, file operations |
+| **MCP Integrations** | Databricks, filesystem, and custom MCP server support |
+| **Streaming Responses** | Real-time AG-UI protocol for smooth user experience |
+| **Context-Aware Chat** | Maintains conversation history with intelligent message compaction |
 
 ### 👥 Multi-User & Organizations
-- **Better Auth Integration**: Secure authentication with email/password
-- **Organization Management**: Multi-tenant architecture with organization isolation
-- **Team Support**: Organize users into teams within organizations
-- **Role-Based Access**: Member, admin, and owner roles
-- **Invitation System**: Email-based invitations with secure token flow
-- **Active Context Forwarding**: Automatic org/team context sent to AI agents
+
+| Feature | Description |
+|---------|-------------|
+| **Better Auth Integration** | Secure authentication with email/password, social login (Google, GitHub, Microsoft) |
+| **SSO Support** | Enterprise OIDC/SAML authentication |
+| **Organization Management** | Multi-tenant isolation with team support |
+| **Role-Based Access** | Owner, Admin, Member roles with fine-grained permissions |
+| **Invitation System** | Email-based invitations with secure token flow |
+| **Session Management** | Auto-selection of active organization and team contexts |
 
 ### 💾 Data & Storage
-- **Dual Database Architecture**:
-  - PostgreSQL for user management, orgs, teams, invitations
-  - SurrealDB WASM for in-browser embeddings and session storage
-- **IndexedDB Persistence**: Client-side data persistence
-- **Message History**: Searchable chat history with usage tracking
-- **Embedding Auto-Generation**: Automatic embedding when content changes
+
+| Feature | Description |
+|---------|-------------|
+| **PostgreSQL Backend** | User management, configuration, conversation history |
+| **Agent Runner** | Persistent thread/run storage with crash recovery |
+| **Workspace Files** | Firebase Storage integration for user files |
+| **Encrypted Credentials** | AES-256-GCM encrypted API keys and secrets |
+| **Real-Time Updates** | Ably Pub/Sub for live usage tracking |
 
 ### 🎨 User Experience
-- **Side Panel Interface**: Modern, responsive chat UI
-- **Dark/Light Modes**: Full theme support
-- **Organization Selector**: Quick switching between organizations
-- **Agent & Model Selectors**: Easy configuration of AI behavior
-- **Settings & Preferences**: Customizable chat experience
-- **Admin Dashboard**: Complete organization and team management
 
-### 🔧 Developer Experience
-- **Hot Module Reload**: Instant updates during development
-- **Turborepo**: Optimized monorepo with 16-thread concurrency
-- **TypeScript**: Full type safety across frontend
-- **Python Type Hints**: Pydantic models for backend
-- **ESLint & Prettier**: Automated code formatting
-- **Modular Architecture**: Clean separation of concerns
+| Feature | Description |
+|---------|-------------|
+| **Side Panel Interface** | Modern, responsive chat UI |
+| **Dark/Light Modes** | Full theme support |
+| **Agent & Model Selectors** | Easy configuration of AI behavior |
+| **Admin Dashboard** | Complete organization and team management |
+| **Workspace Management** | Files, notes, folders, and connections |
 
-## 🏗 Architecture
+---
+
+## 🏗 System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Chrome Extension                          │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  Side Panel  │  │   Content    │  │  Background  │      │
-│  │  (Chat UI)   │  │   Scripts    │  │   Service    │      │
-│  └──────┬───────┘  └──────────────┘  └──────────────┘      │
-│         │                                                     │
-└─────────┼─────────────────────────────────────────────────────┘
-          │
-          │ HTTP/WebSocket
-          │
-┌─────────▼─────────────────────────────────────────────────────┐
-│              Copilot Runtime Server (Node.js)                 │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │  Authentication Middleware                            │    │
-│  │  - Better Auth integration                            │    │
-│  │  - Session management                                 │    │
-│  │  - Org/Team context extraction                        │    │
-│  └──────────────────────────────────────────────────────┘    │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │  Dynamic Routing                                      │    │
-│  │  - Agent selection                                    │    │
-│  │  - Model configuration                                │    │
-│  │  - Context forwarding                                 │    │
-│  └──────────────────────────────────────────────────────┘    │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │  Routes: /auth, /copilotkit, /invitations, /config   │    │
-│  └──────────────────────────────────────────────────────┘    │
-└───────────────────────────┬───────────────────────────────────┘
-                            │
-                            │ HTTP Headers (org/team/user context)
-                            │
-┌───────────────────────────▼───────────────────────────────────┐
-│          Pydantic AI Server (Python/FastAPI)                  │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │  Request Middleware                                   │    │
-│  │  - Extract user/org/team from headers                │    │
-│  │  - Populate request.state                            │    │
-│  └──────────────────────────────────────────────────────┘    │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │  Agent Factory                                        │    │
-│  │  - Dynamic agent instantiation                        │    │
-│  │  - Model-specific configuration                       │    │
-│  └──────────────────────────────────────────────────────┘    │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │  Session Manager & Usage Tracker                      │    │
-│  └──────────────────────────────────────────────────────┘    │
-└───────────────────────────────────────────────────────────────┘
-
-┌───────────────────────────────────────────────────────────────┐
-│                    Data Layer                                 │
-│  ┌──────────────────┐         ┌──────────────────┐           │
-│  │   PostgreSQL     │         │  SurrealDB WASM  │           │
-│  │  - Users         │         │  - Embeddings    │           │
-│  │  - Organizations │         │  - Chat History  │           │
-│  │  - Teams         │         │  - Sessions      │           │
-│  │  - Invitations   │         │  (IndexedDB)     │           │
-│  └──────────────────┘         └──────────────────┘           │
-└───────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              CLIENT APPLICATIONS                                 │
+│                                                                                  │
+│  ┌────────────────────┐  ┌────────────────────┐  ┌────────────────────────────┐│
+│  │  Chrome Extension  │  │     Web App        │  │      Mobile (Future)       ││
+│  │    (Side Panel)    │  │     (React)        │  │                            ││
+│  │                    │  │                    │  │                            ││
+│  │  • Chat UI         │  │  • Admin Dashboard │  │                            ││
+│  │  • Workspace       │  │  • User Portal     │  │                            ││
+│  │  • Browser Actions │  │                    │  │                            ││
+│  └─────────┬──────────┘  └─────────┬──────────┘  └────────────┬───────────────┘│
+│            │                       │                          │                 │
+└────────────┼───────────────────────┼──────────────────────────┼─────────────────┘
+             │                       │                          │
+             └───────────────────────┼──────────────────────────┘
+                                     │
+                         ┌───────────▼───────────┐
+                         │   x-copilot-* headers │
+                         │  (agent, model, auth) │
+                         └───────────┬───────────┘
+                                     │
+┌────────────────────────────────────▼────────────────────────────────────────────┐
+│                        COPILOTKIT RUNTIME SERVER                                │
+│                         (Node.js + Express + Hono)                              │
+│                              Port: 3001                                         │
+│                                                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                         EXPRESS APPLICATION                              │   │
+│  │                                                                          │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │   │
+│  │  │  /api/auth  │  │ /api/admin  │  │/api/workspace│  │  /api/oauth │    │   │
+│  │  │ Better Auth │  │   Config    │  │ Files/Notes │  │ Gmail/Slack │    │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                          HONO APPLICATION                                │   │
+│  │                        /api/copilotkit/*                                 │   │
+│  │                                                                          │   │
+│  │  ┌───────────────────────────────────────────────────────────────────┐  │   │
+│  │  │                    CopilotKit Runtime                              │  │   │
+│  │  │  ┌─────────────────────────────────────────────────────────────┐  │  │   │
+│  │  │  │               PostgresAgentRunner                            │  │  │   │
+│  │  │  │   • Thread/Run Persistence    • Crash Recovery              │  │  │   │
+│  │  │  │   • Message Deletion          • Event Compaction            │  │  │   │
+│  │  │  └─────────────────────────────────────────────────────────────┘  │  │   │
+│  │  │                              │                                     │  │   │
+│  │  │  ┌─────────────────────────────────────────────────────────────┐  │  │   │
+│  │  │  │                    HttpAgent (AG-UI)                         │  │  │   │
+│  │  │  │   • Per-Request Agent IDs    • Auth Context Headers         │  │  │   │
+│  │  │  └─────────────────────────────────────────────────────────────┘  │  │   │
+│  │  └───────────────────────────────────────────────────────────────────┘  │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │  PostgreSQL (Neon) │  Firebase Storage  │  AES-256-GCM Encryption      │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────┬────────────────────────────────────────────┘
+                                     │
+                                     │ HTTP (AG-UI Protocol)
+                                     │ x-copilot-* headers forwarded
+                                     │
+┌────────────────────────────────────▼────────────────────────────────────────────┐
+│                         PYDANTIC AI SERVER                                       │
+│                        (Python + FastAPI)                                        │
+│                             Port: 8001                                           │
+│                                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────────────┐   │
+│  │                           AGENT FACTORY                                   │   │
+│  │                                                                           │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────────────┐   │   │
+│  │  │ General  │  │   Wiki   │  │   Code   │  │    Custom Agents       │   │   │
+│  │  │  Agent   │  │  Agent   │  │  Agent   │  │   (per org/team)       │   │   │
+│  │  └──────────┘  └──────────┘  └──────────┘  └────────────────────────┘   │   │
+│  └──────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────────────┐   │
+│  │                         BACKEND TOOLS (50+)                               │   │
+│  │                                                                           │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │   │
+│  │  │   Web    │  │  Code    │  │  Files   │  │Database  │  │   MCP    │   │   │
+│  │  │  Search  │  │ Execute  │  │   I/O    │  │  Query   │  │  Tools   │   │   │
+│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │   │
+│  └──────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────────────┐   │
+│  │                           SERVICES                                        │   │
+│  │  ┌────────────────┐  ┌────────────────┐  ┌──────────────────────────┐   │   │
+│  │  │ Usage Tracker  │  │  Ably Pub/Sub  │  │   Deployment Manager     │   │   │
+│  │  │  (per tenant)  │  │  (real-time)   │  │   (config hot-reload)    │   │   │
+│  │  └────────────────┘  └────────────────┘  └──────────────────────────┘   │   │
+│  └──────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────────────┐   │
+│  │                         MCP SERVERS                                       │   │
+│  │  ┌────────────────┐  ┌────────────────┐  ┌──────────────────────────┐   │   │
+│  │  │   Databricks   │  │   Filesystem   │  │     Custom Servers       │   │   │
+│  │  └────────────────┘  └────────────────┘  └──────────────────────────┘   │   │
+│  └──────────────────────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────┬───────────────────────────────────────────┘
+                                       │
+                   ┌───────────────────┼───────────────────┐
+                   │                   │                   │
+                   ▼                   ▼                   ▼
+          ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+          │   Anthropic  │    │   OpenAI     │    │   Google     │
+          │   (Claude)   │    │   (GPT)      │    │   (Gemini)   │
+          │  + Bedrock   │    │  + Azure     │    │              │
+          └──────────────┘    └──────────────┘    └──────────────┘
 ```
 
-### Key Data Flow
+### Request Flow
 
-1. **User Authentication**: Side panel → Runtime server (Better Auth) → PostgreSQL
-2. **Chat Request**: Side panel → Runtime server (extracts org/team) → Pydantic server
-3. **Context Forwarding**: Runtime middleware injects `x-copilot-user-id`, `x-copilot-organization-id`, `x-copilot-team-id` headers
-4. **AI Processing**: Pydantic server uses context for personalized responses
-5. **Message Storage**: Responses stored in SurrealDB with embeddings
+```
+1. User sends message in Chrome Extension
+2. Extension → Runtime Server (with auth cookies)
+3. Runtime Server authenticates user via Better Auth
+4. Runtime Server resolves organization/team context
+5. Runtime Server → Python Backend (with x-copilot-* headers)
+6. Python Backend creates/reuses agent instance
+7. Agent executes with tools and LLM calls
+8. Events stream back via AG-UI protocol
+9. Runtime Server persists events to PostgreSQL
+10. Response streams to Chrome Extension
+```
+
+---
+
+## 🛠 Technology Stack
+
+### Frontend (Chrome Extension)
+
+| Technology | Purpose |
+|------------|---------|
+| **React 18** | UI framework |
+| **TypeScript** | Type safety |
+| **Vite** | Build tool with HMR |
+| **TailwindCSS** | Styling |
+| **CopilotKit** | AI chat integration |
+| **SurrealDB WASM** | Client-side embeddings |
+
+### CopilotKit Runtime Server
+
+| Technology | Purpose |
+|------------|---------|
+| **Node.js 20+** | Runtime environment |
+| **Express.js** | HTTP server framework |
+| **Hono** | CopilotKit endpoint handling |
+| **Better Auth** | Authentication system |
+| **PostgreSQL** | Primary database |
+| **Firebase** | File storage |
+
+### Pydantic AI Server
+
+| Technology | Purpose |
+|------------|---------|
+| **Python 3.11+** | Runtime environment |
+| **FastAPI** | Web framework |
+| **Pydantic AI** | Agent framework |
+| **Logfire** | Observability |
+| **Ably** | Real-time pub/sub |
+| **MCP SDK** | Tool protocol |
+
+---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- **Node.js** >= 20 (see `.nvmrc`)
+- **Node.js** >= 20.9.0 (see `.nvmrc`)
 - **Python** >= 3.11
 - **pnpm** >= 8
-- **PostgreSQL** >= 14
+- **PostgreSQL** >= 14 (or Neon serverless)
 - **Chrome/Edge** browser
 
 ### Installation
 
-1. **Clone the repository**
 ```bash
+# 1. Clone the repository
 git clone <repository-url>
 cd project-hands-off
-```
 
-2. **Install dependencies**
-```bash
-# Install pnpm globally if needed
-npm install -g pnpm
-
-# Install extension dependencies
+# 2. Install extension dependencies
 pnpm install
 
-# Install Python server dependencies
+# 3. Install Runtime Server dependencies
+cd copilot-runtime-server
+npm install
+cd ..
+
+# 4. Install Python Server dependencies
 cd copilotkit-pydantic
 pip install -r requirements.txt
 cd ..
 
-# Install runtime server dependencies
+# 5. Set up environment variables (see Configuration section)
+cp copilot-runtime-server/.env.example copilot-runtime-server/.env
+cp copilotkit-pydantic/.env.example copilotkit-pydantic/.env
+
+# 6. Initialize databases
 cd copilot-runtime-server
-npm install
+psql -U your_user -d your_database -f migrations/001_create_agent_runner_tables.sql
 cd ..
 ```
 
-3. **Set up environment variables**
-
-Create `.env` files in each component:
-
-**Extension** (`/` root):
-```env
-VITE_RUNTIME_SERVER_URL=http://localhost:3100
-```
-
-**Runtime Server** (`copilot-runtime-server/.env`):
-```env
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/hands_off
-
-# Better Auth
-BETTER_AUTH_SECRET=your-secret-key-here
-BETTER_AUTH_URL=http://localhost:3100
-
-# AI Providers (get your keys)
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-GOOGLE_API_KEY=...
-
-# Server Config
-PORT=3100
-NODE_ENV=development
-
-# Python Server
-PYDANTIC_SERVER_URL=http://localhost:8001
-```
-
-**Pydantic Server** (`copilotkit-pydantic/.env`):
-```env
-# AI Provider Keys
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-GOOGLE_API_KEY=...
-
-# Server Config
-PORT=8001
-DEBUG=true
-```
-
-4. **Initialize the database**
-```bash
-cd copilot-runtime-server
-npm run db:init
-cd ..
-```
-
-5. **Start the development servers**
+### Starting the Services
 
 ```bash
-# Terminal 1: Chrome Extension
+# Terminal 1: Chrome Extension (development)
 pnpm dev
 
-# Terminal 2: Runtime Server
+# Terminal 2: CopilotKit Runtime Server
 cd copilot-runtime-server
 npm run dev
 
-# Terminal 3: Pydantic Server
+# Terminal 3: Pydantic AI Server
 cd copilotkit-pydantic
 python main.py
 ```
 
-6. **Load the extension**
-   - Open Chrome and navigate to `chrome://extensions`
-   - Enable "Developer mode"
-   - Click "Load unpacked"
-   - Select the `dist` directory
+### Loading the Extension
 
-7. **Open the side panel**
-   - Click the extension icon in the toolbar
-   - Click "Open Side Panel"
-   - Sign up for a new account or log in
+1. Open Chrome and navigate to `chrome://extensions`
+2. Enable "Developer mode" (top right)
+3. Click "Load unpacked"
+4. Select the `dist` directory
+5. Click the extension icon and open the side panel
+6. Sign up for a new account or log in
 
-## 💻 Development
-
-### Project Commands
-
-```bash
-# Extension Development
-pnpm dev              # Development mode with HMR
-pnpm build            # Production build
-pnpm dev:firefox      # Firefox development mode
-pnpm build:firefox    # Firefox production build
-
-# Code Quality
-pnpm lint             # Run ESLint
-pnpm type-check       # TypeScript type checking
-pnpm format           # Format with Prettier
-
-# Utilities
-pnpm update-version <version>  # Update extension version
-pnpm zip              # Package extension for distribution
-pnpm e2e              # Run end-to-end tests
-
-# Module Management
-pnpm module-manager   # Enable/disable extension modules
-```
-
-### Runtime Server Commands
-
-```bash
-cd copilot-runtime-server
-
-npm run dev           # Start with nodemon
-npm start             # Production start
-npm run db:init       # Initialize database
-npm run db:migrate    # Run migrations
-npm test              # Run tests
-```
-
-### Pydantic Server Commands
-
-```bash
-cd copilotkit-pydantic
-
-python main.py                # Start server
-python scripts/init_db.py     # Initialize database
-```
-
-### Adding Dependencies
-
-**Root/Extension packages:**
-```bash
-pnpm i <package> -w              # Add to workspace root
-pnpm i <package> -F side-panel   # Add to specific module
-```
-
-**Runtime Server:**
-```bash
-cd copilot-runtime-server
-npm install <package>
-```
-
-**Pydantic Server:**
-```bash
-cd copilotkit-pydantic
-pip install <package>
-# Don't forget to update requirements.txt
-pip freeze > requirements.txt
-```
-
-## 🔐 Authentication & Authorization
-
-### Better Auth Setup
-
-The project uses [Better Auth](https://www.better-auth.com/) for authentication with the organization plugin.
-
-**Key Features:**
-- Email/password authentication
-- Organization multi-tenancy
-- Team management within organizations
-- Session-based authentication
-- Secure invitation system
-
-**Database Schema:**
-- `user` - User accounts
-- `session` - Active sessions with `activeOrganizationId` and `activeTeamId`
-- `organization` - Organizations/tenants
-- `member` - User-organization membership with roles
-- `team` - Teams within organizations
-- `teamMember` - User-team membership
-- `invitation` - Pending invitations
-
-### Context Forwarding
-
-The runtime server automatically extracts and forwards authentication context to the AI server:
-
-**Headers sent to Pydantic server:**
-- `x-copilot-user-id` - User ID
-- `x-copilot-user-email` - User email
-- `x-copilot-user-name` - User display name
-- `x-copilot-organization-id` - Active organization ID
-- `x-copilot-organization-name` - Organization name
-- `x-copilot-organization-slug` - Organization slug
-- `x-copilot-team-id` - Active team ID
-- `x-copilot-team-name` - Team name
-- `x-copilot-member-role` - User's role in organization
-
-**Auto-Selection Logic:**
-- If no active organization: selects first organization and saves to session
-- If no active team: selects first team user belongs to and saves to session
-- All context automatically forwarded on every AI request
-
-### Roles & Permissions
-
-**Organization Roles:**
-- `owner` - Full control over organization
-- `admin` - Manage members and teams
-- `member` - Basic access
-
-**Enforcement:**
-- Backend: Middleware validates organization/team access
-- Frontend: UI components adapt based on role
-- Database: Foreign key constraints ensure data isolation
+---
 
 ## 📁 Project Structure
 
 ```
 project-hands-off/
-├── chrome-extension/          # Extension manifest and config
-│   ├── manifest.ts            # Manifest generation
-│   ├── public/                # Static assets
-│   └── src/background/        # Background service worker
 │
-├── pages/                     # Extension pages (transpiled)
-│   ├── side-panel/            # Main chat interface (React)
-│   │   ├── src/
-│   │   │   ├── components/    # UI components
-│   │   │   ├── context/       # React contexts (Auth, etc.)
-│   │   │   ├── hooks/         # Custom hooks
-│   │   │   ├── lib/           # Auth client, utilities
-│   │   │   ├── pages/         # Page components
-│   │   │   └── actions/       # Browser actions
-│   │   └── index.tsx
-│   ├── popup/                 # Extension popup
-│   ├── options/               # Options page
-│   ├── content/               # Content scripts
-│   ├── content-ui/            # Injected UI components
-│   └── offscreen/             # Offscreen document for embeddings
+├── chrome-extension/              # Extension manifest and config
+│   ├── manifest.ts                # Manifest generation
+│   ├── public/                    # Static assets (icons, etc.)
+│   └── src/
+│       └── background/            # Background service worker
 │
-├── packages/                  # Shared packages
-│   ├── shared/                # Common types, hooks, components
-│   ├── storage/               # Storage helpers
-│   ├── ui/                    # UI components library
-│   ├── i18n/                  # Internationalization
-│   ├── hmr/                   # Hot module reload plugin
-│   └── ...
+├── pages/                         # Extension pages
+│   ├── side-panel/                # Main chat interface (React)
+│   │   └── src/
+│   │       ├── components/        # UI components
+│   │       ├── context/           # React contexts (Auth, etc.)
+│   │       ├── hooks/             # Custom hooks
+│   │       ├── lib/               # Auth client, utilities
+│   │       └── pages/             # Page components
+│   ├── popup/                     # Extension popup
+│   ├── options/                   # Options page
+│   ├── content/                   # Content scripts
+│   ├── content-ui/                # Injected UI components
+│   └── offscreen/                 # Offscreen document (embeddings)
 │
-├── copilot-runtime-server/    # Node.js/Express server
-│   ├── middleware/
-│   │   ├── dynamicRouting.js  # Agent/model selection + context forwarding
-│   │   ├── auth.js            # Better Auth integration
-│   │   └── ...
-│   ├── routes/
-│   │   ├── auth.js            # Authentication endpoints
-│   │   ├── copilotkit.js      # CopilotKit proxy
-│   │   ├── invitations.js     # Invitation system
-│   │   └── config.js          # Dynamic configuration
-│   ├── auth/
-│   │   └── index.js           # Better Auth setup
-│   ├── config/
-│   │   ├── models.json        # AI model configurations
-│   │   ├── agents.json        # Agent definitions
-│   │   └── providers.json     # Provider settings
-│   ├── scripts/               # Database scripts
-│   └── server.js              # Entry point
+├── packages/                      # Shared packages
+│   ├── shared/                    # Common types, hooks, components
+│   ├── storage/                   # Storage helpers
+│   ├── ui/                        # UI components library
+│   └── i18n/                      # Internationalization
 │
-├── copilotkit-pydantic/       # Python/FastAPI AI server
-│   ├── middleware/
-│   │   └── request_middleware.py  # Extract user/org/team context
-│   ├── core/
-│   │   ├── agent_factory.py   # Dynamic agent creation
-│   │   └── models.py          # Pydantic models
-│   ├── api/
-│   │   ├── routes.py          # HTTP endpoints
-│   │   └── websocket.py       # WebSocket handler
-│   ├── services/
-│   │   ├── session_manager.py # Session state management
-│   │   └── usage_tracker.py   # Token usage tracking
-│   ├── history_processor/     # Message compaction
-│   ├── config/
-│   │   ├── models.json        # Model definitions
-│   │   ├── agents.json        # Agent configurations
-│   │   └── prompts.py         # System prompts
-│   ├── database/              # Database connection
-│   └── main.py                # Entry point
+├── copilot-runtime-server/        # Node.js Gateway Server
+│   ├── server.js                  # Main entry point (Express + Hono)
+│   ├── auth/                      # Better Auth configuration
+│   ├── config/                    # Environment, database, loaders
+│   ├── middleware/                # Auth, CORS, error handling
+│   ├── routes/                    # API route handlers
+│   ├── runners/                   # PostgresAgentRunner
+│   ├── utils/                     # Encryption, OAuth clients
+│   ├── migrations/                # Database migrations
+│   └── README.md                  # Detailed documentation
 │
-├── dist/                      # Built extension (generated)
-├── landing-page/              # Invitation acceptance page
-└── tests/e2e/                 # End-to-end tests
+├── copilotkit-pydantic/           # Python AI Server
+│   ├── main.py                    # FastAPI entry point
+│   ├── api/                       # HTTP routes
+│   ├── core/                      # Agent factory, models
+│   ├── tools/                     # Backend tools (50+)
+│   ├── services/                  # Usage tracker, Ably, deployment
+│   ├── config/                    # Environment, prompts
+│   ├── database/                  # PostgreSQL connection
+│   ├── first-party-mcp-servers/   # MCP server integrations
+│   └── README.md                  # Detailed documentation
+│
+├── landing-page/                  # Invitation acceptance page
+├── dist/                          # Built extension (generated)
+└── tests/e2e/                     # End-to-end tests
 ```
 
-### Key Components
-
-**Side Panel** (`pages/side-panel/`):
-- Main user interface with chat, settings, admin dashboard
-- React context for authentication and state management
-- Organization and team selectors in UI
-- Agent and model configuration
-
-**Runtime Server** (`copilot-runtime-server/`):
-- Proxies requests between extension and AI server
-- Handles authentication with Better Auth
-- Manages organizations, teams, and invitations
-- Extracts and forwards user context to AI server
-
-**Pydantic Server** (`copilotkit-pydantic/`):
-- Hosts AI agents with CopilotKit
-- Receives user/org/team context via headers
-- Manages conversation history and sessions
-- Tracks token usage and implements caching
+---
 
 ## ⚙️ Configuration
 
-### AI Models Configuration
+### Environment Variables Overview
 
-**Runtime Server** (`copilot-runtime-server/config/models.json`):
-```json
-{
-  "claude-3.5-sonnet": {
-    "provider": "anthropic",
-    "model": "claude-3-5-sonnet-20241022",
-    "description": "Most capable Claude model"
-  },
-  "gpt-4o": {
-    "provider": "openai",
-    "model": "gpt-4o",
-    "description": "Latest GPT-4 model"
-  }
-}
+#### Chrome Extension (root `.env`)
+
+```env
+VITE_RUNTIME_SERVER_URL=http://localhost:3001
 ```
 
-**Pydantic Server** (`copilotkit-pydantic/config/models.json`):
-```json
-{
-  "claude-3.5-sonnet": {
-    "provider": "anthropic",
-    "model_name": "claude-3-5-sonnet-20241022",
-    "supports_vision": true
-  }
-}
+#### CopilotKit Runtime Server (`copilot-runtime-server/.env`)
+
+```env
+# Server
+PORT=3001
+NODE_ENV=development
+DEBUG=true
+AGENT_BASE_URL=http://localhost:8001
+
+# Database (PostgreSQL/Neon)
+DB_HOST=your-host.neon.tech
+DB_PORT=5432
+DB_DATABASE=hands_off
+DB_USERNAME=your_user
+DB_PASSWORD=your_password
+DB_OTHER_PARAMS=sslmode=require
+
+# Authentication (Better Auth)
+BETTER_AUTH_URL=http://localhost:3001
+BETTER_AUTH_SECRET=your-32-char-secret-key
+
+# OAuth Providers (Optional)
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-secret
+MICROSOFT_CLIENT_ID=your-microsoft-client-id
+MICROSOFT_CLIENT_SECRET=your-microsoft-secret
+GITHUB_CLIENT_ID=your-github-client-id
+GITHUB_CLIENT_SECRET=your-github-secret
+
+# Encryption
+ENCRYPTION_MASTER_SECRET=your-32-char-encryption-key
+
+# Storage (Optional)
+FIREBASE_STORAGE_BUCKET=your-bucket.appspot.com
+FIREBASE_API_KEY=your-firebase-api-key
+
+# Agent Runner
+USE_SQLITE_RUNNER=false
+AGENT_RUNNER_MAX_HISTORIC_RUNS=1000
+AGENT_RUNNER_TRANSFORM_ERRORS=false
+
+# Server Limits
+BODY_LIMIT_MB=30
+REQUEST_TIMEOUT_MS=300000
+RATE_LIMIT_MAX=120
+CORS_ORIGINS=http://localhost:3000,chrome-extension://your-extension-id
 ```
 
-### Agents Configuration
+#### Pydantic AI Server (`copilotkit-pydantic/.env`)
 
-**Runtime Server** (`copilot-runtime-server/config/agents.json`):
-```json
-{
-  "general": {
-    "name": "General Assistant",
-    "description": "General-purpose AI assistant",
-    "default_model": "claude-3.5-sonnet"
-  },
-  "coding": {
-    "name": "Coding Assistant",
-    "description": "Specialized for programming tasks",
-    "default_model": "claude-3.5-sonnet"
-  }
-}
+```env
+# Server
+PORT=8001
+HOST=0.0.0.0
+DEBUG=true
+
+# Database
+DB_HOST=your-host.neon.tech
+DB_PORT=5432
+DB_DATABASE=hands_off
+DB_USERNAME=your_user
+DB_PASSWORD=your_password
+
+# AI Providers
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+GOOGLE_API_KEY=...
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+AZURE_OPENAI_API_KEY=...
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_REGION=us-east-1
+
+# Observability
+LOGFIRE_TOKEN=your-logfire-token
+
+# Real-time Updates
+ABLY_API_KEY=your-ably-key
+
+# MCP Servers
+DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+DATABRICKS_TOKEN=dapi...
 ```
 
-### Dynamic Configuration API
+---
 
-The runtime server exposes a configuration API:
+## 💻 Development
+
+### Extension Development
+
+```bash
+# Development mode with HMR
+pnpm dev
+
+# Production build
+pnpm build
+
+# Firefox development
+pnpm dev:firefox
+
+# Code quality
+pnpm lint
+pnpm type-check
+pnpm format
+
+# Package for distribution
+pnpm zip
+```
+
+### Runtime Server Development
+
+```bash
+cd copilot-runtime-server
+
+# Development with auto-reload
+npm run dev
+
+# Production mode
+npm run start:prod
+
+# Run migrations
+psql -U user -d database -f migrations/001_create_agent_runner_tables.sql
+```
+
+### Pydantic Server Development
+
+```bash
+cd copilotkit-pydantic
+
+# Start server
+python main.py
+
+# Run with auto-reload
+uvicorn main:app --reload --port 8001
+```
+
+### Adding Dependencies
+
+```bash
+# Extension packages
+pnpm i <package> -w              # Workspace root
+pnpm i <package> -F side-panel   # Specific module
+
+# Runtime Server
+cd copilot-runtime-server && npm install <package>
+
+# Pydantic Server
+cd copilotkit-pydantic && pip install <package>
+pip freeze > requirements.txt
+```
+
+---
+
+## 🔐 Authentication & Authorization
+
+### Authentication Flow
 
 ```
-GET /api/config/models    # List available models
-GET /api/config/agents    # List available agents
+1. User enters email/password in Side Panel
+2. Request sent to Runtime Server /api/auth/sign-in/email
+3. Better Auth validates credentials against PostgreSQL
+4. Session created with secure cookie
+5. Session includes activeOrganizationId and activeTeamId
+6. All subsequent requests include session cookie
+7. Runtime Server extracts and forwards auth context to Python backend
 ```
 
-This allows the frontend to dynamically adapt to available models and agents.
+### Headers Forwarded to Python Backend
+
+| Header | Description |
+|--------|-------------|
+| `x-copilot-user-id` | User's unique ID |
+| `x-copilot-user-email` | User's email address |
+| `x-copilot-user-name` | User's display name |
+| `x-copilot-organization-id` | Active organization ID |
+| `x-copilot-organization-name` | Organization name |
+| `x-copilot-organization-slug` | Organization URL slug |
+| `x-copilot-team-id` | Active team ID |
+| `x-copilot-team-name` | Team name |
+| `x-copilot-member-role` | User's role (owner/admin/member) |
+| `x-copilot-session-id` | Current session ID |
+
+### Roles & Permissions
+
+| Role | Permissions |
+|------|-------------|
+| **owner** | Full control over organization, billing, deletion |
+| **admin** | Manage members, teams, models, agents, tools |
+| **member** | Basic access, create chats, use AI features |
+
+### Auto-Selection Logic
+
+- If no active organization: selects first organization and saves to session
+- If no active team: selects first team user belongs to and saves to session
+- All context automatically forwarded on every AI request
+
+---
 
 ## 🐛 Troubleshooting
 
 ### Extension Issues
 
-**HMR not working:**
-1. Stop the dev server (Ctrl+C)
-2. Kill any `turbo` processes
-3. Run `pnpm dev` again
-
-**Extension not loading:**
-1. Check `dist/manifest.json` is valid
-2. Look for errors in `chrome://extensions` (developer mode)
-3. Try removing and re-adding the extension
-
-**Side panel not opening:**
-1. Ensure the extension has the `sidePanel` permission
-2. Check background service worker logs
-3. Verify the side panel path in manifest
+| Issue | Solution |
+|-------|----------|
+| HMR not working | Stop dev server, kill turbo processes, restart |
+| Extension not loading | Check `dist/manifest.json`, enable developer mode |
+| Side panel not opening | Verify `sidePanel` permission in manifest |
 
 ### Server Issues
 
-**Runtime server won't start:**
-1. Check database connection: `DATABASE_URL` is correct
-2. Ensure PostgreSQL is running
-3. Run `npm run db:init` to initialize database
-4. Check for port conflicts (default 3100)
-
-**Pydantic server errors:**
-1. Verify Python version >= 3.11
-2. Check all requirements installed: `pip install -r requirements.txt`
-3. Ensure AI provider API keys are set
-4. Check for port conflicts (default 8001)
-
-**Database connection errors:**
-```bash
-# Check PostgreSQL is running
-pg_isready
-
-# Test connection
-psql postgresql://user:password@localhost:5432/hands_off
-
-# Reinitialize if needed
-cd copilot-runtime-server
-npm run db:init
-```
-
-**Authentication not working:**
-1. Verify `BETTER_AUTH_SECRET` is set
-2. Check `BETTER_AUTH_URL` matches your runtime server URL
-3. Clear browser cookies and try again
-4. Check database tables were created: `user`, `session`, `organization`, etc.
-
-**Organization/Team context not forwarding:**
-1. Check runtime server logs for "Auth Context" messages
-2. Verify user is member of an organization
-3. Check pydantic server logs show correct IDs
-4. Ensure middleware is extracting headers correctly
+| Issue | Solution |
+|-------|----------|
+| Runtime server won't start | Check `DATABASE_URL`, ensure PostgreSQL running |
+| Python server errors | Verify Python 3.11+, check API keys |
+| Connection timeouts | Increase `REQUEST_TIMEOUT_MS`, check backend health |
+| Auth not working | Verify `BETTER_AUTH_SECRET`, clear cookies |
 
 ### Common Errors
 
-**`grpc` error in turbo:**
 ```bash
-# Kill turbo process
+# Kill stuck turbo process
 pkill -f turbo
-# Or on Windows: taskkill /F /IM turbo.exe
-pnpm dev
+
+# Clear node_modules
+rm -rf node_modules && pnpm install
+
+# Clean build
+rm -rf dist && pnpm build
+
+# Check PostgreSQL connection
+psql -h your-host -U your-user -d your-database -c "SELECT 1"
+
+# Check Python dependencies
+pip install -r requirements.txt --upgrade
 ```
-
-**TypeScript errors in VS Code:**
-1. Ensure using workspace TypeScript version
-2. Cmd/Ctrl+Shift+P → "TypeScript: Select TypeScript Version" → "Use Workspace Version"
-
-**Module not found errors:**
-```bash
-# Clear node_modules and reinstall
-rm -rf node_modules
-pnpm install
-```
-
-**Build fails:**
-```bash
-# Clean build artifacts
-rm -rf dist
-pnpm build
-```
-
-## 📖 Documentation
-
-Additional documentation:
-- [Runtime Server Setup](copilot-runtime-server/SETUP.md)
-- [Invitation System](INVITATION_SYSTEM.md)
-- [Invitation Architecture](INVITATION_ARCHITECTURE.md)
-- [Admin Refactoring](ADMIN_REFACTORING.md)
-- [Single Team Enforcement](SINGLE_TEAM_ENFORCEMENT.md)
-- [UI Team Enforcement](UI_TEAM_ENFORCEMENT.md)
-
-## 📄 License
-
-[Add your license here]
 
 ---
 
-**Note**: This project is built on [Chrome Extension Boilerplate with React + Vite + TypeScript](https://github.com/Jonghakseo/chrome-extension-boilerplate-react-vite)
+## 📖 Documentation
+
+### Component Documentation
+
+| Component | README |
+|-----------|--------|
+| **CopilotKit Runtime Server** | [copilot-runtime-server/README.md](copilot-runtime-server/README.md) |
+| **Pydantic AI Server** | [copilotkit-pydantic/README.md](copilotkit-pydantic/README.md) |
+
+### Additional Guides
+
+| Guide | Description |
+|-------|-------------|
+| [INVITATION_SYSTEM.md](INVITATION_SYSTEM.md) | Invitation flow documentation |
+| [INVITATION_ARCHITECTURE.md](INVITATION_ARCHITECTURE.md) | Invitation system architecture |
+| [ADMIN_REFACTORING.md](ADMIN_REFACTORING.md) | Admin dashboard documentation |
+| [SINGLE_TEAM_ENFORCEMENT.md](SINGLE_TEAM_ENFORCEMENT.md) | Team membership rules |
+
+### API Documentation
+
+| Server | Endpoint | Description |
+|--------|----------|-------------|
+| Runtime | `GET /health` | Health check |
+| Runtime | `POST /api/auth/*` | Authentication (Better Auth) |
+| Runtime | `GET /api/config` | Client configuration |
+| Runtime | `POST /api/copilotkit/*` | AI chat (AG-UI protocol) |
+| Runtime | `/api/admin/*` | Admin configuration APIs |
+| Runtime | `/api/workspace/*` | Personal workspace APIs |
+| Python | `GET /health` | Health check |
+| Python | `POST /agent/{agent_type}/{model_type}` | Agent execution |
+| Python | `/admin/*` | Admin APIs |
+
+---
+
+## 📄 License
+
+TBA
+
+---
+
+## 🤝 Contributing
+
+TBA
+
+---
+
+**Built with ❤️ using [Chrome Extension Boilerplate](https://github.com/AkramElganzoury/chrome-extension-boilerplate-react-vite) • [CopilotKit](https://copilotkit.ai) • [Pydantic AI](https://pydantic.dev/ai) • [Better Auth](https://better-auth.com)**
