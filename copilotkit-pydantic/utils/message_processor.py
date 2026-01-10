@@ -17,6 +17,7 @@ from pydantic_ai.ag_ui import StateDeps
 
 from config import logger
 from core.models import AgentState, UnifiedDeps
+from pydantic_ai.models import ModelRequestParameters
 
 
 async def keep_recent_messages(
@@ -46,10 +47,11 @@ async def keep_recent_messages(
     Reference: https://github.com/pydantic/pydantic-ai/issues/2050
     """
 
-    current_tokens = ctx.usage.total_tokens
+    # current_tokens = await ctx.model.count_tokens(messages, model_settings={}, model_request_parameters=ModelRequestParameters())
+    # Error: Token counting ahead of the request is not supported by InstrumentedModel
 
     logger.info(f"Message History Usage: {ctx.usage.total_tokens} = {ctx.usage.input_tokens} + {ctx.usage.output_tokens}")
-    logger.info(f"Current Tokens: {current_tokens}")
+    # logger.info(f"Current Tokens: {current_tokens.input_tokens} + {current_tokens.output_tokens}")
 
     # --- Pre-sanitization: trim oversized tool results and drop duplicates within a message ---
     def _truncate_text(text: str, limit: int = 2000, keep: int = 1800) -> str:

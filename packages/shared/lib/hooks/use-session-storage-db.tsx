@@ -418,6 +418,24 @@ export const sessionStorageDBWrapper = {
   },
 
   /**
+   * Update session selected page URLs (context selector)
+   */
+  async updateSessionPageURLs(sessionId: string, selectedPageURLs: string[]): Promise<void> {
+    await sessionStorageDB.updateSessionPageURLs(sessionId, selectedPageURLs);
+  },
+
+  /**
+   * Update session selected workspace items (notes and credentials)
+   */
+  async updateSessionWorkspaceItems(
+    sessionId: string, 
+    selectedNoteIds: string[], 
+    selectedCredentialIds: string[]
+  ): Promise<void> {
+    await sessionStorageDB.updateSessionWorkspaceItems(sessionId, selectedNoteIds, selectedCredentialIds);
+  },
+
+  /**
    * Update usage stats
    */
   async updateUsageStats(

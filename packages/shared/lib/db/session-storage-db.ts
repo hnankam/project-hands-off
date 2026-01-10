@@ -110,6 +110,11 @@ export class SessionStorageDB {
         : typeof row.planExpanded === 'number'
           ? row.planExpanded === 1
           : undefined,
+      // Selected context page URLs
+      selectedPageURLs: Array.isArray(row.selectedPageURLs) ? row.selectedPageURLs : undefined,
+      // Selected workspace items
+      selectedNoteIds: Array.isArray(row.selectedNoteIds) ? row.selectedNoteIds : undefined,
+      selectedCredentialIds: Array.isArray(row.selectedCredentialIds) ? row.selectedCredentialIds : undefined,
     };
   }
 
@@ -743,6 +748,36 @@ export class SessionStorageDB {
       { id: sessionId, planExpanded: planExpanded ? 1 : 0, timestamp: Date.now() }
     );
     this.invalidateSessionCache(sessionId);
+  }
+
+  /**
+   * Update session selected page URLs (context selector)
+   */
+  async updateSessionPageURLs(sessionId: string, selectedPageURLs: string[]): Promise<void> {
+    const worker = this.getWorker();
+    await worker.query(
+      'UPDATE session_metadata SET selectedPageURLs = $selectedPageURLs WHERE sessionId = $id OR id = $id;',
+      { id: sessionId, selectedPageURLs }
+    );
+    this.invalidateSessionCache(sessionId);
+    // No notification needed - this is a user-driven action, not a session switch
+  }
+
+  /**
+   * Update session selected workspace items (notes and credentials)
+   */
+  async updateSessionWorkspaceItems(
+    sessionId: string, 
+    selectedNoteIds: string[], 
+    selectedCredentialIds: string[]
+  ): Promise<void> {
+    const worker = this.getWorker();
+    await worker.query(
+      'UPDATE session_metadata SET selectedNoteIds = $selectedNoteIds, selectedCredentialIds = $selectedCredentialIds WHERE sessionId = $id OR id = $id;',
+      { id: sessionId, selectedNoteIds, selectedCredentialIds }
+    );
+    this.invalidateSessionCache(sessionId);
+    // No notification needed - this is a user-driven action, not a session switch
   }
 
   // ========================================

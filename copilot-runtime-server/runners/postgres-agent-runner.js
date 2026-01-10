@@ -17,6 +17,388 @@ import { AgentRunner } from '@copilotkit/runtime/v2';
 import { ReplaySubject } from 'rxjs';
 import { compactEvents, EventType } from '@ag-ui/client';
 import { finalizeRunEvents } from '@copilotkitnext/shared';
+import fastJsonPatch from 'fast-json-patch';
+
+const { applyPatch } = fastJsonPatch;
+
+/**
+ * Aggressive event compaction for history storage
+ * 
+ * Extends the basic compactEvents from @ag-ui/client to also compact:
+ * - STATE_DELTA: Merge consecutive patches or convert to STATE_SNAPSHOT
+ * - ACTIVITY_DELTA: Merge patches per messageId into ACTIVITY_SNAPSHOT
+ * - THINKING_TEXT_MESSAGE_CONTENT: Merge deltas like TEXT_MESSAGE_CONTENT
+ * 
+ * This significantly reduces stored event count for long-running sessions.
+ * 
+ * @param {Array} events - Raw AG-UI events
+ * @param {Object} [options] - Compaction options
+ * @param {boolean} [options.debug=false] - Enable debug logging
+ * @returns {Array} Compacted events
+ */
+function aggressiveCompactEvents(events, options = {}) {
+  const { debug = false } = options;
+  
+  // Count input event types for debugging
+  const inputTypeCounts = {};
+  for (const event of events) {
+    const type = event.type || 'UNKNOWN';
+    inputTypeCounts[type] = (inputTypeCounts[type] || 0) + 1;
+  }
+  
+  // First, apply the standard compaction (TEXT_MESSAGE_CONTENT, TOOL_CALL_ARGS)
+  const basicCompacted = compactEvents(events);
+  
+  // Now apply additional compaction
+  const result = [];
+  
+  // Stats tracking for logging
+  const stats = {
+    inputEvents: events.length,
+    afterBasicCompaction: basicCompacted.length,
+    stateDeltasMerged: 0,
+    activityDeltasMerged: 0,
+    thinkingEventsMerged: 0,
+  };
+  
+  // Track STATE_DELTA events to merge/convert to snapshot
+  let stateDeltas = [];
+  let lastStateSnapshot = null;
+  
+  // Track ACTIVITY_DELTA events per messageId
+  const activityBuffers = new Map(); // messageId -> { patches: [], activityType, baseContent, lastTimestamp }
+  
+  // Track last ACTIVITY_SNAPSHOT content per messageId (to use as base for subsequent deltas)
+  const lastActivitySnapshots = new Map(); // messageId -> content object
+  
+  // Track THINKING_TEXT_MESSAGE events
+  const thinkingBuffers = new Map(); // messageId -> { start, contents: [], end }
+  
+  /**
+   * Flush accumulated state deltas as a single STATE_SNAPSHOT
+   */
+  const flushStateDeltas = () => {
+    if (stateDeltas.length === 0) return;
+    
+    // Build the final state by applying all patches
+    let finalState = lastStateSnapshot ? { ...lastStateSnapshot } : {};
+    
+    for (const deltaEvent of stateDeltas) {
+      if (deltaEvent.delta && Array.isArray(deltaEvent.delta)) {
+        try {
+          const patchResult = applyPatch(finalState, deltaEvent.delta, true, false);
+          finalState = patchResult.newDocument;
+        } catch (e) {
+          // If patch fails, just keep current state
+          if (debug) {
+            console.warn('[aggressiveCompactEvents] Failed to apply state patch:', e.message);
+          }
+        }
+      }
+    }
+    
+    // Emit a single STATE_SNAPSHOT with the final state
+    if (Object.keys(finalState).length > 0) {
+      result.push({
+        type: EventType.STATE_SNAPSHOT,
+        snapshot: finalState,
+        // Preserve timestamp from last delta
+        timestamp: stateDeltas[stateDeltas.length - 1].timestamp,
+      });
+      lastStateSnapshot = finalState;
+    }
+    
+    // Track stats
+    if (stateDeltas.length > 1) {
+      stats.stateDeltasMerged += stateDeltas.length - 1;
+    }
+    
+    stateDeltas = [];
+  };
+  
+  /**
+   * Flush accumulated activity deltas for a messageId as ACTIVITY_SNAPSHOT
+   */
+  const flushActivityDeltas = (messageId) => {
+    const buffer = activityBuffers.get(messageId);
+    if (!buffer || buffer.patches.length === 0) return;
+    
+    // Apply all patches to build final content
+    // Start with baseContent (which contains previous snapshot data)
+    let finalContent = buffer.baseContent ? { ...buffer.baseContent } : {};
+    
+    for (const patch of buffer.patches) {
+      if (patch && Array.isArray(patch)) {
+        try {
+          const patchResult = applyPatch(finalContent, patch, true, false);
+          finalContent = patchResult.newDocument;
+        } catch (e) {
+          if (debug) {
+            console.warn(`[aggressiveCompactEvents] Failed to apply activity patch for ${messageId}:`, e.message);
+          }
+        }
+      }
+    }
+    
+    // Emit ACTIVITY_SNAPSHOT with merged content
+    result.push({
+      type: EventType.ACTIVITY_SNAPSHOT,
+      messageId: messageId,
+      activityType: buffer.activityType,
+      content: finalContent,
+      replace: true,
+      timestamp: buffer.lastTimestamp,
+    });
+    
+    // Update lastActivitySnapshots so subsequent deltas can build on this
+    lastActivitySnapshots.set(messageId, { ...finalContent });
+    
+    // Track stats
+    if (buffer.patches.length > 1) {
+      stats.activityDeltasMerged += buffer.patches.length - 1;
+    }
+    
+    activityBuffers.delete(messageId);
+  };
+  
+  /**
+   * Flush all pending activity deltas
+   */
+  const flushAllActivityDeltas = () => {
+    for (const messageId of activityBuffers.keys()) {
+      flushActivityDeltas(messageId);
+    }
+  };
+  
+  /**
+   * Flush thinking message buffer
+   */
+  const flushThinkingBuffer = (messageId) => {
+    const buffer = thinkingBuffers.get(messageId);
+    if (!buffer) return;
+    
+    // Emit START
+    if (buffer.start) {
+      result.push(buffer.start);
+    }
+    
+    // Merge all content deltas into one
+    if (buffer.contents.length > 0) {
+      const mergedDelta = buffer.contents.map(e => e.delta || '').join('');
+      result.push({
+        type: EventType.THINKING_TEXT_MESSAGE_CONTENT,
+        messageId: messageId,
+        delta: mergedDelta,
+        timestamp: buffer.contents[buffer.contents.length - 1].timestamp,
+      });
+      
+      // Track stats
+      if (buffer.contents.length > 1) {
+        stats.thinkingEventsMerged += buffer.contents.length - 1;
+      }
+    }
+    
+    // Emit END
+    if (buffer.end) {
+      result.push(buffer.end);
+    }
+    
+    thinkingBuffers.delete(messageId);
+  };
+  
+  /**
+   * Flush all pending thinking buffers
+   */
+  const flushAllThinkingBuffers = () => {
+    for (const messageId of thinkingBuffers.keys()) {
+      flushThinkingBuffer(messageId);
+    }
+  };
+  
+  // Process events
+  for (const event of basicCompacted) {
+    switch (event.type) {
+      // ========================================
+      // STATE_DELTA -> STATE_SNAPSHOT compaction
+      // ========================================
+      case EventType.STATE_DELTA:
+      case 'STATE_DELTA':
+        stateDeltas.push(event);
+        break;
+        
+      case EventType.STATE_SNAPSHOT:
+      case 'STATE_SNAPSHOT':
+        // New snapshot supersedes any pending deltas
+        stateDeltas = [];
+        lastStateSnapshot = event.snapshot;
+        result.push(event);
+        break;
+        
+      // ========================================
+      // ACTIVITY_DELTA -> ACTIVITY_SNAPSHOT compaction
+      // ========================================
+      case EventType.ACTIVITY_DELTA:
+      case 'ACTIVITY_DELTA':
+        {
+          const msgId = event.messageId;
+          if (!activityBuffers.has(msgId)) {
+            // Use last known snapshot content as base (if any)
+            // This ensures we don't lose properties from previous snapshots
+            const lastContent = lastActivitySnapshots.get(msgId);
+            activityBuffers.set(msgId, {
+              patches: [],
+              activityType: event.activityType,
+              baseContent: lastContent ? { ...lastContent } : {},
+              lastTimestamp: event.timestamp,
+            });
+          }
+          const buffer = activityBuffers.get(msgId);
+          if (event.patch) {
+            buffer.patches.push(event.patch);
+          }
+          buffer.activityType = event.activityType;
+          buffer.lastTimestamp = event.timestamp;
+        }
+        break;
+        
+      case EventType.ACTIVITY_SNAPSHOT:
+      case 'ACTIVITY_SNAPSHOT':
+        {
+          const msgId = event.messageId;
+          // Store snapshot content for future delta base
+          // This ensures subsequent deltas can build on top of this snapshot
+          if (event.content) {
+            lastActivitySnapshots.set(msgId, { ...event.content });
+          }
+          // New snapshot supersedes any pending deltas for this message
+          activityBuffers.delete(msgId);
+          result.push(event);
+        }
+        break;
+        
+      // ========================================
+      // THINKING_TEXT_MESSAGE compaction
+      // ========================================
+      case EventType.THINKING_TEXT_MESSAGE_START:
+      case 'THINKING_TEXT_MESSAGE_START':
+        {
+          const msgId = event.messageId;
+          // Start new buffer
+          thinkingBuffers.set(msgId, {
+            start: event,
+            contents: [],
+            end: null,
+          });
+        }
+        break;
+        
+      case EventType.THINKING_TEXT_MESSAGE_CONTENT:
+      case 'THINKING_TEXT_MESSAGE_CONTENT':
+        {
+          const msgId = event.messageId;
+          const buffer = thinkingBuffers.get(msgId);
+          if (buffer) {
+            buffer.contents.push(event);
+          } else {
+            // No start event, just pass through
+            result.push(event);
+          }
+        }
+        break;
+        
+      case EventType.THINKING_TEXT_MESSAGE_END:
+      case 'THINKING_TEXT_MESSAGE_END':
+        {
+          const msgId = event.messageId;
+          const buffer = thinkingBuffers.get(msgId);
+          if (buffer) {
+            buffer.end = event;
+            flushThinkingBuffer(msgId);
+          } else {
+            result.push(event);
+          }
+        }
+        break;
+        
+      // ========================================
+      // Boundary events - flush pending state
+      // ========================================
+      case EventType.RUN_STARTED:
+      case 'RUN_STARTED':
+        // Flush any pending from previous run
+        flushStateDeltas();
+        flushAllActivityDeltas();
+        flushAllThinkingBuffers();
+        result.push(event);
+        break;
+        
+      case EventType.RUN_FINISHED:
+      case 'RUN_FINISHED':
+      case EventType.RUN_ERROR:
+      case 'RUN_ERROR':
+        // Flush all pending before run ends
+        flushStateDeltas();
+        flushAllActivityDeltas();
+        flushAllThinkingBuffers();
+        result.push(event);
+        break;
+        
+      // ========================================
+      // Pass-through events
+      // ========================================
+      default:
+        // For other events, just pass through
+        result.push(event);
+        break;
+    }
+  }
+  
+  // Final flush of any remaining buffers
+  flushStateDeltas();
+  flushAllActivityDeltas();
+  flushAllThinkingBuffers();
+  
+  // Calculate stats
+  stats.outputEvents = result.length;
+  const totalMerged = stats.stateDeltasMerged + stats.activityDeltasMerged + stats.thinkingEventsMerged;
+  const basicReduction = stats.inputEvents > 0 
+    ? ((stats.inputEvents - stats.afterBasicCompaction) / stats.inputEvents * 100).toFixed(1)
+    : '0.0';
+  const aggressiveReduction = stats.afterBasicCompaction > 0
+    ? ((stats.afterBasicCompaction - stats.outputEvents) / stats.afterBasicCompaction * 100).toFixed(1)
+    : '0.0';
+  const totalReduction = stats.inputEvents > 0
+    ? ((stats.inputEvents - stats.outputEvents) / stats.inputEvents * 100).toFixed(1)
+    : '0.0';
+  
+  // Always log compaction stats (useful for debugging performance issues)
+  if (totalMerged > 0 || debug) {
+    // Count event types in output for verification
+    const outputTypeCounts = {};
+    for (const event of result) {
+      const type = event.type || 'UNKNOWN';
+      outputTypeCounts[type] = (outputTypeCounts[type] || 0) + 1;
+    }
+    
+    console.log(`[aggressiveCompactEvents] Compaction stats:`, {
+      input: stats.inputEvents,
+      afterBasic: stats.afterBasicCompaction,
+      output: stats.outputEvents,
+      basicReduction: `${basicReduction}%`,
+      aggressiveReduction: `${aggressiveReduction}%`,
+      totalReduction: `${totalReduction}%`,
+      merged: {
+        stateDeltas: stats.stateDeltasMerged,
+        activityDeltas: stats.activityDeltasMerged,
+        thinkingEvents: stats.thinkingEventsMerged,
+      },
+      inputTypes: inputTypeCounts,
+      outputTypes: outputTypeCounts,
+    });
+  }
+  
+  return result;
+}
 
 /**
  * PostgreSQL-backed implementation of AgentRunner
@@ -74,6 +456,7 @@ export class PostgresAgentRunner extends AgentRunner {
       runsCompleted: 0,
       runsFailed: 0,
       runsStopped: 0,
+      runsInterrupted: 0,  // Stale runs cleaned up after server restart
       avgRunDuration: 0,
     };
     
@@ -87,6 +470,13 @@ export class PostgresAgentRunner extends AgentRunner {
       redis: this.redis ? 'enabled' : 'disabled',
       debug: this.debug,
       transformErrors: this.transformErrors,
+    });
+    
+    // Recover stalled runs from previous server instance (async, non-blocking)
+    // This ensures any runs that were in progress when the server crashed
+    // are properly marked as 'interrupted' and threads are reset
+    this.recoverStalledRuns().catch(err => {
+      console.error('[PostgresAgentRunner] Failed to recover stalled runs:', err.message);
     });
   }
   
@@ -371,8 +761,9 @@ export class PostgresAgentRunner extends AgentRunner {
         console.log(`[PostgresAgentRunner] Filtered out ${currentEvents.length - eventsToSave.length} RUN_ERROR events before saving run ${runId}, marking as 'error'`);
       }
       
-      // Compact and store (use filtered events)
-      const compactedEvents = compactEvents(eventsToSave);
+      // Aggressive compact and store (use filtered events)
+      // This merges STATE_DELTA, ACTIVITY_DELTA, and THINKING events in addition to TEXT/TOOL
+      const compactedEvents = aggressiveCompactEvents(eventsToSave, { debug: this.debug });
       console.log(`[PostgresAgentRunner] Persisting ${compactedEvents.length} compacted events for run ${runId} (from ${currentEvents.length} raw events)`);
       await this.completeRun(runId, compactedEvents, status);
       
@@ -620,8 +1011,9 @@ export class PostgresAgentRunner extends AgentRunner {
         return filtered;
       });
       
-      // Compact filtered events
-      const compactedEvents = compactEvents(filteredEvents);
+      // Aggressive compact filtered events for history replay
+      // This merges STATE_DELTA, ACTIVITY_DELTA, and THINKING events for faster load
+      const compactedEvents = aggressiveCompactEvents(filteredEvents, { debug: this.debug });
       
       if (this.debug && deletedMessageIds.size > 0) {
         console.log(`[PostgresAgentRunner] Filtered ${deletedMessageIds.size} deleted messages from ${compactedEvents.length} events for thread ${threadId}`);
@@ -692,10 +1084,12 @@ export class PostgresAgentRunner extends AgentRunner {
             error: (err) => connectionSubject.error(err)
           });
         } else {
-          // Run is marked as active but no subject exists (server restart)
-          if (this.debug) {
-            console.warn(`[PostgresAgentRunner] Stale run detected for ${threadId}`);
-          }
+          // Run is marked as active but no subject exists (server restart scenario)
+          // This is a stale run - clean it up so user can start fresh
+          console.warn(`[PostgresAgentRunner] Stale run detected for ${threadId}, cleaning up...`);
+          
+          await this.cleanupStaleRun(threadId, threadState);
+          
           connectionSubject.complete();
         }
       } else {
@@ -943,6 +1337,65 @@ export class PostgresAgentRunner extends AgentRunner {
       } catch (error) {
         // Ignore cache errors
       }
+    }
+  }
+  
+  /**
+   * Clean up a stale run after server restart
+   * 
+   * This handles the crash recovery scenario where:
+   * - Database shows thread is_running = true
+   * - But no in-memory subject exists (lost on restart)
+   * 
+   * Actions taken:
+   * 1. Mark the stale run as 'interrupted' status
+   * 2. Reset thread state (is_running = false, stop_requested = false)
+   * 3. Clear current_run_id so new runs can start
+   * 
+   * @private
+   * @param {string} threadId - Thread ID
+   * @param {Object} threadState - Current thread state from database
+   */
+  async cleanupStaleRun(threadId, threadState) {
+    try {
+      const staleRunId = threadState?.current_run_id;
+      
+      // Step 1: Mark the stale run as 'interrupted' if we have a run ID
+      if (staleRunId) {
+        const runResult = await this.pool.query(
+          `UPDATE agent_runs 
+           SET status = 'interrupted', 
+               completed_at = NOW(),
+               events = COALESCE(events, '[]'::jsonb)
+           WHERE run_id = $1 AND status = 'running'
+           RETURNING run_id`,
+          [staleRunId]
+        );
+        
+        if (runResult.rows.length > 0) {
+          console.log(`[PostgresAgentRunner] Marked stale run ${staleRunId} as 'interrupted'`);
+          this.metrics.runsInterrupted = (this.metrics.runsInterrupted || 0) + 1;
+        } else {
+          console.log(`[PostgresAgentRunner] Stale run ${staleRunId} was already completed or not found`);
+        }
+      }
+      
+      // Step 2: Reset thread state to allow new runs
+      await this.updateThreadState(threadId, {
+        is_running: false,
+        stop_requested: false,
+        current_run_id: null,
+        last_accessed_at: new Date(),
+      });
+      
+      console.log(`[PostgresAgentRunner] Cleaned up stale run state for thread ${threadId}`);
+      
+      // Step 3: Remove any stale entries from activeSubjects (shouldn't exist, but be safe)
+      this.activeSubjects.delete(threadId);
+      
+    } catch (error) {
+      // Log but don't throw - we still want to complete the connection
+      console.error(`[PostgresAgentRunner] Error cleaning up stale run for ${threadId}: ${error.message}`);
     }
   }
   
@@ -2042,42 +2495,65 @@ export class PostgresAgentRunner extends AgentRunner {
   }
   
   /**
-   * Recover stalled runs (call on startup)
+   * Recover stalled runs on startup
+   * 
+   * This method should be called when the server starts to clean up any runs
+   * that were in progress when the previous server instance crashed or restarted.
+   * 
+   * Actions:
+   * 1. Find all threads marked as is_running = true
+   * 2. Mark their current runs as 'interrupted' (crash recovery status)
+   * 3. Reset thread state to allow new runs
+   * 
+   * @returns {Promise<number>} Number of stalled runs recovered
    */
   async recoverStalledRuns() {
     try {
       const result = await this.pool.query(
         `SELECT thread_id, current_run_id 
          FROM agent_threads 
-         WHERE is_running = TRUE`
+         WHERE is_running = TRUE OR stop_requested = TRUE`
       );
       
+      if (result.rows.length === 0) {
+        console.log('[PostgresAgentRunner] No stalled runs to recover on startup');
+        return 0;
+      }
+      
+      console.log(`[PostgresAgentRunner] Found ${result.rows.length} stalled runs, recovering...`);
+      
       for (const row of result.rows) {
-        if (this.debug) {
-          console.log(`[PostgresAgentRunner] Recovering: ${row.thread_id}`);
+        console.log(`[PostgresAgentRunner] Recovering stalled thread: ${row.thread_id}, run: ${row.current_run_id}`);
+        
+        // Mark run as 'interrupted' (more accurate than 'stopped' for crash recovery)
+        if (row.current_run_id) {
+          await this.pool.query(
+            `UPDATE agent_runs 
+             SET status = 'interrupted', 
+                 completed_at = NOW(),
+                 events = COALESCE(events, '[]'::jsonb)
+             WHERE run_id = $1 AND status = 'running'`,
+            [row.current_run_id]
+          );
         }
         
-        // Mark run as stopped
-        await this.pool.query(
-          `UPDATE agent_runs 
-           SET status = 'stopped', completed_at = NOW() 
-           WHERE run_id = $1`,
-          [row.current_run_id]
-        );
-        
-        // Update thread state
+        // Reset thread state
         await this.updateThreadState(row.thread_id, {
           is_running: false,
           current_run_id: null,
-          stop_requested: false
+          stop_requested: false,
+          last_accessed_at: new Date(),
         });
+        
+        this.metrics.runsInterrupted++;
       }
       
-      if (result.rows.length > 0) {
-        console.log(`[PostgresAgentRunner] Recovered ${result.rows.length} stalled runs`);
-      }
+      console.log(`[PostgresAgentRunner] ✅ Recovered ${result.rows.length} stalled runs on startup`);
+      return result.rows.length;
+      
     } catch (error) {
-      console.error(`[PostgresAgentRunner] Recovery error: ${error.message}`);
+      console.error(`[PostgresAgentRunner] Startup recovery error: ${error.message}`);
+      return 0;
     }
   }
   

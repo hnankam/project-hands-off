@@ -80,11 +80,11 @@ export const AuxiliaryAgentSelector: React.FC<AuxiliaryAgentSelectorProps> = ({
   return (
     <div className="relative" ref={dropdownRef}>
       {!hideLabel && (
-        <div className="mb-1">
-          <span className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
+      <div className="mb-1">
+        <span className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>
             {customLabel || auxInfo.label}
-          </span>
-        </div>
+        </span>
+      </div>
       )}
       
       <button
@@ -173,7 +173,7 @@ export const AuxiliaryAgentSelector: React.FC<AuxiliaryAgentSelectorProps> = ({
                   <span className="truncate flex-1 text-left">{agent.agentName}</span>
                   {isSelected && (
                     <CheckIcon className="ml-auto flex-shrink-0" />
-                  )}
+                      )}
                 </button>
               );
             })

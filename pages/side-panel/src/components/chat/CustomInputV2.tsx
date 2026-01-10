@@ -50,6 +50,9 @@ interface PageSelectorContextValue {
   onNotesChange?: (notes: any[]) => void;
   onCredentialsChange?: (credentials: any[]) => void;
   onFilesChange?: (files: any[]) => void;
+  // Initial workspace item IDs for restoring session state
+  initialSelectedNoteIds?: string[];
+  initialSelectedCredentialIds?: string[];
 }
 
 export const PageSelectorContext = createContext<PageSelectorContextValue | null>(null);
@@ -223,8 +226,23 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
   }, [localFilesWithDetails, pageSelectorCtx]);
   
   // Track selected IDs locally for the selector UI
-  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
-  const [selectedCredentialIds, setSelectedCredentialIds] = useState<string[]>([]);
+  // Initialize with persisted values from session storage
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>(
+    pageSelectorCtx?.initialSelectedNoteIds ?? []
+  );
+  const [selectedCredentialIds, setSelectedCredentialIds] = useState<string[]>(
+    pageSelectorCtx?.initialSelectedCredentialIds ?? []
+  );
+  
+  // Sync with context when session changes
+  useEffect(() => {
+    if (pageSelectorCtx?.initialSelectedNoteIds !== undefined) {
+      setSelectedNoteIds(pageSelectorCtx.initialSelectedNoteIds);
+    }
+    if (pageSelectorCtx?.initialSelectedCredentialIds !== undefined) {
+      setSelectedCredentialIds(pageSelectorCtx.initialSelectedCredentialIds);
+    }
+  }, [pageSelectorCtx?.initialSelectedNoteIds, pageSelectorCtx?.initialSelectedCredentialIds]);
   
   // File input refs for upload functionality
   const fileInputRef = useRef<HTMLInputElement>(null);

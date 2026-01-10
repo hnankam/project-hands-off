@@ -228,6 +228,9 @@ export interface ChatInnerProps {
   onNotesChange?: (notes: any[]) => void;
   onCredentialsChange?: (credentials: any[]) => void;
   onFilesChange?: (files: any[]) => void;
+  // Initial workspace item IDs for restoring session state
+  initialSelectedNoteIds?: string[];
+  initialSelectedCredentialIds?: string[];
 }
 
 // ================================================================================
@@ -267,6 +270,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   onNotesChange,
   onCredentialsChange,
   onFilesChange,
+  initialSelectedNoteIds = [],
+  initialSelectedCredentialIds = [],
 }) => {
   // ================================================================================
   // THEME & STORAGE
@@ -936,6 +941,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
         onNotesChange,
         onCredentialsChange,
         onFilesChange,
+        initialSelectedNoteIds,
+        initialSelectedCredentialIds,
   }), [
     selectedPageURLs,
     onPagesChange,
@@ -948,6 +955,8 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
     onNotesChange,
     onCredentialsChange,
     onFilesChange,
+    initialSelectedNoteIds,
+    initialSelectedCredentialIds,
   ]);
 
   return (

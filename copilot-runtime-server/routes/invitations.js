@@ -74,13 +74,14 @@ async function associateTeamsWithInvitation(db, invitationId, teamIds) {
 
 /**
  * Adds a user to a team if not already a member
+ * IMPORTANT: Only adds user if they are already an organization member
  * @param {Object} db - Database connection
  * @param {string} teamId - Team ID
  * @param {string} userId - User ID
- * @returns {Promise<boolean>} True if user was added, false if already a member
+ * @returns {Promise<boolean>} True if user was added, false if already a member or not an org member
  */
 async function addUserToTeam(db, teamId, userId) {
-  // Check if already a member
+  // Check if already a team member
   const existingMember = await db.query(
     'SELECT id FROM "teamMember" WHERE "teamId" = $1 AND "userId" = $2',
     [teamId, userId]
@@ -88,6 +89,30 @@ async function addUserToTeam(db, teamId, userId) {
 
   if (existingMember.rows && existingMember.rows.length > 0) {
     return false; // Already a member
+  }
+  
+  // Get the organization ID for this team
+  const teamResult = await db.query(
+    'SELECT "organizationId" FROM team WHERE id = $1',
+    [teamId]
+  );
+  
+  if (!teamResult.rows || teamResult.rows.length === 0) {
+    console.warn(`[Invitations] Team ${teamId} not found`);
+    return false;
+  }
+  
+  const organizationId = teamResult.rows[0].organizationId;
+  
+  // Verify user is an organization member before adding to team
+  const orgMemberResult = await db.query(
+    'SELECT id FROM member WHERE "userId" = $1 AND "organizationId" = $2',
+    [userId, organizationId]
+  );
+  
+  if (!orgMemberResult.rows || orgMemberResult.rows.length === 0) {
+    console.warn(`[Invitations] Cannot add user ${userId} to team ${teamId}: user is not an organization member`);
+    return false; // User is not an org member, don't add to team
   }
 
   // Add user to team

@@ -345,43 +345,37 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
         throw new Error(error.message);
       }
 
-      const membersWithDetails = await Promise.all(
-        (membersData || []).map(async (tm: any) => {
-          try {
-            const orgMembers = await authClient.organization.listMembers({
-              query: { organizationId: selectedOrgForTeam },
-            });
+      // Fetch all org members (including team-only members) using custom endpoint
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      let orgMembersList: any[] = [];
+      try {
+        const response = await fetch(`${baseURL}/api/auth/org-members-with-status?organizationId=${selectedOrgForTeam}`, {
+          credentials: 'include',
+        });
+        if (response.ok) {
+          const data = await response.json();
+          orgMembersList = data?.members || [];
+        }
+      } catch (err) {
+        console.warn('Failed to fetch org members:', err);
+      }
 
-            const fullMember = orgMembers.data?.members?.find((m: any) => m.userId === tm.userId);
-            
-            return {
-              id: tm.id,
-              userId: tm.userId,
-              organizationId: selectedOrgForTeam,
-              role: fullMember?.role || 'member',
-              user: {
-                id: tm.userId,
-                name: fullMember?.user?.name || 'Unknown',
-                email: fullMember?.user?.email || tm.userId,
-              },
-              createdAt: tm.createdAt,
-            };
-          } catch {
-            return {
-              id: tm.id,
-              userId: tm.userId,
-              organizationId: selectedOrgForTeam,
-              role: 'member',
-              user: {
-                id: tm.userId,
-                name: 'Unknown',
-                email: tm.userId,
-              },
-              createdAt: tm.createdAt,
-            };
-          }
-        })
-      );
+      const membersWithDetails = (membersData || []).map((tm: any) => {
+        const fullMember = orgMembersList.find((m: any) => m.userId === tm.userId);
+        
+        return {
+          id: tm.id,
+          userId: tm.userId,
+          organizationId: selectedOrgForTeam,
+          role: fullMember?.role || 'member',
+          user: {
+            id: tm.userId,
+            name: fullMember?.user?.name || 'Unknown',
+            email: fullMember?.user?.email || tm.userId,
+          },
+          createdAt: tm.createdAt,
+        };
+      });
 
       setTeamMembers(prev => ({
         ...prev,
@@ -777,7 +771,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                           )}>
                             {teamMembers[team.id].length > 0 ? (
                               <div className="space-y-2">
-                                <h5 className={cn('text-[10px] font-semibold uppercase mb-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                <h5 className={cn('text-[12px] font-semibold uppercase mb-2', isLight ? 'text-gray-700' : 'text-gray-300')}>
                                   Members ({teamMembers[team.id].length})
                                 </h5>
                                 <div className="space-y-1">
@@ -799,15 +793,15 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                                           <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                         </svg>
                                         <div className="flex flex-col min-w-0">
-                                          <span className={cn('truncate font-medium', mainTextColor)}>
+                                          <span className={cn('truncate font-medium text-[12px]', mainTextColor)}>
                                             {member.user.name}
                                           </span>
-                                          <span className={cn('truncate text-[10px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                          <span className={cn('truncate text-[12px]', isLight ? 'text-gray-500' : 'text-gray-400')}>
                                             {member.user.email}
                                           </span>
                                         </div>
                                       </div>
-                                      <span className={cn('text-[10px] px-2 py-0.5 rounded transition-colors flex-shrink-0', isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300')}>
+                                      <span className={cn('text-[12px] px-2 py-0.5 rounded transition-colors flex-shrink-0', isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300')}>
                                         {Array.isArray(member.role) ? member.role[0] : member.role}
                                       </span>
                                     </div>

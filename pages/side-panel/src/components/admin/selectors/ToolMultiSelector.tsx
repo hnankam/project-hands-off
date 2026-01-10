@@ -382,32 +382,32 @@ export const ToolMultiSelector: React.FC<ToolMultiSelectorProps> = ({
                                 {isServerExpanded && (
                                   <div className="ml-4 mt-0.5 flex flex-wrap gap-1">
                                     {serverTools.map(tool => (
-                                      <span
-                                        key={tool.id}
-                                        className={cn(
-                                          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
-                                          isLight
-                                            ? 'bg-blue-100 text-blue-700'
-                                            : 'bg-blue-900/30 text-blue-400'
-                                        )}
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        {tool.name}
-                                        <button
-                                          type="button"
+              <span
+                key={tool.id}
+                className={cn(
+                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
+                  isLight
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-blue-900/30 text-blue-400'
+                )}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {tool.name}
+                <button
+                  type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             removeTool(tool.id, e);
                                           }}
-                                          className={cn(
-                                            'hover:bg-black/10 rounded-full p-0.5 transition-colors',
-                                            isLight ? 'text-blue-600' : 'text-blue-300'
-                                          )}
-                                        >
+                  className={cn(
+                    'hover:bg-black/10 rounded-full p-0.5 transition-colors',
+                    isLight ? 'text-blue-600' : 'text-blue-300'
+                  )}
+                >
                                           <CloseIcon size={8} strokeWidth={3} />
-                                        </button>
-                                      </span>
-                                    ))}
+                </button>
+              </span>
+            ))}
                                   </div>
                                 )}
                               </div>

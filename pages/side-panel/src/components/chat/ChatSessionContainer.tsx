@@ -389,6 +389,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       setSelectedAgent: setSelectedAgentInternal,
       selectedModel,
       setSelectedModel: setSelectedModelInternal,
+      initialSelectedPageURLs,
+      initialSelectedNoteIds,
+      initialSelectedCredentialIds,
       initialUsage,
       initialLastUsage,
       isUsageHydrating,
@@ -479,9 +482,15 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     const [latestDOMUpdate, setLatestDOMUpdate] = useState<any>(null);
 
     // Multi-page context: Selected pages for agent context
-    const [selectedPageURLs, setSelectedPageURLsState] = useState<string[]>([]);
+    // Initialize with persisted values from session storage
+    const [selectedPageURLs, setSelectedPageURLsState] = useState<string[]>(initialSelectedPageURLs);
     const selectedPageURLsRef = useRef(selectedPageURLs);
     selectedPageURLsRef.current = selectedPageURLs;
+    
+    // Sync selectedPageURLs when session changes or initialSelectedPageURLs is loaded
+    useEffect(() => {
+      setSelectedPageURLsState(initialSelectedPageURLs);
+    }, [sessionId, initialSelectedPageURLs]);
     
     const setSelectedPageURLs = useCallback((newSelection: string[] | ((prev: string[]) => string[])) => {
       setSelectedPageURLsState(newSelection);
@@ -1008,6 +1017,56 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       return () => clearTimeout(timeoutId);
     }, [selectedAgent, selectedModel, sessionId]);
 
+    // Persist selected page URLs (context selector) when they change
+    // Use a ref to track if this is the initial load to avoid saving hydrated data
+    const isPageURLsHydrated = useRef(false);
+    useEffect(() => {
+      // Skip saving on initial hydration (when initialSelectedPageURLs loads)
+      if (!isPageURLsHydrated.current) {
+        isPageURLsHydrated.current = true;
+        return;
+      }
+      
+      // Debounce the save operation
+      const timeoutId = setTimeout(() => {
+        sessionStorageDBWrapper.updateSessionPageURLs(sessionId, selectedPageURLs);
+      }, 500); // 500ms debounce
+
+      return () => clearTimeout(timeoutId);
+    }, [selectedPageURLs, sessionId]);
+
+    // Reset hydration flag when session changes
+    useEffect(() => {
+      isPageURLsHydrated.current = false;
+    }, [sessionId]);
+
+    // Persist selected workspace items (notes and credentials) when they change
+    // Use a ref to track if this is the initial load to avoid saving hydrated data
+    const isWorkspaceItemsHydrated = useRef(false);
+    useEffect(() => {
+      // Skip saving on initial hydration
+      if (!isWorkspaceItemsHydrated.current) {
+        isWorkspaceItemsHydrated.current = true;
+        return;
+      }
+      
+      // Extract IDs from full objects
+      const noteIds = selectedNotes.map((note: any) => note.id).filter(Boolean);
+      const credentialIds = selectedCredentials.map((cred: any) => cred.id).filter(Boolean);
+      
+      // Debounce the save operation
+      const timeoutId = setTimeout(() => {
+        sessionStorageDBWrapper.updateSessionWorkspaceItems(sessionId, noteIds, credentialIds);
+      }, 500); // 500ms debounce
+
+      return () => clearTimeout(timeoutId);
+    }, [selectedNotes, selectedCredentials, sessionId]);
+
+    // Reset workspace items hydration flag when session changes
+    useEffect(() => {
+      isWorkspaceItemsHydrated.current = false;
+    }, [sessionId]);
+
     // Content refresh hook
     const { triggerManualRefresh } = useContentRefresh({
       setCurrentTabId: setManagedTabId,
@@ -1283,6 +1342,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           selectedCredentials={selectedCredentialsRef.current}
           onNotesChange={setSelectedNotes}
           onCredentialsChange={setSelectedCredentials}
+          initialSelectedNoteIds={initialSelectedNoteIds}
+          initialSelectedCredentialIds={initialSelectedCredentialIds}
         />
         );
       },
@@ -1312,6 +1373,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
         triggerManualRefreshWithEmbeddingWait,
         selectedNotes,
         selectedCredentials,
+        initialSelectedNoteIds,
+        initialSelectedCredentialIds,
       ],
     );
 

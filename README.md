@@ -641,6 +641,13 @@ pip install -r requirements.txt --upgrade
 
 ## 📖 Documentation
 
+### Architecture Documentation
+
+| Document | Description |
+|----------|-------------|
+| **[Architecture Overview](docs/ARCHITECTURE.md)** | Complete system architecture with diagrams |
+| **[Executive Summary](docs/ARCHITECTURE-EXECUTIVE.md)** | High-level architecture for presentations |
+
 ### Component Documentation
 
 | Component | README |

@@ -78,6 +78,9 @@ export interface SessionMetadata {
   selectedAgent?: string;
   selectedModel?: string;
   planExpanded?: boolean; // Task progress card expanded state
+  selectedPageURLs?: string[]; // Selected context page URLs
+  selectedNoteIds?: string[]; // Selected workspace note IDs
+  selectedCredentialIds?: string[]; // Selected workspace credential IDs
 }
 
 export interface SessionUsageLastRecord {

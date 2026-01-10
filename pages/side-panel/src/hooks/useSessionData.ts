@@ -59,6 +59,13 @@ export interface UseSessionDataReturn {
   /** Update selected model */
   setSelectedModel: (model: string) => void;
   
+  /** Initial selected page URLs loaded from DB */
+  initialSelectedPageURLs: string[];
+  /** Initial selected note IDs loaded from DB */
+  initialSelectedNoteIds: string[];
+  /** Initial selected credential IDs loaded from DB */
+  initialSelectedCredentialIds: string[];
+  
   /** Initial usage totals loaded from DB */
   initialUsage: UsageTotals;
   /** Last usage data point loaded from DB */
@@ -133,6 +140,19 @@ export const useSessionData = (
   const selectedAgent = selections.agent;
   const selectedModel = selections.model;
 
+  // Selected page URLs state (context selector)
+  const [initialSelectedPageURLs, setInitialSelectedPageURLs] = useState<string[]>(
+    initialMetadata?.selectedPageURLs ?? []
+  );
+
+  // Selected workspace items state
+  const [initialSelectedNoteIds, setInitialSelectedNoteIds] = useState<string[]>(
+    initialMetadata?.selectedNoteIds ?? []
+  );
+  const [initialSelectedCredentialIds, setInitialSelectedCredentialIds] = useState<string[]>(
+    initialMetadata?.selectedCredentialIds ?? []
+  );
+
   // Keep selections in sync when sessionId or initialMetadata changes
   useEffect(() => {
     if (sessionId) {
@@ -140,6 +160,9 @@ export const useSessionData = (
         agent: initialMetadata?.selectedAgent ?? '',
         model: initialMetadata?.selectedModel ?? ''
       });
+      setInitialSelectedPageURLs(initialMetadata?.selectedPageURLs ?? []);
+      setInitialSelectedNoteIds(initialMetadata?.selectedNoteIds ?? []);
+      setInitialSelectedCredentialIds(initialMetadata?.selectedCredentialIds ?? []);
       setIsLoadingMetadata(isActive && !initialMetadata);
     }
   }, [sessionId, initialMetadata, isActive]);
@@ -253,13 +276,16 @@ export const useSessionData = (
           return;
         }
 
-        // Apply loaded agent/model to state together in a single update
+        // Apply loaded agent/model/pageURLs/workspaceItems to state together in a single update
         // Set isLoadingMetadata to false IMMEDIATELY so CopilotKitProvider can mount
         // This ensures atomic updates: agent/model and loading flag change together
         setSelections({
           agent: metadata.selectedAgent ?? '',
           model: metadata.selectedModel ?? '',
         });
+        setInitialSelectedPageURLs(metadata.selectedPageURLs ?? []);
+        setInitialSelectedNoteIds(metadata.selectedNoteIds ?? []);
+        setInitialSelectedCredentialIds(metadata.selectedCredentialIds ?? []);
 
         // Mark session as loaded and clear loading flags ATOMICALLY
         lastLoadedSessionRef.current = sessionId;
@@ -448,6 +474,9 @@ export const useSessionData = (
     setSelectedAgent,
     selectedModel,
     setSelectedModel,
+    initialSelectedPageURLs,
+    initialSelectedNoteIds,
+    initialSelectedCredentialIds,
     initialUsage,
     initialLastUsage,
     isUsageHydrating,

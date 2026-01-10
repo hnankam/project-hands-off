@@ -40,8 +40,44 @@ async function isAdminOrOwner(userId, organizationId) {
 }
 
 // Helper to create team member using direct database access
+// IMPORTANT: Only adds user if they are already an organization member
 async function addUserToTeam(teamId, userId) {
   const pool = getPool();
+  
+  // Get the organization ID for this team
+  const teamResult = await pool.query(
+    'SELECT "organizationId" FROM team WHERE id = $1',
+    [teamId]
+  );
+  
+  if (!teamResult.rows || teamResult.rows.length === 0) {
+    throw new Error(`Team ${teamId} not found`);
+  }
+  
+  const organizationId = teamResult.rows[0].organizationId;
+  
+  // Verify user is an organization member before adding to team
+  const memberResult = await pool.query(
+    'SELECT id FROM member WHERE "userId" = $1 AND "organizationId" = $2',
+    [userId, organizationId]
+  );
+  
+  if (!memberResult.rows || memberResult.rows.length === 0) {
+    console.warn(`[Auth] Cannot add user ${userId} to team ${teamId}: user is not an organization member`);
+    throw new Error('User must be an organization member before being added to a team');
+  }
+  
+  // Check if already a team member
+  const existingTeamMember = await pool.query(
+    'SELECT id FROM "teamMember" WHERE "teamId" = $1 AND "userId" = $2',
+    [teamId, userId]
+  );
+  
+  if (existingTeamMember.rows && existingTeamMember.rows.length > 0) {
+    console.log(`[Auth] User ${userId} is already a member of team ${teamId}`);
+    return; // Already a member, no action needed
+  }
+  
   await pool.query(
     `INSERT INTO "teamMember" (id, "teamId", "userId", "createdAt") VALUES ($1, $2, $3, $4)`,
     [crypto.randomUUID(), teamId, userId, new Date()]

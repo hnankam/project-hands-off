@@ -1336,26 +1336,26 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                   </svg>
                 </button>
               )}
-              {!showCreateForm && (
-                <button
-                  onClick={() => {
-                    setShowCreateForm(true);
-                    setEditingAgentId(null);
-                    setEditForm(null);
-                  }}
-                  className={cn(
-                    'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border transition-colors',
-                    isLight
-                      ? 'text-blue-600 border-blue-200 hover:bg-blue-50'
-                      : 'text-blue-300 border-blue-800 hover:bg-blue-900/20',
-                  )}
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                  Add Agent
-                </button>
-              )}
+            {!showCreateForm && (
+              <button
+                onClick={() => {
+                  setShowCreateForm(true);
+                  setEditingAgentId(null);
+                  setEditForm(null);
+                }}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border transition-colors',
+                  isLight
+                    ? 'text-blue-600 border-blue-200 hover:bg-blue-50'
+                    : 'text-blue-300 border-blue-800 hover:bg-blue-900/20',
+                )}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Agent
+              </button>
+            )}
             </div>
           </div>
 

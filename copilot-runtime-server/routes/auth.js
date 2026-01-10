@@ -519,24 +519,62 @@ router.get('/org-members-with-status', async (req, res) => {
     }
     
     // Fetch members with user data including banned status
+    // This query includes:
+    // 1. All organization members from the member table
+    // 2. Team members who may not be in the member table (orphaned team members)
     const result = await pool.query(`
-      SELECT 
-        m.id,
-        m."userId",
-        m."organizationId",
-        m.role,
-        m."createdAt",
-        u.id as "user_id",
-        u.name as "user_name",
-        u.email as "user_email",
-        u.image as "user_image",
-        u.banned as "user_banned",
-        u."banReason" as "user_banReason",
-        u."banExpires" as "user_banExpires"
-      FROM member m
-      JOIN "user" u ON m."userId" = u.id
-      WHERE m."organizationId" = $1
-      ORDER BY COALESCE(u.name, u.email) ASC
+      WITH org_members AS (
+        -- Get all organization members
+        SELECT 
+          m.id,
+          m."userId",
+          m."organizationId",
+          m.role,
+          m."createdAt",
+          u.id as "user_id",
+          u.name as "user_name",
+          u.email as "user_email",
+          u.image as "user_image",
+          u.banned as "user_banned",
+          u."banReason" as "user_banReason",
+          u."banExpires" as "user_banExpires",
+          'member' as source
+        FROM member m
+        JOIN "user" u ON m."userId" = u.id
+        WHERE m."organizationId" = $1
+      ),
+      team_only_members AS (
+        -- Get team members who are NOT in the member table
+        SELECT DISTINCT
+          tm.id,
+          tm."userId",
+          $1 as "organizationId",
+          'member' as role,
+          tm."createdAt",
+          u.id as "user_id",
+          u.name as "user_name",
+          u.email as "user_email",
+          u.image as "user_image",
+          u.banned as "user_banned",
+          u."banReason" as "user_banReason",
+          u."banExpires" as "user_banExpires",
+          'team_only' as source
+        FROM "teamMember" tm
+        JOIN team t ON tm."teamId" = t.id
+        JOIN "user" u ON tm."userId" = u.id
+        WHERE t."organizationId" = $1
+          AND NOT EXISTS (
+            SELECT 1 FROM member m 
+            WHERE m."userId" = tm."userId" 
+            AND m."organizationId" = $1
+          )
+      )
+      SELECT * FROM (
+        SELECT * FROM org_members
+        UNION ALL
+        SELECT * FROM team_only_members
+      ) combined
+      ORDER BY COALESCE(user_name, user_email) ASC
     `, [organizationId]);
     
     // Transform the flat result into nested structure
@@ -546,6 +584,7 @@ router.get('/org-members-with-status', async (req, res) => {
       organizationId: row.organizationId,
       role: row.role,
       createdAt: row.createdAt,
+      source: row.source, // Include source to identify orphaned team members
       user: {
         id: row.user_id,
         name: row.user_name,

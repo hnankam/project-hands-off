@@ -10,6 +10,7 @@ import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import untruncateJson from 'untruncate-json';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
+import { IncrementalMarkdownRenderer } from '../chat/IncrementalMarkdownRenderer';
 import { CodeBlock } from '../chat/slots/CustomCodeBlock';
 import type { ActionPhase } from './ActionStatus';
 
@@ -28,6 +29,7 @@ interface AutoScrollDivProps {
  * Auto-scrolling container that follows streaming content.
  * Same behavior as GraphCard - scrolls to bottom as content streams,
  * but respects user scrolling up.
+ * Uses RAF-based smooth scrolling to prevent flickering.
  */
 const AutoScrollDiv: FC<AutoScrollDivProps> = memo(({ 
   content, 
@@ -43,6 +45,7 @@ const AutoScrollDiv: FC<AutoScrollDivProps> = memo(({
   const isAutoScrolling = useRef(false);
   const wasStreamingRef = useRef(false);
   const prevScrollTopRef = useRef(0);
+  const scrollRafRef = useRef<number | null>(null);
 
   // Check if user is near the bottom of the container
   const isNearBottom = useCallback((element: HTMLDivElement): boolean => {
@@ -57,11 +60,11 @@ const AutoScrollDiv: FC<AutoScrollDivProps> = memo(({
     const element = scrollRef.current;
     if (!element) return;
     
-    // Skip if this scroll was triggered by our auto-scroll
-    if (isAutoScrolling.current) return;
-    
     // Only track user scroll during streaming
     if (!isStreaming) return;
+    
+    // Skip if this is an auto-scroll we triggered
+    if (isAutoScrolling.current) return;
 
     const currentScrollTop = element.scrollTop;
     const prevScrollTop = prevScrollTopRef.current;
@@ -73,15 +76,32 @@ const AutoScrollDiv: FC<AutoScrollDivProps> = memo(({
     // Update previous scroll position
     prevScrollTopRef.current = currentScrollTop;
     
-    // User actively scrolled UP - disable auto-scroll
+    // If user scrolled up and not near bottom, disable auto-scroll
     if (scrolledUp && !nearBottom) {
       isUserScrolledUp.current = true;
     }
-    // User scrolled back to bottom - re-enable auto-scroll
+    // If user is near bottom (regardless of scroll direction), re-enable auto-scroll
     else if (nearBottom) {
       isUserScrolledUp.current = false;
     }
   }, [isNearBottom, isStreaming]);
+
+  // Scroll to bottom - instant during streaming for smooth following
+  const scrollToBottom = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    
+    isAutoScrolling.current = true;
+    // Use RAF to batch with render for smoother visual
+    if (scrollRafRef.current) {
+      cancelAnimationFrame(scrollRafRef.current);
+    }
+    scrollRafRef.current = requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight - element.clientHeight;
+      isAutoScrolling.current = false;
+      scrollRafRef.current = null;
+    });
+  }, []);
 
   // Auto-scroll when content changes (if user hasn't scrolled up)
   useEffect(() => {
@@ -93,17 +113,9 @@ const AutoScrollDiv: FC<AutoScrollDivProps> = memo(({
 
     // Only auto-scroll if content grew AND user hasn't scrolled up AND we're streaming
     if (contentGrew && !isUserScrolledUp.current && isStreaming) {
-      isAutoScrolling.current = true;
-      element.scrollTo({
-        top: element.scrollHeight,
-        behavior: 'smooth'
-      });
-      // Reset auto-scroll flag after scroll initiated
-      setTimeout(() => {
-        isAutoScrolling.current = false;
-      }, 50);
+      scrollToBottom();
     }
-  }, [content, isStreaming]);
+  }, [content, isStreaming, scrollToBottom]);
 
   // Reset scroll state only when a NEW streaming session starts
   // (transition from not streaming to streaming)
@@ -118,6 +130,15 @@ const AutoScrollDiv: FC<AutoScrollDivProps> = memo(({
       prevScrollTopRef.current = 0;
     }
   }, [isStreaming]);
+  
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div 
@@ -139,6 +160,7 @@ AutoScrollDiv.displayName = 'AutoScrollDiv';
 const expandedStateCache: Map<string, boolean> = new Map();
 // Track if user has manually closed a card (persists across remounts)
 const userClosedCache: Map<string, boolean> = new Map();
+
 
 export interface FileManagementCardProps {
   fileName: string;
@@ -167,6 +189,41 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
   
   // Generate a stable cache key from instanceId or fallback to fileName
   const cacheKey = instanceId ?? `file-${fileName}`;
+  
+  // === Performance optimization for streaming content ===
+  // Track content length to detect new chunks, batch display updates with RAF
+  const lastContentLengthRef = useRef(0);
+  const rafPendingRef = useRef(false);
+  const [displayContent, setDisplayContent] = useState(content);
+  
+  const isWorking = status === 'inProgress' || status === 'executing';
+  
+  // Batch content updates with requestAnimationFrame for smooth 60fps
+  useEffect(() => {
+    if (content.length > lastContentLengthRef.current) {
+      lastContentLengthRef.current = content.length;
+      
+      if (!rafPendingRef.current) {
+        rafPendingRef.current = true;
+        requestAnimationFrame(() => {
+          setDisplayContent(content);
+          rafPendingRef.current = false;
+        });
+      }
+    } else if (content.length < lastContentLengthRef.current) {
+      // Content reset (new file) - update immediately
+      lastContentLengthRef.current = content.length;
+      setDisplayContent(content);
+    }
+  }, [content]);
+  
+  // Ensure final content is displayed when streaming completes
+  useEffect(() => {
+    if (status === 'complete') {
+      setDisplayContent(content);
+    }
+  }, [status, content]);
+  // === End performance optimization ===
   
   // Initialize from cache if available
   const [isExpanded, setIsExpanded] = useState(() => {
@@ -222,7 +279,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
     fileInfo = result;
   }
   
-  const isWorking = status === 'inProgress' || status === 'executing';
+  // Note: isWorking is defined earlier in the performance optimization section
   // Treat validation errors as failures
   const isComplete = status === 'complete' && !validationError;
   const hasError = !!error || !!validationError;
@@ -296,8 +353,8 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
   const fileType = useMemo(() => getFileType(fileName), [fileName]);
   const filePath = folder ? `${folder}/${fileName}` : fileName;
   
-  // Use extracted content from validation error if available
-  const displayContent = content || validationError?.partial_data?.content || '';
+  // Use RAF-batched displayContent, with fallback to validation error content
+  const effectiveContent = displayContent || validationError?.partial_data?.content || '';
   
   // Operation-specific text
   const operationText = {
@@ -461,7 +518,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
         {/* Skeleton Content - with streaming preview */}
         <div className="gallery-carousel" style={{ padding: '8px' }}>
           {/* If we have content, show it streaming; otherwise show shimmer */}
-          {displayContent ? (
+          {effectiveContent ? (
             <div
               style={{
                 borderRadius: 6,
@@ -475,23 +532,23 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                   padding: 6,
                   fontSize: 10,
                   fontWeight: 600,
-                  backgroundColor: isLight ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.2)',
+                  backgroundColor: isLight ? 'rgba(243, 244, 246, 0.8)' : 'rgba(55, 65, 81, 0.8)',
                   borderBottom: `1px solid ${borderColor}`,
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
                 }}
               >
-                <span className="copilot-action-sparkle-text" style={{ color: textColor }}>Writing File</span>
-                <span className="gallery-count" style={{ marginLeft: 'auto', opacity: 0.7, color: textColor }}>
-                  {formatSize(displayContent.length)} • {fileType.language}
+                <span className="copilot-action-sparkle-text gallery-content" style={{ color: textColor, fontSize: '12px'}}>Writing File</span>
+                <span className="gallery-count" style={{ marginLeft: 'auto', opacity: 0.7, color: textColor, fontSize: '12px' }}>
+                  {formatSize(contentSize || effectiveContent.length)} • {fileType.language}
                 </span>
               </div>
               
-              {/* Streaming content with auto-scroll */}
+              {/* Streaming content with auto-scroll and cursor */}
               {fileType.isMarkdown ? (
                 <AutoScrollDiv
-                  content={displayContent}
+                  content={effectiveContent}
                   isStreaming={true}
                   style={{
                     padding: 12,
@@ -500,22 +557,48 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                     backgroundColor: isLight ? 'rgba(249, 250, 251, 0.5)' : 'rgba(13, 17, 23, 0.5)',
                   }}
                 >
-                  <CustomMarkdownRenderer content={displayContent} isLight={isLight} hideToolbars={true} />
+                  <CustomMarkdownRenderer content={effectiveContent} isLight={isLight} hideToolbars={true} />
+                  {/* Blinking bar cursor */}
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      width: '6px',
+                      height: '14px',
+                      marginLeft: '2px',
+                      backgroundColor: isLight ? '#374151' : '#d1d5db',
+                      animation: 'blink-cursor 1s step-end infinite',
+                      verticalAlign: 'middle',
+                    }}
+                  />
                 </AutoScrollDiv>
               ) : (
                 <AutoScrollDiv
-                  content={displayContent}
+                  content={effectiveContent}
                   isStreaming={true}
                   style={{ 
                     maxHeight: 400, 
                     overflow: 'auto',
                   }}
                 >
+                  <div style={{ position: 'relative' }}>
                   <CodeBlock 
                     language={fileType.language} 
-                    code={displayContent} 
+                      code={effectiveContent} 
                     isLight={isLight} 
                   />
+                    {/* Blinking bar cursor */}
+                    <span
+                      style={{
+                        position: 'absolute',
+                        bottom: '12px',
+                        right: '12px',
+                        width: '6px',
+                        height: '14px',
+                        backgroundColor: isLight ? '#374151' : '#d1d5db',
+                        animation: 'blink-cursor 1s step-end infinite',
+                      }}
+                    />
+                  </div>
                 </AutoScrollDiv>
               )}
             </div>
@@ -871,7 +954,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
           )}
 
           {/* File Preview - Show when complete OR when validation error with extracted content OR when streaming */}
-          {displayContent && (
+          {effectiveContent && (
             <div>
               {/* Only show toggle button when not streaming (during streaming, always show preview) */}
               {!isWorking && (
@@ -927,7 +1010,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                   </svg>
                   <span className="gallery-prompt">{showPreview ? 'Hide' : 'Show'} {validationError ? 'Recovered' : ''} Content Preview</span>
                   <span className="gallery-count" style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.7 }}>
-                    {formatSize(displayContent.length)} • {fileType.language}
+                    {formatSize(displaySize || effectiveContent.length)} • {fileType.language}
                   </span>
                 </button>
               )}
@@ -958,7 +1041,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                     >
                       <span className="copilot-action-sparkle-text" style={{ color: textColor }}>✨ Writing File</span>
                       <span className="gallery-count" style={{ marginLeft: 'auto', opacity: 0.7, color: textColor }}>
-                        {formatSize(displayContent.length)} • {fileType.language}
+                        {formatSize(displaySize || effectiveContent.length)} • {fileType.language}
                       </span>
                     </div>
                   )}
@@ -979,9 +1062,10 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                   )}
                   
                   {/* Content with auto-scroll during streaming */}
+                  {/* Uses IncrementalMarkdownRenderer for O(1) per-update performance */}
                   {fileType.isMarkdown ? (
                     <AutoScrollDiv
-                      content={displayContent}
+                      content={effectiveContent}
                       isStreaming={isWorking}
                       style={{
                         padding: 12,
@@ -990,11 +1074,16 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                         backgroundColor: isLight ? 'rgba(249, 250, 251, 0.5)' : 'rgba(13, 17, 23, 0.5)',
                       }}
                     >
-                      <CustomMarkdownRenderer content={displayContent} isLight={isLight} hideToolbars={true} />
+                      <IncrementalMarkdownRenderer 
+                        content={effectiveContent} 
+                        isLight={isLight} 
+                        isStreaming={isWorking}
+                        hideToolbars={true} 
+                      />
                     </AutoScrollDiv>
                   ) : (
                     <AutoScrollDiv
-                      content={displayContent}
+                      content={effectiveContent}
                       isStreaming={isWorking}
                       style={{ 
                         maxHeight: 400, 
@@ -1003,7 +1092,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                     >
                       <CodeBlock 
                         language={fileType.language} 
-                        code={displayContent} 
+                        code={effectiveContent} 
                         isLight={isLight} 
                       />
                     </AutoScrollDiv>

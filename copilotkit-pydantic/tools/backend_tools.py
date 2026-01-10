@@ -55,6 +55,7 @@ from tools.auxiliary_agents import get_auxiliary_agent, get_custom_auxiliary_age
 
 # Multi-agent graph tools moved to graph_tools.py
 
+import asyncio
 import os
 import uuid
 from datetime import datetime
@@ -950,66 +951,113 @@ async def run_aux_agent_streaming(
     def capture_result(result):
         result_holder[0] = result
     
+    # Track active activity IDs for cancellation cleanup
+    active_activity_ids: set[str] = set()
+    stream_closed = False
+    consecutive_failures = 0
+    MAX_CONSECUTIVE_FAILURES = 7  # Stop after 7 consecutive send failures
+    
     # Use run_ag_ui to run agent with deps (enables @agent.instructions to access agui_context)
-    async for event in run_ag_ui(
-        agent=aux_agent,
-        run_input=sub_run_input,
-        deps=sub_deps,
-        on_complete=capture_result,
-    ):
-        logger.info(f"Event: {event}")
-        if send_stream is not None:
-            try:
-                import json
-                
-                # Parse the SSE event to check type
-                event_type = None
-                event_data = None
-                if event.startswith('data:'):
-                    try:
-                        event_data = json.loads(event[5:].strip())
-                        event_type = event_data.get('type')
-                    except (json.JSONDecodeError, ValueError):
-                        pass
-                
-                # Forward tool call events directly
-                if event_type in FORWARD_EVENT_TYPES:
-                    await send_stream.send(event)
-                
-                # Convert message events to activity events
-                elif event_type == 'TEXT_MESSAGE_START' and event_data:
-                    message_id = event_data.get('messageId', '')
-                    activity_id = f"aux-{aux_type}-{message_id}"
-                    await send_stream.send(encoder.encode(ActivitySnapshotEvent(
-                        messageId=activity_id,
-                        activityType="aux_agent_message",
-                        content={"agent_key": aux_type, "status": "streaming", "text": []},
-                    )))
-                
-                elif event_type == 'TEXT_MESSAGE_CONTENT' and event_data:
-                    message_id = event_data.get('messageId', '')
-                    activity_id = f"aux-{aux_type}-{message_id}"
-                    delta = event_data.get('delta', '')
-                    if delta:
-                        # Append to text array via JSON patch
+    try:
+        async for event in run_ag_ui(
+            agent=aux_agent,
+            run_input=sub_run_input,
+            deps=sub_deps,
+            on_complete=capture_result,
+        ):
+            # If stream is closed, stop processing immediately
+            if stream_closed:
+                logger.info(f"Auxiliary agent '{aux_type}' stopping - stream closed")
+                break
+            
+            logger.info(f"Event: {event}")
+            if send_stream is not None:
+                try:
+                    import json
+                    
+                    # Parse the SSE event to check type
+                    event_type = None
+                    event_data = None
+                    if event.startswith('data:'):
+                        try:
+                            event_data = json.loads(event[5:].strip())
+                            event_type = event_data.get('type')
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                    
+                    # Forward tool call events directly
+                    if event_type in FORWARD_EVENT_TYPES:
+                        await send_stream.send(event)
+                        consecutive_failures = 0  # Reset on success
+                    
+                    # Convert message events to activity events
+                    elif event_type == 'TEXT_MESSAGE_START' and event_data:
+                        message_id = event_data.get('messageId', '')
+                        activity_id = f"aux-{aux_type}-{message_id}"
+                        active_activity_ids.add(activity_id)
+                        await send_stream.send(encoder.encode(ActivitySnapshotEvent(
+                            messageId=activity_id,
+                            activityType="aux_agent_message",
+                            content={"agent_key": aux_type, "status": "streaming", "chunks": []},
+                        )))
+                        consecutive_failures = 0
+                    
+                    elif event_type == 'TEXT_MESSAGE_CONTENT' and event_data:
+                        message_id = event_data.get('messageId', '')
+                        activity_id = f"aux-{aux_type}-{message_id}"
+                        delta = event_data.get('delta', '')
+                        if delta:
+                            # Append to chunks array - this persists in CopilotKit activity state
+                            await send_stream.send(encoder.encode(ActivityDeltaEvent(
+                                messageId=activity_id,
+                                activityType="aux_agent_message",
+                                patch=[{"op": "add", "path": "/chunks/-", "value": delta}],
+                            )))
+                            consecutive_failures = 0
+                    
+                    elif event_type == 'TEXT_MESSAGE_END' and event_data:
+                        message_id = event_data.get('messageId', '')
+                        activity_id = f"aux-{aux_type}-{message_id}"
+                        active_activity_ids.discard(activity_id)
                         await send_stream.send(encoder.encode(ActivityDeltaEvent(
                             messageId=activity_id,
                             activityType="aux_agent_message",
-                            patch=[{"op": "add", "path": "/text/-", "value": delta}],
+                            patch=[{"op": "replace", "path": "/status", "value": "completed"}],
                         )))
-                
-                elif event_type == 'TEXT_MESSAGE_END' and event_data:
-                    message_id = event_data.get('messageId', '')
-                    activity_id = f"aux-{aux_type}-{message_id}"
+                        consecutive_failures = 0
+                    
+                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                    # Stream definitely closed - stop immediately
+                    logger.info(f"Auxiliary agent '{aux_type}' stream connection closed")
+                    stream_closed = True
+                    break
+                except Exception as e:
+                    # Other send failure - might be temporary or stream closed
+                    consecutive_failures += 1
+                    logger.debug("Failed to send event to stream (attempt %d): %s", consecutive_failures, e)
+                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                        logger.info(f"Auxiliary agent '{aux_type}' stopping after {MAX_CONSECUTIVE_FAILURES} consecutive send failures")
+                        stream_closed = True
+                        break
+    
+    except asyncio.CancelledError:
+        # Handle cancellation gracefully - update any active activity cards to cancelled status
+        logger.info(f"Auxiliary agent '{aux_type}' was cancelled via CancelledError")
+        if send_stream is not None and not stream_closed:
+            for activity_id in active_activity_ids:
+                try:
                     await send_stream.send(encoder.encode(ActivityDeltaEvent(
                         messageId=activity_id,
                         activityType="aux_agent_message",
-                        patch=[{"op": "replace", "path": "/status", "value": "completed"}],
+                        patch=[
+                            {"op": "replace", "path": "/status", "value": "cancelled"},
+                            {"op": "add", "path": "/error", "value": "Operation cancelled by user"},
+                        ],
                     )))
-                
-            except Exception as e:
-                # Stream might be closed, log and continue
-                logger.debug("Failed to send event to stream: %s", e)
+                except Exception:
+                    pass  # Stream might already be closed
+        # Re-raise to propagate cancellation to parent
+        raise
     
     return result_holder[0]
 

@@ -10,13 +10,14 @@
  * Configure via CopilotKitProvider's renderActivityMessages prop.
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import { z } from 'zod';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { GraphStateCard, convertToGraphAgentState, isGraphSteps, isPlanSteps } from '../../components/graph-state';
 import { PlanStateCard } from '../../components/cards';
 import { CustomMarkdownRenderer } from '../../components/chat/CustomMarkdownRenderer';
+import { IncrementalMarkdownRenderer } from '../../components/chat/IncrementalMarkdownRenderer';
 import type { UnifiedAgentState } from '../../components/graph-state/types';
 import { useCopilotAgent } from '../../hooks/copilotkit';
 
@@ -119,14 +120,17 @@ export type UnifiedAgentStateContent = z.infer<typeof unifiedAgentStateSchema>;
  * Sent by run_aux_agent_streaming when custom auxiliary agents respond
  * 
  * Backend sends:
- * - Snapshot (TEXT_MESSAGE_START): { agent_key, status: "streaming", text: [] }
- * - Delta (TEXT_MESSAGE_CONTENT): patch with { op: "add", path: "/text/-", value: "chunk" }
+ * - Snapshot (TEXT_MESSAGE_START): { agent_key, status: "streaming", chunks: [] }
+ * - Delta (TEXT_MESSAGE_CONTENT): patch with { op: "add", path: "/chunks/-", value: "chunk" }
  * - Delta (TEXT_MESSAGE_END): patch with { op: "replace", path: "/status", value: "completed" }
+ * 
+ * Using array append ensures CopilotKit persists all chunks in activity state,
+ * which survives panel close/reopen. Frontend joins with useMemo for performance.
  */
 const auxAgentMessageContentSchema = z.object({
   agent_key: z.string(),
   status: z.enum(['streaming', 'completed', 'finished', 'error']),
-  text: z.array(z.string()), // Array of text chunks, joined for display
+  chunks: z.array(z.string()), // Array of text chunks (persists in activity state)
   error: z.string().optional(),
 });
 
@@ -138,6 +142,132 @@ const auxAgentExpandedStateCache: Map<string, boolean> = new Map();
 const auxAgentUserClosedCache: Map<string, boolean> = new Map();
 
 // ============================================================================
+// AUTO-SCROLL COMPONENT (matches FileManagementCard behavior)
+// ============================================================================
+
+interface AutoScrollDivProps {
+  content: string;
+  isStreaming: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+  threshold?: number;
+}
+
+/**
+ * Auto-scrolling container that follows streaming content.
+ * Scrolls to bottom as content streams, but respects user scrolling up.
+ * Uses RAF-based smooth scrolling to prevent flickering.
+ */
+const AutoScrollDiv: React.FC<AutoScrollDivProps> = memo(({ 
+  content, 
+  isStreaming, 
+  className = '', 
+  style,
+  children,
+  threshold = 50 
+}) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUp = useRef(false);
+  const lastContentLength = useRef(0);
+  const isAutoScrolling = useRef(false);
+  const wasStreamingRef = useRef(false);
+  const prevScrollTopRef = useRef(0);
+  const scrollRafRef = useRef<number | null>(null);
+
+  // Check if user is near the bottom of the container
+  const isNearBottom = useCallback((element: HTMLDivElement): boolean => {
+    const { scrollTop, scrollHeight, clientHeight } = element;
+    if (scrollHeight <= clientHeight) return true;
+    return scrollHeight - scrollTop - clientHeight <= threshold;
+  }, [threshold]);
+
+  // Handle scroll events to detect user scrolling up
+  const handleScroll = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element || !isStreaming) return;
+    
+    // Skip if this is an auto-scroll we triggered
+    if (isAutoScrolling.current) return;
+
+    const currentScrollTop = element.scrollTop;
+    const prevScrollTop = prevScrollTopRef.current;
+    const nearBottom = isNearBottom(element);
+    const scrolledUp = currentScrollTop < prevScrollTop - 5;
+    
+    prevScrollTopRef.current = currentScrollTop;
+    
+    // If user scrolled up and not near bottom, disable auto-scroll
+    if (scrolledUp && !nearBottom) {
+      isUserScrolledUp.current = true;
+    } 
+    // If user is near bottom (regardless of scroll direction), re-enable auto-scroll
+    else if (nearBottom) {
+      isUserScrolledUp.current = false;
+    }
+  }, [isNearBottom, isStreaming]);
+
+  // Scroll to bottom - instant during streaming for smooth following
+  const scrollToBottom = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    
+    isAutoScrolling.current = true;
+    // Use RAF to batch with render for smoother visual
+    if (scrollRafRef.current) {
+      cancelAnimationFrame(scrollRafRef.current);
+    }
+    scrollRafRef.current = requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight - element.clientHeight;
+      isAutoScrolling.current = false;
+      scrollRafRef.current = null;
+    });
+  }, []);
+
+  // Auto-scroll when content changes
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+
+    const contentGrew = content.length > lastContentLength.current;
+    lastContentLength.current = content.length;
+
+    if (contentGrew && !isUserScrolledUp.current && isStreaming) {
+      scrollToBottom();
+    }
+  }, [content, isStreaming, scrollToBottom]);
+
+  // Reset on new streaming session
+  useEffect(() => {
+    const wasStreaming = wasStreamingRef.current;
+    wasStreamingRef.current = isStreaming;
+    
+    if (!wasStreaming && isStreaming) {
+      isUserScrolledUp.current = false;
+      lastContentLength.current = 0;
+      prevScrollTopRef.current = 0;
+    }
+  }, [isStreaming]);
+  
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div ref={scrollRef} onScroll={handleScroll} className={className} style={style}>
+      {children}
+    </div>
+  );
+});
+
+AutoScrollDiv.displayName = 'AutoScrollDiv';
+
+// ============================================================================
 // AUXILIARY AGENT MESSAGE CARD COMPONENT
 // ============================================================================
 
@@ -145,24 +275,66 @@ const auxAgentUserClosedCache: Map<string, boolean> = new Map();
  * Displays auxiliary agent response with streaming support
  * Layout matches ImageGalleryCard for consistency
  * 
- * Text is an array of chunks that gets joined for display.
- * Backend appends via JSON patch: { op: "add", path: "/text/-", value: "chunk" }
+ * Uses chunks array which CopilotKit persists in activity state.
+ * This survives panel close/reopen since CopilotKit replays the full state.
+ * 
+ * Performance optimizations:
+ * - Incremental chunk processing: O(1) per new chunk
+ * - Raw text during streaming: No markdown rendering overhead
+ * - Markdown on completion: Full formatting when done
  */
 const AuxAgentMessageCard: React.FC<{
   agentKey: string;
   status: 'streaming' | 'completed' | 'finished' | 'error';
-  text: string[]; // Array of text chunks
+  chunks: string[]; // Array of text chunks from activity state
   error?: string;
   instanceId?: string;
-}> = ({ agentKey, status, text, error, instanceId }) => {
+}> = ({ agentKey, status, chunks, error, instanceId }) => {
   const { isLight } = useStorage(themeStorage);
-  const contentRef = useRef<HTMLDivElement>(null);
-  
-  // Join text chunks for display
-  const displayText = text.join('');
   
   // Generate a stable cache key
   const cacheKey = instanceId ?? `aux-${agentKey}`;
+  
+  // Track processed chunks count and accumulated text
+  const processedCountRef = useRef(0);
+  const accumulatedTextRef = useRef('');
+  const rafPendingRef = useRef(false);
+  
+  // Initialize displayText - on mount, join all existing chunks once
+  const [displayText, setDisplayText] = useState(() => {
+    const text = chunks.join('');
+    accumulatedTextRef.current = text;
+    processedCountRef.current = chunks.length;
+    return text;
+  });
+  
+  const isWorking = status === 'streaming';
+  
+  // Incrementally process only NEW chunks (O(1) per new chunk)
+  useEffect(() => {
+    if (chunks.length > processedCountRef.current) {
+      // Append new chunks to accumulated text
+      const newChunks = chunks.slice(processedCountRef.current);
+      accumulatedTextRef.current += newChunks.join('');
+      processedCountRef.current = chunks.length;
+      
+      // Batch renders with RAF for smooth 60fps
+      if (!rafPendingRef.current) {
+        rafPendingRef.current = true;
+        requestAnimationFrame(() => {
+          setDisplayText(accumulatedTextRef.current);
+          rafPendingRef.current = false;
+        });
+      }
+    }
+  }, [chunks.length]);
+  
+  // Ensure final content is set when streaming completes
+  useEffect(() => {
+    if (!isWorking && accumulatedTextRef.current) {
+      setDisplayText(accumulatedTextRef.current);
+    }
+  }, [isWorking]);
   
   // Initialize from cache if available
   const [isExpanded, setIsExpanded] = useState(() => {
@@ -183,13 +355,6 @@ const AuxAgentMessageCard: React.FC<{
       setIsExpanded(true);
     }
   }, [status]);
-  
-  // Auto-scroll to bottom when streaming
-  useEffect(() => {
-    if (status === 'streaming' && contentRef.current) {
-      contentRef.current.scrollTop = contentRef.current.scrollHeight;
-    }
-  }, [displayText, status]);
   
   const handleToggle = () => {
     const newState = !isExpanded;
@@ -218,7 +383,7 @@ const AuxAgentMessageCard: React.FC<{
   const mutedTextColor = isLight ? '#6b7280' : '#9ca3af';
   const chevronColor = isLight ? '#6b7280' : '#6b7280';
   
-  // Status colors
+  // Status colors (for badges)
   const getStatusColor = () => {
     switch (status) {
       case 'streaming': return isLight ? '#3b82f6' : '#60a5fa';
@@ -226,6 +391,9 @@ const AuxAgentMessageCard: React.FC<{
       default: return isLight ? '#10b981' : '#34d399';
     }
   };
+  
+  // Cursor color matches CustomCursor.tsx (gray, not blue)
+  const cursorColor = isLight ? '#374151' : '#d1d5db';
   
   const getStatusBadgeStyle = () => {
     switch (status) {
@@ -253,14 +421,19 @@ const AuxAgentMessageCard: React.FC<{
     if (chars < 1000000) return `${(chars / 1000).toFixed(1)}k`;
     return `${(chars / 1000000).toFixed(1)}M`;
   };
-
-  const isWorking = status === 'streaming';
   
-  // Render content using markdown renderer (like ThinkingBlock)
+  // Render content using incremental markdown renderer for O(1) per-update performance
+  // Uses block-level memoization: only re-renders modified/new blocks
   const renderedContent = useMemo(() => {
     if (!displayText) return null;
-    return <CustomMarkdownRenderer content={displayText} isLight={isLight} />;
-  }, [displayText, isLight]);
+    return (
+      <IncrementalMarkdownRenderer 
+        content={displayText} 
+        isLight={isLight} 
+        isStreaming={isWorking}
+      />
+    );
+  }, [displayText, isLight, isWorking]);
   
   return (
     <div
@@ -384,7 +557,7 @@ const AuxAgentMessageCard: React.FC<{
             </span>
           </div>
 
-          {/* Character count - formatted like file sizes */}
+          {/* Character count - formatted like file sizes (shows full text length) */}
           <div
             className="gallery-count"
             style={{
@@ -399,7 +572,7 @@ const AuxAgentMessageCard: React.FC<{
         </div>
       </button>
 
-      {/* Content - Collapsible */}
+      {/* Content - Collapsible with smart auto-scroll */}
       <div
         className="gallery-carousel"
         style={{
@@ -409,8 +582,9 @@ const AuxAgentMessageCard: React.FC<{
           transition: 'max-height 0.3s ease-in-out, opacity 0.3s ease-in-out',
         }}
       >
-        <div
-          ref={contentRef}
+        <AutoScrollDiv
+          content={displayText}
+          isStreaming={isWorking}
           style={{
             padding: '8px',
             maxHeight: '380px',
@@ -458,8 +632,9 @@ const AuxAgentMessageCard: React.FC<{
                     width: '6px',
                     height: '14px',
                     marginLeft: '2px',
-                    backgroundColor: getStatusColor(),
+                    backgroundColor: cursorColor,
                     animation: 'blink 1s step-end infinite',
+                    verticalAlign: 'middle',
                   }}
                 />
               )}
@@ -485,7 +660,7 @@ const AuxAgentMessageCard: React.FC<{
               No response
             </span>
           )}
-        </div>
+        </AutoScrollDiv>
       </div>
 
       {/* CSS for animations */}
@@ -746,7 +921,7 @@ export function createAuxAgentMessageActivityRenderer(deps: ActivityRendererDepe
       message: { id?: string } & Record<string, unknown>;
       agent: unknown;
     }) => {
-      const { agent_key, status, text, error } = props.content;
+      const { agent_key, status, chunks, error } = props.content;
       const messageId = props.message?.id;
       
       return (
@@ -766,7 +941,7 @@ export function createAuxAgentMessageActivityRenderer(deps: ActivityRendererDepe
           <AuxAgentMessageCard
             agentKey={agent_key}
             status={status}
-            text={text}
+            chunks={chunks}
             error={error}
             instanceId={messageId}
           />

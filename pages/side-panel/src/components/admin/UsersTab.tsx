@@ -35,6 +35,7 @@ interface Member {
   role: string | string[];
   user: User;
   createdAt: string | Date;
+  source?: 'member' | 'team_only'; // 'team_only' indicates user is only in a team, not a formal org member
 }
 
 interface Team {
@@ -1280,7 +1281,7 @@ useEffect(() => {
                             />
                           ) : (
                             <span className="text-sm font-semibold">
-                              {member.user.name?.charAt(0).toUpperCase() || member.user.email.charAt(0).toUpperCase()}
+                              {member.user.name?.charAt(0).toUpperCase() || member.user.email?.charAt(0).toUpperCase() || '?'}
                             </span>
                           )}
                         </div>
@@ -1289,7 +1290,7 @@ useEffect(() => {
                             {member.user.name || 'Unknown User'}
                           </div>
                           <div className={cn('text-xs truncate', isLight ? 'text-gray-500' : 'text-gray-400')}>
-                            {member.user.email}
+                            {member.user.email || member.userId}
                           </div>
                           <div className="flex items-center flex-wrap gap-2 mt-1">
                             {member.user.banned && (
@@ -1312,6 +1313,19 @@ useEffect(() => {
                               )}>
                               {Array.isArray(member.role) ? member.role.join(', ') : member.role}
                             </span>
+                            {member.source === 'team_only' && (
+                              <span
+                                className={cn(
+                                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                  isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-900/30 text-amber-400',
+                                )}
+                                title="This user is only in team(s) but not a formal organization member">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                Team only
+                              </span>
+                            )}
                             {/* Show teams this member belongs to */}
                             {Object.entries(teamMembers)
                               .filter(([teamId, userIds]) => userIds.includes(member.userId))
