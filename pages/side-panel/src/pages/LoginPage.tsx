@@ -255,7 +255,7 @@ export default function LoginPage({ onGoToInvitation }: LoginPageProps = {}) {
                     'text-lg font-semibold tracking-tight sm:text-xl',
                     isLight ? 'text-slate-900' : 'text-white',
                   )}>
-                  {isEnterToken ? 'Enter reset token' : isForgotPassword ? 'Reset your password' : isSignUp ? 'Create your workspace access' : 'Welcome back'}
+                  {isEnterToken ? 'Enter reset token' : isForgotPassword ? 'Reset your password' : isSignUp ? 'Create your workspace access' : 'Welcome'}
                 </h1>
                 <p
                   className={cn(

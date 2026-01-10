@@ -96,14 +96,6 @@ def list_features(
         
     Returns:
         ListFeaturesResponse with features
-        
-    Example:
-        # List all features
-        response = list_features(host, token)
-        for feature in response.features:
-            print(f"{feature.full_name}")
-            print(f"  Type: {feature.feature_type}")
-            print(f"  Data Type: {feature.data_type}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -139,16 +131,6 @@ def get_feature(
         
     Returns:
         FeatureModel with feature details
-        
-    Example:
-        # Get feature details
-        feature = get_feature(
-            host, token,
-            full_name="main.ml_features.user_features.age"
-        )
-        print(f"Name: {feature.name}")
-        print(f"Type: {feature.feature_type}")
-        print(f"Description: {feature.description}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -185,26 +167,6 @@ def create_feature(
         
     Returns:
         CreateFeatureResponse with created feature
-        
-    Example:
-        # Create batch feature
-        response = create_feature(
-            host, token,
-            full_name="main.ml_features.user_features.total_purchases",
-            feature_type="BATCH",
-            data_type="DOUBLE",
-            description="Total user purchases"
-        )
-        
-        # Create streaming feature
-        response = create_feature(
-            host, token,
-            full_name="main.ml_features.realtime.click_count",
-            feature_type="STREAMING",
-            data_type="LONG",
-            kafka_config_name="clickstream_kafka",
-            description="Real-time click count"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -252,15 +214,6 @@ def update_feature(
         
     Returns:
         UpdateFeatureResponse with updated feature
-        
-    Example:
-        # Update feature description
-        response = update_feature(
-            host, token,
-            full_name="main.ml_features.user_features.age",
-            update_mask="description",
-            description="User age in years"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -303,13 +256,6 @@ def delete_feature(
         
     Returns:
         DeleteFeatureResponse confirming deletion
-        
-    Example:
-        # Delete feature
-        response = delete_feature(
-            host, token,
-            full_name="main.ml_features.user_features.deprecated_feature"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -343,14 +289,6 @@ def list_kafka_configs(
         
     Returns:
         ListKafkaConfigsResponse with Kafka configs
-        
-    Example:
-        # List all Kafka configs
-        response = list_kafka_configs(host, token)
-        for config in response.kafka_configs:
-            print(f"{config.name}")
-            print(f"  Topic: {config.topic}")
-            print(f"  Servers: {config.bootstrap_servers}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -386,12 +324,6 @@ def get_kafka_config(
         
     Returns:
         KafkaConfigModel with config details
-        
-    Example:
-        # Get Kafka config
-        config = get_kafka_config(host, token, "clickstream_kafka")
-        print(f"Topic: {config.topic}")
-        print(f"Bootstrap servers: {config.bootstrap_servers}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -428,17 +360,6 @@ def create_kafka_config(
         
     Returns:
         CreateKafkaConfigResponse with created config
-        
-    Example:
-        # Create Kafka config
-        response = create_kafka_config(
-            host, token,
-            name="clickstream_kafka",
-            topic="user_clicks",
-            bootstrap_servers="kafka1.example.com:9092,kafka2.example.com:9092",
-            security_protocol="SASL_SSL",
-            sasl_mechanism="PLAIN"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -494,15 +415,6 @@ def update_kafka_config(
         
     Returns:
         UpdateKafkaConfigResponse with updated config
-        
-    Example:
-        # Update Kafka servers
-        response = update_kafka_config(
-            host, token,
-            name="clickstream_kafka",
-            update_mask=["bootstrap_servers"],
-            bootstrap_servers="new-kafka1.example.com:9092"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -550,10 +462,6 @@ def delete_kafka_config(
         
     Returns:
         DeleteKafkaConfigResponse confirming deletion
-        
-    Example:
-        # Delete Kafka config
-        response = delete_kafka_config(host, token, "old_kafka_config")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -589,20 +497,6 @@ def list_materialized_features(
         
     Returns:
         ListMaterializedFeaturesResponse with materialized features
-        
-    Example:
-        # List all materialized features
-        response = list_materialized_features(host, token)
-        for mat_feature in response.materialized_features:
-            print(f"{mat_feature.feature_name}")
-            print(f"  State: {mat_feature.pipeline_state}")
-            print(f"  Destination: {mat_feature.destination_table}")
-        
-        # List for specific feature
-        response = list_materialized_features(
-            host, token,
-            feature_name="main.ml_features.user_features.age"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -639,12 +533,6 @@ def get_materialized_feature(
         
     Returns:
         MaterializedFeatureModel with details
-        
-    Example:
-        # Get materialized feature
-        mat_feature = get_materialized_feature(host, token, "mat-123")
-        print(f"Source: {mat_feature.feature_name}")
-        print(f"State: {mat_feature.pipeline_state}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -681,16 +569,6 @@ def create_materialized_feature(
         
     Returns:
         CreateMaterializedFeatureResponse with created materialized feature
-        
-    Example:
-        # Create materialized feature with daily refresh
-        response = create_materialized_feature(
-            host, token,
-            feature_name="main.ml_features.user_features.total_purchases",
-            destination_table="main.ml_features.user_purchases_materialized",
-            schedule="0 0 * * *",  # Daily at midnight
-            pipeline_state="ACTIVE"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -737,24 +615,6 @@ def batch_create_materialized_features(
         
     Returns:
         BatchCreateMaterializedFeaturesResponse with created features
-        
-    Example:
-        # Batch create materialized features
-        response = batch_create_materialized_features(
-            host, token,
-            requests=[
-                {
-                    "feature_name": "main.ml_features.user_features.age",
-                    "destination_table": "main.ml_features.age_mat",
-                    "schedule": "0 0 * * *"
-                },
-                {
-                    "feature_name": "main.ml_features.user_features.purchases",
-                    "destination_table": "main.ml_features.purchases_mat",
-                    "schedule": "0 */6 * * *"  # Every 6 hours
-                }
-            ]
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -804,24 +664,6 @@ def update_materialized_feature(
         
     Returns:
         UpdateMaterializedFeatureResponse with updated feature
-        
-    Example:
-        # Pause materialized feature
-        response = update_materialized_feature(
-            host, token,
-            materialized_feature_id="mat-123",
-            update_mask="pipeline_state",
-            pipeline_state="PAUSED"
-        )
-        
-        # Resume and update schedule
-        response = update_materialized_feature(
-            host, token,
-            materialized_feature_id="mat-123",
-            update_mask="pipeline_state,schedule",
-            pipeline_state="ACTIVE",
-            schedule="0 */12 * * *"  # Every 12 hours
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -865,10 +707,6 @@ def delete_materialized_feature(
         
     Returns:
         DeleteMaterializedFeatureResponse confirming deletion
-        
-    Example:
-        # Delete materialized feature
-        response = delete_materialized_feature(host, token, "mat-123")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

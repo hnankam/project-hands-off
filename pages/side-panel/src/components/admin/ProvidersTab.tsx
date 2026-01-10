@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
 import { OrganizationSelector, TeamMultiSelector } from './selectors';
@@ -121,6 +122,223 @@ const maskCredentialValue = (value: unknown): string | Record<string, unknown> |
 
 const maskCredentialsForDisplay = (credentials: Record<string, unknown> | null | undefined): unknown => {
   return maskCredentialValue(credentials ?? {});
+};
+
+interface ProviderMoreOptionsButtonProps {
+  provider: ProviderRecord;
+  isLight: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  onClone: () => void;
+  onDelete: () => void;
+}
+
+const ProviderMoreOptionsButton: React.FC<ProviderMoreOptionsButtonProps> = ({
+  provider,
+  isLight,
+  isOpen,
+  onToggle,
+  onClone,
+  onDelete,
+}) => {
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const moreDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Position dropdown when it opens
+  useEffect(() => {
+    if (isOpen && moreButtonRef.current && moreDropdownRef.current) {
+      requestAnimationFrame(() => {
+        if (moreButtonRef.current && moreDropdownRef.current) {
+          const buttonRect = moreButtonRef.current.getBoundingClientRect();
+          const top = buttonRect.bottom + 4;
+          const right = window.innerWidth - buttonRect.right;
+          moreDropdownRef.current.style.top = `${top}px`;
+          moreDropdownRef.current.style.right = `${right}px`;
+        }
+      });
+    }
+  }, [isOpen]);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const element = target as Element;
+      
+      const clickedInsideButton = moreButtonRef.current?.contains(target);
+      const clickedInsideDropdown = moreDropdownRef.current?.contains(target);
+      const isButton = element.tagName === 'BUTTON' || element.closest('button');
+      
+      if (!clickedInsideButton && !clickedInsideDropdown && !isButton) {
+        onToggle();
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside, true);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside, true);
+    };
+  }, [isOpen, onToggle]);
+
+  const buttonClassName = cn(
+    'p-1 rounded transition-colors',
+    isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300',
+  );
+
+  const dropdownStyles: React.CSSProperties = {
+    position: 'fixed',
+    top: '0px',
+    right: '0px',
+    marginTop: '0',
+    backgroundColor: isLight ? '#f9fafb' : '#151C24',
+    border: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+    borderRadius: '6px',
+    boxShadow: '0 10px 20px rgba(0, 0, 0, 0.15)',
+    zIndex: 10002,
+    minWidth: '160px',
+    maxWidth: '200px',
+    width: 'auto',
+    overflow: 'visible',
+    visibility: 'visible',
+    opacity: 1,
+    pointerEvents: 'auto',
+  };
+
+  const menuItemBaseStyles: React.CSSProperties = {
+    width: '100%',
+    padding: '0.5rem 0.75rem',
+    border: 'none',
+    backgroundColor: 'transparent',
+    fontSize: '12px',
+    textAlign: 'left',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    whiteSpace: 'nowrap',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  };
+
+  const menuItemTextColor = isLight ? '#374151' : '#d1d5db';
+  const menuItemBorderColor = isLight ? '#e5e7eb' : '#374151';
+  const menuItemHoverBg = isLight ? '#f3f4f6' : '#1f2937';
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onToggle();
+  };
+
+  const handleClone = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClone();
+  };
+
+  const handleDelete = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onDelete();
+  };
+
+  return (
+    <>
+      <button
+        ref={moreButtonRef}
+        className={buttonClassName}
+        title="More options"
+        onClick={handleClick}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          width="16"
+          height="16"
+        >
+          <circle cx="12" cy="12" r="1" />
+          <circle cx="12" cy="5" r="1" />
+          <circle cx="12" cy="19" r="1" />
+        </svg>
+      </button>
+      
+      {isOpen &&
+        createPortal(
+          <div
+            ref={moreDropdownRef}
+            className="providerMoreOptionsDropdownMenu"
+            style={dropdownStyles}
+          >
+            {/* Clone Option */}
+            <button
+              type="button"
+              onClick={handleClone}
+              style={{
+                ...menuItemBaseStyles,
+                color: menuItemTextColor,
+                borderBottom: `1px solid ${menuItemBorderColor}`,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = menuItemHoverBg;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              Clone provider
+            </button>
+            
+            {/* Delete Option */}
+            <button
+              type="button"
+              onClick={handleDelete}
+              style={{
+                ...menuItemBaseStyles,
+                color: menuItemTextColor,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = menuItemHoverBg;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Delete provider
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
 };
 
 const ProviderSkeletonCard: React.FC<{ isLight: boolean }> = ({ isLight }) => (
@@ -310,6 +528,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
   }, [teamFilterIds]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [isCloning, setIsCloning] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -317,6 +536,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
   const [showEditCredentials, setShowEditCredentials] = useState(false);
+  const [openMoreMenuProviderId, setOpenMoreMenuProviderId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; providerKey: string } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [testStatus, setTestStatus] = useState<{ state: 'idle' | 'loading' | 'success' | 'error'; message?: string }>({ state: 'idle' });
@@ -606,6 +826,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
 
   const resetCreateForm = () => {
     setCreateForm(INITIAL_FORM);
+    setIsCloning(false);
   };
 
   const parseJsonField = (value: string, fieldName: string) => {
@@ -666,7 +887,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
       }
 
       const data = await response.json();
-      onSuccess(`Provider "${data.provider?.providerKey || createForm.providerKey}" created successfully`);
+      onSuccess(`Provider "${data.provider?.providerKey || createForm.providerKey}" ${isCloning ? 'cloned' : 'created'} successfully`);
       setShowCreateForm(false);
       resetCreateForm();
       await refreshProviders(selectedOrgId, teamFilterIds);
@@ -691,12 +912,35 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
         : '',
       metadata: JSON.stringify(provider.metadata ?? {}, null, 2),
     });
+    // Close create form if open
+    setShowCreateForm(false);
   };
 
   const cancelEditProvider = () => {
     setEditingProviderId(null);
     setEditForm(null);
   setTestStatus({ state: 'idle' });
+  };
+
+  const startCloneProvider = (provider: ProviderRecord) => {
+    // Pre-fill the create form with cloned data
+    setCreateForm({
+      providerKey: `${provider.providerKey}-copy`,
+      providerType: provider.providerType,
+      enabled: provider.enabled,
+      scope: provider.teams.length > 0 ? 'team' : 'organization',
+      teamIds: provider.teams.map(t => t.id),
+      credentials: JSON.stringify(provider.credentials ?? {}, null, 2),
+      modelSettings: JSON.stringify(provider.modelSettings ?? {}, null, 2),
+      bedrockModelSettings: provider.bedrockModelSettings
+        ? JSON.stringify(provider.bedrockModelSettings ?? {}, null, 2)
+        : '',
+      metadata: JSON.stringify(provider.metadata ?? {}, null, 2),
+    });
+    setIsCloning(true);
+    setShowCreateForm(true);
+    // Close edit form if open
+    cancelEditProvider();
   };
 
   const handleUpdateProvider = async (providerId: string) => {
@@ -1113,12 +1357,13 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                   </svg>
                 </button>
               )}
-              {!showCreateForm && (
+              {!showCreateForm && !editingProviderId && (
                 <button
                   onClick={() => {
                     setShowCreateForm(true);
                     setEditingProviderId(null);
                     setEditForm(null);
+                    resetCreateForm();
                   }}
                   className={cn(
                     'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border transition-colors',
@@ -1307,7 +1552,7 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                       isLight ? 'bg-blue-500/90 text-white hover:bg-blue-500' : 'bg-blue-600/90 text-white hover:bg-blue-600',
                     )}
                   >
-                    Create Provider
+                    {isCloning ? 'Clone Provider' : 'Create Provider'}
                   </button>
                   <button
                     type="button"
@@ -1745,26 +1990,21 @@ export function ProvidersTab({ isLight, organizations, preselectedOrgId, onError
                                 />
                               </svg>
                             </button>
-                            <button
-                              onClick={() => {
+                            <ProviderMoreOptionsButton
+                              provider={provider}
+                              isLight={isLight}
+                              isOpen={openMoreMenuProviderId === provider.id}
+                              onToggle={() => setOpenMoreMenuProviderId(openMoreMenuProviderId === provider.id ? null : provider.id)}
+                              onClone={() => {
+                                startCloneProvider(provider);
+                                setOpenMoreMenuProviderId(null);
+                              }}
+                              onDelete={() => {
                                 setDeleteConfirm({ id: provider.id, providerKey: provider.providerKey });
                                 setDeleteDialogOpen(true);
+                                setOpenMoreMenuProviderId(null);
                               }}
-                              className={cn(
-                                'p-1 rounded transition-colors',
-                                isLight
-                                  ? 'text-gray-400 hover:text-red-600'
-                                  : 'text-gray-500 hover:text-red-400',
-                              )}
-                              title="Remove provider">
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                />
-                              </svg>
-                            </button>
+                            />
                           </div>
                         </div>
 

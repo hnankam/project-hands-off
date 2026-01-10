@@ -7,6 +7,7 @@ with automatic orchestration, monitoring, and data quality management.
 """
 
 from typing import Optional, Dict, Any
+from itertools import islice
 from cache import get_workspace_client
 from models import (
     PipelineInfoModel,
@@ -94,62 +95,57 @@ def list_pipelines(
     host_credential_key: str,
     token_credential_key: str,
     filter: Optional[str] = None,
-    max_results: int = 25,
-    page_token: Optional[str] = None,
+    limit: int = 25,
+    page: int = 0,
 ) -> ListPipelinesResponse:
     """
-    List Delta Live Tables pipelines.
+    Retrieve a paginated list of Delta Live Tables (DLT) pipelines in the workspace.
     
-    Retrieves a list of pipelines defined in the workspace. Supports filtering
-    and pagination for efficient querying.
+    This function returns pipeline definitions for data processing workflows. Use this to
+    discover available pipelines, check pipeline status, or list ETL workflows.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token: Authentication token
-        filter: Optional filter string (e.g., "name LIKE 'prod%'")
-        max_results: Maximum number of results per page (default: 25)
-        page_token: Pagination token for next page
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        filter: Optional SQL-like filter expression to match pipeline names. Supports wildcards (%). 
+        limit: Number of pipelines to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
         
     Returns:
-        ListPipelinesResponse with pipelines and pagination token
+        ListPipelinesResponse containing:
+        - pipelines: List of PipelineInfoModel objects with pipeline definitions (name, ID, configuration, state, spec)
+        - has_more: Boolean indicating if additional pipelines exist beyond this page
         
-    Example:
-        # List all pipelines
-        response = list_pipelines(host, token)
-        for pipeline in response.pipelines:
-            print(f"{pipeline.name}: {pipeline.pipeline_id}")
-            print(f"  State: {pipeline.state.state if pipeline.state else 'Unknown'}")
-        
-        # List with filter
-        response = list_pipelines(
-            host, token,
-            filter="name LIKE 'production%'"
-        )
-        
-        # List with pagination
-        response = list_pipelines(host, token, max_results=100)
-        if response.next_page_token:
-            next_page = list_pipelines(
-                host, token,
-                max_results=100,
-                page_token=response.next_page_token
-            )
+    Pagination:
+        - Returns up to `limit` pipelines per call
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available
+        - Filter expression applies consistently across all pages
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
-    pipelines = []
-    next_token = None
-    
-    for pipeline in client.pipelines.list_pipelines(
+    response = client.pipelines.list_pipelines(
         filter=filter,
-        max_results=max_results,
-        page_token=page_token,
-    ):
+    )
+    
+    skip = page * limit
+    pipelines_iterator = islice(response, skip, skip + limit)
+    
+    pipelines = []
+    for pipeline in pipelines_iterator:
         pipelines.append(_convert_to_pipeline_info(pipeline))
+    
+    # Check for more results
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
     
     return ListPipelinesResponse(
         pipelines=pipelines,
-        next_page_token=next_token,
+        has_more=has_more,
     )
 
 
@@ -171,15 +167,6 @@ def get_pipeline(
         
     Returns:
         PipelineInfoModel with pipeline details
-        
-    Example:
-        # Get pipeline details
-        pipeline = get_pipeline(host, token, "abc123")
-        print(f"Name: {pipeline.name}")
-        print(f"State: {pipeline.state.state}")
-        print(f"Target: {pipeline.spec.target}")
-        print(f"Continuous: {pipeline.spec.continuous}")
-        print(f"Serverless: {pipeline.spec.serverless}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -232,32 +219,6 @@ def create_pipeline(
         
     Returns:
         CreatePipelineResponse with pipeline ID
-        
-    Example:
-        # Create basic pipeline
-        response = create_pipeline(
-            host, token,
-            name="sales_etl",
-            storage="dbfs:/pipelines/sales",
-            target="sales_db",
-            continuous=False,
-            development=True
-        )
-        print(f"Created pipeline: {response.pipeline_id}")
-        
-        # Create Unity Catalog pipeline with serverless
-        response = create_pipeline(
-            host, token,
-            name="uc_pipeline",
-            storage="dbfs:/pipelines/uc",
-            catalog="production",
-            schema="sales",
-            serverless=True,
-            photon=True,
-            libraries=[{
-                "notebook": {"path": "/Users/me/etl_notebook"}
-            }]
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -347,24 +308,6 @@ def update_pipeline(
         
     Returns:
         UpdatePipelineResponse confirming update
-        
-    Example:
-        # Update pipeline name and mode
-        response = update_pipeline(
-            host, token,
-            pipeline_id="abc123",
-            name="production_sales_etl",
-            development=False,
-            continuous=True
-        )
-        
-        # Enable serverless and Photon
-        response = update_pipeline(
-            host, token,
-            pipeline_id="abc123",
-            serverless=True,
-            photon=True
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -425,11 +368,6 @@ def delete_pipeline(
         
     Returns:
         DeletePipelineResponse confirming deletion
-        
-    Example:
-        # Delete pipeline
-        response = delete_pipeline(host, token, "abc123")
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -468,25 +406,6 @@ def start_pipeline_update(
         
     Returns:
         StartUpdateResponse with update ID
-        
-    Example:
-        # Start incremental update
-        response = start_pipeline_update(host, token, "abc123")
-        print(f"Update started: {response.update_id}")
-        
-        # Full refresh all tables
-        response = start_pipeline_update(
-            host, token,
-            pipeline_id="abc123",
-            full_refresh=True
-        )
-        
-        # Refresh specific tables
-        response = start_pipeline_update(
-            host, token,
-            pipeline_id="abc123",
-            refresh_selection=["orders", "customers"]
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -520,11 +439,6 @@ def stop_pipeline(
         
     Returns:
         StopPipelineResponse confirming stop
-        
-    Example:
-        # Stop running pipeline
-        response = stop_pipeline(host, token, "abc123")
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -553,15 +467,6 @@ def reset_pipeline(
         
     Returns:
         ResetPipelineResponse confirming reset
-        
-    Example:
-        # Reset pipeline (clears all state)
-        response = reset_pipeline(host, token, "abc123")
-        print(response.message)
-        
-        # Typical workflow: reset then start update
-        reset_pipeline(host, token, "abc123")
-        start_pipeline_update(host, token, "abc123", full_refresh=True)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -580,48 +485,57 @@ def list_pipeline_updates(
     host_credential_key: str,
     token_credential_key: str,
     pipeline_id: str,
-    max_results: int = 25,
-    page_token: Optional[str] = None,
+    limit: int = 25,
+    page: int = 0,
 ) -> ListUpdatesResponse:
     """
-    List updates for a Delta Live Tables pipeline.
+    Retrieve paginated execution history of updates for a specific Delta Live Tables pipeline.
     
-    Retrieves the update history for a pipeline, including status and timing
-    information for each update.
+    This function returns update records (pipeline executions) for a given pipeline, ordered by
+    creation time (most recent first). Use this to monitor pipeline runs, track failures, or
+    analyze execution patterns.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token: Authentication token
-        pipeline_id: ID of the pipeline
-        max_results: Maximum results per page (default: 25)
-        page_token: Pagination token
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        pipeline_id: Unique identifier of the pipeline. Required. Must be valid pipeline ID string
+        limit: Number of updates to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
         
     Returns:
-        ListUpdatesResponse with update history
+        ListUpdatesResponse containing:
+        - updates: List of UpdateInfoModel objects with execution details (state, creation time, full refresh flag)
+        - has_more: Boolean indicating if additional updates exist beyond this page
         
-    Example:
-        # List recent updates
-        response = list_pipeline_updates(host, token, "abc123")
-        for update in response.updates:
-            print(f"Update {update.update_id}: {update.state}")
-            print(f"  Created: {update.creation_time}")
-            print(f"  Full Refresh: {update.full_refresh}")
+    Pagination:
+        - Returns up to `limit` updates per call, ordered by creation time (newest first)
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
-    updates = []
-    next_token = None
-    
-    for update in client.pipelines.list_updates(
+    response = client.pipelines.list_updates(
         pipeline_id=pipeline_id,
-        max_results=max_results,
-        page_token=page_token,
-    ):
+    )
+    
+    skip = page * limit
+    updates_iterator = islice(response, skip, skip + limit)
+    
+    updates = []
+    for update in updates_iterator:
         updates.append(_convert_to_update_info(update))
+    
+    # Check for more results
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
     
     return ListUpdatesResponse(
         updates=updates,
-        next_page_token=next_token,
+        has_more=has_more,
     )
 
 
@@ -645,16 +559,6 @@ def get_pipeline_update(
         
     Returns:
         UpdateInfoModel with update details
-        
-    Example:
-        # Get update details
-        update = get_pipeline_update(
-            host, token,
-            pipeline_id="abc123",
-            update_id="update-456"
-        )
-        print(f"State: {update.state}")
-        print(f"Full Refresh: {update.full_refresh}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

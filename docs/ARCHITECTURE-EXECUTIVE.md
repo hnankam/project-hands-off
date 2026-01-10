@@ -26,6 +26,7 @@ flowchart TB
         
         subgraph Storage["DATA LAYER"]
             DB[("PostgreSQL<br/>━━━━━━━━━━━<br/>• Users & Orgs<br/>• Agent Config<br/>• Conversations<br/>• Usage Metrics")]
+            RedisCache[("Redis<br/>━━━━━━━━━━━<br/>• Session State<br/>• Distributed Cache<br/>• Horizontal Scaling")]
         end
     end
 
@@ -55,6 +56,7 @@ flowchart TB
     Gateway <--> Engine
     Engine <--> Storage
     Gateway <--> Storage
+    Engine <--> RedisCache
     
     Engine <--> AI
     Engine <--> Services
@@ -72,6 +74,7 @@ flowchart TB
 | **🤖 Multi-Model AI** | Seamlessly switch between OpenAI, Anthropic, Google, and Groq models |
 | **🏢 Multi-Tenancy** | Full organization and team isolation with RBAC |
 | **⚡ Real-Time** | Live streaming responses via Ably and SSE |
+| **📈 Horizontal Scaling** | Redis-backed distributed sessions with no sticky sessions required |
 | **🔧 Extensible Tools** | Built-in + custom tools via MCP protocol |
 | **📊 Observability** | End-to-end tracing with Pydantic Logfire |
 | **🔐 Enterprise Security** | OAuth 2.0, AES-256 encryption, audit logging |
@@ -123,6 +126,7 @@ sequenceDiagram
 
 ### Scale
 - **Horizontal scaling** for both Node.js and Python servers
+- **Redis** for distributed session state (no sticky sessions)
 - **PostgreSQL** with read replicas for high availability
 - **Connection pooling** for database efficiency
 
@@ -162,17 +166,17 @@ sequenceDiagram
 │  └─────────────┘  └─────────────┘  └─────────────┘         │
 └─────────────────────────────────────────────────────────────┘
                               │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-┌───────────────────┐ ┌─────────────┐ ┌─────────────────────┐
-│    PostgreSQL     │ │  AI Models  │ │  External Services  │
-│  ┌─────────────┐  │ │ ┌─────────┐ │ │ ┌─────────────────┐ │
-│  │ Users/Orgs  │  │ │ │ OpenAI  │ │ │ │      Ably       │ │
-│  │ Agents/Cfg  │  │ │ │Anthropic│ │ │ │    Logfire      │ │
-│  │  Threads    │  │ │ │ Google  │ │ │ │  OAuth/MCP      │ │
-│  │   Usage     │  │ │ │  Groq   │ │ │ └─────────────────┘ │
-│  └─────────────┘  │ │ └─────────┘ │ └─────────────────────┘
-└───────────────────┘ └─────────────┘
+              ┌───────────────┼───────────────┬───────────────┐
+              ▼               ▼               ▼               ▼
+┌───────────────────┐ ┌───────────────┐ ┌─────────────┐ ┌─────────────────────┐
+│    PostgreSQL     │ │     Redis     │ │  AI Models  │ │  External Services  │
+│  ┌─────────────┐  │ │ ┌───────────┐ │ │ ┌─────────┐ │ │ ┌─────────────────┐ │
+│  │ Users/Orgs  │  │ │ │  Session  │ │ │ │ OpenAI  │ │ │ │      Ably       │ │
+│  │ Agents/Cfg  │  │ │ │   State   │ │ │ │Anthropic│ │ │ │    Logfire      │ │
+│  │  Threads    │  │ │ │Horizontal │ │ │ │ Google  │ │ │ │  OAuth/MCP      │ │
+│  │   Usage     │  │ │ │  Scaling  │ │ │ │  Groq   │ │ │ └─────────────────┘ │
+│  └─────────────┘  │ │ └───────────┘ │ │ └─────────┘ │ └─────────────────────┘
+└───────────────────┘ └───────────────┘ └─────────────┘
 ```
 
 ---

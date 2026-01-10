@@ -22,6 +22,7 @@ from config import (
     LOGFIRE_CAPTURE_HEADERS,
 )
 from database.connection import init_connection_pool
+from database.redis_connection import init_redis_connection
 from middleware import agent_error_middleware, agent_model_middleware
 from api import (
     register_agent_routes,
@@ -66,10 +67,13 @@ else:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown."""
-    # Startup: init DB pool and warm configuration caches
+    # Startup: init DB pool, Redis, and warm configuration caches
     await init_connection_pool()
     
-    # Give the pool a moment to be fully ready before loading deployments
+    # Initialize Redis (falls back to in-memory if unavailable)
+    redis_available = await init_redis_connection()
+    
+    # Give the connections a moment to be fully ready
     import asyncio
     await asyncio.sleep(0.2)
     
@@ -77,11 +81,16 @@ async def lifespan(app: FastAPI):
     
     logger.info("🚀 Pydantic AI Agent Server initialized")
     logger.info(f"   Debug mode: {DEBUG}")
+    logger.info(f"   Redis: {'✅ Connected' if redis_available else '⚠️  Unavailable (using in-memory fallback)'}")
     logger.info(f"   Available endpoints:")
     logger.info(f"   - POST /agent/{{agent_type}}/{{model}}")
     logger.info(f"   - GET /sessions")
     logger.info(f"   - POST /sessions/{{session_id}}/cleanup")
     logger.info(f"   Real-time: Ably Pub/Sub (usage:{{session_id}} channel)")
+    
+    if not redis_available:
+        logger.warning("⚠️  WARNING: In-memory state management is NOT suitable for multi-instance deployment!")
+        logger.warning("⚠️  Sessions will be lost if load balancer routes requests to different instances.")
     
     yield
     
@@ -91,6 +100,10 @@ async def lifespan(app: FastAPI):
     # Close connection pool
     from database.connection import close_connection_pool
     await close_connection_pool()
+    
+    # Close Redis connection
+    from database.redis_connection import close_redis_connection
+    await close_redis_connection()
 
 
 # Create FastAPI application with lifespan

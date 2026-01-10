@@ -42,11 +42,6 @@ def list_clusters(
         
     Returns:
         ListClustersResponse with list of clusters
-        
-    Example:
-        clusters = list_clusters(host_credential_key, token_credential_key)
-        for cluster in clusters.clusters:
-            print(f"{cluster.cluster_name} ({cluster.cluster_id}): {cluster.state.state if cluster.state else 'UNKNOWN'}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -135,14 +130,6 @@ def get_cluster(
         
     Returns:
         ClusterInfo with complete cluster details
-        
-    Example:
-        cluster = get_cluster(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
-        print(f"Cluster: {cluster.cluster_name}")
-        print(f"State: {cluster.state.state if cluster.state else 'UNKNOWN'}")
-        print(f"Workers: {cluster.num_workers}")
-        print(f"Cores: {cluster.cluster_cores}")
-        print(f"Memory: {cluster.cluster_memory_mb} MB")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -274,18 +261,6 @@ def create_cluster(
         
     Returns:
         CreateClusterResponse with cluster ID
-        
-    Example:
-        # Create standard cluster
-        cluster = create_cluster(
-            host_credential_key, token_credential_key,
-            spark_version="13.3.x-scala2.12",
-            node_type_id="i3.xlarge",
-            num_workers=2,
-            cluster_name="Analytics Cluster",
-            autotermination_minutes=30
-        )
-        print(f"Created cluster {cluster.cluster_id}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -402,16 +377,6 @@ def edit_cluster(
         
     Returns:
         EditClusterResponse confirming edit
-        
-    Example:
-        # Change number of workers
-        edit_cluster(
-            host_credential_key, token_credential_key,
-            cluster_id="1234-567890-abc123",
-            spark_version="13.3.x-scala2.12",
-            node_type_id="i3.xlarge",
-            num_workers=4
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -486,9 +451,6 @@ def delete_cluster(
         
     Returns:
         DeleteClusterResponse confirming deletion
-        
-    Example:
-        delete_cluster(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -515,13 +477,6 @@ def permanent_delete_cluster(
         
     Returns:
         DeleteClusterResponse confirming permanent deletion
-        
-    Example:
-        # First terminate the cluster
-        delete_cluster(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
-        
-        # Then permanently delete
-        permanent_delete_cluster(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -551,10 +506,6 @@ def start_cluster(
         
     Returns:
         StartClusterResponse confirming start initiated
-        
-    Example:
-        start = start_cluster(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
-        print(start.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -581,10 +532,6 @@ def restart_cluster(
         
     Returns:
         RestartClusterResponse confirming restart initiated
-        
-    Example:
-        restart = restart_cluster(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
-        print(restart.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -614,13 +561,6 @@ def get_cluster_permissions(
         
     Returns:
         Dict with permission details
-        
-    Example:
-        permissions = get_cluster_permissions(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
-        for acl in permissions['access_control_list']:
-            principal = acl.get('user_name') or acl.get('group_name')
-            perms = [p['permission_level'] for p in acl['all_permissions']]
-            print(f"{principal}: {perms}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -659,14 +599,6 @@ def set_cluster_permissions(
         - CAN_ATTACH_TO - Attach notebooks and run commands
         - CAN_RESTART - Attach, restart, resize clusters
         - CAN_MANAGE - Full control (edit, delete, permissions)
-        
-    Example:
-        acls = [
-            {"user_name": "admin@company.com", "permission_level": "CAN_MANAGE"},
-            {"group_name": "data-engineers", "permission_level": "CAN_RESTART"},
-            {"group_name": "analysts", "permission_level": "CAN_ATTACH_TO"}
-        ]
-        set_cluster_permissions(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123", access_control_list=acls)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -701,12 +633,6 @@ def update_cluster_permissions(
         
     Returns:
         Dict with updated permission details
-        
-    Example:
-        acls = [
-            {"user_name": "new-user@company.com", "permission_level": "CAN_ATTACH_TO"}
-        ]
-        update_cluster_permissions(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123", access_control_list=acls)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -739,11 +665,6 @@ def get_cluster_permission_levels(
         
     Returns:
         Dict with available permission levels
-        
-    Example:
-        levels = get_cluster_permission_levels(host_credential_key, token_credential_key, cluster_id="1234-567890-abc123")
-        for level in levels['permission_levels']:
-            print(f"{level['permission_level']}: {level['description']}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

@@ -1,6 +1,7 @@
 """SQL Query History tools for monitoring query executions."""
 
 from typing import Optional, List
+from itertools import islice
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.sql import QueryFilter as SDKQueryFilter, TimeRange as SDKTimeRange, QueryStatus
 from cache import get_workspace_client
@@ -18,45 +19,34 @@ def list_query_history(
     token_credential_key: str,
     filter_by: Optional[QueryFilter] = None,
     include_metrics: Optional[bool] = False,
-    max_results: Optional[int] = 100,
-    page_token: Optional[str] = None
+    limit: int = 25,
+    page: int = 0,
 ) -> ListQueryHistoryResponse:
     """
-    List the history of queries executed through SQL warehouses and serverless compute.
+    Retrieve paginated execution history of SQL queries run on Databricks SQL warehouses and serverless compute.
     
-    Returns most recently started queries first. Use this to monitor query performance,
-    debug failures, track usage patterns, and analyze execution metrics.
+    This function returns query execution records (not query definitions) ordered by start time
+    (most recent first). Use this to monitor performance, debug failures, audit usage, or analyze metrics.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token_credential_key: Credential key for access token
-        filter_by: Optional filter criteria (time range, user IDs, warehouse IDs, statuses)
-        include_metrics: Whether to include detailed query metrics (default: False)
-        max_results: Maximum number of results per page (max 1000, default 100)
-        page_token: Pagination token from previous request
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        filter_by: Optional QueryFilter object to narrow results. Can filter by time range (query_start_time_range), user IDs, warehouse IDs, and execution statuses. Multiple filters combine with AND logic. Default: None (no filtering)
+        include_metrics: Boolean flag to include detailed execution metrics (compilation time, bytes read/written, row counts, cache usage). Increases response size. Default: False
+        limit: Number of query executions to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
     
     Returns:
-        ListQueryHistoryResponse with query execution history and metrics
-    
-    Example:
-        # Get queries from last 24 hours with metrics
-        from datetime import datetime, timedelta
+        ListQueryHistoryResponse containing:
+        - queries: List of QueryExecutionInfo objects with execution records (status, timing, user, warehouse, metrics)
+        - count: Integer number of query executions returned in this page (0 to limit)
+        - has_more: Boolean indicating if additional query executions exist beyond this page
         
-        end_time = int(datetime.now().timestamp() * 1000)
-        start_time = int((datetime.now() - timedelta(days=1)).timestamp() * 1000)
-        
-        response = list_query_history(
-            host, token,
-            filter_by=QueryFilter(
-                query_start_time_range=TimeRange(
-                    start_time_ms=start_time,
-                    end_time_ms=end_time
-                ),
-                statuses=["FAILED", "FINISHED"]
-            ),
-            include_metrics=True,
-            max_results=50
-        )
+    Pagination:
+        - Returns up to `limit` query executions per call, ordered by start time (most recent first)
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available
+        - Filter criteria apply consistently across all pages
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -84,17 +74,22 @@ def list_query_history(
             warehouse_ids=filter_by.warehouse_ids
         )
     
-    # Call SDK
+    # Call SDK - request more than needed to check has_more
     response = client.query_history.list(
         filter_by=sdk_filter,
         include_metrics=include_metrics,
-        max_results=max_results,
-        page_token=page_token
+        max_results=(page + 2) * limit  # Request extra to check for more pages
     )
+    
+    # Paginate the results
+    start_idx = page * limit
+    end_idx = start_idx + limit
+    paginated_results = response.res[start_idx:end_idx] if response.res else []
+    has_more = len(response.res) > end_idx if response.res else False
     
     # Convert to Pydantic models
     query_executions = []
-    for query_info in response.res:
+    for query_info in paginated_results:
         query_dict = query_info.as_dict()
         
         # Convert metrics if present
@@ -151,7 +146,6 @@ def list_query_history(
     return ListQueryHistoryResponse(
         queries=query_executions,
         count=len(query_executions),
-        has_next_page=response.has_next_page if hasattr(response, 'has_next_page') else False,
-        next_page_token=response.next_page_token if hasattr(response, 'next_page_token') else None
+        has_more=has_more,
     )
 

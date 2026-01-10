@@ -6,6 +6,7 @@ including listing, querying, and managing table metadata and permissions.
 """
 
 from typing import Optional
+from itertools import islice
 from cache import get_workspace_client
 from models import (
     TableInfoModel,
@@ -28,8 +29,8 @@ def list_tables(
     token_credential_key: str,
     catalog_name: str,
     schema_name: str,
-    max_results: Optional[int] = None,
-    page_token: Optional[str] = None,
+    limit: int = 25,
+    page: int = 0,
     include_delta_metadata: Optional[bool] = None,
     include_browse: Optional[bool] = None,
     omit_columns: Optional[bool] = None,
@@ -37,80 +38,61 @@ def list_tables(
     omit_username: Optional[bool] = None,
 ) -> ListTablesResponse:
     """
-    List tables in a schema.
+    Retrieve a paginated list of tables within a Unity Catalog schema.
     
-    Gets an array of all tables for the current metastore under the parent
-    catalog and schema. The caller must be a metastore admin or an owner of
-    (or have the SELECT privilege on) the table.
+    This function returns table metadata for all accessible tables in the specified catalog
+    and schema. Use this to discover available tables, check table schemas, or list data assets.
+    
+    Access Requirements: Caller must have metastore admin privileges, table ownership, or
+    SELECT privilege on the tables.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token: Authentication token
-        catalog_name: Name of parent catalog for tables
-        schema_name: Parent schema of tables
-        max_results: Maximum number of tables to return (0 for server default)
-        page_token: Opaque token for next page of results
-        include_delta_metadata: Whether delta metadata should be included
-        include_browse: Include tables with browse-only access
-        omit_columns: Whether to omit the columns from the response
-        omit_properties: Whether to omit the properties from the response
-        omit_username: Whether to omit usernames from the response
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        catalog_name: Name of the Unity Catalog containing the schema. Required. Must be exact match
+        schema_name: Name of the schema containing the tables. Required. Must be exact match
+        limit: Number of tables to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
+        include_delta_metadata: Boolean flag to include Delta Lake-specific metadata (version, format). Default: None (excluded)
+        include_browse: Boolean flag to include tables where user has only browse permission (no SELECT). Default: None (excluded)
+        omit_columns: Boolean flag to exclude column definitions from response. True improves performance for large schemas. Default: None (columns included)
+        omit_properties: Boolean flag to exclude custom table properties from response. Default: None (properties included)
+        omit_username: Boolean flag to exclude creator/modifier usernames from response. Default: None (usernames included)
         
     Returns:
-        ListTablesResponse with list of tables and pagination info
+        ListTablesResponse containing:
+        - tables: List of TableInfoModel objects with full table metadata (name, type, columns, properties, permissions, timestamps)
+        - count: Integer number of tables returned in this page (0 to limit)
+        - has_more: Boolean indicating if additional tables exist beyond this page
         
-    Example:
-        # List all tables in a schema
-        tables = list_tables(
-            host, token,
-            catalog_name="main",
-            schema_name="default"
-        )
-        for table in tables.tables:
-            print(f"{table.full_name} ({table.table_type})")
+    Pagination:
+        - Returns up to `limit` tables per call
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available
+        - Filters and omit flags apply consistently across all pages
         
-        # List with pagination
-        tables = list_tables(
-            host, token,
-            catalog_name="main",
-            schema_name="default",
-            max_results=100
-        )
-        print(f"Found {tables.count} tables")
-        if tables.next_page_token:
-            next_page = list_tables(
-                host, token,
-                catalog_name="main",
-                schema_name="default",
-                max_results=100,
-                page_token=tables.next_page_token
-            )
-        
-        # List without column details for faster response
-        tables = list_tables(
-            host, token,
-            catalog_name="main",
-            schema_name="default",
-            omit_columns=True,
-            omit_properties=True
-        )
+    Performance Optimization:
+        - Set omit_columns=True when column details are not needed (faster for schemas with many tables)
+        - Set omit_properties=True to exclude custom properties
+        - Use list_table_summaries() for lightweight discovery when full metadata is not required
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
-    tables_list = []
-    next_token = None
-    
-    for table in client.tables.list(
+    response = client.tables.list(
         catalog_name=catalog_name,
         schema_name=schema_name,
-        max_results=max_results,
-        page_token=page_token,
         include_delta_metadata=include_delta_metadata,
         include_browse=include_browse,
         omit_columns=omit_columns,
         omit_properties=omit_properties,
         omit_username=omit_username,
-    ):
+    )
+    
+    skip = page * limit
+    tables_iterator = islice(response, skip, skip + limit)
+    
+    tables_list = []
+    for table in tables_iterator:
         # Extract columns if present
         columns = None
         if table.columns:
@@ -169,10 +151,18 @@ def list_tables(
             )
         )
     
+    # Check for more results
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
+    
     return ListTablesResponse(
         tables=tables_list,
         count=len(tables_list),
-        next_page_token=next_token,
+        has_more=has_more,
     )
 
 
@@ -182,65 +172,41 @@ def list_table_summaries(
     catalog_name: str,
     schema_name_pattern: Optional[str] = None,
     table_name_pattern: Optional[str] = None,
-    max_results: Optional[int] = None,
-    page_token: Optional[str] = None,
+    limit: int = 25,
+    page: int = 0,
 ) -> ListTableSummariesResponse:
     """
-    List table summaries across schemas.
+    Retrieve a lightweight paginated list of table summaries across schemas in a catalog.
     
-    Gets an array of table summaries for tables in a catalog. Supports SQL LIKE
-    patterns (% and _) for filtering by schema and table names. This is more
-    efficient than list_tables when you only need basic information.
+    This function returns minimal table metadata (name, type only) for efficient discovery
+    across multiple schemas. Faster than list_tables when full column and property details
+    are not needed. Supports SQL pattern matching for filtering.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token: Authentication token
-        catalog_name: Name of parent catalog
-        schema_name_pattern: SQL LIKE pattern for schema names (e.g., "prod_%")
-        table_name_pattern: SQL LIKE pattern for table names (e.g., "%_fact")
-        max_results: Maximum number of summaries to return (0 for server default)
-        page_token: Opaque token for next page of results
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        catalog_name: Name of the Unity Catalog to search. Required. Must be exact match
+        schema_name_pattern: Optional SQL LIKE pattern to match schema names. Supports wildcards: % (any characters), _ (single character). 
+        table_name_pattern: Optional SQL LIKE pattern to match table names. Supports wildcards: % (any characters), _ (single character). 
+        limit: Number of table summaries to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
         
     Returns:
         ListTableSummariesResponse with list of table summaries
-        
-    Example:
-        # List all tables in a catalog
-        summaries = list_table_summaries(
-            host, token,
-            catalog_name="main"
-        )
-        for summary in summaries.summaries:
-            print(f"{summary.full_name}: {summary.table_type}")
-        
-        # Find all fact tables in production schemas
-        summaries = list_table_summaries(
-            host, token,
-            catalog_name="main",
-            schema_name_pattern="prod_%",
-            table_name_pattern="%_fact"
-        )
-        
-        # Efficient discovery of all tables
-        summaries = list_table_summaries(
-            host, token,
-            catalog_name="main",
-            max_results=1000
-        )
-        print(f"Found {summaries.count} tables")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
-    summaries_list = []
-    next_token = None
-    
-    for summary in client.tables.list_summaries(
+    response = client.tables.list_summaries(
         catalog_name=catalog_name,
         schema_name_pattern=schema_name_pattern,
         table_name_pattern=table_name_pattern,
-        max_results=max_results,
-        page_token=page_token,
-    ):
+    )
+    
+    skip = page * limit
+    summaries_iterator = islice(response, skip, skip + limit)
+    
+    summaries_list = []
+    for summary in summaries_iterator:
         summaries_list.append(
             TableSummaryModel(
                 full_name=summary.full_name,
@@ -248,10 +214,18 @@ def list_table_summaries(
             )
         )
     
+    # Check for more results
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
+    
     return ListTableSummariesResponse(
         summaries=summaries_list,
         count=len(summaries_list),
-        next_page_token=next_token,
+        has_more=has_more,
     )
 
 
@@ -277,28 +251,6 @@ def get_table(
         
     Returns:
         TableInfoModel with complete table details
-        
-    Example:
-        # Get full table details
-        table = get_table(
-            host, token,
-            full_name="main.default.sales"
-        )
-        print(f"Table: {table.full_name}")
-        print(f"Type: {table.table_type}")
-        print(f"Format: {table.data_source_format}")
-        print(f"Location: {table.storage_location}")
-        print(f"Owner: {table.owner}")
-        print(f"Columns: {len(table.columns) if table.columns else 0}")
-        
-        # Get with Delta metadata
-        table = get_table(
-            host, token,
-            full_name="main.default.sales",
-            include_delta_metadata=True
-        )
-        if table.delta_runtime_properties_kvpairs:
-            print(f"Delta properties: {table.delta_runtime_properties_kvpairs}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -384,15 +336,7 @@ def table_exists(
     Returns:
         TableExistsResponseModel with existence status
         
-    Example:
-        # Check if table exists before querying
-        exists = table_exists(
-            host, token,
-            full_name="main.default.sales"
-        )
-        if exists.table_exists:
-            print(f"Table {exists.full_name} exists")
-            table = get_table(host, token, full_name=exists.full_name)
+    
         else:
             print(f"Table {exists.full_name} does not exist")
         
@@ -440,19 +384,6 @@ def delete_table(
         
     Returns:
         DeleteTableResponse confirming deletion
-        
-    Example:
-        # Delete a table
-        result = delete_table(
-            host, token,
-            full_name="main.default.temp_table"
-        )
-        print(result.message)
-        
-        # Delete after checking existence
-        if table_exists(host, token, full_name="main.default.old_data").table_exists:
-            delete_table(host, token, full_name="main.default.old_data")
-            print("Old data table deleted")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -484,22 +415,6 @@ def update_table_owner(
         
     Returns:
         UpdateTableResponse confirming update
-        
-    Example:
-        # Transfer table ownership
-        result = update_table_owner(
-            host, token,
-            full_name="main.default.sales",
-            owner="data-engineer@company.com"
-        )
-        print(result.message)
-        
-        # Update multiple tables
-        tables = ["main.default.sales", "main.default.customers", "main.default.orders"]
-        new_owner = "analytics-team@company.com"
-        for table in tables:
-            update_table_owner(host, token, full_name=table, owner=new_owner)
-            print(f"Updated owner for {table}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

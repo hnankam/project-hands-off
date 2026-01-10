@@ -55,12 +55,15 @@ def get_notebook_cells(host_credential_key: str, token_credential_key: str, path
         if isinstance(source, list):
             source = "".join(source)
         
+        # Normalize outputs (text fields are also stored as arrays)
+        outputs = _normalize_outputs(cell.get('outputs', []))
+        
         cell_model = NotebookCell(
             index=index,
             cell_type=cell.get('cell_type', 'code'),
             source=source,
             metadata=cell.get('metadata', {}),
-            outputs=cell.get('outputs', []),
+            outputs=outputs,
             execution_count=cell.get('execution_count'),
             language=_extract_cell_language(cell)
         )
@@ -87,7 +90,7 @@ def get_notebook_cell(host_credential_key: str, token_credential_key: str, path:
     Returns:
         NotebookCell at the specified index
     """
-    cells_response = get_notebook_cells(host, token, path)
+    cells_response = get_notebook_cells(host_credential_key, token_credential_key, path)
     
     if cell_index < 0 or cell_index >= len(cells_response.cells):
         raise IndexError(f"Cell index {cell_index} out of range (0-{len(cells_response.cells)-1})")
@@ -117,7 +120,7 @@ def search_notebook_cells(
     Returns:
         CellSearchResponse with matching cells and search metadata
     """
-    cells_response = get_notebook_cells(host, token, path)
+    cells_response = get_notebook_cells(host_credential_key, token_credential_key, path)
     results = []
     
     # Compile regex pattern
@@ -419,6 +422,37 @@ def reorder_notebook_cells(
 
 
 # Helper functions
+
+def _normalize_outputs(outputs: list) -> list[dict]:
+    """Normalize output text fields from arrays to strings.
+    
+    Jupyter notebooks store text/data fields in outputs as arrays of lines.
+    This function normalizes them to strings for easier consumption.
+    """
+    normalized = []
+    for output in outputs:
+        output_copy = output.copy()
+        
+        # Normalize 'text' field (common in stream and error outputs)
+        if 'text' in output_copy and isinstance(output_copy['text'], list):
+            output_copy['text'] = "".join(output_copy['text'])
+        
+        # Normalize 'data' field (for display_data and execute_result outputs)
+        if 'data' in output_copy and isinstance(output_copy['data'], dict):
+            data_copy = output_copy['data'].copy()
+            for key, value in data_copy.items():
+                if isinstance(value, list) and key.startswith('text/'):
+                    data_copy[key] = "".join(value)
+            output_copy['data'] = data_copy
+        
+        # Normalize 'traceback' field (for error outputs)
+        if 'traceback' in output_copy and isinstance(output_copy['traceback'], list):
+            output_copy['traceback'] = "".join(output_copy['traceback'])
+        
+        normalized.append(output_copy)
+    
+    return normalized
+
 
 def _extract_cell_language(cell: dict) -> str | None:
     """Extract programming language from cell metadata."""

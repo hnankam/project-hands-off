@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { authClient, listSSOProviders, registerSSOProvider, deleteSSOProvider, requestDomainVerification, verifyDomain, type SSOProvider, type OIDCConfig } from '../../lib/auth-client';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '@extension/ui';
@@ -43,6 +44,228 @@ interface OrganizationsTabProps {
   onNavigateToTeams: (orgId: string) => void;
 }
 
+interface OrgMoreOptionsButtonProps {
+  org: Organization;
+  isLight: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  onClone: () => void;
+  onDelete: () => void;
+  canDelete: boolean;
+}
+
+const OrgMoreOptionsButton: React.FC<OrgMoreOptionsButtonProps> = ({
+  org,
+  isLight,
+  isOpen,
+  onToggle,
+  onClone,
+  onDelete,
+  canDelete,
+}) => {
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const moreDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Position dropdown when it opens
+  useEffect(() => {
+    if (isOpen && moreButtonRef.current && moreDropdownRef.current) {
+      requestAnimationFrame(() => {
+        if (moreButtonRef.current && moreDropdownRef.current) {
+          const buttonRect = moreButtonRef.current.getBoundingClientRect();
+          const top = buttonRect.bottom + 4;
+          const right = window.innerWidth - buttonRect.right;
+          moreDropdownRef.current.style.top = `${top}px`;
+          moreDropdownRef.current.style.right = `${right}px`;
+        }
+      });
+    }
+  }, [isOpen]);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const element = target as Element;
+      
+      const clickedInsideButton = moreButtonRef.current?.contains(target);
+      const clickedInsideDropdown = moreDropdownRef.current?.contains(target);
+      const isButton = element.tagName === 'BUTTON' || element.closest('button');
+      
+      if (!clickedInsideButton && !clickedInsideDropdown && !isButton) {
+        onToggle();
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside, true);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside, true);
+    };
+  }, [isOpen, onToggle]);
+
+  // Use Tailwind classes for button styling
+  const buttonClassName = cn(
+    'p-1 rounded transition-colors',
+    isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300',
+  );
+
+  const dropdownStyles: React.CSSProperties = {
+    position: 'fixed',
+    top: '0px',
+    right: '0px',
+    marginTop: '0',
+    backgroundColor: isLight ? '#f9fafb' : '#151C24',
+    border: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+    borderRadius: '6px',
+    boxShadow: '0 10px 20px rgba(0, 0, 0, 0.15)',
+    zIndex: 10002,
+    minWidth: '160px',
+    maxWidth: '200px',
+    width: 'auto',
+    overflow: 'visible',
+    visibility: 'visible',
+    opacity: 1,
+    pointerEvents: 'auto',
+  };
+
+  const menuItemBaseStyles: React.CSSProperties = {
+    width: '100%',
+    padding: '0.5rem 0.75rem',
+    border: 'none',
+    backgroundColor: 'transparent',
+    fontSize: '12px',
+    textAlign: 'left',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    whiteSpace: 'nowrap',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  };
+
+  const menuItemTextColor = isLight ? '#374151' : '#d1d5db';
+  const menuItemBorderColor = isLight ? '#e5e7eb' : '#374151';
+  const menuItemHoverBg = isLight ? '#f3f4f6' : '#1f2937';
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onToggle();
+  };
+
+  const handleClone = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClone();
+  };
+
+  const handleDelete = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onDelete();
+  };
+
+  return (
+    <>
+      <button
+        ref={moreButtonRef}
+        className={buttonClassName}
+        title="More options"
+        onClick={handleClick}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          width="16"
+          height="16"
+        >
+          <circle cx="12" cy="12" r="1" />
+          <circle cx="12" cy="5" r="1" />
+          <circle cx="12" cy="19" r="1" />
+        </svg>
+      </button>
+      
+      {isOpen &&
+        createPortal(
+          <div
+            ref={moreDropdownRef}
+            className="orgMoreOptionsDropdownMenu"
+            style={dropdownStyles}
+          >
+            {/* Clone Option */}
+            <button
+              type="button"
+              onClick={handleClone}
+              style={{
+                ...menuItemBaseStyles,
+                color: menuItemTextColor,
+                borderBottom: `1px solid ${menuItemBorderColor}`,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = menuItemHoverBg;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              Clone organization
+            </button>
+            
+            {/* Delete Option */}
+            {canDelete && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                style={{
+                  ...menuItemBaseStyles,
+                  color: menuItemTextColor,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = menuItemHoverBg;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  width="14"
+                  height="14"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Delete organization
+              </button>
+            )}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+};
+
 const OrganizationSkeletonCard: React.FC<{ isLight: boolean }> = ({ isLight }) => (
   <div
     className={cn(
@@ -76,12 +299,16 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
   const [editOrgName, setEditOrgName] = useState('');
   const [editOrgSlug, setEditOrgSlug] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [cloningOrgId, setCloningOrgId] = useState<string | null>(null);
+  const [cloneOrgName, setCloneOrgName] = useState('');
+  const [cloneOrgSlug, setCloneOrgSlug] = useState('');
   const [loading, setLoading] = useState(false);
   const [deleteOrgConfirmOpen, setDeleteOrgConfirmOpen] = useState(false);
   const [orgToDelete, setOrgToDelete] = useState<{ id: string; name: string } | null>(null);
   const [expandedOrgIds, setExpandedOrgIds] = useState<Set<string>>(new Set());
   const [orgTeams, setOrgTeams] = useState<Record<string, { teams: Team[]; memberCounts: Record<string, number> }>>({});
   const [userRoles, setUserRoles] = useState<Record<string, string[]>>({});  // orgId -> roles[]
+  const [openMoreMenuOrgId, setOpenMoreMenuOrgId] = useState<string | null>(null);
   const [hasOwnerRole, setHasOwnerRole] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userTeamIds, setUserTeamIds] = useState<Record<string, Set<string>>>({}); // orgId -> Set of teamIds user belongs to
@@ -93,6 +320,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
   // SSO State
   const [orgSSOProviders, setOrgSSOProviders] = useState<Record<string, SSOProvider[]>>({}); // orgId -> SSO providers
   const [ssoExpandedOrgIds, setSSOExpandedOrgIds] = useState<Set<string>>(new Set());
+  const [expandedSSOProviderIds, setExpandedSSOProviderIds] = useState<Set<string>>(new Set()); // Track expanded SSO provider cards
   const [showSSOForm, setShowSSOForm] = useState<string | null>(null); // orgId showing form
   const [ssoFormState, setSSOFormState] = useState<SSOFormState>({
     providerId: '',
@@ -207,12 +435,56 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
     setEditingOrgId(org.id);
     setEditOrgName(org.name);
     setEditOrgSlug(org.slug);
+    // Close create form if open
+    setShowCreateForm(false);
+    // Close clone form if open
+    cancelCloneOrganization();
   };
 
   const cancelEditOrganization = () => {
     setEditingOrgId(null);
     setEditOrgName('');
     setEditOrgSlug('');
+  };
+
+  const startCloneOrganization = (org: Organization) => {
+    setCloningOrgId(org.id);
+    setCloneOrgName(`${org.name} (Copy)`);
+    setCloneOrgSlug(`${org.slug}-copy`);
+    // Close create form if open
+    setShowCreateForm(false);
+    // Close edit form if open
+    cancelEditOrganization();
+  };
+
+  const cancelCloneOrganization = () => {
+    setCloningOrgId(null);
+    setCloneOrgName('');
+    setCloneOrgSlug('');
+  };
+
+  const cloneOrganization = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const { data, error } = await authClient.organization.create({
+        name: cloneOrgName,
+        slug: cloneOrgSlug,
+      });
+
+      if (error) throw new Error(error.message);
+
+      onSuccess(`Organization "${cloneOrgName}" cloned successfully!`);
+      setCloneOrgName('');
+      setCloneOrgSlug('');
+      setCloningOrgId(null);
+      await loadOrganizations();
+    } catch (err: any) {
+      onError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const updateOrganization = async (orgId: string) => {
@@ -373,6 +645,18 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
         if (!orgSSOProviders[orgId]) {
           loadSSOProviders(orgId);
         }
+      }
+      return newSet;
+    });
+  };
+
+  const toggleSSOProviderExpansion = (providerId: string) => {
+    setExpandedSSOProviderIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(providerId)) {
+        newSet.delete(providerId);
+      } else {
+        newSet.add(providerId);
       }
       return newSet;
     });
@@ -634,9 +918,12 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
               </svg>
             </button>
           )}
-        {hasOwnerRole && !showCreateForm && (
+        {hasOwnerRole && !showCreateForm && !cloningOrgId && !editingOrgId && (
           <button
-            onClick={() => setShowCreateForm(true)}
+            onClick={() => {
+              setShowCreateForm(true);
+              cancelCloneOrganization();
+            }}
             className={cn(
               'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors',
               isLight
@@ -708,6 +995,72 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
             <button
               type="button"
               onClick={() => setShowCreateForm(false)}
+              className={cn(
+                'px-4 py-1.5 text-xs rounded transition-colors font-medium',
+                isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
+              )}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Clone Form - Compact Card */}
+      {cloningOrgId && (
+        <form
+          onSubmit={cloneOrganization}
+          className={cn(
+            'mb-3 pt-3 pb-5 pr-8 pl-8 rounded-lg border',
+            isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+          )}>
+          <div className="space-y-2.5">
+            <div>
+              <label className={cn('block text-xs font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                Organization Name
+              </label>
+              <input
+                type="text"
+                value={cloneOrgName}
+                onChange={e => setCloneOrgName(e.target.value)}
+                placeholder="Acme Corp"
+                required
+                className={cn(
+                  'w-full px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-blue-500 outline-none',
+                  isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white',
+                )}
+              />
+            </div>
+            <div>
+              <label className={cn('block text-xs font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                Slug (URL-friendly)
+              </label>
+              <input
+                type="text"
+                value={cloneOrgSlug}
+                onChange={e => setCloneOrgSlug(e.target.value)}
+                placeholder="acme-corp"
+                required
+                className={cn(
+                  'w-full px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-blue-500 outline-none',
+                  isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white',
+                )}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 justify-end mt-3">
+            <button
+              type="submit"
+              disabled={loading}
+              className={cn(
+                'px-4 py-1.5 text-xs rounded transition-colors font-medium',
+                isLight ? 'bg-blue-500/90 text-white hover:bg-blue-500' : 'bg-blue-600/90 text-white hover:bg-blue-600',
+                loading && 'opacity-50 cursor-not-allowed',
+              )}>
+              {loading ? 'Cloning...' : 'Clone Organization'}
+            </button>
+            <button
+              type="button"
+              onClick={cancelCloneOrganization}
               className={cn(
                 'px-4 py-1.5 text-xs rounded transition-colors font-medium',
                 isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
@@ -850,18 +1203,22 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
                         </svg>
                       </button>
                     )}
-                    {userRoles[org.id]?.includes('owner') && (
-                      <button
-                        onClick={() => openDeleteOrgConfirm(org.id, org.name)}
-                        className={cn(
-                          'p-1 rounded transition-colors',
-                          isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400',
-                        )}
-                        title="Delete">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
+                    {(userRoles[org.id]?.includes('owner') || userRoles[org.id]?.includes('admin')) && (
+                      <OrgMoreOptionsButton
+                        org={org}
+                        isLight={isLight}
+                        isOpen={openMoreMenuOrgId === org.id}
+                        onToggle={() => setOpenMoreMenuOrgId(openMoreMenuOrgId === org.id ? null : org.id)}
+                        onClone={() => {
+                          startCloneOrganization(org);
+                          setOpenMoreMenuOrgId(null);
+                        }}
+                        onDelete={() => {
+                          openDeleteOrgConfirm(org.id, org.name);
+                          setOpenMoreMenuOrgId(null);
+                        }}
+                        canDelete={userRoles[org.id]?.includes('owner') || false}
+                      />
                     )}
                   </div>
                 </div>
@@ -938,7 +1295,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
                                     <svg className="w-3 h-3 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                                       <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                                     </svg>
-                                    <span className={cn('truncate font-medium', mainTextColor)}>
+                                    <span className={cn('truncate font-medium uppercase', mainTextColor)}>
                                       {team.name}
                                     </span>
                                   </div>
@@ -980,6 +1337,11 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
                                 </svg>
                                 <h5 className={cn('text-[10px] font-semibold uppercase', isLight ? 'text-gray-700' : 'text-gray-300')}>
                                   SSO Configuration
+                                  {orgSSOProviders[org.id] && orgSSOProviders[org.id].length > 0 && (
+                                    <span className={cn('ml-1 font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                      ({orgSSOProviders[org.id].length})
+                                    </span>
+                                  )}
                                 </h5>
                               </button>
                               {ssoExpandedOrgIds.has(org.id) && showSSOForm !== org.id && (
@@ -1143,90 +1505,170 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
                                 {orgSSOProviders[org.id] ? (
                                   orgSSOProviders[org.id].length > 0 ? (
                                     <div className="space-y-1.5">
-                                      {orgSSOProviders[org.id].map(provider => (
-                                        <div
-                                          key={provider.id}
-                                          className={cn(
-                                            'flex items-center justify-between px-2.5 py-2 rounded-lg text-[11px]',
-                                            isLight ? 'bg-gray-50 border border-gray-200' : 'bg-gray-800/50 border border-gray-700',
-                                          )}
-                                        >
-                                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                                            <svg className="w-3.5 h-3.5 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                                            </svg>
-                                            <div className="flex-1 min-w-0">
-                                              <div className="flex items-center gap-2">
-                                                <span className={cn('font-medium truncate', mainTextColor)}>
-                                                  {provider.domain}
-                                                </span>
-                                                {provider.domainVerified ? (
-                                                  <span className={cn(
-                                                    'px-1.5 py-0.5 text-[9px] font-medium rounded',
-                                                    isLight ? 'bg-green-100 text-green-700' : 'bg-green-900/30 text-green-400'
-                                                  )}>
-                                                    Verified
-                                                  </span>
-                                                ) : (
-                                                  <span className={cn(
-                                                    'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
-                                                    isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300'
-                                                  )}>
-                                                    Pending
-                                                  </span>
+                                      {orgSSOProviders[org.id].map(provider => {
+                                        const isExpanded = expandedSSOProviderIds.has(provider.id);
+                                        return (
+                                          <div
+                                            key={provider.id}
+                                            className={cn(
+                                              'rounded-lg text-[11px] overflow-hidden',
+                                              isLight ? 'bg-gray-50 border border-gray-200' : 'bg-gray-800/50 border border-gray-700',
+                                            )}
+                                          >
+                                            {/* Provider Header */}
+                                            <div className="flex items-center justify-between px-2.5 py-2">
+                                              <button
+                                                onClick={() => toggleSSOProviderExpansion(provider.id)}
+                                                className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                                              >
+                                                <svg 
+                                                  className={cn(
+                                                    'w-3 h-3 flex-shrink-0 transition-transform',
+                                                    isExpanded ? 'rotate-90' : ''
+                                                  )} 
+                                                  fill="none" 
+                                                  stroke="currentColor" 
+                                                  viewBox="0 0 24 24" 
+                                                  strokeWidth={2}
+                                                >
+                                                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                                </svg>
+                                                <svg className="w-3.5 h-3.5 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                                                </svg>
+                                                <div className="flex-1 min-w-0">
+                                                  <div className="flex items-center gap-2">
+                                                    <span className={cn('font-medium truncate', mainTextColor)}>
+                                                      {provider.domain}
+                                                    </span>
+                                                    {provider.domainVerified ? (
+                                                      <span className={cn(
+                                                        'px-1.5 py-0.5 text-[9px] font-medium rounded',
+                                                        isLight ? 'bg-green-100 text-green-700' : 'bg-green-900/30 text-green-400'
+                                                      )}>
+                                                        Verified
+                                                      </span>
+                                                    ) : (
+                                                      <span className={cn(
+                                                        'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                                        isLight ? 'bg-gray-100 text-gray-700' : 'bg-gray-800 text-gray-300'
+                                                      )}>
+                                                        Pending
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                  <div className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
+                                                    {provider.providerId} • {provider.oidcConfig ? 'OIDC' : 'SAML'}
+                                                  </div>
+                                                </div>
+                                              </button>
+                                              <div className="flex items-center gap-1">
+                                                {!provider.domainVerified && (
+                                                  <>
+                                                    <button
+                                                      onClick={() => handleRequestVerification(provider.providerId)}
+                                                      disabled={ssoLoading}
+                                                      className={cn(
+                                                        'p-1 rounded transition-colors',
+                                                        isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400',
+                                                      )}
+                                                      title="Get DNS verification token"
+                                                    >
+                                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1721 9z" />
+                                                      </svg>
+                                                    </button>
+                                                    <button
+                                                      onClick={() => handleVerifyDomain(provider.providerId, org.id)}
+                                                      disabled={ssoLoading}
+                                                      className={cn(
+                                                        'p-1 rounded transition-colors',
+                                                        isLight ? 'text-gray-400 hover:text-green-600' : 'text-gray-500 hover:text-green-400',
+                                                      )}
+                                                      title="Verify domain"
+                                                    >
+                                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                      </svg>
+                                                    </button>
+                                                  </>
                                                 )}
-                                              </div>
-                                              <div className={cn('text-[10px]', isLight ? 'text-gray-500' : 'text-gray-500')}>
-                                                {provider.providerId} • {provider.oidcConfig ? 'OIDC' : 'SAML'}
+                                                <button
+                                                  onClick={() => openDeleteSSOConfirm(provider.providerId, provider.domain, org.id)}
+                                                  className={cn(
+                                                    'p-1 rounded transition-colors',
+                                                    isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400',
+                                                  )}
+                                                  title="Delete"
+                                                >
+                                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                  </svg>
+                                                </button>
                                               </div>
                                             </div>
-                                          </div>
-                                          <div className="flex items-center gap-1">
-                                            {!provider.domainVerified && (
-                                              <>
-                                                <button
-                                                  onClick={() => handleRequestVerification(provider.providerId)}
-                                                  disabled={ssoLoading}
-                                                  className={cn(
-                                                    'p-1 rounded transition-colors',
-                                                    isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400',
+
+                                            {/* Expanded Details */}
+                                            {isExpanded && provider.oidcConfig && (
+                                              <div className={cn(
+                                                'px-3 py-2 border-t',
+                                                isLight ? 'border-gray-200 bg-gray-50/50' : 'border-gray-700 bg-gray-800/30'
+                                              )}>
+                                                <div className="space-y-2 text-[10px]">
+                                                  {provider.oidcConfig.discoveryEndpoint && (
+                                                    <div className="grid grid-cols-[140px_1fr] gap-x-2">
+                                                      <span className={cn('font-medium text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                                        Discovery Endpoint:
+                                                      </span>
+                                                      <span className={cn('break-all', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                                        {provider.oidcConfig.discoveryEndpoint}
+                                                      </span>
+                                                    </div>
                                                   )}
-                                                  title="Get DNS verification token"
-                                                >
-                                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                                                  </svg>
-                                                </button>
-                                                <button
-                                                  onClick={() => handleVerifyDomain(provider.providerId, org.id)}
-                                                  disabled={ssoLoading}
-                                                  className={cn(
-                                                    'p-1 rounded transition-colors',
-                                                    isLight ? 'text-gray-400 hover:text-green-600' : 'text-gray-500 hover:text-green-400',
+                                                  <div className="grid grid-cols-[140px_1fr] gap-x-2">
+                                                    <span className={cn('font-medium text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                                      Client ID:
+                                                    </span>
+                                                    <span className={cn('break-all', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                                      {provider.oidcConfig.clientId}
+                                                    </span>
+                                                  </div>
+                                                  {provider.oidcConfig.authorizationEndpoint && (
+                                                    <div className="grid grid-cols-[140px_1fr] gap-x-2">
+                                                      <span className={cn('font-medium text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                                        Authorization Endpoint:
+                                                      </span>
+                                                      <span className={cn('break-all', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                                        {provider.oidcConfig.authorizationEndpoint}
+                                                      </span>
+                                                    </div>
                                                   )}
-                                                  title="Verify domain"
-                                                >
-                                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                  </svg>
-                                                </button>
-                                              </>
+                                                  {provider.oidcConfig.tokenEndpoint && (
+                                                    <div className="grid grid-cols-[140px_1fr] gap-x-2">
+                                                      <span className={cn('font-medium text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                                        Token Endpoint:
+                                                      </span>
+                                                      <span className={cn('break-all', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                                        {provider.oidcConfig.tokenEndpoint}
+                                                      </span>
+                                                    </div>
+                                                  )}
+                                                  {provider.oidcConfig.scopes && provider.oidcConfig.scopes.length > 0 && (
+                                                    <div className="grid grid-cols-[140px_1fr] gap-x-2">
+                                                      <span className={cn('font-medium text-right', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                                        Scopes:
+                                                      </span>
+                                                      <span className={cn('break-all', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                                        {provider.oidcConfig.scopes.join(', ')}
+                                                      </span>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              </div>
                                             )}
-                                            <button
-                                              onClick={() => openDeleteSSOConfirm(provider.providerId, provider.domain, org.id)}
-                                              className={cn(
-                                                'p-1 rounded transition-colors',
-                                                isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400',
-                                              )}
-                                              title="Delete"
-                                            >
-                                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                              </svg>
-                                            </button>
                                           </div>
-                                        </div>
-                                      ))}
+                                        );
+                                      })}
                                     </div>
                                   ) : showSSOForm !== org.id && (
                                     <p className={cn('text-[11px] text-center py-2', isLight ? 'text-gray-500' : 'text-gray-400')}>
@@ -1255,7 +1697,7 @@ export function OrganizationsTab({ isLight, onError, onSuccess, onNavigateToTeam
           </div>
         ));
         })()}
-        {organizations.length === 0 && !showCreateForm && (
+        {organizations.length === 0 && !showCreateForm && !cloningOrgId && (
           <div className={cn(
             'text-center py-8 text-xs rounded-lg border',
             isLight ? 'text-gray-500 border-gray-200 bg-gray-50' : 'text-gray-400 border-gray-700 bg-[#151C24]',

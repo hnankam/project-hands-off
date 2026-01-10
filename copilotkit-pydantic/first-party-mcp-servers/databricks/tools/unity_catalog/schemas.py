@@ -6,6 +6,7 @@ Unity Catalog, including creating, listing, updating, and managing schema metada
 """
 
 from typing import Optional, Dict
+from itertools import islice
 from cache import get_workspace_client
 from models import (
     SchemaInfoModel,
@@ -52,72 +53,58 @@ def list_schemas(
     host_credential_key: str,
     token_credential_key: str,
     catalog_name: str,
-    max_results: Optional[int] = None,
-    page_token: Optional[str] = None,
+    limit: int = 25,
+    page: int = 0,
     include_browse: Optional[bool] = None,
 ) -> ListSchemasResponse:
     """
-    List schemas in a catalog.
+    Retrieve a paginated list of schemas (databases) within a Unity Catalog.
     
-    Gets an array of schemas for a catalog in the metastore. If the caller is
-    the metastore admin or the owner of the parent catalog, all schemas will
-    be retrieved. Otherwise, only schemas owned by the caller (or for which
-    the caller has the USE_SCHEMA privilege) will be retrieved.
+    This function returns schema metadata for all accessible schemas in the specified catalog.
+    Use this to discover available schemas, check schema ownership, or list organizational units.
+    
+    Access Behavior:
+    - Metastore admins and catalog owners receive all schemas in the catalog
+    - Other users receive only schemas they own or have USE_SCHEMA privilege on
+    - Results filtered based on caller's permissions automatically
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token: Authentication token
-        catalog_name: Parent catalog for schemas
-        max_results: Maximum number of schemas to return (0 for server default)
-        page_token: Opaque token for next page of results
-        include_browse: Include schemas with browse-only access
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        catalog_name: Name of the Unity Catalog containing the schemas. Required. Must be exact match
+        limit: Number of schemas to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
+        include_browse: Boolean flag to include schemas where user has only browse permission (no USE_SCHEMA). Default: None (excluded)
         
     Returns:
         ListSchemasResponse with list of schemas and pagination info
-        
-    Example:
-        # List all schemas in a catalog
-        schemas = list_schemas(
-            host, token,
-            catalog_name="main"
-        )
-        for schema in schemas.schemas:
-            print(f"{schema.full_name}")
-            print(f"  Owner: {schema.owner}")
-            print(f"  Storage: {schema.storage_root}")
-        
-        # List with pagination
-        schemas = list_schemas(
-            host, token,
-            catalog_name="main",
-            max_results=50
-        )
-        print(f"Found {schemas.count} schemas")
-        if schemas.next_page_token:
-            next_page = list_schemas(
-                host, token,
-                catalog_name="main",
-                max_results=50,
-                page_token=schemas.next_page_token
-            )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
-    schemas_list = []
-    next_token = None
-    
-    for schema in client.schemas.list(
+    response = client.schemas.list(
         catalog_name=catalog_name,
-        max_results=max_results,
-        page_token=page_token,
         include_browse=include_browse,
-    ):
+    )
+    
+    skip = page * limit
+    schemas_iterator = islice(response, skip, skip + limit)
+    
+    schemas_list = []
+    for schema in schemas_iterator:
         schemas_list.append(_convert_schema_to_model(schema))
+    
+    # Check for more results
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
     
     return ListSchemasResponse(
         schemas=schemas_list,
         count=len(schemas_list),
-        next_page_token=next_token,
+        has_more=has_more,
     )
 
 
@@ -141,25 +128,6 @@ def get_schema(
         
     Returns:
         SchemaInfoModel with complete schema details
-        
-    Example:
-        # Get full schema details
-        schema = get_schema(
-            host, token,
-            full_name="main.default"
-        )
-        print(f"Schema: {schema.full_name}")
-        print(f"Catalog: {schema.catalog_name}")
-        print(f"Owner: {schema.owner}")
-        print(f"Storage: {schema.storage_root}")
-        print(f"Comment: {schema.comment}")
-        print(f"Created: {schema.created_at} by {schema.created_by}")
-        
-        # Check properties
-        if schema.properties:
-            print("Properties:")
-            for key, value in schema.properties.items():
-                print(f"  {key}: {value}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -202,39 +170,6 @@ def create_schema(
         
     Returns:
         CreateSchemaResponse with created schema information
-        
-    Example:
-        # Create a basic schema
-        result = create_schema(
-            host, token,
-            name="analytics",
-            catalog_name="main",
-            comment="Analytics tables and views"
-        )
-        print(f"Created schema: {result.schema_info.full_name}")
-        
-        # Create schema with custom storage
-        result = create_schema(
-            host, token,
-            name="staging",
-            catalog_name="main",
-            comment="Staging data",
-            storage_root="s3://my-bucket/staging/"
-        )
-        
-        # Create schema with properties
-        result = create_schema(
-            host, token,
-            name="prod",
-            catalog_name="main",
-            comment="Production tables",
-            properties={
-                "environment": "production",
-                "owner_team": "data-engineering",
-                "cost_center": "12345"
-            }
-        )
-        print(f"Schema {result.schema_info.full_name} created with properties")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -272,23 +207,7 @@ def delete_schema(
     Returns:
         DeleteSchemaResponse confirming deletion
         
-    Example:
-        # Delete an empty schema
-        result = delete_schema(
-            host, token,
-            full_name="main.temp_schema"
-        )
-        print(result.message)
-        
-        # Force delete a schema with tables
-        result = delete_schema(
-            host, token,
-            full_name="main.old_schema",
-            force=True
-        )
-        print(f"Force deleted {result.full_name}")
-        
-        # Delete after checking if exists
+    
         try:
             schema = get_schema(host, token, full_name="main.staging")
             delete_schema(host, token, full_name="main.staging")
@@ -336,49 +255,6 @@ def update_schema(
         
     Returns:
         UpdateSchemaResponse with updated schema information
-        
-    Example:
-        # Update schema comment
-        result = update_schema(
-            host, token,
-            full_name="main.analytics",
-            comment="Updated analytics schema with new datasets"
-        )
-        print(f"Updated: {result.schema_info.full_name}")
-        
-        # Transfer ownership
-        result = update_schema(
-            host, token,
-            full_name="main.staging",
-            owner="data-engineer@company.com"
-        )
-        print(f"New owner: {result.schema_info.owner}")
-        
-        # Rename schema
-        result = update_schema(
-            host, token,
-            full_name="main.old_name",
-            new_name="new_name"
-        )
-        print(f"Renamed to: {result.schema_info.full_name}")
-        
-        # Update properties
-        result = update_schema(
-            host, token,
-            full_name="main.prod",
-            properties={
-                "environment": "production",
-                "data_classification": "confidential",
-                "backup_enabled": "true"
-            }
-        )
-        
-        # Enable predictive optimization
-        result = update_schema(
-            host, token,
-            full_name="main.analytics",
-            enable_predictive_optimization="ENABLE"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

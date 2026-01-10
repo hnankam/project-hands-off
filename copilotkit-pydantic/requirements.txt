@@ -11,3 +11,4 @@ requests>=2.31.0
 google-cloud-storage>=2.10.0
 ably>=2.0.0
 logfire[fastapi,psycopg]>=2.0.0
+redis[hiredis]>=5.0.0

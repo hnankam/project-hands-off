@@ -68,45 +68,6 @@ def execute_statement(
     
     Returns:
         ExecuteStatementResponse with statement_id, status, and optionally results
-    
-    Examples:
-        # Synchronous execution (wait for results)
-        response = execute_statement(
-            host, token,
-            statement="SELECT * FROM sales WHERE date > '2024-01-01'",
-            warehouse_id="abc123",
-            wait_timeout="30s",
-            on_wait_timeout="CANCEL"
-        )
-        
-        # Asynchronous execution (poll for results)
-        response = execute_statement(
-            host, token,
-            statement="SELECT * FROM large_table",
-            warehouse_id="abc123",
-            wait_timeout="0s"
-        )
-        # Poll with get_statement(host, token, response.statement_id)
-        
-        # Parameterized query
-        response = execute_statement(
-            host, token,
-            statement="SELECT * FROM users WHERE name = :user_name AND date = :query_date",
-            warehouse_id="abc123",
-            parameters=[
-                StatementParameter(name="user_name", value="Alice"),
-                StatementParameter(name="query_date", value="2024-01-01", type="DATE")
-            ]
-        )
-        
-        # Large results with external links
-        response = execute_statement(
-            host, token,
-            statement="SELECT * FROM massive_table",
-            warehouse_id="abc123",
-            disposition="EXTERNAL_LINKS",
-            format="ARROW_STREAM"  # High-performance format
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -163,30 +124,6 @@ def get_statement(
     
     Returns:
         StatementResponse with current status and results (if completed)
-    
-    Example:
-        # Execute async
-        exec_response = execute_statement(
-            host, token,
-            statement="SELECT COUNT(*) FROM large_table",
-            warehouse_id="abc123",
-            wait_timeout="0s"
-        )
-        
-        # Poll until complete
-        import time
-        while True:
-            status_response = get_statement(host, token, exec_response.statement_id)
-            
-            if status_response.status.state == "SUCCEEDED":
-                print(f"Rows: {status_response.manifest.total_row_count}")
-                print(f"Data: {status_response.result.data_array}")
-                break
-            elif status_response.status.state in ["FAILED", "CANCELED", "CLOSED"]:
-                print(f"Failed: {status_response.status.error.message}")
-                break
-            
-            time.sleep(2)  # Poll every 2 seconds
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     response = client.statement_execution.get_statement(statement_id=statement_id)
@@ -213,29 +150,6 @@ def get_statement_result_chunk(
     
     Returns:
         ResultData with the requested chunk
-    
-    Example:
-        # Execute and get first results
-        response = execute_statement(
-            host, token,
-            statement="SELECT * FROM large_table",
-            warehouse_id="abc123",
-            wait_timeout="30s"
-        )
-        
-        if response.status.state == "SUCCEEDED":
-            # First chunk is in response.result
-            print(f"Chunk 0: {len(response.result.data_array)} rows")
-            
-            # Fetch remaining chunks
-            total_chunks = response.manifest.total_chunk_count
-            for chunk_idx in range(1, total_chunks):
-                chunk = get_statement_result_chunk(
-                    host, token,
-                    response.statement_id,
-                    chunk_idx
-                )
-                print(f"Chunk {chunk_idx}: {len(chunk.data_array)} rows")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     result = client.statement_execution.get_statement_result_chunk_n(
@@ -266,28 +180,6 @@ def cancel_execution(
     
     Returns:
         CancelExecutionResponse confirming the cancel request was received
-    
-    Example:
-        # Start long-running query
-        response = execute_statement(
-            host, token,
-            statement="SELECT * FROM massive_table",
-            warehouse_id="abc123",
-            wait_timeout="0s"
-        )
-        
-        # Cancel it
-        cancel_response = cancel_execution(host, token, response.statement_id)
-        print(cancel_response.message)
-        
-        # Poll until canceled
-        import time
-        while True:
-            status = get_statement(host, token, response.statement_id)
-            if status.status.state in ["CANCELED", "CLOSED"]:
-                print("Successfully canceled")
-                break
-            time.sleep(1)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     client.statement_execution.cancel_execution(statement_id=statement_id)

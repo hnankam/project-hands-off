@@ -63,15 +63,6 @@ def list_vector_search_endpoints(
         
     Returns:
         ListEndpointsResponse with endpoints
-        
-    Example:
-        # List all vector search endpoints
-        response = list_vector_search_endpoints(host, token)
-        for endpoint in response.endpoints:
-            print(f"{endpoint.name}")
-            print(f"  Type: {endpoint.endpoint_type}")
-            print(f"  Status: {endpoint.endpoint_status}")
-            print(f"  Indexes: {endpoint.num_indexes}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -106,18 +97,6 @@ def get_vector_search_endpoint(
         
     Returns:
         EndpointInfoModel with endpoint details
-        
-    Example:
-        # Get endpoint details
-        endpoint = get_vector_search_endpoint(
-            host, token,
-            endpoint_name="vector-search-prod"
-        )
-        print(f"Name: {endpoint.name}")
-        print(f"Type: {endpoint.endpoint_type}")
-        print(f"Status: {endpoint.endpoint_status}")
-        print(f"Creator: {endpoint.creator}")
-        print(f"Number of indexes: {endpoint.num_indexes}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -152,23 +131,7 @@ def create_vector_search_endpoint(
     Returns:
         CreateEndpointResponse with created endpoint
         
-    Example:
-        # Create standard vector search endpoint
-        response = create_vector_search_endpoint(
-            host, token,
-            name="vector-search-prod",
-            endpoint_type="STANDARD"
-        )
-        print(f"Created: {response.endpoint.name}")
-        print(f"Status: {response.endpoint.endpoint_status}")
-        
-        # Create with budget policy
-        response = create_vector_search_endpoint(
-            host, token,
-            name="vector-search-dev",
-            endpoint_type="STANDARD",
-            budget_policy_id="budget-policy-123"
-        )
+    
         
     Note:
         - Endpoint creation is asynchronous and may take several minutes
@@ -216,13 +179,7 @@ def delete_vector_search_endpoint(
     Returns:
         DeleteEndpointResponse confirming deletion
         
-    Example:
-        # Delete vector search endpoint
-        response = delete_vector_search_endpoint(
-            host, token,
-            endpoint_name="vector-search-old"
-        )
-        print(response.message)
+    
         
     Note:
         - All indexes on the endpoint must be deleted first
@@ -260,22 +217,6 @@ def update_endpoint_budget_policy(
         
     Returns:
         UpdateEndpointBudgetPolicyResponse confirming update
-        
-    Example:
-        # Update budget policy
-        response = update_endpoint_budget_policy(
-            host, token,
-            endpoint_name="vector-search-prod",
-            budget_policy_id="budget-policy-production"
-        )
-        print(f"Updated budget policy for {response.endpoint_name}")
-        
-        # Change to development budget
-        response = update_endpoint_budget_policy(
-            host, token,
-            endpoint_name="vector-search-dev",
-            budget_policy_id="budget-policy-dev"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -310,29 +251,6 @@ def update_endpoint_custom_tags(
         
     Returns:
         UpdateEndpointCustomTagsResponse confirming update
-        
-    Example:
-        # Update custom tags
-        response = update_endpoint_custom_tags(
-            host, token,
-            endpoint_name="vector-search-prod",
-            custom_tags=[
-                {"key": "environment", "value": "production"},
-                {"key": "team", "value": "ml-platform"},
-                {"key": "cost-center", "value": "engineering"}
-            ]
-        )
-        print(f"Updated tags for {response.endpoint_name}")
-        
-        # Add project tags
-        response = update_endpoint_custom_tags(
-            host, token,
-            endpoint_name="vector-search-dev",
-            custom_tags=[
-                {"key": "project", "value": "rag-chatbot"},
-                {"key": "owner", "value": "data-science-team"}
-            ]
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -384,26 +302,7 @@ def retrieve_endpoint_metrics(
     Returns:
         RetrieveMetricsResponse with metric data
         
-    Example:
-        # Get recent metrics
-        response = retrieve_endpoint_metrics(
-            host, token,
-            endpoint_name="vector-search-prod"
-        )
-        for series in response.metrics:
-            print(f"Metric: {series.metric_name}")
-            for point in series.data_points:
-                print(f"  {point.timestamp}: {point.value}")
-        
-        # Get specific metrics with time range
-        response = retrieve_endpoint_metrics(
-            host, token,
-            endpoint_name="vector-search-prod",
-            start_time="2024-01-01T00:00:00Z",
-            end_time="2024-01-02T00:00:00Z",
-            metrics=["query_latency_p99", "queries_per_second"],
-            granularity_in_seconds=300  # 5-minute granularity
-        )
+    
         
     Note:
         - Available metrics depend on endpoint type and configuration

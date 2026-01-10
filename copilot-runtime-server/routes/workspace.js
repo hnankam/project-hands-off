@@ -11,6 +11,7 @@ import { encryptCredential, decryptCredential, encryptOAuthTokens, decryptOAuthT
 import { fetchGmailEmails, fetchGmailMessage, fetchGmailThread, convertToTextFormat as gmailToText, convertThreadToTextFormat as gmailThreadToText } from '../utils/gmail-client.js';
 import { fetchRecentSlackMessages, fetchSlackConversations, fetchSlackMessages, fetchSlackThreadReplies, downloadSlackFile, convertToTextFormat as slackToText, convertThreadToTextFormat as slackThreadToText, getMessageFilename, getThreadFilename } from '../utils/slack-client.js';
 import { refreshGoogleToken, refreshSlackToken, shouldRefreshToken, calculateExpiryTimestamp } from '../utils/oauth-refresh.js';
+import { generateCredentialKey, extractDisplayName, updateCredentialKey, baseNameExists, extractSuffix } from '../utils/credential-keys.js';
 
 const router = express.Router();
 
@@ -1210,6 +1211,11 @@ router.get('/credentials', requireAuth, async (req, res) => {
 /**
  * Create a new credential
  * POST /api/workspace/credentials
+ * Body: { name, type, key, password }
+ * 
+ * The user provides a 'key' (e.g., "databricks_host") and the backend adds a suffix.
+ * A 4-character suffix is automatically appended to ensure uniqueness.
+ * Example: key="databricks_host" -> stored as "databricks_host_7a3f"
  */
 router.post('/credentials', requireAuth, async (req, res) => {
   try {
@@ -1220,6 +1226,35 @@ router.post('/credentials', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Name and type are required' });
     }
     
+    if (!key || !key.trim()) {
+      return res.status(400).json({ error: 'Key is required' });
+    }
+    
+    const pool = getPool();
+    
+    // Get all existing keys for this user to check uniqueness
+    const { rows: existingCreds } = await pool.query(
+      'SELECT key FROM workspace_credentials WHERE user_id = $1',
+      [userId]
+    );
+    const existingKeys = existingCreds.map(row => row.key).filter(Boolean);
+    
+    // Check if base key already exists (case-insensitive check, but preserve user's case)
+    const userProvidedKey = key.trim();
+    if (baseNameExists(userProvidedKey, existingKeys)) {
+      return res.status(400).json({ 
+        error: `A credential with key '${userProvidedKey}' already exists. Please choose a different key.` 
+      });
+    }
+    
+    // Generate unique key with suffix based on user's provided key (preserves case)
+    let uniqueKey;
+    try {
+      uniqueKey = generateCredentialKey(userProvidedKey, existingKeys);
+    } catch (keyError) {
+      return res.status(500).json({ error: 'Failed to generate unique credential key' });
+    }
+    
     // Encrypt the password/secret
     let encryptedDataHex = null;
     if (password) {
@@ -1227,17 +1262,24 @@ router.post('/credentials', requireAuth, async (req, res) => {
       encryptedDataHex = encrypted.toString('hex');
     }
     
-    const pool = getPool();
     const { rows } = await pool.query(
       `INSERT INTO workspace_credentials (user_id, name, type, key, encrypted_data)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, name, type, key, created_at, updated_at`,
-      [userId, name, type, key || null, encryptedDataHex]
+      [userId, name, type, uniqueKey, encryptedDataHex]
     );
     
     res.status(201).json({ credential: rows[0] });
   } catch (error) {
     console.error('[Workspace] Error creating credential:', error);
+    
+    // Check for unique constraint violation
+    if (error.code === '23505' && error.constraint === 'workspace_credentials_key_unique') {
+      return res.status(400).json({ 
+        error: 'Credential key already exists. Please try again.' 
+      });
+    }
+    
     res.status(500).json({ error: 'Failed to create credential' });
   }
 });
@@ -1245,6 +1287,10 @@ router.post('/credentials', requireAuth, async (req, res) => {
 /**
  * Update a credential
  * PUT /api/workspace/credentials/:id
+ * Body: { name, type, key?, password? }
+ * 
+ * If user provides a new 'key', it replaces the base key while preserving the suffix.
+ * Example: old key="databricks_host_7a3f", new key="db_host" -> "db_host_7a3f"
  */
 router.put('/credentials/:id', requireAuth, async (req, res) => {
   try {
@@ -1258,9 +1304,9 @@ router.put('/credentials/:id', requireAuth, async (req, res) => {
     
     const pool = getPool();
     
-    // Check ownership
+    // Check ownership and get current key
     const { rows: existing } = await pool.query(
-      'SELECT id FROM workspace_credentials WHERE id = $1 AND user_id = $2',
+      'SELECT id, key FROM workspace_credentials WHERE id = $1 AND user_id = $2',
       [id, userId]
     );
     
@@ -1268,9 +1314,33 @@ router.put('/credentials/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Credential not found' });
     }
     
+    const oldKey = existing[0].key;
+    
+    // Get all existing keys for collision detection (excluding current credential)
+    const { rows: existingCreds } = await pool.query(
+      'SELECT key FROM workspace_credentials WHERE user_id = $1 AND id != $2',
+      [userId, id]
+    );
+    const existingKeys = existingCreds.map(row => row.key).filter(Boolean);
+    
+    // Generate new key with same suffix (preserving user's case)
+    let newKey;
+    try {
+      // If user provides a new key, use it (preserve case); otherwise extract from old key
+      const baseKeyToUse = key && key.trim() ? key.trim() : extractDisplayName(oldKey);
+      newKey = updateCredentialKey(oldKey, baseKeyToUse, existingKeys);
+    } catch (keyError) {
+      if (keyError.message.includes('already exists')) {
+        return res.status(400).json({ 
+          error: `A credential with that key already exists. Please choose a different key.` 
+        });
+      }
+      return res.status(500).json({ error: 'Failed to update credential key' });
+    }
+    
     // Build update query
     let query = `UPDATE workspace_credentials SET name = $1, type = $2, key = $3`;
-    const params = [name, type, key || null];
+    const params = [name, type, newKey];
     
     // Only update password if provided
     if (password) {
@@ -1293,6 +1363,14 @@ router.put('/credentials/:id', requireAuth, async (req, res) => {
     res.json({ credential: rows[0] });
   } catch (error) {
     console.error('[Workspace] Error updating credential:', error);
+    
+    // Check for unique constraint violation
+    if (error.code === '23505' && error.constraint === 'workspace_credentials_key_unique') {
+      return res.status(400).json({ 
+        error: 'Credential key already exists. Please try a different key.' 
+      });
+    }
+    
     res.status(500).json({ error: 'Failed to update credential' });
   }
 });

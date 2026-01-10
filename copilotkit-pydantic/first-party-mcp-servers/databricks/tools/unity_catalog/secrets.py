@@ -40,13 +40,6 @@ def list_secret_scopes(
     
     Returns:
         ListSecretScopesResponse with all scopes
-    
-    Example:
-        # List all secret scopes
-        response = list_secret_scopes(host, token)
-        
-        for scope in response.scopes:
-            print(f"{scope.name} ({scope.backend_type})")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -87,21 +80,6 @@ def create_secret_scope(
     
     Returns:
         CreateSecretScopeResponse confirming creation
-    
-    Example:
-        # Create a scope for database credentials
-        response = create_secret_scope(
-            host, token,
-            scope="jdbc-credentials",
-            initial_manage_principal="users"
-        )
-        print(response.message)
-        
-        # Create scope for production secrets
-        response = create_secret_scope(
-            host, token,
-            scope="prod-api-keys"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -136,11 +114,6 @@ def delete_secret_scope(
     
     Returns:
         DeleteSecretScopeResponse confirming deletion
-    
-    Example:
-        # Delete a scope
-        response = delete_secret_scope(host, token, "temp-credentials")
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     client.secrets.delete_scope(scope=scope)
@@ -173,13 +146,6 @@ def list_secrets(
     
     Returns:
         ListSecretsResponse with secret metadata
-    
-    Example:
-        # List secrets in a scope
-        response = list_secrets(host, token, "jdbc-credentials")
-        
-        for secret in response.secrets:
-            print(f"{secret.key} (last updated: {secret.last_updated_timestamp})")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -222,26 +188,6 @@ def put_secret(
     
     Returns:
         PutSecretResponse confirming storage
-    
-    Example:
-        # Store database password
-        response = put_secret(
-            host, token,
-            scope="jdbc-credentials",
-            key="db-password",
-            string_value="secretpassword123"
-        )
-        
-        # Store API key
-        response = put_secret(
-            host, token,
-            scope="api-keys",
-            key="external-api-token",
-            string_value="sk-1234567890abcdef"
-        )
-        
-        # Reference in SQL (executed on cluster):
-        # ${secrets/jdbc-credentials/db-password}
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -283,15 +229,6 @@ def delete_secret(
     
     Returns:
         DeleteSecretResponse confirming deletion
-    
-    Example:
-        # Delete a secret
-        response = delete_secret(
-            host, token,
-            scope="temp-credentials",
-            key="old-api-key"
-        )
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     client.secrets.delete_secret(scope=scope, key=key)
@@ -324,13 +261,6 @@ def list_secret_acls(
     
     Returns:
         ListAclsResponse with ACL information
-    
-    Example:
-        # List who has access
-        response = list_secret_acls(host, token, "production-secrets")
-        
-        for acl in response.acls:
-            print(f"{acl.principal}: {acl.permission}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -366,15 +296,6 @@ def get_secret_acl(
     
     Returns:
         AclInfo with permission details
-    
-    Example:
-        # Check permission for a group
-        acl = get_secret_acl(
-            host, token,
-            scope="jdbc-credentials",
-            principal="data-scientists"
-        )
-        print(f"Permission: {acl.permission}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     acl = client.secrets.get_acl(scope=scope, principal=principal)
@@ -410,23 +331,6 @@ def put_secret_acl(
     
     Returns:
         PutAclResponse confirming update
-    
-    Example:
-        # Grant read access to data scientists
-        response = put_secret_acl(
-            host, token,
-            scope="jdbc-credentials",
-            principal="data-scientists",
-            permission="READ"
-        )
-        
-        # Grant manage access to admins
-        response = put_secret_acl(
-            host, token,
-            scope="production-secrets",
-            principal="admins",
-            permission="MANAGE"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -463,15 +367,6 @@ def delete_secret_acl(
     
     Returns:
         DeleteAclResponse confirming deletion
-    
-    Example:
-        # Remove access for a user
-        response = delete_secret_acl(
-            host, token,
-            scope="temp-credentials",
-            principal="former-employee"
-        )
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     client.secrets.delete_acl(scope=scope, principal=principal)

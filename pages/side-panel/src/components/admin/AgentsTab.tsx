@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@extension/ui';
 import { authClient } from '../../lib/auth-client';
 import { OrganizationSelector, TeamSelector, TeamMultiSelector, ModelMultiSelector, ToolMultiSelector, AuxiliaryAgentSelector } from './selectors';
@@ -136,6 +137,223 @@ const waitFor = (ms: number, signal?: AbortSignal) =>
     signal?.addEventListener('abort', onAbort);
   });
 
+interface AgentMoreOptionsButtonProps {
+  agent: AgentRecord;
+  isLight: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  onClone: () => void;
+  onDelete: () => void;
+}
+
+const AgentMoreOptionsButton: React.FC<AgentMoreOptionsButtonProps> = ({
+  agent,
+  isLight,
+  isOpen,
+  onToggle,
+  onClone,
+  onDelete,
+}) => {
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const moreDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Position dropdown when it opens
+  useEffect(() => {
+    if (isOpen && moreButtonRef.current && moreDropdownRef.current) {
+      requestAnimationFrame(() => {
+        if (moreButtonRef.current && moreDropdownRef.current) {
+          const buttonRect = moreButtonRef.current.getBoundingClientRect();
+          const top = buttonRect.bottom + 4;
+          const right = window.innerWidth - buttonRect.right;
+          moreDropdownRef.current.style.top = `${top}px`;
+          moreDropdownRef.current.style.right = `${right}px`;
+        }
+      });
+    }
+  }, [isOpen]);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const element = target as Element;
+      
+      const clickedInsideButton = moreButtonRef.current?.contains(target);
+      const clickedInsideDropdown = moreDropdownRef.current?.contains(target);
+      const isButton = element.tagName === 'BUTTON' || element.closest('button');
+      
+      if (!clickedInsideButton && !clickedInsideDropdown && !isButton) {
+        onToggle();
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside, true);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside, true);
+    };
+  }, [isOpen, onToggle]);
+
+  const buttonClassName = cn(
+    'p-1 rounded transition-colors',
+    isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300',
+  );
+
+  const dropdownStyles: React.CSSProperties = {
+    position: 'fixed',
+    top: '0px',
+    right: '0px',
+    marginTop: '0',
+    backgroundColor: isLight ? '#f9fafb' : '#151C24',
+    border: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+    borderRadius: '6px',
+    boxShadow: '0 10px 20px rgba(0, 0, 0, 0.15)',
+    zIndex: 10002,
+    minWidth: '160px',
+    maxWidth: '200px',
+    width: 'auto',
+    overflow: 'visible',
+    visibility: 'visible',
+    opacity: 1,
+    pointerEvents: 'auto',
+  };
+
+  const menuItemBaseStyles: React.CSSProperties = {
+    width: '100%',
+    padding: '0.5rem 0.75rem',
+    border: 'none',
+    backgroundColor: 'transparent',
+    fontSize: '12px',
+    textAlign: 'left',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    whiteSpace: 'nowrap',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  };
+
+  const menuItemTextColor = isLight ? '#374151' : '#d1d5db';
+  const menuItemBorderColor = isLight ? '#e5e7eb' : '#374151';
+  const menuItemHoverBg = isLight ? '#f3f4f6' : '#1f2937';
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onToggle();
+  };
+
+  const handleClone = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClone();
+  };
+
+  const handleDelete = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onDelete();
+  };
+
+  return (
+    <>
+      <button
+        ref={moreButtonRef}
+        className={buttonClassName}
+        title="More options"
+        onClick={handleClick}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          width="16"
+          height="16"
+        >
+          <circle cx="12" cy="12" r="1" />
+          <circle cx="12" cy="5" r="1" />
+          <circle cx="12" cy="19" r="1" />
+        </svg>
+      </button>
+      
+      {isOpen &&
+        createPortal(
+          <div
+            ref={moreDropdownRef}
+            className="agentMoreOptionsDropdownMenu"
+            style={dropdownStyles}
+          >
+            {/* Clone Option */}
+            <button
+              type="button"
+              onClick={handleClone}
+              style={{
+                ...menuItemBaseStyles,
+                color: menuItemTextColor,
+                borderBottom: `1px solid ${menuItemBorderColor}`,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = menuItemHoverBg;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              Clone agent
+            </button>
+            
+            {/* Delete Option */}
+            <button
+              type="button"
+              onClick={handleDelete}
+              style={{
+                ...menuItemBaseStyles,
+                color: menuItemTextColor,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = menuItemHoverBg;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Delete agent
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+};
+
 const AgentSkeletonCard: React.FC<{ isLight: boolean }> = ({ isLight }) => (
   <div
     className={cn(
@@ -246,12 +464,14 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   }, [teamFilterIds]);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [isCloning, setIsCloning] = useState(false);
   const [createForm, setCreateForm] = useState<AgentFormState>(INITIAL_FORM);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<AgentFormState | null>(null);
+  const [openMoreMenuAgentId, setOpenMoreMenuAgentId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; agentType: string } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [expandedInstructions, setExpandedInstructions] = useState<Set<string>>(new Set());
@@ -260,6 +480,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   const [expandedAgentDetails, setExpandedAgentDetails] = useState<Set<string>>(new Set());
   const [createFormAuxExpanded, setCreateFormAuxExpanded] = useState(false);
   const [editFormAuxExpanded, setEditFormAuxExpanded] = useState(false);
+  const [expandedCustomAuxAgents, setExpandedCustomAuxAgents] = useState<Set<number>>(new Set());
   // Track expanded tool categories per agent: { agentId: { frontend: true, backend: false, ... } }
   const [expandedToolCategories, setExpandedToolCategories] = useState<Record<string, Record<string, boolean>>>({});
 
@@ -718,6 +939,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
 
   const resetCreateForm = () => {
     setCreateForm(INITIAL_FORM);
+    setIsCloning(false);
   };
 
   const handleCreateAgent = async (e: React.FormEvent) => {
@@ -803,7 +1025,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
       }
 
       const data = await response.json();
-      onSuccess(`Agent "${data.agent?.agentType || createForm.agentType}" created successfully`);
+      onSuccess(`Agent "${data.agent?.agentType || createForm.agentType}" ${isCloning ? 'cloned' : 'created'} successfully`);
       setShowCreateForm(false);
       resetCreateForm();
       const activeTeamId = teamFilterIds[0] || null;
@@ -842,6 +1064,35 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
   const cancelEditAgent = () => {
     setEditingAgentId(null);
     setEditForm(null);
+  };
+
+  const startCloneAgent = (agent: AgentRecord) => {
+    // Extract auxiliary_agents from metadata
+    const agentMetadata = agent.metadata || {};
+    const auxiliaryAgents: AuxiliaryAgentsConfig = agentMetadata.auxiliary_agents || {};
+    // Create a copy of metadata without auxiliary_agents for the JSON editor
+    const { auxiliary_agents: _, ...otherMetadata } = agentMetadata;
+    
+    // Pre-fill the create form with cloned data
+    setCreateForm({
+      agentType: agent.agentType,
+      agentName: `${agent.agentName} (copy)`,
+      description: agent.description || '',
+      promptTemplate: agent.promptTemplate,
+      scope: agent.teams.length > 0 ? 'team' : 'organization',
+      teamIds: agent.teams.map(t => t.id),
+      metadata: stringifyJson(otherMetadata),
+      auxiliaryAgents,
+      enabled: agent.enabled,
+      modelMode: agent.modelIds && agent.modelIds.length > 0 ? 'custom' : 'all',
+      modelIds: Array.isArray(agent.modelIds) ? agent.modelIds : [],
+      toolMode: agent.toolIds && agent.toolIds.length > 0 ? 'custom' : 'all',
+      toolIds: Array.isArray(agent.toolIds) ? agent.toolIds : [],
+    });
+    setIsCloning(true);
+    setShowCreateForm(true);
+    // Close edit form if open
+    cancelEditAgent();
   };
 
   const handleUpdateAgent = async (agentId: string) => {
@@ -1366,6 +1617,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                 'space-y-3 rounded-lg border p-4',
                 isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
               )}
+              style={{ overflow: 'visible' }}
             >
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1478,9 +1730,9 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                 </button>
                 <div
                   style={{
-                    overflow: createFormAuxExpanded ? 'visible' : 'hidden',
+                    overflow: 'hidden',
                     transition: 'max-height 0.3s ease-in-out, opacity 0.2s ease-in-out',
-                    maxHeight: createFormAuxExpanded ? '1000px' : '0',
+                    maxHeight: createFormAuxExpanded ? '5000px' : '0',
                     opacity: createFormAuxExpanded ? 1 : 0,
                   }}>
                   <div className="grid grid-cols-2 gap-3 pt-2">
@@ -1559,13 +1811,17 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                       </span>
                       <button
                         type="button"
-                        onClick={() => setCreateForm(prev => ({
-                          ...prev,
-                          auxiliaryAgents: {
-                            ...prev.auxiliaryAgents,
-                            custom: [...(prev.auxiliaryAgents.custom || []), { key: '', agent_id: '', description: '' }],
-                          }
-                        }))}
+                        onClick={() => {
+                          const newIdx = (createForm.auxiliaryAgents.custom || []).length;
+                          setCreateForm(prev => ({
+                            ...prev,
+                            auxiliaryAgents: {
+                              ...prev.auxiliaryAgents,
+                              custom: [...(prev.auxiliaryAgents.custom || []), { key: '', agent_id: '', description: '' }],
+                            }
+                          }));
+                          setExpandedCustomAuxAgents(prev => new Set(prev).add(newIdx));
+                        }}
                         className={cn(
                           'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors',
                           isLight
@@ -1591,108 +1847,179 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                         No custom auxiliary agents configured
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        {(createForm.auxiliaryAgents.custom || []).map((customAgent, idx) => (
-                          <div 
-                            key={idx} 
-                            className={cn(
-                              'p-3 rounded-lg border relative',
-                              isLight ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/50 border-gray-700'
-                            )}
-                          >
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                  Key (unique identifier)
-                                </label>
-                                <input
-                                  type="text"
-                                  value={customAgent.key}
-                                  onChange={(e) => {
-                                    const newCustom = [...(createForm.auxiliaryAgents.custom || [])];
-                                    newCustom[idx] = { ...newCustom[idx], key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') };
-                                    setCreateForm(prev => ({
-                                      ...prev,
-                                      auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom }
-                                    }));
-                                  }}
-                                  placeholder="e.g., research_assistant"
-                                  className={cn(
-                                    'w-full px-2 py-1.5 text-xs rounded border',
-                                    isLight 
-                                      ? 'bg-white border-gray-300 text-gray-900 placeholder-gray-400' 
-                                      : 'bg-[#151C24] border-gray-600 text-white placeholder-gray-500'
-                                  )}
-                                />
-                              </div>
-                              <div>
-                                <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                  Agent
-                                </label>
-                                <AuxiliaryAgentSelector
-                                  isLight={isLight}
-                                  agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
-                                  auxType="memory"
-                                  selectedAgentId={customAgent.agent_id || null}
-                                  onChange={(agentId) => {
-                                    const newCustom = [...(createForm.auxiliaryAgents.custom || [])];
-                                    newCustom[idx] = { ...newCustom[idx], agent_id: agentId || '' };
-                                    setCreateForm(prev => ({
-                                      ...prev,
-                                      auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom }
-                                    }));
-                                  }}
-                                  hideLabel={true}
-                                />
-                              </div>
-                              <div className="col-span-2">
-                                <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                  Description (shown to main agent)
-                                </label>
-                                <textarea
-                                  rows={2}
-                                  value={customAgent.description}
-                                  onChange={(e) => {
-                                    const newCustom = [...(createForm.auxiliaryAgents.custom || [])];
-                                    newCustom[idx] = { ...newCustom[idx], description: e.target.value };
-                                    setCreateForm(prev => ({
-                                      ...prev,
-                                      auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom }
-                                    }));
-                                  }}
-                                  placeholder="Describe what this agent does..."
-                                  className={cn(
-                                    'w-full px-2 py-1.5 text-xs rounded border outline-none focus:ring-1 focus:ring-blue-500 resize-y',
-                                    isLight 
-                                      ? 'bg-white border-gray-300 text-gray-900 placeholder-gray-400' 
-                                      : 'bg-[#151C24] border-gray-600 text-[#bcc1c7] placeholder-gray-500'
-                                  )}
-                                />
-                              </div>
-                            </div>
-                            <div className="flex justify-end mt-2">
+                      <div className="space-y-2">
+                        {(createForm.auxiliaryAgents.custom || []).map((customAgent, idx) => {
+                          const isExpanded = expandedCustomAuxAgents.has(idx);
+                          const selectedAgent = agents.find(a => a.id === customAgent.agent_id);
+                          const displayName = customAgent.key || selectedAgent?.agentName || 'Unnamed Agent';
+                          
+                          return (
+                            <div 
+                              key={idx} 
+                              className={cn(
+                                'rounded-lg border',
+                                isLight ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/50 border-gray-700'
+                              )}
+                            >
+                              {/* Accordion Header */}
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const newCustom = (createForm.auxiliaryAgents.custom || []).filter((_, i) => i !== idx);
-                                  setCreateForm(prev => ({
-                                    ...prev,
-                                    auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom.length > 0 ? newCustom : undefined }
-                                  }));
+                                  setExpandedCustomAuxAgents(prev => {
+                                    const newSet = new Set(prev);
+                                    if (newSet.has(idx)) {
+                                      newSet.delete(idx);
+                                    } else {
+                                      newSet.add(idx);
+                                    }
+                                    return newSet;
+                                  });
                                 }}
                                 className={cn(
-                                  'p-1.5 rounded transition-colors',
-                                  isLight ? 'text-red-500 hover:bg-red-50' : 'text-red-400 hover:bg-red-900/20'
+                                  'w-full flex items-center justify-between px-3 py-1.5 rounded-t-lg transition-colors',
+                                  isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800'
                                 )}
-                                title="Remove custom agent"
                               >
-                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  <svg 
+                                    className={cn(
+                                      'w-3 h-3 transition-transform flex-shrink-0',
+                                      isExpanded ? 'rotate-90' : ''
+                                    )} 
+                                    fill="none" 
+                                    stroke="currentColor" 
+                                    viewBox="0 0 24 24" 
+                                    strokeWidth={2}
+                                  >
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                  </svg>
+                                  <span className={cn('text-xs font-medium truncate', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                    {displayName}
+                                  </span>
+                                  {selectedAgent && (
+                                    <span className={cn('text-[10px] truncate', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                      ({selectedAgent.agentName})
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const newCustom = (createForm.auxiliaryAgents.custom || []).filter((_, i) => i !== idx);
+                                    setCreateForm(prev => ({
+                                      ...prev,
+                                      auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom.length > 0 ? newCustom : undefined }
+                                    }));
+                                    setExpandedCustomAuxAgents(prev => {
+                                      const newSet = new Set(prev);
+                                      newSet.delete(idx);
+                                      // Adjust indices for remaining items
+                                      const adjustedSet = new Set<number>();
+                                      newSet.forEach(i => {
+                                        if (i > idx) {
+                                          adjustedSet.add(i - 1);
+                                        } else {
+                                          adjustedSet.add(i);
+                                        }
+                                      });
+                                      return adjustedSet;
+                                    });
+                                  }}
+                                  className={cn(
+                                    'p-1 rounded transition-colors flex-shrink-0',
+                                    isLight ? 'text-gray-400 hover:text-red-500 hover:bg-red-50' : 'text-gray-500 hover:text-red-400 hover:bg-red-900/20'
+                                  )}
+                                  title="Remove custom agent"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
                               </button>
+                              
+                              {/* Accordion Content */}
+                              <div
+                                className={cn(
+                                  'overflow-hidden transition-all ease-in-out',
+                                  isExpanded 
+                                    ? 'max-h-[500px] opacity-100' 
+                                    : 'max-h-0 opacity-0'
+                                )}
+                              >
+                                <div className={cn('px-3 pb-3 pt-2 border-t', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                        Key (unique identifier)
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={customAgent.key}
+                                        onChange={(e) => {
+                                          const newCustom = [...(createForm.auxiliaryAgents.custom || [])];
+                                          newCustom[idx] = { ...newCustom[idx], key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') };
+                                          setCreateForm(prev => ({
+                                            ...prev,
+                                            auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom }
+                                          }));
+                                        }}
+                                        placeholder="e.g., research_assistant"
+                                        className={cn(
+                                          'w-full px-2 py-1.5 text-xs rounded border',
+                                          isLight 
+                                            ? 'bg-white border-gray-300 text-gray-900 placeholder-gray-400' 
+                                            : 'bg-[#151C24] border-gray-600 text-white placeholder-gray-500'
+                                        )}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                        Agent
+                                      </label>
+                                      <AuxiliaryAgentSelector
+                                        isLight={isLight}
+                                        agents={agents.map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                                        auxType="memory"
+                                        selectedAgentId={customAgent.agent_id || null}
+                                        onChange={(agentId) => {
+                                          const newCustom = [...(createForm.auxiliaryAgents.custom || [])];
+                                          newCustom[idx] = { ...newCustom[idx], agent_id: agentId || '' };
+                                          setCreateForm(prev => ({
+                                            ...prev,
+                                            auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom }
+                                          }));
+                                        }}
+                                        hideLabel={true}
+                                      />
+                                    </div>
+                                    <div className="col-span-2">
+                                      <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                        Description (shown to main agent)
+                                      </label>
+                                      <textarea
+                                        rows={2}
+                                        value={customAgent.description}
+                                        onChange={(e) => {
+                                          const newCustom = [...(createForm.auxiliaryAgents.custom || [])];
+                                          newCustom[idx] = { ...newCustom[idx], description: e.target.value };
+                                          setCreateForm(prev => ({
+                                            ...prev,
+                                            auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom }
+                                          }));
+                                        }}
+                                        className={cn(
+                                          'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
+                                          isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
+                                        )}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1852,7 +2179,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                       isLight ? 'bg-blue-500/90 text-white hover:bg-blue-500' : 'bg-blue-600/90 text-white hover:bg-blue-600',
                     )}
                   >
-                    Create Agent
+                    {isCloning ? 'Clone Agent' : 'Create Agent'}
                   </button>
                   <button
                     type="button"
@@ -2008,9 +2335,9 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                           </button>
                           <div
                             style={{
-                              overflow: editFormAuxExpanded ? 'visible' : 'hidden',
+                              overflow: 'hidden',
                               transition: 'max-height 0.3s ease-in-out, opacity 0.2s ease-in-out',
-                              maxHeight: editFormAuxExpanded ? '1000px' : '0',
+                              maxHeight: editFormAuxExpanded ? '5000px' : '0',
                               opacity: editFormAuxExpanded ? 1 : 0,
                             }}>
                             <div className="grid grid-cols-2 gap-3 pt-2">
@@ -2094,13 +2421,17 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                                 </span>
                                 <button
                                   type="button"
-                                  onClick={() => setEditForm(prev => prev ? ({
-                                    ...prev,
-                                    auxiliaryAgents: {
-                                      ...prev.auxiliaryAgents,
-                                      custom: [...(prev.auxiliaryAgents.custom || []), { key: '', agent_id: '', description: '' }],
-                                    }
-                                  }) : prev)}
+                                  onClick={() => {
+                                    const newIdx = (editForm?.auxiliaryAgents.custom || []).length;
+                                    setEditForm(prev => prev ? {
+                                      ...prev,
+                                      auxiliaryAgents: {
+                                        ...prev.auxiliaryAgents,
+                                        custom: [...(prev.auxiliaryAgents.custom || []), { key: '', agent_id: '', description: '' }],
+                                      }
+                                    } : prev);
+                                    setExpandedCustomAuxAgents(prev => new Set(prev).add(newIdx));
+                                  }}
                                   className={cn(
                                     'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors',
                                     isLight
@@ -2126,109 +2457,180 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                                   No custom auxiliary agents configured
                                 </div>
                               ) : (
-                                <div className="space-y-3">
-                                  {(editForm.auxiliaryAgents.custom || []).map((customAgent, idx) => (
-                                    <div 
-                                      key={idx} 
-                                      className={cn(
-                                        'p-3 rounded-lg border relative',
-                                        isLight ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/50 border-gray-700'
-                                      )}
-                                    >
-                                      <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                          <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                            Key (unique identifier)
-                                          </label>
-                                          <input
-                                            type="text"
-                                            value={customAgent.key}
-                                            onChange={(e) => {
-                                              const newCustom = [...(editForm.auxiliaryAgents.custom || [])];
-                                              newCustom[idx] = { ...newCustom[idx], key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') };
-                                              setEditForm(prev => prev ? ({
-                                                ...prev,
-                                                auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom }
-                                              }) : prev);
-                                            }}
-                                            placeholder="e.g., research_assistant"
-                                            className={cn(
-                                              'w-full px-2 py-1.5 text-xs rounded border',
-                                              isLight 
-                                                ? 'bg-white border-gray-300 text-gray-900 placeholder-gray-400' 
-                                                : 'bg-[#151C24] border-gray-600 text-white placeholder-gray-500'
-                                            )}
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                            Agent
-                                          </label>
-                                          <AuxiliaryAgentSelector
-                                            isLight={isLight}
-                                            agents={agents.filter(a => a.id !== editingAgentId).map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
-                                            auxType="memory"
-                                            selectedAgentId={customAgent.agent_id || null}
-                                            onChange={(agentId) => {
-                                              const newCustom = [...(editForm.auxiliaryAgents.custom || [])];
-                                              newCustom[idx] = { ...newCustom[idx], agent_id: agentId || '' };
-                                              setEditForm(prev => prev ? ({
-                                                ...prev,
-                                                auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom }
-                                              }) : prev);
-                                            }}
-                                            excludeAgentId={editingAgentId || undefined}
-                                            hideLabel={true}
-                                          />
-                                        </div>
-                                        <div className="col-span-2">
-                                          <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                                            Description (shown to main agent)
-                                          </label>
-                                          <textarea
-                                            rows={2}
-                                            value={customAgent.description}
-                                            onChange={(e) => {
-                                              const newCustom = [...(editForm.auxiliaryAgents.custom || [])];
-                                              newCustom[idx] = { ...newCustom[idx], description: e.target.value };
-                                              setEditForm(prev => prev ? ({
-                                                ...prev,
-                                                auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom }
-                                              }) : prev);
-                                            }}
-                                            placeholder="Describe what this agent does..."
-                                            className={cn(
-                                              'w-full px-2 py-1.5 text-xs rounded border outline-none focus:ring-1 focus:ring-blue-500 resize-y',
-                                              isLight 
-                                                ? 'bg-white border-gray-300 text-gray-900 placeholder-gray-400' 
-                                                : 'bg-[#151C24] border-gray-600 text-[#bcc1c7] placeholder-gray-500'
-                                            )}
-                                          />
-                                        </div>
-                                      </div>
-                                      <div className="flex justify-end mt-2">
+                                <div className="space-y-2">
+                                  {(editForm.auxiliaryAgents.custom || []).map((customAgent, idx) => {
+                                    const isExpanded = expandedCustomAuxAgents.has(idx);
+                                    const selectedAgent = agents.find(a => a.id === customAgent.agent_id);
+                                    const displayName = customAgent.key || selectedAgent?.agentName || 'Unnamed Agent';
+                                    
+                                    return (
+                                      <div 
+                                        key={idx} 
+                                        className={cn(
+                                          'rounded-lg border',
+                                          isLight ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/50 border-gray-700'
+                                        )}
+                                      >
+                                        {/* Accordion Header */}
                                         <button
                                           type="button"
                                           onClick={() => {
-                                            const newCustom = (editForm.auxiliaryAgents.custom || []).filter((_, i) => i !== idx);
-                                            setEditForm(prev => prev ? ({
-                                              ...prev,
-                                              auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom.length > 0 ? newCustom : undefined }
-                                            }) : prev);
+                                            setExpandedCustomAuxAgents(prev => {
+                                              const newSet = new Set(prev);
+                                              if (newSet.has(idx)) {
+                                                newSet.delete(idx);
+                                              } else {
+                                                newSet.add(idx);
+                                              }
+                                              return newSet;
+                                            });
                                           }}
                                           className={cn(
-                                            'p-1.5 rounded transition-colors',
-                                            isLight ? 'text-red-500 hover:bg-red-50' : 'text-red-400 hover:bg-red-900/20'
+                                            'w-full flex items-center justify-between px-3 py-1.5 rounded-t-lg transition-colors',
+                                            isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-800'
                                           )}
-                                          title="Remove custom agent"
                                         >
-                                          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                          </svg>
+                                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                                            <svg 
+                                              className={cn(
+                                                'w-3 h-3 transition-transform flex-shrink-0',
+                                                isExpanded ? 'rotate-90' : ''
+                                              )} 
+                                              fill="none" 
+                                              stroke="currentColor" 
+                                              viewBox="0 0 24 24" 
+                                              strokeWidth={2}
+                                            >
+                                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                            </svg>
+                                            <span className={cn('text-xs font-medium truncate', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                                              {displayName}
+                                            </span>
+                                            {selectedAgent && (
+                                              <span className={cn('text-[10px] truncate', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                                ({selectedAgent.agentName})
+                                              </span>
+                                            )}
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const newCustom = (editForm.auxiliaryAgents.custom || []).filter((_, i) => i !== idx);
+                                              setEditForm(prev => prev ? ({
+                                                ...prev,
+                                                auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom.length > 0 ? newCustom : undefined }
+                                              }) : prev);
+                                              setExpandedCustomAuxAgents(prev => {
+                                                const newSet = new Set(prev);
+                                                newSet.delete(idx);
+                                                // Adjust indices for remaining items
+                                                const adjustedSet = new Set<number>();
+                                                newSet.forEach(i => {
+                                                  if (i > idx) {
+                                                    adjustedSet.add(i - 1);
+                                                  } else {
+                                                    adjustedSet.add(i);
+                                                  }
+                                                });
+                                                return adjustedSet;
+                                              });
+                                            }}
+                                            className={cn(
+                                              'p-1 rounded transition-colors flex-shrink-0',
+                                              isLight ? 'text-gray-400 hover:text-red-500 hover:bg-red-50' : 'text-gray-500 hover:text-red-400 hover:bg-red-900/20'
+                                            )}
+                                            title="Remove custom agent"
+                                          >
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                            </svg>
+                                          </button>
                                         </button>
+                                        
+                                        {/* Accordion Content */}
+                                        <div
+                                          className={cn(
+                                            'overflow-hidden transition-all ease-in-out',
+                                            isExpanded 
+                                              ? 'max-h-[500px] opacity-100' 
+                                              : 'max-h-0 opacity-0'
+                                          )}
+                                        >
+                                          <div className={cn('px-3 pb-3 pt-2 border-t', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                                            <div className="grid grid-cols-2 gap-2">
+                                              <div>
+                                                <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                                  Key (unique identifier)
+                                                </label>
+                                                <input
+                                                  type="text"
+                                                  value={customAgent.key}
+                                                  onChange={(e) => {
+                                                    const newCustom = [...(editForm.auxiliaryAgents.custom || [])];
+                                                    newCustom[idx] = { ...newCustom[idx], key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') };
+                                                    setEditForm(prev => prev ? ({
+                                                      ...prev,
+                                                      auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom }
+                                                    }) : prev);
+                                                  }}
+                                                  placeholder="e.g., research_assistant"
+                                                  className={cn(
+                                                    'w-full px-2 py-1.5 text-xs rounded border',
+                                                    isLight 
+                                                      ? 'bg-white border-gray-300 text-gray-900 placeholder-gray-400' 
+                                                      : 'bg-[#151C24] border-gray-600 text-white placeholder-gray-500'
+                                                  )}
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                                  Agent
+                                                </label>
+                                                <AuxiliaryAgentSelector
+                                                  isLight={isLight}
+                                                  agents={agents.filter(a => a.id !== editingAgentId).map(a => ({ id: a.id, agentType: a.agentType, agentName: a.agentName, enabled: a.enabled }))}
+                                                  auxType="memory"
+                                                  selectedAgentId={customAgent.agent_id || null}
+                                                  onChange={(agentId) => {
+                                                    const newCustom = [...(editForm.auxiliaryAgents.custom || [])];
+                                                    newCustom[idx] = { ...newCustom[idx], agent_id: agentId || '' };
+                                                    setEditForm(prev => prev ? ({
+                                                      ...prev,
+                                                      auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom }
+                                                    }) : prev);
+                                                  }}
+                                                  excludeAgentId={editingAgentId || undefined}
+                                                  hideLabel={true}
+                                                />
+                                              </div>
+                                              <div className="col-span-2">
+                                                <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                                                  Description (shown to main agent)
+                                                </label>
+                                                <textarea
+                                                  rows={2}
+                                                  value={customAgent.description}
+                                                  onChange={(e) => {
+                                                    const newCustom = [...(editForm.auxiliaryAgents.custom || [])];
+                                                    newCustom[idx] = { ...newCustom[idx], description: e.target.value };
+                                                    setEditForm(prev => prev ? ({
+                                                      ...prev,
+                                                      auxiliaryAgents: { ...prev.auxiliaryAgents, custom: newCustom }
+                                                    }) : prev);
+                                                  }}
+                                                  className={cn(
+                                                    'w-full px-3 py-2 text-xs border rounded outline-none focus:ring-1 focus:ring-blue-500 resize-y json-textarea',
+                                                    isLight ? 'bg-white border-gray-300 text-gray-700' : 'bg-[#151C24] border-gray-600 text-[#bcc1c7]',
+                                                  )}
+                                                />
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
                                       </div>
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
@@ -2475,27 +2877,21 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                                 />
                               </svg>
                             </button>
-                            <button
-                              onClick={() => {
+                            <AgentMoreOptionsButton
+                              agent={agent}
+                              isLight={isLight}
+                              isOpen={openMoreMenuAgentId === agent.id}
+                              onToggle={() => setOpenMoreMenuAgentId(openMoreMenuAgentId === agent.id ? null : agent.id)}
+                              onClone={() => {
+                                startCloneAgent(agent);
+                                setOpenMoreMenuAgentId(null);
+                              }}
+                              onDelete={() => {
                                 setDeleteConfirm({ id: agent.id, agentType: agent.agentType });
                                 setDeleteDialogOpen(true);
+                                setOpenMoreMenuAgentId(null);
                               }}
-                              className={cn(
-                                'p-1 rounded transition-colors',
-                                isLight
-                                  ? 'text-gray-400 hover:text-red-600'
-                                  : 'text-gray-500 hover:text-red-400',
-                              )}
-                              title="Remove agent"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                />
-                              </svg>
-                            </button>
+                            />
                           </div>
                         </div>
 
@@ -2713,7 +3109,13 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                         {/* Auxiliary Agents Accordion */}
                         {(() => {
                           const auxAgents = (agent.metadata as any)?.auxiliary_agents || {};
-                          const configuredCount = Object.values(auxAgents).filter((v: any) => v?.agent_type).length;
+                          // Count built-in auxiliary agents (check for agent_id)
+                          const builtinCount = ['image_generation', 'web_search', 'code_execution', 'url_context', 'memory'].filter(
+                            key => auxAgents[key]?.agent_id
+                          ).length;
+                          // Count custom auxiliary agents
+                          const customCount = Array.isArray(auxAgents.custom) ? auxAgents.custom.filter((c: any) => c?.key && c?.agent_id).length : 0;
+                          const configuredCount = builtinCount + customCount;
                           const isExpanded = expandedAuxAgents.has(agent.id);
                           
                           return (
@@ -2749,7 +3151,7 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                                 style={{
                                   overflow: 'hidden',
                                   transition: 'max-height 0.2s ease-in-out, opacity 0.2s ease-in-out',
-                                  maxHeight: isExpanded ? '300px' : '0',
+                                  maxHeight: isExpanded ? '500px' : '0',
                                   opacity: isExpanded ? 1 : 0,
                                 }}>
                                 <div className={cn('text-xs p-2 rounded', isLight ? 'bg-gray-50' : 'bg-gray-900/40')}>
@@ -2759,36 +3161,45 @@ export function AgentsTab({ isLight, organizations, preselectedOrgId, onError, o
                                     </div>
                                   ) : (
                                     <div className="space-y-1.5">
-                                      {auxAgents.image_generation?.agent_type && (
+                                      {auxAgents.image_generation?.agent_id && (
                                         <div className="flex items-center gap-2">
                                           <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>Image Generation:</span>
-                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.agentType === auxAgents.image_generation.agent_type)?.agentName || auxAgents.image_generation.agent_type}</span>
+                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.id === auxAgents.image_generation.agent_id)?.agentName || 'Unknown'}</span>
                                         </div>
                                       )}
-                                      {auxAgents.web_search?.agent_type && (
+                                      {auxAgents.web_search?.agent_id && (
                                         <div className="flex items-center gap-2">
                                           <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>Web Search:</span>
-                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.agentType === auxAgents.web_search.agent_type)?.agentName || auxAgents.web_search.agent_type}</span>
+                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.id === auxAgents.web_search.agent_id)?.agentName || 'Unknown'}</span>
                                         </div>
                                       )}
-                                      {auxAgents.code_execution?.agent_type && (
+                                      {auxAgents.code_execution?.agent_id && (
                                         <div className="flex items-center gap-2">
                                           <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>Code Execution:</span>
-                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.agentType === auxAgents.code_execution.agent_type)?.agentName || auxAgents.code_execution.agent_type}</span>
+                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.id === auxAgents.code_execution.agent_id)?.agentName || 'Unknown'}</span>
                                         </div>
                                       )}
-                                      {auxAgents.url_context?.agent_type && (
+                                      {auxAgents.url_context?.agent_id && (
                                         <div className="flex items-center gap-2">
                                           <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>URL Context:</span>
-                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.agentType === auxAgents.url_context.agent_type)?.agentName || auxAgents.url_context.agent_type}</span>
+                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.id === auxAgents.url_context.agent_id)?.agentName || 'Unknown'}</span>
                                         </div>
                                       )}
-                                      {auxAgents.memory?.agent_type && (
+                                      {auxAgents.memory?.agent_id && (
                                         <div className="flex items-center gap-2">
                                           <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>Memory:</span>
-                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.agentType === auxAgents.memory.agent_type)?.agentName || auxAgents.memory.agent_type}</span>
+                                          <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{agents.find(a => a.id === auxAgents.memory.agent_id)?.agentName || 'Unknown'}</span>
                                         </div>
                                       )}
+                                      {Array.isArray(auxAgents.custom) && auxAgents.custom.length > 0 && auxAgents.custom.filter((c: any) => c?.key && c?.agent_id).map((customAgent: any, idx: number) => {
+                                        const customAgentRecord = agents.find(a => a.id === customAgent.agent_id);
+                                        return (
+                                          <div key={idx} className="flex items-center gap-2">
+                                            <span className={cn('font-medium', isLight ? 'text-gray-700' : 'text-gray-300')}>{customAgent.key}:</span>
+                                            <span className={cn(isLight ? 'text-gray-600' : 'text-gray-400')}>{customAgentRecord?.agentName || 'Unknown'}</span>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>

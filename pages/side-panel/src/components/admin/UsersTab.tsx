@@ -802,7 +802,7 @@ useEffect(() => {
           <div className="flex items-center justify-between mb-3 min-w-0">
             <div className="flex items-center gap-2 min-w-0 flex-shrink">
               <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
               <h3 className={cn('text-sm font-semibold', mainTextColor)}>
                 Users <span className={cn('text-xs font-normal', isLight ? 'text-gray-500' : 'text-gray-400')}>({totalUsersCount})</span>
@@ -1390,8 +1390,19 @@ useEffect(() => {
                                   : 'text-gray-500 hover:text-gray-300',
                               )}
                               title="More options">
-                              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                              <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                width="16"
+                                height="16"
+                              >
+                                <circle cx="12" cy="12" r="1" />
+                                <circle cx="12" cy="5" r="1" />
+                                <circle cx="12" cy="19" r="1" />
                               </svg>
                             </button>
 
@@ -1399,14 +1410,22 @@ useEffect(() => {
                             {openMenuMemberId === member.id && menuPosition && createPortal(
                               <div
                                 ref={menuRef}
-                                className={cn(
-                                  'fixed w-44 rounded-lg border shadow-xl py-1',
-                                  isLight ? 'bg-white border-gray-200' : 'bg-[#1a2332] border-gray-700',
-                                )}
                                 style={{
-                                  zIndex: 99999,
+                                  position: 'fixed',
                                   top: menuPosition.top,
                                   right: menuPosition.right,
+                                  backgroundColor: isLight ? '#f9fafb' : '#151C24',
+                                  border: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+                                  borderRadius: '6px',
+                                  boxShadow: '0 10px 20px rgba(0, 0, 0, 0.15)',
+                                  zIndex: 10002,
+                                  minWidth: '160px',
+                                  maxWidth: '200px',
+                                  width: 'auto',
+                                  overflow: 'visible',
+                                  visibility: 'visible',
+                                  opacity: 1,
+                                  pointerEvents: 'auto',
                                 }}>
                                 {/* Reset Password */}
                                 <button
@@ -1416,14 +1435,44 @@ useEffect(() => {
                                     setMenuPosition(null);
                                   }}
                                   disabled={loading}
-                                  className={cn(
-                                    'w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors text-left',
-                                    isLight
-                                      ? 'text-gray-700 hover:bg-gray-100'
-                                      : 'text-gray-300 hover:bg-gray-800',
-                                    loading && 'opacity-50 cursor-not-allowed',
-                                  )}>
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  style={{
+                                    width: '100%',
+                                    padding: '0.5rem 0.75rem',
+                                    border: 'none',
+                                    backgroundColor: 'transparent',
+                                    fontSize: '12px',
+                                    textAlign: 'left',
+                                    cursor: loading ? 'not-allowed' : 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    whiteSpace: 'nowrap',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    color: loading 
+                                      ? (isLight ? '#9ca3af' : '#6b7280')
+                                      : (isLight ? '#374151' : '#d1d5db'),
+                                    borderBottom: `1px solid ${isLight ? '#e5e7eb' : '#374151'}`,
+                                    opacity: loading ? 0.5 : 1,
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (!loading) {
+                                      e.currentTarget.style.backgroundColor = isLight ? '#f3f4f6' : '#1f2937';
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                  }}
+                                >
+                                  <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    width="14"
+                                    height="14"
+                                  >
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
                                   </svg>
                                   Reset Password
@@ -1437,32 +1486,68 @@ useEffect(() => {
                                     setMenuPosition(null);
                                   }}
                                   disabled={loading}
-                                  className={cn(
-                                    'w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors text-left',
-                                    isLight
-                                      ? 'text-gray-700 hover:bg-gray-100'
-                                      : 'text-gray-300 hover:bg-gray-800',
-                                    loading && 'opacity-50 cursor-not-allowed',
-                                  )}>
+                                  style={{
+                                    width: '100%',
+                                    padding: '0.5rem 0.75rem',
+                                    border: 'none',
+                                    backgroundColor: 'transparent',
+                                    fontSize: '12px',
+                                    textAlign: 'left',
+                                    cursor: loading ? 'not-allowed' : 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    whiteSpace: 'nowrap',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    color: loading 
+                                      ? (isLight ? '#9ca3af' : '#6b7280')
+                                      : (isLight ? '#374151' : '#d1d5db'),
+                                    borderBottom: `1px solid ${isLight ? '#e5e7eb' : '#374151'}`,
+                                    opacity: loading ? 0.5 : 1,
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (!loading) {
+                                      e.currentTarget.style.backgroundColor = isLight ? '#f3f4f6' : '#1f2937';
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                  }}
+                                >
                                   {member.user.banned ? (
                                     <>
-                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                      <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        width="14"
+                                        height="14"
+                                      >
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                       </svg>
                                       Reactivate User
                                     </>
                                   ) : (
                                     <>
-                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                      <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        width="14"
+                                        height="14"
+                                      >
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                                       </svg>
                                       Deactivate User
                                     </>
                                   )}
                                 </button>
-
-                                {/* Divider */}
-                                <div className={cn('my-1 border-t', isLight ? 'border-gray-200' : 'border-gray-700')} />
 
                                 {/* Remove User */}
                                 <button
@@ -1472,14 +1557,43 @@ useEffect(() => {
                                     setMenuPosition(null);
                                   }}
                                   disabled={loading}
-                                  className={cn(
-                                    'w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors text-left',
-                                    isLight
-                                      ? 'text-gray-600 hover:text-red-600'
-                                      : 'text-gray-400 hover:text-red-400',
-                                    loading && 'opacity-50 cursor-not-allowed',
-                                  )}>
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  style={{
+                                    width: '100%',
+                                    padding: '0.5rem 0.75rem',
+                                    border: 'none',
+                                    backgroundColor: 'transparent',
+                                    fontSize: '12px',
+                                    textAlign: 'left',
+                                    cursor: loading ? 'not-allowed' : 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    whiteSpace: 'nowrap',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    color: loading 
+                                      ? (isLight ? '#9ca3af' : '#6b7280')
+                                      : (isLight ? '#374151' : '#d1d5db'),
+                                    opacity: loading ? 0.5 : 1,
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (!loading) {
+                                      e.currentTarget.style.backgroundColor = isLight ? '#f3f4f6' : '#1f2937';
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                  }}
+                                >
+                                  <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    width="14"
+                                    height="14"
+                                  >
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                   </svg>
                                   Remove from Org

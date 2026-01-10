@@ -6,6 +6,7 @@ including creating, listing, updating, and managing catalog metadata and isolati
 """
 
 from typing import Optional, Dict
+from itertools import islice
 from cache import get_workspace_client
 from models import (
     CatalogInfoModel,
@@ -56,66 +57,56 @@ def _convert_catalog_to_model(catalog) -> CatalogInfoModel:
 def list_catalogs(
     host_credential_key: str,
     token_credential_key: str,
-    max_results: Optional[int] = None,
-    page_token: Optional[str] = None,
+    limit: int = 25,
+    page: int = 0,
     include_browse: Optional[bool] = None,
 ) -> ListCatalogsResponse:
     """
-    List catalogs in the metastore.
+    Retrieve a paginated list of catalogs within the Unity Catalog metastore.
     
-    Gets an array of catalogs in the metastore. If the caller is the metastore
-    admin, all catalogs will be retrieved. Otherwise, only catalogs owned by
-    the caller (or for which the caller has the USE_CATALOG privilege) will
-    be retrieved.
+    This function returns catalog metadata for all accessible catalogs in the metastore.
+    Use this to discover available catalogs, check catalog types, or list top-level data organization.
+    
+    Access Behavior:
+    - Metastore admins receive all catalogs in the metastore
+    - Other users receive only catalogs they own or have USE_CATALOG privilege on
+    - Results filtered based on caller's permissions automatically
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token: Authentication token
-        max_results: Maximum number of catalogs to return (0 for server default)
-        page_token: Opaque token for next page of results
-        include_browse: Include catalogs with browse-only access
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        limit: Number of catalogs to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
+        include_browse: Boolean flag to include catalogs where user has only browse permission (no USE_CATALOG). Default: None (excluded)
         
     Returns:
         ListCatalogsResponse with list of catalogs and pagination info
-        
-    Example:
-        # List all catalogs
-        catalogs = list_catalogs(host, token)
-        for catalog in catalogs.catalogs:
-            print(f"{catalog.name}")
-            print(f"  Owner: {catalog.owner}")
-            print(f"  Type: {catalog.catalog_type}")
-            print(f"  Storage: {catalog.storage_root}")
-        
-        # List with pagination
-        catalogs = list_catalogs(
-            host, token,
-            max_results=50
-        )
-        print(f"Found {catalogs.count} catalogs")
-        if catalogs.next_page_token:
-            next_page = list_catalogs(
-                host, token,
-                max_results=50,
-                page_token=catalogs.next_page_token
-            )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
-    catalogs_list = []
-    next_token = None
-    
-    for catalog in client.catalogs.list(
-        max_results=max_results,
-        page_token=page_token,
+    response = client.catalogs.list(
         include_browse=include_browse,
-    ):
+    )
+    
+    skip = page * limit
+    catalogs_iterator = islice(response, skip, skip + limit)
+    
+    catalogs_list = []
+    for catalog in catalogs_iterator:
         catalogs_list.append(_convert_catalog_to_model(catalog))
+    
+    # Check for more results
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
     
     return ListCatalogsResponse(
         catalogs=catalogs_list,
         count=len(catalogs_list),
-        next_page_token=next_token,
+        has_more=has_more,
     )
 
 
@@ -139,23 +130,6 @@ def get_catalog(
         
     Returns:
         CatalogInfoModel with complete catalog details
-        
-    Example:
-        # Get full catalog details
-        catalog = get_catalog(host, token, name="main")
-        print(f"Catalog: {catalog.name}")
-        print(f"Type: {catalog.catalog_type}")
-        print(f"Owner: {catalog.owner}")
-        print(f"Storage: {catalog.storage_root}")
-        print(f"Isolation: {catalog.isolation_mode}")
-        print(f"Comment: {catalog.comment}")
-        print(f"Created: {catalog.created_at} by {catalog.created_by}")
-        
-        # Check properties
-        if catalog.properties:
-            print("Properties:")
-            for key, value in catalog.properties.items():
-                print(f"  {key}: {value}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -203,45 +177,6 @@ def create_catalog(
         
     Returns:
         CreateCatalogResponse with created catalog information
-        
-    Example:
-        # Create a basic catalog
-        result = create_catalog(
-            host, token,
-            name="analytics",
-            comment="Analytics data catalog"
-        )
-        print(f"Created catalog: {result.catalog_info.name}")
-        
-        # Create catalog with custom storage
-        result = create_catalog(
-            host, token,
-            name="external_data",
-            comment="External data sources",
-            storage_root="s3://my-bucket/external/"
-        )
-        
-        # Create catalog with properties
-        result = create_catalog(
-            host, token,
-            name="prod_data",
-            comment="Production data catalog",
-            properties={
-                "environment": "production",
-                "cost_center": "12345",
-                "data_classification": "confidential"
-            }
-        )
-        print(f"Catalog {result.catalog_info.name} created with properties")
-        
-        # Create Delta Sharing catalog
-        result = create_catalog(
-            host, token,
-            name="shared_catalog",
-            comment="Shared data catalog",
-            provider_name="my_sharing_provider",
-            share_name="my_share"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -282,20 +217,7 @@ def delete_catalog(
     Returns:
         DeleteCatalogResponse confirming deletion
         
-    Example:
-        # Delete an empty catalog
-        result = delete_catalog(host, token, name="temp_catalog")
-        print(result.message)
-        
-        # Force delete a catalog with schemas
-        result = delete_catalog(
-            host, token,
-            name="old_catalog",
-            force=True
-        )
-        print(f"Force deleted {result.name}")
-        
-        # Delete after checking if exists
+    
         try:
             catalog = get_catalog(host, token, name="staging")
             delete_catalog(host, token, name="staging")
@@ -346,57 +268,6 @@ def update_catalog(
         
     Returns:
         UpdateCatalogResponse with updated catalog information
-        
-    Example:
-        # Update catalog comment
-        result = update_catalog(
-            host, token,
-            name="analytics",
-            comment="Updated analytics catalog with new datasets"
-        )
-        print(f"Updated: {result.catalog_info.name}")
-        
-        # Transfer ownership
-        result = update_catalog(
-            host, token,
-            name="staging",
-            owner="data-engineer@company.com"
-        )
-        print(f"New owner: {result.catalog_info.owner}")
-        
-        # Rename catalog
-        result = update_catalog(
-            host, token,
-            name="old_name",
-            new_name="new_name"
-        )
-        print(f"Renamed to: {result.catalog_info.name}")
-        
-        # Set isolation mode to ISOLATED
-        result = update_catalog(
-            host, token,
-            name="sensitive_data",
-            isolation_mode="ISOLATED"
-        )
-        print(f"Isolation mode: {result.catalog_info.isolation_mode}")
-        
-        # Update properties
-        result = update_catalog(
-            host, token,
-            name="prod",
-            properties={
-                "environment": "production",
-                "data_classification": "confidential",
-                "backup_enabled": "true"
-            }
-        )
-        
-        # Enable predictive optimization
-        result = update_catalog(
-            host, token,
-            name="analytics",
-            enable_predictive_optimization="ENABLE"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

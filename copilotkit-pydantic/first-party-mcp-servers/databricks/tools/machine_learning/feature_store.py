@@ -60,15 +60,6 @@ def list_online_stores(
         
     Returns:
         ListOnlineStoresResponse with online stores
-        
-    Example:
-        # List all online stores
-        response = list_online_stores(host, token)
-        for store in response.online_stores:
-            print(f"{store.name}")
-            print(f"  Type: {store.storage_type}")
-            print(f"  Region: {store.region}")
-            print(f"  Status: {store.status}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -104,14 +95,6 @@ def get_online_store(
         
     Returns:
         OnlineStoreModel with store details
-        
-    Example:
-        # Get store details
-        store = get_online_store(host, token, "my-online-store")
-        print(f"Name: {store.name}")
-        print(f"Storage Type: {store.storage_type}")
-        print(f"Region: {store.region}")
-        print(f"Status: {store.status}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -145,23 +128,6 @@ def create_online_store(
         
     Returns:
         CreateOnlineStoreResponse with created store
-        
-    Example:
-        # Create basic online store
-        response = create_online_store(
-            host, token,
-            name="production-features",
-            storage_type="DATABRICKS_ONLINE_STORE"
-        )
-        print(f"Created: {response.online_store.name}")
-        
-        # Create with region
-        response = create_online_store(
-            host, token,
-            name="production-features",
-            storage_type="DATABRICKS_ONLINE_STORE",
-            region="us-west-2"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -213,15 +179,6 @@ def update_online_store(
         
     Returns:
         UpdateOnlineStoreResponse with updated store
-        
-    Example:
-        # Update store configuration
-        response = update_online_store(
-            host, token,
-            name="production-features",
-            update_mask="region",
-            region="us-east-1"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -268,11 +225,6 @@ def delete_online_store(
         
     Returns:
         DeleteOnlineStoreResponse confirming deletion
-        
-    Example:
-        # Delete online store
-        response = delete_online_store(host, token, "old-features")
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -313,37 +265,6 @@ def publish_table(
         
     Returns:
         PublishTableResponse confirming publication
-        
-    Example:
-        # Publish basic feature table
-        response = publish_table(
-            host, token,
-            source_table_name="main.ml_features.user_features",
-            online_table_name="main.ml_features.user_features_online",
-            primary_keys=["user_id"]
-        )
-        print(response.message)
-        
-        # Publish time series features
-        response = publish_table(
-            host, token,
-            source_table_name="main.ml_features.sensor_readings",
-            online_table_name="main.ml_features.sensor_readings_online",
-            primary_keys=["sensor_id"],
-            timeseries_key="sensor_id",
-            timestamp_key="timestamp"
-        )
-        
-        # Typical use case workflow:
-        # 1. Create offline feature table in Unity Catalog
-        # 2. Publish to online store for low-latency lookup
-        # 3. Use online table in real-time model serving
-        response = publish_table(
-            host, token,
-            source_table_name="prod.features.customer_features",
-            online_table_name="prod.features.customer_features_online",
-            primary_keys=["customer_id"]
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -385,14 +306,6 @@ def delete_online_table(
         
     Returns:
         DeleteOnlineTableResponse confirming deletion
-        
-    Example:
-        # Delete online table
-        response = delete_online_table(
-            host, token,
-            online_table_name="main.ml_features.user_features_online"
-        )
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

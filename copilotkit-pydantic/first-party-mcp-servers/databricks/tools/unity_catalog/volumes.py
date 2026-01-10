@@ -6,6 +6,7 @@ enabling file storage for unstructured data, ML artifacts, libraries, and ETL wo
 """
 
 from typing import Optional
+from itertools import islice
 from cache import get_workspace_client
 from models import (
     VolumeInfoModel,
@@ -59,74 +60,59 @@ def list_volumes(
     token_credential_key: str,
     catalog_name: str,
     schema_name: str,
-    max_results: Optional[int] = None,
-    page_token: Optional[str] = None,
+    limit: int = 25,
+    page: int = 0,
     include_browse: Optional[bool] = None,
 ) -> ListVolumesResponse:
     """
-    List volumes in a schema.
+    Retrieve a paginated list of volumes within a Unity Catalog schema.
     
-    Gets an array of volumes for the current metastore under the parent catalog
-    and schema. The returned volumes are filtered based on the privileges of the
-    calling user.
+    This function returns volume metadata for all accessible volumes in the specified catalog
+    and schema. Volumes are managed storage locations for files (not tables). Use this to
+    discover available storage volumes, check volume types (managed/external), or list file assets.
+    
+    Access Behavior: Results automatically filtered based on caller's privileges. Only volumes
+    the user has permission to access are returned.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token: Authentication token
-        catalog_name: Name of parent catalog
-        schema_name: Parent schema of volumes
-        max_results: Maximum number of volumes to return (0 for server default)
-        page_token: Opaque token for next page of results
-        include_browse: Include volumes with browse-only access
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        catalog_name: Name of the Unity Catalog containing the schema. Required. Must be exact match
+        schema_name: Name of the schema containing the volumes. Required. Must be exact match
+        limit: Number of volumes to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
+        include_browse: Boolean flag to include volumes where user has only browse permission (no READ_VOLUME). Default: None (excluded)
         
     Returns:
         ListVolumesResponse with list of volumes and pagination info
-        
-    Example:
-        # List all volumes in a schema
-        volumes = list_volumes(
-            host, token,
-            catalog_name="main",
-            schema_name="default"
-        )
-        for vol in volumes.volumes:
-            print(f"{vol.full_name}")
-            print(f"  Type: {vol.volume_type}")
-            print(f"  Owner: {vol.owner}")
-            print(f"  Location: {vol.storage_location}")
-        
-        # List with pagination
-        volumes = list_volumes(
-            host, token,
-            catalog_name="main",
-            schema_name="ml_datasets",
-            max_results=50
-        )
-        print(f"Found {volumes.count} volumes")
-        
-        # List managed volumes only
-        volumes = list_volumes(host, token, "main", "default")
-        managed = [v for v in volumes.volumes if v.volume_type == "MANAGED"]
-        print(f"Managed volumes: {len(managed)}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
-    volumes_list = []
-    next_token = None
-    
-    for volume in client.volumes.list(
+    response = client.volumes.list(
         catalog_name=catalog_name,
         schema_name=schema_name,
-        max_results=max_results,
-        page_token=page_token,
         include_browse=include_browse,
-    ):
+    )
+    
+    skip = page * limit
+    volumes_iterator = islice(response, skip, skip + limit)
+    
+    volumes_list = []
+    for volume in volumes_iterator:
         volumes_list.append(_convert_volume_to_model(volume))
+    
+    # Check for more results
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
     
     return ListVolumesResponse(
         volumes=volumes_list,
         count=len(volumes_list),
-        next_page_token=next_token,
+        has_more=has_more,
     )
 
 
@@ -150,25 +136,6 @@ def get_volume(
         
     Returns:
         VolumeInfoModel with complete volume details
-        
-    Example:
-        # Get full volume details
-        vol = get_volume(
-            host, token,
-            name="main.default.ml_data"
-        )
-        print(f"Volume: {vol.full_name}")
-        print(f"Type: {vol.volume_type}")
-        print(f"Owner: {vol.owner}")
-        print(f"Storage: {vol.storage_location}")
-        print(f"Created: {vol.created_at}")
-        
-        # Check if volume is managed or external
-        vol = get_volume(host, token, "main.ml.training_data")
-        if vol.volume_type == "MANAGED":
-            print("Volume is managed by Databricks")
-        elif vol.volume_type == "EXTERNAL":
-            print(f"External volume at: {vol.storage_location}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -213,41 +180,6 @@ def create_volume(
         
     Returns:
         CreateVolumeResponse with created volume information
-        
-    Example:
-        # Create managed volume for ML artifacts
-        result = create_volume(
-            host, token,
-            catalog_name="main",
-            schema_name="ml",
-            name="model_artifacts",
-            volume_type="MANAGED",
-            comment="ML model artifacts storage"
-        )
-        print(f"Created: {result.volume_info.full_name}")
-        print(f"Location: {result.volume_info.storage_location}")
-        
-        # Create external volume for shared data
-        result = create_volume(
-            host, token,
-            catalog_name="main",
-            schema_name="data",
-            name="external_datasets",
-            volume_type="EXTERNAL",
-            storage_location="s3://my-bucket/datasets/",
-            comment="External datasets from S3"
-        )
-        print(f"External volume: {result.volume_info.full_name}")
-        
-        # Create volume for unstructured data
-        result = create_volume(
-            host, token,
-            catalog_name="main",
-            schema_name="analytics",
-            name="images",
-            volume_type="MANAGED",
-            comment="Image data for computer vision"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -285,27 +217,6 @@ def delete_volume(
         
     Returns:
         DeleteVolumeResponse confirming deletion
-        
-    Example:
-        # Delete a volume
-        result = delete_volume(
-            host, token,
-            name="main.default.old_data"
-        )
-        print(result.message)
-        
-        # Delete temporary volume
-        result = delete_volume(
-            host, token,
-            name="main.ml.temp_artifacts"
-        )
-        
-        # Clean up all test volumes
-        volumes = list_volumes(host, token, "main", "test")
-        for vol in volumes.volumes:
-            if vol.name.startswith("test_"):
-                delete_volume(host, token, vol.full_name)
-                print(f"Deleted: {vol.full_name}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -338,43 +249,6 @@ def update_volume(
         
     Returns:
         UpdateVolumeResponse with updated volume information
-        
-    Example:
-        # Update volume comment
-        result = update_volume(
-            host, token,
-            name="main.default.ml_data",
-            comment="Updated: ML training datasets"
-        )
-        print(f"Updated comment: {result.volume_info.comment}")
-        
-        # Transfer volume ownership
-        result = update_volume(
-            host, token,
-            name="main.ml.artifacts",
-            owner="data-engineer@company.com"
-        )
-        print(f"New owner: {result.volume_info.owner}")
-        
-        # Rename volume
-        result = update_volume(
-            host, token,
-            name="main.default.old_name",
-            new_name="new_name"
-        )
-        print(f"Renamed to: {result.volume_info.full_name}")
-        
-        # Bulk ownership transfer
-        volumes = list_volumes(host, token, "main", "default")
-        new_owner = "analytics-team@company.com"
-        for vol in volumes.volumes:
-            if vol.owner == "old-owner@company.com":
-                update_volume(
-                    host, token,
-                    name=vol.full_name,
-                    owner=new_owner
-                )
-                print(f"Transferred {vol.full_name}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

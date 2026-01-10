@@ -79,39 +79,6 @@ def create_data_quality_monitor(
         
     Returns:
         CreateMonitorResponse with created monitor
-        
-    Example:
-        # Create table monitor with data profiling
-        response = create_data_quality_monitor(
-            host, token,
-            object_type="table",
-            object_id="abc-123-def",
-            monitor_config={
-                "table_name": "main.sales.transactions",
-                "output_schema_name": "main.data_quality",
-                "data_profiling_config": {
-                    "enabled": True,
-                    "schedule": {
-                        "quartz_cron_expression": "0 0 0 * * ?"
-                    }
-                }
-            }
-        )
-        print(f"Created monitor: {response.monitor.monitor_id}")
-        print(f"Dashboard: {response.monitor.dashboard_id}")
-        
-        # Create schema monitor with anomaly detection
-        response = create_data_quality_monitor(
-            host, token,
-            object_type="schema",
-            object_id="xyz-456-uvw",
-            monitor_config={
-                "schema_name": "main.sales",
-                "anomaly_detection_config": {
-                    "enabled": True
-                }
-            }
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -146,25 +113,6 @@ def get_data_quality_monitor(
         
     Returns:
         DataQualityMonitorModel with monitor details
-        
-    Example:
-        # Get table monitor
-        monitor = get_data_quality_monitor(
-            host, token,
-            object_type="table",
-            object_id="abc-123-def"
-        )
-        print(f"Monitor ID: {monitor.monitor_id}")
-        print(f"Status: {monitor.status}")
-        print(f"Dashboard: {monitor.dashboard_id}")
-        print(f"Metrics table: {monitor.profile_metrics_table_name}")
-        
-        # Get schema monitor
-        monitor = get_data_quality_monitor(
-            host, token,
-            object_type="schema",
-            object_id="xyz-456-uvw"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -199,41 +147,6 @@ def update_data_quality_monitor(
         
     Returns:
         UpdateMonitorResponse with updated monitor
-        
-    Example:
-        # Update schedule for table monitor
-        response = update_data_quality_monitor(
-            host, token,
-            object_type="table",
-            object_id="abc-123-def",
-            update_mask="data_profiling_config.schedule.quartz_cron_expression",
-            monitor_config={
-                "data_profiling_config": {
-                    "schedule": {
-                        "quartz_cron_expression": "0 0 12 * * ?"  # Daily at noon
-                    }
-                }
-            }
-        )
-        
-        # Update custom metrics
-        response = update_data_quality_monitor(
-            host, token,
-            object_type="table",
-            object_id="abc-123-def",
-            update_mask="data_profiling_config.custom_metrics",
-            monitor_config={
-                "data_profiling_config": {
-                    "custom_metrics": [
-                        {
-                            "name": "revenue_check",
-                            "type": "AGGREGATE",
-                            "definition": "SUM(revenue) > 1000000"
-                        }
-                    ]
-                }
-            }
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -275,14 +188,7 @@ def delete_data_quality_monitor(
     Returns:
         DeleteMonitorResponse confirming deletion
         
-    Example:
-        # Delete table monitor
-        response = delete_data_quality_monitor(
-            host, token,
-            object_type="table",
-            object_id="abc-123-def"
-        )
-        print(response.message)
+    
         
     Note:
         - Metric tables are NOT deleted
@@ -322,13 +228,7 @@ def list_data_quality_monitors(
     Returns:
         ListMonitorsResponse with monitors
         
-    Example:
-        # List all monitors
-        response = list_data_quality_monitors(host, token)
-        for monitor in response.monitors:
-            print(f"{monitor.table_name or monitor.schema_name}")
-            print(f"  Status: {monitor.status}")
-            print(f"  Dashboard: {monitor.dashboard_id}")
+    
             
     Note:
         This operation may be unimplemented in some SDK versions.
@@ -380,25 +280,6 @@ def create_data_quality_refresh(
         
     Returns:
         CreateRefreshResponse with created refresh
-        
-    Example:
-        # Trigger manual refresh for table monitor
-        response = create_data_quality_refresh(
-            host, token,
-            object_type="table",
-            object_id="abc-123-def"
-        )
-        print(f"Refresh ID: {response.refresh.refresh_id}")
-        print(f"Status: {response.refresh.status}")
-        
-        # Monitor refresh progress
-        refresh = get_data_quality_refresh(
-            host, token,
-            object_type="table",
-            object_id="abc-123-def",
-            refresh_id=response.refresh.refresh_id
-        )
-        print(f"Status: {refresh.status}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -442,18 +323,6 @@ def get_data_quality_refresh(
         
     Returns:
         DataQualityRefreshModel with refresh details
-        
-    Example:
-        # Get refresh status
-        refresh = get_data_quality_refresh(
-            host, token,
-            object_type="table",
-            object_id="abc-123-def",
-            refresh_id=12345
-        )
-        print(f"Status: {refresh.status}")
-        print(f"Start time: {refresh.start_time}")
-        print(f"End time: {refresh.end_time}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -489,19 +358,6 @@ def list_data_quality_refreshes(
         
     Returns:
         ListRefreshesResponse with refreshes
-        
-    Example:
-        # List all refreshes for a table monitor
-        response = list_data_quality_refreshes(
-            host, token,
-            object_type="table",
-            object_id="abc-123-def"
-        )
-        for refresh in response.refreshes:
-            print(f"Refresh {refresh.refresh_id}")
-            print(f"  Status: {refresh.status}")
-            print(f"  Start: {refresh.start_time}")
-            print(f"  End: {refresh.end_time}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -544,34 +400,6 @@ def cancel_data_quality_refresh(
         
     Returns:
         CancelRefreshResponse confirming cancellation
-        
-    Example:
-        # Cancel a running refresh
-        response = cancel_data_quality_refresh(
-            host, token,
-            object_type="table",
-            object_id="abc-123-def",
-            refresh_id=12345
-        )
-        print(response.message)
-        
-        # Typical workflow:
-        # 1. Create refresh
-        # 2. Monitor progress
-        # 3. Cancel if needed
-        refresh_response = create_data_quality_refresh(
-            host, token,
-            object_type="table",
-            object_id="abc-123-def"
-        )
-        
-        # ... later, if needed ...
-        cancel_data_quality_refresh(
-            host, token,
-            object_type="table",
-            object_id="abc-123-def",
-            refresh_id=refresh_response.refresh.refresh_id
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

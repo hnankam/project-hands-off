@@ -6,6 +6,7 @@ including creating, listing, updating, and managing function metadata.
 """
 
 from typing import Optional, List, Dict, Any
+from itertools import islice
 from cache import get_workspace_client
 from models import (
     FunctionInfoModel,
@@ -102,70 +103,61 @@ def list_functions(
     token_credential_key: str,
     catalog_name: str,
     schema_name: str,
-    max_results: Optional[int] = None,
-    page_token: Optional[str] = None,
+    limit: int = 25,
+    page: int = 0,
     include_browse: Optional[bool] = None,
 ) -> ListFunctionsResponse:
     """
-    List functions in a schema.
+    Retrieve a paginated list of user-defined functions (UDFs) within a Unity Catalog schema.
     
-    Lists all functions within the specified parent catalog and schema. If the
-    user is a metastore admin, all functions are returned. Otherwise, the user
-    must have the USE_CATALOG privilege on the catalog and the USE_SCHEMA
-    privilege on the schema.
+    This function returns function metadata for all accessible UDFs in the specified catalog
+    and schema. Use this to discover available functions, check function signatures, or list
+    callable data transformations.
+    
+    Access Requirements:
+    - Metastore admins receive all functions in the schema
+    - Other users must have USE_CATALOG privilege on catalog AND USE_SCHEMA privilege on schema
+    - Results filtered based on caller's permissions automatically
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token: Authentication token
-        catalog_name: Name of parent catalog
-        schema_name: Parent schema of functions
-        max_results: Maximum number of functions to return (0 for server default)
-        page_token: Opaque token for next page of results
-        include_browse: Include functions with browse-only access
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        catalog_name: Name of the Unity Catalog containing the schema. Required. Must be exact match
+        schema_name: Name of the schema containing the functions. Required. Must be exact match
+        limit: Number of functions to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
+        include_browse: Boolean flag to include functions where user has only browse permission (no EXECUTE). Default: None (excluded)
         
     Returns:
         ListFunctionsResponse with list of functions and pagination info
-        
-    Example:
-        # List all functions in a schema
-        functions = list_functions(
-            host, token,
-            catalog_name="main",
-            schema_name="default"
-        )
-        for func in functions.functions:
-            print(f"{func.full_name}")
-            print(f"  Owner: {func.owner}")
-            print(f"  Return Type: {func.data_type}")
-            print(f"  Routine Body: {func.routine_body}")
-        
-        # List with pagination
-        functions = list_functions(
-            host, token,
-            catalog_name="main",
-            schema_name="default",
-            max_results=50
-        )
-        print(f"Found {functions.count} functions")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
-    functions_list = []
-    next_token = None
-    
-    for function in client.functions.list(
+    response = client.functions.list(
         catalog_name=catalog_name,
         schema_name=schema_name,
-        max_results=max_results,
-        page_token=page_token,
         include_browse=include_browse,
-    ):
+    )
+    
+    skip = page * limit
+    functions_iterator = islice(response, skip, skip + limit)
+    
+    functions_list = []
+    for function in functions_iterator:
         functions_list.append(_convert_function_to_model(function))
+    
+    # Check for more results
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
     
     return ListFunctionsResponse(
         functions=functions_list,
         count=len(functions_list),
-        next_page_token=next_token,
+        has_more=has_more,
     )
 
 
@@ -189,24 +181,6 @@ def get_function(
         
     Returns:
         FunctionInfoModel with complete function details
-        
-    Example:
-        # Get full function details
-        func = get_function(
-            host, token,
-            name="main.default.my_udf"
-        )
-        print(f"Function: {func.full_name}")
-        print(f"Owner: {func.owner}")
-        print(f"Return Type: {func.data_type}")
-        print(f"Deterministic: {func.is_deterministic}")
-        print(f"Definition: {func.routine_definition}")
-        
-        # Print input parameters
-        if func.input_params:
-            print("Parameters:")
-            for param in func.input_params:
-                print(f"  {param.name}: {param.type_text}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -279,53 +253,6 @@ def create_function(
         
     Returns:
         CreateFunctionResponse with created function information
-        
-    Example:
-        # Create a simple SQL UDF
-        result = create_function(
-            host, token,
-            name="add_numbers",
-            catalog_name="main",
-            schema_name="default",
-            input_params=[
-                {"name": "a", "type_text": "INT", "type_name": "INT", "type_json": '{"name":"INT","type":"primitive"}', "position": 0},
-                {"name": "b", "type_text": "INT", "type_name": "INT", "type_json": '{"name":"INT","type":"primitive"}', "position": 1}
-            ],
-            data_type="INT",
-            full_data_type="INT",
-            routine_body="SQL",
-            routine_definition="RETURN a + b",
-            parameter_style="S",
-            is_deterministic=True,
-            sql_data_access="NO_SQL",
-            is_null_call=False,
-            security_type="DEFINER",
-            specific_name="add_numbers",
-            comment="Adds two integers"
-        )
-        print(f"Created function: {result.function_info.full_name}")
-        
-        # Create a string manipulation UDF
-        result = create_function(
-            host, token,
-            name="uppercase_string",
-            catalog_name="main",
-            schema_name="default",
-            input_params=[
-                {"name": "input_str", "type_text": "STRING", "type_name": "STRING", "type_json": '{"name":"STRING","type":"primitive"}', "position": 0}
-            ],
-            data_type="STRING",
-            full_data_type="STRING",
-            routine_body="SQL",
-            routine_definition="RETURN UPPER(input_str)",
-            parameter_style="S",
-            is_deterministic=True,
-            sql_data_access="NO_SQL",
-            is_null_call=False,
-            security_type="DEFINER",
-            specific_name="uppercase_string",
-            comment="Converts string to uppercase"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -418,21 +345,6 @@ def delete_function(
         
     Returns:
         DeleteFunctionResponse confirming deletion
-        
-    Example:
-        # Delete a function
-        result = delete_function(
-            host, token,
-            name="main.default.old_udf"
-        )
-        print(result.message)
-        
-        # Force delete
-        result = delete_function(
-            host, token,
-            name="main.default.temp_func",
-            force=True
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -464,27 +376,6 @@ def update_function_owner(
         
     Returns:
         UpdateFunctionResponse with updated function information
-        
-    Example:
-        # Transfer function ownership
-        result = update_function_owner(
-            host, token,
-            name="main.default.my_udf",
-            owner="data-engineer@company.com"
-        )
-        print(f"New owner: {result.function_info.owner}")
-        
-        # Bulk ownership transfer
-        functions = list_functions(host, token, catalog_name="main", schema_name="default")
-        new_owner = "analytics-team@company.com"
-        for func in functions.functions:
-            if func.owner == "old-owner@company.com":
-                update_function_owner(
-                    host, token,
-                    name=func.full_name,
-                    owner=new_owner
-                )
-                print(f"Transferred {func.full_name}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

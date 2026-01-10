@@ -27,7 +27,7 @@ def resolve_notebook_from_url(host_credential_key: str, token_credential_key: st
     Returns:
         NotebookPathInfo with resolved path and metadata
     
-    Examples:
+    
         URL: https://adb-xxx.azuredatabricks.net/editor/notebooks/1191853414493128
         Returns: NotebookPathInfo with path="/Workspace/Users/user@company.com/General"
     """

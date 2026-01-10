@@ -143,33 +143,6 @@ def list_external_lineage(
         
     Returns:
         ListExternalLineageResponse with list of lineage relationships
-        
-    Example:
-        # List upstream lineage for a table
-        lineage = list_external_lineage(
-            host, token,
-            object_info={"table": {"name": "main.sales.customers"}},
-            lineage_direction="UPSTREAM"
-        )
-        for rel in lineage.lineage_relationships:
-            print(f"Source: {rel.get('source')}")
-            print(f"Target: {rel.get('target')}")
-        
-        # List downstream lineage for a path
-        lineage = list_external_lineage(
-            host, token,
-            object_info={"path": {"url": "s3://bucket/data/input.csv"}},
-            lineage_direction="DOWNSTREAM",
-            page_size=100
-        )
-        print(f"Found {lineage.count} downstream dependencies")
-        
-        # List upstream lineage for a model version
-        lineage = list_external_lineage(
-            host, token,
-            object_info={"model_version": {"name": "fraud_detector", "version": "1"}},
-            lineage_direction="UPSTREAM"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -228,37 +201,6 @@ def create_external_lineage(
         
     Returns:
         CreateExternalLineageResponse with created relationship
-        
-    Example:
-        # Track Databricks table to external system
-        result = create_external_lineage(
-            host, token,
-            source={"table": {"name": "main.sales.orders"}},
-            target={"external_metadata": {"name": "salesforce:orders"}},
-            properties={"sync_frequency": "daily", "owner": "data-eng"}
-        )
-        print(f"Created lineage: {result.message}")
-        
-        # Track file to table lineage with column mappings
-        result = create_external_lineage(
-            host, token,
-            source={"path": {"url": "s3://bucket/raw/users.csv"}},
-            target={"table": {"name": "main.bronze.users"}},
-            columns=[
-                {"source": "user_id", "target": "id"},
-                {"source": "email", "target": "email_address"},
-                {"source": "created_at", "target": "registration_date"}
-            ],
-            properties={"ingestion_job": "daily_user_sync"}
-        )
-        
-        # Track model training data lineage
-        result = create_external_lineage(
-            host, token,
-            source={"table": {"name": "main.ml.training_features"}},
-            target={"model_version": {"name": "fraud_detector", "version": "2"}},
-            properties={"training_date": "2024-01-15", "framework": "sklearn"}
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -319,30 +261,6 @@ def delete_external_lineage(
         
     Returns:
         DeleteExternalLineageResponse confirming deletion
-        
-    Example:
-        # Delete lineage relationship
-        result = delete_external_lineage(
-            host, token,
-            source={"table": {"name": "main.sales.orders"}},
-            target={"external_metadata": {"name": "salesforce:orders"}}
-        )
-        print(result.message)
-        
-        # Delete specific lineage by ID
-        result = delete_external_lineage(
-            host, token,
-            source={"path": {"url": "s3://bucket/raw/users.csv"}},
-            target={"table": {"name": "main.bronze.users"}},
-            id="lineage_123"
-        )
-        
-        # Clean up old model training lineage
-        result = delete_external_lineage(
-            host, token,
-            source={"table": {"name": "main.ml.old_features"}},
-            target={"model_version": {"name": "fraud_detector", "version": "1"}}
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -397,45 +315,6 @@ def update_external_lineage(
         
     Returns:
         UpdateExternalLineageResponse with updated relationship
-        
-    Example:
-        # Update column mappings
-        result = update_external_lineage(
-            host, token,
-            source={"path": {"url": "s3://bucket/raw/users.csv"}},
-            target={"table": {"name": "main.bronze.users"}},
-            update_mask="columns",
-            columns=[
-                {"source": "user_id", "target": "id"},
-                {"source": "email", "target": "email_address"},
-                {"source": "full_name", "target": "display_name"},  # New mapping
-                {"source": "created_at", "target": "registration_date"}
-            ]
-        )
-        print(f"Updated lineage: {result.message}")
-        
-        # Update properties only
-        result = update_external_lineage(
-            host, token,
-            source={"table": {"name": "main.ml.training_features"}},
-            target={"model_version": {"name": "fraud_detector", "version": "2"}},
-            update_mask="properties",
-            properties={
-                "training_date": "2024-02-01",
-                "framework": "sklearn",
-                "accuracy": "0.95"
-            }
-        )
-        
-        # Update both columns and properties
-        result = update_external_lineage(
-            host, token,
-            source={"table": {"name": "main.sales.orders"}},
-            target={"external_metadata": {"name": "salesforce:orders"}},
-            update_mask="columns,properties",
-            columns=[{"source": "order_id", "target": "sf_id"}],
-            properties={"sync_frequency": "hourly", "last_sync": "2024-01-15"}
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

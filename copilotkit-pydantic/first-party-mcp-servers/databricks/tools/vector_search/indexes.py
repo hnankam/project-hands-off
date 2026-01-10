@@ -80,17 +80,6 @@ def list_vector_search_indexes(
         
     Returns:
         ListIndexesResponse with indexes
-        
-    Example:
-        # List all indexes on an endpoint
-        response = list_vector_search_indexes(
-            host, token,
-            endpoint_name="vector-search-prod"
-        )
-        for index in response.indexes:
-            print(f"{index.name}")
-            print(f"  Type: {index.index_type}")
-            print(f"  Primary Key: {index.primary_key}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -128,18 +117,6 @@ def get_vector_search_index(
         
     Returns:
         VectorIndexModel with index details
-        
-    Example:
-        # Get index details
-        index = get_vector_search_index(
-            host, token,
-            index_name="main.vector_search.product_embeddings"
-        )
-        print(f"Name: {index.name}")
-        print(f"Type: {index.index_type}")
-        print(f"Status: {index.status}")
-        print(f"Endpoint: {index.endpoint_name}")
-        print(f"Primary Key: {index.primary_key}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -180,53 +157,6 @@ def create_vector_search_index(
         
     Returns:
         CreateIndexResponse with created index
-        
-    Example:
-        # Create Delta Sync Index (auto-syncs with Delta Table)
-        response = create_vector_search_index(
-            host, token,
-            name="main.vector_search.product_embeddings",
-            endpoint_name="vector-search-prod",
-            primary_key="product_id",
-            index_type="DELTA_SYNC",
-            delta_sync_spec={
-                "source_table": "main.products.embeddings",
-                "embedding_source_columns": [
-                    {
-                        "name": "text",
-                        "embedding_model_endpoint_name": "databricks-bge-large-en"
-                    }
-                ],
-                "pipeline_type": "TRIGGERED"
-            }
-        )
-        print(f"Created: {response.index.name}")
-        print(f"Status: {response.index.status}")
-        
-        # Create Direct Vector Access Index (manual management)
-        response = create_vector_search_index(
-            host, token,
-            name="main.vector_search.custom_vectors",
-            endpoint_name="vector-search-prod",
-            primary_key="doc_id",
-            index_type="DIRECT_ACCESS",
-            direct_access_spec={
-                "embedding_vector_columns": [
-                    {
-                        "name": "embedding",
-                        "dimension": 1024
-                    }
-                ],
-                "schema_json": json.dumps({
-                    "type": "struct",
-                    "fields": [
-                        {"name": "doc_id", "type": "string", "nullable": False},
-                        {"name": "embedding", "type": "array<float>", "nullable": False},
-                        {"name": "text", "type": "string", "nullable": True}
-                    ]
-                })
-            }
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -284,13 +214,7 @@ def delete_vector_search_index(
     Returns:
         DeleteIndexResponse confirming deletion
         
-    Example:
-        # Delete vector search index
-        response = delete_vector_search_index(
-            host, token,
-            index_name="main.vector_search.old_embeddings"
-        )
-        print(response.message)
+    
         
     Note:
         - This operation is irreversible
@@ -342,49 +266,6 @@ def query_vector_search_index(
         
     Returns:
         QueryVectorIndexResponse with search results
-        
-    Example:
-        # Query with text (Delta Sync with model endpoint)
-        response = query_vector_search_index(
-            host, token,
-            index_name="main.vector_search.product_embeddings",
-            columns=["product_id", "name", "description"],
-            query_text="wireless headphones",
-            num_results=5
-        )
-        for result in response.results:
-            print(f"Score: {result.score}")
-            print(f"Data: {result.metadata}")
-        
-        # Query with vector (Direct Access or self-managed embeddings)
-        response = query_vector_search_index(
-            host, token,
-            index_name="main.vector_search.custom_vectors",
-            columns=["doc_id", "text"],
-            query_vector=[0.1, 0.2, ...],  # Your embedding vector
-            num_results=10,
-            score_threshold=0.7
-        )
-        
-        # Query with filters
-        response = query_vector_search_index(
-            host, token,
-            index_name="main.vector_search.products",
-            columns=["product_id", "name", "price"],
-            query_text="laptop",
-            num_results=10,
-            filters_json='{"price <": 1000}'  # Price less than $1000
-        )
-        
-        # Hybrid search (combines semantic + keyword)
-        response = query_vector_search_index(
-            host, token,
-            index_name="main.vector_search.documents",
-            columns=["doc_id", "title", "content"],
-            query_text="machine learning",
-            query_type="HYBRID",
-            num_results=20
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -446,24 +327,6 @@ def query_vector_search_next_page(
         
     Returns:
         QueryVectorIndexResponse with next page of results
-        
-    Example:
-        # Initial query
-        response = query_vector_search_index(
-            host, token,
-            index_name="main.vector_search.products",
-            columns=["product_id", "name"],
-            query_text="laptop",
-            num_results=10
-        )
-        
-        # Get next page if available
-        if response.next_page_token:
-            next_response = query_vector_search_next_page(
-                host, token,
-                index_name="main.vector_search.products",
-                page_token=response.next_page_token
-            )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -518,25 +381,6 @@ def scan_vector_search_index(
         
     Returns:
         ScanVectorIndexResponse with scan results
-        
-    Example:
-        # Initial scan
-        response = scan_vector_search_index(
-            host, token,
-            index_name="main.vector_search.embeddings",
-            num_results=100
-        )
-        for result in response.results:
-            print(result.metadata)
-        
-        # Continue scanning
-        if response.last_primary_key:
-            next_response = scan_vector_search_index(
-                host, token,
-                index_name="main.vector_search.embeddings",
-                num_results=100,
-                last_primary_key=response.last_primary_key
-            )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -588,29 +432,7 @@ def upsert_vector_search_data(
     Returns:
         UpsertDataResponse confirming upsert
         
-    Example:
-        # Upsert vectors to Direct Access Index
-        inputs = [
-            {
-                "doc_id": "doc1",
-                "embedding": [0.1, 0.2, 0.3, ...],  # Your embedding vector
-                "text": "Example document text",
-                "metadata": {"category": "tech"}
-            },
-            {
-                "doc_id": "doc2",
-                "embedding": [0.4, 0.5, 0.6, ...],
-                "text": "Another document",
-                "metadata": {"category": "science"}
-            }
-        ]
-        
-        response = upsert_vector_search_data(
-            host, token,
-            index_name="main.vector_search.custom_vectors",
-            inputs_json=json.dumps(inputs)
-        )
-        print(f"Upserted: {response.upserted_count} vectors")
+    
         
     Note:
         - Only works with Direct Vector Access indexes
@@ -654,14 +476,7 @@ def delete_vector_search_data(
     Returns:
         DeleteDataResponse confirming deletion
         
-    Example:
-        # Delete specific documents by primary key
-        response = delete_vector_search_data(
-            host, token,
-            index_name="main.vector_search.custom_vectors",
-            primary_keys=["doc1", "doc2", "doc3"]
-        )
-        print(f"Deleted: {response.deleted_count} vectors")
+    
         
     Note:
         - Only works with Direct Vector Access indexes
@@ -706,18 +521,7 @@ def sync_vector_search_index(
     Returns:
         SyncIndexResponse confirming sync trigger
         
-    Example:
-        # Trigger manual sync for Delta Sync Index
-        response = sync_vector_search_index(
-            host, token,
-            index_name="main.vector_search.product_embeddings"
-        )
-        print(response.message)
-        
-        # Typical workflow:
-        # 1. Update source Delta Table
-        # 2. Trigger sync to update index
-        # 3. Query updated index
+    
         
     Note:
         - Only works with Delta Sync indexes

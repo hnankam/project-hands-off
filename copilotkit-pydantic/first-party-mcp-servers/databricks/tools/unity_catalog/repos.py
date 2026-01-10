@@ -5,6 +5,7 @@ This module provides tools for managing Git repositories in Databricks workspace
 """
 
 from typing import Optional, List, Dict, Any
+from itertools import islice
 from cache import get_workspace_client
 from models import (
     RepoInfo,
@@ -19,39 +20,47 @@ def list_repos(
     host_credential_key: str,
     token_credential_key: str,
     path_prefix: Optional[str] = None,
-    next_page_token: Optional[str] = None,
+    limit: int = 25,
+    page: int = 0,
 ) -> ListReposResponse:
     """
-    List Git repositories.
+    Retrieve a paginated list of Git repositories in the Databricks workspace.
     
-    Lists repos that the user has Manage permissions on. Use next_page_token
-    to iterate through additional pages.
+    This function returns repository metadata for Git repos integrated with Databricks.
+    Use this to discover available repos, check repo status, or list version-controlled notebooks.
+    
+    Access Requirements: Only returns repositories where the caller has Manage permissions.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token: Authentication token
-        path_prefix: Filter repos by path prefix (e.g., "/Repos/team")
-        next_page_token: Token for pagination
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        path_prefix: Optional string to filter repos by workspace path. Only repos with paths starting with this prefix are returned. 
+        limit: Number of repositories to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
         
     Returns:
-        ListReposResponse with list of repositories
+        ListReposResponse containing:
+        - repos: List of RepoInfo objects with repository details (path, URL, branch, provider, commit ID)
+        - count: Integer number of repos returned in this page (0 to limit)
+        - has_more: Boolean indicating if additional repos exist beyond this page
         
-    Example:
-        # List all repos
-        repos = list_repos(host, token)
-        
-        # List repos in specific path
-        repos = list_repos(host, token, path_prefix="/Repos/team")
+    Pagination:
+        - Returns up to `limit` repos per call
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available
+        - path_prefix filter applies consistently across all pages
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
-    repos_list = []
-    iterator = client.repos.list(
+    response = client.repos.list(
         path_prefix=path_prefix,
-        next_page_token=next_page_token
     )
     
-    for repo in iterator:
+    skip = page * limit
+    repos_iterator = islice(response, skip, skip + limit)
+    
+    repos_list = []
+    for repo in repos_iterator:
         repos_list.append(
             RepoInfo(
                 id=repo.id,
@@ -64,10 +73,18 @@ def list_repos(
             )
         )
     
+    # Check for more results
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
+    
     return ListReposResponse(
         repos=repos_list,
         count=len(repos_list),
-        next_page_token=None  # SDK iterator doesn't expose next token
+        has_more=has_more,
     )
 
 
@@ -88,10 +105,6 @@ def get_repo(
         
     Returns:
         RepoInfo with repository details
-        
-    Example:
-        repo = get_repo(host, token, repo_id=12345)
-        print(f"Repo at {repo.path} on branch {repo.branch}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -140,16 +153,6 @@ def create_repo(
         - bitbucketServer
         - azureDevOpsServices
         - awsCodeCommit
-        
-    Example:
-        # Clone a GitHub repo
-        repo = create_repo(
-            host, token,
-            url="https://github.com/company/analytics.git",
-            provider="github",
-            path="/Repos/team/analytics"
-        )
-        print(f"Created repo {repo.id} at {repo.path}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -195,17 +198,6 @@ def update_repo(
         - Updating to a tag puts the repo in a detached HEAD state
         - Before committing new changes, update to a branch instead
         - To pull latest changes, call update with the current branch name
-        
-    Example:
-        # Switch to feature branch
-        update_repo(host, token, repo_id=12345, branch="feature/new-analysis")
-        
-        # Pull latest changes on current branch
-        repo = get_repo(host, token, repo_id=12345)
-        update_repo(host, token, repo_id=12345, branch=repo.branch)
-        
-        # Check out specific tag
-        update_repo(host, token, repo_id=12345, tag="v1.0.0")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -244,9 +236,6 @@ def delete_repo(
         
     Returns:
         DeleteRepoResponse confirming deletion
-        
-    Example:
-        delete_repo(host, token, repo_id=12345)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -273,11 +262,6 @@ def get_repo_permissions(
         
     Returns:
         Dict with permission details
-        
-    Example:
-        permissions = get_repo_permissions(host, token, repo_id="12345")
-        for acl in permissions.access_control_list:
-            print(f"{acl.user_name}: {acl.all_permissions}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -312,13 +296,6 @@ def set_repo_permissions(
             "user_name": "user@company.com",
             "permission_level": "CAN_MANAGE"  # or CAN_READ, CAN_RUN, CAN_EDIT
         }
-        
-    Example:
-        acls = [
-            {"user_name": "user@company.com", "permission_level": "CAN_EDIT"},
-            {"group_name": "data-scientists", "permission_level": "CAN_READ"}
-        ]
-        set_repo_permissions(host, token, repo_id="12345", access_control_list=acls)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -357,12 +334,6 @@ def update_repo_permissions(
         
     Returns:
         Dict with updated permission details
-        
-    Example:
-        acls = [
-            {"user_name": "user@company.com", "permission_level": "CAN_MANAGE"}
-        ]
-        update_repo_permissions(host, token, repo_id="12345", access_control_list=acls)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -398,11 +369,6 @@ def get_repo_permission_levels(
         
     Returns:
         Dict with available permission levels
-        
-    Example:
-        levels = get_repo_permission_levels(host, token, repo_id="12345")
-        for level in levels.permission_levels:
-            print(f"{level.permission_level}: {level.description}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

@@ -96,48 +96,6 @@ def create_forecasting_experiment(
         
     Returns:
         CreateForecastingExperimentResponse with experiment ID
-        
-    Example:
-        # Basic forecasting experiment
-        response = create_forecasting_experiment(
-            host, token,
-            train_data_path="main.default.sales_data",
-            target_column="sales",
-            time_column="date",
-            forecast_granularity="Daily",
-            forecast_horizon=30
-        )
-        print(f"Experiment ID: {response.experiment_id}")
-        
-        # Advanced experiment with features and model registration
-        response = create_forecasting_experiment(
-            host, token,
-            train_data_path="main.default.sales_data",
-            target_column="sales",
-            time_column="date",
-            forecast_granularity="Daily",
-            forecast_horizon=30,
-            experiment_path="/Users/me/forecasting-experiments",
-            prediction_data_path="main.default.sales_predictions",
-            register_to="main.default.sales_forecasting_model",
-            primary_metric="smape",
-            timeseries_identifier_columns=["store_id", "product_id"],
-            include_features=["promotion", "price", "weather"],
-            training_frameworks=["Prophet", "DeepAR"],
-            holiday_regions=["US"],
-            max_runtime=120
-        )
-        
-        # With automatic waiting
-        response = create_forecasting_experiment(
-            host, token,
-            train_data_path="main.default.sales_data",
-            target_column="sales",
-            time_column="date",
-            forecast_granularity="Hourly",
-            forecast_horizon=168,  # 1 week of hourly forecasts
-            wait_for_completion=True
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -209,25 +167,6 @@ def get_forecasting_experiment(
         
     Returns:
         ForecastingExperimentModel with experiment details
-        
-    Example:
-        # Get experiment details
-        experiment = get_forecasting_experiment(
-            host, token,
-            experiment_id="abc123"
-        )
-        print(f"State: {experiment.state}")
-        print(f"Forecast horizon: {experiment.forecast_horizon}")
-        print(f"Granularity: {experiment.forecast_granularity}")
-        print(f"Frameworks: {experiment.training_frameworks}")
-        
-        if experiment.state == "SUCCEEDED":
-            print(f"Model registered to: {experiment.register_to}")
-            print(f"Predictions saved to: {experiment.prediction_data_path}")
-        elif experiment.state == "FAILED":
-            print(f"Error: {experiment.error_message}")
-        elif experiment.state in ["PENDING", "RUNNING"]:
-            print("Experiment still in progress...")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

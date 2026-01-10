@@ -3,6 +3,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { authClient } from '../../lib/auth-client';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '@extension/ui';
@@ -46,6 +47,223 @@ interface TeamsTabProps {
   onSuccess: (message: string) => void;
 }
 
+interface TeamMoreOptionsButtonProps {
+  team: Team;
+  isLight: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  onClone: () => void;
+  onDelete: () => void;
+}
+
+const TeamMoreOptionsButton: React.FC<TeamMoreOptionsButtonProps> = ({
+  team,
+  isLight,
+  isOpen,
+  onToggle,
+  onClone,
+  onDelete,
+}) => {
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const moreDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Position dropdown when it opens
+  useEffect(() => {
+    if (isOpen && moreButtonRef.current && moreDropdownRef.current) {
+      requestAnimationFrame(() => {
+        if (moreButtonRef.current && moreDropdownRef.current) {
+          const buttonRect = moreButtonRef.current.getBoundingClientRect();
+          const top = buttonRect.bottom + 4;
+          const right = window.innerWidth - buttonRect.right;
+          moreDropdownRef.current.style.top = `${top}px`;
+          moreDropdownRef.current.style.right = `${right}px`;
+        }
+      });
+    }
+  }, [isOpen]);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const element = target as Element;
+      
+      const clickedInsideButton = moreButtonRef.current?.contains(target);
+      const clickedInsideDropdown = moreDropdownRef.current?.contains(target);
+      const isButton = element.tagName === 'BUTTON' || element.closest('button');
+      
+      if (!clickedInsideButton && !clickedInsideDropdown && !isButton) {
+        onToggle();
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside, true);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside, true);
+    };
+  }, [isOpen, onToggle]);
+
+  const buttonClassName = cn(
+    'p-1 rounded transition-colors',
+    isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300',
+  );
+
+  const dropdownStyles: React.CSSProperties = {
+    position: 'fixed',
+    top: '0px',
+    right: '0px',
+    marginTop: '0',
+    backgroundColor: isLight ? '#f9fafb' : '#151C24',
+    border: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+    borderRadius: '6px',
+    boxShadow: '0 10px 20px rgba(0, 0, 0, 0.15)',
+    zIndex: 10002,
+    minWidth: '160px',
+    maxWidth: '200px',
+    width: 'auto',
+    overflow: 'visible',
+    visibility: 'visible',
+    opacity: 1,
+    pointerEvents: 'auto',
+  };
+
+  const menuItemBaseStyles: React.CSSProperties = {
+    width: '100%',
+    padding: '0.5rem 0.75rem',
+    border: 'none',
+    backgroundColor: 'transparent',
+    fontSize: '12px',
+    textAlign: 'left',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    whiteSpace: 'nowrap',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  };
+
+  const menuItemTextColor = isLight ? '#374151' : '#d1d5db';
+  const menuItemBorderColor = isLight ? '#e5e7eb' : '#374151';
+  const menuItemHoverBg = isLight ? '#f3f4f6' : '#1f2937';
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onToggle();
+  };
+
+  const handleClone = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClone();
+  };
+
+  const handleDelete = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onDelete();
+  };
+
+  return (
+    <>
+      <button
+        ref={moreButtonRef}
+        className={buttonClassName}
+        title="More options"
+        onClick={handleClick}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          width="16"
+          height="16"
+        >
+          <circle cx="12" cy="12" r="1" />
+          <circle cx="12" cy="5" r="1" />
+          <circle cx="12" cy="19" r="1" />
+        </svg>
+      </button>
+      
+      {isOpen &&
+        createPortal(
+          <div
+            ref={moreDropdownRef}
+            className="teamMoreOptionsDropdownMenu"
+            style={dropdownStyles}
+          >
+            {/* Clone Option */}
+            <button
+              type="button"
+              onClick={handleClone}
+              style={{
+                ...menuItemBaseStyles,
+                color: menuItemTextColor,
+                borderBottom: `1px solid ${menuItemBorderColor}`,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = menuItemHoverBg;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              Clone team
+            </button>
+            
+            {/* Delete Option */}
+            <button
+              type="button"
+              onClick={handleDelete}
+              style={{
+                ...menuItemBaseStyles,
+                color: menuItemTextColor,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = menuItemHoverBg;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Delete team
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+};
+
 const TeamSkeletonCard: React.FC<{ isLight: boolean }> = ({ isLight }) => (
   <div
     className={cn(
@@ -77,6 +295,9 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
   const [editTeamName, setEditTeamName] = useState('');
   const [showCreateTeamForm, setShowCreateTeamForm] = useState(false);
+  const [cloningTeamId, setCloningTeamId] = useState<string | null>(null);
+  const [cloneTeamName, setCloneTeamName] = useState('');
+  const [openMoreMenuTeamId, setOpenMoreMenuTeamId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [deleteTeamConfirmOpen, setDeleteTeamConfirmOpen] = useState(false);
   const [teamToDelete, setTeamToDelete] = useState<{ id: string; name: string } | null>(null);
@@ -251,11 +472,52 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
   const startEditTeam = (team: Team) => {
     setEditingTeamId(team.id);
     setEditTeamName(team.name);
+    // Close create form if open
+    setShowCreateTeamForm(false);
+    // Close clone form if open
+    cancelCloneTeam();
   };
 
   const cancelEditTeam = () => {
     setEditingTeamId(null);
     setEditTeamName('');
+  };
+
+  const startCloneTeam = (team: Team) => {
+    setCloningTeamId(team.id);
+    setCloneTeamName(`${team.name} (Copy)`);
+    // Close create form if open
+    setShowCreateTeamForm(false);
+    // Close edit form if open
+    cancelEditTeam();
+  };
+
+  const cancelCloneTeam = () => {
+    setCloningTeamId(null);
+    setCloneTeamName('');
+  };
+
+  const cloneTeam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const { data, error } = await (authClient.organization as any).createTeam({
+        name: cloneTeamName,
+        organizationId: selectedOrgForTeam,
+      });
+
+      if (error) throw new Error(error.message);
+
+      onSuccess(`Team "${cloneTeamName}" cloned successfully!`);
+      setCloneTeamName('');
+      setCloningTeamId(null);
+      await loadUserRoleAndTeams(selectedOrgForTeam);
+    } catch (err: any) {
+      onError(err.message || 'Failed to clone team');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const updateTeam = async (teamId: string) => {
@@ -348,10 +610,10 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
       // Fetch all org members (including team-only members) using custom endpoint
       const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
       let orgMembersList: any[] = [];
-      try {
+          try {
         const response = await fetch(`${baseURL}/api/auth/org-members-with-status?organizationId=${selectedOrgForTeam}`, {
           credentials: 'include',
-        });
+            });
         if (response.ok) {
           const data = await response.json();
           orgMembersList = data?.members || [];
@@ -362,19 +624,19 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
 
       const membersWithDetails = (membersData || []).map((tm: any) => {
         const fullMember = orgMembersList.find((m: any) => m.userId === tm.userId);
-        
-        return {
-          id: tm.id,
-          userId: tm.userId,
-          organizationId: selectedOrgForTeam,
-          role: fullMember?.role || 'member',
-          user: {
-            id: tm.userId,
-            name: fullMember?.user?.name || 'Unknown',
-            email: fullMember?.user?.email || tm.userId,
-          },
-          createdAt: tm.createdAt,
-        };
+            
+            return {
+              id: tm.id,
+              userId: tm.userId,
+              organizationId: selectedOrgForTeam,
+              role: fullMember?.role || 'member',
+              user: {
+                id: tm.userId,
+                name: fullMember?.user?.name || 'Unknown',
+                email: fullMember?.user?.email || tm.userId,
+              },
+              createdAt: tm.createdAt,
+            };
       });
 
       setTeamMembers(prev => ({
@@ -496,9 +758,12 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                   </svg>
                 </button>
               )}
-            {canManageTeams && !showCreateTeamForm && (
+            {canManageTeams && !showCreateTeamForm && !cloningTeamId && !editingTeamId && (
               <button
-                onClick={() => setShowCreateTeamForm(true)}
+                onClick={() => {
+                  setShowCreateTeamForm(true);
+                  cancelCloneTeam();
+                }}
                 className={cn(
                   'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors',
                   isLight
@@ -554,6 +819,56 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                 <button
                   type="button"
                   onClick={() => setShowCreateTeamForm(false)}
+                  className={cn(
+                    'px-4 py-1.5 text-xs rounded transition-colors font-medium',
+                    isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
+                  )}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Clone Form - Compact Card */}
+          {cloningTeamId && (
+            <form
+              onSubmit={cloneTeam}
+              className={cn(
+                'mb-3 pt-3 pb-5 pr-8 pl-8 rounded-lg border',
+                isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700',
+              )}>
+              <div className="space-y-2.5">
+                <div>
+                  <label className={cn('block text-xs font-medium mb-1.5', isLight ? 'text-gray-700' : 'text-gray-300')}>
+                    Team Name
+                  </label>
+                  <input
+                    type="text"
+                    value={cloneTeamName}
+                    onChange={e => setCloneTeamName(e.target.value)}
+                    placeholder="Engineering, Sales, Marketing..."
+                    required
+                    className={cn(
+                      'w-full px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-blue-500 outline-none',
+                      isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white',
+                    )}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 justify-end mt-3">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className={cn(
+                    'px-4 py-1.5 text-xs rounded transition-colors font-medium',
+                    isLight ? 'bg-blue-500/90 text-white hover:bg-blue-500' : 'bg-blue-600/90 text-white hover:bg-blue-600',
+                    loading && 'opacity-50 cursor-not-allowed',
+                  )}>
+                  {loading ? 'Cloning...' : 'Clone Team'}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelCloneTeam}
                   className={cn(
                     'px-4 py-1.5 text-xs rounded transition-colors font-medium',
                     isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-700 text-gray-200 hover:bg-gray-600',
@@ -682,17 +997,20 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
                           </button>
                         )}
                         {canManageTeams && (
-                          <button
-                            onClick={() => openDeleteTeamConfirm(team.id, team.name)}
-                            className={cn(
-                              'p-1 rounded transition-colors',
-                              isLight ? 'text-gray-400 hover:text-red-600' : 'text-gray-500 hover:text-red-400',
-                            )}
-                            title="Delete">
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
+                          <TeamMoreOptionsButton
+                            team={team}
+                            isLight={isLight}
+                            isOpen={openMoreMenuTeamId === team.id}
+                            onToggle={() => setOpenMoreMenuTeamId(openMoreMenuTeamId === team.id ? null : team.id)}
+                            onClone={() => {
+                              startCloneTeam(team);
+                              setOpenMoreMenuTeamId(null);
+                            }}
+                            onDelete={() => {
+                              openDeleteTeamConfirm(team.id, team.name);
+                              setOpenMoreMenuTeamId(null);
+                            }}
+                          />
                         )}
                       </div>
                     </div>
@@ -826,7 +1144,7 @@ export function TeamsTab({ isLight, organizations, preselectedOrgId, onError, on
               </div>
             ));
             })()}
-            {teams.length === 0 && !showCreateTeamForm && (
+            {teams.length === 0 && !showCreateTeamForm && !cloningTeamId && (
               <div className={cn(
                 'text-center py-8 text-xs rounded-lg border',
                 isLight ? 'text-gray-500 border-gray-200 bg-gray-50' : 'text-gray-400 border-gray-700 bg-[#151C24]',

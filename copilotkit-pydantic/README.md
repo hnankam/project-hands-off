@@ -43,6 +43,7 @@ A production-ready, multi-tenant AI agent server built with **FastAPI** and **Py
 - **Firebase Storage**: Cloud storage for generated content
 
 ### Production Features
+- **Horizontal Scalability**: Redis-backed session state for distributed deployments
 - **Logfire Observability**: Full tracing of agent runs, tool calls, and model interactions
 - **Connection Pooling**: Optimized for Neon serverless PostgreSQL
 - **Deployment Manager**: Hot-reload configurations without server restart
@@ -94,16 +95,20 @@ A production-ready, multi-tenant AI agent server built with **FastAPI** and **Py
 │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌───────────────┐  │   │
 │  │  │   Session   │ │    Ably     │ │   Usage     │ │  Deployment   │  │   │
 │  │  │   Manager   │ │  Publisher  │ │   Tracker   │ │   Manager     │  │   │
-│  │  └─────────────┘ └─────────────┘ └─────────────┘ └───────────────┘  │   │
+│  │  │  (Redis)    │ └─────────────┘ └─────────────┘ └───────────────┘  │   │
+│  │  └─────────────┘                                                      │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          PostgreSQL (Neon)                                   │
-│  providers │ models │ agents │ tools │ mcp_servers │ usage │ workspace_*   │
-└─────────────────────────────────────────────────────────────────────────────┘
+                        ┌─────────────┴─────────────┐
+                        ▼                           ▼
+┌───────────────────────────────────┐ ┌─────────────────────────────────────┐
+│      PostgreSQL (Neon)            │ │        Redis (Optional)             │
+│  providers │ models │ agents │   │ │  • Session State (Distributed)      │
+│  tools │ mcp_servers │ usage │   │ │  • Horizontal Scaling               │
+│  workspace_* │ threads           │ │  • No Sticky Sessions               │
+└───────────────────────────────────┘ └─────────────────────────────────────┘
 ```
 
 ---
@@ -247,6 +252,13 @@ uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 | `DB_USERNAME` | Database user | ✅ |
 | `DB_PASSWORD` | Database password | ✅ |
 | `DB_OTHER_PARAMS` | Connection params | Default: `sslmode=require` |
+| `REDIS_ENABLED` | Enable Redis for distributed sessions | Default: false |
+| `REDIS_HOST` | Redis server host | For horizontal scaling |
+| `REDIS_PORT` | Redis server port | Default: 6379 |
+| `REDIS_DB` | Redis database number | Default: 0 |
+| `REDIS_PASSWORD` | Redis password | For production |
+| `REDIS_SSL` | Enable SSL/TLS for Redis | Default: false |
+| `REDIS_MAX_CONNECTIONS` | Max connections per instance | Default: 50 |
 | `ABLY_API_KEY` | Ably Pub/Sub API key | For real-time updates |
 | `GOOGLE_API_KEY` | Google AI API key | For Gemini models |
 | `LOGFIRE_TOKEN` | Logfire observability token | For tracing |
@@ -914,6 +926,14 @@ DB_OTHER_PARAMS=sslmode=require
 DB_POOL_MIN_SIZE=0
 DB_POOL_MAX_SIZE=5
 
+# Redis (for horizontal scaling)
+REDIS_ENABLED=true
+REDIS_HOST=your-redis-host.cloud.redislabs.com
+REDIS_PORT=6379
+REDIS_PASSWORD=***
+REDIS_SSL=true
+REDIS_MAX_CONNECTIONS=50
+
 # Real-time
 ABLY_API_KEY=***
 
@@ -950,10 +970,20 @@ curl http://localhost:8001/readyz
 
 ### Scaling Considerations
 
-- **Stateless**: Agent state is passed per-request, no sticky sessions needed
+- **Horizontal Scaling**: Full support with Redis-backed session state
+- **No Sticky Sessions**: Load balancer can use any routing algorithm
+- **Stateless Architecture**: Configuration auto-refreshes from database
 - **Connection Pooling**: Small pool (5 connections) for Neon's serverless model
-- **Caching**: Agent instances cached per (org, team, agent_type, model)
+- **Distributed Caching**: Agent instances cached per-instance, configs shared via DB
 - **Prewarming**: First request triggers background prewarming of org context
+- **Graceful Degradation**: Falls back to in-memory state if Redis unavailable
+
+**Recommended Setup:**
+- **Single Instance**: No Redis needed (in-memory mode)
+- **2-10 Instances**: Redis Standalone (ElastiCache, Upstash, etc.)
+- **10+ Instances**: Redis Cluster for high availability
+
+See `SCALABILITY_STATUS.md` and `REDIS_SETUP.md` for detailed deployment guidance.
 
 ---
 

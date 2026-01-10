@@ -150,14 +150,6 @@ def list_registry_models(
         
     Returns:
         ListModelsResponse with registered models
-        
-    Example:
-        # List all models
-        response = list_registry_models(host, token)
-        for model in response.models:
-            print(f"{model.name}")
-            print(f"  Created: {model.creation_timestamp}")
-            print(f"  Description: {model.description}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -193,13 +185,6 @@ def get_registry_model(
         
     Returns:
         RegisteredModelModel with model details
-        
-    Example:
-        # Get model details
-        model = get_registry_model(host, token, "my-model")
-        print(f"Name: {model.name}")
-        print(f"Description: {model.description}")
-        print(f"Tags: {model.tags}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -230,22 +215,6 @@ def create_registry_model(
         
     Returns:
         CreateModelResponse with created model
-        
-    Example:
-        # Create basic model
-        response = create_registry_model(
-            host, token,
-            name="fraud-detection-model"
-        )
-        print(f"Created: {response.model.name}")
-        
-        # Create with description and tags
-        response = create_registry_model(
-            host, token,
-            name="recommendation-model",
-            description="Product recommendation model",
-            tags={"team": "ml", "use_case": "recommendations"}
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -285,14 +254,6 @@ def update_registry_model(
         
     Returns:
         UpdateModelResponse confirming update
-        
-    Example:
-        # Update model description
-        response = update_registry_model(
-            host, token,
-            name="fraud-detection-model",
-            description="Updated fraud detection model v2"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -321,11 +282,6 @@ def delete_registry_model(
         
     Returns:
         DeleteModelResponse confirming deletion
-        
-    Example:
-        # Delete model
-        response = delete_registry_model(host, token, "old-model")
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -366,25 +322,6 @@ def create_model_version(
         
     Returns:
         CreateModelVersionResponse with created version
-        
-    Example:
-        # Create version from DBFS
-        response = create_model_version(
-            host, token,
-            name="fraud-detection-model",
-            source="dbfs:/models/fraud_detection/v1"
-        )
-        print(f"Version: {response.model_version.version}")
-        
-        # Create with run lineage
-        response = create_model_version(
-            host, token,
-            name="fraud-detection-model",
-            source="dbfs:/models/fraud_detection/v2",
-            run_id="abc123",
-            description="Improved accuracy model",
-            tags={"validated": "true"}
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -426,14 +363,6 @@ def get_model_version(
         
     Returns:
         ModelVersionModel with version details
-        
-    Example:
-        # Get version details
-        version = get_model_version(host, token, "my-model", "1")
-        print(f"Version: {version.version}")
-        print(f"Stage: {version.current_stage}")
-        print(f"Source: {version.source}")
-        print(f"Status: {version.status}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -466,15 +395,6 @@ def update_model_version(
         
     Returns:
         UpdateModelVersionResponse confirming update
-        
-    Example:
-        # Update version description
-        response = update_model_version(
-            host, token,
-            name="fraud-detection-model",
-            version="2",
-            description="Production-ready model with 95% accuracy"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -506,14 +426,6 @@ def delete_model_version(
         
     Returns:
         DeleteModelVersionResponse confirming deletion
-        
-    Example:
-        # Delete old version
-        response = delete_model_version(
-            host, token,
-            name="fraud-detection-model",
-            version="1"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -552,20 +464,6 @@ def search_model_versions(
         
     Returns:
         ListModelVersionsResponse with matching versions
-        
-    Example:
-        # Search by model name
-        response = search_model_versions(
-            host, token,
-            filter="name = 'fraud-detection-model'"
-        )
-        
-        # Search with ordering
-        response = search_model_versions(
-            host, token,
-            filter="name LIKE 'production%'",
-            order_by=["version DESC"]
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -605,20 +503,6 @@ def get_latest_model_versions(
         
     Returns:
         ListModelVersionsResponse with latest versions
-        
-    Example:
-        # Get all latest versions
-        response = get_latest_model_versions(
-            host, token,
-            name="fraud-detection-model"
-        )
-        
-        # Get production version
-        response = get_latest_model_versions(
-            host, token,
-            name="fraud-detection-model",
-            stages=["Production"]
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -664,26 +548,6 @@ def transition_model_stage(
         
     Returns:
         TransitionStageResponse with updated version
-        
-    Example:
-        # Promote to staging
-        response = transition_model_stage(
-            host, token,
-            name="fraud-detection-model",
-            version="2",
-            stage="Staging",
-            comment="Ready for testing"
-        )
-        
-        # Promote to production
-        response = transition_model_stage(
-            host, token,
-            name="fraud-detection-model",
-            version="2",
-            stage="Production",
-            archive_existing_versions=True,
-            comment="Passed all tests, deploying to prod"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -724,16 +588,6 @@ def create_transition_request(
         
     Returns:
         CreateTransitionRequestResponse with request details
-        
-    Example:
-        # Request production deployment
-        response = create_transition_request(
-            host, token,
-            name="fraud-detection-model",
-            version="3",
-            stage="Production",
-            comment="Model shows 96% accuracy in staging tests"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -775,17 +629,6 @@ def approve_transition_request(
         
     Returns:
         ApproveTransitionRequestResponse confirming approval
-        
-    Example:
-        # Approve production deployment
-        response = approve_transition_request(
-            host, token,
-            name="fraud-detection-model",
-            version="3",
-            stage="Production",
-            archive_existing_versions=True,
-            comment="Approved after review"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -823,16 +666,6 @@ def reject_transition_request(
         
     Returns:
         ApproveTransitionRequestResponse confirming rejection
-        
-    Example:
-        # Reject production deployment
-        response = reject_transition_request(
-            host, token,
-            name="fraud-detection-model",
-            version="3",
-            stage="Production",
-            comment="Performance metrics not met"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -874,15 +707,6 @@ def create_model_comment(
         
     Returns:
         CreateCommentResponse with created comment
-        
-    Example:
-        # Add testing notes
-        response = create_model_comment(
-            host, token,
-            name="fraud-detection-model",
-            version="2",
-            comment="Tested with 10k samples. Accuracy: 95.3%"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -916,14 +740,6 @@ def update_model_comment(
         
     Returns:
         UpdateCommentResponse confirming update
-        
-    Example:
-        # Update comment
-        response = update_model_comment(
-            host, token,
-            comment_id="abc123",
-            comment="Updated: Accuracy improved to 96.1%"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -952,10 +768,6 @@ def delete_model_comment(
         
     Returns:
         DeleteCommentResponse confirming deletion
-        
-    Example:
-        # Delete comment
-        response = delete_model_comment(host, token, "abc123")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -991,11 +803,6 @@ def set_model_tag(
         
     Returns:
         SetTagResponse confirming tag set
-        
-    Example:
-        # Add tags
-        set_model_tag(host, token, "my-model", "team", "ml-team")
-        set_model_tag(host, token, "my-model", "use_case", "fraud_detection")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1027,10 +834,6 @@ def delete_model_tag(
         
     Returns:
         DeleteTagResponse confirming deletion
-        
-    Example:
-        # Delete tag
-        response = delete_model_tag(host, token, "my-model", "old_tag")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1065,16 +868,6 @@ def set_model_version_tag(
         
     Returns:
         SetTagResponse confirming tag set
-        
-    Example:
-        # Add version tags
-        set_model_version_tag(
-            host, token,
-            name="my-model",
-            version="2",
-            key="validated",
-            value="true"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1109,15 +902,6 @@ def delete_model_version_tag(
         
     Returns:
         DeleteTagResponse confirming deletion
-        
-    Example:
-        # Delete version tag
-        response = delete_model_version_tag(
-            host, token,
-            name="my-model",
-            version="2",
-            key="old_tag"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1162,24 +946,6 @@ def create_registry_webhook(
         
     Returns:
         CreateWebhookResponse with created webhook
-        
-    Example:
-        # HTTP webhook for all models
-        response = create_registry_webhook(
-            host, token,
-            events=["MODEL_VERSION_CREATED", "MODEL_VERSION_TRANSITIONED_STAGE"],
-            http_url="https://my-app.com/webhook",
-            description="Notify on model changes"
-        )
-        
-        # Job webhook for specific model
-        response = create_registry_webhook(
-            host, token,
-            events=["MODEL_VERSION_TRANSITIONED_TO_PRODUCTION"],
-            job_id="12345",
-            model_name="fraud-detection-model",
-            description="Deploy on production promotion"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1234,15 +1000,6 @@ def update_registry_webhook(
         
     Returns:
         UpdateWebhookResponse confirming update
-        
-    Example:
-        # Update webhook events
-        response = update_registry_webhook(
-            host, token,
-            webhook_id="abc123",
-            events=["MODEL_VERSION_TRANSITIONED_TO_PRODUCTION"],
-            status="ACTIVE"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1296,10 +1053,6 @@ def delete_registry_webhook(
         
     Returns:
         DeleteWebhookResponse confirming deletion
-        
-    Example:
-        # Delete webhook
-        response = delete_registry_webhook(host, token, "abc123")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1329,18 +1082,6 @@ def list_registry_webhooks(
         
     Returns:
         ListWebhooksResponse with webhooks
-        
-    Example:
-        # List all webhooks
-        response = list_registry_webhooks(host, token)
-        for webhook in response.webhooks:
-            print(f"Webhook {webhook.id}: {webhook.events}")
-        
-        # List webhooks for specific model
-        response = list_registry_webhooks(
-            host, token,
-            model_name="fraud-detection-model"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

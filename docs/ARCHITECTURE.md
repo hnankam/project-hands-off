@@ -70,6 +70,10 @@ flowchart TB
             WorkspaceDB[("Workspace<br/>Resources")]
         end
         
+        subgraph Redis["Redis Cache (Optional)"]
+            SessionState[("Session State<br/>Distributed")]
+        end
+        
         Encryption["🔒 AES-256-GCM<br/>Credential Encryption"]
     end
 
@@ -135,6 +139,7 @@ flowchart TB
     %% Data Layer
     PGR --> PostgreSQL
     PydanticServer --> PostgreSQL
+    PydanticServer --> Redis
     Auth --> UserDB
     TM --> AgentDB
     PGR --> ThreadDB
@@ -222,6 +227,7 @@ flowchart TB
 | Threads & Runs | PostgreSQL | Conversation history, agent state |
 | Usage & Billing | PostgreSQL | Token counts, costs, analytics |
 | Workspace Resources | PostgreSQL | Files, notes, connections |
+| Session State | Redis (Optional) | Distributed session management for horizontal scaling |
 | Credential Encryption | AES-256-GCM | Secure token storage |
 
 ### 📡 Real-Time Layer
@@ -383,6 +389,7 @@ flowchart TB
         subgraph Data["Data Layer"]
             PG["PostgreSQL<br/>(Primary)"]
             PGReplica["PostgreSQL<br/>(Read Replica)"]
+            RedisCache["Redis<br/>(Session State)"]
         end
         
         subgraph External["External Services"]
@@ -399,6 +406,8 @@ flowchart TB
     Node2 --> Pydantic2
     Pydantic1 --> PG
     Pydantic2 --> PG
+    Pydantic1 --> RedisCache
+    Pydantic2 --> RedisCache
     Node1 --> PG
     Node2 --> PG
     PG --> PGReplica
@@ -433,6 +442,7 @@ flowchart TB
 | **API Gateway** | Node.js, Hono, Express |
 | **AI Engine** | Python, FastAPI, Pydantic AI |
 | **Database** | PostgreSQL 15+, SQLite (dev) |
+| **Cache** | Redis 5+ (optional, for horizontal scaling) |
 | **Authentication** | Better Auth, OAuth 2.0, JWT |
 | **Real-time** | Ably, Server-Sent Events |
 | **Observability** | Pydantic Logfire, Custom Metrics |

@@ -14,7 +14,7 @@ from core import get_agent
 from core.models import AgentState
 from services import (
     cleanup_session,
-    session_states,
+    get_all_sessions,
     ably_publisher,
     create_usage_tracking_callback,
     log_usage_failure,
@@ -509,15 +509,10 @@ def register_info_routes(app: FastAPI) -> None:
         Returns:
             Dictionary with session information
         """
-        sessions = {}
-        for session_id, states in session_states.items():
-            sessions[session_id] = {
-                "agents": list(states.keys()),
-                "agent_count": len(states),
-            }
+        sessions = get_all_sessions()
         return {
             "sessions": sessions,
-            "total_sessions": len(session_states),
+            "total_sessions": len(sessions),
             "realtime_provider": "ably",
         }
 

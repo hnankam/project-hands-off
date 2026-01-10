@@ -70,19 +70,7 @@ def create_account_metastore(
     Returns:
         CreateAccountMetastoreResponse with created metastore info
         
-    Example:
-        # Create a new metastore
-        response = create_account_metastore(
-            host_credential_key=host_credential_key,
-            account_id_credential_key=account_id_credential_key,
-            token_credential_key=token_credential_key,
-            metastore_config={
-                "name": "my-metastore",
-                "storage_root": "s3://my-bucket/metastore",
-                "region": "us-west-2"
-            }
-        )
-        print(f"Created metastore: {response.metastore.metastore_id}")
+    
         
     Note:
         - Metastore names must be unique within an account
@@ -126,15 +114,6 @@ def get_account_metastore(
         
     Returns:
         GetAccountMetastoreResponse with metastore details
-        
-    Example:
-        response = get_account_metastore(
-            host_credential_key=host_credential_key,
-            account_id_credential_key=account_id_credential_key,
-            token_credential_key=token_credential_key,
-            metastore_id="metastore-123"
-        )
-        print(f"Metastore: {response.metastore.name}")
     """
     client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
@@ -166,17 +145,6 @@ def list_account_metastores(
         
     Returns:
         ListAccountMetastoresResponse with list of metastores
-        
-    Example:
-        response = list_account_metastores(
-            host_credential_key=host_credential_key,
-            account_id_credential_key=account_id_credential_key,
-            token_credential_key=token_credential_key
-        )
-        
-        print(f"Total metastores: {len(response.metastores)}")
-        for metastore in response.metastores:
-            print(f"Metastore: {metastore.name} ({metastore.metastore_id})")
     """
     client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
@@ -211,19 +179,6 @@ def update_account_metastore(
         
     Returns:
         UpdateAccountMetastoreResponse with updated metastore info
-        
-    Example:
-        response = update_account_metastore(
-            host_credential_key=host_credential_key,
-            account_id_credential_key=account_id_credential_key,
-            token_credential_key=token_credential_key,
-            metastore_id="metastore-123",
-            metastore_config={
-                "name": "updated-metastore-name",
-                "owner": "admin@company.com"
-            }
-        )
-        print(f"Updated: {response.metastore.name}")
     """
     client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
@@ -268,15 +223,7 @@ def delete_account_metastore(
     Returns:
         DeleteAccountMetastoreResponse confirming deletion
         
-    Example:
-        response = delete_account_metastore(
-            host_credential_key=host_credential_key,
-            account_id_credential_key=account_id_credential_key,
-            token_credential_key=token_credential_key,
-            metastore_id="metastore-123",
-            force=False
-        )
-        print(response.message)
+    
         
     Warning:
         - This is a destructive operation

@@ -70,27 +70,6 @@ def list_external_locations(
         
     Returns:
         ListExternalLocationsResponse with external locations and pagination
-        
-    Example:
-        # List all external locations
-        response = list_external_locations(host, token)
-        for location in response.external_locations:
-            print(f"{location.name}: {location.url}")
-        
-        # List with pagination
-        response = list_external_locations(
-            host, token,
-            max_results=100,
-            page_token=None
-        )
-        
-        # Continue to next page if available
-        if response.next_page_token:
-            next_page = list_external_locations(
-                host, token,
-                max_results=100,
-                page_token=response.next_page_token
-            )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -132,17 +111,6 @@ def get_external_location(
         
     Returns:
         ExternalLocationInfoModel with location details
-        
-    Example:
-        # Get external location details
-        location = get_external_location(
-            host, token,
-            name="production-s3-bucket"
-        )
-        print(f"URL: {location.url}")
-        print(f"Credential: {location.credential_name}")
-        print(f"Read-only: {location.read_only}")
-        print(f"Owner: {location.owner}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -187,28 +155,6 @@ def create_external_location(
         
     Returns:
         CreateExternalLocationResponse with created location
-        
-    Example:
-        # Create an S3 external location
-        response = create_external_location(
-            host, token,
-            name="production-data",
-            url="s3://my-company-data/production",
-            credential_name="aws-prod-credential",
-            comment="Production data storage",
-            read_only=False
-        )
-        print(f"Created: {response.external_location.name}")
-        
-        # Create read-only location
-        response = create_external_location(
-            host, token,
-            name="archive-data",
-            url="s3://my-company-data/archive",
-            credential_name="aws-archive-credential",
-            comment="Archived historical data",
-            read_only=True
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -266,30 +212,6 @@ def update_external_location(
         
     Returns:
         UpdateExternalLocationResponse with updated location
-        
-    Example:
-        # Update external location URL
-        response = update_external_location(
-            host, token,
-            name="production-data",
-            url="s3://my-company-data/production-v2"
-        )
-        
-        # Update credential and make read-only
-        response = update_external_location(
-            host, token,
-            name="staging-data",
-            credential_name="new-staging-credential",
-            read_only=True,
-            comment="Migrated to new credential"
-        )
-        
-        # Rename location
-        response = update_external_location(
-            host, token,
-            name="old-name",
-            new_name="new-name"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -332,21 +254,6 @@ def delete_external_location(
         
     Returns:
         DeleteExternalLocationResponse confirming deletion
-        
-    Example:
-        # Delete external location
-        response = delete_external_location(
-            host, token,
-            name="old-location"
-        )
-        print(response.message)
-        
-        # Force delete with dependencies
-        response = delete_external_location(
-            host, token,
-            name="location-with-tables",
-            force=True
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

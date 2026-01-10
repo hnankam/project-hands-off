@@ -115,18 +115,6 @@ def list_postgres_projects(
         
     Returns:
         ListPostgresProjectsResponse with list of projects
-        
-    Example:
-        # List all projects
-        projects = list_postgres_projects(host, token)
-        for proj in projects.projects:
-            print(f"{proj.name}: {proj.display_name}")
-            print(f"  PG Version: {proj.pg_version}")
-            print(f"  Storage: {proj.synthetic_storage_size_bytes} bytes")
-        
-        # List with pagination
-        projects = list_postgres_projects(host, token, page_size=10)
-        print(f"Found {projects.count} projects")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -162,17 +150,6 @@ def get_postgres_project(
         
     Returns:
         PostgresProjectModel with project details
-        
-    Example:
-        # Get project details
-        project = get_postgres_project(
-            host, token,
-            name="projects/my-postgres-db"
-        )
-        print(f"Project: {project.display_name}")
-        print(f"Version: {project.pg_version}")
-        print(f"Created: {project.create_time}")
-        print(f"Storage: {project.synthetic_storage_size_bytes} bytes")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -204,26 +181,6 @@ def create_postgres_project(
         
     Returns:
         CreatePostgresProjectResponse with operation info
-        
-    Example:
-        # Create basic project
-        result = create_postgres_project(
-            host, token,
-            project_id="my-postgres-db",
-            display_name="My PostgreSQL Database",
-            pg_version=15
-        )
-        print(f"Operation: {result.operation.name}")
-        print(f"Status: {result.message}")
-        
-        # Create with settings
-        result = create_postgres_project(
-            host, token,
-            project_id="analytics-db",
-            display_name="Analytics Database",
-            pg_version=16,
-            settings={"max_connections": 100}
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -270,23 +227,6 @@ def update_postgres_project(
         
     Returns:
         UpdatePostgresResponse with operation info
-        
-    Example:
-        # Update display name
-        result = update_postgres_project(
-            host, token,
-            name="projects/my-db",
-            update_mask="display_name",
-            display_name="Production Database"
-        )
-        
-        # Update settings
-        result = update_postgres_project(
-            host, token,
-            name="projects/my-db",
-            update_mask="settings",
-            settings={"max_connections": 200}
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -327,14 +267,6 @@ def delete_postgres_project(
         
     Returns:
         DeletePostgresResponse confirming deletion
-        
-    Example:
-        # Delete a project
-        result = delete_postgres_project(
-            host, token,
-            name="projects/old-db"
-        )
-        print(result.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -368,18 +300,6 @@ def list_postgres_branches(
         
     Returns:
         ListPostgresBranchesResponse with list of branches
-        
-    Example:
-        # List all branches in a project
-        branches = list_postgres_branches(
-            host, token,
-            parent="projects/my-db"
-        )
-        for branch in branches.branches:
-            print(f"{branch.name}")
-            print(f"  Default: {branch.default}")
-            print(f"  Size: {branch.logical_size_bytes} bytes")
-            print(f"  State: {branch.current_state}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -416,17 +336,6 @@ def get_postgres_branch(
         
     Returns:
         PostgresBranchModel with branch details
-        
-    Example:
-        # Get branch details
-        branch = get_postgres_branch(
-            host, token,
-            name="projects/my-db/branches/main"
-        )
-        print(f"Branch: {branch.name}")
-        print(f"Default: {branch.default}")
-        print(f"Protected: {branch.is_protected}")
-        print(f"Size: {branch.logical_size_bytes} bytes")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -458,23 +367,6 @@ def create_postgres_branch(
         
     Returns:
         CreatePostgresBranchResponse with operation info
-        
-    Example:
-        # Create main branch
-        result = create_postgres_branch(
-            host, token,
-            parent="projects/my-db",
-            branch_id="main",
-            is_protected=True
-        )
-        
-        # Create development branch from main
-        result = create_postgres_branch(
-            host, token,
-            parent="projects/my-db",
-            branch_id="dev",
-            source_branch="projects/my-db/branches/main"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -518,23 +410,6 @@ def update_postgres_branch(
         
     Returns:
         UpdatePostgresResponse with operation info
-        
-    Example:
-        # Protect a branch
-        result = update_postgres_branch(
-            host, token,
-            name="projects/my-db/branches/main",
-            update_mask="is_protected",
-            is_protected=True
-        )
-        
-        # Unprotect a branch
-        result = update_postgres_branch(
-            host, token,
-            name="projects/my-db/branches/dev",
-            update_mask="is_protected",
-            is_protected=False
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -573,14 +448,6 @@ def delete_postgres_branch(
         
     Returns:
         DeletePostgresResponse confirming deletion
-        
-    Example:
-        # Delete a branch
-        result = delete_postgres_branch(
-            host, token,
-            name="projects/my-db/branches/old-dev"
-        )
-        print(result.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -614,18 +481,6 @@ def list_postgres_endpoints(
         
     Returns:
         ListPostgresEndpointsResponse with list of endpoints
-        
-    Example:
-        # List all endpoints in a branch
-        endpoints = list_postgres_endpoints(
-            host, token,
-            parent="projects/my-db/branches/main"
-        )
-        for endpoint in endpoints.endpoints:
-            print(f"{endpoint.name}")
-            print(f"  Host: {endpoint.host}")
-            print(f"  Type: {endpoint.endpoint_type}")
-            print(f"  State: {endpoint.current_state}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -662,18 +517,6 @@ def get_postgres_endpoint(
         
     Returns:
         PostgresEndpointModel with endpoint details
-        
-    Example:
-        # Get endpoint details
-        endpoint = get_postgres_endpoint(
-            host, token,
-            name="projects/my-db/branches/main/endpoints/primary"
-        )
-        print(f"Endpoint: {endpoint.name}")
-        print(f"Host: {endpoint.host}")
-        print(f"Type: {endpoint.endpoint_type}")
-        print(f"Min CU: {endpoint.autoscaling_limit_min_cu}")
-        print(f"Max CU: {endpoint.autoscaling_limit_max_cu}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -711,28 +554,6 @@ def create_postgres_endpoint(
         
     Returns:
         CreatePostgresEndpointResponse with operation info
-        
-    Example:
-        # Create read-write endpoint
-        result = create_postgres_endpoint(
-            host, token,
-            parent="projects/my-db/branches/main",
-            endpoint_id="primary",
-            endpoint_type="READ_WRITE",
-            autoscaling_limit_min_cu=0.25,
-            autoscaling_limit_max_cu=2.0,
-            pooler_mode="TRANSACTION"
-        )
-        
-        # Create read-only endpoint
-        result = create_postgres_endpoint(
-            host, token,
-            parent="projects/my-db/branches/main",
-            endpoint_id="readonly",
-            endpoint_type="READ_ONLY",
-            autoscaling_limit_min_cu=0.25,
-            autoscaling_limit_max_cu=1.0
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -785,24 +606,6 @@ def update_postgres_endpoint(
         
     Returns:
         UpdatePostgresResponse with operation info
-        
-    Example:
-        # Update autoscaling limits
-        result = update_postgres_endpoint(
-            host, token,
-            name="projects/my-db/branches/main/endpoints/primary",
-            update_mask="autoscaling_limit_min_cu,autoscaling_limit_max_cu",
-            autoscaling_limit_min_cu=0.5,
-            autoscaling_limit_max_cu=4.0
-        )
-        
-        # Disable an endpoint
-        result = update_postgres_endpoint(
-            host, token,
-            name="projects/my-db/branches/dev/endpoints/test",
-            update_mask="disabled",
-            disabled=True
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -845,14 +648,6 @@ def delete_postgres_endpoint(
         
     Returns:
         DeletePostgresResponse confirming deletion
-        
-    Example:
-        # Delete an endpoint
-        result = delete_postgres_endpoint(
-            host, token,
-            name="projects/my-db/branches/dev/endpoints/old-test"
-        )
-        print(result.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -882,18 +677,6 @@ def get_postgres_operation(
         
     Returns:
         PostgresOperationModel with operation status
-        
-    Example:
-        # Check operation status
-        operation = get_postgres_operation(
-            host, token,
-            name="operations/create-project-12345"
-        )
-        print(f"Done: {operation.done}")
-        if operation.error:
-            print(f"Error: {operation.error}")
-        elif operation.response:
-            print(f"Result: {operation.response}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

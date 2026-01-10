@@ -122,14 +122,6 @@ def list_experiments(
         
     Returns:
         ListExperimentsResponse with experiments and pagination
-        
-    Example:
-        # List all experiments
-        response = list_experiments(host, token)
-        for exp in response.experiments:
-            print(f"{exp.name} (ID: {exp.experiment_id})")
-            print(f"  Location: {exp.artifact_location}")
-            print(f"  Created: {exp.creation_time}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -166,13 +158,6 @@ def get_experiment(
         
     Returns:
         ExperimentModel with experiment details
-        
-    Example:
-        # Get experiment details
-        experiment = get_experiment(host, token, "12345")
-        print(f"Name: {experiment.name}")
-        print(f"Artifact location: {experiment.artifact_location}")
-        print(f"Stage: {experiment.lifecycle_stage}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -198,14 +183,6 @@ def get_experiment_by_name(
         
     Returns:
         ExperimentModel with experiment details
-        
-    Example:
-        # Get experiment by name
-        experiment = get_experiment_by_name(
-            host, token,
-            experiment_name="/Users/me/my-ml-project"
-        )
-        print(f"Experiment ID: {experiment.experiment_id}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -238,21 +215,6 @@ def create_experiment(
         
     Returns:
         CreateExperimentResponse with experiment ID
-        
-    Example:
-        # Create basic experiment
-        response = create_experiment(
-            host, token,
-            name="/Users/me/fraud-detection"
-        )
-        print(f"Created experiment: {response.experiment_id}")
-        
-        # Create with tags
-        response = create_experiment(
-            host, token,
-            name="/Users/me/recommendation-model",
-            tags={"team": "ml", "project": "recommendations"}
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -293,14 +255,6 @@ def update_experiment(
         
     Returns:
         UpdateExperimentResponse confirming update
-        
-    Example:
-        # Rename experiment
-        response = update_experiment(
-            host, token,
-            experiment_id="12345",
-            new_name="/Users/me/fraud-detection-v2"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -330,11 +284,6 @@ def delete_experiment(
         
     Returns:
         DeleteExperimentResponse confirming deletion
-        
-    Example:
-        # Delete experiment
-        response = delete_experiment(host, token, "12345")
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -362,11 +311,6 @@ def restore_experiment(
         
     Returns:
         UpdateExperimentResponse confirming restoration
-        
-    Example:
-        # Restore deleted experiment
-        response = restore_experiment(host, token, "12345")
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -401,20 +345,6 @@ def search_experiments(
         
     Returns:
         ListExperimentsResponse with matching experiments
-        
-    Example:
-        # Search by name pattern
-        response = search_experiments(
-            host, token,
-            filter="name LIKE '/Users/me/%'"
-        )
-        
-        # Search with ordering
-        response = search_experiments(
-            host, token,
-            filter="tags.team = 'ml'",
-            order_by=["creation_time DESC"]
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -463,22 +393,6 @@ def create_experiment_run(
         
     Returns:
         CreateRunResponse with run information
-        
-    Example:
-        # Create basic run
-        response = create_run(
-            host, token,
-            experiment_id="12345"
-        )
-        print(f"Run ID: {response.run.info.run_id}")
-        
-        # Create with name and tags
-        response = create_run(
-            host, token,
-            experiment_id="12345",
-            run_name="random-forest-v1",
-            tags={"model_type": "random_forest", "version": "1.0"}
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -517,15 +431,6 @@ def get_experiment_run(
         
     Returns:
         RunModel with run details
-        
-    Example:
-        # Get run details
-        run = get_run(host, token, "abc123")
-        print(f"Run name: {run.info.run_name}")
-        print(f"Status: {run.info.status}")
-        if run.data:
-            print(f"Metrics: {run.data.metrics}")
-            print(f"Parameters: {run.data.params}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -557,23 +462,6 @@ def update_experiment_run(
         
     Returns:
         UpdateRunResponse with updated run info
-        
-    Example:
-        # Mark run as finished
-        response = update_run(
-            host, token,
-            run_id="abc123",
-            status="FINISHED"
-        )
-        
-        # Update name and end time
-        import time
-        response = update_run(
-            host, token,
-            run_id="abc123",
-            run_name="final-model",
-            end_time=int(time.time() * 1000)
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -613,11 +501,6 @@ def delete_experiment_run(
         
     Returns:
         DeleteRunResponse confirming deletion
-        
-    Example:
-        # Delete run
-        response = delete_run(host, token, "abc123")
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -645,11 +528,6 @@ def restore_experiment_run(
         
     Returns:
         UpdateRunResponse confirming restoration
-        
-    Example:
-        # Restore deleted run
-        response = restore_run(host, token, "abc123")
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -686,21 +564,6 @@ def search_experiment_runs(
         
     Returns:
         SearchRunsResponse with matching runs
-        
-    Example:
-        # Search by metric
-        response = search_runs(
-            host, token,
-            experiment_ids=["12345"],
-            filter="metrics.accuracy > 0.9"
-        )
-        
-        # Complex filter with ordering
-        response = search_runs(
-            host, token,
-            filter="metrics.rmse < 1 AND params.model_class = 'LogisticRegression'",
-            order_by=["metrics.accuracy DESC"]
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -752,24 +615,6 @@ def log_metric(
         
     Returns:
         LogMetricResponse confirming logging
-        
-    Example:
-        # Log simple metric
-        response = log_metric(
-            host, token,
-            run_id="abc123",
-            key="accuracy",
-            value=0.95
-        )
-        
-        # Log metric with step
-        response = log_metric(
-            host, token,
-            run_id="abc123",
-            key="loss",
-            value=0.12,
-            step=100
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -806,12 +651,6 @@ def log_param(
         
     Returns:
         LogParamResponse confirming logging
-        
-    Example:
-        # Log model hyperparameters
-        log_param(host, token, run_id="abc123", key="learning_rate", value="0.01")
-        log_param(host, token, run_id="abc123", key="max_depth", value="10")
-        log_param(host, token, run_id="abc123", key="n_estimators", value="100")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -850,12 +689,6 @@ def set_experiment_tag(
         
     Returns:
         SetExperimentTagResponse confirming tag set
-        
-    Example:
-        # Set experiment tags
-        set_experiment_tag(host, token, "12345", "team", "ml-team")
-        set_experiment_tag(host, token, "12345", "project", "fraud-detection")
-        set_experiment_tag(host, token, "12345", "version", "v2")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -890,12 +723,6 @@ def set_run_tag(
         
     Returns:
         SetRunTagResponse confirming tag set
-        
-    Example:
-        # Set run tags
-        set_run_tag(host, token, "abc123", "model_type", "xgboost")
-        set_run_tag(host, token, "abc123", "production", "true")
-        set_run_tag(host, token, "abc123", "reviewer", "data-scientist@company.com")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -928,11 +755,6 @@ def delete_run_tag(
         
     Returns:
         SetRunTagResponse confirming deletion
-        
-    Example:
-        # Delete a run tag
-        response = delete_run_tag(host, token, "abc123", "outdated_tag")
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

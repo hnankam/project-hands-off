@@ -60,7 +60,7 @@ class ListQueriesResponse(BaseModel):
     """Response model for listing queries."""
     queries: List[QueryInfo] = Field(..., description="List of queries")
     count: int = Field(..., description="Total number of queries returned")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more queries exist")
 
 
 class CreateQueryResponse(BaseModel):
@@ -191,7 +191,7 @@ class ListQueryHistoryResponse(BaseModel):
     queries: List[QueryExecutionInfo] = Field(..., description="List of query executions")
     count: int = Field(..., description="Number of queries returned")
     has_next_page: bool = Field(..., description="Whether there are more results")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 
 # ============================================================================
@@ -501,7 +501,7 @@ class ListReposResponse(BaseModel):
     """Response model for listing repositories."""
     repos: List[RepoInfo] = Field(..., description="List of repositories")
     count: int = Field(..., description="Number of repositories returned")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 
 class CreateRepoResponse(BaseModel):
@@ -872,14 +872,14 @@ class ListTablesResponse(BaseModel):
     """Response model for listing tables."""
     tables: list[TableInfoModel] = Field(..., description="List of tables")
     count: int = Field(..., description="Number of tables returned")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 
 class ListTableSummariesResponse(BaseModel):
     """Response model for listing table summaries."""
     summaries: list[TableSummaryModel] = Field(..., description="List of table summaries")
     count: int = Field(..., description="Number of summaries returned")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 
 class TableExistsResponseModel(BaseModel):
@@ -930,7 +930,7 @@ class ListSchemasResponse(BaseModel):
     """Response model for listing schemas."""
     schemas: list[SchemaInfoModel] = Field(..., description="List of schemas")
     count: int = Field(..., description="Number of schemas returned")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 
 class CreateSchemaResponse(BaseModel):
@@ -986,7 +986,7 @@ class ListCatalogsResponse(BaseModel):
     """Response model for listing catalogs."""
     catalogs: list[CatalogInfoModel] = Field(..., description="List of catalogs")
     count: int = Field(..., description="Number of catalogs returned")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 
 class CreateCatalogResponse(BaseModel):
@@ -1062,7 +1062,7 @@ class ListFunctionsResponse(BaseModel):
     """Response model for listing functions."""
     functions: list[FunctionInfoModel] = Field(..., description="List of functions")
     count: int = Field(..., description="Number of functions returned")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 
 class CreateFunctionResponse(BaseModel):
@@ -1117,7 +1117,7 @@ class ListVolumesResponse(BaseModel):
     """Response model for listing volumes."""
     volumes: list[VolumeInfoModel] = Field(..., description="List of volumes")
     count: int = Field(..., description="Number of volumes returned")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 
 class CreateVolumeResponse(BaseModel):
@@ -1190,7 +1190,7 @@ class ListExternalLineageResponse(BaseModel):
     """Response model for listing external lineage relationships."""
     lineage_relationships: list[Dict[str, Any]] = Field(..., description="List of lineage relationships")
     count: int = Field(..., description="Number of relationships returned")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 
 class CreateExternalLineageResponse(BaseModel):
@@ -1274,21 +1274,21 @@ class ListPostgresProjectsResponse(BaseModel):
     """Response model for listing Postgres projects."""
     projects: list[PostgresProjectModel] = Field(..., description="List of projects")
     count: int = Field(..., description="Number of projects returned")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 
 class ListPostgresBranchesResponse(BaseModel):
     """Response model for listing Postgres branches."""
     branches: list[PostgresBranchModel] = Field(..., description="List of branches")
     count: int = Field(..., description="Number of branches returned")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 
 class ListPostgresEndpointsResponse(BaseModel):
     """Response model for listing Postgres endpoints."""
     endpoints: list[PostgresEndpointModel] = Field(..., description="List of endpoints")
     count: int = Field(..., description="Number of endpoints returned")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 
 class CreatePostgresProjectResponse(BaseModel):
@@ -1402,7 +1402,7 @@ class ExternalLocationInfoModel(BaseModel):
 class ListExternalLocationsResponse(BaseModel):
     """Response model for listing external locations."""
     external_locations: list[ExternalLocationInfoModel] = Field(default_factory=list, description="List of external locations")
-    next_page_token: Optional[str] = Field(None, description="Token for next page of results")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="External locations retrieved successfully", description="Status message")
 
 
@@ -1466,7 +1466,7 @@ class PipelineInfoModel(BaseModel):
 class ListPipelinesResponse(BaseModel):
     """Response model for listing pipelines."""
     pipelines: list[PipelineInfoModel] = Field(default_factory=list, description="List of pipelines")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Pipelines retrieved successfully", description="Status message")
 
 
@@ -1505,7 +1505,7 @@ class StartUpdateResponse(BaseModel):
 class ListUpdatesResponse(BaseModel):
     """Response model for listing pipeline updates."""
     updates: list[UpdateInfoModel] = Field(default_factory=list, description="List of pipeline updates")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Pipeline updates retrieved successfully", description="Status message")
 
 
@@ -1566,7 +1566,7 @@ class RunModel(BaseModel):
 class ListExperimentsResponse(BaseModel):
     """Response model for listing experiments."""
     experiments: list[ExperimentModel] = Field(default_factory=list, description="List of experiments")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Experiments retrieved successfully", description="Status message")
 
 
@@ -1608,7 +1608,7 @@ class UpdateRunResponse(BaseModel):
 class SearchRunsResponse(BaseModel):
     """Response model for searching runs."""
     runs: list[RunModel] = Field(default_factory=list, description="List of runs matching search criteria")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Runs retrieved successfully", description="Status message")
 
 
@@ -1696,7 +1696,7 @@ class WebhookModel(BaseModel):
 class ListModelsResponse(BaseModel):
     """Response model for listing registered models."""
     models: list[RegisteredModelModel] = Field(default_factory=list, description="List of registered models")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Models retrieved successfully", description="Status message")
 
 
@@ -1738,7 +1738,7 @@ class DeleteModelVersionResponse(BaseModel):
 class ListModelVersionsResponse(BaseModel):
     """Response model for listing model versions."""
     model_versions: list[ModelVersionModel] = Field(default_factory=list, description="List of model versions")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Model versions retrieved successfully", description="Status message")
 
 
@@ -1806,7 +1806,7 @@ class DeleteWebhookResponse(BaseModel):
 class ListWebhooksResponse(BaseModel):
     """Response model for listing webhooks."""
     webhooks: list[WebhookModel] = Field(default_factory=list, description="List of webhooks")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Webhooks retrieved successfully", description="Status message")
 
 
@@ -1857,7 +1857,7 @@ class OnlineStoreModel(BaseModel):
 class ListOnlineStoresResponse(BaseModel):
     """Response model for listing online stores."""
     online_stores: list[OnlineStoreModel] = Field(default_factory=list, description="List of online stores")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Online stores retrieved successfully", description="Status message")
 
 
@@ -1932,7 +1932,7 @@ class MaterializedFeatureModel(BaseModel):
 class ListFeaturesResponse(BaseModel):
     """Response model for listing features."""
     features: list[FeatureModel] = Field(default_factory=list, description="List of features")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Features retrieved successfully", description="Status message")
 
 
@@ -1957,7 +1957,7 @@ class DeleteFeatureResponse(BaseModel):
 class ListKafkaConfigsResponse(BaseModel):
     """Response model for listing Kafka configs."""
     kafka_configs: list[KafkaConfigModel] = Field(default_factory=list, description="List of Kafka configs")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Kafka configs retrieved successfully", description="Status message")
 
 
@@ -1982,7 +1982,7 @@ class DeleteKafkaConfigResponse(BaseModel):
 class ListMaterializedFeaturesResponse(BaseModel):
     """Response model for listing materialized features."""
     materialized_features: list[MaterializedFeatureModel] = Field(default_factory=list, description="List of materialized features")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Materialized features retrieved successfully", description="Status message")
 
 
@@ -2029,7 +2029,7 @@ class EndpointInfoModel(BaseModel):
 class ListEndpointsResponse(BaseModel):
     """Response model for listing vector search endpoints."""
     endpoints: list[EndpointInfoModel] = Field(default_factory=list, description="List of endpoints")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Vector search endpoints retrieved successfully", description="Status message")
 
 
@@ -2081,7 +2081,7 @@ class RetrieveMetricsResponse(BaseModel):
     """Response model for retrieving endpoint metrics."""
     endpoint_name: str = Field(..., description="Endpoint name")
     metrics: list[MetricSeries] = Field(default_factory=list, description="Metric series")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Metrics retrieved successfully", description="Status message")
 
 
@@ -2112,7 +2112,7 @@ class MiniVectorIndexModel(BaseModel):
 class ListIndexesResponse(BaseModel):
     """Response model for listing vector search indexes."""
     indexes: list[MiniVectorIndexModel] = Field(default_factory=list, description="List of indexes")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Vector search indexes retrieved successfully", description="Status message")
 
 
@@ -2138,7 +2138,7 @@ class QueryVectorIndexResponse(BaseModel):
     """Response model for querying a vector index."""
     index_name: str = Field(..., description="Index name")
     results: list[QueryResultRow] = Field(default_factory=list, description="Query results")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Query executed successfully", description="Status message")
 
 
@@ -2278,7 +2278,7 @@ class DeleteMonitorResponse(BaseModel):
 class ListMonitorsResponse(BaseModel):
     """Response model for listing data quality monitors."""
     monitors: list[DataQualityMonitorModel] = Field(default_factory=list, description="List of monitors")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Monitors retrieved successfully", description="Status message")
 
 
@@ -2307,7 +2307,7 @@ class CancelRefreshResponse(BaseModel):
 class ListRefreshesResponse(BaseModel):
     """Response model for listing refreshes."""
     refreshes: list[DataQualityRefreshModel] = Field(default_factory=list, description="List of refreshes")
-    next_page_token: Optional[str] = Field(None, description="Token for next page")
+    has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Refreshes retrieved successfully", description="Status message")
 
 

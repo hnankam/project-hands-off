@@ -41,16 +41,6 @@ def list_warehouses(
     
     Returns:
         ListWarehousesResponse with warehouse information
-    
-    Example:
-        # List all warehouses
-        response = list_warehouses(host, token)
-        
-        for wh in response.warehouses:
-            print(f"{wh.name}: {wh.state} ({wh.cluster_size})")
-            print(f"  ID: {wh.id}")
-            print(f"  Active sessions: {wh.num_active_sessions}")
-            print(f"  Clusters: {wh.num_clusters}/{wh.max_num_clusters}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -83,17 +73,6 @@ def get_warehouse(
     
     Returns:
         WarehouseInfo with complete warehouse details
-    
-    Example:
-        # Check warehouse status
-        warehouse = get_warehouse(host, token, "abc123")
-        
-        if warehouse.state == "STOPPED":
-            print("Warehouse is stopped, starting...")
-            start_warehouse(host, token, warehouse.id)
-        elif warehouse.state == "RUNNING":
-            print(f"Warehouse ready! {warehouse.num_active_sessions} active sessions")
-            print(f"Health: {warehouse.health.status}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     response = client.warehouses.get(id=warehouse_id)
@@ -136,32 +115,6 @@ def create_warehouse(
     
     Returns:
         CreateWarehouseResponse with created warehouse details
-    
-    Example:
-        # Create a small warehouse for development
-        response = create_warehouse(
-            host, token,
-            name="dev-warehouse",
-            cluster_size="X-Small",
-            auto_stop_mins=10,
-            enable_photon=True
-        )
-        print(f"Created warehouse {response.id}: {response.state}")
-        
-        # Create a large warehouse for production
-        response = create_warehouse(
-            host, token,
-            name="prod-warehouse",
-            cluster_size="2X-Large",
-            min_num_clusters=2,
-            max_num_clusters=10,
-            auto_stop_mins=0,  # Never auto-stop
-            enable_photon=True,
-            tags=[
-                EndpointTagPair(key="Environment", value="Production"),
-                EndpointTagPair(key="Team", value="Analytics")
-            ]
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -228,22 +181,6 @@ def update_warehouse(
     
     Returns:
         UpdateWarehouseResponse with updated warehouse details
-    
-    Example:
-        # Scale up for heavy workload
-        response = update_warehouse(
-            host, token,
-            warehouse_id="abc123",
-            cluster_size="2X-Large",
-            max_num_clusters=10
-        )
-        
-        # Change auto-stop for cost savings
-        response = update_warehouse(
-            host, token,
-            warehouse_id="abc123",
-            auto_stop_mins=5  # Stop after 5 mins idle
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -293,11 +230,6 @@ def delete_warehouse(
     
     Returns:
         DeleteWarehouseResponse confirming deletion
-    
-    Example:
-        # Delete temporary warehouse
-        response = delete_warehouse(host, token, "temp-warehouse-123")
-        print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     client.warehouses.delete(id=warehouse_id)
@@ -328,18 +260,6 @@ def start_warehouse(
     
     Returns:
         StartWarehouseResponse with warehouse state
-    
-    Example:
-        # Ensure warehouse is running
-        warehouse = get_warehouse(host, token, "abc123")
-        
-        if warehouse.state == "STOPPED":
-            print("Starting warehouse...")
-            response = start_warehouse(host, token, warehouse.id)
-            print(f"State: {response.state}")
-        
-        # Now execute statement
-        execute_statement(host, token, "SELECT * FROM table", warehouse.id)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -373,16 +293,6 @@ def stop_warehouse(
     
     Returns:
         StopWarehouseResponse with warehouse state
-    
-    Example:
-        # Stop idle warehouse to save costs
-        warehouses = list_warehouses(host, token)
-        
-        for wh in warehouses.warehouses:
-            if wh.state == "RUNNING" and wh.num_active_sessions == 0:
-                print(f"Stopping idle warehouse {wh.name}")
-                response = stop_warehouse(host, token, wh.id)
-                print(response.message)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     

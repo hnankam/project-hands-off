@@ -10,6 +10,38 @@ interface Credential {
   updated_at: string;
 }
 
+/**
+ * Extract display name from credential key by removing suffix
+ * @param uniqueKey - Full key with suffix (e.g., "production_7a3f")
+ * @returns Display name without suffix (e.g., "production")
+ */
+function extractDisplayName(uniqueKey?: string): string {
+  if (!uniqueKey) return '';
+  
+  // Pattern: match everything before the last underscore followed by exactly 4 alphanumeric chars
+  const match = uniqueKey.match(/^(.+)_[a-z0-9]{4}$/);
+  
+  if (match) {
+    return match[1];
+  }
+  
+  // Fallback: if pattern doesn't match, return as-is
+  return uniqueKey;
+}
+
+/**
+ * Mask a credential value for display
+ * @param value - The credential value to mask
+ * @returns Masked string with asterisks
+ */
+function maskCredentialValue(value: string | null | undefined): string {
+  if (!value) return '';
+  
+  const raw = String(value);
+  const maskLength = Math.max(6, Math.min(raw.length || 0, 12));
+  return '*'.repeat(maskLength);
+}
+
 export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void }> = ({ isLight, onStatsChange }) => {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +57,13 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [credentialToDelete, setCredentialToDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Password visibility state
+  const [showPassword, setShowPassword] = useState(false);
+  
+  // State for tracking which credential secrets are visible in the table
+  const [visibleSecrets, setVisibleSecrets] = useState<Record<string, string>>({});
+  const [loadingSecrets, setLoadingSecrets] = useState<Record<string, boolean>>({});
 
   const loadCredentials = useCallback(async () => {
     try {
@@ -43,6 +82,49 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
     }
   }, []);
 
+  const toggleSecretVisibility = async (credentialId: string) => {
+    // If already visible, just hide it
+    if (visibleSecrets[credentialId]) {
+      setVisibleSecrets(prev => {
+        const next = { ...prev };
+        delete next[credentialId];
+        return next;
+      });
+      return;
+    }
+
+    // Otherwise, fetch the secret
+    setLoadingSecrets(prev => ({ ...prev, [credentialId]: true }));
+    
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseURL}/api/workspace/credentials/bulk`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: [credentialId] }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const credential = data.credentials?.[0];
+        if (credential?.password) {
+          setVisibleSecrets(prev => ({ ...prev, [credentialId]: credential.password }));
+        }
+      }
+    } catch (error) {
+      console.error('[Workspace] Failed to fetch credential secret:', error);
+    } finally {
+      setLoadingSecrets(prev => {
+        const next = { ...prev };
+        delete next[credentialId];
+        return next;
+      });
+    }
+  };
+
   useEffect(() => {
     loadCredentials();
   }, [loadCredentials]);
@@ -54,19 +136,49 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
     setType('');
     setKey('');
     setPassword('');
+    setShowPassword(false);
   };
 
-  const handleEdit = (credential: Credential) => {
+  const handleEdit = async (credential: Credential) => {
     setShowEditor(true);
     setEditingCredential(credential);
     setName(credential.name);
     setType(credential.type);
-    setKey(credential.key || '');
-    setPassword(''); // Don't load existing password
+    // Extract the base key (without suffix) for editing
+    setKey(credential.key ? extractDisplayName(credential.key) : '');
+    setShowPassword(false); // Reset password visibility
+    
+    // Load the existing password so user can see it with eye icon
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseURL}/api/workspace/credentials/bulk`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: [credential.id] }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const fullCredential = data.credentials?.[0];
+        if (fullCredential?.password) {
+          setPassword(fullCredential.password);
+        } else {
+          setPassword('');
+        }
+      } else {
+        setPassword('');
+      }
+    } catch (error) {
+      console.error('[Workspace] Failed to fetch credential password:', error);
+      setPassword('');
+    }
   };
 
   const handleSave = async () => {
-    if (!name.trim() || !type.trim()) {
+    if (!name.trim() || !type.trim() || !key.trim()) {
       alert('Please fill in all required fields');
       return;
     }
@@ -87,7 +199,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
         body: JSON.stringify({
           name,
           type,
-          key,
+          key: key.trim() || undefined, // Send user-provided key
           password: password || undefined, // Only send if provided
         }),
       });
@@ -200,7 +312,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
 
             <div>
               <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
-                Key
+                Key *
               </label>
               <input
                 type="text"
@@ -210,16 +322,42 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
                   'w-full px-3 py-1.5 text-xs border rounded focus:ring-1 focus:ring-blue-500 outline-none',
                   isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#151C24] border-gray-600 text-white'
                 )}
-                placeholder="API key, username, client ID, etc."
+                placeholder="e.g., databricks_host, production_token"
               />
             </div>
 
             <div>
-              <label className={cn('block text-xs font-medium mb-1', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
-                Password / Secret {editingCredential && '(leave blank to keep unchanged)'}
-              </label>
+              <div className="mb-1 flex items-center justify-between">
+                <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
+                  Secret {!editingCredential && '*'}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(prev => !prev)}
+                  className={cn(
+                    'inline-flex h-5 w-5 items-center justify-center rounded transition-colors',
+                    isLight
+                      ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                      : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200',
+                  )}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? (
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19.5c-5 0-9-4.5-9-7.5a7.88 7.88 0 012.243-3.992m2.598-1.96A9.956 9.956 0 0112 4.5c5 0 9 4.5 9 7.5a7.86 7.86 0 01-2.318 4.042M3 3l18 18" />
+                    </svg>
+                  ) : (
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M1.5 12s4.5-7.5 10.5-7.5 10.5 7.5 10.5 7.5-4.5 7.5-10.5 7.5S1.5 12 1.5 12z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className={cn(
@@ -233,10 +371,10 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 onClick={handleSave}
-                disabled={saving || !name.trim() || !type.trim()}
+                disabled={saving || !name.trim() || !type.trim() || (!editingCredential && !key.trim())}
                 className={cn(
                   'px-4 py-1.5 text-xs rounded font-medium transition-colors',
-                  saving || !name.trim() || !type.trim()
+                  saving || !name.trim() || !type.trim() || (!editingCredential && !key.trim())
                     ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
                     : isLight
                     ? 'bg-blue-500/90 text-white hover:bg-blue-500'
@@ -294,6 +432,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
                   <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Name</th>
                   <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Type</th>
                   <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Key</th>
+                  <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Secret</th>
                   <th className={cn('px-3 py-1.5 text-left text-xs font-semibold', isLight ? 'text-gray-600' : 'text-gray-300')}>Updated</th>
                   <th className={cn('px-3 py-1.5 text-right text-xs font-semibold w-24', isLight ? 'text-gray-600' : 'text-gray-300')}>Actions</th>
                 </tr>
@@ -316,7 +455,41 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
                       </span>
                     </td>
                     <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
-                      {credential.key || '—'}
+                      {/* Display the key without suffix for cleaner UI */}
+                      {credential.key ? extractDisplayName(credential.key) : '—'}
+                    </td>
+                    <td className={cn('px-3 py-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      <div className="flex items-center gap-2">
+                        {loadingSecrets[credential.id] ? (
+                          <span className="text-[10px]">Loading...</span>
+                        ) : visibleSecrets[credential.id] ? (
+                          <span className="font-mono text-[11px] break-all max-w-[200px]">{visibleSecrets[credential.id]}</span>
+                        ) : (
+                          <span className="text-[11px]">{maskCredentialValue('secret')}</span>
+                        )}
+                        <button
+                          onClick={() => toggleSecretVisibility(credential.id)}
+                          className={cn(
+                            'inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded transition-colors',
+                            isLight
+                              ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                              : 'text-gray-500 hover:bg-gray-700 hover:text-gray-300',
+                          )}
+                          title={visibleSecrets[credential.id] ? 'Hide secret' : 'Show secret'}
+                          aria-label={visibleSecrets[credential.id] ? 'Hide secret' : 'Show secret'}
+                        >
+                          {visibleSecrets[credential.id] ? (
+                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19.5c-5 0-9-4.5-9-7.5a7.88 7.88 0 012.243-3.992m2.598-1.96A9.956 9.956 0 0112 4.5c5 0 9 4.5 9 7.5a7.86 7.86 0 01-2.318 4.042M3 3l18 18" />
+                            </svg>
+                          ) : (
+                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M1.5 12s4.5-7.5 10.5-7.5 10.5 7.5 10.5 7.5-4.5 7.5-10.5 7.5S1.5 12 1.5 12z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </td>
                     <td className={cn('px-3 py-1.5 whitespace-nowrap', isLight ? 'text-gray-600' : 'text-gray-400')}>
                       {formatDate(credential.updated_at)}

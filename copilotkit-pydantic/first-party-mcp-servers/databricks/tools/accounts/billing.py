@@ -37,29 +37,7 @@ def download_billable_usage(
     Returns:
         BillableUsageDownloadResponse with CSV content and metadata
     
-    Example:
-        # Download usage logs for August-September 2024
-        response = download_billable_usage(
-            host="https://accounts.cloud.databricks.com",
-            account_id="abc-123-def",
-            token="dapi...",
-            start_month="2024-08",
-            end_month="2024-09",
-            personal_data=False
-        )
-        
-        # Parse the CSV content
-        import csv
-        from io import StringIO
-        reader = csv.DictReader(StringIO(response.csv_content))
-        for row in reader:
-            print(f"Workspace: {row['workspace_id']}")
-            print(f"Usage: {row['usage_quantity']}")
-            print(f"SKU: {row['sku_name']}")
-        
-        # Save to file
-        with open('usage_2024-08_to_2024-09.csv', 'w') as f:
-            f.write(response.csv_content)
+    
     
     Notes:
         - This method may take several minutes to complete for large date ranges

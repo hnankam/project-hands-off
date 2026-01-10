@@ -525,23 +525,23 @@ router.get('/org-members-with-status', async (req, res) => {
     const result = await pool.query(`
       WITH org_members AS (
         -- Get all organization members
-        SELECT 
-          m.id,
-          m."userId",
-          m."organizationId",
-          m.role,
-          m."createdAt",
-          u.id as "user_id",
-          u.name as "user_name",
-          u.email as "user_email",
-          u.image as "user_image",
-          u.banned as "user_banned",
-          u."banReason" as "user_banReason",
+      SELECT 
+        m.id,
+        m."userId",
+        m."organizationId",
+        m.role,
+        m."createdAt",
+        u.id as "user_id",
+        u.name as "user_name",
+        u.email as "user_email",
+        u.image as "user_image",
+        u.banned as "user_banned",
+        u."banReason" as "user_banReason",
           u."banExpires" as "user_banExpires",
           'member' as source
-        FROM member m
-        JOIN "user" u ON m."userId" = u.id
-        WHERE m."organizationId" = $1
+      FROM member m
+      JOIN "user" u ON m."userId" = u.id
+      WHERE m."organizationId" = $1
       ),
       team_only_members AS (
         -- Get team members who are NOT in the member table

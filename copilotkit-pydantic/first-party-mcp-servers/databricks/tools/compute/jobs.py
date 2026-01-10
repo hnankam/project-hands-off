@@ -6,6 +6,7 @@ job CRUD, run management, and permission control.
 """
 
 from typing import Optional, List, Dict, Any
+from itertools import islice
 from cache import get_workspace_client
 from models import (
     JobInfo,
@@ -37,50 +38,58 @@ from models import (
 def list_jobs(
     host_credential_key: str,
     token_credential_key: str,
-    limit: Optional[int] = None,
+    limit: int = 25,
+    page: int = 0,
     name: Optional[str] = None,
-    expand_tasks: Optional[bool] = None,
-    page_token: Optional[str] = None,
+    expand_tasks: bool = False,
 ) -> ListJobsResponse:
     """
-    List jobs in the workspace.
+    Retrieve a paginated list of Databricks jobs accessible to the authenticated user.
     
-    Lists all jobs that the user has access to. Supports filtering by name
-    and pagination.
+    This function returns jobs defined in the workspace with support for filtering and pagination.
+    Use this to discover available jobs, check job configurations, or iterate through large job lists.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token: Authentication token
-        limit: Maximum number of jobs to return
-        name: Filter by job name (exact match)
-        expand_tasks: Whether to expand task details
-        page_token: Token for pagination
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        limit: Number of jobs to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Page 0 returns first `limit` jobs, page 1 returns next `limit` jobs. Default: 0
+        name: Optional exact job name for filtering. Only jobs with this exact name are returned. Default: None (no filtering)
+        expand_tasks: Boolean flag to include detailed task configuration in response. True includes full task details, False includes minimal info. Default: False
         
     Returns:
-        ListJobsResponse with list of jobs
+        ListJobsResponse containing:
+        - jobs: List of JobInfo objects with job details
+        - count: Integer number of jobs returned in this page (0 to limit)
+        - has_more: Boolean indicating if additional jobs exist beyond this page
         
-    Example:
-        # List all jobs
-        jobs = list_jobs(host, token)
-        
-        # List jobs with name filter
-        jobs = list_jobs(host, token, name="Daily ETL")
-        
-        # List with pagination
-        jobs = list_jobs(host, token, limit=50, page_token="...")
+    Pagination:
+        - Returns up to `limit` jobs per call
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available, call again with page+1
+        - has_more=False indicates this is the final page
+        - Empty list (count=0) with has_more=False means no jobs match criteria
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
-    jobs_list = []
-    iterator = client.jobs.list(
-        limit=limit,
+    # Call the API to get jobs
+    response = client.jobs.list(
         name=name,
         expand_tasks=expand_tasks,
-        page_token=page_token,
     )
     
-    has_more = False
-    for job in iterator:
+    # Calculate skip and take based on page number
+    # Page 0: skip 0, take limit (items 0 to limit-1)
+    # Page 1: skip limit, take limit (items limit to 2*limit-1)
+    # Page N: skip N*limit, take limit
+    skip = page * limit
+    
+    # Use islice to skip to the right page and take only the requested number of items
+    # islice(iterator, start, stop) takes items from start to stop-1
+    jobs_iterator = islice(response, skip, skip + limit)
+    
+    jobs_list = []
+    for job in jobs_iterator:
         # Extract settings
         settings = None
         if job.settings:
@@ -135,10 +144,14 @@ def list_jobs(
                 run_as_user_name=getattr(job, 'run_as_user_name', None),
             )
         )
-        
-        # Check if more jobs exist
-        if hasattr(job, 'has_more'):
-            has_more = job.has_more
+    
+    # Check if there are more results by attempting to peek at the next item
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
     
     return ListJobsResponse(
         jobs=jobs_list,
@@ -165,11 +178,6 @@ def get_job(
         
     Returns:
         JobInfo with complete job details
-        
-    Example:
-        job = get_job(host, token, job_id=12345)
-        print(f"Job: {job.name}")
-        print(f"Tasks: {len(job.settings.tasks) if job.settings else 0}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -278,38 +286,6 @@ def create_job(
             "notebook_task": {"notebook_path": "/ETL/extract"},
             "existing_cluster_id": "cluster-id"
         }
-        
-    Example:
-        # Create single-task job
-        job = create_job(
-            host, token,
-            name="Daily Report",
-            tasks=[{
-                "task_key": "run_report",
-                "notebook_task": {"notebook_path": "/Reports/daily"},
-                "existing_cluster_id": "cluster-123"
-            }],
-            schedule={"quartz_cron_expression": "0 9 * * *", "timezone_id": "UTC"}
-        )
-        
-        # Create multi-task workflow
-        job = create_job(
-            host, token,
-            name="ETL Pipeline",
-            tasks=[
-                {
-                    "task_key": "extract",
-                    "notebook_task": {"notebook_path": "/ETL/extract"},
-                    "existing_cluster_id": "cluster-123"
-                },
-                {
-                    "task_key": "transform",
-                    "notebook_task": {"notebook_path": "/ETL/transform"},
-                    "depends_on": [{"task_key": "extract"}],
-                    "existing_cluster_id": "cluster-123"
-                }
-            ]
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -370,24 +346,6 @@ def update_job(
         
     Returns:
         UpdateJobResponse confirming update
-        
-    Example:
-        # Update job name and max concurrent runs
-        update_job(
-            host, token,
-            job_id=12345,
-            new_settings={
-                "name": "Updated ETL Pipeline",
-                "max_concurrent_runs": 3
-            }
-        )
-        
-        # Remove schedule
-        update_job(
-            host, token,
-            job_id=12345,
-            fields_to_remove=["schedule"]
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -424,17 +382,6 @@ def reset_job(
         
     Returns:
         UpdateJobResponse confirming reset
-        
-    Example:
-        reset_job(
-            host, token,
-            job_id=12345,
-            new_settings={
-                "name": "Completely New Job",
-                "tasks": [...],
-                "max_concurrent_runs": 1
-            }
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -467,9 +414,6 @@ def delete_job(
         
     Returns:
         DeleteJobResponse confirming deletion
-        
-    Example:
-        delete_job(host, token, job_id=12345)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -516,22 +460,6 @@ def run_now(
         
     Returns:
         RunNowResponse with run ID
-        
-    Example:
-        # Run job with parameters
-        run = run_now(
-            host, token,
-            job_id=12345,
-            notebook_params={"date": "2024-01-01", "region": "us-west"}
-        )
-        print(f"Started run {run.run_id}")
-        
-        # Run with idempotency token
-        run = run_now(
-            host, token,
-            job_id=12345,
-            idempotency_token="run-2024-01-01"
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -587,19 +515,6 @@ def submit_run(
         
     Returns:
         SubmitRunResponse with run ID
-        
-    Example:
-        # Submit ad-hoc analysis
-        run = submit_run(
-            host, token,
-            run_name="Ad-hoc Analysis 2024-01-01",
-            tasks=[{
-                "task_key": "analyze",
-                "notebook_task": {"notebook_path": "/Analysis/report"},
-                "existing_cluster_id": "cluster-123"
-            }]
-        )
-        print(f"Submitted run {run.run_id}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -647,12 +562,6 @@ def get_run(
         
     Returns:
         RunInfo with complete run details
-        
-    Example:
-        run = get_run(host, token, run_id=67890)
-        print(f"State: {run.state.life_cycle_state}")
-        print(f"Result: {run.state.result_state}")
-        print(f"Duration: {run.execution_duration}ms")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -723,64 +632,63 @@ def list_runs(
     job_id: Optional[int] = None,
     active_only: Optional[bool] = None,
     completed_only: Optional[bool] = None,
-    limit: Optional[int] = None,
+    limit: int = 25,
+    page: int = 0,
     start_time_from: Optional[int] = None,
     start_time_to: Optional[int] = None,
-    expand_tasks: Optional[bool] = None,
-    page_token: Optional[str] = None,
+    expand_tasks: bool = False,
 ) -> ListRunsResponse:
     """
-    List job runs.
+    Retrieve a paginated list of Databricks job run executions with filtering capabilities.
     
-    Lists runs for a specific job or all runs in the workspace. Supports
-    filtering by state and time range.
+    This function returns job runs (execution instances) with support for filtering by job ID,
+    execution state, time range, and pagination. Use this to monitor job execution history,
+    track failures, or analyze run patterns.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token: Authentication token
-        job_id: Filter by job ID
-        active_only: Only return active runs
-        completed_only: Only return completed runs
-        limit: Maximum number of runs to return
-        start_time_from: Filter by start time (epoch ms)
-        start_time_to: Filter by start time (epoch ms)
-        expand_tasks: Whether to expand task details
-        page_token: Token for pagination
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        job_id: Optional integer job ID to filter runs. If specified, only runs for this job are returned. Default: None (all jobs)
+        active_only: Boolean filter for active runs (PENDING, RUNNING, TERMINATING states). Cannot be used with completed_only. Default: None (no state filter)
+        completed_only: Boolean filter for completed runs (SUCCESS, FAILED, CANCELLED states). Cannot be used with active_only. Default: None (no state filter)
+        limit: Number of runs to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
+        start_time_from: Optional Unix epoch timestamp in milliseconds. Only runs started at or after this time are returned. Default: None (no time filter)
+        start_time_to: Optional Unix epoch timestamp in milliseconds. Only runs started before or at this time are returned. Default: None (no time filter)
+        expand_tasks: Boolean flag to include detailed task execution info. True includes full task run details, False includes minimal info. Default: False
         
     Returns:
-        ListRunsResponse with list of runs
+        ListRunsResponse containing:
+        - runs: List of RunInfo objects with execution details (state, timing, results)
+        - count: Integer number of runs returned in this page (0 to limit)
+        - has_more: Boolean indicating if additional runs exist beyond this page
         
-    Example:
-        # List all runs for a job
-        runs = list_runs(host, token, job_id=12345)
-        
-        # List active runs only
-        runs = list_runs(host, token, job_id=12345, active_only=True)
-        
-        # List runs in time range
-        runs = list_runs(
-            host, token,
-            job_id=12345,
-            start_time_from=1704067200000,  # 2024-01-01
-            start_time_to=1704153600000     # 2024-01-02
-        )
+    Pagination:
+        - Returns up to `limit` runs per call, ordered by start time (most recent first)
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available
+        - Filters (job_id, state, time range) apply consistently across all pages
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
-    runs_list = []
-    iterator = client.jobs.list_runs(
+    # Call the API to get runs
+    response = client.jobs.list_runs(
         job_id=job_id,
         active_only=active_only,
         completed_only=completed_only,
-        limit=limit,
         start_time_from=start_time_from,
         start_time_to=start_time_to,
         expand_tasks=expand_tasks,
-        page_token=page_token,
     )
     
-    has_more = False
-    for run in iterator:
+    # Calculate skip and take based on page number
+    skip = page * limit
+    
+    # Use islice to skip to the right page and take only the requested number of items
+    runs_iterator = islice(response, skip, skip + limit)
+    
+    runs_list = []
+    for run in runs_iterator:
         # Extract state
         state = None
         if run.state:
@@ -828,9 +736,14 @@ def list_runs(
                 tasks=tasks,
             )
         )
-        
-        if hasattr(run, 'has_more'):
-            has_more = run.has_more
+    
+    # Check if there are more results by attempting to peek at the next item
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
     
     return ListRunsResponse(
         runs=runs_list,
@@ -857,9 +770,6 @@ def cancel_run(
         
     Returns:
         CancelRunResponse confirming cancellation
-        
-    Example:
-        cancel_run(host, token, run_id=67890)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -887,13 +797,6 @@ def cancel_all_runs(
         
     Returns:
         Dict with cancellation status
-        
-    Example:
-        # Cancel all runs of a specific job
-        cancel_all_runs(host, token, job_id=12345)
-        
-        # Cancel all queued runs in workspace
-        cancel_all_runs(host, token, all_queued_runs=True)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -925,9 +828,6 @@ def delete_run(
         
     Returns:
         DeleteRunResponse confirming deletion
-        
-    Example:
-        delete_run(host, token, run_id=67890)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -974,23 +874,6 @@ def repair_run(
         
     Returns:
         RepairRunResponse with repair ID
-        
-    Example:
-        # Repair all failed tasks
-        repair = repair_run(
-            host, token,
-            run_id=67890,
-            rerun_all_failed_tasks=True
-        )
-        print(f"Repair ID: {repair.repair_id}")
-        
-        # Repair specific tasks
-        repair = repair_run(
-            host, token,
-            run_id=67890,
-            rerun_tasks=["transform", "load"],
-            rerun_dependent_tasks=True
-        )
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1032,13 +915,6 @@ def get_run_output(
         
     Returns:
         RunOutputInfo with output details
-        
-    Example:
-        output = get_run_output(host, token, run_id=67890)
-        if output.error:
-            print(f"Run failed: {output.error}")
-        elif output.notebook_output:
-            print(f"Result: {output.notebook_output}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1094,12 +970,6 @@ def export_run(
         
     Returns:
         ExportRunResponse with exported views
-        
-    Example:
-        # Export all views
-        export = export_run(host, token, run_id=67890, views_to_export="ALL")
-        for view in export.views:
-            print(f"{view.name}: {view.type}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1147,13 +1017,6 @@ def get_job_permissions(
         
     Returns:
         Dict with permission details
-        
-    Example:
-        permissions = get_job_permissions(host, token, job_id="12345")
-        for acl in permissions['access_control_list']:
-            principal = acl.get('user_name') or acl.get('group_name')
-            perms = [p['permission_level'] for p in acl['all_permissions']]
-            print(f"{principal}: {perms}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1192,14 +1055,6 @@ def set_job_permissions(
         - CAN_VIEW - View job configuration and runs
         - CAN_MANAGE_RUN - Trigger runs, cancel runs
         - CAN_MANAGE - Full control (edit, delete, permissions)
-        
-    Example:
-        acls = [
-            {"user_name": "admin@company.com", "permission_level": "CAN_MANAGE"},
-            {"group_name": "data-engineers", "permission_level": "CAN_MANAGE_RUN"},
-            {"group_name": "analysts", "permission_level": "CAN_VIEW"}
-        ]
-        set_job_permissions(host, token, job_id="12345", access_control_list=acls)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1234,12 +1089,6 @@ def update_job_permissions(
         
     Returns:
         Dict with updated permission details
-        
-    Example:
-        acls = [
-            {"user_name": "new-user@company.com", "permission_level": "CAN_VIEW"}
-        ]
-        update_job_permissions(host, token, job_id="12345", access_control_list=acls)
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
@@ -1272,11 +1121,6 @@ def get_job_permission_levels(
         
     Returns:
         Dict with available permission levels
-        
-    Example:
-        levels = get_job_permission_levels(host, token, job_id="12345")
-        for level in levels['permission_levels']:
-            print(f"{level['permission_level']}: {level['description']}")
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
