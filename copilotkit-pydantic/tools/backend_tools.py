@@ -1619,6 +1619,10 @@ BACKEND_TOOLS = {
     'move_file': None,
     'create_text_file': None,
     'update_file_content': None,
+    'read_file': None,
+    'glob_files': None,
+    'grep_files': None,
+    'edit_file': None,
 }
 
 
@@ -1636,7 +1640,8 @@ def get_backend_tool(tool_key: str):
         'search_workspace_files', 'get_file_content', 'search_workspace_notes', 
         'get_note_content', 'get_file_metadata', 'list_folders', 'create_folder',
         'rename_folder', 'delete_folder', 'list_files', 'delete_file', 
-        'rename_file', 'move_file', 'create_text_file', 'update_file_content'
+        'rename_file', 'move_file', 'create_text_file', 'update_file_content',
+        'read_file', 'glob_files', 'grep_files', 'edit_file'
     )
     
     if tool_key in workspace_tools:
@@ -1656,7 +1661,11 @@ def get_backend_tool(tool_key: str):
                 rename_file,
                 move_file,
                 create_text_file,
-                update_file_content
+                update_file_content,
+                read_file,
+                glob_files,
+                grep_files,
+                edit_file,
             )
             BACKEND_TOOLS['search_workspace_files'] = search_workspace_files
             BACKEND_TOOLS['get_file_content'] = get_file_content
@@ -1673,6 +1682,10 @@ def get_backend_tool(tool_key: str):
             BACKEND_TOOLS['move_file'] = move_file
             BACKEND_TOOLS['create_text_file'] = create_text_file
             BACKEND_TOOLS['update_file_content'] = update_file_content
+            BACKEND_TOOLS['read_file'] = read_file
+            BACKEND_TOOLS['glob_files'] = glob_files
+            BACKEND_TOOLS['grep_files'] = grep_files
+            BACKEND_TOOLS['edit_file'] = edit_file
     
     return BACKEND_TOOLS.get(tool_key)
 

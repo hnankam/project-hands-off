@@ -560,7 +560,7 @@ export class PostgresAgentRunner extends AgentRunner {
         console.log(`[PostgresAgentRunner] Tool call to message ID mapping (executeRun, ${toolCallIdToMessageId.size} entries):`);
         for (const [toolCallId, messageId] of toolCallIdToMessageId.entries()) {
           const isDeleted = deletedMessageIds.has(messageId);
-          console.log(`[PostgresAgentRunner]   toolCallId: ${toolCallId} -> messageId: ${messageId} ${isDeleted ? '(DELETED)' : '(not deleted)'}`);
+          // console.log(`[PostgresAgentRunner]   toolCallId: ${toolCallId} -> messageId: ${messageId} ${isDeleted ? '(DELETED)' : '(not deleted)'}`);
         }
       }
       
@@ -597,7 +597,7 @@ export class PostgresAgentRunner extends AgentRunner {
               typeof event.messageId === 'string' && 
               deletedMessageIds.has(event.messageId)) {
             if (this.debug) {
-              console.log(`[PostgresAgentRunner] Filtering out deleted message ${event.messageId} from event ${event.type} in executeRun`);
+              // console.log(`[PostgresAgentRunner] Filtering out deleted message ${event.messageId} from event ${event.type} in executeRun`);
             }
             continue; // Skip this event
           }
@@ -611,7 +611,7 @@ export class PostgresAgentRunner extends AgentRunner {
             // Check if tool call is deleted (associated message was deleted)
             if (deletedToolCallIds.has(event.toolCallId)) {
               if (this.debug) {
-                console.log(`[PostgresAgentRunner] Filtering out tool call event ${event.type} with toolCallId ${event.toolCallId} (associated message deleted) in executeRun`);
+                // console.log(`[PostgresAgentRunner] Filtering out tool call event ${event.type} with toolCallId ${event.toolCallId} (associated message deleted) in executeRun`);
               }
               continue; // Skip this event
             }
@@ -628,14 +628,14 @@ export class PostgresAgentRunner extends AgentRunner {
             // Debug: Log tool call events that are NOT being filtered
             if (this.debug && (event.type === 'TOOL_CALL_START' || event.type === 'TOOL_CALL_ARGS' || event.type === 'TOOL_CALL_END' || event.type === 'TOOL_CALL_RESULT')) {
               const isDeleted = deletedMessageIds.has(associatedMessageId);
-              console.log(`[PostgresAgentRunner] NOT filtering tool call event ${event.type} with toolCallId ${event.toolCallId} (associated messageId: ${associatedMessageId}, deleted: ${isDeleted}) in executeRun`);
+              // console.log(`[PostgresAgentRunner] NOT filtering tool call event ${event.type} with toolCallId ${event.toolCallId} (associated messageId: ${associatedMessageId}, deleted: ${isDeleted}) in executeRun`);
             }
           }
           
           // Include all other events (including new messages from new runs)
           // New messages have new IDs that are not in the deleted sets
           if (this.debug && (event.type === 'TOOL_CALL_START' || event.type === 'TOOL_CALL_ARGS' || event.type === 'TOOL_CALL_END' || event.type === 'TOOL_CALL_RESULT')) {
-            console.log(`[PostgresAgentRunner] Including tool call event ${event.type} with toolCallId: ${event.toolCallId || 'none'} in executeRun`);
+            // console.log(`[PostgresAgentRunner] Including tool call event ${event.type} with toolCallId: ${event.toolCallId || 'none'} in executeRun`);
           }
           filtered.push(event);
         }
@@ -921,7 +921,7 @@ export class PostgresAgentRunner extends AgentRunner {
         console.log(`[PostgresAgentRunner] Tool call to message ID mapping (${toolCallIdToMessageId.size} entries):`);
         for (const [toolCallId, messageId] of toolCallIdToMessageId.entries()) {
           const isDeleted = deletedMessageIds.has(messageId);
-          console.log(`[PostgresAgentRunner]   toolCallId: ${toolCallId} -> messageId: ${messageId} ${isDeleted ? '(DELETED)' : '(not deleted)'}`);
+          // console.log(`[PostgresAgentRunner]   toolCallId: ${toolCallId} -> messageId: ${messageId} ${isDeleted ? '(DELETED)' : '(not deleted)'}`);
         }
       }
       
@@ -944,7 +944,7 @@ export class PostgresAgentRunner extends AgentRunner {
             );
             
             if (event.input.messages.length !== originalLength && this.debug) {
-              console.log(`[PostgresAgentRunner] Filtered ${originalLength - event.input.messages.length} deleted messages from RUN_STARTED input`);
+              // console.log(`[PostgresAgentRunner] Filtered ${originalLength - event.input.messages.length} deleted messages from RUN_STARTED input`);
             }
             
             // Always include RUN_STARTED event (even if it had deleted messages)
@@ -959,12 +959,12 @@ export class PostgresAgentRunner extends AgentRunner {
               typeof event.messageId === 'string') {
             if (deletedMessageIds.has(event.messageId)) {
               if (this.debug) {
-                console.log(`[PostgresAgentRunner] Filtering out deleted message ${event.messageId} from event ${event.type} in loadAndStreamHistory`);
+                // console.log(`[PostgresAgentRunner] Filtering out deleted message ${event.messageId} from event ${event.type} in loadAndStreamHistory`);
               }
               continue; // Skip this event
             } else if (this.debug && (event.type === 'TEXT_MESSAGE_START' || event.type === 'TEXT_MESSAGE_CONTENT' || event.type === 'TEXT_MESSAGE_END')) {
               // Debug: Log assistant messages that are NOT being filtered
-              console.log(`[PostgresAgentRunner] NOT filtering event ${event.type} with messageId ${event.messageId} (not in deleted set) in loadAndStreamHistory`);
+              // console.log(`[PostgresAgentRunner] NOT filtering event ${event.type} with messageId ${event.messageId} (not in deleted set) in loadAndStreamHistory`);
         }
           }
           
@@ -978,7 +978,7 @@ export class PostgresAgentRunner extends AgentRunner {
             // Check if tool call is deleted (associated message was deleted)
             if (deletedToolCallIds.has(event.toolCallId)) {
               if (this.debug) {
-                console.log(`[PostgresAgentRunner] Filtering out tool call event ${event.type} with toolCallId ${event.toolCallId} (associated message deleted)`);
+                // console.log(`[PostgresAgentRunner] Filtering out tool call event ${event.type} with toolCallId ${event.toolCallId} (associated message deleted)`);
               }
               continue; // Skip this event - tool call belongs to deleted assistant message
             }
@@ -996,14 +996,14 @@ export class PostgresAgentRunner extends AgentRunner {
             // Debug: Log tool call events that are NOT being filtered
             if (this.debug && (event.type === 'TOOL_CALL_START' || event.type === 'TOOL_CALL_ARGS' || event.type === 'TOOL_CALL_END' || event.type === 'TOOL_CALL_RESULT')) {
               const isDeleted = deletedMessageIds.has(associatedMessageId);
-              console.log(`[PostgresAgentRunner] NOT filtering tool call event ${event.type} with toolCallId ${event.toolCallId} (associated messageId: ${associatedMessageId}, deleted: ${isDeleted})`);
+              // console.log(`[PostgresAgentRunner] NOT filtering tool call event ${event.type} with toolCallId ${event.toolCallId} (associated messageId: ${associatedMessageId}, deleted: ${isDeleted})`);
             }
           }
           
           // Include all other events (including new messages from new runs)
           // New messages have new IDs that are not in the deleted sets
           if (this.debug && (event.type === 'TOOL_CALL_START' || event.type === 'TOOL_CALL_ARGS' || event.type === 'TOOL_CALL_END' || event.type === 'TOOL_CALL_RESULT')) {
-            console.log(`[PostgresAgentRunner] Including tool call event ${event.type} with toolCallId: ${event.toolCallId || 'none'}`);
+            // console.log(`[PostgresAgentRunner] Including tool call event ${event.type} with toolCallId: ${event.toolCallId || 'none'}`);
           }
           filtered.push(event);
         }
@@ -1058,7 +1058,7 @@ export class PostgresAgentRunner extends AgentRunner {
             const associationInfo = evt.associatedMessageId !== 'none' 
               ? `associated with ${evt.associatedMessageRole} message ${evt.associatedMessageId}`
               : 'no associated message found';
-            console.log(`[PostgresAgentRunner]   ${evt.type} - toolCallId: ${evt.toolCallId}, ${associationInfo}`);
+            // console.log(`[PostgresAgentRunner]   ${evt.type} - toolCallId: ${evt.toolCallId}, ${associationInfo}`);
           });
         } else {
           console.log(`[PostgresAgentRunner] No tool call events being emitted`);
@@ -1738,7 +1738,7 @@ export class PostgresAgentRunner extends AgentRunner {
           runInitiatingMessageId = messages[messages.length - 1].id;
           const runInitiatingRole = messages[messages.length - 1].role;
           if (this.debug) {
-            console.log(`[PostgresAgentRunner]${contextStr} Run ${run.runId} initiated by ${runInitiatingRole} message ${runInitiatingMessageId}`);
+            // console.log(`[PostgresAgentRunner]${contextStr} Run ${run.runId} initiated by ${runInitiatingRole} message ${runInitiatingMessageId}`);
           }
         }
       }
@@ -1750,7 +1750,7 @@ export class PostgresAgentRunner extends AgentRunner {
           if (event.type === 'TEXT_MESSAGE_START' && event.messageId) {
             runInitiatingMessageId = event.messageId;
             if (this.debug) {
-              console.log(`[PostgresAgentRunner]${contextStr} Run ${run.runId} creates assistant message ${runInitiatingMessageId}`);
+              // console.log(`[PostgresAgentRunner]${contextStr} Run ${run.runId} creates assistant message ${runInitiatingMessageId}`);
             }
             break; // Use the first TEXT_MESSAGE_START
           }
@@ -1763,7 +1763,7 @@ export class PostgresAgentRunner extends AgentRunner {
           if (runInitiatingMessageId) {
             toolCallIdToMessageId.set(event.toolCallId, runInitiatingMessageId);
             if (this.debug) {
-              console.log(`[PostgresAgentRunner]${contextStr} Linked toolCallId ${event.toolCallId} to message ${runInitiatingMessageId} (run: ${run.runId})`);
+              // console.log(`[PostgresAgentRunner]${contextStr} Linked toolCallId ${event.toolCallId} to message ${runInitiatingMessageId} (run: ${run.runId})`);
             }
           } else {
             if (this.debug) {
@@ -1781,7 +1781,7 @@ export class PostgresAgentRunner extends AgentRunner {
           if (!toolCallIdToMessageId.has(event.toolCallId)) {
             toolCallIdToMessageId.set(event.toolCallId, event.messageId);
             if (this.debug) {
-              console.log(`[PostgresAgentRunner]${contextStr} Linked toolCallId ${event.toolCallId} to tool result message ${event.messageId} (fallback, run: ${run.runId})`);
+              // console.log(`[PostgresAgentRunner]${contextStr} Linked toolCallId ${event.toolCallId} to tool result message ${event.messageId} (fallback, run: ${run.runId})`);
             }
           }
         }
@@ -1829,7 +1829,7 @@ export class PostgresAgentRunner extends AgentRunner {
       if (deletedMessageIds.has(messageId)) {
         deletedToolCallIds.add(toolCallId);
         if (this.debug) {
-          console.log(`[PostgresAgentRunner]${contextStr} Marking toolCallId ${toolCallId} as deleted (initiating message ${messageId} is deleted)`);
+          // console.log(`[PostgresAgentRunner]${contextStr} Marking toolCallId ${toolCallId} as deleted (initiating message ${messageId} is deleted)`);
         }
       }
     }
@@ -1842,7 +1842,7 @@ export class PostgresAgentRunner extends AgentRunner {
         if (!deletedToolCallIds.has(toolCallId)) {
           deletedToolCallIds.add(toolCallId);
           if (this.debug) {
-            console.log(`[PostgresAgentRunner]${contextStr} Marking toolCallId ${toolCallId} as incomplete (no TOOL_CALL_RESULT event)`);
+            // console.log(`[PostgresAgentRunner]${contextStr} Marking toolCallId ${toolCallId} as incomplete (no TOOL_CALL_RESULT event)`);
           }
         }
       } else {
@@ -1852,7 +1852,7 @@ export class PostgresAgentRunner extends AgentRunner {
           if (!deletedToolCallIds.has(toolCallId)) {
             deletedToolCallIds.add(toolCallId);
             if (this.debug) {
-              console.log(`[PostgresAgentRunner]${contextStr} Marking toolCallId ${toolCallId} as deleted (tool result message ${resultMessageId} is deleted)`);
+              // console.log(`[PostgresAgentRunner]${contextStr} Marking toolCallId ${toolCallId} as deleted (tool result message ${resultMessageId} is deleted)`);
             }
           }
         }

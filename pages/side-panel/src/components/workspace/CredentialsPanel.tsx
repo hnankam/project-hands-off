@@ -330,7 +330,7 @@ export const CredentialsPanel: React.FC<{ isLight: boolean; onStatsChange?: () =
               <div className="mb-1 flex items-center justify-between">
                 <label className={cn('text-xs font-medium', isLight ? 'text-gray-700' : 'text-[#bcc1c7]')}>
                   Secret {!editingCredential && '*'}
-                </label>
+              </label>
                 <button
                   type="button"
                   onClick={() => setShowPassword(prev => !prev)}

@@ -694,7 +694,8 @@ export function createDefaultToolRenderer(deps: BuiltinToolDependencies) {
         argsSummary = '';
       }
 
-      const baseMessage = argsSummary ? `${displayName} (${argsSummary})` : displayName;
+      // Use args summary only for pending/complete, not for inProgress/executing
+      const pendingMessage = argsSummary ? `${displayName} (${argsSummary})` : displayName;
 
       // Check for actual error patterns in result (not just the word "error")
       const hasError = isErrorResult(props.result);
@@ -726,8 +727,9 @@ export function createDefaultToolRenderer(deps: BuiltinToolDependencies) {
           status={status}
           icon={<DefaultToolIcon style={getIconStyle()} />}
           messages={{
-            pending: `Starting ${baseMessage}...`,
-            inProgress: `${baseMessage} in progress...`,
+            pending: `Starting ${pendingMessage}...`,
+            inProgress: `${displayName} in progress...`,
+            executing: `${displayName} executing...`,
             complete: hasError ? `${displayName} failed` : `${displayName} complete`,
           }}
           args={props.args as Record<string, unknown>}
