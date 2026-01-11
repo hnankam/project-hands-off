@@ -344,56 +344,16 @@ class FileWriteResult(BaseModel):
     size_bytes: int = Field(description="File size in bytes")
 
 
-class EditOperation(BaseModel):
-    """Single find/replace operation for edit_file."""
-    search: str = Field(description="Text or pattern to find")
-    replace: str = Field(description="Replacement text")
-    all_occurrences: bool = Field(default=True, description="Replace all matches or just first")
-    regex: bool = Field(default=False, description="Treat search as regex pattern")
-    case_sensitive: bool = Field(default=True, description="Case-sensitive matching")
-    
-    class Config:
-        json_schema_extra = {
-            "examples": [
-                {
-                    "search": "old_function",
-                    "replace": "new_function",
-                    "all_occurrences": True,
-                    "regex": False,
-                    "case_sensitive": True
-                },
-                {
-                    "search": "v\\d+\\.\\d+",
-                    "replace": "v2.0",
-                    "regex": True
-                }
-            ]
-        }
-
-
-class EditOperationResult(BaseModel):
-    """Result of a single edit operation within bulk edit."""
-    operation_index: int = Field(description="Index of this operation in the edits list (0-based)")
-    search_pattern: str = Field(description="The search pattern that was used")
-    matches_found: int = Field(description="Number of matches found for this operation")
-    replacements_made: int = Field(description="Number of replacements made for this operation")
-    success: bool = Field(description="Whether this specific operation succeeded")
-    error: Optional[str] = Field(default=None, description="Error message if operation failed")
-
-
-class EditFileResult(BaseModel):
-    """Result of bulk file edit operation (multiple find/replace operations)."""
-    success: bool = Field(description="Whether overall edit succeeded")
+class EditResult(BaseModel):
+    """Result of file edit operation."""
+    success: bool = Field(description="Whether edit succeeded")
     message: str = Field(description="Success or error message")
     file_id: str = Field(description="File ID")
     file_name: str = Field(description="File name")
-    total_operations: int = Field(description="Total number of edit operations performed")
-    successful_operations: int = Field(description="Number of successful operations")
-    total_matches: int = Field(description="Total matches found across all operations")
-    total_replacements: int = Field(description="Total replacements made across all operations")
+    matches_found: int = Field(description="Number of matches found")
+    replacements_made: int = Field(description="Number of replacements made")
     size_bytes: int = Field(description="New file size in bytes")
     preview: str = Field(description="Preview of modified content (first 200 chars)")
-    operations: List[EditOperationResult] = Field(description="Results for each individual edit operation")
 
 
 class GrepMatch(BaseModel):
@@ -1328,93 +1288,58 @@ async def get_note_content(
 async def edit_file(
     ctx: RunContext[UnifiedDeps],
     file_id: str,
-    edits: List[EditOperation]
+    search: str,
+    replace: str,
+    all_occurrences: bool = True,
+    regex: bool = False,
+    case_sensitive: bool = True
 ) -> str:
-    """Apply multiple find/replace operations to a file in sequence.
+    """Replace text patterns in a file.
     
     WHEN TO USE:
     - User requests to replace, change, or substitute text in a file
-    - Need to make multiple edits to the same file
-    - Code refactoring with multiple pattern replacements
-    - Config updates requiring multiple value changes
-    - Text normalization with multiple find/replace operations
+    - Need to make specific edits without rewriting entire file
+    - Want to update multiple occurrences at once
     
     PARAMETERS:
     - file_id (required): File UUID from search or list results
-    - edits (required): List of edit operations to apply in sequence
-      Each operation contains:
-      * search: Text or regex pattern to find
-      * replace: Replacement text
-      * all_occurrences: Replace all matches or just first (default: True)
-      * regex: Treat search as regex pattern (default: False)
-      * case_sensitive: Case-sensitive matching (default: True)
+    - search (required): Text or pattern to find
+    - replace (required): Replacement text
+    - all_occurrences (optional): Replace all matches or just first. Default: True
+    - regex (optional): Treat search as regex pattern. Default: False
+    - case_sensitive (optional): Case-sensitive matching. Default: True
     
     RETURNS:
-    JSON with success, message, file_id, file_name, total_operations, 
-    successful_operations, total_matches, total_replacements, size_bytes, 
-    preview, and per-operation results array.
+    JSON with success boolean, message, file_id, file_name, matches_found,
+    replacements_made, size_bytes (new size), preview (first 200 chars).
     
     BEHAVIOR:
-    - Operations applied sequentially in order provided
-    - Each operation works on result of previous operation
-    - Transactional: All operations succeed or file remains unchanged
-    - Single validation pass after all edits complete
-    - Single file write after all operations
+    - all_occurrences=True: Replaces all matches in file
+    - all_occurrences=False: Replaces only first match
+    - Validates structured files (JSON, YAML) after editing
+    - Rolls back changes if validation fails
     
     FILE SIZE LIMIT:
     - Max 10MB for edit operations
     - Larger files rejected with error
     
     VALIDATION:
-    - JSON files: Validates JSON syntax after ALL edits
-    - YAML files: Validates YAML syntax after ALL edits
-    - Python files: Validates Python syntax after ALL edits
-    - Rolls back ALL changes if validation fails
-    
-    PERFORMANCE:
-    - Single file read (vs N reads for N operations)
-    - Single file write (vs N writes for N operations)
-    - Single validation pass (vs N validations)
-    - 80-90% faster for 5+ operations
+    - JSON files: Validates JSON syntax after edit
+    - YAML files: Validates YAML syntax after edit
+    - Prevents corruption of structured files
     
     ERROR CASES:
     - file_not_found: Invalid file_id or access denied
     - file_too_large: Exceeds 10MB limit
-    - validation_failed: Edits would corrupt file structure
-    - no_matches: One or more patterns not found (continues with other edits)
-    - invalid_pattern: Malformed regex pattern in one or more operations
-    - empty_edits: No edit operations provided
-    
-    EXAMPLES:
-    Single edit:
-    edits=[{"search": "old", "replace": "new"}]
-    
-    Multiple edits:
-    edits=[
-      {"search": "v1.0", "replace": "v2.0"},
-      {"search": "old_api", "replace": "new_api"},
-      {"search": "DEBUG = True", "replace": "DEBUG = False"}
-    ]
-    
-    Regex edits:
-    edits=[
-      {"search": "\\d{4}", "replace": "2026", "regex": true},
-      {"search": "TODO.*", "replace": "DONE", "regex": true}
-    ]
+    - validation_failed: Edit would corrupt file structure
+    - no_matches: Search pattern not found in file
+    - invalid_pattern: Malformed regex pattern
     """
     user_id = ctx.deps.user_id
     
     try:
         import re
         import json
-        
-        # Validate edits parameter
-        if not edits or len(edits) == 0:
-            error = ErrorResponse(
-                error="empty_edits",
-                details="At least one edit operation is required"
-            )
-            return error.model_dump_json(indent=2)
         
         # Get file metadata
         file_data = await _get_file_content_service(user_id, file_id)
@@ -1467,110 +1392,82 @@ async def edit_file(
                 )
                 return error.model_dump_json(indent=2)
         
-        # Store original content for potential rollback
-        original_content = content
+        # Perform search and replace
+        matches_found = 0
+        replacements_made = 0
         modified_content = content
         
-        # Track results for each operation
-        operation_results = []
-        total_matches = 0
-        total_replacements = 0
-        successful_operations = 0
-        
-        # Apply each edit operation sequentially
-        for idx, edit_op in enumerate(edits):
-            search = edit_op.search
-            replace = edit_op.replace
-            all_occurrences = edit_op.all_occurrences
-            regex = edit_op.regex
-            case_sensitive = edit_op.case_sensitive
-            
-            matches_found = 0
-            replacements_made = 0
-            operation_success = True
-            operation_error = None
+        if regex:
+            # Regex-based replacement
+            if len(search) > MAX_REGEX_PATTERN_LENGTH:
+                error = ErrorResponse(
+                    error="invalid_pattern",
+                    details=f"Regex pattern too long (max {MAX_REGEX_PATTERN_LENGTH} chars)"
+                )
+                return error.model_dump_json(indent=2)
             
             try:
-                if regex:
-                    # Regex-based replacement
-                    if len(search) > MAX_REGEX_PATTERN_LENGTH:
-                        operation_success = False
-                        operation_error = f"Pattern too long (max {MAX_REGEX_PATTERN_LENGTH} chars)"
-                    else:
-                        try:
-                            flags = 0 if case_sensitive else re.IGNORECASE
-                            compiled_pattern = re.compile(search, flags)
-                            
-                            # Count matches in current content
-                            matches = list(compiled_pattern.finditer(modified_content))
-                            matches_found = len(matches)
-                            
-                            if matches_found > 0:
-                                # Perform replacement
-                                if all_occurrences:
-                                    modified_content = compiled_pattern.sub(replace, modified_content)
-                                    replacements_made = matches_found
-                                else:
-                                    modified_content = compiled_pattern.sub(replace, modified_content, count=1)
-                                    replacements_made = 1
-                            
-                        except re.error as e:
-                            operation_success = False
-                            operation_error = f"Invalid regex: {str(e)}"
+                flags = 0 if case_sensitive else re.IGNORECASE
+                compiled_pattern = re.compile(search, flags)
+                
+                # Count matches
+                matches = list(compiled_pattern.finditer(content))
+                matches_found = len(matches)
+                
+                if matches_found == 0:
+                    error = ErrorResponse(
+                        error="no_matches",
+                        details=f"Pattern '{search}' not found in file"
+                    )
+                    return error.model_dump_json(indent=2)
+                
+                # Perform replacement
+                if all_occurrences:
+                    modified_content = compiled_pattern.sub(replace, content)
+                    replacements_made = matches_found
                 else:
-                    # Simple string replacement
-                    if case_sensitive:
-                        matches_found = modified_content.count(search)
-                    else:
-                        matches_found = modified_content.lower().count(search.lower())
+                    modified_content = compiled_pattern.sub(replace, content, count=1)
+                    replacements_made = 1
                     
-                    if matches_found > 0:
-                        # Perform replacement
-                        if all_occurrences:
-                            if case_sensitive:
-                                modified_content = modified_content.replace(search, replace)
-                            else:
-                                # Case-insensitive replacement
-                                pattern = re.compile(re.escape(search), re.IGNORECASE)
-                                modified_content = pattern.sub(replace, modified_content)
-                            replacements_made = matches_found
-                        else:
-                            if case_sensitive:
-                                modified_content = modified_content.replace(search, replace, 1)
-                            else:
-                                pattern = re.compile(re.escape(search), re.IGNORECASE)
-                                modified_content = pattern.sub(replace, modified_content, count=1)
-                            replacements_made = 1
-                
-                # Track totals
-                if operation_success:
-                    successful_operations += 1
-                    total_matches += matches_found
-                    total_replacements += replacements_made
-                
-            except Exception as e:
-                operation_success = False
-                operation_error = str(e)
+            except re.error as e:
+                error = ErrorResponse(
+                    error="invalid_pattern",
+                    details=f"Invalid regex pattern: {str(e)}"
+                )
+                return error.model_dump_json(indent=2)
+        else:
+            # Simple string replacement
+            if case_sensitive:
+                matches_found = content.count(search)
+            else:
+                matches_found = content.lower().count(search.lower())
             
-            # Record operation result
-            operation_results.append(EditOperationResult(
-                operation_index=idx,
-                search_pattern=search[:50],  # Truncate for readability
-                matches_found=matches_found,
-                replacements_made=replacements_made,
-                success=operation_success,
-                error=operation_error
-            ))
+            if matches_found == 0:
+                error = ErrorResponse(
+                    error="no_matches",
+                    details=f"Text '{search}' not found in file"
+                )
+                return error.model_dump_json(indent=2)
+            
+            # Perform replacement
+            if all_occurrences:
+                if case_sensitive:
+                    modified_content = content.replace(search, replace)
+                else:
+                    # Case-insensitive replacement
+                    import re
+                    pattern = re.compile(re.escape(search), re.IGNORECASE)
+                    modified_content = pattern.sub(replace, content)
+                replacements_made = matches_found
+            else:
+                if case_sensitive:
+                    modified_content = content.replace(search, replace, 1)
+                else:
+                    pattern = re.compile(re.escape(search), re.IGNORECASE)
+                    modified_content = pattern.sub(replace, content, count=1)
+                replacements_made = 1
         
-        # Check if any operations succeeded
-        if successful_operations == 0:
-            error = ErrorResponse(
-                error="all_operations_failed",
-                details=f"All {len(edits)} edit operations failed. See operation results for details."
-            )
-            return error.model_dump_json(indent=2)
-        
-        # Validate structured files (after ALL edits)
+        # Validate structured files
         file_name = file_data['file_name']
         file_type = file_data.get('file_type', '').lower()
         
@@ -1580,7 +1477,7 @@ async def edit_file(
             except json.JSONDecodeError as e:
                 error = ErrorResponse(
                     error="validation_failed",
-                    details=f"Edits would create invalid JSON: {str(e)}. No changes applied."
+                    details=f"Edit would create invalid JSON: {str(e)}"
                 )
                 return error.model_dump_json(indent=2)
         
@@ -1591,21 +1488,11 @@ async def edit_file(
             except Exception as e:
                 error = ErrorResponse(
                     error="validation_failed",
-                    details=f"Edits would create invalid YAML: {str(e)}. No changes applied."
+                    details=f"Edit would create invalid YAML: {str(e)}"
                 )
                 return error.model_dump_json(indent=2)
         
-        elif file_name.endswith('.py') or 'x-python' in file_type:
-            try:
-                compile(modified_content, file_name, 'exec')
-            except SyntaxError as e:
-                error = ErrorResponse(
-                    error="validation_failed",
-                    details=f"Edits would create invalid Python: {str(e)}. No changes applied."
-                )
-                return error.model_dump_json(indent=2)
-        
-        # Update file content via service (single write operation)
+        # Update file content via service
         result_data = await _update_file_content_service(
             user_id=user_id,
             file_id=file_id,
@@ -1616,18 +1503,15 @@ async def edit_file(
         # Generate preview
         preview = modified_content[:200] + ('...' if len(modified_content) > 200 else '')
         
-        result = EditFileResult(
+        result = EditResult(
             success=True,
-            message=f"File edited successfully: {total_replacements} replacement(s) made across {successful_operations} operation(s)",
+            message=f"File edited successfully: {replacements_made} replacement(s) made",
             file_id=file_id,
             file_name=file_name,
-            total_operations=len(edits),
-            successful_operations=successful_operations,
-            total_matches=total_matches,
-            total_replacements=total_replacements,
+            matches_found=matches_found,
+            replacements_made=replacements_made,
             size_bytes=result_data['file_size'],
-            preview=preview,
-            operations=operation_results
+            preview=preview
         )
         
         return result.model_dump_json(indent=2)
