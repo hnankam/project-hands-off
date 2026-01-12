@@ -132,7 +132,7 @@ async def keep_recent_messages(
         return ids
 
     total_msgs = len(messages)
-    keep_full_after_index = max(0, total_msgs - 1)  # keep only the last message untouched
+    keep_full_after_index = max(0, total_msgs - 2)  # keep only the last 2 messages untouched
     last_return_occurrence: dict[str, int] = {}
     last_call_occurrence: dict[str, int] = {}
     
@@ -171,16 +171,70 @@ async def keep_recent_messages(
                     # For older messages, also truncate and apply cross-message dedup
                     if idx < keep_full_after_index:
                         if isinstance(part, ToolReturnPart):
-                            # Only truncate for select tools (match frontend behavior)
+                            # Only truncate for select tools
                             tool_name = getattr(part, 'tool_name', None)
+                            
                             TRUNCATE_TOOL_NAMES = {
+                                # Browser extension tools
                                 'searchPageContent',
                                 'searchFormData',
                                 'searchDOMUpdates',
                                 'searchClickableElements',
                                 'takeScreenshot',
+                                # Workspace tools - High Priority (large content)
+                                'get_file_content',
+                                'read_file',
+                                'get_note_content',
+                                'grep_files',
+                                'update_file_content',
+                                # Workspace tools - Medium Priority (large lists)
+                                'search_workspace_files',
+                                'search_workspace_notes',
+                                'list_files',
+                                'glob_files',
+                                # Databricks - High Priority (large content)
+                                'get_notebook',
+                                'get_notebook_cells',
+                                'execute_statement',
+                                'get_statement',
+                                'get_statement_result_chunk',
+                                'execute_command',
+                                'get_command_status',
+                                'get_run_output',
+                                'export_run',
+                                # Databricks - Medium Priority (large lists/metadata)
+                                'list_notebooks',
+                                'list_directories',
+                                'list_query_history',
+                                'list_jobs',
+                                'list_runs',
+                                'list_clusters',
+                                'get_job',
+                                'get_run',
+                                # Unity Catalog tools
+                                'list_tables',
+                                'list_table_summaries',
+                                'list_schemas',
+                                'list_catalogs',
+                                'list_functions',
+                                'list_volumes',
+                                # Machine Learning tools
+                                'search_runs',
+                                'list_experiments',
+                                'list_models',
+                                'list_model_versions',
+                                # Pipeline tools
+                                'list_pipelines',
+                                'list_pipeline_updates',
                             }
-                            if hasattr(part, 'content') and tool_name in TRUNCATE_TOOL_NAMES:
+                            
+                            # Check if any truncate tool name appears in the full tool name
+                            # This handles MCP prefixed names like "databricks_list_query_history"
+                            should_truncate = tool_name and any(
+                                truncate_name in tool_name for truncate_name in TRUNCATE_TOOL_NAMES
+                            )
+                            
+                            if hasattr(part, 'content') and should_truncate:
                                 try:
                                     if isinstance(part.content, (dict, list)):
                                         text = json.dumps(part.content)
@@ -189,7 +243,7 @@ async def keep_recent_messages(
                                         part.content = _truncate_text(str(part.content), limit=100, keep=90)
                                 except Exception:
                                     pass
-                            elif hasattr(part, 'result') and tool_name in TRUNCATE_TOOL_NAMES:
+                            elif hasattr(part, 'result') and should_truncate:
                                 try:
                                     if isinstance(part.result, (dict, list)):
                                         text = json.dumps(part.result)

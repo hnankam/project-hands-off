@@ -517,19 +517,20 @@ print(f"User executed {response.count} queries on this warehouse")
 all_queries = []
 page_token = None
 
+page = 0
 while True:
     response = list_query_history(
-        host, token,
-        max_results=1000,  # Max per page
-        page_token=page_token
+        host_credential_key, token_credential_key,
+        limit=25,  # Results per page
+        page=page
     )
     
     all_queries.extend(response.queries)
     
-    if not response.has_next_page:
+    if not response.has_more:
         break
     
-    page_token = response.next_page_token
+    page += 1
 
 print(f"Fetched {len(all_queries)} total queries")
 ```

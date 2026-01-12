@@ -168,9 +168,10 @@ export interface FileManagementCardProps {
   status?: ActionPhase;
   result?: any;
   error?: any;
-  content?: string; // File content for preview
+  content?: string; // File content for preview (streaming)
   contentSize?: number; // Size of content in bytes
   instanceId?: string;
+  fileId?: string; // File ID for fetching content from database
   operation?: 'create' | 'update'; // Type of operation
 }
 
@@ -183,12 +184,19 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
   content = '',
   contentSize = 0,
   instanceId,
+  fileId,
   operation = 'create',
 }) => {
   const { isLight } = useStorage(themeStorage);
   
   // Generate a stable cache key from instanceId or fallback to fileName
   const cacheKey = instanceId ?? `file-${fileName}`;
+  
+  // === File content fetching (from database) ===
+  const [fetchedContent, setFetchedContent] = useState<string | null>(null);
+  const [isFetchingContent, setIsFetchingContent] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const hasAttemptedFetch = useRef(false);
   
   // === Performance optimization for streaming content ===
   // Track content length to detect new chunks, batch display updates with RAF
@@ -234,6 +242,43 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
   
   // Initialize userClosed from cache
   const userClosedRef = useRef(userClosedCache.get(cacheKey) ?? false);
+  
+  // Fetch file content from database when preview is shown and content is not available from streaming
+  const fetchFileContent = useCallback(async () => {
+    if (!fileId || isFetchingContent || hasAttemptedFetch.current) {
+      return;
+    }
+    
+    hasAttemptedFetch.current = true;
+    setIsFetchingContent(true);
+    setFetchError(null);
+    
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseURL}/api/workspace/files/${fileId}/content`, {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file content: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      setFetchedContent(data.content || '');
+    } catch (err: any) {
+      console.error('[FileManagementCard] Error fetching file content:', err);
+      setFetchError(err.message || 'Failed to load content');
+    } finally {
+      setIsFetchingContent(false);
+    }
+  }, [fileId]); // Removed isFetchingContent from dependencies to avoid circular dependency
+  
+  // Trigger fetch when preview is shown (user clicks "Show Content Preview")
+  useEffect(() => {
+    if (showPreview && !isWorking && fileId && !content && !fetchedContent && !isFetchingContent && !hasAttemptedFetch.current) {
+      fetchFileContent();
+    }
+  }, [showPreview, isWorking, fileId, content, fetchedContent, isFetchingContent, fetchFileContent]);
   
   // Sync expanded state to cache whenever it changes
   useEffect(() => {
@@ -353,8 +398,21 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
   const fileType = useMemo(() => getFileType(fileName), [fileName]);
   const filePath = folder ? `${folder}/${fileName}` : fileName;
   
-  // Use RAF-batched displayContent, with fallback to validation error content
-  const effectiveContent = displayContent || validationError?.partial_data?.content || '';
+  // Determine final content to display with proper fallback chain and state messages
+  const finalContent = (() => {
+    // If fetching, show loading message
+    if (isFetchingContent) {
+      return '// Loading file content from database...\n\n// Please wait...';
+    }
+    
+    // If fetch failed, show error message
+    if (fetchError) {
+      return `// Failed to load file content: ${fetchError}\n\n// The file was created successfully, but preview is unavailable.`;
+    }
+    
+    // Use content hierarchy: streaming → fetched → validation error → empty
+    return displayContent || fetchedContent || validationError?.partial_data?.content || '';
+  })();
   
   // Operation-specific text
   const operationText = {
@@ -518,7 +576,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
         {/* Skeleton Content - with streaming preview */}
         <div className="gallery-carousel" style={{ padding: '8px' }}>
           {/* If we have content, show it streaming; otherwise show shimmer */}
-          {effectiveContent ? (
+          {finalContent ? (
             <div
               style={{
                 borderRadius: 6,
@@ -541,14 +599,14 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
               >
                 <span className="copilot-action-sparkle-text gallery-content" style={{ color: textColor, fontSize: '12px'}}>Writing File</span>
                 <span className="gallery-count" style={{ marginLeft: 'auto', opacity: 0.7, color: textColor, fontSize: '12px' }}>
-                  {formatSize(contentSize || effectiveContent.length)} • {fileType.language}
+                  {formatSize(contentSize || finalContent.length)} • {fileType.language}
                 </span>
               </div>
               
               {/* Streaming content with auto-scroll and cursor */}
               {fileType.isMarkdown ? (
                 <AutoScrollDiv
-                  content={effectiveContent}
+                  content={finalContent}
                   isStreaming={true}
                   style={{
                     padding: 12,
@@ -557,7 +615,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                     backgroundColor: isLight ? 'rgba(249, 250, 251, 0.5)' : 'rgba(13, 17, 23, 0.5)',
                   }}
                 >
-                  <CustomMarkdownRenderer content={effectiveContent} isLight={isLight} hideToolbars={true} />
+                  <CustomMarkdownRenderer content={finalContent} isLight={isLight} hideToolbars={true} />
                   {/* Blinking bar cursor */}
                   <span
                     style={{
@@ -573,7 +631,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                 </AutoScrollDiv>
               ) : (
                 <AutoScrollDiv
-                  content={effectiveContent}
+                  content={finalContent}
                   isStreaming={true}
                   style={{ 
                     maxHeight: 400, 
@@ -583,7 +641,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                   <div style={{ position: 'relative' }}>
                   <CodeBlock 
                     language={fileType.language} 
-                      code={effectiveContent} 
+                      code={finalContent} 
                     isLight={isLight} 
                   />
                     {/* Blinking bar cursor */}
@@ -811,27 +869,24 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
       >
         <div className="gallery-content" style={{ padding: '8px' }}>
           {/* File path */}
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div className="gallery-content"
               style={{
                 fontSize: 11,
                 fontWeight: 600,
                 color: mutedTextColor,
-                marginBottom: 4,
+                flexShrink: 0,
               }}
             >
               Location:
             </div>
             <div className="gallery-content"
               style={{
-                fontSize: 11,
+                fontSize: 10,
                 fontFamily: 'monospace',
-                color: textColor,
-                padding: '6px 8px',
-                backgroundColor: isLight ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.2)',
-                borderRadius: 6,
-                border: `1px solid ${borderColor}`,
+                color: mutedTextColor,
                 wordBreak: 'break-all',
+                flex: 1,
               }}
             >
               {filePath}
@@ -840,13 +895,13 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
 
           {/* File ID (if available) */}
           {fileInfo.file_id && !hasError && (
-            <div style={{ marginBottom: 8 }}>
+            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div className="gallery-content"
                 style={{
                   fontSize: 11,
                   fontWeight: 600,
                   color: mutedTextColor,
-                  marginBottom: 4,
+                  flexShrink: 0,
                 }}
               >
                 File ID:
@@ -857,6 +912,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                   fontFamily: 'monospace',
                   color: mutedTextColor,
                   wordBreak: 'break-all',
+                  flex: 1,
                 }}
               >
                 {fileInfo.file_id}
@@ -953,8 +1009,8 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
             </div>
           )}
 
-          {/* File Preview - Show when complete OR when validation error with extracted content OR when streaming */}
-          {effectiveContent && (
+          {/* File Preview - Show when complete OR when validation error with extracted content OR when streaming OR when fileId is available for fetching */}
+          {(finalContent || (fileId && !isWorking)) && (
             <div>
               {/* Only show toggle button when not streaming (during streaming, always show preview) */}
               {!isWorking && (
@@ -1010,7 +1066,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                   </svg>
                   <span className="gallery-prompt">{showPreview ? 'Hide' : 'Show'} {validationError ? 'Recovered' : ''} Content Preview</span>
                   <span className="gallery-count" style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.7 }}>
-                    {formatSize(displaySize || effectiveContent.length)} • {fileType.language}
+                    {formatSize(displaySize || finalContent.length)} • {fileType.language}
                   </span>
                 </button>
               )}
@@ -1041,7 +1097,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                     >
                       <span className="copilot-action-sparkle-text" style={{ color: textColor }}>✨ Writing File</span>
                       <span className="gallery-count" style={{ marginLeft: 'auto', opacity: 0.7, color: textColor }}>
-                        {formatSize(displaySize || effectiveContent.length)} • {fileType.language}
+                        {formatSize(displaySize || finalContent.length)} • {fileType.language}
                       </span>
                     </div>
                   )}
@@ -1065,7 +1121,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                   {/* Uses IncrementalMarkdownRenderer for O(1) per-update performance */}
                   {fileType.isMarkdown ? (
                     <AutoScrollDiv
-                      content={effectiveContent}
+                      content={finalContent}
                       isStreaming={isWorking}
                       style={{
                         padding: 12,
@@ -1075,7 +1131,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                       }}
                     >
                       <IncrementalMarkdownRenderer 
-                        content={effectiveContent} 
+                        content={finalContent} 
                         isLight={isLight} 
                         isStreaming={isWorking}
                         hideToolbars={true} 
@@ -1083,7 +1139,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                     </AutoScrollDiv>
                   ) : (
                     <AutoScrollDiv
-                      content={effectiveContent}
+                      content={finalContent}
                       isStreaming={isWorking}
                       style={{ 
                         maxHeight: 400, 
@@ -1092,7 +1148,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                     >
                       <CodeBlock 
                         language={fileType.language} 
-                        code={effectiveContent} 
+                        code={finalContent} 
                         isLight={isLight} 
                       />
                     </AutoScrollDiv>

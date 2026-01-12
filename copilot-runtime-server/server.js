@@ -931,6 +931,86 @@ const app = express();
       }
     });
 
+    /**
+     * GET /api/runs/:runId/tool-result/:toolCallId
+     * Get the full untruncated content of a tool call result or args
+     * Used by the frontend to lazy-load truncated tool results
+     * 
+     * Query params:
+     * - eventType: 'TOOL_CALL_RESULT' or 'TOOL_CALL_ARGS' (required)
+     * 
+     * Returns: { content: string | object, found: boolean }
+     */
+    app.get('/api/runs/:runId/tool-result/:toolCallId', async (req, res) => {
+      try {
+        const { runId, toolCallId } = req.params;
+        const { eventType } = req.query;
+        
+        if (!runId || !toolCallId) {
+          return res.status(400).json({ error: 'Run ID and Tool Call ID are required' });
+        }
+        
+        if (!eventType || (eventType !== 'TOOL_CALL_RESULT' && eventType !== 'TOOL_CALL_ARGS')) {
+          return res.status(400).json({ error: 'Event type must be TOOL_CALL_RESULT or TOOL_CALL_ARGS' });
+        }
+        
+        // Query the database for the run's events
+        const pool = getPool();
+        const result = await pool.query(
+          `SELECT events FROM agent_runs WHERE run_id = $1`,
+          [runId]
+        );
+        
+        if (result.rows.length === 0) {
+          return res.status(404).json({ error: 'Run not found', found: false });
+        }
+        
+        const events = result.rows[0].events || [];
+        
+        // Find the event with the matching toolCallId and eventType
+        const targetEvent = events.find(event => 
+          event.toolCallId === toolCallId && event.type === eventType
+        );
+        
+        if (!targetEvent) {
+          return res.status(404).json({ 
+            error: `${eventType} event with toolCallId ${toolCallId} not found in run ${runId}`,
+            found: false 
+          });
+        }
+        
+        // Extract content based on event type
+        let content = null;
+        if (eventType === 'TOOL_CALL_RESULT') {
+          // For TOOL_CALL_RESULT, check content field first, then result field
+          content = targetEvent.content !== undefined ? targetEvent.content : targetEvent.result;
+        } else {
+          // For TOOL_CALL_ARGS, check args field first, then delta field
+          content = targetEvent.args !== undefined ? targetEvent.args : targetEvent.delta;
+        }
+        
+        if (content === null || content === undefined) {
+          return res.status(404).json({ 
+            error: `No content found in ${eventType} event`,
+            found: false 
+          });
+        }
+        
+        // Return the full untruncated content
+        res.json({ 
+          content,
+          found: true,
+          eventType,
+          toolCallId,
+          runId
+        });
+        
+      } catch (error) {
+        log(`Error fetching tool result: ${error.message}`, res.locals.reqId);
+        res.status(500).json({ error: 'Failed to fetch tool result', message: error.message });
+      }
+    });
+
     // ========================================================================
     // Admin API Routes
     // ========================================================================

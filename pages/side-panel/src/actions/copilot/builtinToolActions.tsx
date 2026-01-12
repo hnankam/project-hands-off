@@ -449,38 +449,106 @@ export function createFileCreationRenderer(deps: BuiltinToolDependencies) {
     name: 'create_text_file',
     args: createTextFileSchema,
     render: (props: V2RenderProps<z.infer<typeof createTextFileSchema>>) => {
-      const fileName = props.args?.file_name || 'file.txt';
-      const folder = props.args?.folder;
-      const content = props.args?.content || '';
       const status = mapV2Status(props.status);
       
       // Check for error in result
       const hasError = isErrorResult(props.result);
       const error = hasError ? props.result as string : undefined;
       
-      // Calculate content size
-      const contentSize = new Blob([content]).size;
+      // DEBUG: Log error detection
+      console.log('[create_text_file] Debug:', {
+        hasError,
+        resultType: typeof props.result,
+        result: props.result,
+        status,
+      });
       
-      // Create unique instance ID based on file name
-      const instanceId = `create-file-${clipText(fileName, 50)}`;
+      // Extract file info - PREFER RESULT over ARGS (result is authoritative, args may be truncated)
+      let fileName: string | undefined = undefined;
+      let folder = undefined;
+      let actualSize = 0;
+      let content = '';
+      let fileId = undefined;
+      
+      // First, try to extract from result (authoritative source) - only if no error
+      if (props.result && typeof props.result === 'string' && !hasError) {
+        try {
+          const parsed = JSON.parse(props.result);
+          if (parsed.file_name) {
+            fileName = parsed.file_name;
+          }
+          if (parsed.folder) {
+            folder = parsed.folder;
+          } else if (parsed.file_path && parsed.file_path.includes('/')) {
+            // Extract folder from file_path
+            folder = parsed.file_path.split('/').slice(0, -1).join('/');
+          }
+          if (parsed.size_bytes) {
+            actualSize = parsed.size_bytes;
+          }
+          if (parsed.file_id) {
+            fileId = parsed.file_id;
+          }
+        } catch {
+          // If parsing fails, we'll use args below
+        }
+      }
+      
+      // Fallback to args - try to get filename even if there's an error (user intended filename)
+      // Note: args may be truncated, so prefer result when available
+      const isArgsTruncated = props.args && typeof props.args === 'object' && 
+        'truncated' in props.args && props.args.truncated === true;
+      
+      if (props.args && !isArgsTruncated) {
+        if (!fileName && props.args.file_name) {
+          fileName = props.args.file_name;
+        }
+        if (!folder) {
+          folder = props.args.folder;
+        }
+        if (props.args.content) {
+          content = props.args.content;
+        }
+      }
+      
+      // Only use default filename if we have no filename AND it's a success case
+      // For errors, don't show a default filename
+      if (!fileName && !hasError) {
+        fileName = 'file.txt';
+      }
+      // If args are truncated, content will be fetched from database using fileId in FileManagementCard
+      
+      // Calculate content size (prefer actual size from result, fallback to content estimation)
+      const contentSize = actualSize || new Blob([content]).size;
+      
+      // Create unique instance ID based on file name (use placeholder if no filename)
+      const instanceId = `create-file-${clipText(fileName || 'unknown', 50)}`;
 
-      // // TEMPORARILY USING DEFAULT ActionStatus INSTEAD OF FileManagementCard
-      // const displayText = folder ? `${folder}/${fileName}` : fileName;
-      // const sizeText = contentSize > 0 ? ` (${formatBytes(contentSize)})` : '';
+      // If there's an error, use ActionStatus instead of FileManagementCard
+      if (hasError) {
+        console.log('[create_text_file] Rendering ActionStatus for error:', { fileName, error });
+        // Only show filename if we have one (don't show default 'file.txt' for errors)
+        const displayText = fileName 
+          ? (folder ? `${folder}/${fileName}` : fileName)
+          : 'File';
+        return (
+          <ActionStatus
+            toolName={`Create ${displayText}`}
+            status={status}
+            args={props.args}
+            result={props.result}
+            error={error}
+          />
+        );
+      }
       
-      // return (
-      //   <ActionStatus
-      //     toolName={`Create File: ${displayText}${sizeText}`}
-      //     status={status}
-      //     args={props.args}
-      //     result={props.result}
-      //     error={error}
-      //   />
-      // );
-      
+      // Success case: use FileManagementCard
+      // Ensure fileName is defined (should be set above, but fallback for safety)
+      const finalFileName = fileName || 'file.txt';
+      console.log('[create_text_file] Rendering FileManagementCard for success:', { fileName: finalFileName, fileId });
       return (
         <FileManagementCard
-          fileName={fileName}
+          fileName={finalFileName}
           folder={folder}
           status={status}
           result={props.result}
@@ -488,6 +556,7 @@ export function createFileCreationRenderer(deps: BuiltinToolDependencies) {
           content={content}
           contentSize={contentSize}
           instanceId={instanceId}
+          fileId={fileId}
           operation="create"
         />
       );
@@ -515,72 +584,110 @@ export function createFileUpdateRenderer(deps: BuiltinToolDependencies) {
     name: 'update_file_content',
     args: updateFileContentSchema,
     render: (props: V2RenderProps<z.infer<typeof updateFileContentSchema>>) => {
-      const content = props.args?.content || '';
       const status = mapV2Status(props.status);
       
       // Check for error in result
       const hasError = isErrorResult(props.result);
       const error = hasError ? props.result as string : undefined;
       
-      // Extract file info - prioritize args.file_name, then result, then default
-      let fileName = props.args?.file_name || 'file.txt';
-      let folder = undefined;
-      let fileId = props.args?.file_id || '';
-      let displaySize = 0;
+      // DEBUG: Log error detection
+      console.log('[update_file_content] Debug:', {
+        hasError,
+        resultType: typeof props.result,
+        result: props.result,
+        status,
+      });
       
-      // If we have a result, extract additional metadata
+      // Extract file info - PREFER RESULT over ARGS (result is authoritative, args may be truncated)
+      let fileName: string | undefined = undefined;
+      let folder = undefined;
+      let fileId = '';
+      let actualSize = 0;
+      let content = '';
+      
+      // First, try to extract from result (authoritative source) - only if no error
       if (props.result && typeof props.result === 'string' && !hasError) {
         try {
           const parsed = JSON.parse(props.result);
-          // Update fileName only if we didn't get it from args
-          if (!props.args?.file_name && parsed.file_name) {
+          if (parsed.file_name) {
             fileName = parsed.file_name;
           }
-          // Extract folder from file_path
           if (parsed.folder) {
             folder = parsed.folder;
           } else if (parsed.file_path && parsed.file_path.includes('/')) {
             folder = parsed.file_path.split('/').slice(0, -1).join('/');
           }
-          // Extract size
           if (parsed.size_bytes) {
-            displaySize = parsed.size_bytes;
+            actualSize = parsed.size_bytes;
           }
-          fileId = parsed.file_id || fileId;
+          if (parsed.file_id) {
+            fileId = parsed.file_id;
+          }
         } catch {
           // If parsing fails, try regex extraction
           const fileNameMatch = props.result.match(/file[_\s]name['"]?\s*:\s*['"]?([^'"}\s,]+)/i);
-          if (fileNameMatch && !props.args?.file_name) {
+          if (fileNameMatch) {
             fileName = fileNameMatch[1];
           }
         }
       }
       
-      // Calculate content size (use actual result size if available, otherwise estimate from content)
-      const contentSize = displaySize || new Blob([content]).size;
+      // Fallback to args - try to get filename even if there's an error (user intended filename)
+      // Note: args may be truncated, so prefer result when available
+      const isArgsTruncated = props.args && typeof props.args === 'object' && 
+        'truncated' in props.args && props.args.truncated === true;
       
-      // Create unique instance ID based on file ID
-      const instanceId = `update-file-${clipText(fileId || fileName, 50)}`;
+      if (props.args && !isArgsTruncated) {
+        if (!fileName && props.args.file_name) {
+          fileName = props.args.file_name;
+        }
+        if (!fileId) {
+          fileId = props.args.file_id || '';
+        }
+        if (props.args.content) {
+          content = props.args.content;
+        }
+      }
+      
+      // Only use default filename if we have no filename AND it's a success case
+      // For errors, don't show a default filename
+      if (!fileName && !hasError) {
+        fileName = 'file.txt';
+      }
+      // If args are truncated, content will be fetched from database using fileId in FileManagementCard
+      
+      // Calculate content size (prefer actual size from result, fallback to content estimation)
+      const contentSize = actualSize || new Blob([content]).size;
+      
+      // Create unique instance ID based on file ID (use placeholder if no filename/fileId)
+      const instanceId = `update-file-${clipText(fileId || fileName || 'unknown', 50)}`;
 
-      // TEMPORARILY USING DEFAULT ActionStatus INSTEAD OF FileManagementCard
-      // const displayText = folder ? `${folder}/${fileName}` : fileName;
-      // const sizeText = contentSize > 0 ? ` (${formatBytes(contentSize)})` : '';
-      // const operation = props.args?.append ? 'Append to' : 'Update';
+      // If there's an error, use ActionStatus instead of FileManagementCard
+      if (hasError) {
+        console.log('[update_file_content] Rendering ActionStatus for error:', { fileName, error });
+        // Only show filename if we have one (don't show default 'file.txt' for errors)
+        const displayText = fileName 
+          ? (folder ? `${folder}/${fileName}` : fileName)
+          : 'File';
+        const operation = props.args?.append ? 'Append to' : 'Update';
+        return (
+          <ActionStatus
+            toolName={`${operation} ${displayText}`}
+            status={status}
+            args={props.args}
+            result={props.result}
+            error={error}
+          />
+        );
+      }
       
-      // return (
-      //   <ActionStatus
-      //     toolName={`${operation} File: ${displayText}${sizeText}`}
-      //     status={status}
-      //     args={props.args}
-      //     result={props.result}
-      //     error={error}
-      //   />
-      // );
-      
-      // ORIGINAL FileManagementCard (commented out)
+      // Success case: use FileManagementCard
+      // Ensure fileName is defined (should be set above, but fallback for safety)
+      const finalFileName = fileName || 'file.txt';
+      console.log('[update_file_content] Rendering FileManagementCard for success:', { fileName: finalFileName, fileId });
       return (
         <FileManagementCard
-          fileName={fileName}
+          fileName={finalFileName}
           folder={folder}
           status={status}
           result={props.result}
@@ -588,6 +695,7 @@ export function createFileUpdateRenderer(deps: BuiltinToolDependencies) {
           content={content}
           contentSize={contentSize}
           instanceId={instanceId}
+          fileId={fileId}
           operation="update"
         />
       );
@@ -649,20 +757,46 @@ function formatToolName(name: string): string {
  * Check if a result string indicates an actual error (not just contains the word "error")
  */
 function isErrorResult(result: unknown): boolean {
-  if (typeof result !== 'string') return false;
+  if (typeof result !== 'string') {
+    console.log('[isErrorResult] Not a string:', typeof result, result);
+    return false;
+  }
   
-  // Check for explicit error patterns at the start of the result
+  const trimmed = result.trim();
+  
+  // First, try to parse as JSON and check for error field
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed === 'object' && parsed !== null && 'error' in parsed) {
+      console.log('[isErrorResult] Detected error via JSON parse:', {
+        resultPreview: trimmed.substring(0, 100),
+        error: parsed.error,
+        isError: true
+      });
+      return true;
+    }
+  } catch (e) {
+    // Not valid JSON, continue to pattern matching
+  }
+  
+  // Check for explicit error patterns at the start of the result (fallback for non-JSON errors)
   const errorPatterns = [
     /^error:/i,
     /^failed:/i,
     /^exception:/i,
     /^traceback/i,
-    /^\{"error":/i,
-    /^{"type":\s*"error"/i,
     /^multi-agent graph execution failed/i,
   ];
   
-  return errorPatterns.some(pattern => pattern.test(result.trim()));
+  const isError = errorPatterns.some(pattern => pattern.test(trimmed));
+  
+  console.log('[isErrorResult] Checking:', {
+    resultPreview: trimmed.substring(0, 100),
+    isError,
+    matchedPattern: isError ? errorPatterns.find(p => p.test(trimmed))?.toString() : 'none'
+  });
+  
+  return isError;
 }
 
 /**

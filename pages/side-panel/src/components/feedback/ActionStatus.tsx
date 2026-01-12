@@ -3,6 +3,22 @@ import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { CodeBlock } from '../chat/slots/CustomCodeBlock';
+import { API_CONFIG } from '../../constants';
+
+// Add spin animation for loading indicator
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  `;
+  if (!document.querySelector('style[data-action-status-animations]')) {
+    style.setAttribute('data-action-status-animations', '');
+    document.head.appendChild(style);
+  }
+}
 
 /**
  * V2 API Status Values:
@@ -79,6 +95,11 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
   const inputScrollRef = useRef<HTMLElement>(null);
   const outputScrollRef = useRef<HTMLElement>(null);
   const errorScrollRef = useRef<HTMLElement>(null);
+  
+  // State for loading full truncated content
+  const [fullContent, setFullContent] = useState<any>(null);
+  const [isLoadingContent, setIsLoadingContent] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   
   // Auto-expand when in progress or executing (unless user manually closed it)
   useEffect(() => {
@@ -234,6 +255,68 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
     </svg>
   );
 
+  // Check if content is truncated
+  const isTruncated = useCallback((data: any): { isTruncated: boolean; metadata?: any } => {
+    if (!data) return { isTruncated: false };
+    
+    // Check if data is a string that looks like truncated metadata JSON
+    if (typeof data === 'string') {
+      const trimmed = data.trim();
+      if (trimmed.startsWith('{') && trimmed.includes('"truncated"')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (parsed.truncated === true && parsed.toolCallId && parsed.runId) {
+            return { isTruncated: true, metadata: parsed };
+          }
+        } catch {
+          // Not valid JSON, not truncated
+        }
+      }
+    }
+    
+    // Check if data is already a parsed object with truncated flag
+    if (typeof data === 'object' && data !== null && data.truncated === true) {
+      if (data.toolCallId && data.runId) {
+        return { isTruncated: true, metadata: data };
+      }
+    }
+    
+    return { isTruncated: false };
+  }, []);
+  
+  // Load full content from backend
+  const loadFullContent = useCallback(async (metadata: any) => {
+    setIsLoadingContent(true);
+    setLoadError(null);
+    
+    try {
+      const { toolCallId, runId, eventType } = metadata;
+      const response = await fetch(
+        `${API_CONFIG.BASE_URL}/api/runs/${runId}/tool-result/${toolCallId}?eventType=${eventType}`,
+        {
+          credentials: 'include',
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Failed to load content: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.found && data.content !== undefined) {
+        setFullContent(data.content);
+      } else {
+        throw new Error('Content not found in response');
+      }
+    } catch (error) {
+      console.error('Error loading full content:', error);
+      setLoadError(error instanceof Error ? error.message : 'Failed to load content');
+    } finally {
+      setIsLoadingContent(false);
+    }
+  }, []);
+
   // Format data for display
   // isInput flag indicates this is input args (always show full JSON for args)
   const formatData = (data: any, isInput: boolean = false): { content: string; isMarkdown: boolean; language?: string } => {
@@ -369,7 +452,13 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
 
           {/* Output Result */}
           {result && (() => {
-            const { content, isMarkdown, language } = formatData(result, false);
+            // Check if result is truncated
+            const { isTruncated: resultIsTruncated, metadata } = isTruncated(result);
+            
+            // Use full content if loaded, otherwise use result
+            const displayData = fullContent !== null ? fullContent : result;
+            const { content, isMarkdown, language } = formatData(displayData, false);
+            
             return (
               <div style={{ marginBottom: 8 }}>
                 <div
@@ -378,10 +467,95 @@ export const ActionStatus: React.FC<ActionStatusProps> = memo(({
                     fontWeight: 600,
                     color: isLight ? '#6b7280' : '#9ca3af',
                     marginBottom: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
                   }}
                 >
-                  Output:
+                  <span>Output:</span>
+                  {resultIsTruncated && fullContent === null && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        loadFullContent(metadata);
+                      }}
+                      disabled={isLoadingContent}
+                      style={{
+                        fontSize: 10,
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        border: isLight ? '1px solid #d1d5db' : '1px solid #4b5563',
+                        background: isLight ? '#ffffff' : '#1f2937',
+                        color: isLight ? '#374151' : '#d1d5db',
+                        cursor: isLoadingContent ? 'wait' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isLoadingContent) {
+                          e.currentTarget.style.background = isLight ? '#f3f4f6' : '#374151';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = isLight ? '#ffffff' : '#1f2937';
+                      }}
+                    >
+                      {isLoadingContent ? (
+                        <>
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            style={{ animation: 'spin 1s linear infinite' }}
+                          >
+                            <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                            <path d="M12 2a10 10 0 0 1 10 10" strokeOpacity="0.75" />
+                          </svg>
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          Load full content ({metadata?.originalLength?.toLocaleString()} chars)
+                        </>
+                      )}
+                    </button>
+                  )}
+                  {fullContent !== null && (
+                    <span style={{ fontSize: 10, color: isLight ? '#10b981' : '#34d399' }}>
+                      ✓ Full content loaded
+                    </span>
+                  )}
                 </div>
+                {loadError && (
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: '#ef4444',
+                      marginBottom: 4,
+                      padding: 4,
+                      background: isLight ? '#fee2e2' : '#7f1d1d',
+                      borderRadius: 4,
+                    }}
+                  >
+                    Error: {loadError}
+                  </div>
+                )}
                 {isMarkdown ? (
                   <div
                     ref={outputScrollRef as any}

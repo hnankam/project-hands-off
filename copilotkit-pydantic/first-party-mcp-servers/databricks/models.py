@@ -190,7 +190,6 @@ class ListQueryHistoryResponse(BaseModel):
     """Response model for listing query execution history."""
     queries: List[QueryExecutionInfo] = Field(..., description="List of query executions")
     count: int = Field(..., description="Number of queries returned")
-    has_next_page: bool = Field(..., description="Whether there are more results")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
 
 

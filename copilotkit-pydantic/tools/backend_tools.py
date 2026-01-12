@@ -867,21 +867,25 @@ async def run_aux_agent_streaming(
     user_message: str,
     send_stream: Any,
     run_input: RunAgentInput,
+    parent_deps: UnifiedDeps,
     aux_type: str = "",
-    agui_context: list[dict] | None = None,
 ) -> Any:
     """Run auxiliary agent with streaming events forwarded to frontend.
     
     Only tool call events are forwarded to avoid interfering with 
     the parent agent's run lifecycle and message stream.
     
+    The sub-agent shares the same state instance as the parent agent, so any
+    plans/graphs created by the sub-agent will be visible to the parent agent.
+    All other dependencies (user_id, organization_id, etc.) are also shared.
+    
     Args:
         aux_agent: The auxiliary agent to run
         user_message: Message to send to the agent
         send_stream: Stream to forward events to (can be None)
         run_input: RunAgentInput from parent (ensures thread_id matches)
+        parent_deps: UnifiedDeps from parent agent (shared state and context)
         aux_type: Type of auxiliary agent (e.g., 'image_generation', 'web_search')
-        agui_context: AGUI context from parent agent's deps (useCopilotReadableData)
         
     Returns:
         The final result from the agent run
@@ -895,6 +899,7 @@ async def run_aux_agent_streaming(
     # Convert agui_context dicts to Context items for RunAgentInput
     from ag_ui.core import Context
     context_items = []
+    agui_context = parent_deps.agui_context if parent_deps else None
     if agui_context:
         for item in agui_context:
             try:
@@ -913,24 +918,48 @@ async def run_aux_agent_streaming(
         forwarded_props=run_input.forwarded_props or None,
     )
     
-    # Create deps with agui_context so @agent.instructions can access it
-    # This is critical for inject_agui_context to work in auxiliary agents
+    # Share the same state instance and all dependencies from parent
+    # This ensures:
+    # 1. Plans/graphs created by sub-agent are visible to parent agent
+    # 2. Sub-agent can access workspace files (requires user_id)
+    # 3. Sub-agent can access organization/team context
+    # 4. State mutations are immediately visible to both agents
     sub_deps = UnifiedDeps(
-        state=AgentState(),
+        state=parent_deps.state,  # Share the same state instance (reference, not copy)
         send_stream=None,  # Don't use send_stream in deps (we handle it ourselves)
         adapter=None,
-        agui_context=agui_context,  # Pass context for @agent.instructions decorator
+        # Share all context fields from parent
+        user_id=parent_deps.user_id,
+        organization_id=parent_deps.organization_id,
+        team_id=parent_deps.team_id,
+        session_id=parent_deps.session_id,
+        auth_session_id=parent_deps.auth_session_id,
+        agent_id=parent_deps.agent_id,
+        model_id=parent_deps.model_id,
+        broadcast_func=parent_deps.broadcast_func,
+        agent_type=parent_deps.agent_type,
+        agent_info=parent_deps.agent_info,
+        agui_context=parent_deps.agui_context,  # Pass context for @agent.instructions decorator
+        # Graph metadata (typically None for auxiliary agents)
+        graph_id=parent_deps.graph_id,
+        graph_name=parent_deps.graph_name,
     )
     
     # Create encoder for activity events
     encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
     
-    # Event types to forward directly (tool calls)
+    # Event types to forward directly (tool calls and state/activity events)
     FORWARD_EVENT_TYPES = {
         'TOOL_CALL_START',
         'TOOL_CALL_ARGS', 
         'TOOL_CALL_END',
         'TOOL_CALL_RESULT',
+        # State events from tool results (e.g., create_plan, create_graph)
+        'STATE_SNAPSHOT',
+        'STATE_DELTA',
+        # Activity events from tool results (e.g., create_plan, create_graph)
+        'ACTIVITY_SNAPSHOT',
+        'ACTIVITY_DELTA',
     }
     
     # Message event types to convert to activity events
@@ -985,8 +1014,13 @@ async def run_aux_agent_streaming(
                         except (json.JSONDecodeError, ValueError):
                             pass
                     
-                    # Forward tool call events directly
+                    # Forward tool call events and state/activity events directly
                     if event_type in FORWARD_EVENT_TYPES:
+                        # Log state events for debugging
+                        if event_type in ('STATE_SNAPSHOT', 'STATE_DELTA', 'ACTIVITY_SNAPSHOT', 'ACTIVITY_DELTA'):
+                            logger.debug(
+                                f"Auxiliary agent '{aux_type}' forwarding {event_type} event to frontend"
+                            )
                         await send_stream.send(event)
                         consecutive_failures = 0  # Reset on success
                     
@@ -1123,7 +1157,6 @@ async def generate_images(
         send_stream = getattr(deps, 'send_stream', None) if deps else None
         adapter = getattr(deps, 'adapter', None) if deps else None
         run_input = adapter.run_input if adapter else None
-        agui_context = getattr(deps, 'agui_context', None) if deps else None
         
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
@@ -1131,13 +1164,14 @@ async def generate_images(
             return [error_msg]  # Return list since this function returns list[str]
 
         # Run with streaming - events are forwarded to frontend
+        # Pass parent deps to share state and all context (user_id, organization_id, etc.)
         result = await run_aux_agent_streaming(
             aux_agent=aux_agent,
             user_message=user_message,
             send_stream=send_stream,
             run_input=run_input,
+            parent_deps=deps,
             aux_type='image_generation',
-            agui_context=agui_context,
         )
                 
         # Upload each BinaryImage to Firebase Storage
@@ -1298,7 +1332,6 @@ async def web_search(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
         send_stream = getattr(deps, 'send_stream', None) if deps else None
         adapter = getattr(deps, 'adapter', None) if deps else None
         run_input = adapter.run_input if adapter else None
-        agui_context = getattr(deps, 'agui_context', None) if deps else None
         
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
@@ -1306,13 +1339,14 @@ async def web_search(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
             return error_msg  # Return string since this function returns str
 
         # Run with streaming - events are forwarded to frontend
+        # Pass parent deps to share state and all context (user_id, organization_id, etc.)
         result = await run_aux_agent_streaming(
             aux_agent=aux_agent,
             user_message=prompt,
             send_stream=send_stream,
             run_input=run_input,
+            parent_deps=deps,
             aux_type='web_search',
-            agui_context=agui_context,
         )
         
         return result.response.text if result and result.response else "Web search completed (no results)"
@@ -1374,7 +1408,6 @@ async def code_execution(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
         send_stream = getattr(deps, 'send_stream', None) if deps else None
         adapter = getattr(deps, 'adapter', None) if deps else None
         run_input = adapter.run_input if adapter else None
-        agui_context = getattr(deps, 'agui_context', None) if deps else None
         
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
@@ -1382,13 +1415,14 @@ async def code_execution(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
             return error_msg  # Return string since this function returns str
 
         # Run with streaming - events are forwarded to frontend
+        # Pass parent deps to share state and all context (user_id, organization_id, etc.)
         result = await run_aux_agent_streaming(
             aux_agent=aux_agent,
             user_message=user_message,
             send_stream=send_stream,
             run_input=run_input,
+            parent_deps=deps,
             aux_type='code_execution',
-            agui_context=agui_context,
         )
         
         return result.response.text if result and result.response else "Code execution completed (no output)"
@@ -1452,7 +1486,6 @@ async def url_context(ctx: RunContext[UnifiedDeps], urls: list[str]) -> str:
         send_stream = getattr(deps, 'send_stream', None) if deps else None
         adapter = getattr(deps, 'adapter', None) if deps else None
         run_input = adapter.run_input if adapter else None
-        agui_context = getattr(deps, 'agui_context', None) if deps else None
         
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
@@ -1460,13 +1493,14 @@ async def url_context(ctx: RunContext[UnifiedDeps], urls: list[str]) -> str:
             return error_msg  # Return string since this function returns str
 
         # Run with streaming - events are forwarded to frontend
+        # Pass parent deps to share state and all context (user_id, organization_id, etc.)
         result = await run_aux_agent_streaming(
             aux_agent=aux_agent,
             user_message=user_message,
             send_stream=send_stream,
             run_input=run_input,
+            parent_deps=deps,
             aux_type='url_context',
-            agui_context=agui_context,
         )
         
         return result.response.text if result and result.response else "URL context loaded (no content)"
@@ -1545,7 +1579,6 @@ async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) 
         send_stream = getattr(deps, 'send_stream', None) if deps else None
         adapter = getattr(deps, 'adapter', None) if deps else None
         run_input = adapter.run_input if adapter else None
-        agui_context = getattr(deps, 'agui_context', None) if deps else None
         
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
@@ -1554,13 +1587,14 @@ async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) 
         
         # Run with streaming - events are forwarded to frontend
         # Custom aux agents can inherit parent tools (unlike built-in types)
+        # Pass parent deps to share state and all context (user_id, organization_id, etc.)
         result = await run_aux_agent_streaming(
             aux_agent=aux_agent,
             user_message=prompt,
             send_stream=send_stream,
             run_input=run_input,
+            parent_deps=deps,
             aux_type=f"custom:{agent_key}",  # Use custom: prefix to allow tool inheritance
-            agui_context=agui_context,
         )
         
         response_text = result.response.text if result and result.response else ""
