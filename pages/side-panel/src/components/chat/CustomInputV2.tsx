@@ -244,6 +244,76 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     }
   }, [pageSelectorCtx?.initialSelectedNoteIds, pageSelectorCtx?.initialSelectedCredentialIds]);
   
+  // Restore full workspace item data from IDs when session is loaded
+  // This ensures that when a session is opened, selected notes/credentials are available to the agent
+  useEffect(() => {
+    const restoreWorkspaceItems = async () => {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      
+      // Restore notes if we have initial IDs and no notes data yet
+      if (pageSelectorCtx?.initialSelectedNoteIds && 
+          pageSelectorCtx.initialSelectedNoteIds.length > 0 &&
+          selectedNotes.length === 0) {
+        try {
+          const response = await fetch(`${baseURL}/api/workspace/notes/bulk`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ ids: pageSelectorCtx.initialSelectedNoteIds }),
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.notes && data.notes.length > 0) {
+              setSelectedNotes(data.notes);
+              debug.log('[CustomInputV2] Restored', data.notes.length, 'notes from session');
+            }
+          }
+        } catch (error) {
+          debug.error('[CustomInputV2] Failed to restore notes:', error);
+        }
+      }
+      
+      // Restore credentials if we have initial IDs and no credentials data yet
+      // ✅ SECURITY: Use /metadata endpoint to fetch only metadata (no passwords/secrets)
+      if (pageSelectorCtx?.initialSelectedCredentialIds && 
+          pageSelectorCtx.initialSelectedCredentialIds.length > 0 &&
+          selectedCredentials.length === 0) {
+        try {
+          const response = await fetch(`${baseURL}/api/workspace/credentials/metadata`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ ids: pageSelectorCtx.initialSelectedCredentialIds }),
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.credentials && data.credentials.length > 0) {
+              setSelectedCredentials(data.credentials);
+              debug.log('[CustomInputV2] Restored', data.credentials.length, 'credentials (metadata only) from session');
+            }
+          }
+        } catch (error) {
+          debug.error('[CustomInputV2] Failed to restore credentials:', error);
+        }
+      }
+    };
+    
+    restoreWorkspaceItems();
+  }, [
+    pageSelectorCtx?.initialSelectedNoteIds, 
+    pageSelectorCtx?.initialSelectedCredentialIds,
+    selectedNotes.length,
+    selectedCredentials.length,
+    setSelectedNotes,
+    setSelectedCredentials,
+  ]);
+  
   // File input refs for upload functionality
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);

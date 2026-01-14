@@ -36,6 +36,7 @@
 @import './styles/components/editors/tiptap.css';
 @import './styles/components/editors/codemirror.css';
 @import './styles/components/markdown/content.css';
+@import './styles/components/workspace/files-card-markdown.css';
 @import './styles/components/mermaid/diagrams.css';
 @import './styles/components/misc/agent-instructions.css';
 

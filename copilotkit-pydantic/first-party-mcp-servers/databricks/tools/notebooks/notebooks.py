@@ -43,7 +43,7 @@ def list_notebooks(
         
         for item in items:
             # Filter for notebooks only
-            if item.object_type.value == 'NOTEBOOK':
+            if item.object_type and item.object_type.value == 'NOTEBOOK':
                 item_dict = item.as_dict()
                 notebooks.append(NotebookInfo(
                     path=item_dict.get('path'),

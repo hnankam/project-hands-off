@@ -37,46 +37,67 @@ def resolve_notebook_from_url(host_credential_key: str, token_credential_key: st
     notebook_id = _extract_notebook_id_from_url(url)
     
     if notebook_id:
-        # ID-based URL - use list_notebooks with recursive search
+        # ID-based URL - search workspace directly without collecting all notebooks first
         # Databricks doesn't support direct ID->path lookup
         import logging
         logger = logging.getLogger(__name__)
         
-        # Import here to avoid circular dependency
-        from tools.notebooks.notebooks import list_notebooks
-        
         logger.info(f"Searching workspace for notebook ID: {notebook_id}")
         
         try:
-            # Search entire workspace recursively from root
-            logger.info(f"Searching workspace recursively for notebook ID: {notebook_id}")
+            # Try multiple root paths in order of likelihood
+            search_paths = [
+                "/Workspace",      # Modern workspace root
+                "/",               # Legacy root
+                "/Users",          # User directories
+            ]
             
-            # List all notebooks recursively from root using SDK's built-in recursive listing
-            response = list_notebooks(host_credential_key, token_credential_key, path="/", recursive=True)
+            notebooks_checked = 0
             
-            # Find notebook with matching object_id or resource_id
-            for notebook in response.notebooks:
-                obj_id = str(notebook.object_id) if notebook.object_id else ''
-                res_id = str(notebook.resource_id) if notebook.resource_id else ''
+            for search_root in search_paths:
+                logger.info(f"Searching from root: {search_root}")
                 
-                if obj_id == notebook_id or res_id == notebook_id:
-                    logger.info(f"✓ Found notebook {notebook_id} at {notebook.path}")
-                    return NotebookPathInfo(
-                        url=url,
-                        notebook_id=notebook_id,
-                        path=notebook.path,
-                        object_type=notebook.object_type,
-                        language=notebook.language,
-                        created_at=notebook.created_at,
-                        modified_at=notebook.modified_at
-                    )
+                try:
+                    # Iterate directly through workspace items without collecting them all first
+                    items = client.workspace.list(search_root, recursive=True)
+                    
+                    for item in items:
+                        # Filter for notebooks only
+                        if item.object_type and item.object_type.value == 'NOTEBOOK':
+                            notebooks_checked += 1
+                            
+                            # Check if this is the notebook we're looking for
+                            obj_id = str(item.object_id) if item.object_id else ''
+                            res_id = str(item.resource_id) if item.resource_id else ''
+                            
+                            # Log progress every 100 notebooks
+                            if notebooks_checked % 100 == 0:
+                                logger.info(f"Checked {notebooks_checked} notebooks so far...")
+                            
+                            if obj_id == notebook_id or res_id == notebook_id:
+                                logger.info(f"✓ Found notebook {notebook_id} at {item.path} (checked {notebooks_checked} notebooks)")
+                                item_dict = item.as_dict()
+                                return NotebookPathInfo(
+                                    url=url,
+                                    notebook_id=notebook_id,
+                                    path=item_dict.get('path'),
+                                    object_type=item_dict.get('object_type'),
+                                    language=item_dict.get('language'),
+                                    created_at=item_dict.get('created_at'),
+                                    modified_at=item_dict.get('modified_at')
+                                )
+                
+                except Exception as e:
+                    # Path might not exist or no permission, try next path
+                    logger.warning(f"Could not search {search_root}: {str(e)}")
+                    continue
             
-            # Not found
-            logger.error(f"Notebook {notebook_id} not found in workspace")
+            # Not found after searching all roots
+            logger.error(f"Notebook {notebook_id} not found after checking {notebooks_checked} notebooks in {len(search_paths)} root paths")
             raise ValueError(
                 f"Could not find notebook with ID {notebook_id} in workspace. "
-                "Searched entire workspace recursively. The notebook may be in a "
-                "restricted folder or may not exist."
+                f"Searched {notebooks_checked} notebooks across roots: {', '.join(search_paths)}. "
+                "The notebook may be in a restricted folder or may not exist."
             )
         except ValueError:
             raise

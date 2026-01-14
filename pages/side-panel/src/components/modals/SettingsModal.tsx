@@ -19,6 +19,13 @@ interface SettingsModalProps {
   onShowSuggestionsChange: (show: boolean) => void;
   onShowThoughtBlocksChange: (show: boolean) => void;
   onAgentModeChatChange: (enabled: boolean) => void;
+  sharedContexts?: {
+    multiPageMetadata?: any;
+    userContext?: any;
+    workspaceContext?: any;
+    selectedNotes?: any[];
+    selectedCredentials?: any[];
+  };
 }
 
 interface ToolParameter {
@@ -59,10 +66,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onShowSuggestionsChange,
   onShowThoughtBlocksChange,
   onAgentModeChatChange,
+  sharedContexts,
 }) => {
   const { theme } = useStorage(themeStorage);
   const { chatFontSize } = useStorage(preferencesStorage);
   const [toolsExpanded, setToolsExpanded] = useState(false);
+  const [contextsExpanded, setContextsExpanded] = useState(false);
+  const [expandedContexts, setExpandedContexts] = useState<Set<string>>(new Set());
   const [categoryExpanded, setCategoryExpanded] = useState<Record<string, boolean>>({
     frontend: false,
     backend: false,
@@ -581,52 +591,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* Divider */}
             <div className={cn('border-t', isLight ? 'border-gray-200' : 'border-gray-700')} />
 
-            {/* Agent Mode Chat Toggle */}
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <label
-                  htmlFor="agent-mode-chat"
-                  className="text-xs font-medium cursor-pointer"
-                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
-                >
-                  Agent Mode Chat
-                </label>
-                <p
-                  className={cn(
-                    'text-xs mt-0.5',
-                    isLight ? 'text-gray-500' : 'text-gray-400'
-                  )}
-                >
-                  Enable sticky user messages with dynamic scroll
-                </p>
-              </div>
-              <button
-                id="agent-mode-chat"
-                role="switch"
-                aria-checked={agentModeChat}
-                onClick={() => onAgentModeChatChange(!agentModeChat)}
-                className={cn(
-                  'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 ml-3',
-                  agentModeChat
-                    ? 'bg-blue-600 focus:ring-blue-500'
-                    : isLight
-                    ? 'bg-gray-200 focus:ring-gray-300'
-                    : 'bg-gray-600 focus:ring-gray-500'
-                )}
-              >
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                    agentModeChat ? 'translate-x-4' : 'translate-x-0'
-                  )}
-                />
-              </button>
-            </div>
-
-            {/* Divider */}
-            <div className={cn('border-t', isLight ? 'border-gray-200' : 'border-gray-700')} />
-
             {/* Available Tools Accordion */}
             <div className="flex items-center justify-between">
               <div className="flex-1">
@@ -931,6 +895,366 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Divider */}
+            <div className={cn('border-t', isLight ? 'border-gray-200' : 'border-gray-700')} />
+
+            {/* Shared Contexts Accordion */}
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <label
+                  htmlFor="shared-contexts-toggle"
+                  className="text-xs font-medium cursor-pointer"
+                  style={{ color: isLight ? '#374151' : '#bcc1c7' }}
+                >
+                  Shared Contexts
+                </label>
+                <p
+                  className={cn(
+                    'text-xs mt-0.5',
+                    isLight ? 'text-gray-500' : 'text-gray-400'
+                  )}
+                >
+                  Context data shared with the agent
+                </p>
+              </div>
+              <button
+                id="shared-contexts-toggle"
+                type="button"
+                onClick={() => setContextsExpanded(!contextsExpanded)}
+                className={cn(
+                  'flex items-center gap-2 ml-3 transition-colors',
+                  isLight ? 'text-gray-600 hover:text-gray-700' : 'text-gray-400 hover:text-[#bcc1c7]'
+                )}
+              >
+                <span
+                  className={cn(
+                    'text-[10px] font-medium px-1.5 py-0.5 rounded',
+                    isLight ? 'bg-gray-200 text-gray-700' : 'bg-gray-800 text-gray-300',
+                  )}
+                >
+                  {(() => {
+                    // Calculate sum of selected items: notes + credentials + pages
+                    let count = 0;
+                    if (sharedContexts?.selectedNotes) count += sharedContexts.selectedNotes.length;
+                    if (sharedContexts?.selectedCredentials) count += sharedContexts.selectedCredentials.length;
+                    if (sharedContexts?.multiPageMetadata?.selectedPages?.count) {
+                      count += sharedContexts.multiPageMetadata.selectedPages.count;
+                    }
+                    return count;
+                  })()}
+                </span>
+                <svg
+                  className={cn(
+                    'h-4 w-4 flex-shrink-0 transition-transform duration-300 ease-in-out',
+                    contextsExpanded && 'rotate-180',
+                  )}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+            </div>
+
+            {contextsExpanded && (
+              <div className="mt-2">
+                <div
+                  className={cn(
+                    'rounded-md border',
+                    isLight ? 'bg-white border-gray-200' : 'bg-[#151C24] border-gray-700'
+                  )}
+                >
+                  <div 
+                    className="max-h-[320px] overflow-y-auto rounded-md"
+                    style={{
+                      scrollbarWidth: 'thin',
+                      scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
+                    }}
+                  >
+                    {/* Multi-page Context */}
+                    <div className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpandedContexts(prev => {
+                            const next = new Set(prev);
+                            if (next.has('multiPage')) {
+                              next.delete('multiPage');
+                            } else {
+                              next.add('multiPage');
+                            }
+                            return next;
+                          });
+                        }}
+                        className={cn('w-full px-3 py-2 text-left transition-colors', isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50')}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <svg
+                              className={cn('w-3 h-3 flex-shrink-0 transition-transform', expandedContexts.has('multiPage') && 'rotate-90')}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              strokeWidth={2.5}
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                            </svg>
+                            <div className={cn('text-xs font-medium', isLight ? 'text-gray-800' : 'text-gray-200')}>
+                              Multi-page Context
+                            </div>
+                          </div>
+                          {(() => {
+                            const pageCount = sharedContexts?.multiPageMetadata?.selectedPages?.count ?? 0;
+                            return pageCount > 0 ? (
+                              <span className={cn('text-[10px] flex-shrink-0', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                                {pageCount} {pageCount === 1 ? 'page' : 'pages'}
+                              </span>
+                            ) : null;
+                          })()}
+                        </div>
+                      </button>
+                      {expandedContexts.has('multiPage') && (
+                        <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
+                          <pre className={cn(
+                            'text-[10px] p-2 rounded overflow-x-auto',
+                            isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
+                          )}
+                          style={{
+                            scrollbarWidth: 'thin',
+                            scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
+                          }}
+                          >
+                            {JSON.stringify(sharedContexts?.multiPageMetadata || { note: 'No data available' }, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* User Context */}
+                    <div className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpandedContexts(prev => {
+                            const next = new Set(prev);
+                            if (next.has('user')) {
+                              next.delete('user');
+                            } else {
+                              next.add('user');
+                            }
+                            return next;
+                          });
+                        }}
+                        className={cn('w-full px-3 py-2 text-left transition-colors', isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50')}
+                      >
+                        <div className="flex items-center gap-2">
+                          <svg
+                            className={cn('w-3 h-3 flex-shrink-0 transition-transform', expandedContexts.has('user') && 'rotate-90')}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            strokeWidth={2.5}
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                          <div className={cn('text-xs font-medium', isLight ? 'text-gray-800' : 'text-gray-200')}>
+                            User Context
+                          </div>
+                        </div>
+                      </button>
+                      {expandedContexts.has('user') && (
+                        <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
+                          <pre className={cn(
+                            'text-[10px] p-2 rounded overflow-x-auto',
+                            isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
+                          )}
+                          style={{
+                            scrollbarWidth: 'thin',
+                            scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
+                          }}
+                          >
+                            {JSON.stringify(sharedContexts?.userContext || { note: 'No data available' }, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Workspace Context */}
+                    <div className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpandedContexts(prev => {
+                            const next = new Set(prev);
+                            if (next.has('workspace')) {
+                              next.delete('workspace');
+                            } else {
+                              next.add('workspace');
+                            }
+                            return next;
+                          });
+                        }}
+                        className={cn('w-full px-3 py-2 text-left transition-colors', isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50')}
+                      >
+                        <div className="flex items-center gap-2">
+                          <svg
+                            className={cn('w-3 h-3 flex-shrink-0 transition-transform', expandedContexts.has('workspace') && 'rotate-90')}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            strokeWidth={2.5}
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                          <div className={cn('text-xs font-medium', isLight ? 'text-gray-800' : 'text-gray-200')}>
+                            Workspace Context
+                          </div>
+                        </div>
+                      </button>
+                      {expandedContexts.has('workspace') && (
+                        <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
+                          <pre className={cn(
+                            'text-[10px] p-2 rounded overflow-x-auto',
+                            isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
+                          )}
+                          style={{
+                            scrollbarWidth: 'thin',
+                            scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
+                          }}
+                          >
+                            {JSON.stringify(sharedContexts?.workspaceContext || { note: 'No data available' }, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Selected Notes Context - Only show when notes are available */}
+                    {sharedContexts?.selectedNotes && sharedContexts.selectedNotes.length > 0 && (
+                      <div className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExpandedContexts(prev => {
+                              const next = new Set(prev);
+                              if (next.has('notes')) {
+                                next.delete('notes');
+                              } else {
+                                next.add('notes');
+                              }
+                              return next;
+                            });
+                          }}
+                          className={cn('w-full px-3 py-2 text-left transition-colors', isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50')}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <svg
+                                className={cn('w-3 h-3 flex-shrink-0 transition-transform', expandedContexts.has('notes') && 'rotate-90')}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                strokeWidth={2.5}
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                              </svg>
+                              <div className={cn('text-xs font-medium', isLight ? 'text-gray-800' : 'text-gray-200')}>
+                                Selected Notes Context
+                              </div>
+                            </div>
+                            <span className={cn('text-[10px] flex-shrink-0', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {sharedContexts.selectedNotes.length} {sharedContexts.selectedNotes.length === 1 ? 'note' : 'notes'}
+                            </span>
+                          </div>
+                        </button>
+                        {expandedContexts.has('notes') && (
+                          <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
+                            <pre className={cn(
+                              'text-[10px] p-2 rounded overflow-x-auto',
+                              isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
+                            )}
+                            style={{
+                              scrollbarWidth: 'thin',
+                              scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
+                            }}
+                            >
+                              {JSON.stringify(sharedContexts.selectedNotes.map(note => ({
+                                id: note.id,
+                                title: note.title,
+                                content: note.content,
+                              })), null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Selected Credentials Context - Only show when credentials are available */}
+                    {sharedContexts?.selectedCredentials && sharedContexts.selectedCredentials.length > 0 && (
+                      <div className={cn('border-b last:border-b-0', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExpandedContexts(prev => {
+                              const next = new Set(prev);
+                              if (next.has('credentials')) {
+                                next.delete('credentials');
+                              } else {
+                                next.add('credentials');
+                              }
+                              return next;
+                            });
+                          }}
+                          className={cn('w-full px-3 py-2 text-left transition-colors', isLight ? 'bg-gray-50 hover:bg-gray-100' : 'bg-gray-800/30 hover:bg-gray-800/50')}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <svg
+                                className={cn('w-3 h-3 flex-shrink-0 transition-transform', expandedContexts.has('credentials') && 'rotate-90')}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                strokeWidth={2.5}
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                              </svg>
+                              <div className={cn('text-xs font-medium', isLight ? 'text-gray-800' : 'text-gray-200')}>
+                                Selected Credentials Context
+                              </div>
+                            </div>
+                            <span className={cn('text-[10px] flex-shrink-0', isLight ? 'text-gray-500' : 'text-gray-400')}>
+                              {sharedContexts.selectedCredentials.length} {sharedContexts.selectedCredentials.length === 1 ? 'credential' : 'credentials'}
+                            </span>
+                          </div>
+                        </button>
+                        {expandedContexts.has('credentials') && (
+                          <div className={cn('px-3 pb-3 pt-2', isLight ? 'bg-gray-50' : 'bg-gray-800/30')}>
+                            <pre className={cn(
+                              'text-[10px] p-2 rounded overflow-x-auto',
+                              isLight ? 'bg-gray-100 text-gray-800' : 'bg-gray-900/50 text-gray-300'
+                            )}
+                            style={{
+                              scrollbarWidth: 'thin',
+                              scrollbarColor: isLight ? '#d1d5db #f3f4f6' : '#4b5563 #1f2937',
+                            }}
+                            >
+                              {JSON.stringify(sharedContexts.selectedCredentials.map(cred => ({
+                                id: cred.id,
+                                name: cred.name,
+                                type: cred.type,
+                                key: cred.key,
+                              })), null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>

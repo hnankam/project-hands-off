@@ -607,27 +607,51 @@ router.post('/files/register', requireAuth, express.json(), async (req, res) => 
 });
 
 /**
- * Update file metadata (rename)
+ * Update file metadata (rename or move)
  * PUT /api/workspace/files/:fileId
- * Body: { file_name: string }
+ * Body: { file_name?: string, folder?: string | null }
  */
 router.put('/files/:fileId', requireAuth, async (req, res) => {
   try {
     const userId = req.auth.user.id;
     const { fileId } = req.params;
-    const { file_name } = req.body;
-    
-    if (!file_name || !file_name.trim()) {
-      return res.status(400).json({ error: 'file_name is required' });
-    }
+    const { file_name, folder } = req.body;
     
     const pool = getPool();
+    let updateFields = [];
+    let updateValues = [];
+    let paramIndex = 1;
     
-    // Update the file name
-    const { rows, rowCount } = await pool.query(
-      'UPDATE workspace_files SET file_name = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3 RETURNING *',
-      [file_name.trim(), fileId, userId]
-    );
+    // Update file name if provided
+    if (file_name !== undefined) {
+    if (!file_name || !file_name.trim()) {
+        return res.status(400).json({ error: 'file_name cannot be empty' });
+    }
+      updateFields.push(`file_name = $${paramIndex}`);
+      updateValues.push(file_name.trim());
+      paramIndex++;
+    }
+    
+    // Update folder if provided
+    if (folder !== undefined) {
+      // Normalize: null, empty string, or 'root' all mean root folder
+      const normalizedFolder = (folder === null || folder === '' || folder === 'root') ? null : folder;
+      updateFields.push(`folder = $${paramIndex}`);
+      updateValues.push(normalizedFolder);
+      paramIndex++;
+    }
+    
+    if (updateFields.length === 0) {
+      return res.status(400).json({ error: 'Either file_name or folder must be provided' });
+    }
+    
+    // Add updated_at and WHERE clause params
+    updateFields.push(`updated_at = NOW()`);
+    updateValues.push(fileId, userId);
+    
+    const query = `UPDATE workspace_files SET ${updateFields.join(', ')} WHERE id = $${paramIndex} AND user_id = $${paramIndex + 1} RETURNING *`;
+    
+    const { rows, rowCount } = await pool.query(query, updateValues);
     
     if (rowCount === 0) {
       return res.status(404).json({ error: 'File not found' });

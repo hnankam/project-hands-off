@@ -122,7 +122,9 @@ class QueryFilter(BaseModel):
     statement_ids: Optional[List[str]] = Field(None, description="Filter by statement IDs")
     statuses: Optional[List[str]] = Field(None, description="Filter by query statuses (QUEUED, RUNNING, CANCELED, FAILED, FINISHED)")
     user_ids: Optional[List[int]] = Field(None, description="Filter by user IDs")
+    user_names: Optional[List[str]] = Field(None, description="Filter by user names (exact match, case-insensitive)")
     warehouse_ids: Optional[List[str]] = Field(None, description="Filter by SQL warehouse IDs")
+    query_text_contains: Optional[str] = Field(None, description="Filter by query text containing this string (case-insensitive)")
 
 
 class QueryMetrics(BaseModel):

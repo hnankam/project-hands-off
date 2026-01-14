@@ -43,6 +43,7 @@ def format_agui_context(context_items: list[dict | Any]) -> str:
         return ""
     
     parts = ["\n\n=== User Session Context ===\n"]
+    
     for item in context_items:
         # Handle both dict and Pydantic model formats
         if hasattr(item, 'model_dump'):
@@ -64,8 +65,199 @@ def format_agui_context(context_items: list[dict | Any]) -> str:
         if not value:
             continue
         
-        # Format: Description followed by value in code block
-        parts.append(f"\n**{description}**:\n```\n{value}\n```\n")
+        # If value is a JSON string, parse it
+        if isinstance(value, str):
+            import json
+            try:
+                value = json.loads(value)
+            except (json.JSONDecodeError, TypeError):
+                # If parsing fails, use the string as-is
+                pass
+        
+        # Format specific context types in markdown structure
+        formatted = _format_context_value(description, value)
+        if formatted:
+            parts.append(formatted)
+    
+    return "".join(parts)
+
+
+def _format_context_value(description: str, value: any) -> str:
+    """Format a specific context value based on its type.
+    
+    Args:
+        description: Context description
+        value: Context value (dict, list, or other)
+        
+    Returns:
+        Formatted markdown string
+    """
+    if not isinstance(value, dict):
+        # Fallback for non-dict values
+        return f"\n**{description}**:\n```\n{value}\n```\n"
+    
+    # Detect context type by description text (more reliable than structure)
+    desc_lower = description.lower()
+    
+    # Multi-page Context
+    if 'multi-page' in desc_lower or ('current page' in desc_lower and 'selected' in desc_lower):
+        return _format_multipage_context(value)
+    
+    # User Context
+    elif 'authenticated user' in desc_lower or ('user information' in desc_lower and 'organization' in desc_lower):
+        return _format_user_context(value)
+    
+    # Workspace Context (but not selected notes/credentials)
+    elif 'workspace' in desc_lower and 'uploaded files' in desc_lower:
+        return _format_workspace_context(value)
+    
+    # Selected Notes Context
+    elif 'selected' in desc_lower and 'notes' in desc_lower and 'full content' in desc_lower:
+        return _format_selected_notes_context(value)
+    
+    # Selected Credentials Context
+    elif 'credentials' in desc_lower and 'api calls' in desc_lower:
+        return _format_selected_credentials_context(value)
+    
+    # Fallback: try structure-based detection
+    elif 'currentPage' in value or 'selectedPages' in value:
+        return _format_multipage_context(value)
+    elif 'user' in value and isinstance(value.get('user'), dict):
+        return _format_user_context(value)
+    elif 'files' in value and 'notes' in value:
+        return _format_workspace_context(value)
+    elif 'selectedNotes' in value:
+        return _format_selected_notes_context(value)
+    elif 'selectedCredentials' in value:
+        return _format_selected_credentials_context(value)
+    
+    # Fallback for unknown formats
+    else:
+        return f"\n**{description}**:\n```\n{value}\n```\n"
+
+
+def _format_multipage_context(value: dict) -> str:
+    """Format multi-page context in markdown."""
+    parts = ["\n## Multi-page Context\n"]
+    
+    current = value.get('currentPage', {})
+    if current:
+        parts.append(f"**Current Page**: {current.get('pageTitle', 'Untitled')}\n")
+        parts.append(f"- URL: `{current.get('pageURL', 'N/A')}`\n")
+        if current.get('hasEmbeddings'):
+            parts.append(f"- Content: Indexed with {current.get('totalHtmlChunks', 0)} HTML chunks, "
+                        f"{current.get('totalFormChunks', 0)} form chunks, "
+                        f"{current.get('totalClickableChunks', 0)} clickable elements\n")
+    
+    # selectedPages is an object with 'pages' array inside it
+    selected_pages_obj = value.get('selectedPages', {})
+    if selected_pages_obj and isinstance(selected_pages_obj, dict):
+        pages = selected_pages_obj.get('pages', [])
+        count = selected_pages_obj.get('count', 0)
+        
+        if pages and isinstance(pages, list) and count > 0:
+            parts.append(f"\n**Selected Pages** ({count} pages):\n")
+            for page in pages:
+                if isinstance(page, dict):
+                    parts.append(f"- {page.get('pageTitle', 'Untitled')} (`{page.get('pageURL', 'N/A')}`)")
+                    # Selected pages use different field names: htmlChunkCount, formChunkCount, clickableChunkCount
+                    html_chunks = page.get('htmlChunkCount', 0)
+                    form_chunks = page.get('formChunkCount', 0)
+                    clickable_chunks = page.get('clickableChunkCount', 0)
+                    if html_chunks > 0 or form_chunks > 0 or clickable_chunks > 0:
+                        parts.append(f" - Indexed with {html_chunks} HTML chunks, "
+                                    f"{form_chunks} form chunks, "
+                                    f"{clickable_chunks} clickable elements")
+                    parts.append("\n")
+    
+    return "".join(parts)
+
+
+def _format_user_context(value: dict) -> str:
+    """Format user context in markdown."""
+    parts = ["\n## User Context\n"]
+    
+    user = value.get('user', {})
+    if user:
+        parts.append(f"\n**User**: {user.get('name', 'N/A')}\n")
+        parts.append(f"- Email: {user.get('email', 'N/A')}\n")
+    
+    org = value.get('organization')
+    if org:
+        parts.append(f"- Organization: {org.get('name', 'N/A')}\n")
+    
+    return "".join(parts)
+
+
+def _format_workspace_context(value: dict) -> str:
+    """Format workspace context in markdown."""
+    parts = ["\n## Workspace Context\n"]
+    
+    files = value.get('files', {})
+    if files:
+        count = files.get('count', 0)
+        parts.append(f"\n**Files**: {count} total\n")
+        recent = files.get('recent', [])
+        if recent and isinstance(recent, list):
+            parts.append("Recent files:\n")
+            for f in recent:
+                if isinstance(f, dict):
+                    parts.append(f"- {f.get('name', 'Untitled')} ({f.get('type', 'unknown')})\n")
+    
+    notes = value.get('notes', {})
+    if notes:
+        count = notes.get('count', 0)
+        parts.append(f"\n**Notes**: {count} total\n")
+        recent = notes.get('recent', [])
+        if recent and isinstance(recent, list):
+            parts.append("Recent notes:\n")
+            for n in recent:
+                if isinstance(n, dict):
+                    parts.append(f"- {n.get('title', 'Untitled')}\n")
+    
+    storage = value.get('storage_used')
+    if storage:
+        parts.append(f"\n**Storage Used**: {storage}\n")
+    
+    return "".join(parts)
+
+
+def _format_selected_notes_context(value: dict) -> str:
+    """Format selected notes context in markdown."""
+    notes = value.get('selectedNotes', [])
+    if not notes or not isinstance(notes, list):
+        return ""
+    
+    parts = [f"\n## Selected Notes ({len(notes)} notes)\n"]
+    
+    for note in notes:
+        if not isinstance(note, dict):
+            continue
+        parts.append(f"\n### {note.get('title', 'Untitled')}\n")
+        content = note.get('content', '')
+        if content:
+            parts.append(f"{content}\n")
+    
+    return "".join(parts)
+
+
+def _format_selected_credentials_context(value: dict) -> str:
+    """Format selected credentials context in markdown."""
+    creds = value.get('selectedCredentials', [])
+    if not creds or not isinstance(creds, list):
+        return ""
+    
+    parts = [f"\n## Selected Credentials ({len(creds)} credentials)\n"]
+    parts.append("\n**Available for API calls** (passwords/secrets stored securely server-side):\n")
+    
+    for cred in creds:
+        if not isinstance(cred, dict):
+            continue
+        parts.append(f"- **{cred.get('name', 'Unnamed')}** ({cred.get('type', 'unknown')})")
+        key = cred.get('key')
+        if key:
+            parts.append(f" - Key: `{key}`")
+        parts.append("\n")
     
     return "".join(parts)
 
@@ -326,12 +518,7 @@ async def create_agent(
         context += "- **Unique ID**: Auto-generated (e.g., 'abc123def456')\n"
         context += "- **Human Name**: Descriptive, user-friendly (e.g., 'Build Dream House')\n"
         context += "- **Status**: Plans (active, paused, completed, cancelled) | Graphs (active, running, paused, completed, cancelled, waiting)\n\n"
-        
-        context += "## Targeting Plans & Graphs\n\n"
-        context += "Reference by **NAME** or **ID**:\n"
-        context += "- update_plan_step('Build House Plan', 0, status='completed')\n"
-        context += "- update_plan_step('abc123def456', 0, status='completed')\n\n"
-        context += "Names are case-insensitive and support partial matching.\n\n"
+  
         
         # Add current active plans
         if active_plans:
@@ -363,26 +550,6 @@ async def create_agent(
         if not active_plans and not paused_plans and not active_graphs:
             context += "## No Active Work\n\n"
             context += "Create a new plan: `create_plan(name='...', steps=[...])`\n\n"
-        
-        # Add best practices
-        context += "## Best Practices\n\n"
-        context += "1. **Use descriptive names** when creating plans/graphs\n"
-        context += "   'Research Machine Learning Papers'\n"
-        context += "   'Plan 1'\n\n"
-        context += "2. **Keep names concise** - limit to 50 characters or less\n"
-        context += "   'Build React Dashboard'\n"
-        context += "   'Build a comprehensive full-stack React dashboard with authentication and real-time updates'\n\n"
-        context += "3. **Use names when user mentions them**\n"
-        context += "   User: 'Update @Build House Plan'\n"
-        context += "   You: update_plan_step('Build House Plan', ...)\n\n"
-        context += "4. **Use list_plans() if unsure** which plan to update\n\n"
-        context += "5. **Multiple active plans are normal** - don't force single active\n\n"
-        
-        # Add quick tool reference
-        context += "## Tools Available\n\n"
-        context += "**Plans**: create_plan, update_plan_step, update_plan_status, "
-        context += "rename_plan, list_plans, delete_plan\n"
-        context += "**Graphs**: run_graph (multi-agent execution)\n"
         
         return context
 

@@ -25,6 +25,8 @@ import { useEnabledFrontendTools } from '../../hooks/useEnabledFrontendTools';
 import { TIMING_CONSTANTS, COPIOLITKIT_CONFIG, ABLY_CONFIG } from '../../constants';
 import { ts } from '../../utils/logging';
 import { useAuth } from '../../context/AuthContext';
+import { useMultiPageMetadata } from '../../hooks/useMultiPageMetadata';
+import { useWorkspaceContext } from '../../hooks/useWorkspaceContext';
 import { CopilotKitProvider, useCopilotChat, useCopilotAgent, SharedAgentProvider } from '../../hooks/copilotkit';
 import { createAllToolRenderers } from '../../actions/copilot/builtinToolActions';
 import { createActivityMessageRenderers } from '../../actions/copilot/activityRenderers';
@@ -329,7 +331,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     // This was causing unnecessary re-renders on every session update.
     // Agent/model loading is now handled by useSessionData hook.
     const { showAgentCursor, showSuggestions, showThoughtBlocks, agentModeChat, chatFontSize } = useStorage(preferencesStorage);
-    const { organization, activeTeam } = useAuth();
+    const { user, organization, member, activeTeam } = useAuth();
     const [userMessagesCount, setUserMessagesCount] = useState<number>(0);
     const [assistantMessagesCount, setAssistantMessagesCount] = useState<number>(0);
     const [isCounterReady, setIsCounterReady] = useState<boolean>(false); // Hide counter until stable
@@ -927,6 +929,53 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
       embedTexts,
       sessionId,
     });
+
+    // Multi-page metadata for shared contexts display
+    const multiPageMetadata = useMultiPageMetadata({
+      selectedPageURLs,
+      currentPageURL: currentPageContent?.url || null,
+      currentPageContent,
+      pageContentEmbedding: pageContentEmbeddingRef.current,
+      currentPageTotals: dbTotals,
+      enableLogging: false,
+    });
+
+    // Workspace context for shared contexts display
+    const { context: workspaceContext } = useWorkspaceContext();
+
+    // Prepare shared contexts data for SettingsModal
+    const sharedContexts = useMemo(() => ({
+      multiPageMetadata,
+      userContext: user ? {
+        user: {
+          name: user.name,
+          email: user.email,
+        },
+        organization: organization ? {
+          name: organization.name,
+        } : null,
+      } : null,
+      workspaceContext: workspaceContext ? {
+        files: {
+          count: workspaceContext.file_count,
+          recent: workspaceContext.recent_files.map((f: any) => ({
+            id: f.id,
+            name: f.file_name,
+            type: f.file_type,
+          })),
+        },
+        notes: {
+          count: workspaceContext.note_count,
+          recent: workspaceContext.recent_notes.map((n: any) => ({
+            id: n.id,
+            title: n.title,
+          })),
+        },
+        storage_used: workspaceContext.total_size,
+      } : null,
+      selectedNotes,
+      selectedCredentials,
+    }), [multiPageMetadata, user, organization, member, workspaceContext, selectedNotes, selectedCredentials]);
 
     // Track the previous page URL to detect actual navigation changes
     const previousPageURLRef = useRef<string | null>(null);
@@ -1544,6 +1593,7 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           modelType={activeModel}
           organizationId={organization?.id || undefined}
           teamId={activeTeam || undefined}
+          sharedContexts={sharedContexts}
           onClose={() => setIsSettingsOpen(false)}
           onShowAgentCursorChange={show => preferencesStorage.setShowAgentCursor(show)}
           onShowSuggestionsChange={show => preferencesStorage.setShowSuggestions(show)}

@@ -1,0 +1,316 @@
+/* =============================================================================
+   FILES CARD MARKDOWN RENDERING (VS Code Style)
+   =============================================================================
+   
+   VS Code-style markdown rendering for file previews in the workspace files card.
+   Matches VS Code's markdown preview appearance for consistency.
+   
+   Key Features:
+   - 14px base font size (VS Code standard)
+   - 1.6 line-height for readability
+   - Proper spacing (16px margins)
+   - VS Code color palette
+   - Clean typography matching VS Code preview
+   
+   ============================================================================= */
+
+/* Base Typography & Spacing */
+.files-card-markdown .markdown-content {
+  font-size: 13px; /* Reduced from 14px */
+  line-height: 1.6; /* Cursor/VS Code uses 1.6 line-height */
+  color: #333333; /* Cursor light mode text */
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  padding: 16px; /* Cursor uses 16px padding */
+  max-width: 100%;
+  word-wrap: break-word;
+  background-color: #f9fafb; /* Match default markdown renderer */
+}
+
+/* Dark mode */
+.files-card-markdown.dark .markdown-content {
+  color: #cccccc; /* Cursor dark mode text */
+  background-color: #0d1117; /* Match default markdown renderer */
+}
+
+/* Headings */
+.files-card-markdown .markdown-content h1 {
+  font-size: 1.85em; /* Reduced from 2em */
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid #ddd;
+  line-height: 1.25;
+  color: inherit;
+}
+
+.files-card-markdown .markdown-content h2 {
+  font-size: 1.6em; /* Reduced from 1.75em */
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid #ddd;
+  line-height: 1.25;
+}
+
+.files-card-markdown .markdown-content h3 {
+  font-size: 1.35em; /* Reduced from 1.5em */
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+
+.files-card-markdown .markdown-content h4 {
+  font-size: 1.15em; /* Reduced from 1.25em */
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+
+.files-card-markdown .markdown-content h5 {
+  font-size: 0.95em; /* Reduced from 1em */
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+
+.files-card-markdown .markdown-content h6 {
+  font-size: 0.8em; /* Reduced from 0.875em */
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+
+.files-card-markdown .markdown-content h1:first-child,
+.files-card-markdown .markdown-content h2:first-child,
+.files-card-markdown .markdown-content h3:first-child,
+.files-card-markdown .markdown-content h4:first-child,
+.files-card-markdown .markdown-content h5:first-child,
+.files-card-markdown .markdown-content h6:first-child {
+  margin-top: 0;
+}
+
+/* Dark mode heading borders */
+.files-card-markdown.dark .markdown-content h1,
+.files-card-markdown.dark .markdown-content h2 {
+  border-bottom-color: #30363d;
+}
+
+/* Paragraphs */
+.files-card-markdown .markdown-content p {
+  margin-top: 0;
+  margin-bottom: 1em; /* Cursor uses 1em spacing */
+  line-height: 1.6;
+}
+
+.files-card-markdown .markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* Links */
+.files-card-markdown .markdown-content a {
+  color: #0066cc; /* Cursor blue */
+  text-decoration: none;
+}
+
+.files-card-markdown .markdown-content a:hover {
+  text-decoration: underline;
+}
+
+.files-card-markdown.dark .markdown-content a {
+  color: #4c9aff; /* Cursor dark mode blue */
+}
+
+/* Code Blocks */
+.files-card-markdown .markdown-content pre {
+  background-color: #e8eaed; /* Match default markdown renderer */
+  border-radius: 3px;
+  padding: 10px;
+  overflow: auto;
+  font-size: 0.85em; /* Reduced from 0.9em */
+  line-height: 1.45;
+  margin: 0 0 1em 0;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.files-card-markdown.dark .markdown-content pre {
+  background-color: #0d1117; /* Match default markdown renderer */
+}
+
+.files-card-markdown .markdown-content pre code {
+  display: block;
+  padding: 0;
+  margin: 0;
+  overflow: visible;
+  line-height: inherit;
+  word-wrap: normal;
+  background-color: transparent;
+  border: 0;
+  font-size: inherit;
+}
+
+.files-card-markdown .markdown-content code {
+  padding: 0.2em 0.4em;
+  margin: 0;
+  font-size: 80%; /* Reduced from 85% */
+  background-color: rgba(0, 0, 0, 0.05); /* Cursor light mode inline code */
+  border-radius: 3px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.files-card-markdown.dark .markdown-content code {
+  background-color: rgba(255, 255, 255, 0.08); /* Cursor dark mode inline code */
+  color: #cccccc;
+}
+
+/* Lists */
+.files-card-markdown .markdown-content ul,
+.files-card-markdown .markdown-content ol {
+  padding-left: 2em;
+  margin-top: 0;
+  margin-bottom: 1em;
+}
+
+/* Lists immediately after headings - reduce spacing */
+.files-card-markdown .markdown-content h1 + ul,
+.files-card-markdown .markdown-content h1 + ol,
+.files-card-markdown .markdown-content h2 + ul,
+.files-card-markdown .markdown-content h2 + ol,
+.files-card-markdown .markdown-content h3 + ul,
+.files-card-markdown .markdown-content h3 + ol,
+.files-card-markdown .markdown-content h4 + ul,
+.files-card-markdown .markdown-content h4 + ol,
+.files-card-markdown .markdown-content h5 + ul,
+.files-card-markdown .markdown-content h5 + ol,
+.files-card-markdown .markdown-content h6 + ul,
+.files-card-markdown .markdown-content h6 + ol {
+  margin-top: 0;
+}
+
+.files-card-markdown .markdown-content li {
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* Paragraphs inside list items - make inline and remove all margins */
+.files-card-markdown .markdown-content li > p,
+.files-card-markdown .markdown-content li[class*="[&>p]:"] > p,
+.files-card-markdown .markdown-content [data-streamdown="list-item"] > p {
+  display: inline !important;
+}
+
+/* Blockquotes */
+.files-card-markdown .markdown-content blockquote {
+  padding: 0 1em;
+  color: #666666; /* Cursor muted text */
+  border-left: 0.25em solid #ddd;
+  margin: 0 0 1em 0;
+}
+
+.files-card-markdown.dark .markdown-content blockquote {
+  color: #999999;
+  border-left-color: #3a3a3a;
+}
+
+.files-card-markdown .markdown-content blockquote > :first-child {
+  margin-top: 0;
+}
+
+.files-card-markdown .markdown-content blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* Tables */
+.files-card-markdown .markdown-content table {
+  border-spacing: 0;
+  border-collapse: collapse;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+  margin: 0 0 1em 0;
+}
+
+.files-card-markdown .markdown-content table th {
+  font-weight: 600;
+  padding: 8px 13px;
+  border-bottom: 2px solid #ddd;
+  border-right: 1px solid #ddd;
+  background-color: #f4f4f4;
+  text-align: left;
+}
+
+.files-card-markdown .markdown-content table th:last-child {
+  border-right: none;
+}
+
+.files-card-markdown.dark .markdown-content table th {
+  border-bottom-color: #3a3a3a;
+  border-right-color: #3a3a3a;
+  background-color: #1a1a1a;
+}
+
+.files-card-markdown .markdown-content table td {
+  padding: 8px 13px;
+  border-top: 1px solid #ddd;
+  border-right: 1px solid #ddd;
+  border-bottom: none;
+  text-align: left;
+}
+
+.files-card-markdown .markdown-content table td:last-child {
+  border-right: none;
+}
+
+.files-card-markdown.dark .markdown-content table td {
+  border-top-color: #3a3a3a;
+  border-right-color: #3a3a3a;
+}
+
+.files-card-markdown .markdown-content table tr {
+  background-color: transparent;
+}
+
+/* Remove bottom border from last row to prevent doubling */
+.files-card-markdown .markdown-content table tbody tr:last-child {
+  border-bottom-width: 0px;
+}
+
+.files-card-markdown.dark .markdown-content table tbody tr:last-child {
+  border-bottom-width: 0px;
+}
+
+.files-card-markdown .markdown-content table tr:nth-child(2n) {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.files-card-markdown.dark .markdown-content table tr:nth-child(2n) {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* Horizontal Rules */
+.files-card-markdown .markdown-content hr {
+  height: 1px;
+  padding: 0;
+  margin: 1em 0;
+  background-color: #ddd;
+  border: 0;
+}
+
+.files-card-markdown.dark .markdown-content hr {
+  background-color: #30363d; /* Match header underline color */
+}
+
+/* Images */
+.files-card-markdown .markdown-content img {
+  max-width: 100%;
+  box-sizing: content-box;
+  background-color: transparent;
+  border-style: none;
+  margin: 0 0 1em 0;
+}

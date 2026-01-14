@@ -2,9 +2,10 @@ import { COPIOLITKIT_CONFIG } from '../../constants';
 import { useAuth } from '../../context/AuthContext';
 import { ensureFirebase, ensureFirebaseAuth } from '../../utils/firebaseStorage';
 import { AdminConfirmDialog } from '../admin/modals/AdminConfirmDialog';
-import { cn } from '@extension/ui';
+import { cn, DropdownMenu, DropdownMenuItem } from '@extension/ui';
 import { ref as fbRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { CodeBlock } from '../chat/slots/CustomCodeBlock';
 
@@ -26,6 +27,540 @@ interface FolderItem {
   file_count: number;
   subfolder_count: number;
 }
+
+interface FileMoreOptionsButtonProps {
+  file: WorkspaceFile;
+  isLight: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  onDownload: () => void;
+  onDelete: () => void;
+  onMove: () => void;
+  disabled?: boolean;
+}
+
+interface FolderMoreOptionsButtonProps {
+  folder: FolderItem;
+  isLight: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  onDelete: () => void;
+  disabled?: boolean;
+}
+
+interface FolderSelectorProps {
+  isLight: boolean;
+  folders: FolderItem[];
+  selectedFolder: string | null;
+  onChange: (folder: string | null) => void;
+}
+
+const FolderSelector: React.FC<FolderSelectorProps> = ({ isLight, folders, selectedFolder, onChange }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+    return undefined;
+  }, [isOpen]);
+
+  // Calculate dropdown position
+  const [position, setPosition] = useState<'up' | 'down'>('down');
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const buttonRect = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - buttonRect.bottom;
+      const spaceAbove = buttonRect.top;
+      const dropdownHeight = 200;
+      setPosition(spaceBelow < dropdownHeight && spaceAbove > spaceBelow ? 'up' : 'down');
+    }
+  }, [isOpen]);
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          'w-full rounded border px-2 py-1.5 text-xs text-left flex items-center justify-between',
+          isLight 
+            ? 'border-gray-300 bg-white text-gray-900 hover:border-gray-400' 
+            : 'border-gray-600 bg-[#1a1f28] text-white hover:border-gray-500'
+        )}
+      >
+        <span className="truncate flex-1">{selectedFolder || 'Root (No folder)'}</span>
+        <svg
+          className={cn('h-3 w-3 flex-shrink-0 ml-2 transition-transform', 
+            isLight ? 'text-gray-500' : 'text-gray-400',
+            isOpen && 'rotate-180'
+          )}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div
+          className={cn(
+            'absolute left-0 w-full rounded-md border shadow-lg z-[9999] max-h-[200px] overflow-y-auto',
+            position === 'up' ? 'bottom-full mb-1' : 'top-full mt-1',
+            isLight
+              ? 'bg-white border-gray-200'
+              : 'bg-[#151C24] border-gray-700'
+          )}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              onChange(null);
+              setIsOpen(false);
+            }}
+            className={cn(
+              'w-full px-2.5 py-1.5 text-xs text-left transition-colors',
+              isLight
+                ? 'text-gray-700 hover:bg-gray-100'
+                : 'text-gray-200 hover:bg-gray-700',
+              !selectedFolder && (isLight ? 'bg-blue-50' : 'bg-blue-900/20')
+            )}
+          >
+            Root (No folder)
+          </button>
+          {folders.map(folder => (
+            <button
+              type="button"
+              key={folder.path}
+              onClick={() => {
+                onChange(folder.path);
+                setIsOpen(false);
+              }}
+              className={cn(
+                'w-full px-2.5 py-1.5 text-xs text-left transition-colors break-words',
+                isLight
+                  ? 'text-gray-700 hover:bg-gray-100'
+                  : 'text-gray-200 hover:bg-gray-700',
+                selectedFolder === folder.path && (isLight ? 'bg-blue-50' : 'bg-blue-900/20')
+              )}
+            >
+              {folder.path}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const FolderMoreOptionsButton: React.FC<FolderMoreOptionsButtonProps> = ({
+  folder,
+  isLight,
+  isOpen,
+  onToggle,
+  onDelete,
+  disabled = false,
+}) => {
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const moreDropdownRef = useRef<HTMLDivElement>(null);
+
+  const buttonClassName = cn(
+    'rounded p-1 opacity-0 transition-all group-hover:opacity-100',
+    disabled && 'cursor-not-allowed opacity-50',
+    isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300'
+  );
+
+  const dropdownStyles: React.CSSProperties = {
+    position: 'fixed',
+    backgroundColor: isLight ? '#ffffff' : '#151C24',
+    border: `1px solid ${isLight ? '#e5e7eb' : '#374151'}`,
+    borderRadius: '6px',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+    zIndex: 10000,
+    minWidth: '160px',
+    overflow: 'hidden',
+    pointerEvents: 'auto',
+  };
+
+  const menuItemBaseStyles: React.CSSProperties = {
+    width: '100%',
+    padding: '0.5rem 0.75rem',
+    border: 'none',
+    backgroundColor: 'transparent',
+    fontSize: '12px',
+    textAlign: 'left',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    whiteSpace: 'nowrap',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  };
+
+  const menuItemTextColor = isLight ? '#374151' : '#d1d5db';
+  const menuItemHoverBg = isLight ? '#f3f4f6' : '#1f2937';
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!disabled) {
+      onToggle();
+    }
+  };
+
+  const handleDelete = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onDelete();
+    onToggle();
+  };
+
+  // Position dropdown near button
+  useEffect(() => {
+    if (isOpen && moreButtonRef.current && moreDropdownRef.current) {
+      const buttonRect = moreButtonRef.current.getBoundingClientRect();
+      const dropdown = moreDropdownRef.current;
+      
+      dropdown.style.top = `${buttonRect.bottom + 4}px`;
+      dropdown.style.right = `${window.innerWidth - buttonRect.right}px`;
+    }
+  }, [isOpen]);
+
+  return (
+    <>
+      <button
+        ref={moreButtonRef}
+        className={buttonClassName}
+        title="More options"
+        onClick={handleClick}
+        disabled={disabled}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          width="16"
+          height="16"
+        >
+          <circle cx="12" cy="12" r="1" />
+          <circle cx="12" cy="5" r="1" />
+          <circle cx="12" cy="19" r="1" />
+        </svg>
+      </button>
+      
+      {isOpen &&
+        createPortal(
+          <div
+            ref={moreDropdownRef}
+            className="folderMoreOptionsDropdownMenu"
+            style={dropdownStyles}
+          >
+            {/* Delete Option */}
+            <button
+              type="button"
+              onClick={handleDelete}
+              style={{
+                ...menuItemBaseStyles,
+                color: isLight ? '#dc2626' : '#ef4444',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = menuItemHoverBg;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Delete folder
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+};
+
+const FileMoreOptionsButton: React.FC<FileMoreOptionsButtonProps> = ({
+  file,
+  isLight,
+  isOpen,
+  onToggle,
+  onDownload,
+  onDelete,
+  onMove,
+  disabled = false,
+}) => {
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const moreDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Position dropdown when it opens
+  useEffect(() => {
+    if (isOpen && moreButtonRef.current && moreDropdownRef.current) {
+      requestAnimationFrame(() => {
+        if (moreButtonRef.current && moreDropdownRef.current) {
+          const buttonRect = moreButtonRef.current.getBoundingClientRect();
+          const top = buttonRect.bottom + 4;
+          const right = window.innerWidth - buttonRect.right;
+          moreDropdownRef.current.style.top = `${top}px`;
+          moreDropdownRef.current.style.right = `${right}px`;
+        }
+      });
+    }
+  }, [isOpen]);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const element = target as Element;
+      
+      const clickedInsideButton = moreButtonRef.current?.contains(target);
+      const clickedInsideDropdown = moreDropdownRef.current?.contains(target);
+      const isButton = element.tagName === 'BUTTON' || element.closest('button');
+      
+      if (!clickedInsideButton && !clickedInsideDropdown && !isButton) {
+        onToggle();
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside, true);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside, true);
+    };
+  }, [isOpen, onToggle]);
+
+  const buttonClassName = cn(
+    'p-1 rounded transition-colors',
+    disabled
+      ? 'cursor-not-allowed opacity-50'
+      : isLight ? 'text-gray-400 hover:text-gray-600' : 'text-gray-500 hover:text-gray-300',
+  );
+
+  const dropdownStyles: React.CSSProperties = {
+    position: 'fixed',
+    top: '0px',
+    right: '0px',
+    marginTop: '0',
+    backgroundColor: isLight ? '#f9fafb' : '#151C24',
+    border: isLight ? '1px solid #e5e7eb' : '1px solid #374151',
+    borderRadius: '6px',
+    boxShadow: '0 10px 20px rgba(0, 0, 0, 0.15)',
+    zIndex: 10002,
+    minWidth: '160px',
+    maxWidth: '200px',
+    width: 'auto',
+    overflow: 'visible',
+    visibility: 'visible',
+    opacity: 1,
+    pointerEvents: 'auto',
+  };
+
+  const menuItemBaseStyles: React.CSSProperties = {
+    width: '100%',
+    padding: '0.5rem 0.75rem',
+    border: 'none',
+    backgroundColor: 'transparent',
+    fontSize: '12px',
+    textAlign: 'left',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    whiteSpace: 'nowrap',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  };
+
+  const menuItemTextColor = isLight ? '#374151' : '#d1d5db';
+  const menuItemBorderColor = isLight ? '#e5e7eb' : '#374151';
+  const menuItemHoverBg = isLight ? '#f3f4f6' : '#1f2937';
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!disabled) {
+      onToggle();
+    }
+  };
+
+  const handleDownload = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onDownload();
+    onToggle();
+  };
+
+  const handleMove = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onMove();
+    onToggle();
+  };
+
+  const handleDelete = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onDelete();
+    onToggle();
+  };
+
+  return (
+    <>
+      <button
+        ref={moreButtonRef}
+        className={buttonClassName}
+        title="More options"
+        onClick={handleClick}
+        disabled={disabled}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          width="16"
+          height="16"
+        >
+          <circle cx="12" cy="12" r="1" />
+          <circle cx="12" cy="5" r="1" />
+          <circle cx="12" cy="19" r="1" />
+        </svg>
+      </button>
+      
+      {isOpen &&
+        createPortal(
+          <div
+            ref={moreDropdownRef}
+            className="fileMoreOptionsDropdownMenu"
+            style={dropdownStyles}
+          >
+            {/* Download Option */}
+            <button
+              type="button"
+              onClick={handleDownload}
+              style={{
+                ...menuItemBaseStyles,
+                color: menuItemTextColor,
+                borderBottom: `1px solid ${menuItemBorderColor}`,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = menuItemHoverBg;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download file
+            </button>
+            
+            {/* Move Option */}
+            <button
+              type="button"
+              onClick={handleMove}
+              style={{
+                ...menuItemBaseStyles,
+                color: menuItemTextColor,
+                borderBottom: `1px solid ${menuItemBorderColor}`,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = menuItemHoverBg;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-3-3l3 3-3 3" />
+              </svg>
+              Move file
+            </button>
+            
+            {/* Delete Option */}
+            <button
+              type="button"
+              onClick={handleDelete}
+              style={{
+                ...menuItemBaseStyles,
+                color: isLight ? '#dc2626' : '#ef4444',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = menuItemHoverBg;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="14"
+                height="14"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Delete file
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+};
 
 export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void }> = ({ isLight, onStatsChange }) => {
   const { user } = useAuth();
@@ -64,6 +599,20 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [fileContents, setFileContents] = useState<Map<string, { content: string; loading: boolean; error?: string }>>(new Map());
   const [loadingPreviews, setLoadingPreviews] = useState<Set<string>>(new Set());
+
+  // More options menu state
+  const [openMoreMenuFileId, setOpenMoreMenuFileId] = useState<string | null>(null);
+  const [openMoreMenuFolderPath, setOpenMoreMenuFolderPath] = useState<string | null>(null);
+
+  // Move file state
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [fileToMove, setFileToMove] = useState<{ id: string; name: string; currentFolder: string | null } | null>(null);
+  const [selectedMoveFolder, setSelectedMoveFolder] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+
+  // Bulk move state
+  const [bulkMoveDialogOpen, setBulkMoveDialogOpen] = useState(false);
+  const [bulkMoveDestFolder, setBulkMoveDestFolder] = useState<string | null>(null);
 
   const loadFiles = useCallback(async () => {
     try {
@@ -287,6 +836,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
       onStatsChange?.();
       setDeleteDialogOpen(false);
       setFileToDelete(null);
+      setOpenMoreMenuFileId(null); // Close more options menu after deletion
     } catch (error) {
       console.error('[Workspace] Delete error:', error);
       alert('Failed to delete file');
@@ -442,14 +992,123 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     }
   };
 
+  const openMoveDialog = (file: WorkspaceFile) => {
+    setFileToMove({ id: file.id, name: file.file_name, currentFolder: normalizeFolder(file.folder) });
+    setSelectedMoveFolder(null); // Default to root
+    setMoveDialogOpen(true);
+  };
+
+  const confirmMoveFile = async () => {
+    if (!fileToMove) return;
+
+    // Check if moving to the same location
+    const normalizedCurrentFolder = fileToMove.currentFolder || null;
+    const normalizedSelectedFolder = selectedMoveFolder || null;
+    if (normalizedCurrentFolder === normalizedSelectedFolder) {
+      alert('File is already in the selected location.');
+      return;
+    }
+
+    setMoving(true);
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseURL}/api/workspace/files/${fileToMove.id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          folder: selectedMoveFolder,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Move failed');
+      }
+
+      await loadFiles();
+      onStatsChange?.();
+      setMoveDialogOpen(false);
+      setFileToMove(null);
+      setSelectedMoveFolder(null);
+      setOpenMoreMenuFileId(null); // Close more options menu after move
+    } catch (error) {
+      console.error('[Workspace] Move error:', error);
+      alert('Failed to move file: ' + (error as Error).message);
+    } finally {
+      setMoving(false);
+    }
+  };
+
+  const openBulkMoveDialog = () => {
+    if (selectedFiles.size === 0 && selectedFolders.size === 0) return;
+    setBulkMoveDestFolder(null); // Default to root
+    setBulkMoveDialogOpen(true);
+  };
+
+  const confirmBulkMove = async () => {
+    if (selectedFiles.size === 0 && selectedFolders.size === 0) return;
+
+    setMoving(true);
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+      // Move files
+      if (selectedFiles.size > 0) {
+        const movePromises = Array.from(selectedFiles).map(fileId => 
+          fetch(`${baseURL}/api/workspace/files/${fileId}`, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              folder: bulkMoveDestFolder,
+            }),
+          })
+        );
+
+        const responses = await Promise.all(movePromises);
+        const failedFiles = responses.filter(r => !r.ok);
+        if (failedFiles.length > 0) {
+          throw new Error(`Failed to move ${failedFiles.length} file(s)`);
+        }
+      }
+
+      // Move folders - note: this requires backend support for moving folders
+      // For now, we'll show a message if folders are selected
+      if (selectedFolders.size > 0) {
+        alert('Moving folders is not yet supported. Only files have been moved.');
+      }
+
+      await loadFiles();
+      await loadFolders();
+      onStatsChange?.();
+      setSelectedFiles(new Set());
+      setSelectedFolders(new Set());
+      setBulkSelectMode(false);
+      setBulkMoveDialogOpen(false);
+      setBulkMoveDestFolder(null);
+    } catch (error) {
+      console.error('[Workspace] Bulk move error:', error);
+      alert('Failed to move items: ' + (error as Error).message);
+    } finally {
+      setMoving(false);
+    }
+  };
+
   const handleStartRename = (file: WorkspaceFile) => {
     setRenamingFileId(file.id);
     setRenameValue(file.file_name);
+    setOpenMoreMenuFileId(null); // Close more options menu when starting rename
   };
 
   const handleCancelRename = () => {
     setRenamingFileId(null);
     setRenameValue('');
+    setOpenMoreMenuFileId(null); // Close more options menu when cancelling rename
   };
 
   const handleSaveRename = async (fileId: string) => {
@@ -490,6 +1149,25 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
       renameInputRef.current.select();
     }
   }, [renamingFileId]);
+
+  // Close more options menus when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      const isMoreMenuClick = target.closest('.fileMoreOptionsDropdownMenu') || target.closest('.folderMoreOptionsDropdownMenu');
+      
+      if (!isMoreMenuClick) {
+        setOpenMoreMenuFileId(null);
+        setOpenMoreMenuFolderPath(null);
+      }
+    };
+
+    if (openMoreMenuFileId || openMoreMenuFolderPath) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+    return undefined;
+  }, [openMoreMenuFileId, openMoreMenuFolderPath]);
 
   const formatSize = (bytes: number) => {
     const k = 1024;
@@ -865,15 +1543,43 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
     // Render markdown
     if (fileType.isMarkdown) {
       return (
-        <div className={cn('px-4 py-3', isLight ? 'bg-gray-50' : 'bg-[#0d1117]')}>
+        <div 
+          className={cn('files-card-markdown', isLight ? '' : 'dark')} 
+          style={{ 
+            maxWidth: '100%', 
+            width: '100%',
+            overflow: 'hidden',
+            overflowX: 'hidden',
+            boxSizing: 'border-box',
+          }}>
+          <div 
+            style={{ 
+              maxWidth: '100%', 
+              width: '100%',
+              overflow: 'hidden', 
+              overflowX: 'hidden',
+              boxSizing: 'border-box',
+            }}>
+            <div style={{ maxWidth: '100%', overflowX: 'auto', width: '100%' }}>
           <CustomMarkdownRenderer content={fileData.content} isLight={isLight} hideToolbars={true} />
+            </div>
+          </div>
         </div>
       );
     }
 
     // Render code/text
     return (
-      <div className="overflow-auto" style={{ maxHeight: '400px' }}>
+      <div 
+        className="overflow-auto" 
+        style={{ 
+          maxHeight: '400px', 
+          maxWidth: '100%',
+          width: '100%',
+          overflowX: 'hidden',
+          overflowY: 'auto',
+          boxSizing: 'border-box',
+        }}>
         <CodeBlock language={fileType.language} code={fileData.content} isLight={isLight} hideToolbar={true}/>
       </div>
     );
@@ -955,6 +1661,25 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
           </div>
           <div className="flex items-center gap-2">
             {bulkSelectMode && (
+              <>
+                <button
+                  onClick={openBulkMoveDialog}
+                  disabled={selectedFiles.size === 0 && selectedFolders.size === 0}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-medium transition-colors',
+                    selectedFiles.size === 0 && selectedFolders.size === 0
+                      ? 'cursor-not-allowed opacity-50'
+                      : isLight
+                        ? 'border-blue-300 text-blue-600 hover:bg-blue-50'
+                        : 'border-blue-700 text-blue-400 hover:bg-blue-900/20',
+                  )}
+                  title="Move selected">
+                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-3-3l3 3-3 3" />
+                  </svg>
+                  MOVE ({selectedFiles.size + selectedFolders.size})
+                </button>
               <button
                 onClick={openBulkDeleteDialog}
                 disabled={selectedFiles.size === 0 && selectedFolders.size === 0}
@@ -972,6 +1697,7 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                 </svg>
                 DELETE ({selectedFiles.size + selectedFolders.size})
               </button>
+              </>
             )}
             <button
               onClick={toggleBulkSelectMode}
@@ -1117,8 +1843,8 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
             {currentFolder ? 'This folder is empty.' : 'No files yet. Upload your first file or create a folder.'}
           </div>
         ) : (
-          <div className="w-full">
-            <table className="w-full border-collapse text-xs">
+          <div className="w-full" style={{ overflowX: 'auto', maxWidth: '100%' }}>
+            <table className="w-full border-collapse text-xs" style={{ minWidth: 0 }}>
               <thead className={cn('sticky top-0 z-10', isLight ? 'bg-gray-50' : 'bg-[#151C24]')}>
                 <tr className={cn('border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
                   {bulkSelectMode && (
@@ -1201,22 +1927,19 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                     {!bulkSelectMode && (
                       <td className="px-3 py-1.5 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openFolderDeleteDialog(folder);
+                          <FolderMoreOptionsButton
+                            folder={folder}
+                            isLight={isLight}
+                            isOpen={openMoreMenuFolderPath === folder.path}
+                            onToggle={() => {
+                              setOpenMoreMenuFolderPath(prev => prev === folder.path ? null : folder.path);
+                              setOpenMoreMenuFileId(null); // Close file menu if open
                             }}
-                            className={cn(
-                              'rounded p-1 opacity-0 transition-all group-hover:opacity-100',
-                              isLight
-                                ? 'text-gray-400 hover:text-red-600'
-                                : 'text-gray-500 hover:text-red-400',
-                            )}
-                            title="Delete folder">
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
+                            onDelete={() => {
+                              openFolderDeleteDialog(folder);
+                              setOpenMoreMenuFolderPath(null);
+                            }}
+                          />
                         </div>
                       </td>
                     )}
@@ -1366,36 +2089,16 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                             <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                           </svg>
                         </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownloadFile(file);
-                          }}
-                          className={cn(
-                            'rounded p-1 transition-colors',
-                            isLight ? 'text-gray-400 hover:text-blue-600' : 'text-gray-500 hover:text-blue-400',
-                          )}
-                          title="Download file">
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => openDeleteDialog(file.id, file.file_name)}
+                        <FileMoreOptionsButton
+                          file={file}
+                          isLight={isLight}
+                          isOpen={openMoreMenuFileId === file.id}
+                          onToggle={() => setOpenMoreMenuFileId(openMoreMenuFileId === file.id ? null : file.id)}
+                          onDownload={() => handleDownloadFile(file)}
+                          onMove={() => openMoveDialog(file)}
+                          onDelete={() => openDeleteDialog(file.id, file.file_name)}
                           disabled={renamingFileId !== null}
-                          className={cn(
-                            'rounded p-1 transition-colors',
-                            renamingFileId !== null
-                              ? 'cursor-not-allowed opacity-50'
-                              : isLight
-                                ? 'text-gray-400 hover:text-red-600'
-                                : 'text-gray-500 hover:text-red-400',
-                          )}
-                          title="Delete file">
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
+                        />
                       </div>
                     </td>
                     )}
@@ -1408,7 +2111,13 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                         'border-b',
                         isLight ? 'border-gray-100 bg-gray-50/50' : 'border-gray-700 bg-gray-900/20',
                       )}>
-                      <td colSpan={bulkSelectMode ? 5 : 4}>
+                      <td 
+                        colSpan={bulkSelectMode ? 5 : 4}
+                        style={{
+                          padding: 0,
+                          width: 0,
+                          maxWidth: 0,
+                        }}>
                         <div
                           className={cn(
                             'ml-3',
@@ -1416,7 +2125,13 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                           )}
                           style={{
                             maxHeight: '500px',
-                            overflow: 'auto',
+                            overflowY: 'auto',
+                            overflowX: 'hidden',
+                            maxWidth: '100%',
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            wordBreak: 'break-word',
+                            overflowWrap: 'break-word',
                           }}>
                           {renderFilePreview(file)}
                         </div>
@@ -1552,6 +2267,118 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
         </>
       )}
 
+      {/* Move File Dialog */}
+      {moveDialogOpen && fileToMove && (
+        <>
+          <div
+            className="fixed bg-black/50 backdrop-blur-sm"
+            style={{ 
+              top: 0, 
+              left: 0, 
+              right: 0, 
+              bottom: 0, 
+              position: 'fixed',
+              zIndex: 100,
+              width: '100vw',
+              height: '100vh'
+            }}
+            onClick={() => {
+              setMoveDialogOpen(false);
+              setFileToMove(null);
+              setSelectedMoveFolder(null);
+            }}
+          />
+          <div 
+            className="fixed flex items-center justify-center p-4 pointer-events-none" 
+            style={{ 
+              top: 0, 
+              left: 0, 
+              right: 0, 
+              bottom: 0,
+              zIndex: 101,
+              overflow: 'visible'
+            }}
+          >
+            <div
+              className={cn(
+                'w-full max-w-md shadow-xl pointer-events-auto',
+                isLight ? 'bg-gray-50 border border-gray-200' : 'bg-[#151C24] border border-gray-700'
+              )}
+              style={{ 
+                overflow: 'visible',
+                borderRadius: '0.5rem'
+              }}
+              onClick={(e) => e.stopPropagation()}>
+              <div className={cn('flex items-center justify-between px-4 py-3 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                  Move File
+                </h2>
+              </div>
+              <div className="px-4 py-4 space-y-3" style={{ overflow: 'visible' }}>
+                <div className="flex items-start gap-3">
+                  <div className={cn('flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center', isLight ? 'bg-blue-100' : 'bg-blue-900/30')}>
+                    <svg className={cn('w-4 h-4', isLight ? 'text-blue-600' : 'text-blue-400')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-3-3l3 3-3 3" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                      Move "{fileToMove.name}"?
+                    </p>
+                    <p className={cn('text-xs mt-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      Select a destination folder
+                    </p>
+                  </div>
+                </div>
+                <div className={cn('rounded p-3', isLight ? 'bg-gray-100' : 'bg-gray-800/50')}>
+                  <label className={cn('text-xs font-medium block mb-2', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                    Destination Folder
+                  </label>
+                  <FolderSelector
+                    isLight={isLight}
+                    folders={folders.filter(folder => folder.path !== fileToMove.currentFolder)}
+                    selectedFolder={selectedMoveFolder}
+                    onChange={setSelectedMoveFolder}
+                  />
+                  {fileToMove.currentFolder && (
+                    <p className={cn('text-[10px] mt-1.5', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      Current location: {fileToMove.currentFolder}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className={cn('flex items-center justify-end gap-2 px-4 py-3 border-t', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                <button
+                  onClick={() => {
+                    setMoveDialogOpen(false);
+                    setFileToMove(null);
+                    setSelectedMoveFolder(null);
+                  }}
+                  disabled={moving}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                    moving ? 'opacity-50 cursor-not-allowed' : '',
+                    isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-700 text-gray-100 hover:bg-gray-600'
+                  )}>
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmMoveFile}
+                  disabled={moving}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                    moving ? 'opacity-50 cursor-not-allowed' : '',
+                    'bg-blue-600 text-white hover:bg-blue-700'
+                  )}>
+                  {moving ? 'Moving...' : 'Move File'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Bulk Delete Confirmation Dialog */}
       {bulkDeleteDialogOpen && (
         <>
@@ -1635,6 +2462,118 @@ export const FilesPanel: React.FC<{ isLight: boolean; onStatsChange?: () => void
                     'bg-red-600 text-white hover:bg-red-700'
                   )}>
                   {deleting ? 'Deleting...' : `Delete ${selectedFiles.size + selectedFolders.size} Item(s)`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Bulk Move Dialog */}
+      {bulkMoveDialogOpen && (
+        <>
+          <div
+            className="fixed bg-black/50 backdrop-blur-sm"
+            style={{ 
+              top: 0, 
+              left: 0, 
+              right: 0, 
+              bottom: 0, 
+              position: 'fixed',
+              zIndex: 100,
+              width: '100vw',
+              height: '100vh'
+            }}
+            onClick={() => {
+              setBulkMoveDialogOpen(false);
+              setBulkMoveDestFolder(null);
+            }}
+          />
+          <div 
+            className="fixed flex items-center justify-center p-4 pointer-events-none" 
+            style={{ 
+              top: 0, 
+              left: 0, 
+              right: 0, 
+              bottom: 0,
+              zIndex: 101,
+              overflow: 'visible'
+            }}
+          >
+            <div
+              className={cn(
+                'w-full max-w-md shadow-xl pointer-events-auto',
+                isLight ? 'bg-gray-50 border border-gray-200' : 'bg-[#151C24] border border-gray-700'
+              )}
+              style={{ 
+                overflow: 'visible',
+                borderRadius: '0.5rem'
+              }}
+              onClick={(e) => e.stopPropagation()}>
+              <div className={cn('flex items-center justify-between px-4 py-3 border-b', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                <h2 className={cn('text-sm font-semibold', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                  Move Items
+                </h2>
+              </div>
+              <div className="px-4 py-4 space-y-3" style={{ overflow: 'visible' }}>
+                <div className="flex items-start gap-3">
+                  <div className={cn('flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center', isLight ? 'bg-blue-100' : 'bg-blue-900/30')}>
+                    <svg className={cn('w-4 h-4', isLight ? 'text-blue-600' : 'text-blue-400')} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-3-3l3 3-3 3" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className={cn('text-sm font-medium', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                      Move {selectedFiles.size + selectedFolders.size} item(s)?
+                    </p>
+                    <p className={cn('text-xs mt-1', isLight ? 'text-gray-600' : 'text-gray-400')}>
+                      {selectedFiles.size > 0 && `${selectedFiles.size} file(s)`}
+                      {selectedFiles.size > 0 && selectedFolders.size > 0 && ' and '}
+                      {selectedFolders.size > 0 && `${selectedFolders.size} folder(s)`}
+                    </p>
+                  </div>
+                </div>
+                <div className={cn('rounded p-3', isLight ? 'bg-gray-100' : 'bg-gray-800/50')}>
+                  <label className={cn('text-xs font-medium block mb-2', isLight ? 'text-gray-900' : 'text-gray-100')}>
+                    Destination Folder
+                  </label>
+                  <FolderSelector
+                    isLight={isLight}
+                    folders={folders}
+                    selectedFolder={bulkMoveDestFolder}
+                    onChange={setBulkMoveDestFolder}
+                  />
+                </div>
+                {selectedFolders.size > 0 && (
+                  <div className={cn('text-xs p-2 rounded', isLight ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' : 'bg-yellow-900/20 text-yellow-400 border border-yellow-700')}>
+                    Note: Moving folders is not yet supported. Only files will be moved.
+                  </div>
+                )}
+              </div>
+              <div className={cn('flex items-center justify-end gap-2 px-4 py-3 border-t', isLight ? 'border-gray-200' : 'border-gray-700')}>
+                <button
+                  onClick={() => {
+                    setBulkMoveDialogOpen(false);
+                    setBulkMoveDestFolder(null);
+                  }}
+                  disabled={moving}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                    moving ? 'opacity-50 cursor-not-allowed' : '',
+                    isLight ? 'bg-gray-200 text-gray-900 hover:bg-gray-300' : 'bg-gray-700 text-gray-100 hover:bg-gray-600'
+                  )}>
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmBulkMove}
+                  disabled={moving || selectedFiles.size === 0}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                    moving || selectedFiles.size === 0 ? 'opacity-50 cursor-not-allowed' : '',
+                    'bg-blue-600 text-white hover:bg-blue-700'
+                  )}>
+                  {moving ? 'Moving...' : 'Move Items'}
                 </button>
               </div>
             </div>

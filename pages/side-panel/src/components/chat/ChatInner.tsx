@@ -147,9 +147,6 @@ const SelectedNotesContext: React.FC<{ notes: any[] }> = ({ notes }) => {
         id: note.id,
         title: note.title,
         content: note.content,
-        folder: note.folder,
-        tags: note.tags,
-        updated: note.updated_at,
       })),
     },
   });
@@ -532,28 +529,16 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
   // Add user details to context
   useCopilotReadableData({
     description:
-      'Current authenticated user information including personal details, organization, and team membership. Use this when the user asks about themselves, their organization, their role, or their team.',
+      'Current authenticated user information including personal details and organization. Use this when the user asks about themselves or their organization.',
     value: user
       ? {
           user: {
-            id: user.id,
             name: user.name,
             email: user.email,
-            createdAt: user.createdAt,
           },
           organization: organization
             ? {
-                id: organization.id,
                 name: organization.name,
-                slug: organization.slug,
-                logo: organization.logo,
-                createdAt: organization.createdAt,
-              }
-            : null,
-          member: member
-            ? {
-                role: member.role,
-                createdAt: member.createdAt,
               }
             : null,
         }
@@ -572,7 +557,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
               id: f.id,
               name: f.file_name,
               type: f.file_type,
-              uploaded: f.created_at,
             })),
           },
           notes: {
@@ -580,17 +564,6 @@ const ChatInnerComponent: FC<ChatInnerProps> = ({
             recent: workspaceContext.recent_notes.map(n => ({
               id: n.id,
               title: n.title,
-              created: n.created_at,
-              updated: n.updated_at,
-            })),
-          },
-          connections: {
-            count: workspaceContext.connection_count,
-            active: workspaceContext.active_connections.map(c => ({
-              id: c.id,
-              name: c.connection_name,
-              service: c.service_name,
-              status: c.status,
             })),
           },
           storage_used: workspaceContext.total_size,
