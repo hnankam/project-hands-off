@@ -90,6 +90,13 @@ export const StatusBar: FC<StatusBarProps> = memo(({
 
   // If we have an error but no URL info yet, don't show error (still loading URL info)
   const hasUrlInfo = currentUrl !== null;
+  
+  // Check if we have valid content (has URL or title) - more reliable than just truthiness check
+  const hasValidContent = useMemo(() => {
+    const current = contentState.current;
+    return current && (current.url || current.pageURL || current.title);
+  }, [contentState.current]);
+  
   return (
     <div 
       className={`flex items-center justify-between gap-2 px-2 py-1 border-b h-[34px] ${
@@ -192,7 +199,7 @@ export const StatusBar: FC<StatusBarProps> = memo(({
             </svg>
             <span>{embeddingStatus || 'Generating embeddings...'}</span>
           </div>
-        ) : contentState.current ? (
+        ) : hasValidContent ? (
           <div className={`content-status-indicator flex items-center gap-1 flex-1 min-w-0 ${
             isLight ? 'text-green-600' : 'text-green-400'
           }`}>

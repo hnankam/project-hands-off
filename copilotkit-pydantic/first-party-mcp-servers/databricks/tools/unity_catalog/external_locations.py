@@ -65,7 +65,7 @@ def list_external_locations(
         token: Authentication token
         include_browse: Whether to include locations with selective metadata access
         include_unbound: Whether to include locations not bound to workspace
-        max_results: Maximum number of results (0 for server default, recommended)
+        max_results: Maximum number of results (0 for server default, recommended). Maximum: 20 when include_browse or include_unbound is True
         page_token: Opaque pagination token for next page
         
     Returns:
@@ -73,13 +73,16 @@ def list_external_locations(
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
+    # Cap max_results at 20 when expand options are True to reduce response size
+    effective_max_results = min(max_results, 20) if (include_browse or include_unbound) and max_results > 0 else max_results
+    
     locations = []
     next_token = None
     
     for location in client.external_locations.list(
         include_browse=include_browse,
         include_unbound=include_unbound,
-        max_results=max_results,
+        max_results=effective_max_results,
         page_token=page_token,
     ):
         locations.append(_convert_to_external_location_model(location))

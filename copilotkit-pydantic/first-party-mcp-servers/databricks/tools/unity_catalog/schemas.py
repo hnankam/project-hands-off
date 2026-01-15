@@ -72,7 +72,7 @@ def list_schemas(
         host_credential_key: Globally unique key identifying the Databricks workspace host credential
         token_credential_key: Globally unique key identifying the access token credential
         catalog_name: Name of the Unity Catalog containing the schemas. Required. Must be exact match
-        limit: Number of schemas to return in a single request. Must be positive integer. Default: 25
+        limit: Number of schemas to return in a single request. Must be positive integer. Default: 25. Maximum: 20 when include_browse=True
         page: Zero-indexed page number for pagination. Default: 0
         include_browse: Boolean flag to include schemas where user has only browse permission (no USE_SCHEMA). Default: None (excluded)
         
@@ -81,13 +81,16 @@ def list_schemas(
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
+    # Cap limit at 20 when include_browse is True to reduce response size
+    effective_limit = min(limit, 20) if include_browse else limit
+    
     response = client.schemas.list(
         catalog_name=catalog_name,
         include_browse=include_browse,
     )
     
-    skip = page * limit
-    schemas_iterator = islice(response, skip, skip + limit)
+    skip = page * effective_limit
+    schemas_iterator = islice(response, skip, skip + effective_limit)
     
     schemas_list = []
     for schema in schemas_iterator:

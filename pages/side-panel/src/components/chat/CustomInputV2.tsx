@@ -1784,19 +1784,15 @@ function CustomInputV2Component(props: CopilotChatInputProps) {
     }
     setAttachments([]);
     
-    // Send via useCopilotChat hook (bypasses onSubmitMessage)
-    // This allows us to send Message objects with content arrays
+    // Send via useCopilotChat hook
+    // Note: This bypasses CopilotKit's tool gathering, but context and state are included
     try {
       await sendMessage(userMessage);
-      
-      debug.log('[CustomInputV2] Multimodal message sent successfully');
       
       // Cleanup object URLs after successful send
       currentAttachments.forEach(a => URL.revokeObjectURL(a.previewUrl));
     } catch (error) {
       console.error('[CustomInputV2] Failed to send multimodal message:', error);
-      
-      debug.log('[CustomInputV2] Message was already added, skipping fallback to prevent duplicate');
       
       // Cleanup object URLs even on error
       currentAttachments.forEach(a => URL.revokeObjectURL(a.previewUrl));

@@ -589,9 +589,15 @@ export class PostgresAgentRunner extends AgentRunner {
           if (event.type === EventType.RUN_STARTED && event.input?.messages) {
             const originalLength = event.input.messages.length;
             
-            event.input.messages = event.input.messages.filter(
-              msg => !deletedMessageIds.has(msg.id)
-            );
+            // Filter deleted messages
+            event.input.messages = event.input.messages.filter(msg => {
+              // Filter deleted messages
+              if (deletedMessageIds.has(msg.id)) {
+                return false;
+              }
+              
+              return true;
+            });
             
             if (event.input.messages.length !== originalLength && this.debug) {
               console.log(`[PostgresAgentRunner] Filtered ${originalLength - event.input.messages.length} deleted messages from RUN_STARTED input in executeRun`);
@@ -616,7 +622,8 @@ export class PostgresAgentRunner extends AgentRunner {
           
           // Filter tool call events (START, ARGS, END, RESULT) if:
           // 1. Their toolCallId is associated with a deleted message, OR
-          // 2. They are orphaned (no associated message found)
+          // 2. They are orphaned (no associated message found), OR
+          // 3. For RESULT events, they don't have a corresponding TOOL_CALL_START (orphaned return)
           // Only filter if this specific toolCallId is in the deleted set
           if ('toolCallId' in event && 
               typeof event.toolCallId === 'string') {
@@ -672,6 +679,39 @@ export class PostgresAgentRunner extends AgentRunner {
       // Step 5: Track events
       const seenMessageIds = new Set(historicMessageIds);
       
+      // Step 5.5: Buffer for batching TOOL_CALL_ARGS events (reduce thousands of tiny events)
+      const toolCallArgsBuffer = new Map(); // toolCallId -> { events: [], lastFlush: timestamp }
+      const ARGS_BATCH_SIZE = 50; // Merge up to 50 consecutive TOOL_CALL_ARGS events
+      const ARGS_BATCH_TIMEOUT_MS = 100; // Flush after 100ms of inactivity
+      
+      const flushToolCallArgsBuffer = (toolCallId) => {
+        const buffer = toolCallArgsBuffer.get(toolCallId);
+        if (!buffer || buffer.events.length === 0) return;
+        
+        // Merge all deltas into a single event
+        const mergedDelta = buffer.events.map(e => e.delta || e.args || '').join('');
+        const firstEvent = buffer.events[0];
+        
+        const mergedEvent = {
+          ...firstEvent,
+          delta: mergedDelta,
+          args: undefined, // Clear args if present, use delta instead
+        };
+        
+        // Truncate if needed
+        const truncated = this.truncateToolCallResults([mergedEvent], runId);
+        const eventToStream = truncated[0];
+        
+        // Emit merged event (only if subjects are still active)
+        if (!runSubject.closed && threadSubject && !threadSubject.closed) {
+          runSubject.next(eventToStream);
+          threadSubject.next(eventToStream);
+        }
+        
+        // Clear buffer
+        toolCallArgsBuffer.delete(toolCallId);
+      };
+      
       // Step 6: Execute agent
       await agent.runAgent(input, {
         onEvent: async ({ event }) => {
@@ -683,15 +723,17 @@ export class PostgresAgentRunner extends AgentRunner {
             // This ensures the database always contains the full, original data
             currentEvents.push(processedEvent);
             
-            // Create a TRUNCATED COPY for streaming to frontend only
-            // This reduces payload size without corrupting the database
-            let eventToStream = processedEvent;
             const isResult = processedEvent.type === EventType.TOOL_CALL_RESULT || processedEvent.type === 'TOOL_CALL_RESULT';
             const isArgs = processedEvent.type === EventType.TOOL_CALL_ARGS || processedEvent.type === 'TOOL_CALL_ARGS';
+            const isRunError = processedEvent.type === EventType.RUN_ERROR || processedEvent.type === 'RUN_ERROR';
             
-            if (isResult || isArgs) {
-              const truncated = this.truncateToolCallResults([processedEvent], runId);
-              eventToStream = truncated[0]; // Truncated version for frontend only
+            // CRITICAL: Skip RUN_ERROR events from user-initiated stops
+            // These should not be emitted to the frontend during execution
+            if (isRunError) {
+              const stopRequested = await this.isStopRequested(threadId);
+              if (stopRequested) {
+                return; // Don't emit to frontend, but keep in currentEvents for status tracking
+              }
             }
             
             // Check if observable is still active before emitting
@@ -700,6 +742,54 @@ export class PostgresAgentRunner extends AgentRunner {
                 console.log(`[PostgresAgentRunner] Skipping event - runSubject already closed`);
               }
               return;
+            }
+            
+            // Handle TOOL_CALL_ARGS batching to reduce thousands of tiny events
+            if (isArgs) {
+              const toolCallId = processedEvent.toolCallId || 'unknown';
+              
+              // Initialize buffer for this toolCallId if needed
+              if (!toolCallArgsBuffer.has(toolCallId)) {
+                toolCallArgsBuffer.set(toolCallId, {
+                  events: [],
+                  lastFlush: Date.now(),
+                  flushTimeout: null,
+                });
+              }
+              
+              const buffer = toolCallArgsBuffer.get(toolCallId);
+              buffer.events.push(processedEvent);
+              buffer.lastFlush = Date.now();
+              
+              // Clear existing timeout
+              if (buffer.flushTimeout) {
+                clearTimeout(buffer.flushTimeout);
+              }
+              
+              // Flush if batch size reached
+              if (buffer.events.length >= ARGS_BATCH_SIZE) {
+                flushToolCallArgsBuffer(toolCallId);
+              } else {
+                // Set timeout to flush after inactivity
+                buffer.flushTimeout = setTimeout(() => {
+                  flushToolCallArgsBuffer(toolCallId);
+                }, ARGS_BATCH_TIMEOUT_MS);
+              }
+              
+              return; // Don't emit individual event, wait for batch
+            }
+            
+            // Flush any pending TOOL_CALL_ARGS buffers when we see TOOL_CALL_END or TOOL_CALL_RESULT
+            if (processedEvent.type === EventType.TOOL_CALL_END || isResult) {
+              const toolCallId = processedEvent.toolCallId || 'unknown';
+              flushToolCallArgsBuffer(toolCallId);
+            }
+            
+            // Create a TRUNCATED COPY for streaming to frontend only (for non-args events)
+            let eventToStream = processedEvent;
+            if (isResult) {
+              const truncated = this.truncateToolCallResults([processedEvent], runId);
+              eventToStream = truncated[0]; // Truncated version for frontend only
             }
             
             // Stream TRUNCATED event to subscribers (frontend)
@@ -738,11 +828,40 @@ export class PostgresAgentRunner extends AgentRunner {
       });
       
     } catch (err) {
-      error = err;
-      console.error(`[PostgresAgentRunner] Run failed: ${error.message}`);
-      this.metrics.runsFailed++;
+      // Check if this is a user-initiated stop (not a real error)
+      const stopRequested = await this.isStopRequested(threadId);
+      if (stopRequested) {
+        // User stopped - don't treat as error
+        error = null;
+      } else {
+        // Real error
+        error = err;
+        console.error(`[PostgresAgentRunner] Run failed: ${error.message}`);
+        this.metrics.runsFailed++;
+      }
       
     } finally {
+      // Flush any remaining TOOL_CALL_ARGS buffers before finalizing
+      // CRITICAL: Clear all pending timeouts first to prevent them from firing after cleanup
+      // Wrap in try-catch to handle case where buffer wasn't initialized (early error)
+      try {
+        if (typeof toolCallArgsBuffer !== 'undefined' && toolCallArgsBuffer.size > 0) {
+          for (const [toolCallId, buffer] of toolCallArgsBuffer.entries()) {
+            // Clear any pending timeout
+            if (buffer.flushTimeout) {
+              clearTimeout(buffer.flushTimeout);
+              buffer.flushTimeout = null;
+            }
+            // Flush the buffer
+            if (typeof flushToolCallArgsBuffer !== 'undefined') {
+              flushToolCallArgsBuffer(toolCallId);
+            }
+          }
+        }
+      } catch (cleanupError) {
+        console.error(`[PostgresAgentRunner] Buffer cleanup error: ${cleanupError.message}`);
+      }
+      
       // Always finalize (success or error)
       await this.finalizeRun(request, currentEvents, error, runSubject, startTime);
     }
@@ -764,9 +883,35 @@ export class PostgresAgentRunner extends AgentRunner {
       const stopRequested = await this.isStopRequested(threadId);
       const appendedEvents = finalizeRunEvents(currentEvents, { stopRequested });
       
+        // CRITICAL: For stopped runs, finalizeRunEvents creates RUN_ERROR (not RUN_FINISHED)
+        // We need to manually add RUN_FINISHED for stopped runs
+        if (stopRequested) {
+          // Check if RUN_FINISHED already exists
+          const hasRunFinished = appendedEvents.some(e => 
+            e.type === 'RUN_FINISHED' || e.type === EventType.RUN_FINISHED
+          );
+          
+          if (!hasRunFinished) {
+            // Add RUN_FINISHED event for stopped runs with all required fields
+            appendedEvents.push({
+              type: EventType.RUN_FINISHED,
+              threadId: threadId,
+              runId: runId,
+              timestamp: Date.now(),
+            });
+          }
+        }
+      
       // Emit finalization events
+      // CRITICAL: Filter out RUN_ERROR events when run was stopped by user
+      // User-initiated stops should not show error banners on the frontend
       const threadSubject = this.activeSubjects.get(threadId)?.threadSubject;
       for (const event of appendedEvents) {
+        // Skip RUN_ERROR events for stopped runs (user-initiated)
+        if (stopRequested && (event.type === 'RUN_ERROR' || event.type === EventType.RUN_ERROR)) {
+          continue;
+        }
+        
         if (!runSubject.closed) {
           runSubject.next(event);
         }
@@ -775,15 +920,33 @@ export class PostgresAgentRunner extends AgentRunner {
         }
       }
       
-      // Filter out RUN_ERROR events before saving
-      // RUN_ERROR events should not be persisted as they will be filtered out on load anyway
-      // This ensures runs are saved in a clean state
+      // Add finalization events to database persistence
+      // For stopped runs: include RUN_FINISHED (from appendedEvents), exclude RUN_ERROR
+      // For error runs: exclude RUN_ERROR events (they'll be marked as 'error' in status)
+      // For completed runs: include RUN_FINISHED
       const hasRunError = currentEvents.some(e => e.type === 'RUN_ERROR');
-      const eventsToSave = currentEvents.filter(e => e.type !== 'RUN_ERROR');
+      
+      // Merge finalization events (RUN_FINISHED) but avoid duplicates
+      // appendedEvents may include events already in currentEvents (like TEXT_MESSAGE_END)
+      const currentEventTypes = new Set(currentEvents.map(e => `${e.type}-${e.messageId || ''}`));
+      const finalizationEventsToSave = appendedEvents.filter(e => {
+        // Skip RUN_ERROR events
+        if (e.type === 'RUN_ERROR' || e.type === EventType.RUN_ERROR) {
+          return false;
+        }
+        // Skip duplicates (events already in currentEvents)
+        const eventKey = `${e.type}-${e.messageId || ''}`;
+        return !currentEventTypes.has(eventKey);
+      });
+      
+      const eventsToSave = [
+        ...currentEvents.filter(e => e.type !== 'RUN_ERROR'),
+        ...finalizationEventsToSave
+      ];
       
       // Determine final status
-      // If there are RUN_ERROR events, mark as error regardless of the error parameter
-      const status = (error || hasRunError) ? 'error' : (stopRequested ? 'stopped' : 'completed');
+      // stopRequested takes precedence over error flag for user-initiated stops
+      const status = stopRequested ? 'stopped' : ((error || hasRunError) ? 'error' : 'completed');
       
       if (hasRunError && this.debug) {
         console.log(`[PostgresAgentRunner] Filtered out ${currentEvents.length - eventsToSave.length} RUN_ERROR events before saving run ${runId}, marking as 'error'`);
@@ -839,16 +1002,31 @@ export class PostgresAgentRunner extends AgentRunner {
       }
       
       // Complete observables
-      if (error) {
-        runSubject.error(error);
+      // CRITICAL: User-stopped runs should complete successfully, not error
+      // Only call runSubject.error() for actual errors
+      if (error && !stopRequested) {
+        // Real error - serialize for frontend Zod validation
+        const serializedError = {
+          message: error.message || 'Unknown error occurred',
+          code: error.code || 'AGENT_ERROR',
+          stack: this.debug ? error.stack : undefined
+        };
+        runSubject.error(serializedError);
       } else {
+        // Success or user-stopped - complete normally
         runSubject.complete();
       }
       
     } catch (finalizeError) {
       console.error(`[PostgresAgentRunner] Finalization error: ${finalizeError.message}`);
       if (!runSubject.closed) {
-        runSubject.error(finalizeError);
+        // Serialize error for frontend
+        const serializedError = {
+          message: finalizeError.message || 'Finalization error occurred',
+          code: finalizeError.code || 'FINALIZATION_ERROR',
+          stack: this.debug ? finalizeError.stack : undefined
+        };
+        runSubject.error(serializedError);
       }
     } finally {
       // Complete thread subject before deleting
@@ -964,12 +1142,18 @@ export class PostgresAgentRunner extends AgentRunner {
           if (event.type === EventType.RUN_STARTED && event.input?.messages) {
             const originalLength = event.input.messages.length;
             
-            event.input.messages = event.input.messages.filter(
-              msg => !deletedMessageIds.has(msg.id)
-            );
+            // Filter deleted messages
+            event.input.messages = event.input.messages.filter(msg => {
+              // Filter deleted messages
+              if (deletedMessageIds.has(msg.id)) {
+                return false;
+              }
+              
+              return true;
+            });
             
             if (event.input.messages.length !== originalLength && this.debug) {
-              // console.log(`[PostgresAgentRunner] Filtered ${originalLength - event.input.messages.length} deleted messages from RUN_STARTED input`);
+              console.log(`[PostgresAgentRunner] Filtered ${originalLength - event.input.messages.length} deleted messages from RUN_STARTED input`);
             }
             
             // Always include RUN_STARTED event (even if it had deleted messages)
@@ -995,7 +1179,8 @@ export class PostgresAgentRunner extends AgentRunner {
           
           // Filter tool call events (START, ARGS, END, RESULT) if:
           // 1. Their toolCallId is associated with a deleted message, OR
-          // 2. They are orphaned (no associated message found)
+          // 2. They are orphaned (no associated message found), OR
+          // 3. For RESULT events, they don't have a corresponding TOOL_CALL_START (orphaned return)
           // This ensures ALL tool call events for deleted assistant messages are filtered out
           // Only filter if this specific toolCallId is in the deleted set (ID-based, not chronological)
           if ('toolCallId' in event && 

@@ -139,6 +139,7 @@ async def keep_recent_messages(
     # Build map of tool_call_id -> message index where the corresponding tool return exists
     tool_return_exists: dict[str, int] = {}
     tool_return_occurrences: dict[str, list[int]] = defaultdict(list)
+    
     for _idx, _msg in enumerate(messages):
         for part in getattr(_msg, 'parts', []) or []:
             if _is_tool_result_part(part):
@@ -367,11 +368,24 @@ async def keep_recent_messages(
 
     messages = post_validated_messages
 
+    # Ensure history ends with ModelRequest (workaround for pydantic-ai issue #2778)
+    def _ensure_ends_with_request(msgs: list[ModelMessage]) -> list[ModelMessage]:
+        """Ensure the message history ends with a ModelRequest.
+        
+        Reference: https://github.com/pydantic/pydantic-ai/issues/2778#issuecomment-3249642627
+        """
+        if not msgs:
+            return [ModelRequest(parts=[])]
+        if not isinstance(msgs[-1], ModelRequest):
+            logger.info("Appending synthetic ModelRequest(parts=[]) to ensure history ends with ModelRequest")
+            return msgs + [ModelRequest(parts=[])]
+        return msgs
+
     message_window = 150
 
     if len(messages) <= message_window:
         logger.info(f"Returning {len(messages)} messages (<={message_window})")
-        return messages
+        return _ensure_ends_with_request(messages)
 
     # Find system prompt if it exists
     system_prompt = None
@@ -407,9 +421,9 @@ async def keep_recent_messages(
             result = [system_prompt] + result
 
         logger.info(f"Returning {len(result)} messages after cut")
-        return result
+        return _ensure_ends_with_request(result)
 
     # No safe cut point found, keep all messages
     logger.info(f"Returning {len(messages)} messages (no safe cut)")
-    return messages
+    return _ensure_ends_with_request(messages)
 

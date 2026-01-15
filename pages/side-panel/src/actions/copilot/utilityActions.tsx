@@ -17,7 +17,7 @@ import { ConfirmationCard } from '../../components/cards/ConfirmationCard';
 
 /** Schema for wait parameters */
 export const waitSchema = z.object({
-  seconds: z.number().describe('Seconds to wait (0-30)'),
+  seconds: z.number().default(30).describe('Seconds to wait (5-600)'),
 });
 
 /** Schema for confirmAction parameters */
@@ -30,10 +30,13 @@ export const confirmActionSchema = z.object({
 // ============================================================================
 
 /** Maximum wait time in seconds */
-const MAX_WAIT_SECONDS = 30;
+const MAX_WAIT_SECONDS = 600;
 
 /** Minimum wait time in seconds */
-const MIN_WAIT_SECONDS = 0;
+const MIN_WAIT_SECONDS = 5;
+
+/** Default wait time in seconds */
+const DEFAULT_WAIT_SECONDS = 30;
 
 /** Log prefix for agent actions */
 const LOG_PREFIX = {
@@ -94,7 +97,7 @@ interface UtilityActionDependencies {
  */
 function normalizeWaitSeconds(value: unknown): number {
   const num = Number(value);
-  if (!Number.isFinite(num)) return MIN_WAIT_SECONDS;
+  if (!Number.isFinite(num)) return DEFAULT_WAIT_SECONDS;
   return Math.max(MIN_WAIT_SECONDS, Math.min(MAX_WAIT_SECONDS, Math.floor(num)));
 }
 

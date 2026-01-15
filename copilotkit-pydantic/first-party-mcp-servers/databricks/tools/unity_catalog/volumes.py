@@ -79,7 +79,7 @@ def list_volumes(
         token_credential_key: Globally unique key identifying the access token credential
         catalog_name: Name of the Unity Catalog containing the schema. Required. Must be exact match
         schema_name: Name of the schema containing the volumes. Required. Must be exact match
-        limit: Number of volumes to return in a single request. Must be positive integer. Default: 25
+        limit: Number of volumes to return in a single request. Must be positive integer. Default: 25. Maximum: 20 when include_browse=True
         page: Zero-indexed page number for pagination. Default: 0
         include_browse: Boolean flag to include volumes where user has only browse permission (no READ_VOLUME). Default: None (excluded)
         
@@ -88,14 +88,17 @@ def list_volumes(
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
+    # Cap limit at 20 when include_browse is True to reduce response size
+    effective_limit = min(limit, 20) if include_browse else limit
+    
     response = client.volumes.list(
         catalog_name=catalog_name,
         schema_name=schema_name,
         include_browse=include_browse,
     )
     
-    skip = page * limit
-    volumes_iterator = islice(response, skip, skip + limit)
+    skip = page * effective_limit
+    volumes_iterator = islice(response, skip, skip + effective_limit)
     
     volumes_list = []
     for volume in volumes_iterator:

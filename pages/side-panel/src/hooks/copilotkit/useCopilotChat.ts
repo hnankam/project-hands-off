@@ -109,6 +109,20 @@ export interface CopilotChatState {
 const DEFAULT_AGENT_ID = 'dynamic_agent';
 
 /**
+ * Helper to extract context from CopilotKit's internal context store.
+ * Context is registered via useCopilotReadableData and stored in contextStore._context.
+ * The _context property is an object mapping context IDs (UUIDs) to context values.
+ */
+function extractContextFromCopilotKit(copilotkit: any): any[] {
+  if (!copilotkit?.contextStore?._context) {
+    return [];
+  }
+  
+  // contextStore._context is an object with UUID keys mapping to context values
+  return Object.values(copilotkit.contextStore._context);
+}
+
+/**
  * Centralized hook for CopilotKit chat functionality.
  *
  * @example
@@ -149,7 +163,9 @@ export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatS
   }, [agentMessages, agentSetMessages]);
 
   // Send a new message - V2 implementation
-  // Call agent.runAgent() directly to bypass CopilotKit runtime caching
+  // NOTE: Calling agent.addMessage() + agent.runAgent() directly bypasses
+  // CopilotKit's tool gathering mechanism. Context and state work, but tools
+  // registered via useFrontendTool are not accessible.
   const sendMessage = useCallback(async (message: Message) => {
     if (!agent) {
       console.warn('[useCopilotChat] sendMessage: agent not available');
@@ -162,15 +178,28 @@ export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatS
         agent.addMessage(message);
       }
       
-      if (typeof agent.runAgent === 'function') {
-        await agent.runAgent();
-      }
+      // Extract context from CopilotKit
+      const gatheredContext = extractContextFromCopilotKit(copilotkit);
       
+      // Run agent with gathered context and state
+      if (typeof agent.runAgent === 'function') {
+        const parameters: any = {};
+        
+        if (gatheredContext.length > 0) {
+          parameters.context = gatheredContext;
+        }
+        
+        if (agent.state) {
+          parameters.state = agent.state;
+        }
+        
+        await agent.runAgent(parameters);
+      }
     } catch (error) {
       console.error('[useCopilotChat] Error sending message:', error);
       throw error;
     }
-  }, [agent]);
+  }, [agent, copilotkit]);
 
   // Reload/regenerate messages
   // If messageId is provided, filter messages to include only up to that message
@@ -178,13 +207,18 @@ export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatS
   // For assistant messages: find the triggering user message and include all messages up to and including that user message
   // Also deletes old messages from backend before regenerating to ensure persistence
   const reloadMessages = useCallback(async (messageId?: string) => {
-    if (!agent) return;
+    if (!agent) {
+      console.warn('[useCopilotChat] reloadMessages: agent not available');
+      return;
+    }
     
     const currentMessages = (agent.messages ?? []) as Message[];
     
     if (!messageId || currentMessages.length === 0) {
       // No messageId provided or no messages - just run agent with all messages
-      if (typeof agent.runAgent === 'function') {
+      if (typeof agent.run === 'function') {
+        await agent.run();
+      } else if (typeof agent.runAgent === 'function') {
         await agent.runAgent();
       }
       return;
@@ -238,6 +272,11 @@ export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatS
       messagesToDelete = currentMessages.slice(messageIndex + 1);
     }
     
+    console.log('[useCopilotChat] Filtered messages:', { 
+      filteredCount: filteredMessages.length, 
+      toDeleteCount: messagesToDelete.length 
+    });
+    
     // Delete old messages from backend before regenerating (equivalent to "delete all below")
     // This ensures that when the page reloads, the old messages won't be loaded
     if (messagesToDelete.length > 0 && threadId) {
@@ -246,8 +285,10 @@ export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatS
         .filter((id): id is string => Boolean(id));
       
       if (messageIdsToDelete.length > 0) {
+        console.log('[useCopilotChat] Deleting messages from backend:', messageIdsToDelete.length);
         try {
           await deleteMessagesFromBackend(threadId, messageIdsToDelete);
+          console.log('[useCopilotChat] Messages deleted successfully');
         } catch (error) {
           console.error('[useCopilotChat] Failed to delete messages before reload:', error);
           // Continue anyway - frontend state will be updated
@@ -255,16 +296,29 @@ export function useCopilotChat(agentId: string = DEFAULT_AGENT_ID): CopilotChatS
       }
     }
     
-    // Update agent messages with filtered list
+    // Set the filtered messages
     if (typeof agent.setMessages === 'function') {
       agent.setMessages(filteredMessages);
     }
     
-    // Run agent with filtered messages
+    // Extract context from CopilotKit
+    const gatheredContext = extractContextFromCopilotKit(copilotkit);
+    
+    // Run agent with gathered context and state
     if (typeof agent.runAgent === 'function') {
-      await agent.runAgent();
+      const parameters: any = {};
+      
+      if (gatheredContext.length > 0) {
+        parameters.context = gatheredContext;
+      }
+      
+      if (agent.state) {
+        parameters.state = agent.state;
+      }
+      
+      await agent.runAgent(parameters);
     }
-  }, [agent, threadId]);
+  }, [agent, threadId, copilotkit]);
 
   // Reset chat state
   const reset = useCallback(() => {

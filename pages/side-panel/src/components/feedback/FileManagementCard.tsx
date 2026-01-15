@@ -9,6 +9,7 @@ import React, { useState, memo, useMemo, useEffect, useRef, useCallback, FC } fr
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
 import untruncateJson from 'untruncate-json';
+import { cn } from '@extension/ui';
 import { CustomMarkdownRenderer } from '../chat/CustomMarkdownRenderer';
 import { IncrementalMarkdownRenderer } from '../chat/IncrementalMarkdownRenderer';
 import { CodeBlock } from '../chat/slots/CustomCodeBlock';
@@ -238,8 +239,6 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
     return expandedStateCache.get(cacheKey) ?? false;
   });
   
-  const [showPreview, setShowPreview] = useState(false);
-  
   // Initialize userClosed from cache
   const userClosedRef = useRef(userClosedCache.get(cacheKey) ?? false);
   
@@ -273,12 +272,12 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
     }
   }, [fileId]); // Removed isFetchingContent from dependencies to avoid circular dependency
   
-  // Trigger fetch when preview is shown (user clicks "Show Content Preview")
+  // Trigger fetch when accordion is expanded (for completed files)
   useEffect(() => {
-    if (showPreview && !isWorking && fileId && !content && !fetchedContent && !isFetchingContent && !hasAttemptedFetch.current) {
+    if (isExpanded && !isWorking && fileId && !content && !fetchedContent && !isFetchingContent && !hasAttemptedFetch.current) {
       fetchFileContent();
     }
-  }, [showPreview, isWorking, fileId, content, fetchedContent, isFetchingContent, fetchFileContent]);
+  }, [isExpanded, isWorking, fileId, content, fetchedContent, isFetchingContent, fetchFileContent]);
   
   // Sync expanded state to cache whenever it changes
   useEffect(() => {
@@ -567,7 +566,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                   flexShrink: 0,
                 }}
               >
-                {formatSize(displaySize)}
+                {formatSize(displaySize)} • {fileType.language}
               </div>
             )}
           </div>
@@ -584,38 +583,24 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                 overflow: 'hidden',
               }}
             >
-              {/* Writing indicator */}
-              <div
-                style={{
-                  padding: 6,
-                  fontSize: 10,
-                  fontWeight: 600,
-                  backgroundColor: isLight ? 'rgba(243, 244, 246, 0.8)' : 'rgba(55, 65, 81, 0.8)',
-                  borderBottom: `1px solid ${borderColor}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
-                <span className="copilot-action-sparkle-text gallery-content" style={{ color: textColor, fontSize: '12px'}}>Writing File</span>
-                <span className="gallery-count" style={{ marginLeft: 'auto', opacity: 0.7, color: textColor, fontSize: '12px' }}>
-                  {formatSize(contentSize || finalContent.length)} • {fileType.language}
-                </span>
-              </div>
-              
               {/* Streaming content with auto-scroll and cursor */}
               {fileType.isMarkdown ? (
                 <AutoScrollDiv
                   content={finalContent}
                   isStreaming={true}
                   style={{
-                    padding: 12,
                     maxHeight: 400,
                     overflow: 'auto',
-                    backgroundColor: isLight ? 'rgba(249, 250, 251, 0.5)' : 'rgba(13, 17, 23, 0.5)',
                   }}
                 >
-                  <CustomMarkdownRenderer content={finalContent} isLight={isLight} hideToolbars={true} />
+                  <div className={cn('files-card-markdown', isLight ? '' : 'dark')}>
+                    <CustomMarkdownRenderer 
+                      content={finalContent} 
+                      isLight={isLight} 
+                      hideToolbars={true} 
+                      className="markdown-content"
+                    />
+                  </div>
                   {/* Blinking bar cursor */}
                   <span
                     style={{
@@ -643,6 +628,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                     language={fileType.language} 
                       code={finalContent} 
                     isLight={isLight} 
+                    hideToolbar={true}
                   />
                     {/* Blinking bar cursor */}
                     <span
@@ -852,7 +838,7 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
                 flexShrink: 0,
               }}
             >
-              {formatSize(displaySize)}
+              {formatSize(displaySize)} • {fileType.language}
             </div>
           )}
         </div>
@@ -868,58 +854,6 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
         }}
       >
         <div className="gallery-content" style={{ padding: '8px' }}>
-          {/* File path */}
-          <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div className="gallery-content"
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: mutedTextColor,
-                flexShrink: 0,
-              }}
-            >
-              Location:
-            </div>
-            <div className="gallery-content"
-              style={{
-                fontSize: 10,
-                fontFamily: 'monospace',
-                color: mutedTextColor,
-                wordBreak: 'break-all',
-                flex: 1,
-              }}
-            >
-              {filePath}
-            </div>
-          </div>
-
-          {/* File ID (if available) */}
-          {fileInfo.file_id && !hasError && (
-            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div className="gallery-content"
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: mutedTextColor,
-                  flexShrink: 0,
-                }}
-              >
-                File ID:
-              </div>
-              <div className="gallery-content"
-                style={{
-                  fontSize: 10,
-                  fontFamily: 'monospace',
-                  color: mutedTextColor,
-                  wordBreak: 'break-all',
-                  flex: 1,
-                }}
-              >
-                {fileInfo.file_id}
-              </div>
-            </div>
-          )}
-
           {/* Validation Error - Incomplete JSON Arguments */}
           {validationError && (
             <div style={{ marginBottom: 8 }}>
@@ -1012,149 +946,69 @@ export const FileManagementCard: React.FC<FileManagementCardProps> = memo(({
           {/* File Preview - Show when complete OR when validation error with extracted content OR when streaming OR when fileId is available for fetching */}
           {(finalContent || (fileId && !isWorking)) && (
             <div>
-              {/* Only show toggle button when not streaming (during streaming, always show preview) */}
-              {!isWorking && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowPreview(!showPreview);
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '6px',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: validationError ? '#ef4444' : textColor,
-                    backgroundColor: validationError ? 
-                      (isLight ? 'rgba(254, 242, 242, 0.8)' : 'rgba(127, 29, 29, 0.3)') : 
-                      (isLight ? 'rgba(243, 244, 246, 0.8)' : 'rgba(55, 65, 81, 0.8)'),
-                    border: validationError ? '1px solid #ef4444' : `1px solid ${borderColor}`,
-                    borderRadius: 6,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    width: '100%',
-                    marginBottom: showPreview ? 8 : 0,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = validationError ?
-                      (isLight ? 'rgba(254, 226, 226, 0.8)' : 'rgba(153, 27, 27, 0.3)') :
-                      (isLight ? 'rgba(229, 231, 235, 0.8)' : 'rgba(75, 85, 99, 0.8)');
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = validationError ?
-                      (isLight ? 'rgba(254, 242, 242, 0.8)' : 'rgba(127, 29, 29, 0.3)') :
-                      (isLight ? 'rgba(243, 244, 246, 0.8)' : 'rgba(55, 65, 81, 0.8)');
-                  }}
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+              {/* File content preview - always show when accordion is expanded */}
+              <div
+                style={{
+                  marginTop: 0,
+                  borderRadius: 6,
+                  border: validationError ? '1px solid #ef4444' : `1px solid ${borderColor}`,
+                  overflow: 'hidden',
+                }}
+              >
+                {validationError && !isWorking && (
+                  <div
                     style={{
-                      transition: 'transform 0.2s ease',
-                      transform: showPreview ? 'rotate(90deg)' : 'rotate(0deg)',
+                      padding: 8,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: '#ef4444',
+                      backgroundColor: isLight ? '#fef2f2' : 'rgba(127, 29, 29, 0.3)',
+                      borderBottom: '1px solid #ef4444',
                     }}
                   >
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                  <span className="gallery-prompt">{showPreview ? 'Hide' : 'Show'} {validationError ? 'Recovered' : ''} Content Preview</span>
-                  <span className="gallery-count" style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.7 }}>
-                    {formatSize(displaySize || finalContent.length)} • {fileType.language}
-                  </span>
-                </button>
-              )}
-
-              {/* File content preview - always show during streaming, or when showPreview is true */}
-              {(isWorking || showPreview) && (
-                <div
-                  style={{
-                    marginTop: isWorking ? 0 : 0,
-                    borderRadius: 6,
-                    border: validationError ? '1px solid #ef4444' : `1px solid ${borderColor}`,
-                    overflow: 'hidden',
-                  }}
-                >
-                  {/* Writing indicator */}
-                  {isWorking && (
-                    <div
-                      style={{
-                        padding: 6,
-                        fontSize: 10,
-                        fontWeight: 600,
-                        backgroundColor: isLight ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.2)',
-                        borderBottom: `1px solid ${borderColor}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                      }}
-                    >
-                      <span className="copilot-action-sparkle-text" style={{ color: textColor }}>✨ Writing File</span>
-                      <span className="gallery-count" style={{ marginLeft: 'auto', opacity: 0.7, color: textColor }}>
-                        {formatSize(displaySize || finalContent.length)} • {fileType.language}
-                      </span>
-                    </div>
-                  )}
-                  
-                  {validationError && !isWorking && (
-                    <div
-                      style={{
-                        padding: 8,
-                        fontSize: 10,
-                        fontWeight: 600,
-                        color: '#ef4444',
-                        backgroundColor: isLight ? '#fef2f2' : 'rgba(127, 29, 29, 0.3)',
-                        borderBottom: '1px solid #ef4444',
-                      }}
-                    >
-                      ⚠️ This content was recovered from an incomplete AI response
-                    </div>
-                  )}
-                  
-                  {/* Content with auto-scroll during streaming */}
-                  {/* Uses IncrementalMarkdownRenderer for O(1) per-update performance */}
-                  {fileType.isMarkdown ? (
-                    <AutoScrollDiv
-                      content={finalContent}
-                      isStreaming={isWorking}
-                      style={{
-                        padding: 12,
-                        maxHeight: 400,
-                        overflow: 'auto',
-                        backgroundColor: isLight ? 'rgba(249, 250, 251, 0.5)' : 'rgba(13, 17, 23, 0.5)',
-                      }}
-                    >
+                    ⚠️ This content was recovered from an incomplete AI response
+                  </div>
+                )}
+                
+                {/* Content with auto-scroll during streaming */}
+                {/* Uses IncrementalMarkdownRenderer for O(1) per-update performance */}
+                {fileType.isMarkdown ? (
+                  <AutoScrollDiv
+                    content={finalContent}
+                    isStreaming={isWorking}
+                    style={{
+                      maxHeight: 400,
+                      overflow: 'auto',
+                    }}
+                  >
+                    <div className={cn('files-card-markdown', isLight ? '' : 'dark')}>
                       <IncrementalMarkdownRenderer 
                         content={finalContent} 
                         isLight={isLight} 
                         isStreaming={isWorking}
                         hideToolbars={true} 
+                        className="markdown-content"
                       />
-                    </AutoScrollDiv>
-                  ) : (
-                    <AutoScrollDiv
-                      content={finalContent}
-                      isStreaming={isWorking}
-                      style={{ 
-                        maxHeight: 400, 
-                        overflow: 'auto',
-                      }}
-                    >
-                      <CodeBlock 
-                        language={fileType.language} 
-                        code={finalContent} 
-                        isLight={isLight} 
-                      />
-                    </AutoScrollDiv>
-                  )}
-                </div>
-              )}
+                    </div>
+                  </AutoScrollDiv>
+                ) : (
+                  <AutoScrollDiv
+                    content={finalContent}
+                    isStreaming={isWorking}
+                    style={{ 
+                      maxHeight: 400, 
+                      overflow: 'auto',
+                    }}
+                  >
+                    <CodeBlock 
+                      language={fileType.language} 
+                      code={finalContent} 
+                      isLight={isLight} 
+                      hideToolbar={true}
+                    />
+                  </AutoScrollDiv>
+                )}
+              </div>
             </div>
           )}
         </div>

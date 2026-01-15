@@ -52,7 +52,7 @@ def list_jobs(
     Args:
         host_credential_key: Globally unique key identifying the Databricks workspace host credential
         token_credential_key: Globally unique key identifying the access token credential
-        limit: Number of jobs to return in a single request. Must be positive integer. Default: 25
+        limit: Number of jobs to return in a single request. Must be positive integer. Default: 25. Maximum: 20 when expand_tasks=True
         page: Zero-indexed page number for pagination. Page 0 returns first `limit` jobs, page 1 returns next `limit` jobs. Default: 0
         name: Optional exact job name for filtering. Only jobs with this exact name are returned. Default: None (no filtering)
         expand_tasks: Boolean flag to include detailed task configuration in response. True includes full task details, False includes minimal info. Default: False
@@ -72,6 +72,9 @@ def list_jobs(
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
+    # Cap limit at 20 when expand_tasks is True to reduce response size
+    effective_limit = min(limit, 20) if expand_tasks else limit
+    
     # Call the API to get jobs
     response = client.jobs.list(
         name=name,
@@ -82,11 +85,11 @@ def list_jobs(
     # Page 0: skip 0, take limit (items 0 to limit-1)
     # Page 1: skip limit, take limit (items limit to 2*limit-1)
     # Page N: skip N*limit, take limit
-    skip = page * limit
+    skip = page * effective_limit
     
     # Use islice to skip to the right page and take only the requested number of items
     # islice(iterator, start, stop) takes items from start to stop-1
-    jobs_iterator = islice(response, skip, skip + limit)
+    jobs_iterator = islice(response, skip, skip + effective_limit)
     
     jobs_list = []
     for job in jobs_iterator:
@@ -651,7 +654,7 @@ def list_runs(
         job_id: Optional integer job ID to filter runs. If specified, only runs for this job are returned. Default: None (all jobs)
         active_only: Boolean filter for active runs (PENDING, RUNNING, TERMINATING states). Cannot be used with completed_only. Default: None (no state filter)
         completed_only: Boolean filter for completed runs (SUCCESS, FAILED, CANCELLED states). Cannot be used with active_only. Default: None (no state filter)
-        limit: Number of runs to return in a single request. Must be positive integer. Default: 25
+        limit: Number of runs to return in a single request. Must be positive integer. Default: 25. Maximum: 20 when expand_tasks=True
         page: Zero-indexed page number for pagination. Default: 0
         start_time_from: Optional Unix epoch timestamp in milliseconds. Only runs started at or after this time are returned. Default: None (no time filter)
         start_time_to: Optional Unix epoch timestamp in milliseconds. Only runs started before or at this time are returned. Default: None (no time filter)
@@ -671,6 +674,9 @@ def list_runs(
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
+    # Cap limit at 20 when expand_tasks is True to reduce response size
+    effective_limit = min(limit, 20) if expand_tasks else limit
+    
     # Call the API to get runs
     response = client.jobs.list_runs(
         job_id=job_id,
@@ -682,10 +688,10 @@ def list_runs(
     )
     
     # Calculate skip and take based on page number
-    skip = page * limit
+    skip = page * effective_limit
     
     # Use islice to skip to the right page and take only the requested number of items
-    runs_iterator = islice(response, skip, skip + limit)
+    runs_iterator = islice(response, skip, skip + effective_limit)
     
     runs_list = []
     for run in runs_iterator:

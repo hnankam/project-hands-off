@@ -23,6 +23,7 @@ interface IncrementalMarkdownRendererProps {
   isLight?: boolean;
   isStreaming?: boolean;
   hideToolbars?: boolean;
+  className?: string;
 }
 
 // Block types for parsing
@@ -250,6 +251,7 @@ export const IncrementalMarkdownRenderer: React.FC<IncrementalMarkdownRendererPr
   isLight = false,
   isStreaming = false,
   hideToolbars = false,
+  className = '',
 }) => {
   // Cache of previous blocks for comparison
   const prevBlocksRef = useRef<Block[]>([]);
@@ -283,7 +285,7 @@ export const IncrementalMarkdownRenderer: React.FC<IncrementalMarkdownRendererPr
   }
   
   return (
-    <div className="incremental-markdown">
+    <div className={`incremental-markdown ${className}`.trim()}>
       {blocks.map((block, index) => (
         <MemoizedBlock
           key={`block-${index}-${block.hash}`}

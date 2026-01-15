@@ -75,7 +75,7 @@ def list_catalogs(
     Args:
         host_credential_key: Globally unique key identifying the Databricks workspace host credential
         token_credential_key: Globally unique key identifying the access token credential
-        limit: Number of catalogs to return in a single request. Must be positive integer. Default: 25
+        limit: Number of catalogs to return in a single request. Must be positive integer. Default: 25. Maximum: 20 when include_browse=True
         page: Zero-indexed page number for pagination. Default: 0
         include_browse: Boolean flag to include catalogs where user has only browse permission (no USE_CATALOG). Default: None (excluded)
         
@@ -84,12 +84,15 @@ def list_catalogs(
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
+    # Cap limit at 20 when include_browse is True to reduce response size
+    effective_limit = min(limit, 20) if include_browse else limit
+    
     response = client.catalogs.list(
         include_browse=include_browse,
     )
     
-    skip = page * limit
-    catalogs_iterator = islice(response, skip, skip + limit)
+    skip = page * effective_limit
+    catalogs_iterator = islice(response, skip, skip + effective_limit)
     
     catalogs_list = []
     for catalog in catalogs_iterator:

@@ -33,7 +33,7 @@ def list_query_history(
         token_credential_key: Globally unique key identifying the access token credential
         filter_by: Optional QueryFilter object to narrow results. Can filter by time range (query_start_time_range), user IDs, user names, warehouse IDs, execution statuses, and query text content (query_text_contains). Multiple filters combine with AND logic. Default: None (no filtering)
         include_metrics: Boolean flag to include detailed execution metrics (compilation time, bytes read/written, row counts, cache usage). Increases response size. Default: False
-        limit: Number of query executions to return in a single request. Must be positive integer. Default: 25
+        limit: Number of query executions to return in a single request. Must be positive integer. Default: 25. Maximum: 20 when include_metrics=True
         page: Zero-indexed page number for pagination. Default: 0
     
     Returns:
@@ -49,6 +49,9 @@ def list_query_history(
         - Filter criteria apply consistently across all pages
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
+    
+    # Cap limit at 20 when include_metrics is True to reduce response size
+    effective_limit = min(limit, 20) if include_metrics else limit
     
     # Store client-side filters (SDK doesn't support these)
     query_text_filter = None
@@ -91,7 +94,7 @@ def list_query_history(
     response = client.query_history.list(
         filter_by=sdk_filter,
         include_metrics=include_metrics,
-        max_results=(page + multiplier) * limit
+        max_results=(page + multiplier) * effective_limit
     )
     
     # Apply client-side filtering if needed
@@ -112,8 +115,8 @@ def list_query_history(
         ]
     
     # Paginate the filtered results
-    start_idx = page * limit
-    end_idx = start_idx + limit
+    start_idx = page * effective_limit
+    end_idx = start_idx + effective_limit
     paginated_results = filtered_results[start_idx:end_idx]
     has_more = len(filtered_results) > end_idx
     

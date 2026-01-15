@@ -6,11 +6,22 @@ export interface WaitCountdownProps {
   isLight: boolean;
 }
 
+const MIN_WAIT_SECONDS = 5;
+const MAX_WAIT_SECONDS = 600;
+const DEFAULT_WAIT_SECONDS = 30;
+
 export const WaitCountdown: React.FC<WaitCountdownProps> = ({ seconds, status, isLight }) => {
-  const [remaining, setRemaining] = React.useState(Math.max(0, Math.min(30, Math.floor(Number(seconds) || 0))));
+  const normalizeSeconds = (value: unknown): number => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return DEFAULT_WAIT_SECONDS;
+    return Math.max(MIN_WAIT_SECONDS, Math.min(MAX_WAIT_SECONDS, Math.floor(num)));
+  };
+
+  const normalizedSeconds = normalizeSeconds(seconds);
+  const [remaining, setRemaining] = React.useState(normalizedSeconds);
 
   React.useEffect(() => {
-    const total = Math.max(0, Math.min(30, Math.floor(Number(seconds) || 0)));
+    const total = normalizedSeconds;
     const start = Date.now();
     setRemaining(total);
     const tick = () => {
@@ -22,11 +33,11 @@ export const WaitCountdown: React.FC<WaitCountdownProps> = ({ seconds, status, i
     const intervalId = window.setInterval(tick, 250);
     tick();
     return () => clearInterval(intervalId);
-  }, [seconds]);
+  }, [normalizedSeconds]);
 
   const done = status === 'complete' || remaining <= 0;
   const text = done
-    ? `Finished waiting ${Math.max(0, Math.min(30, Math.floor(Number(seconds) || 0)))}s`
+    ? `Finished waiting ${normalizedSeconds}s`
     : `Waiting ${remaining}s…`;
 
   // Custom icon for wait action - clock/timer

@@ -34,7 +34,7 @@
 
 /* Headings */
 .files-card-markdown .markdown-content h1 {
-  font-size: 1.85em; /* Reduced from 2em */
+  font-size: 1.5em; /* Further reduced from 1.85em */
   font-weight: 600;
   margin-top: 1em;
   margin-bottom: 0.5em;
@@ -45,7 +45,7 @@
 }
 
 .files-card-markdown .markdown-content h2 {
-  font-size: 1.6em; /* Reduced from 1.75em */
+  font-size: 1.3em; /* Further reduced from 1.6em */
   font-weight: 600;
   margin-top: 1em;
   margin-bottom: 0.5em;
@@ -55,7 +55,7 @@
 }
 
 .files-card-markdown .markdown-content h3 {
-  font-size: 1.35em; /* Reduced from 1.5em */
+  font-size: 1.15em; /* Further reduced from 1.35em */
   font-weight: 600;
   margin-top: 1em;
   margin-bottom: 0.5em;
@@ -63,7 +63,7 @@
 }
 
 .files-card-markdown .markdown-content h4 {
-  font-size: 1.15em; /* Reduced from 1.25em */
+  font-size: 1.05em; /* Further reduced from 1.15em */
   font-weight: 600;
   margin-top: 1em;
   margin-bottom: 0.5em;
@@ -71,7 +71,7 @@
 }
 
 .files-card-markdown .markdown-content h5 {
-  font-size: 0.95em; /* Reduced from 1em */
+  font-size: 0.98em; /* Slightly reduced from 0.95em */
   font-weight: 600;
   margin-top: 1em;
   margin-bottom: 0.5em;
@@ -79,7 +79,7 @@
 }
 
 .files-card-markdown .markdown-content h6 {
-  font-size: 0.8em; /* Reduced from 0.875em */
+  font-size: 0.9em; /* Increased from 0.8em */
   font-weight: 600;
   margin-top: 1em;
   margin-bottom: 0.5em;
@@ -157,7 +157,7 @@
 .files-card-markdown .markdown-content code {
   padding: 0.2em 0.4em;
   margin: 0;
-  font-size: 80%; /* Reduced from 85% */
+  font-size: 0.95em; /* Increased from 80% to be closer to normal text */
   background-color: rgba(0, 0, 0, 0.05); /* Cursor light mode inline code */
   border-radius: 3px;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;

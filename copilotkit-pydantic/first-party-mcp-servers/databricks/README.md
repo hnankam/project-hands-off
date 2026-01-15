@@ -619,7 +619,7 @@ response = execute_statement(
         StatementParameter(name="start_date", value="2024-01-01", type="DATE"),
         StatementParameter(name="status", value="active")
     ],
-    wait_timeout="10s"
+    wait_timeout="30s"
 )
 ```
 
@@ -708,7 +708,7 @@ response = execute_statement(
     warehouse_id="abc123def456",
     catalog="production",
     schema="analytics",
-    wait_timeout="10s"
+    wait_timeout="30s"
 )
 ```
 
@@ -747,7 +747,7 @@ response = execute_statement(
 | Mode | wait_timeout | on_wait_timeout | Behavior |
 |------|--------------|-----------------|----------|
 | **Synchronous** | 5s-50s | CANCEL | Wait for results or cancel |
-| **Hybrid** (default) | 10s | CONTINUE | Wait 10s, then return statement_id |
+| **Hybrid** (default) | 30s | CONTINUE | Wait 30s, then return statement_id |
 | **Asynchronous** | 0s | (ignored) | Return statement_id immediately |
 
 **Result Disposition:**

@@ -667,6 +667,58 @@ const app = express();
 
         let bodyForRequest = c.req.raw.body;
 
+        // CRITICAL: Filter orphaned tool returns from the request body BEFORE forwarding to Python backend
+        // This prevents the "Tool call with ID ... not found in the history" error
+        if (c.req.raw.method === 'POST' && originalUrl.pathname.includes('/run')) {
+          try {
+            const rawBody = await c.req.text();
+            const bodyJson = JSON.parse(rawBody);
+            
+            // Filter messages if they exist
+            if (bodyJson.messages && Array.isArray(bodyJson.messages)) {
+              const originalLength = bodyJson.messages.length;
+              
+              // Build set of valid tool call IDs
+              const validToolCallIds = new Set();
+              for (const msg of bodyJson.messages) {
+                if (msg.role === 'assistant' && msg.toolCalls) {
+                  for (const tc of msg.toolCalls) {
+                    if (tc.id) {
+                      validToolCallIds.add(tc.id);
+                    }
+                  }
+                }
+              }
+              
+              // Filter out orphaned tool returns
+              bodyJson.messages = bodyJson.messages.filter(msg => {
+                if (msg.role === 'tool' && msg.toolCallId) {
+                  if (!validToolCallIds.has(msg.toolCallId)) {
+                    if (DEBUG) {
+                      console.log(`[server.js] Filtering orphaned tool return ${msg.id} with toolCallId ${msg.toolCallId}`);
+                    }
+                    return false;
+                  }
+                }
+                return true;
+              });
+              
+              if (bodyJson.messages.length !== originalLength) {
+                if (DEBUG) {
+                  console.log(`[server.js] Filtered ${originalLength - bodyJson.messages.length} orphaned tool returns from request body`);
+                }
+              }
+            }
+            
+            // Re-serialize the filtered body
+            bodyForRequest = JSON.stringify(bodyJson);
+          } catch (err) {
+            console.error(`[server.js] ⚠️  Failed to filter request body: ${err.message}`);
+            // Fall back to original body if filtering fails
+            bodyForRequest = await c.req.raw.text();
+          }
+        }
+
         const modifiedRequest = new Request(originalUrl.toString(), {
           method: c.req.raw.method,
           headers: modifiedHeaders,

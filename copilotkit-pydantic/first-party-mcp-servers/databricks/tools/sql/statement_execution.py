@@ -34,7 +34,7 @@ def execute_statement(
     token_credential_key: str,
     statement: str,
     warehouse_id: str,
-    wait_timeout: Optional[str] = "10s",
+    wait_timeout: Optional[str] = "30s",
     on_wait_timeout: Optional[str] = "CONTINUE",
     format: Optional[str] = "JSON_ARRAY",
     disposition: Optional[str] = "INLINE",
@@ -56,7 +56,7 @@ def execute_statement(
         token_credential_key: Credential key for access token
         statement: SQL statement to execute
         warehouse_id: SQL warehouse ID to execute on
-        wait_timeout: Wait time ("0s" for async, "5s"-"50s" for sync, default: "10s")
+        wait_timeout: Wait time ("0s" for async, "5s"-"50s" for sync, default: "30s")
         on_wait_timeout: Action on timeout: "CONTINUE" (async) or "CANCEL" (default: "CONTINUE")
         format: Result format: "JSON_ARRAY", "ARROW_STREAM", "CSV" (default: "JSON_ARRAY")
         disposition: Result disposition: "INLINE" (≤25MB) or "EXTERNAL_LINKS" (≤100GB) (default: "INLINE")

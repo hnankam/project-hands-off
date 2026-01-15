@@ -51,7 +51,7 @@ def list_tables(
         token_credential_key: Globally unique key identifying the access token credential
         catalog_name: Name of the Unity Catalog containing the schema. Required. Must be exact match
         schema_name: Name of the schema containing the tables. Required. Must be exact match
-        limit: Number of tables to return in a single request. Must be positive integer. Default: 25
+        limit: Number of tables to return in a single request. Must be positive integer. Default: 25. Maximum: 20 when include_delta_metadata or include_browse is True
         page: Zero-indexed page number for pagination. Default: 0
         include_delta_metadata: Boolean flag to include Delta Lake-specific metadata (version, format). Default: None (excluded)
         include_browse: Boolean flag to include tables where user has only browse permission (no SELECT). Default: None (excluded)
@@ -78,6 +78,9 @@ def list_tables(
     """
     client = get_workspace_client(host_credential_key, token_credential_key)
     
+    # Cap limit at 20 when expand options are True to reduce response size
+    effective_limit = min(limit, 20) if (include_delta_metadata or include_browse) else limit
+    
     response = client.tables.list(
         catalog_name=catalog_name,
         schema_name=schema_name,
@@ -88,8 +91,8 @@ def list_tables(
         omit_username=omit_username,
     )
     
-    skip = page * limit
-    tables_iterator = islice(response, skip, skip + limit)
+    skip = page * effective_limit
+    tables_iterator = islice(response, skip, skip + effective_limit)
     
     tables_list = []
     for table in tables_iterator:
