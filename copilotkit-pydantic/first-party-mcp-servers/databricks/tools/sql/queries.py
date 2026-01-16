@@ -48,6 +48,7 @@ def list_queries(
         - Set page=0 for first results, increment page by 1 for subsequent calls
         - has_more=True indicates more results available
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     response = client.queries.list()
@@ -96,9 +97,16 @@ def list_queries(
         count=len(queries),
         has_more=has_more,
     )
+    except Exception as e:
+        return ListQueriesResponse(
+            queries=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list queries: {str(e)}",
+        )
 
 
-def get_query(host_credential_key: str, token_credential_key: str, query_id: str) -> QueryInfo:
+def get_query(host_credential_key: str, token_credential_key: str, query_id: str) -> Optional[QueryInfo]:
     """
     Get details of a specific SQL query.
     
@@ -108,8 +116,9 @@ def get_query(host_credential_key: str, token_credential_key: str, query_id: str
         query_id: ID of the query to retrieve
     
     Returns:
-        QueryInfo with complete query details including SQL text, metadata, and tags
+        QueryInfo with complete query details including SQL text, metadata, and tags, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     query = client.queries.get(id=query_id)
     query_dict = query.as_dict()
@@ -138,6 +147,11 @@ def get_query(host_credential_key: str, token_credential_key: str, query_id: str
         apply_auto_limit=query_dict.get('apply_auto_limit'),
         parameters=parameters
     )
+    except Exception as e:
+        return QueryInfo(
+            id=query_id,
+            error_message=f"Failed to get query: {str(e)}",
+        )
 
 
 def create_query(
@@ -174,6 +188,7 @@ def create_query(
     Returns:
         CreateQueryResponse with the created query details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     query_request = CreateQueryRequestQuery(
@@ -198,6 +213,12 @@ def create_query(
         warehouse_id=created_query.warehouse_id,
         status=f"Query '{display_name}' created successfully"
     )
+    except Exception as e:
+        return CreateQueryResponse(
+            id=None,
+            status="failed",
+            error_message=f"Failed to create query: {str(e)}",
+        )
 
 
 def update_query(
@@ -234,6 +255,7 @@ def update_query(
     Returns:
         UpdateQueryResponse with the updated query details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Build update mask based on provided parameters
@@ -269,7 +291,11 @@ def update_query(
         update_dict["apply_auto_limit"] = apply_auto_limit
     
     if not update_fields:
-        raise ValueError("At least one field must be provided for update")
+            return UpdateQueryResponse(
+                id=query_id,
+                status="failed",
+                error_message="At least one field must be provided for update",
+            )
     
     update_mask = ",".join(update_fields)
     query_request = UpdateQueryRequestQuery(**update_dict)
@@ -287,6 +313,12 @@ def update_query(
         update_time=updated_query.update_time,
         status=f"Query '{query_id}' updated successfully"
     )
+    except Exception as e:
+        return UpdateQueryResponse(
+            id=query_id,
+            status="failed",
+            error_message=f"Failed to update query: {str(e)}",
+        )
 
 
 def delete_query(host_credential_key: str, token_credential_key: str, query_id: str) -> DeleteQueryResponse:
@@ -305,6 +337,7 @@ def delete_query(host_credential_key: str, token_credential_key: str, query_id: 
     Returns:
         DeleteQueryResponse confirming the deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.queries.delete(id=query_id)
@@ -313,28 +346,57 @@ def delete_query(host_credential_key: str, token_credential_key: str, query_id: 
         id=query_id,
         status=f"Query '{query_id}' moved to trash (recoverable for 30 days)"
     )
+    except Exception as e:
+        return DeleteQueryResponse(
+            id=query_id,
+            status="failed",
+            error_message=f"Failed to delete query: {str(e)}",
+        )
 
 
 def list_query_visualizations(
     host_credential_key: str,
     token_credential_key: str,
-    query_id: str
+    query_id: str,
+    limit: int = 25,
+    page: int = 0,
 ) -> ListVisualizationsResponse:
     """
-    List all visualizations for a specific query.
+    Retrieve a paginated list of visualizations for a specific SQL query.
+    
+    Returns visualization definitions (charts, tables, etc.) associated with a query.
+    Use this to discover available visualizations or retrieve visualization configurations.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token_credential_key: Credential key for access token
-        query_id: ID of the query
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        query_id: ID of the query. Required. Must be valid query ID string
+        limit: Number of visualizations to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
     
     Returns:
-        ListVisualizationsResponse with all visualizations for the query
+        ListVisualizationsResponse containing:
+        - visualizations: List of VisualizationInfo objects with visualization configurations
+        - count: Integer number of visualizations returned in this page (0 to limit)
+        - has_more: Boolean indicating if additional visualizations exist beyond this page
+        
+    Pagination:
+        - Returns up to `limit` visualizations per call
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available
     """
+    try:
+    from itertools import islice
+    
     client = get_workspace_client(host_credential_key, token_credential_key)
     
+    response = client.queries.list_visualizations(id=query_id)
+    
+    skip = page * limit
+    visualizations_iterator = islice(response, skip, skip + limit)
+    
     visualizations = []
-    for viz in client.queries.list_visualizations(id=query_id):
+    for viz in visualizations_iterator:
         viz_dict = viz.as_dict()
         visualizations.append(VisualizationInfo(
             id=viz_dict.get('id'),
@@ -347,9 +409,26 @@ def list_query_visualizations(
             serialized_query_plan=viz_dict.get('serialized_query_plan')
         ))
     
+    # Check for more results
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
+    
     return ListVisualizationsResponse(
         query_id=query_id,
         visualizations=visualizations,
-        count=len(visualizations)
+        count=len(visualizations),
+        has_more=has_more,
     )
+    except Exception as e:
+        return ListVisualizationsResponse(
+            query_id=query_id,
+            visualizations=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list query visualizations: {str(e)}",
+        )
 

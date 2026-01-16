@@ -51,13 +51,13 @@ def list_tables(
         token_credential_key: Globally unique key identifying the access token credential
         catalog_name: Name of the Unity Catalog containing the schema. Required. Must be exact match
         schema_name: Name of the schema containing the tables. Required. Must be exact match
-        limit: Number of tables to return in a single request. Must be positive integer. Default: 25. Maximum: 20 when include_delta_metadata or include_browse is True
+        limit: Number of tables to return in a single request. Must be positive integer. Default: 25
         page: Zero-indexed page number for pagination. Default: 0
-        include_delta_metadata: Boolean flag to include Delta Lake-specific metadata (version, format). Default: None (excluded)
-        include_browse: Boolean flag to include tables where user has only browse permission (no SELECT). Default: None (excluded)
-        omit_columns: Boolean flag to exclude column definitions from response. True improves performance for large schemas. Default: None (columns included)
-        omit_properties: Boolean flag to exclude custom table properties from response. Default: None (properties included)
-        omit_username: Boolean flag to exclude creator/modifier usernames from response. Default: None (usernames included)
+        include_delta_metadata: Boolean flag (reserved for future SDK support). Currently not applied. Default: None
+        include_browse: Boolean flag (reserved for future SDK support). Currently not applied. Default: None
+        omit_columns: Boolean flag (reserved for future SDK support). Currently not applied. Default: None
+        omit_properties: Boolean flag (reserved for future SDK support). Currently not applied. Default: None
+        omit_username: Boolean flag (reserved for future SDK support). Currently not applied. Default: None
         
     Returns:
         ListTablesResponse containing:
@@ -69,30 +69,25 @@ def list_tables(
         - Returns up to `limit` tables per call
         - Set page=0 for first results, increment page by 1 for subsequent calls
         - has_more=True indicates more results available
-        - Filters and omit flags apply consistently across all pages
         
-    Performance Optimization:
-        - Set omit_columns=True when column details are not needed (faster for schemas with many tables)
-        - Set omit_properties=True to exclude custom properties
+    Note:
+        - The Databricks SDK's current version only supports catalog_name and schema_name parameters
+        - Additional filter/optimization parameters are accepted but not currently applied
         - Use list_table_summaries() for lightweight discovery when full metadata is not required
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
-    # Cap limit at 20 when expand options are True to reduce response size
-    effective_limit = min(limit, 20) if (include_delta_metadata or include_browse) else limit
-    
+    # Note: The Databricks SDK's TablesAPI.list() only supports catalog_name and schema_name
+    # The include_delta_metadata, include_browse, omit_* parameters are accepted by the function
+    # but not passed to the SDK call as they're not supported in the current SDK version
     response = client.tables.list(
         catalog_name=catalog_name,
         schema_name=schema_name,
-        include_delta_metadata=include_delta_metadata,
-        include_browse=include_browse,
-        omit_columns=omit_columns,
-        omit_properties=omit_properties,
-        omit_username=omit_username,
     )
     
-    skip = page * effective_limit
-    tables_iterator = islice(response, skip, skip + effective_limit)
+    skip = page * limit
+    tables_iterator = islice(response, skip, skip + limit)
     
     tables_list = []
     for table in tables_iterator:
@@ -167,6 +162,13 @@ def list_tables(
         count=len(tables_list),
         has_more=has_more,
     )
+    except Exception as e:
+        return ListTablesResponse(
+            tables=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list tables: {str(e)}",
+        )
 
 
 def list_table_summaries(
@@ -197,6 +199,7 @@ def list_table_summaries(
     Returns:
         ListTableSummariesResponse with list of table summaries
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     response = client.tables.list_summaries(
@@ -230,6 +233,13 @@ def list_table_summaries(
         count=len(summaries_list),
         has_more=has_more,
     )
+    except Exception as e:
+        return ListTableSummariesResponse(
+            summaries=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list table summaries: {str(e)}",
+        )
 
 
 def get_table(
@@ -238,7 +248,7 @@ def get_table(
     full_name: str,
     include_delta_metadata: Optional[bool] = None,
     include_browse: Optional[bool] = None,
-) -> TableInfoModel:
+) -> Optional[TableInfoModel]:
     """
     Get table details.
     
@@ -255,6 +265,7 @@ def get_table(
     Returns:
         TableInfoModel with complete table details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     table = client.tables.get(
@@ -318,6 +329,11 @@ def get_table(
         effective_predictive_optimization_flag=table.effective_predictive_optimization_flag.as_dict() if table.effective_predictive_optimization_flag else None,
         delta_runtime_properties_kvpairs=table.delta_runtime_properties_kvpairs.as_dict() if table.delta_runtime_properties_kvpairs else None,
     )
+    except Exception as e:
+        return TableInfoModel(
+            full_name=full_name,
+            error_message=f"Failed to get table: {str(e)}",
+        )
 
 
 def table_exists(
@@ -352,6 +368,7 @@ def table_exists(
             # Create table first
             pass
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     response = client.tables.exists(full_name=full_name)
@@ -360,6 +377,12 @@ def table_exists(
         table_exists=response.table_exists or False,
         full_name=full_name,
     )
+    except Exception as e:
+        return TableExistsResponseModel(
+            table_exists=False,
+            full_name=full_name,
+            error_message=f"Failed to check table existence: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -388,11 +411,17 @@ def delete_table(
     Returns:
         DeleteTableResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.tables.delete(full_name=full_name)
     
     return DeleteTableResponse(full_name=full_name)
+    except Exception as e:
+        return DeleteTableResponse(
+            full_name=full_name,
+            error_message=f"Failed to delete table: {str(e)}",
+        )
 
 
 def update_table_owner(
@@ -419,6 +448,7 @@ def update_table_owner(
     Returns:
         UpdateTableResponse confirming update
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.tables.update(
@@ -427,4 +457,9 @@ def update_table_owner(
     )
     
     return UpdateTableResponse(full_name=full_name)
+    except Exception as e:
+        return UpdateTableResponse(
+            full_name=full_name,
+            error_message=f"Failed to update table owner: {str(e)}",
+        )
 

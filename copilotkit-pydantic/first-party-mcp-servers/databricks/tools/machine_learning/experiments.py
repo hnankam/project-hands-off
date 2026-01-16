@@ -123,6 +123,7 @@ def list_experiments(
     Returns:
         ListExperimentsResponse with experiments and pagination
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     experiments = []
@@ -138,13 +139,19 @@ def list_experiments(
         experiments=experiments,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListExperimentsResponse(
+            experiments=[],
+            next_page_token=None,
+            error_message=f"Failed to list experiments: {str(e)}",
+        )
 
 
 def get_experiment(
     host_credential_key: str,
     token_credential_key: str,
     experiment_id: str,
-) -> ExperimentModel:
+) -> Optional[ExperimentModel]:
     """
     Get an MLflow experiment by ID.
     
@@ -157,20 +164,23 @@ def get_experiment(
         experiment_id: ID of the experiment
         
     Returns:
-        ExperimentModel with experiment details
+        ExperimentModel with experiment details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     experiment = client.experiments.get_experiment(experiment_id=experiment_id)
     
     return _convert_to_experiment_model(experiment)
+    except Exception as e:
+        return None
 
 
 def get_experiment_by_name(
     host_credential_key: str,
     token_credential_key: str,
     experiment_name: str,
-) -> ExperimentModel:
+) -> Optional[ExperimentModel]:
     """
     Get an MLflow experiment by name.
     
@@ -182,8 +192,9 @@ def get_experiment_by_name(
         experiment_name: Name of the experiment
         
     Returns:
-        ExperimentModel with experiment details
+        ExperimentModel with experiment details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     experiment = client.experiments.get_experiment_by_name(
@@ -191,6 +202,8 @@ def get_experiment_by_name(
     )
     
     return _convert_to_experiment_model(experiment)
+    except Exception as e:
+        return None
 
 
 def create_experiment(
@@ -216,6 +229,7 @@ def create_experiment(
     Returns:
         CreateExperimentResponse with experiment ID
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert tags dictionary to list of ExperimentTag
@@ -233,6 +247,11 @@ def create_experiment(
     return CreateExperimentResponse(
         experiment_id=experiment.experiment_id,
     )
+    except Exception as e:
+        return CreateExperimentResponse(
+            experiment_id=None,
+            error_message=f"Failed to create experiment: {str(e)}",
+        )
 
 
 def update_experiment(
@@ -256,6 +275,7 @@ def update_experiment(
     Returns:
         UpdateExperimentResponse confirming update
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.update_experiment(
@@ -264,6 +284,10 @@ def update_experiment(
     )
     
     return UpdateExperimentResponse()
+    except Exception as e:
+        return UpdateExperimentResponse(
+            error_message=f"Failed to update experiment: {str(e)}",
+        )
 
 
 def delete_experiment(
@@ -285,6 +309,7 @@ def delete_experiment(
     Returns:
         DeleteExperimentResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.delete_experiment(experiment_id=experiment_id)
@@ -292,6 +317,11 @@ def delete_experiment(
     return DeleteExperimentResponse(
         experiment_id=experiment_id,
     )
+    except Exception as e:
+        return DeleteExperimentResponse(
+            experiment_id=None,
+            error_message=f"Failed to delete experiment: {str(e)}",
+        )
 
 
 def restore_experiment(
@@ -312,6 +342,7 @@ def restore_experiment(
     Returns:
         UpdateExperimentResponse confirming restoration
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.restore_experiment(experiment_id=experiment_id)
@@ -319,6 +350,10 @@ def restore_experiment(
     return UpdateExperimentResponse(
         message="Experiment restored successfully"
     )
+    except Exception as e:
+        return UpdateExperimentResponse(
+            error_message=f"Failed to restore experiment: {str(e)}",
+        )
 
 
 def search_experiments(
@@ -346,6 +381,7 @@ def search_experiments(
     Returns:
         ListExperimentsResponse with matching experiments
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     experiments = []
@@ -363,6 +399,12 @@ def search_experiments(
         experiments=experiments,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListExperimentsResponse(
+            experiments=[],
+            next_page_token=None,
+            error_message=f"Failed to search experiments: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -394,6 +436,7 @@ def create_experiment_run(
     Returns:
         CreateRunResponse with run information
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert tags dictionary to list of RunTag
@@ -412,13 +455,18 @@ def create_experiment_run(
     return CreateRunResponse(
         run=_convert_to_run_model(run.run),
     )
+    except Exception as e:
+        return CreateRunResponse(
+            run=None,
+            error_message=f"Failed to create experiment run: {str(e)}",
+        )
 
 
 def get_experiment_run(
     host_credential_key: str,
     token_credential_key: str,
     run_id: str,
-) -> RunModel:
+) -> Optional[RunModel]:
     """
     Get an MLflow run.
     
@@ -430,13 +478,16 @@ def get_experiment_run(
         run_id: ID of the run
         
     Returns:
-        RunModel with run details
+        RunModel with run details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     run = client.experiments.get_run(run_id=run_id)
     
     return _convert_to_run_model(run.run)
+    except Exception as e:
+        return None
 
 
 def update_experiment_run(
@@ -463,6 +514,7 @@ def update_experiment_run(
     Returns:
         UpdateRunResponse with updated run info
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert status string to enum if provided
@@ -481,6 +533,11 @@ def update_experiment_run(
     return UpdateRunResponse(
         run=_convert_to_run_model(run.run_info) if hasattr(run, 'run_info') else RunModel(),
     )
+    except Exception as e:
+        return UpdateRunResponse(
+            run=None,
+            error_message=f"Failed to update experiment run: {str(e)}",
+        )
 
 
 def delete_experiment_run(
@@ -502,6 +559,7 @@ def delete_experiment_run(
     Returns:
         DeleteRunResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.delete_run(run_id=run_id)
@@ -509,6 +567,11 @@ def delete_experiment_run(
     return DeleteRunResponse(
         run_id=run_id,
     )
+    except Exception as e:
+        return DeleteRunResponse(
+            run_id=None,
+            error_message=f"Failed to delete experiment run: {str(e)}",
+        )
 
 
 def restore_experiment_run(
@@ -529,6 +592,7 @@ def restore_experiment_run(
     Returns:
         UpdateRunResponse confirming restoration
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.restore_run(run_id=run_id)
@@ -536,6 +600,10 @@ def restore_experiment_run(
     return UpdateRunResponse(
         message="Run restored successfully"
     )
+    except Exception as e:
+        return UpdateRunResponse(
+            error_message=f"Failed to restore experiment run: {str(e)}",
+        )
 
 
 def search_experiment_runs(
@@ -565,6 +633,7 @@ def search_experiment_runs(
     Returns:
         SearchRunsResponse with matching runs
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     runs = []
@@ -583,6 +652,12 @@ def search_experiment_runs(
         runs=runs,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return SearchRunsResponse(
+            runs=[],
+            next_page_token=None,
+            error_message=f"Failed to search experiment runs: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -616,6 +691,7 @@ def log_metric(
     Returns:
         LogMetricResponse confirming logging
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.log_metric(
@@ -627,6 +703,10 @@ def log_metric(
     )
     
     return LogMetricResponse()
+    except Exception as e:
+        return LogMetricResponse(
+            error_message=f"Failed to log metric: {str(e)}",
+        )
 
 
 def log_param(
@@ -652,6 +732,7 @@ def log_param(
     Returns:
         LogParamResponse confirming logging
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.log_param(
@@ -661,6 +742,10 @@ def log_param(
     )
     
     return LogParamResponse()
+    except Exception as e:
+        return LogParamResponse(
+            error_message=f"Failed to log parameter: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -690,6 +775,7 @@ def set_experiment_tag(
     Returns:
         SetExperimentTagResponse confirming tag set
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.set_experiment_tag(
@@ -699,6 +785,10 @@ def set_experiment_tag(
     )
     
     return SetExperimentTagResponse()
+    except Exception as e:
+        return SetExperimentTagResponse(
+            error_message=f"Failed to set experiment tag: {str(e)}",
+        )
 
 
 def set_run_tag(
@@ -724,6 +814,7 @@ def set_run_tag(
     Returns:
         SetRunTagResponse confirming tag set
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.set_tag(
@@ -733,6 +824,10 @@ def set_run_tag(
     )
     
     return SetRunTagResponse()
+    except Exception as e:
+        return SetRunTagResponse(
+            error_message=f"Failed to set run tag: {str(e)}",
+        )
 
 
 def delete_run_tag(
@@ -756,6 +851,7 @@ def delete_run_tag(
     Returns:
         SetRunTagResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.experiments.delete_tag(
@@ -766,4 +862,8 @@ def delete_run_tag(
     return SetRunTagResponse(
         message="Run tag deleted successfully"
     )
+    except Exception as e:
+        return SetRunTagResponse(
+            error_message=f"Failed to delete run tag: {str(e)}",
+        )
 

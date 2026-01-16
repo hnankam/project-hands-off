@@ -53,12 +53,38 @@ from utils.firebase_storage import upload_binary_image_to_storage
 # Import auxiliary agent factory
 from tools.auxiliary_agents import get_auxiliary_agent, get_custom_auxiliary_agent, get_custom_auxiliary_agents_config
 
+# Import message processor for sub-agent context management
+from utils.message_processor import keep_recent_messages, pydantic_to_agui_messages
+
 # Multi-agent graph tools moved to graph_tools.py
 
 import asyncio
 import os
 import uuid
+import json
 from datetime import datetime
+
+# ========== Error Formatting Helpers ==========
+
+def format_error_json(error_type: str, message: str, details: dict | None = None) -> str:
+    """Format an error as a JSON string.
+    
+    Args:
+        error_type: Type of error (e.g., 'not_found', 'validation_error', 'execution_error')
+        message: Human-readable error message
+        details: Optional additional error details
+        
+    Returns:
+        JSON string representation of the error
+    """
+    error_obj = {
+        "error": True,
+        "error_type": error_type,
+        "message": message,
+    }
+    if details:
+        error_obj["details"] = details
+    return json.dumps(error_obj)
 
 # ========== Name Resolution Helpers ==========
 
@@ -134,29 +160,17 @@ async def create_plan(
     steps: list[str],
     status: str = "active"
 ) -> ToolReturn:
-    """Create a new plan with a descriptive name.
-    
-    Multiple plans can be active simultaneously. Each plan has a unique ID and
-    a human-readable name. Users can reference plans by name (e.g., @"Build House Plan").
-    
-    Uses hybrid snapshot/delta approach:
-    - State updates: First plan sends StateSnapshotEvent, subsequent use StateDeltaEvent
-    - Activity messages: Always sends ActivitySnapshotEvent to create new chat message
+    """Create a task plan with multiple steps. Multiple plans can exist simultaneously. Reference plans by name or ID.
     
     Args:
-        ctx: The run context with agent state
-        name: Human-readable name for this plan (max 50 chars, e.g., "Build Dream House", "Research ML")
+        name: Plan name (e.g., "Build Website", "Analyze Data")
         steps: List of step descriptions
-        status: Initial status, default "active" (can be "active", "paused")
+        status: "active" or "paused" (default: "active")
         
     Returns:
-        Confirmation message with plan name and ID
+        Plan ID and confirmation message
         
-    Example:
-        create_plan(
-            name="Research Machine Learning",
-            steps=["Read papers", "Summarize findings", "Draft report"]
-        )
+    Example: create_plan(name="Build App", steps=["Design UI", "Implement API", "Deploy"])
     """
     # Generate unique plan ID
     plan_id = f"{uuid.uuid4().hex[:12]}"
@@ -252,27 +266,18 @@ async def update_plan_step(
     description: str | None = None,
     status: StepStatus | None = None
 ) -> ToolReturn:
-    """Update a specific plan's step.
-    
-    Uses StateDeltaEvent with JSON Patch operations for efficient incremental updates.
+    """Update a plan step's description or status. Steps are 0-indexed.
     
     Args:
-        ctx: The run context with agent state
-        plan_identifier: Plan name OR plan_id (e.g., "Build House Plan" or "abc123")
-        step_index: Index of step to update (0-based)
-        description: New description (optional)
-        status: New status (optional)
+        plan_identifier: Plan name or ID
+        step_index: Step index (0-based)
+        description: New step description (optional)
+        status: "pending", "running", "completed", "failed", or "deleted" (optional)
         
     Returns:
         Confirmation message
         
-    Raises:
-        ValueError: If plan or step not found
-        
-    Example:
-        update_plan_step("Build Dream House", 0, status="completed")
-        # or
-        update_plan_step("abc123def456", 0, status="completed")
+    Example: update_plan_step("Build App", 0, status="completed")
     """
     # Resolve name/ID to actual plan_id
     plan_id = resolve_plan_identifier(ctx.deps.state, plan_identifier)
@@ -283,7 +288,7 @@ async def update_plan_step(
             f'Plan "{plan_identifier}" not found. Available plans:\n' +
             ('\n'.join(available) if available else 'No plans available')
         )
-        return ToolReturn(return_value=error_msg)
+        return ToolReturn(return_value=format_error_json('not_found', error_msg))
     
     plan = ctx.deps.state.plans[plan_id]
     
@@ -293,7 +298,7 @@ async def update_plan_step(
             f"Step {step_index} doesn't exist in plan '{plan.name}'. "
             f"Current steps count: {len(plan.steps)}"
         )
-        return ToolReturn(return_value=error_msg)
+        return ToolReturn(return_value=format_error_json('validation_error', error_msg))
 
     # Validate status if provided
     valid_statuses = ['pending', 'running', 'completed', 'failed', 'deleted']
@@ -312,7 +317,7 @@ async def update_plan_step(
                 f"Accepted values are: {', '.join(valid_statuses)}. "
                 f"Please use one of these exact values."
             )
-            return ToolReturn(return_value=error_msg)
+            return ToolReturn(return_value=format_error_json('validation_error', error_msg))
         
         # Use the exact valid status value (normalize case)
         status = matched_status  # type: ignore
@@ -401,30 +406,16 @@ async def update_plan_steps(
     plan_identifier: str,
     updates: list[dict[str, Any]]
 ) -> ToolReturn:
-    """Update multiple plan steps in a single operation.
-    
-    More efficient than calling update_plan_step multiple times. Useful for
-    updating step sequences (e.g., mark step 1 completed and step 2 running).
-    
-    Uses StateDeltaEvent with JSON Patch operations for efficient incremental updates.
+    """Update multiple plan steps at once. More efficient than multiple update_plan_step calls.
     
     Args:
-        ctx: The run context with agent state
-        plan_identifier: Plan name OR plan_id (e.g., "Build House Plan" or "abc123")
-        updates: List of step updates, each with:
-            - step_index (int, required): Index of step to update
-            - description (str, optional): New description
-            - status (str, optional): New status
-            
-    Returns:
-        Confirmation message with count of updated steps
+        plan_identifier: Plan name or ID
+        updates: List of dicts with step_index (required), description (optional), status (optional)
         
-    Example:
-        update_plan_steps("Build Dream House", [
-            {"step_index": 0, "status": "completed"},
-            {"step_index": 1, "status": "running"},
-            {"step_index": 2, "description": "Updated task description"}
-        ])
+    Returns:
+        Confirmation with count of updated steps
+        
+    Example: update_plan_steps("Build App", [{"step_index": 0, "status": "completed"}, {"step_index": 1, "status": "running"}])
     """
     # Resolve name/ID to actual plan_id
     plan_id = resolve_plan_identifier(ctx.deps.state, plan_identifier)
@@ -435,7 +426,7 @@ async def update_plan_steps(
             f'Plan "{plan_identifier}" not found. Available plans:\n' +
             ('\n'.join(available) if available else 'No plans available')
         )
-        return ToolReturn(return_value=error_msg)
+        return ToolReturn(return_value=format_error_json('not_found', error_msg))
     
     plan = ctx.deps.state.plans[plan_id]
     
@@ -508,7 +499,7 @@ async def update_plan_steps(
         error_msg = f'No steps were updated in plan "{plan.name}"'
         if errors:
             error_msg += f'\nErrors:\n' + '\n'.join(f'  - {e}' for e in errors)
-        return ToolReturn(return_value=error_msg)
+        return ToolReturn(return_value=format_error_json('validation_error', error_msg, {"errors": errors} if errors else None))
     
     # Update plan timestamp (both in memory and as a patch operation)
     new_timestamp = datetime.now().isoformat()
@@ -573,25 +564,21 @@ async def update_plan_status(
     plan_identifier: str,
     status: str
 ) -> ToolReturn:
-    """Change a plan's status (pause, resume, complete, cancel).
-    
-    Uses StateDeltaEvent with JSON Patch operations for efficient incremental updates.
+    """Change plan status.
     
     Args:
-        ctx: The run context with agent state
-        plan_identifier: Plan name OR plan_id
-        status: New status ("active", "paused", "completed", "cancelled")
+        plan_identifier: Plan name or ID
+        status: "active", "paused", "completed", or "cancelled"
         
     Returns:
         Confirmation message
         
-    Example:
-        update_plan_status("Build Dream House", "paused")
+    Example: update_plan_status("Build App", "paused")
     """
     # Resolve to plan_id
     plan_id = resolve_plan_identifier(ctx.deps.state, plan_identifier)
     if not plan_id:
-        return ToolReturn(return_value=f'Plan "{plan_identifier}" not found')
+        return ToolReturn(return_value=format_error_json('not_found', f'Plan "{plan_identifier}" not found'))
     
     plan = ctx.deps.state.plans[plan_id]
     old_status = plan.status
@@ -657,19 +644,18 @@ async def rename_plan(
 ) -> ToolReturn:
     """Rename a plan.
     
-    Uses StateDeltaEvent with JSON Patch operations for efficient incremental updates.
-    
     Args:
-        ctx: The run context with agent state
-        plan_identifier: Current name or ID
-        new_name: New human-readable name
+        plan_identifier: Plan name or ID
+        new_name: New plan name
         
-    Example:
-        rename_plan("Build House", "Build Eco-Friendly House")
+    Returns:
+        Confirmation message
+        
+    Example: rename_plan("Build House", "Build Eco-Friendly House")
     """
     plan_id = resolve_plan_identifier(ctx.deps.state, plan_identifier)
     if not plan_id:
-        return ToolReturn(return_value=f'Plan "{plan_identifier}" not found')
+        return ToolReturn(return_value=format_error_json('not_found', f'Plan "{plan_identifier}" not found'))
     
     plan = ctx.deps.state.plans[plan_id]
     old_name = plan.name
@@ -729,12 +715,12 @@ async def rename_plan(
 
 
 async def list_plans(ctx: RunContext[UnifiedDeps]) -> ToolReturn:
-    """List all plans in the session with their complete data.
-    
-    Returns all plan instances with their complete data as JSON.
+    """List all plans with their complete data as JSON.
     
     Returns:
-        ToolReturn with JSON string containing all plans from state
+        JSON string with all plans
+        
+    Example: list_plans()
     """
     import json
     
@@ -756,20 +742,16 @@ async def list_plans(ctx: RunContext[UnifiedDeps]) -> ToolReturn:
 async def get_plan_details(
     ctx: RunContext[UnifiedDeps],
     plan_identifier: str
-) -> str:
-    """Get detailed information about a plan including all steps.
-    
-    Returns the plan's complete step list with descriptions and statuses,
-    useful for reviewing progress or debugging.
+) -> ToolReturn:
+    """Get plan details including all steps with descriptions and statuses.
     
     Args:
         plan_identifier: Plan name or ID
         
     Returns:
-        Detailed plan information with all steps
+        Formatted plan details string
         
-    Example:
-        get_plan_details("Build House Plan")
+    Example: get_plan_details("Build App")
     """
     plan_id = resolve_plan_identifier(ctx.deps.state, plan_identifier)
     if not plan_id:
@@ -778,7 +760,7 @@ async def get_plan_details(
             f'Plan "{plan_identifier}" not found. Available plans:\n' +
             ('\n'.join(available) if available else 'No plans available')
         )
-        return error_msg
+        return ToolReturn(return_value=format_error_json('not_found', error_msg))
     
     plan = ctx.deps.state.plans[plan_id]
     
@@ -796,27 +778,26 @@ async def get_plan_details(
     if plan.metadata:
         result += f'\nMetadata: {plan.metadata}\n'
     
-    return result
+    return ToolReturn(return_value=result)
 
 
 async def delete_plan(
     ctx: RunContext[UnifiedDeps],
     plan_identifier: str
 ) -> ToolReturn:
-    """Remove a plan from the session.
-    
-    Uses StateDeltaEvent with JSON Patch 'remove' operation for efficient deletion.
+    """Delete a plan.
     
     Args:
-        ctx: The run context with agent state
-        plan_identifier: Plan name OR plan_id
+        plan_identifier: Plan name or ID
         
     Returns:
         Confirmation message
+        
+    Example: delete_plan("Build App")
     """
     plan_id = resolve_plan_identifier(ctx.deps.state, plan_identifier)
     if not plan_id:
-        return ToolReturn(return_value=f'Plan "{plan_identifier}" not found')
+        return ToolReturn(return_value=format_error_json('not_found', f'Plan "{plan_identifier}" not found'))
     
     plan_name = ctx.deps.state.plans[plan_id].name
     
@@ -867,7 +848,7 @@ async def run_aux_agent_streaming(
     user_message: str,
     send_stream: Any,
     run_input: RunAgentInput,
-    parent_deps: UnifiedDeps,
+    parent_ctx: RunContext[UnifiedDeps],
     aux_type: str = "",
 ) -> Any:
     """Run auxiliary agent with streaming events forwarded to frontend.
@@ -884,12 +865,14 @@ async def run_aux_agent_streaming(
         user_message: Message to send to the agent
         send_stream: Stream to forward events to (can be None)
         run_input: RunAgentInput from parent (ensures thread_id matches)
-        parent_deps: UnifiedDeps from parent agent (shared state and context)
+        parent_ctx: Parent RunContext (provides deps and context for sub-agent)
         aux_type: Type of auxiliary agent (e.g., 'image_generation', 'web_search')
         
     Returns:
         The final result from the agent run
     """
+    # Extract parent_deps from context
+    parent_deps = parent_ctx.deps
     # Known auxiliary types that should NOT inherit parent tools
     NO_TOOLS_AUX_TYPES = {'image_generation', 'web_search', 'code_execution', 'url_context'}
     
@@ -908,10 +891,49 @@ async def run_aux_agent_streaming(
                 # If it can't be converted to Context, skip
                 pass
 
+    # Inherit parent's message history and append new user message
+    # Use parent_ctx.messages (ModelMessages) with keep_recent_messages to properly limit
+    # while preserving tool call/result pairs, then convert to AG-UI format
+    
+    model_messages = parent_ctx.messages
+    
+    if model_messages:
+        logger.info(
+            f"Sub-agent '{aux_type}': using parent_ctx.messages ({len(model_messages)} ModelMessages), "
+            "applying keep_recent_messages to preserve tool call/result pairs"
+        )
+        processed_model_messages = await keep_recent_messages(parent_ctx, model_messages)
+        logger.info(
+            f"Sub-agent '{aux_type}': after keep_recent_messages, {len(processed_model_messages)} messages"
+        )
+        
+        # Convert ModelMessages to AG-UI format for RunAgentInput
+        # RunAgentInput.messages expects AG-UI messages (UserMessage/AssistantMessage) not ModelMessages
+        agui_messages = pydantic_to_agui_messages(processed_model_messages)
+        
+        logger.info(
+            f"Sub-agent '{aux_type}': converted {len(processed_model_messages)} ModelMessages "
+            f"to {len(agui_messages)} AG-UI messages"
+        )
+        
+        # Append new user message
+        agui_messages.append(UserMessage(id=str(uuid.uuid4()), content=user_message))
+        sub_messages = agui_messages
+        
+    else:
+        # No parent messages - just create new user message
+        sub_messages = [UserMessage(id=str(uuid.uuid4()), content=user_message)]
+        logger.info(f"Sub-agent '{aux_type}': no parent messages, starting with new user message")
+    
+    logger.info(
+        f"Sub-agent '{aux_type}': starting with {len(sub_messages)} AG-UI messages "
+        f"(includes new user message)"
+    )
+
     sub_run_input = RunAgentInput(
         thread_id=run_input.thread_id,  # Inherit thread_id from parent
         run_id=str(uuid.uuid4()),  # New run_id for this sub-agent
-        messages=[UserMessage(id=str(uuid.uuid4()), content=user_message)],
+        messages=sub_messages,  # Include parent message history + new message
         state=run_input.state or {},
         context=context_items,  # Context items for RunAgentInput
         tools=tools,
@@ -924,26 +946,6 @@ async def run_aux_agent_streaming(
     # 2. Sub-agent can access workspace files (requires user_id)
     # 3. Sub-agent can access organization/team context
     # 4. State mutations are immediately visible to both agents
-    sub_deps = UnifiedDeps(
-        state=parent_deps.state,  # Share the same state instance (reference, not copy)
-        send_stream=None,  # Don't use send_stream in deps (we handle it ourselves)
-        adapter=None,
-        # Share all context fields from parent
-        user_id=parent_deps.user_id,
-        organization_id=parent_deps.organization_id,
-        team_id=parent_deps.team_id,
-        session_id=parent_deps.session_id,
-        auth_session_id=parent_deps.auth_session_id,
-        agent_id=parent_deps.agent_id,
-        model_id=parent_deps.model_id,
-        broadcast_func=parent_deps.broadcast_func,
-        agent_type=parent_deps.agent_type,
-        agent_info=parent_deps.agent_info,
-        agui_context=parent_deps.agui_context,  # Pass context for @agent.instructions decorator
-        # Graph metadata (typically None for auxiliary agents)
-        graph_id=parent_deps.graph_id,
-        graph_name=parent_deps.graph_name,
-    )
     
     # Create encoder for activity events
     encoder = EventEncoder(accept=SSE_CONTENT_TYPE)
@@ -975,8 +977,10 @@ async def run_aux_agent_streaming(
         'RUN_ERROR',
     }
     
-    # Capture result via callback
+    # Capture result and error via callbacks
     result_holder = [None]
+    error_holder = [None]  # Track if an error occurred
+    
     def capture_result(result):
         result_holder[0] = result
     
@@ -991,7 +995,7 @@ async def run_aux_agent_streaming(
         async for event in run_ag_ui(
             agent=aux_agent,
             run_input=sub_run_input,
-            deps=sub_deps,
+            deps=parent_ctx.deps,
             on_complete=capture_result,
         ):
             # If stream is closed, stop processing immediately
@@ -1060,6 +1064,38 @@ async def run_aux_agent_streaming(
                         )))
                         consecutive_failures = 0
                     
+                    # Convert run lifecycle events to activity events
+                    elif event_type == 'RUN_FINISHED' and event_data:
+                        # Update all active activities to finished status
+                        for activity_id in list(active_activity_ids):
+                            await send_stream.send(encoder.encode(ActivityDeltaEvent(
+                                messageId=activity_id,
+                                activityType="aux_agent_message",
+                                patch=[{"op": "replace", "path": "/status", "value": "finished"}],
+                            )))
+                        active_activity_ids.clear()
+                        consecutive_failures = 0
+                    
+                    elif event_type == 'RUN_ERROR' and event_data:
+                        # Update all active activities to error status with error message
+                        # RUN_ERROR events have the error in the 'message' field
+                        error_message = event_data.get('message') or event_data.get('error', 'An error occurred')
+                        
+                        # Store error message for tool to return
+                        error_holder[0] = error_message
+                        
+                        for activity_id in list(active_activity_ids):
+                            await send_stream.send(encoder.encode(ActivityDeltaEvent(
+                                messageId=activity_id,
+                                activityType="aux_agent_message",
+                                patch=[
+                                    {"op": "replace", "path": "/status", "value": "error"},
+                                    {"op": "add", "path": "/error", "value": error_message},
+                                ],
+                            )))
+                        active_activity_ids.clear()
+                        consecutive_failures = 0
+                    
                 except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                     # Stream definitely closed - stop immediately
                     logger.info(f"Auxiliary agent '{aux_type}' stream connection closed")
@@ -1093,6 +1129,12 @@ async def run_aux_agent_streaming(
         # Re-raise to propagate cancellation to parent
         raise
     
+    # If an error occurred during the run, return a dict with the error
+    # The error message was already sent to the frontend via ActivityDeltaEvent
+    if error_holder[0] is not None:
+        logger.error(f"Auxiliary agent '{aux_type}' failed: {error_holder[0]}")
+        return {"error": error_holder[0]}
+    
     return result_holder[0]
 
 
@@ -1102,28 +1144,17 @@ async def generate_images(
     ctx: RunContext[UnifiedDeps], 
     prompt: str, 
     num_images: int = 1
-) -> list[str]:
-    """Generate images based on a text prompt using AI and upload to Firebase Storage.
-    
-    This function uses a configured auxiliary agent for image generation.
-    The auxiliary agent must be configured in the main agent's metadata:
-    
-    {
-        "auxiliary_agents": {
-            "image_generation": { "agent_type": "your-image-agent" }
-        }
-    }
+) -> ToolReturn:
+    """Generate images from text prompt using AI. Returns list of image URLs.
     
     Args:
-        ctx: The run context with agent state and context
-        prompt: Text description of the images to generate
-        num_images: Number of images to generate (default: 1)
+        prompt: Image description
+        num_images: Number of images (default: 1)
         
     Returns:
-        List of public URLs pointing to the uploaded images in Firebase Storage
+        List of image URLs
         
-    Raises:
-        ValueError: If no auxiliary agent is configured for image_generation
+    Example: generate_images(prompt="A sunset over mountains", num_images=2)
     """
     # Get agent context
     organization_id, team_id, agent_type, agent_info = _get_agent_context(ctx)
@@ -1144,7 +1175,7 @@ async def generate_images(
             '{"auxiliary_agents": {"image_generation": {"agent_type": "your-image-agent"}}}'
         )
         logger.error(error_msg)
-        return [error_msg]  # Return list since this function returns list[str]
+        return ToolReturn(return_value=[format_error_json('configuration_error', error_msg)])
     
     try:
         # Use the auxiliary agent to generate images
@@ -1161,7 +1192,7 @@ async def generate_images(
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
             logger.error(error_msg)
-            return [error_msg]  # Return list since this function returns list[str]
+            return [format_error_json('configuration_error', error_msg)]  # Return list since this function returns list[str]
 
         # Run with streaming - events are forwarded to frontend
         # Pass parent deps to share state and all context (user_id, organization_id, etc.)
@@ -1170,9 +1201,13 @@ async def generate_images(
             user_message=user_message,
             send_stream=send_stream,
             run_input=run_input,
-            parent_deps=deps,
+            parent_ctx=ctx,
             aux_type='image_generation',
         )
+        
+        # If result is a dict with 'error', the agent failed
+        if isinstance(result, dict) and 'error' in result:
+            return ToolReturn(return_value=[format_error_json('execution_error', f"Image generation failed: {result['error']}", {"agent_error": result['error']})])
                 
         # Upload each BinaryImage to Firebase Storage
         uploaded_urls = []
@@ -1194,18 +1229,18 @@ async def generate_images(
                 type(result.response),
                 getattr(result.response, 'text', str(result.response))[:500] if result.response else 'None'
             )
-            return []
+            return ToolReturn(return_value=[])
         
         # Ensure images is iterable
         if not hasattr(images, '__iter__'):
             logger.warning("Images attribute is not iterable: %s", type(images))
-            return []
+            return ToolReturn(return_value=[])
         
         images_list = list(images) if images else []
         
         if not images_list:
             logger.warning("Auxiliary agent returned empty images list")
-            return []
+            return ToolReturn(return_value=[])
         
         logger.info("Received %d images from auxiliary agent", len(images_list))
         
@@ -1215,7 +1250,7 @@ async def generate_images(
         
         if not user_id:
             logger.error("Cannot generate images: user_id is required for workspace storage")
-            return ["Error: User authentication required for image generation"]
+            return ToolReturn(return_value=[format_error_json('authentication_error', "User authentication required for image generation")])
         
         for idx, image in enumerate(images_list):
             if isinstance(image, BinaryImage):
@@ -1272,36 +1307,26 @@ async def generate_images(
                 logger.warning("Unexpected image type: %s", type(image))
         
         if not uploaded_urls:
-            return []
+            return ToolReturn(return_value=[])
         
-        return uploaded_urls
+        return ToolReturn(return_value=uploaded_urls)
         
     except Exception as e:
         error_msg = f"Image generation failed: {str(e)}"
         logger.exception("Image generation failed: %s", e)
-        return [error_msg]  # Return list since this function returns list[str]
+        return ToolReturn(return_value=[format_error_json('execution_error', error_msg, {"exception": str(e)})])
 
 
-async def web_search(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
-    """Search the web for information using a configured auxiliary agent.
-    
-    The auxiliary agent must be configured in the main agent's metadata:
-    
-    {
-        "auxiliary_agents": {
-            "web_search": { "agent_type": "your-search-agent" }
-        }
-    }
+async def web_search(ctx: RunContext[UnifiedDeps], prompt: str) -> ToolReturn:
+    """Search the web for information. Returns search results as text.
     
     Args:
-        ctx: The run context with agent state and context
         prompt: Search query
         
     Returns:
-        Search results as text
+        Search results text
         
-    Raises:
-        ValueError: If no auxiliary agent is configured for web_search
+    Example: web_search(prompt="latest AI developments 2024")
     """
     # Get agent context
     organization_id, team_id, agent_type, agent_info = _get_agent_context(ctx)
@@ -1322,7 +1347,7 @@ async def web_search(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
             '{"auxiliary_agents": {"web_search": {"agent_type": "your-search-agent"}}}'
         )
         logger.error(error_msg)
-        return error_msg  # Return string since this function returns str
+        return ToolReturn(return_value=format_error_json('configuration_error', error_msg))
     
     try:
         logger.info("Running auxiliary agent for web search with prompt: %s", prompt[:100])
@@ -1336,7 +1361,7 @@ async def web_search(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
             logger.error(error_msg)
-            return error_msg  # Return string since this function returns str
+            return format_error_json('configuration_error', error_msg)  # Return string since this function returns str
 
         # Run with streaming - events are forwarded to frontend
         # Pass parent deps to share state and all context (user_id, organization_id, etc.)
@@ -1345,37 +1370,31 @@ async def web_search(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
             user_message=prompt,
             send_stream=send_stream,
             run_input=run_input,
-            parent_deps=deps,
+            parent_ctx=ctx,
             aux_type='web_search',
         )
         
-        return result.response.text if result and result.response else "Web search completed (no results)"
+        # If result is a dict with 'error', the agent failed
+        if isinstance(result, dict) and 'error' in result:
+            return ToolReturn(return_value=format_error_json('execution_error', f"Web search failed: {result['error']}", {"agent_error": result['error']}))
+        
+        return ToolReturn(return_value=result.response.text if result and result.response else "Web search completed (no results)")
     except Exception as e:
         error_msg = f"Web search failed: {str(e)}"
         logger.exception("Web search failed: %s", e)
-        return error_msg  # Return string since this function returns str
+        return ToolReturn(return_value=format_error_json('execution_error', error_msg, {"exception": str(e)}))
 
 
-async def code_execution(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
-    """Execute code using a configured auxiliary agent.
-    
-    The auxiliary agent must be configured in the main agent's metadata:
-    
-    {
-        "auxiliary_agents": {
-            "code_execution": { "agent_type": "your-code-agent" }
-        }
-    }
+async def code_execution(ctx: RunContext[UnifiedDeps], prompt: str) -> ToolReturn:
+    """Execute code and return results. Uses auxiliary agent for code execution.
     
     Args:
-        ctx: The run context with agent state and context
-        prompt: Code execution prompt
+        prompt: Code to execute or execution instructions
         
     Returns:
         Execution results as text
         
-    Raises:
-        ValueError: If no auxiliary agent is configured for code_execution
+    Example: code_execution(prompt="Calculate fibonacci(10)")
     """
     # Get agent context
     organization_id, team_id, agent_type, agent_info = _get_agent_context(ctx)
@@ -1396,7 +1415,7 @@ async def code_execution(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
             '{"auxiliary_agents": {"code_execution": {"agent_type": "your-code-agent"}}}'
         )
         logger.error(error_msg)
-        return error_msg  # Return string since this function returns str
+        return ToolReturn(return_value=format_error_json('configuration_error', error_msg))
     
     try:
         user_message = f"Execute this code and return the result: {prompt}"
@@ -1412,7 +1431,7 @@ async def code_execution(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
             logger.error(error_msg)
-            return error_msg  # Return string since this function returns str
+            return ToolReturn(return_value=format_error_json('configuration_error', error_msg))
 
         # Run with streaming - events are forwarded to frontend
         # Pass parent deps to share state and all context (user_id, organization_id, etc.)
@@ -1421,37 +1440,31 @@ async def code_execution(ctx: RunContext[UnifiedDeps], prompt: str) -> str:
             user_message=user_message,
             send_stream=send_stream,
             run_input=run_input,
-            parent_deps=deps,
+            parent_ctx=ctx,
             aux_type='code_execution',
         )
         
-        return result.response.text if result and result.response else "Code execution completed (no output)"
+        # If result is a dict with 'error', the agent failed
+        if isinstance(result, dict) and 'error' in result:
+            return ToolReturn(return_value=format_error_json('execution_error', f"Code execution failed: {result['error']}", {"agent_error": result['error']}))
+        
+        return ToolReturn(return_value=result.response.text if result and result.response else "Code execution completed (no output)")
     except Exception as e:
         error_msg = f"Code execution failed: {str(e)}"
         logger.exception("Code execution failed: %s", e)
-        return error_msg  # Return string since this function returns str
+        return ToolReturn(return_value=format_error_json('execution_error', error_msg, {"exception": str(e)}))
 
 
-async def url_context(ctx: RunContext[UnifiedDeps], urls: list[str]) -> str:
-    """Load content from URLs using a configured auxiliary agent.
-    
-    The auxiliary agent must be configured in the main agent's metadata:
-    
-    {
-        "auxiliary_agents": {
-            "url_context": { "agent_type": "your-url-agent" }
-        }
-    }
+async def url_context(ctx: RunContext[UnifiedDeps], urls: list[str]) -> ToolReturn:
+    """Load and extract content from URLs. Returns text content from web pages.
     
     Args:
-        ctx: The run context with agent state and context
-        urls: List of URLs to load content from
+        urls: List of URLs to load
         
     Returns:
-        URL content as text
+        Extracted text content
         
-    Raises:
-        ValueError: If no auxiliary agent is configured for url_context
+    Example: url_context(urls=["https://example.com/article"])
     """
     # Get agent context
     organization_id, team_id, agent_type, agent_info = _get_agent_context(ctx)
@@ -1472,7 +1485,7 @@ async def url_context(ctx: RunContext[UnifiedDeps], urls: list[str]) -> str:
             '{"auxiliary_agents": {"url_context": {"agent_type": "your-url-agent"}}}'
         )
         logger.error(error_msg)
-        return error_msg  # Return string since this function returns str
+        return ToolReturn(return_value=format_error_json('configuration_error', error_msg))
     
     try:
         # Format URLs as a prompt
@@ -1490,7 +1503,7 @@ async def url_context(ctx: RunContext[UnifiedDeps], urls: list[str]) -> str:
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
             logger.error(error_msg)
-            return error_msg  # Return string since this function returns str
+            return ToolReturn(return_value=format_error_json('configuration_error', error_msg))
 
         # Run with streaming - events are forwarded to frontend
         # Pass parent deps to share state and all context (user_id, organization_id, etc.)
@@ -1499,38 +1512,34 @@ async def url_context(ctx: RunContext[UnifiedDeps], urls: list[str]) -> str:
             user_message=user_message,
             send_stream=send_stream,
             run_input=run_input,
-            parent_deps=deps,
+            parent_ctx=ctx,
             aux_type='url_context',
         )
         
-        return result.response.text if result and result.response else "URL context loaded (no content)"
+        # If result is a dict with 'error', the agent failed
+        if isinstance(result, dict) and 'error' in result:
+            return ToolReturn(return_value=format_error_json('execution_error', f"URL context loading failed: {result['error']}", {"agent_error": result['error']}))
+        
+        return ToolReturn(return_value=result.response.text if result and result.response else "URL context loaded (no content)")
     except Exception as e:
         error_msg = f"URL context failed: {str(e)}"
         logger.exception("URL context failed: %s", e)
-        return error_msg  # Return string since this function returns str
+        return ToolReturn(return_value=format_error_json('execution_error', error_msg, {"exception": str(e)}))
 
 
 # ========== Custom Auxiliary Agent Tool ==========
 
-async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) -> str:
-    """Call a custom auxiliary agent with a specific prompt.
-    
-    This tool allows you to delegate tasks to specialized auxiliary agents
-    that have been configured for this agent. Each auxiliary agent has
-    specific capabilities described in the agent instructions.
-    
-    Unlike built-in auxiliary agents (image_generation, web_search, etc.),
-    custom auxiliary agents are user-defined and can handle any specialized task.
+async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) -> ToolReturn:
+    """Call a custom auxiliary agent to delegate specialized tasks.
     
     Args:
-        agent_key: The unique key of the auxiliary agent to call (e.g., "research_assistant")
-        prompt: The prompt/task to send to the auxiliary agent
+        agent_key: Agent identifier (e.g., "databricks_expert", "research_assistant")
+        prompt: Task or question for the agent
         
     Returns:
-        Response from the auxiliary agent, or an error message if the agent is not available
+        Agent response text
         
-    Example:
-        call_agent(agent_key="research_assistant", prompt="Find papers on transformer architectures")
+    Example: call_agent(agent_key="databricks_expert", prompt="List all clusters")
     """
     # Get agent context
     organization_id, team_id, agent_type, agent_info = _get_agent_context(ctx)
@@ -1538,18 +1547,21 @@ async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) 
     # Validate that custom auxiliary agents are configured
     custom_agents = get_custom_auxiliary_agents_config(agent_info.get('metadata', {}))
     if not custom_agents:
-        return (
+        return ToolReturn(return_value=format_error_json(
+            'configuration_error',
             f"No custom auxiliary agents are configured for agent '{agent_type}'. "
             "Configure them in the agent's metadata under auxiliary_agents.custom."
-        )
+        ))
     
     # Check if the requested agent_key exists
     agent_keys = [a['key'] for a in custom_agents]
     if agent_key not in agent_keys:
-        return (
+        return ToolReturn(return_value=format_error_json(
+            'not_found',
             f"Custom auxiliary agent '{agent_key}' not found. "
-            f"Available agents: {', '.join(agent_keys)}"
-        )
+            f"Available agents: {', '.join(agent_keys)}",
+            {"available_agents": agent_keys}
+        ))
     
     # Get the custom auxiliary agent
     aux_agent = await get_custom_auxiliary_agent(
@@ -1561,10 +1573,11 @@ async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) 
     )
     
     if aux_agent is None:
-        return (
+        return ToolReturn(return_value=format_error_json(
+            'configuration_error',
             f"Custom auxiliary agent '{agent_key}' could not be loaded. "
             "The agent may have been deleted or is not properly configured."
-        )
+        ))
     
     try:
         logger.info(
@@ -1583,7 +1596,7 @@ async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) 
         if run_input is None:
             error_msg = "No run_input available in deps - streaming requires run_input from adapter"
             logger.error(error_msg)
-            return error_msg
+            return ToolReturn(return_value=format_error_json('configuration_error', error_msg))
         
         # Run with streaming - events are forwarded to frontend
         # Custom aux agents can inherit parent tools (unlike built-in types)
@@ -1593,21 +1606,29 @@ async def call_agent(ctx: RunContext[UnifiedDeps], agent_key: str, prompt: str) 
             user_message=prompt,
             send_stream=send_stream,
             run_input=run_input,
-            parent_deps=deps,
+            parent_ctx=ctx,
             aux_type=f"custom:{agent_key}",  # Use custom: prefix to allow tool inheritance
         )
+        
+        # If result is a dict with 'error', the agent failed
+        if isinstance(result, dict) and 'error' in result:
+            return ToolReturn(return_value=format_error_json(
+                'execution_error',
+                f"Custom auxiliary agent '{agent_key}' failed with error: {result['error']}",
+                {"agent_error": result['error'], "agent_key": agent_key}
+            ))
         
         response_text = result.response.text if result and result.response else ""
         
         if not response_text:
-            return f"Custom auxiliary agent '{agent_key}' completed but returned no response."
+            return ToolReturn(return_value=f"Custom auxiliary agent '{agent_key}' completed but returned no response.")
         
-        return response_text
+        return ToolReturn(return_value=response_text)
         
     except Exception as e:
         error_msg = f"Custom auxiliary agent '{agent_key}' failed: {str(e)}"
         logger.exception("Custom auxiliary agent '%s' failed: %s", agent_key, e)
-        return error_msg
+        return ToolReturn(return_value=format_error_json('execution_error', error_msg, {"exception": str(e), "agent_key": agent_key}))
 
 
 # Multi-agent graph tools moved to graph_tools.py

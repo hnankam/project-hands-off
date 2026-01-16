@@ -80,6 +80,7 @@ def create_data_quality_monitor(
     Returns:
         CreateMonitorResponse with created monitor
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.dataquality import Monitor
@@ -92,6 +93,11 @@ def create_data_quality_monitor(
     return CreateMonitorResponse(
         monitor=_convert_to_monitor(monitor),
     )
+    except Exception as e:
+        return CreateMonitorResponse(
+            monitor=None,
+            error_message=f"Failed to create data quality monitor: {str(e)}",
+        )
 
 
 def get_data_quality_monitor(
@@ -99,7 +105,7 @@ def get_data_quality_monitor(
     token_credential_key: str,
     object_type: str,
     object_id: str,
-) -> DataQualityMonitorModel:
+) -> Optional[DataQualityMonitorModel]:
     """
     Get a data quality monitor.
     
@@ -114,6 +120,7 @@ def get_data_quality_monitor(
     Returns:
         DataQualityMonitorModel with monitor details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     monitor = client.data_quality.get_monitor(
@@ -122,6 +129,9 @@ def get_data_quality_monitor(
     )
     
     return _convert_to_monitor(monitor)
+    except Exception as e:
+        print(f"Error getting data quality monitor: {e}")
+        return None
 
 
 def update_data_quality_monitor(
@@ -148,6 +158,7 @@ def update_data_quality_monitor(
     Returns:
         UpdateMonitorResponse with updated monitor
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.dataquality import Monitor
@@ -165,6 +176,11 @@ def update_data_quality_monitor(
     return UpdateMonitorResponse(
         monitor=_convert_to_monitor(monitor),
     )
+    except Exception as e:
+        return UpdateMonitorResponse(
+            monitor=None,
+            error_message=f"Failed to update data quality monitor: {str(e)}",
+        )
 
 
 def delete_data_quality_monitor(
@@ -195,6 +211,7 @@ def delete_data_quality_monitor(
         - Dashboard is NOT deleted
         - Manual cleanup required if desired
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.data_quality.delete_monitor(
@@ -206,6 +223,12 @@ def delete_data_quality_monitor(
         object_type=object_type,
         object_id=object_id,
     )
+    except Exception as e:
+        return DeleteMonitorResponse(
+            object_type=object_type,
+            object_id=object_id,
+            error_message=f"Failed to delete data quality monitor: {str(e)}",
+        )
 
 
 def list_data_quality_monitors(
@@ -233,6 +256,7 @@ def list_data_quality_monitors(
     Note:
         This operation may be unimplemented in some SDK versions.
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     monitors = []
@@ -252,6 +276,12 @@ def list_data_quality_monitors(
         monitors=monitors,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListMonitorsResponse(
+            monitors=[],
+            next_page_token=None,
+            error_message=f"Failed to list data quality monitors: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -281,6 +311,7 @@ def create_data_quality_refresh(
     Returns:
         CreateRefreshResponse with created refresh
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.dataquality import Refresh
@@ -300,6 +331,11 @@ def create_data_quality_refresh(
     return CreateRefreshResponse(
         refresh=_convert_to_refresh(refresh),
     )
+    except Exception as e:
+        return CreateRefreshResponse(
+            refresh=None,
+            error_message=f"Failed to create data quality refresh: {str(e)}",
+        )
 
 
 def get_data_quality_refresh(
@@ -308,7 +344,7 @@ def get_data_quality_refresh(
     object_type: str,
     object_id: str,
     refresh_id: int,
-) -> DataQualityRefreshModel:
+) -> Optional[DataQualityRefreshModel]:
     """
     Get a data quality refresh.
     
@@ -324,6 +360,7 @@ def get_data_quality_refresh(
     Returns:
         DataQualityRefreshModel with refresh details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     refresh = client.data_quality.get_refresh(
@@ -333,6 +370,9 @@ def get_data_quality_refresh(
     )
     
     return _convert_to_refresh(refresh)
+    except Exception as e:
+        print(f"Error getting data quality refresh: {e}")
+        return None
 
 
 def list_data_quality_refreshes(
@@ -359,6 +399,7 @@ def list_data_quality_refreshes(
     Returns:
         ListRefreshesResponse with refreshes
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     refreshes = []
@@ -376,6 +417,12 @@ def list_data_quality_refreshes(
         refreshes=refreshes,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListRefreshesResponse(
+            refreshes=[],
+            next_page_token=None,
+            error_message=f"Failed to list data quality refreshes: {str(e)}",
+        )
 
 
 def cancel_data_quality_refresh(
@@ -401,6 +448,7 @@ def cancel_data_quality_refresh(
     Returns:
         CancelRefreshResponse confirming cancellation
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.data_quality.cancel_refresh(
@@ -412,4 +460,9 @@ def cancel_data_quality_refresh(
     return CancelRefreshResponse(
         refresh_id=refresh_id,
     )
+    except Exception as e:
+        return CancelRefreshResponse(
+            refresh_id=refresh_id,
+            error_message=f"Failed to cancel data quality refresh: {str(e)}",
+        )
 

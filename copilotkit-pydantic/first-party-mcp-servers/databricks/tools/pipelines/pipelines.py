@@ -122,6 +122,7 @@ def list_pipelines(
         - has_more=True indicates more results available
         - Filter expression applies consistently across all pages
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     response = client.pipelines.list_pipelines(
@@ -147,13 +148,19 @@ def list_pipelines(
         pipelines=pipelines,
         has_more=has_more,
     )
+    except Exception as e:
+        return ListPipelinesResponse(
+            pipelines=[],
+            has_more=False,
+            error_message=f"Failed to list pipelines: {str(e)}",
+        )
 
 
 def get_pipeline(
     host_credential_key: str,
     token_credential_key: str,
     pipeline_id: str,
-) -> PipelineInfoModel:
+) -> Optional[PipelineInfoModel]:
     """
     Get Delta Live Tables pipeline details.
     
@@ -166,13 +173,19 @@ def get_pipeline(
         pipeline_id: ID of the pipeline
         
     Returns:
-        PipelineInfoModel with pipeline details
+        PipelineInfoModel with pipeline details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     pipeline = client.pipelines.get(pipeline_id=pipeline_id)
     
     return _convert_to_pipeline_info(pipeline)
+    except Exception as e:
+        return PipelineInfoModel(
+            pipeline_id=pipeline_id,
+            error_message=f"Failed to get pipeline: {str(e)}",
+        )
 
 
 def create_pipeline(
@@ -220,6 +233,7 @@ def create_pipeline(
     Returns:
         CreatePipelineResponse with pipeline ID
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.pipelines import PipelineLibrary, NotebookLibrary, PipelineCluster
@@ -262,6 +276,11 @@ def create_pipeline(
     return CreatePipelineResponse(
         pipeline_id=pipeline.pipeline_id,
     )
+    except Exception as e:
+        return CreatePipelineResponse(
+            pipeline_id=None,
+            error_message=f"Failed to create pipeline: {str(e)}",
+        )
 
 
 def update_pipeline(
@@ -309,6 +328,7 @@ def update_pipeline(
     Returns:
         UpdatePipelineResponse confirming update
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert libraries if provided
@@ -348,6 +368,10 @@ def update_pipeline(
     )
     
     return UpdatePipelineResponse()
+    except Exception as e:
+        return UpdatePipelineResponse(
+            error_message=f"Failed to update pipeline: {str(e)}",
+        )
 
 
 def delete_pipeline(
@@ -369,6 +393,7 @@ def delete_pipeline(
     Returns:
         DeletePipelineResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.pipelines.delete(pipeline_id=pipeline_id)
@@ -376,6 +401,11 @@ def delete_pipeline(
     return DeletePipelineResponse(
         pipeline_id=pipeline_id,
     )
+    except Exception as e:
+        return DeletePipelineResponse(
+            pipeline_id=pipeline_id,
+            error_message=f"Failed to delete pipeline: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -407,6 +437,7 @@ def start_pipeline_update(
     Returns:
         StartUpdateResponse with update ID
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     update = client.pipelines.start_update(
@@ -419,6 +450,11 @@ def start_pipeline_update(
     return StartUpdateResponse(
         update_id=update.update_id,
     )
+    except Exception as e:
+        return StartUpdateResponse(
+            update_id=None,
+            error_message=f"Failed to start pipeline update: {str(e)}",
+        )
 
 
 def stop_pipeline(
@@ -440,6 +476,7 @@ def stop_pipeline(
     Returns:
         StopPipelineResponse confirming stop
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.pipelines.stop(pipeline_id=pipeline_id)
@@ -447,6 +484,11 @@ def stop_pipeline(
     return StopPipelineResponse(
         pipeline_id=pipeline_id,
     )
+    except Exception as e:
+        return StopPipelineResponse(
+            pipeline_id=pipeline_id,
+            error_message=f"Failed to stop pipeline: {str(e)}",
+        )
 
 
 def reset_pipeline(
@@ -468,6 +510,7 @@ def reset_pipeline(
     Returns:
         ResetPipelineResponse confirming reset
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.pipelines.reset(pipeline_id=pipeline_id)
@@ -475,6 +518,11 @@ def reset_pipeline(
     return ResetPipelineResponse(
         pipeline_id=pipeline_id,
     )
+    except Exception as e:
+        return ResetPipelineResponse(
+            pipeline_id=pipeline_id,
+            error_message=f"Failed to reset pipeline: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -512,6 +560,7 @@ def list_pipeline_updates(
         - Set page=0 for first results, increment page by 1 for subsequent calls
         - has_more=True indicates more results available
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     response = client.pipelines.list_updates(
@@ -537,6 +586,12 @@ def list_pipeline_updates(
         updates=updates,
         has_more=has_more,
     )
+    except Exception as e:
+        return ListUpdatesResponse(
+            updates=[],
+            has_more=False,
+            error_message=f"Failed to list pipeline updates: {str(e)}",
+        )
 
 
 def get_pipeline_update(
@@ -544,7 +599,7 @@ def get_pipeline_update(
     token_credential_key: str,
     pipeline_id: str,
     update_id: str,
-) -> UpdateInfoModel:
+) -> Optional[UpdateInfoModel]:
     """
     Get details of a specific pipeline update.
     
@@ -558,8 +613,9 @@ def get_pipeline_update(
         update_id: ID of the update
         
     Returns:
-        UpdateInfoModel with update details
+        UpdateInfoModel with update details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     update = client.pipelines.get_update(
@@ -568,4 +624,10 @@ def get_pipeline_update(
     )
     
     return _convert_to_update_info(update)
+    except Exception as e:
+        return UpdateInfoModel(
+            pipeline_id=pipeline_id,
+            update_id=update_id,
+            error_message=f"Failed to get pipeline update: {str(e)}",
+        )
 

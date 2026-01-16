@@ -144,6 +144,7 @@ def list_external_lineage(
     Returns:
         ListExternalLineageResponse with list of lineage relationships
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import LineageDirection
@@ -167,7 +168,14 @@ def list_external_lineage(
     return ListExternalLineageResponse(
         lineage_relationships=relationships,
         count=len(relationships),
-        next_page_token=None,  # SDK handles pagination internally
+            has_more=False,  # SDK handles pagination internally
+        )
+    except Exception as e:
+        return ListExternalLineageResponse(
+            lineage_relationships=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list external lineage: {str(e)}",
     )
 
 
@@ -202,6 +210,7 @@ def create_external_lineage(
     Returns:
         CreateExternalLineageResponse with created relationship
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import (
@@ -237,6 +246,11 @@ def create_external_lineage(
     return CreateExternalLineageResponse(
         relationship=_convert_relationship_to_model(relationship),
     )
+    except Exception as e:
+        return CreateExternalLineageResponse(
+            relationship=None,
+            error_message=f"Failed to create external lineage: {str(e)}",
+        )
 
 
 def delete_external_lineage(
@@ -262,6 +276,7 @@ def delete_external_lineage(
     Returns:
         DeleteExternalLineageResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import DeleteRequestExternalLineage
@@ -285,6 +300,12 @@ def delete_external_lineage(
         source=_object_to_string(source),
         target=_object_to_string(target),
     )
+    except Exception as e:
+        return DeleteExternalLineageResponse(
+            source=_object_to_string(source),
+            target=_object_to_string(target),
+            error_message=f"Failed to delete external lineage: {str(e)}",
+        )
 
 
 def update_external_lineage(
@@ -316,6 +337,7 @@ def update_external_lineage(
     Returns:
         UpdateExternalLineageResponse with updated relationship
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import (
@@ -352,4 +374,9 @@ def update_external_lineage(
     return UpdateExternalLineageResponse(
         relationship=_convert_relationship_to_model(relationship),
     )
+    except Exception as e:
+        return UpdateExternalLineageResponse(
+            relationship=None,
+            error_message=f"Failed to update external lineage: {str(e)}",
+        )
 

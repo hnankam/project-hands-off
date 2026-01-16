@@ -20,30 +20,65 @@ def list_notebooks(
     host_credential_key: str, 
     token_credential_key: str, 
     path: str = "/",
-    recursive: bool = False
+    recursive: bool = False,
+    limit: int = 25,
+    page: int = 0,
 ) -> ListNotebooksResponse:
     """
-    List all notebooks in a workspace directory.
+    Retrieve a paginated list of notebooks in a workspace directory.
+    
+    This function returns notebook metadata for accessible notebooks at the specified path.
+    Use this to discover available notebooks, check notebook languages, or list data assets.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token_credential_key: Credential key for access token
-        path: The workspace path to list notebooks from (default: /)
-        recursive: Whether to recursively list notebooks in subdirectories (default: False)
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        path: The workspace path to list notebooks from. Default: / (root)
+        recursive: Whether to recursively list notebooks in subdirectories. Default: False
+        limit: Number of notebooks to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
     
     Returns:
-        ListNotebooksResponse containing list of notebooks with their metadata
+        ListNotebooksResponse containing:
+        - notebooks: List of NotebookInfo objects with notebook metadata
+        - count: Integer number of notebooks returned in this page (0 to limit)
+        - has_more: Boolean indicating if additional notebooks exist beyond this page
+        
+    Pagination:
+        - Returns up to `limit` notebooks per call
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available
+        - recursive flag applies consistently across all pages
     """
+    from itertools import islice
+    
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     notebooks = []
-    try:
+    has_more = False
+    
         # Use the SDK's built-in recursive parameter
         items = client.workspace.list(path, recursive=recursive)
+        
+        # Calculate pagination
+        skip = page * limit
+        collected = 0
+        skipped = 0
         
         for item in items:
             # Filter for notebooks only
             if item.object_type and item.object_type.value == 'NOTEBOOK':
+                # Skip items for previous pages
+                if skipped < skip:
+                    skipped += 1
+                    continue
+                
+                # Check if we've collected enough
+                if collected >= limit:
+                    has_more = True
+                    break
+                
                 item_dict = item.as_dict()
                 notebooks.append(NotebookInfo(
                     path=item_dict.get('path'),
@@ -55,16 +90,24 @@ def list_notebooks(
                     created_at=item_dict.get('created_at'),
                     modified_at=item_dict.get('modified_at')
                 ))
-    except Exception:
-        # Path doesn't exist or no permission
-        pass
+                collected += 1
     
     return ListNotebooksResponse(
         path=path,
         recursive=recursive,
         notebooks=notebooks,
-        count=len(notebooks)
+        count=len(notebooks),
+        has_more=has_more,
     )
+    except Exception as e:
+        return ListNotebooksResponse(
+            path=path,
+            recursive=recursive,
+            notebooks=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list notebooks: {str(e)}",
+        )
 
 
 def get_notebook(host_credential_key: str, token_credential_key: str, path: str, format: str = "SOURCE") -> NotebookExportResponse:
@@ -80,6 +123,7 @@ def get_notebook(host_credential_key: str, token_credential_key: str, path: str,
     Returns:
         NotebookExportResponse with decoded content as string and metadata
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Map string format to ExportFormat enum
@@ -118,6 +162,14 @@ def get_notebook(host_credential_key: str, token_credential_key: str, path: str,
         format=format.upper(),
         file_type=file_type
     )
+    except Exception as e:
+        return NotebookExportResponse(
+            content=None,
+            path=path,
+            format=format.upper(),
+            file_type=None,
+            error_message=f"Failed to get notebook: {str(e)}",
+        )
 
 
 def import_notebook(
@@ -144,6 +196,7 @@ def import_notebook(
     Returns:
         NotebookImportResponse with import status and metadata
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Map string language to Language enum
@@ -185,6 +238,15 @@ def import_notebook(
         status="imported",
         overwritten=overwrite
     )
+    except Exception as e:
+        return NotebookImportResponse(
+            path=None,
+            language=None,
+            format=None,
+            status="failed",
+            overwritten=False,
+            error_message=f"Failed to import notebook: {str(e)}",
+        )
 
 
 def delete_notebook(host_credential_key: str, token_credential_key: str, path: str, recursive: bool = False) -> NotebookDeleteResponse:
@@ -200,6 +262,7 @@ def delete_notebook(host_credential_key: str, token_credential_key: str, path: s
     Returns:
         NotebookDeleteResponse with deletion status
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.workspace.delete(path=path, recursive=recursive)
@@ -209,6 +272,13 @@ def delete_notebook(host_credential_key: str, token_credential_key: str, path: s
         status="deleted",
         recursive=recursive
     )
+    except Exception as e:
+        return NotebookDeleteResponse(
+            path=None,
+            status="failed",
+            recursive=recursive,
+            error_message=f"Failed to delete notebook: {str(e)}",
+        )
 
 
 def create_notebook(
@@ -229,6 +299,7 @@ def create_notebook(
     Returns:
         NotebookCreateResponse with creation status
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Map string language to Language enum
@@ -255,6 +326,13 @@ def create_notebook(
         language=language.upper(),
         status="created"
     )
+    except Exception as e:
+        return NotebookCreateResponse(
+            path=None,
+            language=None,
+            status="failed",
+            error_message=f"Failed to create notebook: {str(e)}",
+        )
 
 
 def get_notebook_status(host_credential_key: str, token_credential_key: str, path: str) -> NotebookStatusResponse:
@@ -269,6 +347,7 @@ def get_notebook_status(host_credential_key: str, token_credential_key: str, pat
     Returns:
         NotebookStatusResponse with notebook metadata
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     status = client.workspace.get_status(path=path)
@@ -284,4 +363,16 @@ def get_notebook_status(host_credential_key: str, token_credential_key: str, pat
         created_at=status_dict.get('created_at'),
         modified_at=status_dict.get('modified_at')
     )
+    except Exception as e:
+        return NotebookStatusResponse(
+            path=None,
+            object_id=None,
+            resource_id=None,
+            object_type=None,
+            language=None,
+            size=None,
+            created_at=None,
+            modified_at=None,
+            error_message=f"Failed to get notebook status: {str(e)}",
+        )
 

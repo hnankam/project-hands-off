@@ -61,6 +61,7 @@ def list_online_stores(
     Returns:
         ListOnlineStoresResponse with online stores
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     stores = []
@@ -76,13 +77,19 @@ def list_online_stores(
         online_stores=stores,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListOnlineStoresResponse(
+            online_stores=[],
+            next_page_token=None,
+            error_message=f"Failed to list online stores: {str(e)}",
+        )
 
 
 def get_online_store(
     host_credential_key: str,
     token_credential_key: str,
     name: str,
-) -> OnlineStoreModel:
+) -> Optional[OnlineStoreModel]:
     """
     Get an online feature store.
     
@@ -94,13 +101,16 @@ def get_online_store(
         name: Online store name
         
     Returns:
-        OnlineStoreModel with store details
+        OnlineStoreModel with store details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     store = client.feature_store.get_online_store(name=name)
     
     return _convert_to_online_store(store)
+    except Exception as e:
+        return None
 
 
 def create_online_store(
@@ -129,6 +139,7 @@ def create_online_store(
     Returns:
         CreateOnlineStoreResponse with created store
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Create OnlineStore object
@@ -152,6 +163,11 @@ def create_online_store(
     return CreateOnlineStoreResponse(
         online_store=_convert_to_online_store(store),
     )
+    except Exception as e:
+        return CreateOnlineStoreResponse(
+            online_store=None,
+            error_message=f"Failed to create online store: {str(e)}",
+        )
 
 
 def update_online_store(
@@ -180,6 +196,7 @@ def update_online_store(
     Returns:
         UpdateOnlineStoreResponse with updated store
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Create OnlineStore object with updates
@@ -205,6 +222,11 @@ def update_online_store(
     return UpdateOnlineStoreResponse(
         online_store=_convert_to_online_store(store),
     )
+    except Exception as e:
+        return UpdateOnlineStoreResponse(
+            online_store=None,
+            error_message=f"Failed to update online store: {str(e)}",
+        )
 
 
 def delete_online_store(
@@ -226,6 +248,7 @@ def delete_online_store(
     Returns:
         DeleteOnlineStoreResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.feature_store.delete_online_store(name=name)
@@ -233,6 +256,11 @@ def delete_online_store(
     return DeleteOnlineStoreResponse(
         name=name,
     )
+    except Exception as e:
+        return DeleteOnlineStoreResponse(
+            name=None,
+            error_message=f"Failed to delete online store: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -266,6 +294,7 @@ def publish_table(
     Returns:
         PublishTableResponse confirming publication
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Create PublishSpec
@@ -286,6 +315,11 @@ def publish_table(
     return PublishTableResponse(
         online_table_name=online_table_name,
     )
+    except Exception as e:
+        return PublishTableResponse(
+            online_table_name=None,
+            error_message=f"Failed to publish table: {str(e)}",
+        )
 
 
 def delete_online_table(
@@ -307,6 +341,7 @@ def delete_online_table(
     Returns:
         DeleteOnlineTableResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.feature_store.delete_online_table(
@@ -316,4 +351,9 @@ def delete_online_table(
     return DeleteOnlineTableResponse(
         online_table_name=online_table_name,
     )
+    except Exception as e:
+        return DeleteOnlineTableResponse(
+            online_table_name=None,
+            error_message=f"Failed to delete online table: {str(e)}",
+        )
 

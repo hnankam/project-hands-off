@@ -9,7 +9,7 @@ This module provides tools for managing issue assignments and workflow transitio
 
 from typing import Any, Optional, Dict, List
 from pydantic import BaseModel, Field
-from ...cache import get_jira_client
+from cache import get_jira_client
 
 
 # ============================================================================
@@ -60,64 +60,30 @@ class SetStatusResponse(BaseModel):
 # ============================================================================
 
 def assign_issue(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     assignee: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> AssignIssueResponse:
     """
     Assign an issue to a user.
 
-    Assigns (or reassigns) an issue to a specific user. Use "-1" to automatically assign,
-    or an empty string to unassign.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Use "-1" to automatically assign, or an empty string to unassign.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         issue_key: Issue key (e.g., "PROJ-123")
         assignee: Account ID (Cloud) or username (Server/DC). Use "-1" for automatic assignment or "" to unassign
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        AssignIssueResponse with assignment confirmation
-
-    Example:
-        # Assign issue to user (Cloud)
-        response = assign_issue(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            issue_key="PROJ-123",
-            assignee="5b10a2844c20165700ede21g",  # Account ID
-            username="user@example.com",
-            cloud=True
-        )
-
-        # Unassign issue (Server/DC)
-        response = assign_issue(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            issue_key="DGROWTH-100",
-            assignee="",  # Empty string to unassign
-            cloud=False
-        )
-
-        # Auto-assign issue (Cloud)
-        response = assign_issue(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            issue_key="PROJ-123",
-            assignee="-1",  # Automatic assignment
-            username="user@example.com",
-            cloud=True
-        )
+        AssignIssueResponse with assignment confirmation message
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.assign_issue(issue_key, assignee)
     
     return AssignIssueResponse(
@@ -128,51 +94,26 @@ def assign_issue(
 
 
 def get_issue_transitions(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> GetTransitionsResponse:
     """
-    Get available transitions for an issue.
-
-    Retrieves all workflow transitions available for an issue based on its current status.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Get all workflow transitions available for an issue based on its current status.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         issue_key: Issue key (e.g., "PROJ-123")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        GetTransitionsResponse with available transitions
-
-    Example:
-        # Get available transitions (Cloud)
-        response = get_issue_transitions(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            issue_key="PROJ-123",
-            username="user@example.com",
-            cloud=True
-        )
-        for transition in response.transitions:
-            print(f"{transition.id}: {transition.name} -> {transition.to['name']}")
-
-        # Get available transitions (Server/DC)
-        response = get_issue_transitions(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            issue_key="DGROWTH-100",
-            cloud=False
-        )
+        GetTransitionsResponse with available transitions and current status
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     transitions_data = client.get_issue_transitions(issue_key)
     
     # Parse transitions
@@ -189,59 +130,32 @@ def get_issue_transitions(
 
 
 def transition_issue(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     transition_id: str,
-    username: str = "",
+    username_credential_key: str = "",
     fields: Optional[Dict[str, Any]] = None,
     comment: Optional[str] = None,
     cloud: bool = False,
 ) -> TransitionIssueResponse:
     """
-    Transition an issue through workflow.
-
-    Moves an issue to a different status using a workflow transition ID.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Move an issue to a different status using a workflow transition ID.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         issue_key: Issue key (e.g., "PROJ-123")
         transition_id: Transition ID to execute
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         fields: Optional fields to set during transition (e.g., resolution)
         comment: Optional comment to add during transition
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        TransitionIssueResponse with transition confirmation
-
-    Example:
-        # Transition issue to "In Progress" (Cloud)
-        response = transition_issue(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            issue_key="PROJ-123",
-            transition_id="21",  # ID for "Start Progress"
-            username="user@example.com",
-            comment="Starting work on this issue",
-            cloud=True
-        )
-
-        # Transition to "Done" with resolution (Server/DC)
-        response = transition_issue(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            issue_key="DGROWTH-100",
-            transition_id="31",  # ID for "Done"
-            fields={"resolution": {"name": "Fixed"}},
-            cloud=False
-        )
+        TransitionIssueResponse with transition confirmation message
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     
     # Build transition data
     transition_data = {"transition": {"id": transition_id}}
@@ -262,54 +176,30 @@ def transition_issue(
 
 
 def set_issue_status(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     status_name: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> SetStatusResponse:
     """
-    Set issue status by name.
-
-    Sets the issue status to a specific value by finding and executing the appropriate transition.
-    This is a convenience method that automatically finds the correct transition for the desired status.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Set issue status by name, automatically finding and executing the appropriate transition.
+    
+    This is a convenience method that finds the correct transition for the desired status.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         issue_key: Issue key (e.g., "PROJ-123")
         status_name: Target status name (e.g., "In Progress", "Done")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        SetStatusResponse with status change confirmation
-
-    Example:
-        # Set status to "In Progress" (Cloud)
-        response = set_issue_status(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            issue_key="PROJ-123",
-            status_name="In Progress",
-            username="user@example.com",
-            cloud=True
-        )
-
-        # Set status to "Done" (Server/DC)
-        response = set_issue_status(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            issue_key="DGROWTH-100",
-            status_name="Done",
-            cloud=False
-        )
+        SetStatusResponse with status change confirmation message
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.set_issue_status(issue_key, status_name)
     
     return SetStatusResponse(

@@ -67,6 +67,7 @@ def download_billable_usage(
         - cluster_creator_email: Email of cluster creator
         - job_creator_email: Email of job creator
     """
+    try:
     client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
     # Download billable usage (returns DownloadResponse with CSV content)
@@ -85,4 +86,11 @@ def download_billable_usage(
         start_month=start_month,
         end_month=end_month,
     )
+    except Exception as e:
+        return BillableUsageDownloadResponse(
+            csv_content=None,
+            start_month=start_month,
+            end_month=end_month,
+            error_message=f"Failed to download billable usage for {start_month} to {end_month}: {str(e)}",
+        )
 

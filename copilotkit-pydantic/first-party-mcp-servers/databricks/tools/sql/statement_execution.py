@@ -69,6 +69,7 @@ def execute_statement(
     Returns:
         ExecuteStatementResponse with statement_id, status, and optionally results
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert parameters to SDK format
@@ -100,6 +101,12 @@ def execute_statement(
     
     # Convert to Pydantic models
     return _convert_statement_response(response)
+    except Exception as e:
+        return ExecuteStatementResponse(
+            statement_id=None,
+            status=None,
+            error_message=f"Failed to execute statement: {str(e)}",
+        )
 
 
 def get_statement(
@@ -125,9 +132,15 @@ def get_statement(
     Returns:
         StatementResponse with current status and results (if completed)
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     response = client.statement_execution.get_statement(statement_id=statement_id)
     return _convert_statement_response(response)
+    except Exception as e:
+        return StatementResponse(
+            statement_id=statement_id,
+            error_message=f"Failed to get statement: {str(e)}",
+        )
 
 
 def get_statement_result_chunk(
@@ -135,7 +148,7 @@ def get_statement_result_chunk(
     token_credential_key: str,
     statement_id: str,
     chunk_index: int
-) -> ResultData:
+) -> Optional[ResultData]:
     """
     Fetch a specific result chunk by index.
     
@@ -149,14 +162,17 @@ def get_statement_result_chunk(
         chunk_index: Zero-based chunk index to fetch
     
     Returns:
-        ResultData with the requested chunk
+        ResultData with the requested chunk, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     result = client.statement_execution.get_statement_result_chunk_n(
         statement_id=statement_id,
         chunk_index=chunk_index
     )
     return _convert_result_data(result)
+    except Exception as e:
+        return None
 
 
 def cancel_execution(
@@ -181,6 +197,7 @@ def cancel_execution(
     Returns:
         CancelExecutionResponse confirming the cancel request was received
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     client.statement_execution.cancel_execution(statement_id=statement_id)
     
@@ -188,6 +205,11 @@ def cancel_execution(
         statement_id=statement_id,
         message=f"Cancel request sent for statement {statement_id}. Poll with get_statement() to confirm cancellation."
     )
+    except Exception as e:
+        return CancelExecutionResponse(
+            statement_id=statement_id,
+            error_message=f"Failed to cancel execution: {str(e)}",
+        )
 
 
 # ============================================================================

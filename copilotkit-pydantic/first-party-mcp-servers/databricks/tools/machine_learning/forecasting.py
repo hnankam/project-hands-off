@@ -97,6 +97,7 @@ def create_forecasting_experiment(
     Returns:
         CreateForecastingExperimentResponse with experiment ID
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     if wait_for_completion:
@@ -147,13 +148,18 @@ def create_forecasting_experiment(
     return CreateForecastingExperimentResponse(
         experiment_id=experiment.experiment_id,
     )
+    except Exception as e:
+        return CreateForecastingExperimentResponse(
+            experiment_id=None,
+            error_message=f"Failed to create forecasting experiment: {str(e)}",
+        )
 
 
 def get_forecasting_experiment(
     host_credential_key: str,
     token_credential_key: str,
     experiment_id: str,
-) -> ForecastingExperimentModel:
+) -> Optional[ForecastingExperimentModel]:
     """
     Get a forecasting experiment by ID.
     
@@ -166,11 +172,14 @@ def get_forecasting_experiment(
         experiment_id: Experiment ID
         
     Returns:
-        ForecastingExperimentModel with experiment details
+        ForecastingExperimentModel with experiment details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     experiment = client.forecasting.get_experiment(experiment_id=experiment_id)
     
     return _convert_to_forecasting_experiment(experiment)
+    except Exception as e:
+        return None
 

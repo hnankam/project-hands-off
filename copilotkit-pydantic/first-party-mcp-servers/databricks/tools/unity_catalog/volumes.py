@@ -86,6 +86,7 @@ def list_volumes(
     Returns:
         ListVolumesResponse with list of volumes and pagination info
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Cap limit at 20 when include_browse is True to reduce response size
@@ -117,6 +118,13 @@ def list_volumes(
         count=len(volumes_list),
         has_more=has_more,
     )
+    except Exception as e:
+        return ListVolumesResponse(
+            volumes=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list volumes: {str(e)}",
+        )
 
 
 def get_volume(
@@ -124,7 +132,7 @@ def get_volume(
     token_credential_key: str,
     name: str,
     include_browse: Optional[bool] = None,
-) -> VolumeInfoModel:
+) -> Optional[VolumeInfoModel]:
     """
     Get volume details.
     
@@ -140,6 +148,7 @@ def get_volume(
     Returns:
         VolumeInfoModel with complete volume details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     volume = client.volumes.read(
@@ -148,6 +157,11 @@ def get_volume(
     )
     
     return _convert_volume_to_model(volume)
+    except Exception as e:
+        return VolumeInfoModel(
+            full_name=name,
+            error_message=f"Failed to get volume: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -184,6 +198,7 @@ def create_volume(
     Returns:
         CreateVolumeResponse with created volume information
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import VolumeType
@@ -200,6 +215,11 @@ def create_volume(
     return CreateVolumeResponse(
         volume_info=_convert_volume_to_model(volume),
     )
+    except Exception as e:
+        return CreateVolumeResponse(
+            volume_info=None,
+            error_message=f"Failed to create volume: {str(e)}",
+        )
 
 
 def delete_volume(
@@ -221,11 +241,17 @@ def delete_volume(
     Returns:
         DeleteVolumeResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.volumes.delete(name=name)
     
     return DeleteVolumeResponse(name=name)
+    except Exception as e:
+        return DeleteVolumeResponse(
+            name=name,
+            error_message=f"Failed to delete volume: {str(e)}",
+        )
 
 
 def update_volume(
@@ -253,6 +279,7 @@ def update_volume(
     Returns:
         UpdateVolumeResponse with updated volume information
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     volume = client.volumes.update(
@@ -265,4 +292,9 @@ def update_volume(
     return UpdateVolumeResponse(
         volume_info=_convert_volume_to_model(volume),
     )
+    except Exception as e:
+        return UpdateVolumeResponse(
+            volume_info=None,
+            error_message=f"Failed to update volume: {str(e)}",
+        )
 

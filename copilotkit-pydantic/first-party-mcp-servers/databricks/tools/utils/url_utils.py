@@ -31,25 +31,25 @@ def resolve_notebook_from_url(host_credential_key: str, token_credential_key: st
         URL: https://adb-xxx.azuredatabricks.net/editor/notebooks/1191853414493128
         Returns: NotebookPathInfo with path="/Workspace/Users/user@company.com/General"
     """
-    client = get_workspace_client(host_credential_key, token_credential_key)
-    
-    # Try to extract notebook ID from URL (modern format)
-    notebook_id = _extract_notebook_id_from_url(url)
-    
-    if notebook_id:
-        # ID-based URL - search workspace directly without collecting all notebooks first
-        # Databricks doesn't support direct ID->path lookup
-        import logging
-        logger = logging.getLogger(__name__)
+    try:
+        client = get_workspace_client(host_credential_key, token_credential_key)
         
-        logger.info(f"Searching workspace for notebook ID: {notebook_id}")
+        # Try to extract notebook ID from URL (modern format)
+        notebook_id = _extract_notebook_id_from_url(url)
         
-        try:
+        if notebook_id:
+            # ID-based URL - search workspace directly without collecting all notebooks first
+            # Databricks doesn't support direct ID->path lookup
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            logger.info(f"Searching workspace for notebook ID: {notebook_id}")
+            
             # Try multiple root paths in order of likelihood
             search_paths = [
+                "/Users",          # User directories
                 "/Workspace",      # Modern workspace root
                 "/",               # Legacy root
-                "/Users",          # User directories
             ]
             
             notebooks_checked = 0
@@ -94,40 +94,58 @@ def resolve_notebook_from_url(host_credential_key: str, token_credential_key: st
             
             # Not found after searching all roots
             logger.error(f"Notebook {notebook_id} not found after checking {notebooks_checked} notebooks in {len(search_paths)} root paths")
-            raise ValueError(
+            return NotebookPathInfo(
+                url=url,
+                notebook_id=notebook_id,
+                path=None,
+                error_message=(
                 f"Could not find notebook with ID {notebook_id} in workspace. "
                 f"Searched {notebooks_checked} notebooks across roots: {', '.join(search_paths)}. "
                 "The notebook may be in a restricted folder or may not exist."
             )
-        except ValueError:
-            raise
-        except Exception as e:
-            raise ValueError(f"Error searching for notebook ID {notebook_id}: {str(e)}")
-    
-    # Try to extract path from URL (legacy format)
-    path = _extract_notebook_path_from_url(url)
-    
-    if path:
-        # Path-based URL - verify it exists
-        try:
-            status = client.workspace.get_status(path=path)
-            
+            )
+        
+        # Try to extract path from URL (legacy format)
+        path = _extract_notebook_path_from_url(url)
+        
+        if path:
+            # Path-based URL - verify it exists
+            try:
+                status = client.workspace.get_status(path=path)
+                
+                return NotebookPathInfo(
+                    url=url,
+                    notebook_id=None,
+                    path=path,
+                    object_type=str(status.object_type) if status.object_type else None,
+                    language=str(status.language) if status.language else None,
+                    created_at=status.created_at,
+                    modified_at=status.modified_at
+                )
+            except Exception as e:
+                    return NotebookPathInfo(
+                        url=url,
+                        notebook_id=None,
+                        path=None,
+                        error_message=f"Could not find notebook at path {path}: {str(e)}"
+                    )
+        
+        # Could not extract ID or path
             return NotebookPathInfo(
                 url=url,
                 notebook_id=None,
-                path=path,
-                object_type=str(status.object_type) if status.object_type else None,
-                language=str(status.language) if status.language else None,
-                created_at=status.created_at,
-                modified_at=status.modified_at
+                path=None,
+                error_message=(
+            f"Could not extract notebook ID or path from URL: {url}. "
+            "Supported formats: /editor/notebooks/{{id}}, /explore/data/{{id}}, #workspace/path"
+                )
             )
-        except Exception as e:
-            raise ValueError(f"Could not find notebook at path {path}: {str(e)}")
-    
-    # Could not extract ID or path
-    raise ValueError(
-        f"Could not extract notebook ID or path from URL: {url}. "
-        "Supported formats: /editor/notebooks/{{id}}, /explore/data/{{id}}, #workspace/path"
+    except Exception as e:
+        return NotebookPathInfo(
+            url=url,
+            notebook_id=None,
+            path=None,
+            error_message=f"Failed to resolve notebook from URL: {str(e)}"
     )
 
 

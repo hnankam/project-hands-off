@@ -8,7 +8,7 @@ This module provides tools for managing issue votes:
 
 from typing import List, Optional
 from pydantic import BaseModel, Field
-from ...cache import get_jira_client
+from cache import get_jira_client
 
 
 # ============================================================================
@@ -49,10 +49,10 @@ class GetVotesResponse(BaseModel):
 # ============================================================================
 
 def vote_issue(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> VoteIssueResponse:
     """
@@ -64,10 +64,10 @@ def vote_issue(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -92,7 +92,7 @@ def vote_issue(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.issue_vote(issue_key)
     
     return VoteIssueResponse(
@@ -102,10 +102,10 @@ def vote_issue(
 
 
 def unvote_issue(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> UnvoteIssueResponse:
     """
@@ -117,10 +117,10 @@ def unvote_issue(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -145,7 +145,7 @@ def unvote_issue(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.issue_unvote(issue_key)
     
     return UnvoteIssueResponse(
@@ -155,10 +155,10 @@ def unvote_issue(
 
 
 def get_votes(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> GetVotesResponse:
     """
@@ -170,10 +170,10 @@ def get_votes(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -202,7 +202,7 @@ def get_votes(
         if response.has_voted:
             print("You have voted for this issue")
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     votes_data = client.get_issue_votes(issue_key)
     
     # Parse voters

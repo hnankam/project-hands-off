@@ -48,6 +48,7 @@ def list_query_history(
         - has_more=True indicates more results available
         - Filter criteria apply consistently across all pages
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Cap limit at 20 when include_metrics is True to reduce response size
@@ -181,4 +182,11 @@ def list_query_history(
         count=len(query_executions),
         has_more=has_more,
     )
+    except Exception as e:
+        return ListQueryHistoryResponse(
+            queries=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list query history: {str(e)}",
+        )
 

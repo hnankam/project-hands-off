@@ -1,10 +1,23 @@
-"""Jira client connection pooling with TTL-based cache."""
+"""Jira client connection pooling with TTL-based cache.
+
+Credentials are resolved from credential keys at runtime.
+The cache keys are based on credential keys, not the resolved values.
+"""
+
+import sys
+from pathlib import Path
 
 from atlassian import Jira
 from cachetools import TTLCache
-import hashlib
 from threading import Lock
 import logging
+
+# Add parent directory to path to import shared module
+parent_path = Path(__file__).parent.parent
+if str(parent_path) not in sys.path:
+    sys.path.insert(0, str(parent_path))
+
+from shared.credential_resolver import resolve_credential  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -15,20 +28,24 @@ jira_client_cache = TTLCache(maxsize=1000, ttl=3600)
 cache_lock = Lock()
 
 
-def get_jira_client(url: str, username: str, api_token: str, cloud: bool = False) -> Jira:
+def get_jira_client(
+    url_credential_key: str, 
+    token_credential_key: str, 
+    username_credential_key: str = "", 
+    cloud: bool = False
+) -> Jira:
     """
     Get cached Jira client or create new one.
     
-    Caches clients by hash of (url + username + api_token) to reuse connections
-    for the same user/instance combination.
+    Caches clients by credential keys. Credentials are resolved from the database
+    using the shared credential_resolver module.
     
     SECURITY: Only token-based authentication is supported (no passwords).
     
     Args:
-        url: Jira instance URL (e.g., "https://yoursite.atlassian.net" for Cloud,
-             "https://jira.company.com" for Server/Data Center)
-        username: Email address (Cloud) or empty string (Server/Data Center)
-        api_token: API token (Cloud) or Personal Access Token (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Set to True for Jira Cloud, False for Server/Data Center (default: False)
     
     Returns:
@@ -46,15 +63,20 @@ def get_jira_client(url: str, username: str, api_token: str, cloud: bool = False
            - Get PAT: Profile → Personal Access Tokens → Create token
            - Minimum version: Jira 8.14+
     """
-    # Create stable cache key from credentials
-    cache_key = hashlib.sha256(f"{url}:{username}:{api_token}:{cloud}".encode()).hexdigest()
+    # Cache key is based on credential keys (stable and readable)
+    cache_key = f"jira:{url_credential_key}:{token_credential_key}:{username_credential_key}:{cloud}"
     
     with cache_lock:
         if cache_key in jira_client_cache:
-            logger.debug(f"Cache HIT for Jira instance: {url}")
+            logger.debug(f"Cache HIT for Jira client (url_key: {url_credential_key})")
             return jira_client_cache[cache_key]
         
-        logger.info(f"Cache MISS - creating new client for Jira instance: {url}")
+        logger.info(f"Cache MISS - creating new Jira client (url_key: {url_credential_key})")
+        
+        # Resolve credential keys to actual values
+        url = resolve_credential(url_credential_key)
+        api_token = resolve_credential(token_credential_key)
+        username = resolve_credential(username_credential_key) if username_credential_key else ""
         
         # Create new client with appropriate token authentication
         if cloud:

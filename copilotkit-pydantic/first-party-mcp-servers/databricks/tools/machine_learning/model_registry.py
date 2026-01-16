@@ -151,6 +151,7 @@ def list_registry_models(
     Returns:
         ListModelsResponse with registered models
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     models = []
@@ -166,13 +167,19 @@ def list_registry_models(
         models=models,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListModelsResponse(
+            models=[],
+            next_page_token=None,
+            error_message=f"Failed to list registry models: {str(e)}",
+        )
 
 
 def get_registry_model(
     host_credential_key: str,
     token_credential_key: str,
     name: str,
-) -> RegisteredModelModel:
+) -> Optional[RegisteredModelModel]:
     """
     Get a registered model by name.
     
@@ -184,13 +191,16 @@ def get_registry_model(
         name: Model name
         
     Returns:
-        RegisteredModelModel with model details
+        RegisteredModelModel with model details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     model = client.model_registry.get_model(name=name)
     
     return _convert_to_registered_model(model.registered_model_databricks)
+    except Exception as e:
+        return None
 
 
 def create_registry_model(
@@ -216,6 +226,7 @@ def create_registry_model(
     Returns:
         CreateModelResponse with created model
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert tags dictionary to list of ModelTag
@@ -233,6 +244,11 @@ def create_registry_model(
     return CreateModelResponse(
         model=_convert_to_registered_model(model.registered_model),
     )
+    except Exception as e:
+        return CreateModelResponse(
+            model=None,
+            error_message=f"Failed to create registry model: {str(e)}",
+        )
 
 
 def update_registry_model(
@@ -255,6 +271,7 @@ def update_registry_model(
     Returns:
         UpdateModelResponse confirming update
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.update_model(
@@ -263,6 +280,10 @@ def update_registry_model(
     )
     
     return UpdateModelResponse()
+    except Exception as e:
+        return UpdateModelResponse(
+            error_message=f"Failed to update registry model: {str(e)}",
+        )
 
 
 def delete_registry_model(
@@ -283,6 +304,7 @@ def delete_registry_model(
     Returns:
         DeleteModelResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.delete_model(name=name)
@@ -290,6 +312,11 @@ def delete_registry_model(
     return DeleteModelResponse(
         model_name=name,
     )
+    except Exception as e:
+        return DeleteModelResponse(
+            model_name=None,
+            error_message=f"Failed to delete registry model: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -323,6 +350,7 @@ def create_model_version(
     Returns:
         CreateModelVersionResponse with created version
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert tags dictionary to list of ModelVersionTag
@@ -342,6 +370,11 @@ def create_model_version(
     return CreateModelVersionResponse(
         model_version=_convert_to_model_version(version.model_version),
     )
+    except Exception as e:
+        return CreateModelVersionResponse(
+            model_version=None,
+            error_message=f"Failed to create model version: {str(e)}",
+        )
 
 
 def get_model_version(
@@ -349,7 +382,7 @@ def get_model_version(
     token_credential_key: str,
     name: str,
     version: str,
-) -> ModelVersionModel:
+) -> Optional[ModelVersionModel]:
     """
     Get a specific model version.
     
@@ -362,8 +395,9 @@ def get_model_version(
         version: Version number
         
     Returns:
-        ModelVersionModel with version details
+        ModelVersionModel with version details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     version = client.model_registry.get_model_version(
@@ -372,6 +406,8 @@ def get_model_version(
     )
     
     return _convert_to_model_version(version.model_version)
+    except Exception as e:
+        return None
 
 
 def update_model_version(
@@ -396,6 +432,7 @@ def update_model_version(
     Returns:
         UpdateModelVersionResponse confirming update
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.update_model_version(
@@ -405,6 +442,10 @@ def update_model_version(
     )
     
     return UpdateModelVersionResponse()
+    except Exception as e:
+        return UpdateModelVersionResponse(
+            error_message=f"Failed to update model version: {str(e)}",
+        )
 
 
 def delete_model_version(
@@ -427,6 +468,7 @@ def delete_model_version(
     Returns:
         DeleteModelVersionResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.delete_model_version(
@@ -438,6 +480,12 @@ def delete_model_version(
         model_name=name,
         version=version,
     )
+    except Exception as e:
+        return DeleteModelVersionResponse(
+            model_name=None,
+            version=None,
+            error_message=f"Failed to delete model version: {str(e)}",
+        )
 
 
 def search_model_versions(
@@ -465,6 +513,7 @@ def search_model_versions(
     Returns:
         ListModelVersionsResponse with matching versions
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     versions = []
@@ -482,6 +531,12 @@ def search_model_versions(
         model_versions=versions,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListModelVersionsResponse(
+            model_versions=[],
+            next_page_token=None,
+            error_message=f"Failed to search model versions: {str(e)}",
+        )
 
 
 def get_latest_model_versions(
@@ -504,6 +559,7 @@ def get_latest_model_versions(
     Returns:
         ListModelVersionsResponse with latest versions
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     versions = client.model_registry.get_latest_versions(
@@ -516,6 +572,11 @@ def get_latest_model_versions(
     return ListModelVersionsResponse(
         model_versions=version_list,
     )
+    except Exception as e:
+        return ListModelVersionsResponse(
+            model_versions=[],
+            error_message=f"Failed to get latest model versions: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -549,6 +610,7 @@ def transition_model_stage(
     Returns:
         TransitionStageResponse with updated version
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.model_registry.transition_stage(
@@ -562,6 +624,11 @@ def transition_model_stage(
     return TransitionStageResponse(
         model_version=_convert_to_model_version(result.model_version),
     )
+    except Exception as e:
+        return TransitionStageResponse(
+            model_version=None,
+            error_message=f"Failed to transition model stage: {str(e)}",
+        )
 
 
 def create_transition_request(
@@ -589,6 +656,7 @@ def create_transition_request(
     Returns:
         CreateTransitionRequestResponse with request details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.model_registry.create_transition_request(
@@ -601,6 +669,11 @@ def create_transition_request(
     return CreateTransitionRequestResponse(
         request=_convert_to_transition_request(result.request) if hasattr(result, 'request') else TransitionRequestModel(),
     )
+    except Exception as e:
+        return CreateTransitionRequestResponse(
+            request=None,
+            error_message=f"Failed to create transition request: {str(e)}",
+        )
 
 
 def approve_transition_request(
@@ -630,6 +703,7 @@ def approve_transition_request(
     Returns:
         ApproveTransitionRequestResponse confirming approval
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.approve_transition_request(
@@ -641,6 +715,10 @@ def approve_transition_request(
     )
     
     return ApproveTransitionRequestResponse()
+    except Exception as e:
+        return ApproveTransitionRequestResponse(
+            error_message=f"Failed to approve transition request: {str(e)}",
+        )
 
 
 def reject_transition_request(
@@ -667,6 +745,7 @@ def reject_transition_request(
     Returns:
         ApproveTransitionRequestResponse confirming rejection
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.reject_transition_request(
@@ -679,6 +758,10 @@ def reject_transition_request(
     return ApproveTransitionRequestResponse(
         message="Transition request rejected successfully"
     )
+    except Exception as e:
+        return ApproveTransitionRequestResponse(
+            error_message=f"Failed to reject transition request: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -708,6 +791,7 @@ def create_model_comment(
     Returns:
         CreateCommentResponse with created comment
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.model_registry.create_comment(
@@ -719,6 +803,11 @@ def create_model_comment(
     return CreateCommentResponse(
         comment=_convert_to_comment(result.comment),
     )
+    except Exception as e:
+        return CreateCommentResponse(
+            comment=None,
+            error_message=f"Failed to create model comment: {str(e)}",
+        )
 
 
 def update_model_comment(
@@ -741,6 +830,7 @@ def update_model_comment(
     Returns:
         UpdateCommentResponse confirming update
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.update_comment(
@@ -749,6 +839,10 @@ def update_model_comment(
     )
     
     return UpdateCommentResponse()
+    except Exception as e:
+        return UpdateCommentResponse(
+            error_message=f"Failed to update model comment: {str(e)}",
+        )
 
 
 def delete_model_comment(
@@ -769,6 +863,7 @@ def delete_model_comment(
     Returns:
         DeleteCommentResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.delete_comment(id=comment_id)
@@ -776,6 +871,11 @@ def delete_model_comment(
     return DeleteCommentResponse(
         comment_id=comment_id,
     )
+    except Exception as e:
+        return DeleteCommentResponse(
+            comment_id=None,
+            error_message=f"Failed to delete model comment: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -804,6 +904,7 @@ def set_model_tag(
     Returns:
         SetTagResponse confirming tag set
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.set_model_tag(
@@ -813,6 +914,10 @@ def set_model_tag(
     )
     
     return SetTagResponse()
+    except Exception as e:
+        return SetTagResponse(
+            error_message=f"Failed to set model tag: {str(e)}",
+        )
 
 
 def delete_model_tag(
@@ -835,6 +940,7 @@ def delete_model_tag(
     Returns:
         DeleteTagResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.delete_model_tag(
@@ -843,6 +949,10 @@ def delete_model_tag(
     )
     
     return DeleteTagResponse()
+    except Exception as e:
+        return DeleteTagResponse(
+            error_message=f"Failed to delete model tag: {str(e)}",
+        )
 
 
 def set_model_version_tag(
@@ -869,6 +979,7 @@ def set_model_version_tag(
     Returns:
         SetTagResponse confirming tag set
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.set_model_version_tag(
@@ -879,6 +990,10 @@ def set_model_version_tag(
     )
     
     return SetTagResponse()
+    except Exception as e:
+        return SetTagResponse(
+            error_message=f"Failed to set model version tag: {str(e)}",
+        )
 
 
 def delete_model_version_tag(
@@ -903,6 +1018,7 @@ def delete_model_version_tag(
     Returns:
         DeleteTagResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.delete_model_version_tag(
@@ -912,6 +1028,10 @@ def delete_model_version_tag(
     )
     
     return DeleteTagResponse()
+    except Exception as e:
+        return DeleteTagResponse(
+            error_message=f"Failed to delete model version tag: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -947,6 +1067,7 @@ def create_registry_webhook(
     Returns:
         CreateWebhookResponse with created webhook
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert events to enum
@@ -971,6 +1092,11 @@ def create_registry_webhook(
     return CreateWebhookResponse(
         webhook=_convert_to_webhook(result.webhook),
     )
+    except Exception as e:
+        return CreateWebhookResponse(
+            webhook=None,
+            error_message=f"Failed to create registry webhook: {str(e)}",
+        )
 
 
 def update_registry_webhook(
@@ -1001,6 +1127,7 @@ def update_registry_webhook(
     Returns:
         UpdateWebhookResponse confirming update
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert optional parameters
@@ -1034,6 +1161,10 @@ def update_registry_webhook(
     )
     
     return UpdateWebhookResponse()
+    except Exception as e:
+        return UpdateWebhookResponse(
+            error_message=f"Failed to update registry webhook: {str(e)}",
+        )
 
 
 def delete_registry_webhook(
@@ -1054,6 +1185,7 @@ def delete_registry_webhook(
     Returns:
         DeleteWebhookResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.model_registry.delete_webhook(id=webhook_id)
@@ -1061,6 +1193,11 @@ def delete_registry_webhook(
     return DeleteWebhookResponse(
         webhook_id=webhook_id,
     )
+    except Exception as e:
+        return DeleteWebhookResponse(
+            webhook_id=None,
+            error_message=f"Failed to delete registry webhook: {str(e)}",
+        )
 
 
 def list_registry_webhooks(
@@ -1083,6 +1220,7 @@ def list_registry_webhooks(
     Returns:
         ListWebhooksResponse with webhooks
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     webhooks = []
@@ -1098,4 +1236,10 @@ def list_registry_webhooks(
         webhooks=webhooks,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListWebhooksResponse(
+            webhooks=[],
+            next_page_token=None,
+            error_message=f"Failed to list registry webhooks: {str(e)}",
+        )
 

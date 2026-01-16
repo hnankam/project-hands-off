@@ -116,6 +116,7 @@ def list_postgres_projects(
     Returns:
         ListPostgresProjectsResponse with list of projects
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     projects_list = []
@@ -131,6 +132,13 @@ def list_postgres_projects(
         count=len(projects_list),
         next_page_token=None,
     )
+    except Exception as e:
+        return ListPostgresProjectsResponse(
+            projects=[],
+            count=0,
+            next_page_token=None,
+            error_message=f"Failed to list Postgres projects: {str(e)}",
+        )
 
 
 def get_postgres_project(
@@ -151,11 +159,14 @@ def get_postgres_project(
     Returns:
         PostgresProjectModel with project details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     project = client.postgres.get_project(name=name)
     
     return _convert_project_to_model(project)
+    except Exception as e:
+        return None
 
 
 def create_postgres_project(
@@ -182,6 +193,7 @@ def create_postgres_project(
     Returns:
         CreatePostgresProjectResponse with operation info
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.postgres import Project, ProjectSettings
@@ -200,6 +212,11 @@ def create_postgres_project(
     return CreatePostgresProjectResponse(
         operation=_convert_operation_to_model(operation),
     )
+    except Exception as e:
+        return CreatePostgresProjectResponse(
+            operation=None,
+            error_message=f"Failed to create Postgres project: {str(e)}",
+        )
 
 
 def update_postgres_project(
@@ -228,6 +245,7 @@ def update_postgres_project(
     Returns:
         UpdatePostgresResponse with operation info
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.postgres import Project, ProjectSettings, FieldMask
@@ -248,6 +266,11 @@ def update_postgres_project(
     return UpdatePostgresResponse(
         operation=_convert_operation_to_model(operation),
     )
+    except Exception as e:
+        return UpdatePostgresResponse(
+            operation=None,
+            error_message=f"Failed to update Postgres project {name}: {str(e)}",
+        )
 
 
 def delete_postgres_project(
@@ -268,11 +291,17 @@ def delete_postgres_project(
     Returns:
         DeletePostgresResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.postgres.delete_project(name=name)
     
     return DeletePostgresResponse(name=name)
+    except Exception as e:
+        return DeletePostgresResponse(
+            name=name,
+            error_message=f"Failed to delete Postgres project {name}: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -301,6 +330,7 @@ def list_postgres_branches(
     Returns:
         ListPostgresBranchesResponse with list of branches
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     branches_list = []
@@ -317,6 +347,13 @@ def list_postgres_branches(
         count=len(branches_list),
         next_page_token=None,
     )
+    except Exception as e:
+        return ListPostgresBranchesResponse(
+            branches=[],
+            count=0,
+            next_page_token=None,
+            error_message=f"Failed to list Postgres branches: {str(e)}",
+        )
 
 
 def get_postgres_branch(
@@ -337,11 +374,14 @@ def get_postgres_branch(
     Returns:
         PostgresBranchModel with branch details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     branch = client.postgres.get_branch(name=name)
     
     return _convert_branch_to_model(branch)
+    except Exception as e:
+        return None
 
 
 def create_postgres_branch(
@@ -368,6 +408,7 @@ def create_postgres_branch(
     Returns:
         CreatePostgresBranchResponse with operation info
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.postgres import Branch
@@ -387,6 +428,11 @@ def create_postgres_branch(
     return CreatePostgresBranchResponse(
         operation=_convert_operation_to_model(operation),
     )
+    except Exception as e:
+        return CreatePostgresBranchResponse(
+            operation=None,
+            error_message=f"Failed to create Postgres branch: {str(e)}",
+        )
 
 
 def update_postgres_branch(
@@ -411,6 +457,7 @@ def update_postgres_branch(
     Returns:
         UpdatePostgresResponse with operation info
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.postgres import Branch, FieldMask
@@ -429,6 +476,11 @@ def update_postgres_branch(
     return UpdatePostgresResponse(
         operation=_convert_operation_to_model(operation),
     )
+    except Exception as e:
+        return UpdatePostgresResponse(
+            operation=None,
+            error_message=f"Failed to update Postgres branch {name}: {str(e)}",
+        )
 
 
 def delete_postgres_branch(
@@ -449,11 +501,17 @@ def delete_postgres_branch(
     Returns:
         DeletePostgresResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.postgres.delete_branch(name=name)
     
     return DeletePostgresResponse(name=name)
+    except Exception as e:
+        return DeletePostgresResponse(
+            name=name,
+            error_message=f"Failed to delete Postgres branch {name}: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -482,6 +540,7 @@ def list_postgres_endpoints(
     Returns:
         ListPostgresEndpointsResponse with list of endpoints
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     endpoints_list = []
@@ -498,6 +557,13 @@ def list_postgres_endpoints(
         count=len(endpoints_list),
         next_page_token=None,
     )
+    except Exception as e:
+        return ListPostgresEndpointsResponse(
+            endpoints=[],
+            count=0,
+            next_page_token=None,
+            error_message=f"Failed to list Postgres endpoints: {str(e)}",
+        )
 
 
 def get_postgres_endpoint(
@@ -518,11 +584,14 @@ def get_postgres_endpoint(
     Returns:
         PostgresEndpointModel with endpoint details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     endpoint = client.postgres.get_endpoint(name=name)
     
     return _convert_endpoint_to_model(endpoint)
+    except Exception as e:
+        return None
 
 
 def create_postgres_endpoint(
@@ -555,6 +624,7 @@ def create_postgres_endpoint(
     Returns:
         CreatePostgresEndpointResponse with operation info
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.postgres import Endpoint, EndpointType, EndpointPoolerMode
@@ -577,6 +647,11 @@ def create_postgres_endpoint(
     return CreatePostgresEndpointResponse(
         operation=_convert_operation_to_model(operation),
     )
+    except Exception as e:
+        return CreatePostgresEndpointResponse(
+            operation=None,
+            error_message=f"Failed to create Postgres endpoint: {str(e)}",
+        )
 
 
 def update_postgres_endpoint(
@@ -607,6 +682,7 @@ def update_postgres_endpoint(
     Returns:
         UpdatePostgresResponse with operation info
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.postgres import Endpoint, EndpointPoolerMode, FieldMask
@@ -629,6 +705,11 @@ def update_postgres_endpoint(
     return UpdatePostgresResponse(
         operation=_convert_operation_to_model(operation),
     )
+    except Exception as e:
+        return UpdatePostgresResponse(
+            operation=None,
+            error_message=f"Failed to update Postgres endpoint {name}: {str(e)}",
+        )
 
 
 def delete_postgres_endpoint(
@@ -649,11 +730,17 @@ def delete_postgres_endpoint(
     Returns:
         DeletePostgresResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.postgres.delete_endpoint(name=name)
     
     return DeletePostgresResponse(name=name)
+    except Exception as e:
+        return DeletePostgresResponse(
+            name=name,
+            error_message=f"Failed to delete Postgres endpoint {name}: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -678,9 +765,12 @@ def get_postgres_operation(
     Returns:
         PostgresOperationModel with operation status
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     operation = client.postgres.get_operation(name=name)
     
     return _convert_operation_to_model(operation)
+    except Exception as e:
+        return None
 

@@ -54,37 +54,42 @@ class QueryInfo(BaseModel):
     last_modifier_user_name: Optional[str] = Field(None, description="Last modifier username")
     apply_auto_limit: Optional[bool] = Field(None, description="Whether to apply auto limit")
     parameters: Optional[List[Dict[str, Any]]] = Field(None, description="Query parameters")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListQueriesResponse(BaseModel):
     """Response model for listing queries."""
-    queries: List[QueryInfo] = Field(..., description="List of queries")
-    count: int = Field(..., description="Total number of queries returned")
+    queries: List[QueryInfo] = Field(default_factory=list, description="List of queries")
+    count: Optional[int] = Field(None, description="Total number of queries returned")
     has_more: Optional[bool] = Field(None, description="Whether more queries exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateQueryResponse(BaseModel):
     """Response model for creating a query."""
-    id: str = Field(..., description="Created query ID")
+    id: Optional[str] = Field(None, description="Created query ID")
     display_name: Optional[str] = Field(None, description="Query display name")
     query_text: Optional[str] = Field(None, description="SQL query text")
     warehouse_id: Optional[str] = Field(None, description="SQL warehouse ID")
     status: str = Field(default="created", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateQueryResponse(BaseModel):
     """Response model for updating a query."""
-    id: str = Field(..., description="Updated query ID")
+    id: Optional[str] = Field(None, description="Updated query ID")
     display_name: Optional[str] = Field(None, description="Query display name")
     query_text: Optional[str] = Field(None, description="SQL query text")
     update_time: Optional[str] = Field(None, description="Last update timestamp")
     status: str = Field(default="updated", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteQueryResponse(BaseModel):
     """Response model for deleting a query."""
-    id: str = Field(..., description="Deleted query ID")
+    id: Optional[str] = Field(None, description="Deleted query ID")
     status: str = Field(default="deleted", description="Status message (moved to trash)")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class VisualizationInfo(BaseModel):
@@ -101,9 +106,11 @@ class VisualizationInfo(BaseModel):
 
 class ListVisualizationsResponse(BaseModel):
     """Response model for listing query visualizations."""
-    query_id: str = Field(..., description="Query ID")
-    visualizations: List[VisualizationInfo] = Field(..., description="List of visualizations")
-    count: int = Field(..., description="Total number of visualizations")
+    query_id: Optional[str] = Field(None, description="Query ID")
+    visualizations: List[VisualizationInfo] = Field(default_factory=list, description="List of visualizations")
+    count: Optional[int] = Field(None, description="Total number of visualizations")
+    has_more: Optional[bool] = Field(None, description="Whether more visualizations exist beyond this page")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -190,9 +197,10 @@ class QueryExecutionInfo(BaseModel):
 
 class ListQueryHistoryResponse(BaseModel):
     """Response model for listing query execution history."""
-    queries: List[QueryExecutionInfo] = Field(..., description="List of query executions")
-    count: int = Field(..., description="Number of queries returned")
+    queries: List[QueryExecutionInfo] = Field(default_factory=list, description="List of query executions")
+    count: Optional[int] = Field(None, description="Number of queries returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -285,20 +293,23 @@ class StatementResponse(BaseModel):
     status: Optional[StatementStatus] = Field(None, description="Execution status")
     manifest: Optional[ResultManifest] = Field(None, description="Result manifest (when succeeded)")
     result: Optional[ResultData] = Field(None, description="First chunk of result data (when succeeded)")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ExecuteStatementResponse(BaseModel):
     """Response model for executing a SQL statement."""
-    statement_id: str = Field(..., description="Statement ID for polling")
-    status: StatementStatus = Field(..., description="Current execution status")
+    statement_id: Optional[str] = Field(None, description="Statement ID for polling")
+    status: Optional[StatementStatus] = Field(None, description="Current execution status")
     manifest: Optional[ResultManifest] = Field(None, description="Result manifest (if completed)")
     result: Optional[ResultData] = Field(None, description="First chunk of results (if completed)")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CancelExecutionResponse(BaseModel):
     """Response model for canceling statement execution."""
-    statement_id: str = Field(..., description="Canceled statement ID")
-    message: str = Field(..., description="Confirmation message")
+    statement_id: Optional[str] = Field(None, description="Canceled statement ID")
+    message: str = Field(default="Cancel request sent", description="Confirmation message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -354,48 +365,56 @@ class WarehouseInfo(BaseModel):
     tags: Optional[EndpointTags] = Field(None, description="Resource tags")
     instance_profile_arn: Optional[str] = Field(None, description="AWS instance profile ARN")
     channel: Optional[Dict[str, Any]] = Field(None, description="Channel information")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListWarehousesResponse(BaseModel):
     """Response model for listing SQL warehouses."""
-    warehouses: List[WarehouseInfo] = Field(..., description="List of SQL warehouses")
-    count: int = Field(..., description="Number of warehouses returned")
+    warehouses: List[WarehouseInfo] = Field(default_factory=list, description="List of SQL warehouses")
+    count: Optional[int] = Field(None, description="Number of warehouses returned")
+    has_more: Optional[bool] = Field(None, description="Whether more warehouses exist beyond this page")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateWarehouseResponse(BaseModel):
     """Response model for creating a SQL warehouse."""
-    id: str = Field(..., description="Created warehouse ID")
-    name: str = Field(..., description="Warehouse name")
-    state: str = Field(..., description="Initial state")
+    id: Optional[str] = Field(None, description="Created warehouse ID")
+    name: Optional[str] = Field(None, description="Warehouse name")
+    state: Optional[str] = Field(None, description="Initial state")
     message: str = Field(default="Warehouse created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateWarehouseResponse(BaseModel):
     """Response model for updating a SQL warehouse."""
-    id: str = Field(..., description="Updated warehouse ID")
+    id: Optional[str] = Field(None, description="Updated warehouse ID")
     name: Optional[str] = Field(None, description="Warehouse name")
     state: Optional[str] = Field(None, description="Current state")
     message: str = Field(default="Warehouse updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteWarehouseResponse(BaseModel):
     """Response model for deleting a SQL warehouse."""
-    id: str = Field(..., description="Deleted warehouse ID")
+    id: Optional[str] = Field(None, description="Deleted warehouse ID")
     message: str = Field(default="Warehouse deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class StartWarehouseResponse(BaseModel):
     """Response model for starting a SQL warehouse."""
-    id: str = Field(..., description="Started warehouse ID")
-    state: str = Field(..., description="Current state (STARTING or RUNNING)")
-    message: str = Field(..., description="Status message")
+    id: Optional[str] = Field(None, description="Started warehouse ID")
+    state: Optional[str] = Field(None, description="Current state (STARTING or RUNNING)")
+    message: str = Field(default="Warehouse started", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class StopWarehouseResponse(BaseModel):
     """Response model for stopping a SQL warehouse."""
-    id: str = Field(..., description="Stopped warehouse ID")
-    state: str = Field(..., description="Current state (STOPPING or STOPPED)")
-    message: str = Field(..., description="Status message")
+    id: Optional[str] = Field(None, description="Stopped warehouse ID")
+    state: Optional[str] = Field(None, description="Current state (STOPPING or STOPPED)")
+    message: str = Field(default="Warehouse stopped", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -411,21 +430,25 @@ class SecretScopeInfo(BaseModel):
 
 class ListSecretScopesResponse(BaseModel):
     """Response model for listing secret scopes."""
-    scopes: List[SecretScopeInfo] = Field(..., description="List of secret scopes")
-    count: int = Field(..., description="Number of scopes returned")
+    scopes: List[SecretScopeInfo] = Field(default_factory=list, description="List of secret scopes")
+    count: Optional[int] = Field(None, description="Number of scopes returned")
+    has_more: Optional[bool] = Field(None, description="Whether more scopes exist beyond this page")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateSecretScopeResponse(BaseModel):
     """Response model for creating a secret scope."""
-    scope: str = Field(..., description="Created scope name")
-    backend_type: str = Field(..., description="Backend type")
+    scope: Optional[str] = Field(None, description="Created scope name")
+    backend_type: Optional[str] = Field(None, description="Backend type")
     message: str = Field(default="Secret scope created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteSecretScopeResponse(BaseModel):
     """Response model for deleting a secret scope."""
-    scope: str = Field(..., description="Deleted scope name")
+    scope: Optional[str] = Field(None, description="Deleted scope name")
     message: str = Field(default="Secret scope deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class SecretMetadataInfo(BaseModel):
@@ -436,23 +459,27 @@ class SecretMetadataInfo(BaseModel):
 
 class ListSecretsResponse(BaseModel):
     """Response model for listing secrets in a scope."""
-    scope: str = Field(..., description="Scope name")
-    secrets: List[SecretMetadataInfo] = Field(..., description="List of secret metadata")
-    count: int = Field(..., description="Number of secrets")
+    scope: Optional[str] = Field(None, description="Scope name")
+    secrets: List[SecretMetadataInfo] = Field(default_factory=list, description="List of secret metadata")
+    count: Optional[int] = Field(None, description="Number of secrets")
+    has_more: Optional[bool] = Field(None, description="Whether more secrets exist beyond this page")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class PutSecretResponse(BaseModel):
     """Response model for storing a secret."""
-    scope: str = Field(..., description="Scope name")
-    key: str = Field(..., description="Secret key")
+    scope: Optional[str] = Field(None, description="Scope name")
+    key: Optional[str] = Field(None, description="Secret key")
     message: str = Field(default="Secret stored successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteSecretResponse(BaseModel):
     """Response model for deleting a secret."""
-    scope: str = Field(..., description="Scope name")
-    key: str = Field(..., description="Secret key")
+    scope: Optional[str] = Field(None, description="Scope name")
+    key: Optional[str] = Field(None, description="Secret key")
     message: str = Field(default="Secret deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class AclInfo(BaseModel):
@@ -463,24 +490,28 @@ class AclInfo(BaseModel):
 
 class ListAclsResponse(BaseModel):
     """Response model for listing ACLs on a scope."""
-    scope: str = Field(..., description="Scope name")
-    acls: List[AclInfo] = Field(..., description="List of ACLs")
-    count: int = Field(..., description="Number of ACLs")
+    scope: Optional[str] = Field(None, description="Scope name")
+    acls: List[AclInfo] = Field(default_factory=list, description="List of ACLs")
+    count: Optional[int] = Field(None, description="Number of ACLs")
+    has_more: Optional[bool] = Field(None, description="Whether more ACLs exist beyond this page")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class PutAclResponse(BaseModel):
     """Response model for setting an ACL."""
-    scope: str = Field(..., description="Scope name")
-    principal: str = Field(..., description="Principal")
-    permission: str = Field(..., description="Permission level")
+    scope: Optional[str] = Field(None, description="Scope name")
+    principal: Optional[str] = Field(None, description="Principal")
+    permission: Optional[str] = Field(None, description="Permission level")
     message: str = Field(default="ACL updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteAclResponse(BaseModel):
     """Response model for deleting an ACL."""
-    scope: str = Field(..., description="Scope name")
-    principal: str = Field(..., description="Principal")
+    scope: Optional[str] = Field(None, description="Scope name")
+    principal: Optional[str] = Field(None, description="Principal")
     message: str = Field(default="ACL deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -496,38 +527,43 @@ class RepoInfo(BaseModel):
     branch: Optional[str] = Field(None, description="Current branch")
     head_commit_id: Optional[str] = Field(None, description="HEAD commit ID")
     sparse_checkout: Optional[Dict[str, Any]] = Field(None, description="Sparse checkout configuration")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListReposResponse(BaseModel):
     """Response model for listing repositories."""
-    repos: List[RepoInfo] = Field(..., description="List of repositories")
-    count: int = Field(..., description="Number of repositories returned")
+    repos: List[RepoInfo] = Field(default_factory=list, description="List of repositories")
+    count: Optional[int] = Field(None, description="Number of repositories returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateRepoResponse(BaseModel):
     """Response model for creating a repository."""
-    id: int = Field(..., description="Created repository ID")
-    path: str = Field(..., description="Workspace path")
-    url: str = Field(..., description="Git repository URL")
-    provider: str = Field(..., description="Git provider")
+    id: Optional[int] = Field(None, description="Created repository ID")
+    path: Optional[str] = Field(None, description="Workspace path")
+    url: Optional[str] = Field(None, description="Git repository URL")
+    provider: Optional[str] = Field(None, description="Git provider")
     branch: Optional[str] = Field(None, description="Current branch")
     message: str = Field(default="Repository created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateRepoResponse(BaseModel):
     """Response model for updating a repository."""
-    repo_id: int = Field(..., description="Repository ID")
+    repo_id: Optional[int] = Field(None, description="Repository ID")
     branch: Optional[str] = Field(None, description="Current branch")
     tag: Optional[str] = Field(None, description="Current tag (if detached HEAD)")
     head_commit_id: Optional[str] = Field(None, description="HEAD commit ID")
     message: str = Field(default="Repository updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteRepoResponse(BaseModel):
     """Response model for deleting a repository."""
-    repo_id: int = Field(..., description="Deleted repository ID")
+    repo_id: Optional[int] = Field(None, description="Deleted repository ID")
     message: str = Field(default="Repository deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -583,27 +619,31 @@ class JobInfo(BaseModel):
 
 class ListJobsResponse(BaseModel):
     """Response model for listing jobs."""
-    jobs: list[JobInfo] = Field(..., description="List of jobs")
-    count: int = Field(..., description="Number of jobs returned")
+    jobs: list[JobInfo] = Field(default_factory=list, description="List of jobs")
+    count: int = Field(0, description="Number of jobs returned")
     has_more: Optional[bool] = Field(None, description="Whether more jobs exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateJobResponse(BaseModel):
     """Response model for creating a job."""
-    job_id: int = Field(..., description="Created job ID")
+    job_id: Optional[int] = Field(None, description="Created job ID")
     message: str = Field(default="Job created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateJobResponse(BaseModel):
     """Response model for updating a job."""
-    job_id: int = Field(..., description="Updated job ID")
+    job_id: Optional[int] = Field(None, description="Updated job ID")
     message: str = Field(default="Job updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteJobResponse(BaseModel):
     """Response model for deleting a job."""
-    job_id: int = Field(..., description="Deleted job ID")
+    job_id: Optional[int] = Field(None, description="Deleted job ID")
     message: str = Field(default="Job deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class RunStateInfo(BaseModel):
@@ -652,41 +692,47 @@ class RunInfo(BaseModel):
 
 class ListRunsResponse(BaseModel):
     """Response model for listing runs."""
-    runs: list[RunInfo] = Field(..., description="List of runs")
-    count: int = Field(..., description="Number of runs returned")
+    runs: list[RunInfo] = Field(default_factory=list, description="List of runs")
+    count: int = Field(0, description="Number of runs returned")
     has_more: Optional[bool] = Field(None, description="Whether more runs exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class RunNowResponse(BaseModel):
     """Response model for running a job now."""
-    run_id: int = Field(..., description="Started run ID")
-    number_in_job: int = Field(..., description="Sequential number of this run")
+    run_id: Optional[int] = Field(None, description="Started run ID")
+    number_in_job: Optional[int] = Field(None, description="Sequential number of this run")
     message: str = Field(default="Job run triggered successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class SubmitRunResponse(BaseModel):
     """Response model for submitting a one-time run."""
-    run_id: int = Field(..., description="Submitted run ID")
+    run_id: Optional[int] = Field(None, description="Submitted run ID")
     message: str = Field(default="Run submitted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CancelRunResponse(BaseModel):
     """Response model for canceling a run."""
-    run_id: int = Field(..., description="Canceled run ID")
+    run_id: Optional[int] = Field(None, description="Canceled run ID")
     message: str = Field(default="Run canceled successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteRunResponse(BaseModel):
     """Response model for deleting a run."""
-    run_id: int = Field(..., description="Deleted run ID")
+    run_id: Optional[int] = Field(None, description="Deleted run ID")
     message: str = Field(default="Run deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class RepairRunResponse(BaseModel):
     """Response model for repairing a run."""
-    run_id: int = Field(..., description="Original run ID")
-    repair_id: int = Field(..., description="Repair attempt ID")
+    run_id: Optional[int] = Field(None, description="Original run ID")
+    repair_id: Optional[int] = Field(None, description="Repair attempt ID")
     message: str = Field(default="Run repair initiated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class RunOutputInfo(BaseModel):
@@ -710,7 +756,8 @@ class ExportRunView(BaseModel):
 
 class ExportRunResponse(BaseModel):
     """Response model for exporting a run."""
-    views: list[ExportRunView] = Field(..., description="Exported views")
+    views: list[ExportRunView] = Field(default_factory=list, description="Exported views")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -773,38 +820,45 @@ class ClusterInfo(BaseModel):
 
 class ListClustersResponse(BaseModel):
     """Response model for listing clusters."""
-    clusters: list[ClusterInfo] = Field(..., description="List of clusters")
-    count: int = Field(..., description="Number of clusters returned")
+    clusters: list[ClusterInfo] = Field(default_factory=list, description="List of clusters")
+    count: int = Field(0, description="Number of clusters returned")
+    has_more: bool = Field(False, description="Whether more clusters exist beyond this page")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateClusterResponse(BaseModel):
     """Response model for creating a cluster."""
-    cluster_id: str = Field(..., description="Created cluster ID")
+    cluster_id: Optional[str] = Field(None, description="Created cluster ID")
     message: str = Field(default="Cluster created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class EditClusterResponse(BaseModel):
     """Response model for editing a cluster."""
-    cluster_id: str = Field(..., description="Edited cluster ID")
+    cluster_id: Optional[str] = Field(None, description="Edited cluster ID")
     message: str = Field(default="Cluster edited successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteClusterResponse(BaseModel):
     """Response model for deleting/terminating a cluster."""
-    cluster_id: str = Field(..., description="Deleted cluster ID")
+    cluster_id: Optional[str] = Field(None, description="Deleted cluster ID")
     message: str = Field(default="Cluster deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class StartClusterResponse(BaseModel):
     """Response model for starting a cluster."""
-    cluster_id: str = Field(..., description="Started cluster ID")
+    cluster_id: Optional[str] = Field(None, description="Started cluster ID")
     message: str = Field(default="Cluster start initiated", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class RestartClusterResponse(BaseModel):
     """Response model for restarting a cluster."""
-    cluster_id: str = Field(..., description="Restarted cluster ID")
+    cluster_id: Optional[str] = Field(None, description="Restarted cluster ID")
     message: str = Field(default="Cluster restart initiated", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -861,6 +915,7 @@ class TableInfoModel(BaseModel):
     enable_predictive_optimization: Optional[str] = Field(None, description="Predictive optimization setting")
     effective_predictive_optimization_flag: Optional[Dict[str, Any]] = Field(None, description="Effective predictive optimization flag")
     delta_runtime_properties_kvpairs: Optional[Dict[str, Any]] = Field(None, description="Delta runtime properties")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class TableSummaryModel(BaseModel):
@@ -871,34 +926,39 @@ class TableSummaryModel(BaseModel):
 
 class ListTablesResponse(BaseModel):
     """Response model for listing tables."""
-    tables: list[TableInfoModel] = Field(..., description="List of tables")
-    count: int = Field(..., description="Number of tables returned")
+    tables: list[TableInfoModel] = Field(default_factory=list, description="List of tables")
+    count: Optional[int] = Field(None, description="Number of tables returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListTableSummariesResponse(BaseModel):
     """Response model for listing table summaries."""
-    summaries: list[TableSummaryModel] = Field(..., description="List of table summaries")
-    count: int = Field(..., description="Number of summaries returned")
+    summaries: list[TableSummaryModel] = Field(default_factory=list, description="List of table summaries")
+    count: Optional[int] = Field(None, description="Number of summaries returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class TableExistsResponseModel(BaseModel):
     """Response model for checking table existence."""
-    table_exists: bool = Field(..., description="Whether the table exists")
-    full_name: str = Field(..., description="Full name that was checked")
+    table_exists: Optional[bool] = Field(None, description="Whether the table exists")
+    full_name: Optional[str] = Field(None, description="Full name that was checked")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteTableResponse(BaseModel):
     """Response model for deleting a table."""
-    full_name: str = Field(..., description="Full name of deleted table")
+    full_name: Optional[str] = Field(None, description="Full name of deleted table")
     message: str = Field(default="Table deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateTableResponse(BaseModel):
     """Response model for updating a table."""
-    full_name: str = Field(..., description="Full name of updated table")
+    full_name: Optional[str] = Field(None, description="Full name of updated table")
     message: str = Field(default="Table updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -925,31 +985,36 @@ class SchemaInfoModel(BaseModel):
     browse_only: Optional[bool] = Field(None, description="Whether schema can only be browsed (limited metadata)")
     enable_predictive_optimization: Optional[str] = Field(None, description="Predictive optimization setting")
     effective_predictive_optimization_flag: Optional[Dict[str, Any]] = Field(None, description="Effective predictive optimization flag")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListSchemasResponse(BaseModel):
     """Response model for listing schemas."""
-    schemas: list[SchemaInfoModel] = Field(..., description="List of schemas")
-    count: int = Field(..., description="Number of schemas returned")
+    schemas: list[SchemaInfoModel] = Field(default_factory=list, description="List of schemas")
+    count: Optional[int] = Field(None, description="Number of schemas returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateSchemaResponse(BaseModel):
     """Response model for creating a schema."""
-    schema_info: SchemaInfoModel = Field(..., description="Created schema information")
+    schema_info: Optional[SchemaInfoModel] = Field(None, description="Created schema information")
     message: str = Field(default="Schema created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteSchemaResponse(BaseModel):
     """Response model for deleting a schema."""
-    full_name: str = Field(..., description="Full name of deleted schema")
+    full_name: Optional[str] = Field(None, description="Full name of deleted schema")
     message: str = Field(default="Schema deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateSchemaResponse(BaseModel):
     """Response model for updating a schema."""
-    schema_info: SchemaInfoModel = Field(..., description="Updated schema information")
+    schema_info: Optional[SchemaInfoModel] = Field(None, description="Updated schema information")
     message: str = Field(default="Schema updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -981,31 +1046,36 @@ class CatalogInfoModel(BaseModel):
     enable_predictive_optimization: Optional[str] = Field(None, description="Predictive optimization setting")
     effective_predictive_optimization_flag: Optional[Dict[str, Any]] = Field(None, description="Effective predictive optimization flag")
     provisioning_info: Optional[Dict[str, Any]] = Field(None, description="Provisioning information")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListCatalogsResponse(BaseModel):
     """Response model for listing catalogs."""
-    catalogs: list[CatalogInfoModel] = Field(..., description="List of catalogs")
-    count: int = Field(..., description="Number of catalogs returned")
+    catalogs: list[CatalogInfoModel] = Field(default_factory=list, description="List of catalogs")
+    count: Optional[int] = Field(None, description="Number of catalogs returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateCatalogResponse(BaseModel):
     """Response model for creating a catalog."""
-    catalog_info: CatalogInfoModel = Field(..., description="Created catalog information")
+    catalog_info: Optional[CatalogInfoModel] = Field(None, description="Created catalog information")
     message: str = Field(default="Catalog created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteCatalogResponse(BaseModel):
     """Response model for deleting a catalog."""
-    name: str = Field(..., description="Name of deleted catalog")
+    name: Optional[str] = Field(None, description="Name of deleted catalog")
     message: str = Field(default="Catalog deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateCatalogResponse(BaseModel):
     """Response model for updating a catalog."""
-    catalog_info: CatalogInfoModel = Field(..., description="Updated catalog information")
+    catalog_info: Optional[CatalogInfoModel] = Field(None, description="Updated catalog information")
     message: str = Field(default="Catalog updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -1057,31 +1127,36 @@ class FunctionInfoModel(BaseModel):
     input_params: Optional[list[FunctionParameterInfoModel]] = Field(None, description="Input parameters")
     return_params: Optional[list[FunctionParameterInfoModel]] = Field(None, description="Return parameters")
     browse_only: Optional[bool] = Field(None, description="Whether function can only be browsed (limited metadata)")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListFunctionsResponse(BaseModel):
     """Response model for listing functions."""
-    functions: list[FunctionInfoModel] = Field(..., description="List of functions")
-    count: int = Field(..., description="Number of functions returned")
+    functions: list[FunctionInfoModel] = Field(default_factory=list, description="List of functions")
+    count: Optional[int] = Field(None, description="Number of functions returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateFunctionResponse(BaseModel):
     """Response model for creating a function."""
-    function_info: FunctionInfoModel = Field(..., description="Created function information")
+    function_info: Optional[FunctionInfoModel] = Field(None, description="Created function information")
     message: str = Field(default="Function created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteFunctionResponse(BaseModel):
     """Response model for deleting a function."""
-    name: str = Field(..., description="Full name of deleted function")
+    name: Optional[str] = Field(None, description="Full name of deleted function")
     message: str = Field(default="Function deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateFunctionResponse(BaseModel):
     """Response model for updating a function."""
-    function_info: FunctionInfoModel = Field(..., description="Updated function information")
+    function_info: Optional[FunctionInfoModel] = Field(None, description="Updated function information")
     message: str = Field(default="Function updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -1112,31 +1187,36 @@ class VolumeInfoModel(BaseModel):
     access_point: Optional[str] = Field(None, description="Access point URL for the volume")
     encryption_details: Optional[EncryptionDetailsModel] = Field(None, description="Encryption details")
     browse_only: Optional[bool] = Field(None, description="Whether volume can only be browsed (limited metadata)")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListVolumesResponse(BaseModel):
     """Response model for listing volumes."""
-    volumes: list[VolumeInfoModel] = Field(..., description="List of volumes")
-    count: int = Field(..., description="Number of volumes returned")
+    volumes: list[VolumeInfoModel] = Field(default_factory=list, description="List of volumes")
+    count: Optional[int] = Field(None, description="Number of volumes returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateVolumeResponse(BaseModel):
     """Response model for creating a volume."""
-    volume_info: VolumeInfoModel = Field(..., description="Created volume information")
+    volume_info: Optional[VolumeInfoModel] = Field(None, description="Created volume information")
     message: str = Field(default="Volume created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteVolumeResponse(BaseModel):
     """Response model for deleting a volume."""
-    name: str = Field(..., description="Full name of deleted volume")
+    name: Optional[str] = Field(None, description="Full name of deleted volume")
     message: str = Field(default="Volume deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateVolumeResponse(BaseModel):
     """Response model for updating a volume."""
-    volume_info: VolumeInfoModel = Field(..., description="Updated volume information")
+    volume_info: Optional[VolumeInfoModel] = Field(None, description="Updated volume information")
     message: str = Field(default="Volume updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -1189,28 +1269,32 @@ class ExternalLineageRelationshipModel(BaseModel):
 
 class ListExternalLineageResponse(BaseModel):
     """Response model for listing external lineage relationships."""
-    lineage_relationships: list[Dict[str, Any]] = Field(..., description="List of lineage relationships")
-    count: int = Field(..., description="Number of relationships returned")
+    lineage_relationships: list[Dict[str, Any]] = Field(default_factory=list, description="List of lineage relationships")
+    count: Optional[int] = Field(None, description="Number of relationships returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateExternalLineageResponse(BaseModel):
     """Response model for creating external lineage relationship."""
-    relationship: ExternalLineageRelationshipModel = Field(..., description="Created lineage relationship")
+    relationship: Optional[ExternalLineageRelationshipModel] = Field(None, description="Created lineage relationship")
     message: str = Field(default="External lineage relationship created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteExternalLineageResponse(BaseModel):
     """Response model for deleting external lineage relationship."""
-    source: str = Field(..., description="Source object identifier")
-    target: str = Field(..., description="Target object identifier")
+    source: Optional[str] = Field(None, description="Source object identifier")
+    target: Optional[str] = Field(None, description="Target object identifier")
     message: str = Field(default="External lineage relationship deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateExternalLineageResponse(BaseModel):
     """Response model for updating external lineage relationship."""
-    relationship: ExternalLineageRelationshipModel = Field(..., description="Updated lineage relationship")
+    relationship: Optional[ExternalLineageRelationshipModel] = Field(None, description="Updated lineage relationship")
     message: str = Field(default="External lineage relationship updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -1273,53 +1357,61 @@ class PostgresOperationModel(BaseModel):
 
 class ListPostgresProjectsResponse(BaseModel):
     """Response model for listing Postgres projects."""
-    projects: list[PostgresProjectModel] = Field(..., description="List of projects")
-    count: int = Field(..., description="Number of projects returned")
+    projects: list[PostgresProjectModel] = Field(default_factory=list, description="List of projects")
+    count: int = Field(0, description="Number of projects returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListPostgresBranchesResponse(BaseModel):
     """Response model for listing Postgres branches."""
-    branches: list[PostgresBranchModel] = Field(..., description="List of branches")
-    count: int = Field(..., description="Number of branches returned")
+    branches: list[PostgresBranchModel] = Field(default_factory=list, description="List of branches")
+    count: int = Field(0, description="Number of branches returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListPostgresEndpointsResponse(BaseModel):
     """Response model for listing Postgres endpoints."""
-    endpoints: list[PostgresEndpointModel] = Field(..., description="List of endpoints")
-    count: int = Field(..., description="Number of endpoints returned")
+    endpoints: list[PostgresEndpointModel] = Field(default_factory=list, description="List of endpoints")
+    count: int = Field(0, description="Number of endpoints returned")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreatePostgresProjectResponse(BaseModel):
     """Response model for creating a Postgres project."""
-    operation: PostgresOperationModel = Field(..., description="Long-running operation")
+    operation: Optional[PostgresOperationModel] = Field(None, description="Long-running operation")
     message: str = Field(default="Postgres project creation initiated", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreatePostgresBranchResponse(BaseModel):
     """Response model for creating a Postgres branch."""
-    operation: PostgresOperationModel = Field(..., description="Long-running operation")
+    operation: Optional[PostgresOperationModel] = Field(None, description="Long-running operation")
     message: str = Field(default="Postgres branch creation initiated", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreatePostgresEndpointResponse(BaseModel):
     """Response model for creating a Postgres endpoint."""
-    operation: PostgresOperationModel = Field(..., description="Long-running operation")
+    operation: Optional[PostgresOperationModel] = Field(None, description="Long-running operation")
     message: str = Field(default="Postgres endpoint creation initiated", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeletePostgresResponse(BaseModel):
     """Response model for deleting Postgres resources."""
-    name: str = Field(..., description="Name of deleted resource")
+    name: Optional[str] = Field(None, description="Name of deleted resource")
     message: str = Field(default="Resource deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdatePostgresResponse(BaseModel):
     """Response model for updating Postgres resources."""
-    operation: PostgresOperationModel = Field(..., description="Long-running operation")
+    operation: Optional[PostgresOperationModel] = Field(None, description="Long-running operation")
     message: str = Field(default="Resource update initiated", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -1355,27 +1447,31 @@ class ContextStatusModel(BaseModel):
 
 class CreateExecutionContextResponse(BaseModel):
     """Response model for creating an execution context."""
-    context: ContextStatusModel = Field(..., description="Created execution context")
+    context: Optional[ContextStatusModel] = Field(None, description="Created execution context")
     message: str = Field(default="Execution context created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ExecuteCommandResponse(BaseModel):
     """Response model for executing a command."""
-    command: CommandStatusModel = Field(..., description="Command execution status")
+    command: Optional[CommandStatusModel] = Field(None, description="Command execution status")
     message: str = Field(default="Command execution initiated", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CancelCommandResponse(BaseModel):
     """Response model for canceling a command."""
-    command: CommandStatusModel = Field(..., description="Canceled command status")
+    command: Optional[CommandStatusModel] = Field(None, description="Canceled command status")
     message: str = Field(default="Command cancellation initiated", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DestroyContextResponse(BaseModel):
     """Response model for destroying an execution context."""
-    cluster_id: str = Field(..., description="Cluster ID")
-    context_id: str = Field(..., description="Context ID")
+    cluster_id: Optional[str] = Field(None, description="Cluster ID")
+    context_id: Optional[str] = Field(None, description="Context ID")
     message: str = Field(default="Execution context destroyed successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -1398,6 +1494,7 @@ class ExternalLocationInfoModel(BaseModel):
     enable_file_events: Optional[bool] = Field(None, description="Whether file events are enabled")
     fallback: Optional[bool] = Field(None, description="Whether fallback mode is enabled")
     isolation_mode: Optional[str] = Field(None, description="Isolation mode")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListExternalLocationsResponse(BaseModel):
@@ -1405,24 +1502,28 @@ class ListExternalLocationsResponse(BaseModel):
     external_locations: list[ExternalLocationInfoModel] = Field(default_factory=list, description="List of external locations")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="External locations retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateExternalLocationResponse(BaseModel):
     """Response model for creating an external location."""
-    external_location: ExternalLocationInfoModel = Field(..., description="Created external location")
+    external_location: Optional[ExternalLocationInfoModel] = Field(None, description="Created external location")
     message: str = Field(default="External location created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateExternalLocationResponse(BaseModel):
     """Response model for updating an external location."""
-    external_location: ExternalLocationInfoModel = Field(..., description="Updated external location")
+    external_location: Optional[ExternalLocationInfoModel] = Field(None, description="Updated external location")
     message: str = Field(default="External location updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteExternalLocationResponse(BaseModel):
     """Response model for deleting an external location."""
-    name: str = Field(..., description="Name of deleted external location")
+    name: Optional[str] = Field(None, description="Name of deleted external location")
     message: str = Field(default="External location deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -1462,6 +1563,7 @@ class PipelineInfoModel(BaseModel):
     creator_user_name: Optional[str] = Field(None, description="Creator username")
     last_modified: Optional[int] = Field(None, description="Last modified timestamp")
     latest_updates: Optional[list[str]] = Field(None, description="Latest update IDs")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListPipelinesResponse(BaseModel):
@@ -1469,23 +1571,27 @@ class ListPipelinesResponse(BaseModel):
     pipelines: list[PipelineInfoModel] = Field(default_factory=list, description="List of pipelines")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Pipelines retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreatePipelineResponse(BaseModel):
     """Response model for creating a pipeline."""
-    pipeline_id: str = Field(..., description="Created pipeline ID")
+    pipeline_id: Optional[str] = Field(None, description="Created pipeline ID")
     message: str = Field(default="Pipeline created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdatePipelineResponse(BaseModel):
     """Response model for updating a pipeline."""
     message: str = Field(default="Pipeline updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeletePipelineResponse(BaseModel):
     """Response model for deleting a pipeline."""
-    pipeline_id: str = Field(..., description="Deleted pipeline ID")
+    pipeline_id: Optional[str] = Field(None, description="Deleted pipeline ID")
     message: str = Field(default="Pipeline deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateInfoModel(BaseModel):
@@ -1495,12 +1601,14 @@ class UpdateInfoModel(BaseModel):
     state: Optional[str] = Field(None, description="Update state (QUEUED, RUNNING, COMPLETED, FAILED, CANCELED)")
     creation_time: Optional[int] = Field(None, description="Creation timestamp")
     full_refresh: Optional[bool] = Field(None, description="Whether this is a full refresh")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class StartUpdateResponse(BaseModel):
     """Response model for starting a pipeline update."""
-    update_id: str = Field(..., description="Started update ID")
+    update_id: Optional[str] = Field(None, description="Started update ID")
     message: str = Field(default="Pipeline update started successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListUpdatesResponse(BaseModel):
@@ -1508,18 +1616,21 @@ class ListUpdatesResponse(BaseModel):
     updates: list[UpdateInfoModel] = Field(default_factory=list, description="List of pipeline updates")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Pipeline updates retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class StopPipelineResponse(BaseModel):
     """Response model for stopping a pipeline."""
-    pipeline_id: str = Field(..., description="Stopped pipeline ID")
+    pipeline_id: Optional[str] = Field(None, description="Stopped pipeline ID")
     message: str = Field(default="Pipeline stopped successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ResetPipelineResponse(BaseModel):
     """Response model for resetting a pipeline."""
-    pipeline_id: str = Field(..., description="Reset pipeline ID")
+    pipeline_id: Optional[str] = Field(None, description="Reset pipeline ID")
     message: str = Field(default="Pipeline reset successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -1569,41 +1680,48 @@ class ListExperimentsResponse(BaseModel):
     experiments: list[ExperimentModel] = Field(default_factory=list, description="List of experiments")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Experiments retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateExperimentResponse(BaseModel):
     """Response model for creating an experiment."""
-    experiment_id: str = Field(..., description="Created experiment ID")
+    experiment_id: Optional[str] = Field(None, description="Created experiment ID")
     message: str = Field(default="Experiment created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteExperimentResponse(BaseModel):
     """Response model for deleting an experiment."""
-    experiment_id: str = Field(..., description="Deleted experiment ID")
+    experiment_id: Optional[str] = Field(None, description="Deleted experiment ID")
     message: str = Field(default="Experiment deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateExperimentResponse(BaseModel):
     """Response model for updating an experiment."""
     message: str = Field(default="Experiment updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateRunResponse(BaseModel):
     """Response model for creating a run."""
-    run: RunModel = Field(..., description="Created run")
+    run: Optional[RunModel] = Field(None, description="Created run")
     message: str = Field(default="Run created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteRunResponse(BaseModel):
     """Response model for deleting a run."""
-    run_id: str = Field(..., description="Deleted run ID")
+    run_id: Optional[str] = Field(None, description="Deleted run ID")
     message: str = Field(default="Run deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateRunResponse(BaseModel):
     """Response model for updating a run."""
-    run: RunModel = Field(..., description="Updated run information")
+    run: Optional[RunModel] = Field(None, description="Updated run information")
     message: str = Field(default="Run updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class SearchRunsResponse(BaseModel):
@@ -1611,26 +1729,31 @@ class SearchRunsResponse(BaseModel):
     runs: list[RunModel] = Field(default_factory=list, description="List of runs matching search criteria")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Runs retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class LogMetricResponse(BaseModel):
     """Response model for logging a metric."""
     message: str = Field(default="Metric logged successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class LogParamResponse(BaseModel):
     """Response model for logging a parameter."""
     message: str = Field(default="Parameter logged successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class SetExperimentTagResponse(BaseModel):
     """Response model for setting an experiment tag."""
     message: str = Field(default="Experiment tag set successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class SetRunTagResponse(BaseModel):
     """Response model for setting a run tag."""
     message: str = Field(default="Run tag set successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -1699,41 +1822,48 @@ class ListModelsResponse(BaseModel):
     models: list[RegisteredModelModel] = Field(default_factory=list, description="List of registered models")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Models retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateModelResponse(BaseModel):
     """Response model for creating a registered model."""
-    model: RegisteredModelModel = Field(..., description="Created model")
+    model: Optional[RegisteredModelModel] = Field(None, description="Created model")
     message: str = Field(default="Model created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateModelResponse(BaseModel):
     """Response model for updating a model."""
     message: str = Field(default="Model updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteModelResponse(BaseModel):
     """Response model for deleting a model."""
-    model_name: str = Field(..., description="Deleted model name")
+    model_name: Optional[str] = Field(None, description="Deleted model name")
     message: str = Field(default="Model deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateModelVersionResponse(BaseModel):
     """Response model for creating a model version."""
-    model_version: ModelVersionModel = Field(..., description="Created model version")
+    model_version: Optional[ModelVersionModel] = Field(None, description="Created model version")
     message: str = Field(default="Model version created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateModelVersionResponse(BaseModel):
     """Response model for updating a model version."""
     message: str = Field(default="Model version updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteModelVersionResponse(BaseModel):
     """Response model for deleting a model version."""
-    model_name: str = Field(..., description="Model name")
-    version: str = Field(..., description="Deleted version")
+    model_name: Optional[str] = Field(None, description="Model name")
+    version: Optional[str] = Field(None, description="Deleted version")
     message: str = Field(default="Model version deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListModelVersionsResponse(BaseModel):
@@ -1741,67 +1871,79 @@ class ListModelVersionsResponse(BaseModel):
     model_versions: list[ModelVersionModel] = Field(default_factory=list, description="List of model versions")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Model versions retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class TransitionStageResponse(BaseModel):
     """Response model for transitioning stage."""
-    model_version: ModelVersionModel = Field(..., description="Updated model version")
+    model_version: Optional[ModelVersionModel] = Field(None, description="Updated model version")
     message: str = Field(default="Stage transitioned successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateTransitionRequestResponse(BaseModel):
     """Response model for creating transition request."""
-    request: TransitionRequestModel = Field(..., description="Created transition request")
+    request: Optional[TransitionRequestModel] = Field(None, description="Created transition request")
     message: str = Field(default="Transition request created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ApproveTransitionRequestResponse(BaseModel):
     """Response model for approving transition request."""
     message: str = Field(default="Transition request approved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateCommentResponse(BaseModel):
     """Response model for creating a comment."""
-    comment: ModelCommentModel = Field(..., description="Created comment")
+    comment: Optional[ModelCommentModel] = Field(None, description="Created comment")
     message: str = Field(default="Comment created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateCommentResponse(BaseModel):
     """Response model for updating a comment."""
     message: str = Field(default="Comment updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteCommentResponse(BaseModel):
     """Response model for deleting a comment."""
-    comment_id: str = Field(..., description="Deleted comment ID")
+    comment_id: Optional[str] = Field(None, description="Deleted comment ID")
     message: str = Field(default="Comment deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class SetTagResponse(BaseModel):
     """Response model for setting a tag."""
     message: str = Field(default="Tag set successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteTagResponse(BaseModel):
     """Response model for deleting a tag."""
     message: str = Field(default="Tag deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateWebhookResponse(BaseModel):
     """Response model for creating a webhook."""
-    webhook: WebhookModel = Field(..., description="Created webhook")
+    webhook: Optional[WebhookModel] = Field(None, description="Created webhook")
     message: str = Field(default="Webhook created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateWebhookResponse(BaseModel):
     """Response model for updating a webhook."""
     message: str = Field(default="Webhook updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteWebhookResponse(BaseModel):
     """Response model for deleting a webhook."""
-    webhook_id: str = Field(..., description="Deleted webhook ID")
+    webhook_id: Optional[str] = Field(None, description="Deleted webhook ID")
     message: str = Field(default="Webhook deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListWebhooksResponse(BaseModel):
@@ -1809,6 +1951,7 @@ class ListWebhooksResponse(BaseModel):
     webhooks: list[WebhookModel] = Field(default_factory=list, description="List of webhooks")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Webhooks retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -1837,8 +1980,9 @@ class ForecastingExperimentModel(BaseModel):
 
 class CreateForecastingExperimentResponse(BaseModel):
     """Response model for creating a forecasting experiment."""
-    experiment_id: str = Field(..., description="Created experiment ID")
+    experiment_id: Optional[str] = Field(None, description="Created experiment ID")
     message: str = Field(default="Forecasting experiment created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -1860,36 +2004,42 @@ class ListOnlineStoresResponse(BaseModel):
     online_stores: list[OnlineStoreModel] = Field(default_factory=list, description="List of online stores")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Online stores retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateOnlineStoreResponse(BaseModel):
     """Response model for creating an online store."""
-    online_store: OnlineStoreModel = Field(..., description="Created online store")
+    online_store: Optional[OnlineStoreModel] = Field(None, description="Created online store")
     message: str = Field(default="Online store created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateOnlineStoreResponse(BaseModel):
     """Response model for updating an online store."""
-    online_store: OnlineStoreModel = Field(..., description="Updated online store")
+    online_store: Optional[OnlineStoreModel] = Field(None, description="Updated online store")
     message: str = Field(default="Online store updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteOnlineStoreResponse(BaseModel):
     """Response model for deleting an online store."""
-    name: str = Field(..., description="Deleted online store name")
+    name: Optional[str] = Field(None, description="Deleted online store name")
     message: str = Field(default="Online store deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class PublishTableResponse(BaseModel):
     """Response model for publishing a table."""
-    online_table_name: str = Field(..., description="Published online table name")
+    online_table_name: Optional[str] = Field(None, description="Published online table name")
     message: str = Field(default="Table published successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteOnlineTableResponse(BaseModel):
     """Response model for deleting an online table."""
-    online_table_name: str = Field(..., description="Deleted online table name")
+    online_table_name: Optional[str] = Field(None, description="Deleted online table name")
     message: str = Field(default="Online table deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -1935,24 +2085,28 @@ class ListFeaturesResponse(BaseModel):
     features: list[FeatureModel] = Field(default_factory=list, description="List of features")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Features retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateFeatureResponse(BaseModel):
     """Response model for creating a feature."""
-    feature: FeatureModel = Field(..., description="Created feature")
+    feature: Optional[FeatureModel] = Field(None, description="Created feature")
     message: str = Field(default="Feature created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateFeatureResponse(BaseModel):
     """Response model for updating a feature."""
-    feature: FeatureModel = Field(..., description="Updated feature")
+    feature: Optional[FeatureModel] = Field(None, description="Updated feature")
     message: str = Field(default="Feature updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteFeatureResponse(BaseModel):
     """Response model for deleting a feature."""
-    full_name: str = Field(..., description="Deleted feature name")
+    full_name: Optional[str] = Field(None, description="Deleted feature name")
     message: str = Field(default="Feature deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListKafkaConfigsResponse(BaseModel):
@@ -1960,24 +2114,28 @@ class ListKafkaConfigsResponse(BaseModel):
     kafka_configs: list[KafkaConfigModel] = Field(default_factory=list, description="List of Kafka configs")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Kafka configs retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateKafkaConfigResponse(BaseModel):
     """Response model for creating a Kafka config."""
-    kafka_config: KafkaConfigModel = Field(..., description="Created Kafka config")
+    kafka_config: Optional[KafkaConfigModel] = Field(None, description="Created Kafka config")
     message: str = Field(default="Kafka config created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateKafkaConfigResponse(BaseModel):
     """Response model for updating a Kafka config."""
-    kafka_config: KafkaConfigModel = Field(..., description="Updated Kafka config")
+    kafka_config: Optional[KafkaConfigModel] = Field(None, description="Updated Kafka config")
     message: str = Field(default="Kafka config updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteKafkaConfigResponse(BaseModel):
     """Response model for deleting a Kafka config."""
-    name: str = Field(..., description="Deleted Kafka config name")
+    name: Optional[str] = Field(None, description="Deleted Kafka config name")
     message: str = Field(default="Kafka config deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListMaterializedFeaturesResponse(BaseModel):
@@ -1985,30 +2143,35 @@ class ListMaterializedFeaturesResponse(BaseModel):
     materialized_features: list[MaterializedFeatureModel] = Field(default_factory=list, description="List of materialized features")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Materialized features retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateMaterializedFeatureResponse(BaseModel):
     """Response model for creating a materialized feature."""
-    materialized_feature: MaterializedFeatureModel = Field(..., description="Created materialized feature")
+    materialized_feature: Optional[MaterializedFeatureModel] = Field(None, description="Created materialized feature")
     message: str = Field(default="Materialized feature created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class BatchCreateMaterializedFeaturesResponse(BaseModel):
     """Response model for batch creating materialized features."""
     materialized_features: list[MaterializedFeatureModel] = Field(default_factory=list, description="Created materialized features")
     message: str = Field(default="Materialized features created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateMaterializedFeatureResponse(BaseModel):
     """Response model for updating a materialized feature."""
-    materialized_feature: MaterializedFeatureModel = Field(..., description="Updated materialized feature")
+    materialized_feature: Optional[MaterializedFeatureModel] = Field(None, description="Updated materialized feature")
     message: str = Field(default="Materialized feature updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteMaterializedFeatureResponse(BaseModel):
     """Response model for deleting a materialized feature."""
-    materialized_feature_id: str = Field(..., description="Deleted materialized feature ID")
+    materialized_feature_id: Optional[str] = Field(None, description="Deleted materialized feature ID")
     message: str = Field(default="Materialized feature deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -2032,25 +2195,29 @@ class ListEndpointsResponse(BaseModel):
     endpoints: list[EndpointInfoModel] = Field(default_factory=list, description="List of endpoints")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Vector search endpoints retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateEndpointResponse(BaseModel):
     """Response model for creating a vector search endpoint."""
-    endpoint: EndpointInfoModel = Field(..., description="Created endpoint")
+    endpoint: Optional[EndpointInfoModel] = Field(None, description="Created endpoint")
     message: str = Field(default="Vector search endpoint created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteEndpointResponse(BaseModel):
     """Response model for deleting a vector search endpoint."""
-    endpoint_name: str = Field(..., description="Deleted endpoint name")
+    endpoint_name: Optional[str] = Field(None, description="Deleted endpoint name")
     message: str = Field(default="Vector search endpoint deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateEndpointBudgetPolicyResponse(BaseModel):
     """Response model for updating endpoint budget policy."""
-    endpoint_name: str = Field(..., description="Endpoint name")
-    budget_policy_id: str = Field(..., description="Updated budget policy ID")
+    endpoint_name: Optional[str] = Field(None, description="Endpoint name")
+    budget_policy_id: Optional[str] = Field(None, description="Updated budget policy ID")
     message: str = Field(default="Budget policy updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CustomTagModel(BaseModel):
@@ -2061,9 +2228,10 @@ class CustomTagModel(BaseModel):
 
 class UpdateEndpointCustomTagsResponse(BaseModel):
     """Response model for updating endpoint custom tags."""
-    endpoint_name: str = Field(..., description="Endpoint name")
+    endpoint_name: Optional[str] = Field(None, description="Endpoint name")
     custom_tags: list[CustomTagModel] = Field(default_factory=list, description="Updated custom tags")
     message: str = Field(default="Custom tags updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class MetricDataPoint(BaseModel):
@@ -2080,10 +2248,11 @@ class MetricSeries(BaseModel):
 
 class RetrieveMetricsResponse(BaseModel):
     """Response model for retrieving endpoint metrics."""
-    endpoint_name: str = Field(..., description="Endpoint name")
+    endpoint_name: Optional[str] = Field(None, description="Endpoint name")
     metrics: list[MetricSeries] = Field(default_factory=list, description="Metric series")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Metrics retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -2115,18 +2284,21 @@ class ListIndexesResponse(BaseModel):
     indexes: list[MiniVectorIndexModel] = Field(default_factory=list, description="List of indexes")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Vector search indexes retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateIndexResponse(BaseModel):
     """Response model for creating a vector search index."""
-    index: VectorIndexModel = Field(..., description="Created index")
+    index: Optional[VectorIndexModel] = Field(None, description="Created index")
     message: str = Field(default="Vector search index created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteIndexResponse(BaseModel):
     """Response model for deleting a vector search index."""
-    index_name: str = Field(..., description="Deleted index name")
+    index_name: Optional[str] = Field(None, description="Deleted index name")
     message: str = Field(default="Vector search index deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class QueryResultRow(BaseModel):
@@ -2137,30 +2309,34 @@ class QueryResultRow(BaseModel):
 
 class QueryVectorIndexResponse(BaseModel):
     """Response model for querying a vector index."""
-    index_name: str = Field(..., description="Index name")
+    index_name: Optional[str] = Field(None, description="Index name")
     results: list[QueryResultRow] = Field(default_factory=list, description="Query results")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Query executed successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpsertDataResponse(BaseModel):
     """Response model for upserting data to a vector index."""
-    index_name: str = Field(..., description="Index name")
+    index_name: Optional[str] = Field(None, description="Index name")
     upserted_count: Optional[int] = Field(None, description="Number of vectors upserted")
     message: str = Field(default="Data upserted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteDataResponse(BaseModel):
     """Response model for deleting data from a vector index."""
-    index_name: str = Field(..., description="Index name")
+    index_name: Optional[str] = Field(None, description="Index name")
     deleted_count: Optional[int] = Field(None, description="Number of vectors deleted")
     message: str = Field(default="Data deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class SyncIndexResponse(BaseModel):
     """Response model for syncing a vector index."""
-    index_name: str = Field(..., description="Index name")
+    index_name: Optional[str] = Field(None, description="Index name")
     message: str = Field(default="Index sync triggered successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ScanResultRow(BaseModel):
@@ -2170,10 +2346,11 @@ class ScanResultRow(BaseModel):
 
 class ScanVectorIndexResponse(BaseModel):
     """Response model for scanning a vector index."""
-    index_name: str = Field(..., description="Index name")
+    index_name: Optional[str] = Field(None, description="Index name")
     results: list[ScanResultRow] = Field(default_factory=list, description="Scan results")
     last_primary_key: Optional[str] = Field(None, description="Last primary key for pagination")
     message: str = Field(default="Scan executed successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -2182,10 +2359,11 @@ class ScanVectorIndexResponse(BaseModel):
 
 class BillableUsageDownloadResponse(BaseModel):
     """Response model for downloading billable usage logs."""
-    csv_content: str = Field(..., description="Billable usage logs in CSV format")
-    start_month: str = Field(..., description="Start month (YYYY-MM)")
-    end_month: str = Field(..., description="End month (YYYY-MM)")
+    csv_content: Optional[str] = Field(None, description="Billable usage logs in CSV format")
+    start_month: Optional[str] = Field(None, description="Start month (YYYY-MM)")
+    end_month: Optional[str] = Field(None, description="End month (YYYY-MM)")
     message: str = Field(default="Billable usage logs downloaded successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -2212,32 +2390,39 @@ class AccountMetastoreInfoModel(BaseModel):
 
 class CreateAccountMetastoreResponse(BaseModel):
     """Response model for creating an account metastore."""
-    metastore: AccountMetastoreInfoModel = Field(..., description="Created metastore information")
+    metastore: Optional[AccountMetastoreInfoModel] = Field(None, description="Created metastore information")
     message: str = Field(default="Account metastore created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetAccountMetastoreResponse(BaseModel):
     """Response model for getting an account metastore."""
-    metastore: AccountMetastoreInfoModel = Field(..., description="Metastore information")
+    metastore: Optional[AccountMetastoreInfoModel] = Field(None, description="Metastore information")
     message: str = Field(default="Account metastore retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListAccountMetastoresResponse(BaseModel):
     """Response model for listing account metastores."""
     metastores: list[AccountMetastoreInfoModel] = Field(default_factory=list, description="List of metastores")
+    count: int = Field(0, description="Number of metastores returned")
+    has_more: bool = Field(False, description="Whether more metastores exist beyond this page")
     message: str = Field(default="Account metastores retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateAccountMetastoreResponse(BaseModel):
     """Response model for updating an account metastore."""
-    metastore: AccountMetastoreInfoModel = Field(..., description="Updated metastore information")
+    metastore: Optional[AccountMetastoreInfoModel] = Field(None, description="Updated metastore information")
     message: str = Field(default="Account metastore updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteAccountMetastoreResponse(BaseModel):
     """Response model for deleting an account metastore."""
-    metastore_id: str = Field(..., description="Deleted metastore ID")
+    metastore_id: Optional[str] = Field(None, description="Deleted metastore ID")
     message: str = Field(default="Account metastore deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -2255,25 +2440,29 @@ class DataQualityMonitorModel(BaseModel):
     dashboard_id: Optional[str] = Field(None, description="Dashboard ID")
     drift_metrics_table_name: Optional[str] = Field(None, description="Drift metrics table")
     profile_metrics_table_name: Optional[str] = Field(None, description="Profile metrics table")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateMonitorResponse(BaseModel):
     """Response model for creating a data quality monitor."""
-    monitor: DataQualityMonitorModel = Field(..., description="Created monitor")
+    monitor: Optional[DataQualityMonitorModel] = Field(None, description="Created monitor")
     message: str = Field(default="Data quality monitor created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateMonitorResponse(BaseModel):
     """Response model for updating a data quality monitor."""
-    monitor: DataQualityMonitorModel = Field(..., description="Updated monitor")
+    monitor: Optional[DataQualityMonitorModel] = Field(None, description="Updated monitor")
     message: str = Field(default="Data quality monitor updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteMonitorResponse(BaseModel):
     """Response model for deleting a data quality monitor."""
-    object_type: str = Field(..., description="Object type")
-    object_id: str = Field(..., description="Object ID")
+    object_type: Optional[str] = Field(None, description="Object type")
+    object_id: Optional[str] = Field(None, description="Object ID")
     message: str = Field(default="Data quality monitor deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListMonitorsResponse(BaseModel):
@@ -2281,6 +2470,7 @@ class ListMonitorsResponse(BaseModel):
     monitors: list[DataQualityMonitorModel] = Field(default_factory=list, description="List of monitors")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Monitors retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DataQualityRefreshModel(BaseModel):
@@ -2291,18 +2481,21 @@ class DataQualityRefreshModel(BaseModel):
     status: Optional[str] = Field(None, description="Refresh status")
     start_time: Optional[int] = Field(None, description="Start timestamp")
     end_time: Optional[int] = Field(None, description="End timestamp")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateRefreshResponse(BaseModel):
     """Response model for creating a refresh."""
-    refresh: DataQualityRefreshModel = Field(..., description="Created refresh")
+    refresh: Optional[DataQualityRefreshModel] = Field(None, description="Created refresh")
     message: str = Field(default="Refresh created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CancelRefreshResponse(BaseModel):
     """Response model for canceling a refresh."""
-    refresh_id: int = Field(..., description="Canceled refresh ID")
+    refresh_id: Optional[int] = Field(None, description="Canceled refresh ID")
     message: str = Field(default="Refresh canceled successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ListRefreshesResponse(BaseModel):
@@ -2310,6 +2503,7 @@ class ListRefreshesResponse(BaseModel):
     refreshes: list[DataQualityRefreshModel] = Field(default_factory=list, description="List of refreshes")
     has_more: Optional[bool] = Field(None, description="Whether more results exist")
     message: str = Field(default="Refreshes retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DatabricksResponse(BaseModel):
@@ -2339,10 +2533,11 @@ class NotebookExportResponse(BaseModel):
         format: The export format used (SOURCE, HTML, JUPYTER, DBC)
         file_type: The file type/extension of the exported content
     """
-    content: str = Field(..., description="Decoded notebook content as UTF-8 string")
+    content: Optional[str] = Field(None, description="Decoded notebook content as UTF-8 string")
     path: Optional[str] = Field(None, description="Workspace path of the notebook")
     format: Optional[str] = Field(None, description="Export format (SOURCE, HTML, JUPYTER, DBC)")
     file_type: Optional[str] = Field(None, description="File type/extension of the exported content")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
     
     class Config:
         json_schema_extra = {
@@ -2365,11 +2560,12 @@ class NotebookImportResponse(BaseModel):
         status: The status of the import operation
         overwritten: Whether an existing notebook was overwritten
     """
-    path: str = Field(..., description="Workspace path where notebook was imported")
-    language: str = Field(..., description="Notebook language (PYTHON, SCALA, SQL, R)")
-    format: str = Field(..., description="Import format (SOURCE, HTML, JUPYTER, DBC, AUTO)")
+    path: Optional[str] = Field(None, description="Workspace path where notebook was imported")
+    language: Optional[str] = Field(None, description="Notebook language (PYTHON, SCALA, SQL, R)")
+    format: Optional[str] = Field(None, description="Import format (SOURCE, HTML, JUPYTER, DBC, AUTO)")
     status: str = Field(default="imported", description="Status of the import operation")
     overwritten: bool = Field(default=False, description="Whether an existing notebook was overwritten")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
     
     class Config:
         json_schema_extra = {
@@ -2391,9 +2587,10 @@ class NotebookDeleteResponse(BaseModel):
         status: The status of the delete operation
         recursive: Whether the delete was recursive (for directories)
     """
-    path: str = Field(..., description="Workspace path of the deleted notebook")
+    path: Optional[str] = Field(None, description="Workspace path of the deleted notebook")
     status: str = Field(default="deleted", description="Status of the delete operation")
     recursive: bool = Field(default=False, description="Whether delete was recursive")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
     
     class Config:
         json_schema_extra = {
@@ -2413,9 +2610,10 @@ class NotebookCreateResponse(BaseModel):
         language: The language of the created notebook (PYTHON, SCALA, SQL, R)
         status: The status of the create operation
     """
-    path: str = Field(..., description="Workspace path where notebook was created")
-    language: str = Field(..., description="Notebook language (PYTHON, SCALA, SQL, R)")
+    path: Optional[str] = Field(None, description="Workspace path where notebook was created")
+    language: Optional[str] = Field(None, description="Notebook language (PYTHON, SCALA, SQL, R)")
     status: str = Field(default="created", description="Status of the create operation")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
     
     class Config:
         json_schema_extra = {
@@ -2440,7 +2638,7 @@ class NotebookStatusResponse(BaseModel):
         created_at: Creation timestamp (milliseconds since epoch)
         modified_at: Last modified timestamp (milliseconds since epoch)
     """
-    path: str = Field(..., description="Workspace path")
+    path: Optional[str] = Field(None, description="Workspace path")
     object_id: Optional[int] = Field(None, description="Unique object ID")
     resource_id: Optional[str] = Field(None, description="Resource identifier")
     object_type: Optional[str] = Field(None, description="Object type")
@@ -2448,6 +2646,7 @@ class NotebookStatusResponse(BaseModel):
     size: Optional[int] = Field(None, description="Size in bytes")
     created_at: Optional[int] = Field(None, description="Creation timestamp (ms)")
     modified_at: Optional[int] = Field(None, description="Last modified timestamp (ms)")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
     
     class Config:
         json_schema_extra = {
@@ -2543,10 +2742,11 @@ class NotebookCellsResponse(BaseModel):
         total_cells: Total number of cells
         notebook_metadata: Notebook-level metadata
     """
-    path: str = Field(..., description="Workspace path of the notebook")
-    cells: list[NotebookCell] = Field(..., description="List of notebook cells")
-    total_cells: int = Field(..., description="Total number of cells")
+    path: Optional[str] = Field(None, description="Workspace path of the notebook")
+    cells: list[NotebookCell] = Field(default_factory=list, description="List of notebook cells")
+    total_cells: int = Field(default=0, description="Total number of cells")
     notebook_metadata: dict[str, Any] = Field(default_factory=dict, description="Notebook metadata")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
     
     class Config:
         json_schema_extra = {
@@ -2598,12 +2798,13 @@ class CellSearchResponse(BaseModel):
         results: List of cells containing matches
         total_matches: Total number of matching cells found
     """
-    path: str = Field(..., description="Notebook path searched")
-    pattern: str = Field(..., description="Search pattern used")
+    path: Optional[str] = Field(None, description="Notebook path searched")
+    pattern: Optional[str] = Field(None, description="Search pattern used")
     cell_type: Optional[str] = Field(None, description="Cell type filter")
-    case_sensitive: bool = Field(..., description="Whether search was case-sensitive")
-    results: List[CellSearchResult] = Field(..., description="Matching cells")
-    total_matches: int = Field(..., description="Total matching cells")
+    case_sensitive: bool = Field(default=False, description="Whether search was case-sensitive")
+    results: List[CellSearchResult] = Field(default_factory=list, description="Matching cells")
+    total_matches: int = Field(default=0, description="Total matching cells")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
     
     class Config:
         json_schema_extra = {
@@ -2636,11 +2837,12 @@ class CellOperationResponse(BaseModel):
         status: Status of the operation
         total_cells: Total number of cells after operation
     """
-    path: str = Field(..., description="Workspace path of the notebook")
-    operation: str = Field(..., description="Operation performed (insert, update, delete, reorder)")
-    cell_index: int = Field(..., description="Index of affected cell")
+    path: Optional[str] = Field(None, description="Workspace path of the notebook")
+    operation: Optional[str] = Field(None, description="Operation performed (insert, update, delete, reorder)")
+    cell_index: int = Field(default=-1, description="Index of affected cell")
     status: str = Field(default="success", description="Operation status")
-    total_cells: int = Field(..., description="Total cells after operation")
+    total_cells: int = Field(default=0, description="Total cells after operation")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
     
     class Config:
         json_schema_extra = {
@@ -2689,11 +2891,14 @@ class ListDirectoriesResponse(BaseModel):
         recursive: Whether the search was recursive (always False - returns current level only)
         items: List of workspace items (DIRECTORY, NOTEBOOK, FILE, LIBRARY, REPO, DASHBOARD)
         count: Total number of items
+        has_more: Whether more items exist beyond this page
     """
-    path: str = Field(..., description="Workspace path searched")
-    recursive: bool = Field(..., description="Whether search was recursive")
-    items: List[DirectoryInfo] = Field(..., description="List of workspace items (all types)")
-    count: int = Field(..., description="Total items found")
+    path: Optional[str] = Field(None, description="Workspace path searched")
+    recursive: bool = Field(default=False, description="Whether search was recursive")
+    items: List[DirectoryInfo] = Field(default_factory=list, description="List of workspace items (all types)")
+    count: int = Field(default=0, description="Total items found")
+    has_more: bool = Field(default=False, description="Whether more items exist beyond this page")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DirectoryCreateResponse(BaseModel):
@@ -2703,8 +2908,9 @@ class DirectoryCreateResponse(BaseModel):
         path: The workspace path where directory was created
         status: Status message
     """
-    path: str = Field(..., description="Workspace path created")
+    path: Optional[str] = Field(None, description="Workspace path created")
     status: str = Field(default="created", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DirectoryDeleteResponse(BaseModel):
@@ -2715,9 +2921,10 @@ class DirectoryDeleteResponse(BaseModel):
         recursive: Whether deletion was recursive
         status: Status message
     """
-    path: str = Field(..., description="Workspace path deleted")
-    recursive: bool = Field(..., description="Whether deletion was recursive")
+    path: Optional[str] = Field(None, description="Workspace path deleted")
+    recursive: bool = Field(default=False, description="Whether deletion was recursive")
     status: str = Field(default="deleted", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DirectoryInfoResponse(BaseModel):
@@ -2731,12 +2938,13 @@ class DirectoryInfoResponse(BaseModel):
         created_at: Creation timestamp (ms)
         modified_at: Last modified timestamp (ms)
     """
-    path: str = Field(..., description="Full workspace path")
+    path: Optional[str] = Field(None, description="Full workspace path")
     object_id: Optional[int] = Field(None, description="Unique object ID")
     resource_id: Optional[str] = Field(None, description="Resource identifier")
-    object_type: str = Field(..., description="Object type (DIRECTORY)")
+    object_type: Optional[str] = Field(None, description="Object type (DIRECTORY)")
     created_at: Optional[int] = Field(None, description="Creation timestamp (ms)")
     modified_at: Optional[int] = Field(None, description="Last modified timestamp (ms)")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DirectoryTreeNode(BaseModel):
@@ -2766,9 +2974,10 @@ class DirectoryTreeResponse(BaseModel):
         max_depth: Maximum depth traversed
         tree: The root node of the tree
     """
-    path: str = Field(..., description="Root path")
-    max_depth: int = Field(..., description="Maximum depth")
-    tree: DirectoryTreeNode = Field(..., description="Directory tree structure")
+    path: Optional[str] = Field(None, description="Root path")
+    max_depth: int = Field(default=0, description="Maximum depth")
+    tree: Optional[DirectoryTreeNode] = Field(None, description="Directory tree structure")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class LanguageBreakdown(BaseModel):
@@ -2791,13 +3000,14 @@ class DirectoryStatsResponse(BaseModel):
         language_breakdown: Breakdown by notebook language
         total_size_bytes: Total size in bytes (if available)
     """
-    path: str = Field(..., description="Directory path")
-    recursive: bool = Field(..., description="Whether stats are recursive")
-    total_notebooks: int = Field(..., description="Total notebooks")
-    total_directories: int = Field(..., description="Total subdirectories")
-    total_files: int = Field(..., description="Total other items (FILE, LIBRARY, REPO, DASHBOARD)")
-    language_breakdown: LanguageBreakdown = Field(..., description="Notebooks by language")
+    path: Optional[str] = Field(None, description="Directory path")
+    recursive: bool = Field(default=False, description="Whether stats are recursive")
+    total_notebooks: int = Field(default=0, description="Total notebooks")
+    total_directories: int = Field(default=0, description="Total subdirectories")
+    total_files: int = Field(default=0, description="Total other items (FILE, LIBRARY, REPO, DASHBOARD)")
+    language_breakdown: Optional[LanguageBreakdown] = Field(None, description="Notebooks by language")
     total_size_bytes: int = Field(default=0, description="Total size in bytes")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DirectorySearchResult(BaseModel):
@@ -2827,11 +3037,12 @@ class DirectorySearchResponse(BaseModel):
         results: List of matching directories
         total_matches: Total number of matches
     """
-    path: str = Field(..., description="Root path searched")
-    pattern: str = Field(..., description="Search pattern")
-    recursive: bool = Field(..., description="Whether search was recursive")
-    results: List[DirectorySearchResult] = Field(..., description="Matching directories")
-    total_matches: int = Field(..., description="Total matches found")
+    path: Optional[str] = Field(None, description="Root path searched")
+    pattern: Optional[str] = Field(None, description="Search pattern")
+    recursive: bool = Field(default=False, description="Whether search was recursive")
+    results: List[DirectorySearchResult] = Field(default_factory=list, description="Matching directories")
+    total_matches: int = Field(default=0, description="Total matches found")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -2869,11 +3080,14 @@ class ListNotebooksResponse(BaseModel):
         recursive: Whether the search was recursive
         notebooks: List of notebooks found
         count: Total number of notebooks
+        has_more: Whether more notebooks exist beyond this page
     """
-    path: str = Field(..., description="Workspace path searched")
-    recursive: bool = Field(..., description="Whether search was recursive")
-    notebooks: List[NotebookInfo] = Field(..., description="List of notebooks")
-    count: int = Field(..., description="Total notebooks found")
+    path: Optional[str] = Field(None, description="Workspace path searched")
+    recursive: bool = Field(default=False, description="Whether search was recursive")
+    notebooks: List[NotebookInfo] = Field(default_factory=list, description="List of notebooks")
+    count: int = Field(default=0, description="Total notebooks found")
+    has_more: bool = Field(default=False, description="Whether more notebooks exist beyond this page")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
     
     class Config:
         json_schema_extra = {
@@ -2915,11 +3129,12 @@ class NotebookPathInfo(BaseModel):
     """
     url: str = Field(..., description="Original URL")
     notebook_id: Optional[str] = Field(None, description="Notebook ID from URL")
-    path: str = Field(..., description="Workspace path")
+    path: Optional[str] = Field(None, description="Workspace path")
     object_type: Optional[str] = Field(None, description="Object type")
     language: Optional[str] = Field(None, description="Programming language")
     created_at: Optional[int] = Field(None, description="Creation timestamp (ms)")
     modified_at: Optional[int] = Field(None, description="Last modified timestamp (ms)")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
     
     class Config:
         json_schema_extra = {

@@ -145,3 +145,81 @@
   
 2026-01-09 08:38:17.342 [debug] Found 0 images in content
 2026-01-09 08:38:17.343 [debug] Found 0 attachment references in content
+2026-01-16 12:52:34.963 [debug] Initializing ConfigManager from environment variables
+2026-01-16 12:52:34.966 [debug] Loaded config from environment (sensitive data redacted):
+2026-01-16 12:52:34.966 [debug] {
+  "host": "wiki.corp.adobe.com",
+  "authMethod": "[REDACTED]",
+  "port": 1984,
+  "assetsOutputDir": "./cursor-wiki-mcp/assets",
+  "assets": {
+    "extractAssets": false,
+    "outputDir": "./cursor-wiki-mcp/assets",
+    "filenamePrefix": "asset-",
+    "createOutputDirs": true,
+    "useAbsolutePath": true,
+    "assetTypes": [
+      "image",
+      "pdf",
+      "document",
+      "attachment",
+      "plantuml"
+    ]
+  }
+}
+2026-01-16 12:52:34.966 [debug] ConfigManager initialized
+2026-01-16 12:52:35.494 [info] Initializing MCP Server...
+2026-01-16 12:52:35.495 [debug] Creating Confluence client
+2026-01-16 12:52:35.496 [debug] - Host: wiki.corp.adobe.com
+2026-01-16 12:52:35.496 [debug] Normalized host: wiki.corp.adobe.com
+2026-01-16 12:52:35.496 [debug] Client config host with protocol: https://wiki.corp.adobe.com
+2026-01-16 12:52:35.496 [debug] ApiPrefix: /rest
+2026-01-16 12:52:35.496 [info] Using Personal Access Token authentication method
+2026-01-16 12:52:35.497 [info] Confluence client created successfully for host: wiki.corp.adobe.com
+2026-01-16 12:52:35.497 [info] Registered expert-wiki-editor prompt
+2026-01-16 12:52:35.498 [info] Registered plantuml_diagram_creator prompt
+2026-01-16 12:52:35.498 [info] Registered prompts: expert_wiki_editor, plantuml_diagram_creator
+2026-01-16 12:52:35.498 [info] Prompt "expert_wiki_editor" registered: has description=true, has callback=true
+2026-01-16 12:52:35.498 [info] Prompt "plantuml_diagram_creator" registered: has description=true, has callback=true
+2026-01-16 12:52:35.498 [info] MCP Server initialized successfully
+2026-01-16 12:52:35.499 [info] Wiki MCP Server connected via stdio
+2026-01-16 12:52:35.499 [info] Wiki MCP Server started successfully with stdio transport
+2026-01-16 12:52:37.465 [debug] Initializing ConfigManager from environment variables
+2026-01-16 12:52:37.466 [debug] Loaded config from environment (sensitive data redacted):
+2026-01-16 12:52:37.467 [debug] {
+  "host": "wiki.corp.adobe.com",
+  "authMethod": "[REDACTED]",
+  "port": 1984,
+  "assetsOutputDir": "./cursor-wiki-mcp/assets",
+  "assets": {
+    "extractAssets": false,
+    "outputDir": "./cursor-wiki-mcp/assets",
+    "filenamePrefix": "asset-",
+    "createOutputDirs": true,
+    "useAbsolutePath": true,
+    "assetTypes": [
+      "image",
+      "pdf",
+      "document",
+      "attachment",
+      "plantuml"
+    ]
+  }
+}
+2026-01-16 12:52:37.467 [debug] ConfigManager initialized
+2026-01-16 12:52:37.738 [info] Initializing MCP Server...
+2026-01-16 12:52:37.740 [debug] Creating Confluence client
+2026-01-16 12:52:37.740 [debug] - Host: wiki.corp.adobe.com
+2026-01-16 12:52:37.740 [debug] Normalized host: wiki.corp.adobe.com
+2026-01-16 12:52:37.740 [debug] Client config host with protocol: https://wiki.corp.adobe.com
+2026-01-16 12:52:37.741 [debug] ApiPrefix: /rest
+2026-01-16 12:52:37.741 [info] Using Personal Access Token authentication method
+2026-01-16 12:52:37.741 [info] Confluence client created successfully for host: wiki.corp.adobe.com
+2026-01-16 12:52:37.742 [info] Registered expert-wiki-editor prompt
+2026-01-16 12:52:37.742 [info] Registered plantuml_diagram_creator prompt
+2026-01-16 12:52:37.742 [info] Registered prompts: expert_wiki_editor, plantuml_diagram_creator
+2026-01-16 12:52:37.742 [info] Prompt "expert_wiki_editor" registered: has description=true, has callback=true
+2026-01-16 12:52:37.742 [info] Prompt "plantuml_diagram_creator" registered: has description=true, has callback=true
+2026-01-16 12:52:37.743 [info] MCP Server initialized successfully
+2026-01-16 12:52:37.744 [info] Wiki MCP Server connected via stdio
+2026-01-16 12:52:37.744 [info] Wiki MCP Server started successfully with stdio transport

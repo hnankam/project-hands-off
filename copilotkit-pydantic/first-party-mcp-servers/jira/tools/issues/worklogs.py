@@ -10,7 +10,7 @@ This module provides tools for managing issue worklogs:
 
 from typing import Any, Optional, Dict, List
 from pydantic import BaseModel, Field
-from ...cache import get_jira_client
+from cache import get_jira_client
 
 
 # ============================================================================
@@ -78,10 +78,10 @@ class DeleteWorklogResponse(BaseModel):
 # ============================================================================
 
 def get_worklogs(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> GetWorklogsResponse:
     """
@@ -93,10 +93,10 @@ def get_worklogs(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -123,7 +123,7 @@ def get_worklogs(
         )
         print(f"Total worklogs: {response.total}")
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     worklogs_data = client.get_issue_worklogs(issue_key)
     
     # Parse worklogs
@@ -140,11 +140,11 @@ def get_worklogs(
 
 
 def add_worklog(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     time_spent: str,
-    username: str = "",
+    username_credential_key: str = "",
     comment: Optional[str] = None,
     started: Optional[str] = None,
     adjust_estimate: Optional[str] = None,
@@ -161,11 +161,11 @@ def add_worklog(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
         time_spent: Time spent in Jira format (e.g., "3h 20m", "1d 2h", "45m")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         comment: Optional comment for the worklog
         started: Optional start timestamp (ISO 8601 format or Jira date format)
         adjust_estimate: How to adjust the estimate ("auto", "new", "leave", "manual")
@@ -199,7 +199,7 @@ def add_worklog(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     worklog_data = client.add_worklog(
         issue_key,
         time_spent=time_spent,
@@ -221,11 +221,11 @@ def add_worklog(
 
 
 def get_worklog(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     worklog_id: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> GetWorklogResponse:
     """
@@ -237,11 +237,11 @@ def get_worklog(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
         worklog_id: Worklog ID to retrieve
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -268,7 +268,7 @@ def get_worklog(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     worklog_data = client.get_issue_worklog(issue_key, worklog_id)
     
     # Parse worklog
@@ -281,12 +281,12 @@ def get_worklog(
 
 
 def update_worklog(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     worklog_id: str,
     time_spent: str,
-    username: str = "",
+    username_credential_key: str = "",
     comment: Optional[str] = None,
     started: Optional[str] = None,
     cloud: bool = False,
@@ -300,12 +300,12 @@ def update_worklog(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
         worklog_id: Worklog ID to update
         time_spent: New time spent in Jira format (e.g., "3h 20m")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         comment: New comment for the worklog (optional)
         started: New start timestamp (optional)
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
@@ -336,7 +336,7 @@ def update_worklog(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     worklog_data = client.update_issue_worklog(
         issue_key,
         worklog_id,
@@ -357,11 +357,11 @@ def update_worklog(
 
 
 def delete_worklog(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     worklog_id: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> DeleteWorklogResponse:
     """
@@ -373,11 +373,11 @@ def delete_worklog(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
         worklog_id: Worklog ID to delete
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -403,7 +403,7 @@ def delete_worklog(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.delete_issue_worklog(issue_key, worklog_id)
     
     return DeleteWorklogResponse(

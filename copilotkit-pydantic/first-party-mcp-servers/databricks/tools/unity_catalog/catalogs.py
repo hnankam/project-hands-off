@@ -82,6 +82,7 @@ def list_catalogs(
     Returns:
         ListCatalogsResponse with list of catalogs and pagination info
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Cap limit at 20 when include_browse is True to reduce response size
@@ -111,6 +112,13 @@ def list_catalogs(
         count=len(catalogs_list),
         has_more=has_more,
     )
+    except Exception as e:
+        return ListCatalogsResponse(
+            catalogs=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list catalogs: {str(e)}",
+        )
 
 
 def get_catalog(
@@ -118,7 +126,7 @@ def get_catalog(
     token_credential_key: str,
     name: str,
     include_browse: Optional[bool] = None,
-) -> CatalogInfoModel:
+) -> Optional[CatalogInfoModel]:
     """
     Get catalog details.
     
@@ -134,6 +142,7 @@ def get_catalog(
     Returns:
         CatalogInfoModel with complete catalog details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     catalog = client.catalogs.get(
@@ -142,6 +151,11 @@ def get_catalog(
     )
     
     return _convert_catalog_to_model(catalog)
+    except Exception as e:
+        return CatalogInfoModel(
+            name=name,
+            error_message=f"Failed to get catalog: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -181,6 +195,7 @@ def create_catalog(
     Returns:
         CreateCatalogResponse with created catalog information
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     catalog = client.catalogs.create(
@@ -197,6 +212,11 @@ def create_catalog(
     return CreateCatalogResponse(
         catalog_info=_convert_catalog_to_model(catalog),
     )
+    except Exception as e:
+        return CreateCatalogResponse(
+            catalog_info=None,
+            error_message=f"Failed to create catalog: {str(e)}",
+        )
 
 
 def delete_catalog(
@@ -228,6 +248,7 @@ def delete_catalog(
         except Exception as e:
             print(f"Catalog not found or cannot be deleted: {e}")
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.catalogs.delete(
@@ -236,6 +257,11 @@ def delete_catalog(
     )
     
     return DeleteCatalogResponse(name=name)
+    except Exception as e:
+        return DeleteCatalogResponse(
+            name=name,
+            error_message=f"Failed to delete catalog: {str(e)}",
+        )
 
 
 def update_catalog(
@@ -272,6 +298,7 @@ def update_catalog(
     Returns:
         UpdateCatalogResponse with updated catalog information
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert string parameters to enums if provided
@@ -299,4 +326,9 @@ def update_catalog(
     return UpdateCatalogResponse(
         catalog_info=_convert_catalog_to_model(catalog),
     )
+    except Exception as e:
+        return UpdateCatalogResponse(
+            catalog_info=None,
+            error_message=f"Failed to update catalog: {str(e)}",
+        )
 

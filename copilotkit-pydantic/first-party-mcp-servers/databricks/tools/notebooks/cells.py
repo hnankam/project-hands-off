@@ -8,7 +8,7 @@ modifying the cells array, and re-importing the modified notebook.
 import base64
 import json
 import re
-from typing import Any
+from typing import Any, Optional
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.workspace import ExportFormat, ImportFormat, Language
 from cache import get_workspace_client
@@ -33,6 +33,7 @@ def get_notebook_cells(host_credential_key: str, token_credential_key: str, path
     Returns:
         NotebookCellsResponse with all cells and metadata
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Export notebook as JUPYTER format
@@ -75,9 +76,17 @@ def get_notebook_cells(host_credential_key: str, token_credential_key: str, path
         total_cells=len(cell_models),
         notebook_metadata=notebook_metadata
     )
+    except Exception as e:
+        return NotebookCellsResponse(
+            path=path,
+            cells=[],
+            total_cells=0,
+            notebook_metadata={},
+            error_message=f"Failed to get notebook cells: {str(e)}",
+        )
 
 
-def get_notebook_cell(host_credential_key: str, token_credential_key: str, path: str, cell_index: int) -> NotebookCell:
+def get_notebook_cell(host_credential_key: str, token_credential_key: str, path: str, cell_index: int) -> Optional[NotebookCell]:
     """
     Get a specific cell from a notebook by index.
     
@@ -88,14 +97,20 @@ def get_notebook_cell(host_credential_key: str, token_credential_key: str, path:
         cell_index: Index of the cell to retrieve (0-based)
     
     Returns:
-        NotebookCell at the specified index
+        NotebookCell at the specified index, or None on error
     """
+    try:
     cells_response = get_notebook_cells(host_credential_key, token_credential_key, path)
     
+        if cells_response.error_message:
+            return None
+        
     if cell_index < 0 or cell_index >= len(cells_response.cells):
-        raise IndexError(f"Cell index {cell_index} out of range (0-{len(cells_response.cells)-1})")
+            return None
     
     return cells_response.cells[cell_index]
+    except Exception as e:
+        return None
 
 
 def search_notebook_cells(
@@ -120,7 +135,20 @@ def search_notebook_cells(
     Returns:
         CellSearchResponse with matching cells and search metadata
     """
+    try:
     cells_response = get_notebook_cells(host_credential_key, token_credential_key, path)
+        
+        if cells_response.error_message:
+            return CellSearchResponse(
+                path=path,
+                pattern=pattern,
+                cell_type=cell_type,
+                case_sensitive=case_sensitive,
+                results=[],
+                total_matches=0,
+                error_message=cells_response.error_message,
+            )
+        
     results = []
     
     # Compile regex pattern
@@ -160,6 +188,16 @@ def search_notebook_cells(
         results=results,
         total_matches=len(results)
     )
+    except Exception as e:
+        return CellSearchResponse(
+            path=path,
+            pattern=pattern,
+            cell_type=cell_type,
+            case_sensitive=case_sensitive,
+            results=[],
+            total_matches=0,
+            error_message=f"Failed to search notebook cells: {str(e)}",
+        )
 
 
 def insert_notebook_cell(
@@ -186,6 +224,7 @@ def insert_notebook_cell(
     Returns:
         CellOperationResponse with operation status
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Export notebook
@@ -213,7 +252,14 @@ def insert_notebook_cell(
     # Insert cell at specified index
     cells = notebook_data.get('cells', [])
     if cell_index < 0 or cell_index > len(cells):
-        raise IndexError(f"Insert index {cell_index} out of range (0-{len(cells)})")
+            return CellOperationResponse(
+                path=path,
+                operation="insert",
+                cell_index=cell_index,
+                status="failed",
+                total_cells=len(cells),
+                error_message=f"Insert index {cell_index} out of range (0-{len(cells)})",
+            )
     
     cells.insert(cell_index, new_cell)
     notebook_data['cells'] = cells
@@ -237,6 +283,15 @@ def insert_notebook_cell(
         status="success",
         total_cells=len(cells)
     )
+    except Exception as e:
+        return CellOperationResponse(
+            path=path,
+            operation="insert",
+            cell_index=cell_index,
+            status="failed",
+            total_cells=0,
+            error_message=f"Failed to insert notebook cell: {str(e)}",
+        )
 
 
 def update_notebook_cell(
@@ -259,6 +314,7 @@ def update_notebook_cell(
     Returns:
         CellOperationResponse with operation status
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Export notebook
@@ -270,7 +326,14 @@ def update_notebook_cell(
     # Update cell (convert string to array for Jupyter format)
     cells = notebook_data.get('cells', [])
     if cell_index < 0 or cell_index >= len(cells):
-        raise IndexError(f"Cell index {cell_index} out of range (0-{len(cells)-1})")
+            return CellOperationResponse(
+                path=path,
+                operation="update",
+                cell_index=cell_index,
+                status="failed",
+                total_cells=len(cells),
+                error_message=f"Cell index {cell_index} out of range (0-{len(cells)-1})",
+            )
     
     source_array = cell_content.splitlines(keepends=True) if isinstance(cell_content, str) else cell_content
     cells[cell_index]['source'] = source_array
@@ -301,6 +364,15 @@ def update_notebook_cell(
         status="success",
         total_cells=len(cells)
     )
+    except Exception as e:
+        return CellOperationResponse(
+            path=path,
+            operation="update",
+            cell_index=cell_index,
+            status="failed",
+            total_cells=0,
+            error_message=f"Failed to update notebook cell: {str(e)}",
+        )
 
 
 def delete_notebook_cell(
@@ -321,6 +393,7 @@ def delete_notebook_cell(
     Returns:
         CellOperationResponse with operation status
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Export notebook
@@ -332,7 +405,14 @@ def delete_notebook_cell(
     # Delete cell
     cells = notebook_data.get('cells', [])
     if cell_index < 0 or cell_index >= len(cells):
-        raise IndexError(f"Cell index {cell_index} out of range (0-{len(cells)-1})")
+            return CellOperationResponse(
+                path=path,
+                operation="delete",
+                cell_index=cell_index,
+                status="failed",
+                total_cells=len(cells),
+                error_message=f"Cell index {cell_index} out of range (0-{len(cells)-1})",
+            )
     
     deleted_cell = cells.pop(cell_index)
     notebook_data['cells'] = cells
@@ -356,6 +436,15 @@ def delete_notebook_cell(
         status="success",
         total_cells=len(cells)
     )
+    except Exception as e:
+        return CellOperationResponse(
+            path=path,
+            operation="delete",
+            cell_index=cell_index,
+            status="failed",
+            total_cells=0,
+            error_message=f"Failed to delete notebook cell: {str(e)}",
+        )
 
 
 def reorder_notebook_cells(
@@ -378,6 +467,7 @@ def reorder_notebook_cells(
     Returns:
         CellOperationResponse with operation status
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Export notebook
@@ -389,9 +479,23 @@ def reorder_notebook_cells(
     # Reorder cells
     cells = notebook_data.get('cells', [])
     if from_index < 0 or from_index >= len(cells):
-        raise IndexError(f"From index {from_index} out of range (0-{len(cells)-1})")
+            return CellOperationResponse(
+                path=path,
+                operation="reorder",
+                cell_index=to_index,
+                status="failed",
+                total_cells=len(cells),
+                error_message=f"From index {from_index} out of range (0-{len(cells)-1})",
+            )
     if to_index < 0 or to_index >= len(cells):
-        raise IndexError(f"To index {to_index} out of range (0-{len(cells)-1})")
+            return CellOperationResponse(
+                path=path,
+                operation="reorder",
+                cell_index=to_index,
+                status="failed",
+                total_cells=len(cells),
+                error_message=f"To index {to_index} out of range (0-{len(cells)-1})",
+            )
     
     # Remove cell from original position
     cell = cells.pop(from_index)
@@ -419,6 +523,15 @@ def reorder_notebook_cells(
         status="success",
         total_cells=len(cells)
     )
+    except Exception as e:
+        return CellOperationResponse(
+            path=path,
+            operation="reorder",
+            cell_index=to_index,
+            status="failed",
+            total_cells=0,
+            error_message=f"Failed to reorder notebook cells: {str(e)}",
+        )
 
 
 # Helper functions

@@ -9,6 +9,7 @@ server-side from the workspace_credentials table.
 """
 
 from typing import Optional, List, Dict, Any
+from itertools import islice
 from cache import get_workspace_client
 from models import (
     ClusterInfo,
@@ -30,23 +31,71 @@ from models import (
 def list_clusters(
     host_credential_key: str,
     token_credential_key: str,
+    limit: int = 10,
+    page: int = 0,
+    cluster_name: Optional[str] = None,
 ) -> ListClustersResponse:
     """
-    List all clusters.
+    Retrieve a paginated list of Databricks clusters accessible to the authenticated user.
     
-    Lists all clusters in the workspace that the user has access to.
+    This function returns clusters in the workspace with support for filtering and pagination.
+    Use this to discover available clusters, check cluster configurations, or iterate through large cluster lists.
     
     Args:
-        host_credential_key: Globally unique key for the credential containing Databricks workspace URL
-        token_credential_key: Globally unique key for the credential containing authentication token
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        limit: Number of clusters to return in a single request. Must be positive integer. Maximum 10. Default: 10
+        page: Zero-indexed page number for pagination. Page 0 returns first `limit` clusters, page 1 returns next `limit` clusters. Default: 0
+        cluster_name: Optional cluster name for filtering. Filters by partial match (case-insensitive). Default: None (no filtering)
         
     Returns:
-        ListClustersResponse with list of clusters
+        ListClustersResponse containing:
+        - clusters: List of ClusterInfo objects with cluster details
+        - count: Integer number of clusters returned in this page (0 to limit)
+        - has_more: Boolean indicating if additional clusters exist beyond this page
+        
+    Pagination:
+        - Returns up to `limit` clusters per call
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available, call again with page+1
+        - has_more=False indicates this is the final page
+        - Empty list (count=0) with has_more=False means no clusters match criteria
     """
+    try:
+    # Cap limit at maximum page size
+    limit = min(limit, 10)
+    
     client = get_workspace_client(host_credential_key, token_credential_key)
     
+    # Get clusters iterator
+    response = client.clusters.list()
+    
+    # For filtering and pagination, we need to iterate through all clusters
+    # Skip filtered items based on page number, then collect up to limit
+    skip_count = page * limit
+    collected = 0
+    skipped = 0
+    has_more = False
+    
     clusters_list = []
-    for cluster in client.clusters.list():
+    for cluster in response:
+        # Apply name filter if specified (case-insensitive partial match)
+        if cluster_name and cluster.cluster_name:
+            if cluster_name.lower() not in cluster.cluster_name.lower():
+                continue
+        
+        # Skip items for previous pages
+        if skipped < skip_count:
+            skipped += 1
+            continue
+        
+        # Collect this cluster if we haven't reached the limit
+        if collected >= limit:
+            # We found one more filtered item beyond our limit
+            # This means has_more = True, so we can break
+            has_more = True
+            break
+        
         # Extract state
         state = None
         if cluster.state:
@@ -105,11 +154,23 @@ def list_clusters(
                 termination_reason=cluster.termination_reason.as_dict() if cluster.termination_reason else None,
             )
         )
+        collected += 1
+    
+    # If we exited the loop normally (not via break), has_more is already False
+    # has_more was set to True in the loop if we found an extra item beyond limit
     
     return ListClustersResponse(
         clusters=clusters_list,
         count=len(clusters_list),
+        has_more=has_more,
     )
+    except Exception as e:
+        return ListClustersResponse(
+            clusters=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list clusters: {str(e)}",
+        )
 
 
 def get_cluster(
@@ -131,6 +192,7 @@ def get_cluster(
     Returns:
         ClusterInfo with complete cluster details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     cluster = client.clusters.get(cluster_id=cluster_id)
@@ -191,6 +253,10 @@ def get_cluster(
         cluster_log_conf=cluster.cluster_log_conf.as_dict() if cluster.cluster_log_conf else None,
         termination_reason=cluster.termination_reason.as_dict() if cluster.termination_reason else None,
     )
+    except Exception as e:
+        # For functions returning models directly, return None on error
+        # FastMCP will handle the None return appropriately
+        return None
 
 
 def create_cluster(
@@ -262,6 +328,7 @@ def create_cluster(
     Returns:
         CreateClusterResponse with cluster ID
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.compute import (
@@ -329,6 +396,11 @@ def create_cluster(
     ).result()  # Wait for cluster to be created
     
     return CreateClusterResponse(cluster_id=response.cluster_id)
+    except Exception as e:
+        return CreateClusterResponse(
+            cluster_id=None,
+            error_message=f"Failed to create cluster: {str(e)}",
+        )
 
 
 def edit_cluster(
@@ -378,6 +450,7 @@ def edit_cluster(
     Returns:
         EditClusterResponse confirming edit
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.compute import (
@@ -431,6 +504,11 @@ def edit_cluster(
     )
     
     return EditClusterResponse(cluster_id=cluster_id)
+    except Exception as e:
+        return EditClusterResponse(
+            cluster_id=cluster_id,
+            error_message=f"Failed to edit cluster {cluster_id}: {str(e)}",
+        )
 
 
 def delete_cluster(
@@ -452,11 +530,17 @@ def delete_cluster(
     Returns:
         DeleteClusterResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.clusters.delete(cluster_id=cluster_id)
     
     return DeleteClusterResponse(cluster_id=cluster_id)
+    except Exception as e:
+        return DeleteClusterResponse(
+            cluster_id=cluster_id,
+            error_message=f"Failed to delete cluster {cluster_id}: {str(e)}",
+        )
 
 
 def permanent_delete_cluster(
@@ -478,6 +562,7 @@ def permanent_delete_cluster(
     Returns:
         DeleteClusterResponse confirming permanent deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.clusters.permanent_delete(cluster_id=cluster_id)
@@ -486,6 +571,11 @@ def permanent_delete_cluster(
         cluster_id=cluster_id,
         message="Cluster permanently deleted"
     )
+    except Exception as e:
+        return DeleteClusterResponse(
+            cluster_id=cluster_id,
+            error_message=f"Failed to permanently delete cluster {cluster_id}: {str(e)}",
+        )
 
 
 def start_cluster(
@@ -507,11 +597,17 @@ def start_cluster(
     Returns:
         StartClusterResponse confirming start initiated
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.clusters.start(cluster_id=cluster_id).result()  # Wait for start
     
     return StartClusterResponse(cluster_id=cluster_id)
+    except Exception as e:
+        return StartClusterResponse(
+            cluster_id=cluster_id,
+            error_message=f"Failed to start cluster {cluster_id}: {str(e)}",
+        )
 
 
 def restart_cluster(
@@ -533,11 +629,17 @@ def restart_cluster(
     Returns:
         RestartClusterResponse confirming restart initiated
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.clusters.restart(cluster_id=cluster_id).result()  # Wait for restart
     
     return RestartClusterResponse(cluster_id=cluster_id)
+    except Exception as e:
+        return RestartClusterResponse(
+            cluster_id=cluster_id,
+            error_message=f"Failed to restart cluster {cluster_id}: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -562,11 +664,14 @@ def get_cluster_permissions(
     Returns:
         Dict with permission details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     permissions = client.clusters.get_permissions(cluster_id=cluster_id)
     
     return permissions.as_dict()
+    except Exception as e:
+        return {"error": f"Failed to get cluster permissions for {cluster_id}: {str(e)}"}
 
 
 def set_cluster_permissions(
@@ -600,6 +705,7 @@ def set_cluster_permissions(
         - CAN_RESTART - Attach, restart, resize clusters
         - CAN_MANAGE - Full control (edit, delete, permissions)
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.compute import ClusterAccessControlRequest
@@ -612,6 +718,8 @@ def set_cluster_permissions(
     )
     
     return permissions.as_dict()
+    except Exception as e:
+        return {"error": f"Failed to set cluster permissions for {cluster_id}: {str(e)}"}
 
 
 def update_cluster_permissions(
@@ -634,6 +742,7 @@ def update_cluster_permissions(
     Returns:
         Dict with updated permission details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.compute import ClusterAccessControlRequest
@@ -646,6 +755,8 @@ def update_cluster_permissions(
     )
     
     return permissions.as_dict()
+    except Exception as e:
+        return {"error": f"Failed to update cluster permissions for {cluster_id}: {str(e)}"}
 
 
 def get_cluster_permission_levels(
@@ -666,8 +777,11 @@ def get_cluster_permission_levels(
     Returns:
         Dict with available permission levels
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     levels = client.clusters.get_permission_levels(cluster_id=cluster_id)
     
     return levels.as_dict()
+    except Exception as e:
+        return {"error": f"Failed to get cluster permission levels for {cluster_id}: {str(e)}"}

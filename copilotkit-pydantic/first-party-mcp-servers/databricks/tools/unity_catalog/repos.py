@@ -50,6 +50,7 @@ def list_repos(
         - has_more=True indicates more results available
         - path_prefix filter applies consistently across all pages
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     response = client.repos.list(
@@ -86,13 +87,20 @@ def list_repos(
         count=len(repos_list),
         has_more=has_more,
     )
+    except Exception as e:
+        return ListReposResponse(
+            repos=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list repos: {str(e)}",
+        )
 
 
 def get_repo(
     host_credential_key: str,
     token_credential_key: str,
     repo_id: int,
-) -> RepoInfo:
+) -> Optional[RepoInfo]:
     """
     Get repository details.
     
@@ -106,6 +114,7 @@ def get_repo(
     Returns:
         RepoInfo with repository details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     repo = client.repos.get(repo_id=repo_id)
@@ -119,6 +128,9 @@ def get_repo(
         head_commit_id=repo.head_commit_id,
         sparse_checkout=repo.sparse_checkout.as_dict() if repo.sparse_checkout else None,
     )
+    except Exception as e:
+        print(f"Error getting repo: {e}")
+        return None
 
 
 def create_repo(
@@ -154,6 +166,7 @@ def create_repo(
         - azureDevOpsServices
         - awsCodeCommit
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     repo = client.repos.create(
@@ -169,6 +182,15 @@ def create_repo(
         provider=repo.provider,
         branch=repo.branch,
     )
+    except Exception as e:
+        return CreateRepoResponse(
+            id=None,
+            path=path,
+            url=url,
+            provider=provider,
+            branch=None,
+            error_message=f"Failed to create repo: {str(e)}",
+        )
 
 
 def update_repo(
@@ -199,6 +221,7 @@ def update_repo(
         - Before committing new changes, update to a branch instead
         - To pull latest changes, call update with the current branch name
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.repos.update(
@@ -216,6 +239,14 @@ def update_repo(
         tag=tag if tag else None,
         head_commit_id=repo.head_commit_id,
     )
+    except Exception as e:
+        return UpdateRepoResponse(
+            repo_id=repo_id,
+            branch=branch,
+            tag=tag,
+            head_commit_id=None,
+            error_message=f"Failed to update repo: {str(e)}",
+        )
 
 
 def delete_repo(
@@ -237,11 +268,17 @@ def delete_repo(
     Returns:
         DeleteRepoResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.repos.delete(repo_id=repo_id)
     
     return DeleteRepoResponse(repo_id=repo_id)
+    except Exception as e:
+        return DeleteRepoResponse(
+            repo_id=repo_id,
+            error_message=f"Failed to delete repo: {str(e)}",
+        )
 
 
 def get_repo_permissions(
@@ -263,11 +300,14 @@ def get_repo_permissions(
     Returns:
         Dict with permission details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     permissions = client.repos.get_permissions(repo_id=repo_id)
     
     return permissions.as_dict()
+    except Exception as e:
+        return {"error": f"Failed to get repo permissions: {str(e)}"}
 
 
 def set_repo_permissions(
@@ -297,6 +337,7 @@ def set_repo_permissions(
             "permission_level": "CAN_MANAGE"  # or CAN_READ, CAN_RUN, CAN_EDIT
         }
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.workspace import RepoAccessControlRequest
@@ -312,6 +353,8 @@ def set_repo_permissions(
     )
     
     return permissions.as_dict()
+    except Exception as e:
+        return {"error": f"Failed to set repo permissions: {str(e)}"}
 
 
 def update_repo_permissions(
@@ -335,6 +378,7 @@ def update_repo_permissions(
     Returns:
         Dict with updated permission details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.workspace import RepoAccessControlRequest
@@ -350,6 +394,8 @@ def update_repo_permissions(
     )
     
     return permissions.as_dict()
+    except Exception as e:
+        return {"error": f"Failed to update repo permissions: {str(e)}"}
 
 
 def get_repo_permission_levels(
@@ -370,9 +416,12 @@ def get_repo_permission_levels(
     Returns:
         Dict with available permission levels
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     levels = client.repos.get_permission_levels(repo_id=repo_id)
     
     return levels.as_dict()
+    except Exception as e:
+        return {"error": f"Failed to get repo permission levels: {str(e)}"}
 

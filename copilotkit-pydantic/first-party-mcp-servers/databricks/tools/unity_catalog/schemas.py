@@ -79,6 +79,7 @@ def list_schemas(
     Returns:
         ListSchemasResponse with list of schemas and pagination info
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Cap limit at 20 when include_browse is True to reduce response size
@@ -109,6 +110,13 @@ def list_schemas(
         count=len(schemas_list),
         has_more=has_more,
     )
+    except Exception as e:
+        return ListSchemasResponse(
+            schemas=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list schemas: {str(e)}",
+        )
 
 
 def get_schema(
@@ -116,7 +124,7 @@ def get_schema(
     token_credential_key: str,
     full_name: str,
     include_browse: Optional[bool] = None,
-) -> SchemaInfoModel:
+) -> Optional[SchemaInfoModel]:
     """
     Get schema details.
     
@@ -132,6 +140,7 @@ def get_schema(
     Returns:
         SchemaInfoModel with complete schema details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     schema = client.schemas.get(
@@ -140,6 +149,11 @@ def get_schema(
     )
     
     return _convert_schema_to_model(schema)
+    except Exception as e:
+        return SchemaInfoModel(
+            full_name=full_name,
+            error_message=f"Failed to get schema: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -174,6 +188,7 @@ def create_schema(
     Returns:
         CreateSchemaResponse with created schema information
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     schema = client.schemas.create(
@@ -187,6 +202,11 @@ def create_schema(
     return CreateSchemaResponse(
         schema_info=_convert_schema_to_model(schema),
     )
+    except Exception as e:
+        return CreateSchemaResponse(
+            schema_info=None,
+            error_message=f"Failed to create schema: {str(e)}",
+        )
 
 
 def delete_schema(
@@ -218,6 +238,7 @@ def delete_schema(
         except Exception as e:
             print(f"Schema not found or cannot be deleted: {e}")
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.schemas.delete(
@@ -226,6 +247,11 @@ def delete_schema(
     )
     
     return DeleteSchemaResponse(full_name=full_name)
+    except Exception as e:
+        return DeleteSchemaResponse(
+            full_name=full_name,
+            error_message=f"Failed to delete schema: {str(e)}",
+        )
 
 
 def update_schema(
@@ -259,6 +285,7 @@ def update_schema(
     Returns:
         UpdateSchemaResponse with updated schema information
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert enable_predictive_optimization string to enum if provided
@@ -279,4 +306,9 @@ def update_schema(
     return UpdateSchemaResponse(
         schema_info=_convert_schema_to_model(schema),
     )
+    except Exception as e:
+        return UpdateSchemaResponse(
+            schema_info=None,
+            error_message=f"Failed to update schema: {str(e)}",
+        )
 

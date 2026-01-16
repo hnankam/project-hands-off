@@ -71,6 +71,7 @@ def list_external_locations(
     Returns:
         ListExternalLocationsResponse with external locations and pagination
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Cap max_results at 20 when expand options are True to reduce response size
@@ -89,7 +90,13 @@ def list_external_locations(
     
     return ListExternalLocationsResponse(
         external_locations=locations,
-        next_page_token=next_token,
+            has_more=False,  # SDK handles pagination internally
+        )
+    except Exception as e:
+        return ListExternalLocationsResponse(
+            external_locations=[],
+            has_more=False,
+            error_message=f"Failed to list external locations: {str(e)}",
     )
 
 
@@ -98,7 +105,7 @@ def get_external_location(
     token_credential_key: str,
     name: str,
     include_browse: bool = False,
-) -> ExternalLocationInfoModel:
+) -> Optional[ExternalLocationInfoModel]:
     """
     Get an external location from Unity Catalog.
     
@@ -115,6 +122,7 @@ def get_external_location(
     Returns:
         ExternalLocationInfoModel with location details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     location = client.external_locations.get(
@@ -123,6 +131,11 @@ def get_external_location(
     )
     
     return _convert_to_external_location_model(location)
+    except Exception as e:
+        return ExternalLocationInfoModel(
+            name=name,
+            error_message=f"Failed to get external location: {str(e)}",
+        )
 
 
 def create_external_location(
@@ -159,6 +172,7 @@ def create_external_location(
     Returns:
         CreateExternalLocationResponse with created location
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     location = client.external_locations.create(
@@ -175,6 +189,11 @@ def create_external_location(
     return CreateExternalLocationResponse(
         external_location=_convert_to_external_location_model(location),
     )
+    except Exception as e:
+        return CreateExternalLocationResponse(
+            external_location=None,
+            error_message=f"Failed to create external location: {str(e)}",
+        )
 
 
 def update_external_location(
@@ -216,6 +235,7 @@ def update_external_location(
     Returns:
         UpdateExternalLocationResponse with updated location
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     location = client.external_locations.update(
@@ -235,6 +255,11 @@ def update_external_location(
     return UpdateExternalLocationResponse(
         external_location=_convert_to_external_location_model(location),
     )
+    except Exception as e:
+        return UpdateExternalLocationResponse(
+            external_location=None,
+            error_message=f"Failed to update external location: {str(e)}",
+        )
 
 
 def delete_external_location(
@@ -258,6 +283,7 @@ def delete_external_location(
     Returns:
         DeleteExternalLocationResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.external_locations.delete(
@@ -268,4 +294,9 @@ def delete_external_location(
     return DeleteExternalLocationResponse(
         name=name,
     )
+    except Exception as e:
+        return DeleteExternalLocationResponse(
+            name=name,
+            error_message=f"Failed to delete external location: {str(e)}",
+        )
 

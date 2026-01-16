@@ -8,7 +8,7 @@ This module provides tools for managing issue links and watchers:
 
 from typing import Any, Optional, Dict, List
 from pydantic import BaseModel, Field
-from ...cache import get_jira_client
+from cache import get_jira_client
 
 
 # ============================================================================
@@ -99,12 +99,12 @@ class RemoveWatcherResponse(BaseModel):
 # ============================================================================
 
 def link_issues(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     link_type: str,
     inward_issue: str,
     outward_issue: str,
-    username: str = "",
+    username_credential_key: str = "",
     comment: Optional[str] = None,
     cloud: bool = False,
 ) -> IssueLinkResponse:
@@ -117,12 +117,12 @@ def link_issues(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         link_type: Link type name (e.g., "Blocks", "Duplicates", "Relates")
         inward_issue: Inward issue key
         outward_issue: Outward issue key
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         comment: Optional comment for the link
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
@@ -152,7 +152,7 @@ def link_issues(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.issue_link(link_type, inward_issue, outward_issue, comment=comment)
     
     return IssueLinkResponse(
@@ -164,10 +164,10 @@ def link_issues(
 
 
 def get_remote_links(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> GetRemoteLinksResponse:
     """
@@ -179,10 +179,10 @@ def get_remote_links(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -208,7 +208,7 @@ def get_remote_links(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     links_data = client.get_issue_remote_links(issue_key)
     
     # Parse remote links
@@ -222,12 +222,12 @@ def get_remote_links(
 
 
 def create_remote_link(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     link_url: str,
     title: str,
-    username: str = "",
+    username_credential_key: str = "",
     summary: Optional[str] = None,
     icon_url: Optional[str] = None,
     cloud: bool = False,
@@ -241,12 +241,12 @@ def create_remote_link(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
         link_url: URL of the remote resource
         title: Title of the link
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         summary: Optional summary of the link
         icon_url: Optional icon URL
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
@@ -277,7 +277,7 @@ def create_remote_link(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     
     # Build link object
     link_object = {
@@ -299,13 +299,13 @@ def create_remote_link(
 
 
 def update_remote_link(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     link_id: int,
     link_url: str,
     title: str,
-    username: str = "",
+    username_credential_key: str = "",
     summary: Optional[str] = None,
     icon_url: Optional[str] = None,
     cloud: bool = False,
@@ -319,13 +319,13 @@ def update_remote_link(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
         link_id: Remote link ID to update
         link_url: New URL of the remote resource
         title: New title of the link
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         summary: Optional new summary
         icon_url: Optional new icon URL
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
@@ -358,7 +358,7 @@ def update_remote_link(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     
     # Build link object
     link_object = {
@@ -380,11 +380,11 @@ def update_remote_link(
 
 
 def delete_remote_link(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     link_id: int,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> DeleteRemoteLinkResponse:
     """
@@ -396,11 +396,11 @@ def delete_remote_link(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
         link_id: Remote link ID to delete
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -426,7 +426,7 @@ def delete_remote_link(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.delete_issue_remote_links(issue_key, link_id)
     
     return DeleteRemoteLinkResponse(
@@ -441,10 +441,10 @@ def delete_remote_link(
 # ============================================================================
 
 def get_watchers(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> GetWatchersResponse:
     """
@@ -456,10 +456,10 @@ def get_watchers(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -486,7 +486,7 @@ def get_watchers(
         )
         print(f"Total watchers: {response.watching_count}")
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     watchers_data = client.get_issue_watchers(issue_key)
     
     # Parse watchers
@@ -503,11 +503,11 @@ def get_watchers(
 
 
 def add_watcher(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     watcher: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> AddWatcherResponse:
     """
@@ -519,11 +519,11 @@ def add_watcher(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
         watcher: Account ID (Cloud) or username (Server/DC) of the watcher
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -549,7 +549,7 @@ def add_watcher(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.add_issue_watcher(issue_key, watcher)
     
     return AddWatcherResponse(
@@ -560,11 +560,11 @@ def add_watcher(
 
 
 def remove_watcher(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     watcher: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> RemoveWatcherResponse:
     """
@@ -576,11 +576,11 @@ def remove_watcher(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_key: Issue key (e.g., "PROJ-123")
         watcher: Account ID (Cloud) or username (Server/DC) of the watcher
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -606,7 +606,7 @@ def remove_watcher(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.remove_issue_watcher(issue_key, watcher)
     
     return RemoveWatcherResponse(

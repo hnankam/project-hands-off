@@ -27,34 +27,65 @@ from models import (
 def list_directories(
     host_credential_key: str,
     token_credential_key: str,
-    path: str = "/"
+    path: str = "/",
+    limit: int = 25,
+    page: int = 0,
 ) -> ListDirectoriesResponse:
     """
-    List all workspace items at a given path (non-recursive).
+    Retrieve a paginated list of workspace items at a given path (non-recursive).
     
     Returns all items (directories, notebooks, files, etc.) at the current level only.
     For recursive traversal, the agent should call this function for each subdirectory.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token_credential_key: Credential key for access token
-        path: The workspace path to list from (default: /)
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        path: The workspace path to list from. Default: / (root)
+        limit: Number of items to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
     
     Returns:
-        ListDirectoriesResponse containing list of all workspace items with metadata
+        ListDirectoriesResponse containing:
+        - items: List of DirectoryInfo objects with workspace item metadata
+        - count: Integer number of items returned in this page (0 to limit)
+        - has_more: Boolean indicating if additional items exist beyond this page
+        
+    Pagination:
+        - Returns up to `limit` items per call
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available
     """
+    from itertools import islice
+    
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     items_list = []
-    try:
+    has_more = False
+    
         # List only immediate children (no recursive flag)
         items = client.workspace.list(path)
+        
+        # Calculate pagination
+        skip = page * limit
+        collected = 0
+        skipped = 0
         
         for item in items:
             # Include all items (directories, notebooks, files, etc.)
             if not item.object_type:
                 continue
                 
+            # Skip items for previous pages
+            if skipped < skip:
+                skipped += 1
+                continue
+            
+            # Check if we've collected enough
+            if collected >= limit:
+                has_more = True
+                break
+            
             item_type = item.object_type.value
             language = item.language.value if item.language else None
             
@@ -68,18 +99,24 @@ def list_directories(
                 created_at=item.created_at,
                 modified_at=item.modified_at
             ))
-    except Exception as e:
-        # Path doesn't exist or no permission
-        import logging
-        logging.getLogger(__name__).warning(f"Error listing items in {path}: {e}")
-        pass
+            collected += 1
     
     return ListDirectoriesResponse(
         path=path,
         recursive=False,
         items=items_list,
-        count=len(items_list)
+        count=len(items_list),
+        has_more=has_more,
     )
+    except Exception as e:
+        return ListDirectoriesResponse(
+            path=path,
+            recursive=False,
+            items=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list directories: {str(e)}",
+        )
 
 
 def create_directory(
@@ -99,6 +136,7 @@ def create_directory(
     Returns:
         DirectoryCreateResponse indicating success
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # mkdirs automatically creates parent directories
@@ -108,6 +146,12 @@ def create_directory(
         path=path,
         status=f"Directory '{path}' created successfully"
     )
+    except Exception as e:
+        return DirectoryCreateResponse(
+            path=None,
+            status="failed",
+            error_message=f"Failed to create directory: {str(e)}",
+        )
 
 
 def delete_directory(
@@ -128,6 +172,7 @@ def delete_directory(
     Returns:
         DirectoryDeleteResponse indicating success
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.workspace.delete(path=path, recursive=recursive)
@@ -137,6 +182,13 @@ def delete_directory(
         recursive=recursive,
         status=f"Directory '{path}' deleted successfully"
     )
+    except Exception as e:
+        return DirectoryDeleteResponse(
+            path=None,
+            recursive=recursive,
+            status="failed",
+            error_message=f"Failed to delete directory: {str(e)}",
+        )
 
 
 def get_directory_info(
@@ -155,6 +207,7 @@ def get_directory_info(
     Returns:
         DirectoryInfoResponse with directory metadata
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     status = client.workspace.get_status(path=path)
@@ -168,6 +221,16 @@ def get_directory_info(
         created_at=status_dict.get('created_at'),
         modified_at=status_dict.get('modified_at')
     )
+    except Exception as e:
+        return DirectoryInfoResponse(
+            path=None,
+            object_id=None,
+            resource_id=None,
+            object_type=None,
+            created_at=None,
+            modified_at=None,
+            error_message=f"Failed to get directory info: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -192,6 +255,7 @@ def get_directory_tree(
     Returns:
         DirectoryTreeResponse with nested tree structure
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     def build_tree(current_path: str, current_depth: int) -> DirectoryTreeNode:
@@ -246,6 +310,13 @@ def get_directory_tree(
         max_depth=max_depth,
         tree=tree
     )
+    except Exception as e:
+        return DirectoryTreeResponse(
+            path=path,
+            max_depth=max_depth,
+            tree=None,
+            error_message=f"Failed to get directory tree: {str(e)}",
+        )
 
 
 def get_directory_stats(
@@ -267,6 +338,7 @@ def get_directory_stats(
     Returns:
         DirectoryStatsResponse with counts and breakdowns for current level
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     total_notebooks = 0
@@ -280,7 +352,6 @@ def get_directory_stats(
         'R': 0
     }
     
-    try:
         # List only immediate children (no recursive flag)
         items = client.workspace.list(path)
         
@@ -304,9 +375,6 @@ def get_directory_stats(
             # Add size if available
             if item.size:
                 total_size += item.size
-    except Exception:
-        # Path doesn't exist or no permission
-        pass
     
     return DirectoryStatsResponse(
         path=path,
@@ -317,6 +385,17 @@ def get_directory_stats(
         language_breakdown=LanguageBreakdown(**language_counts),
         total_size_bytes=total_size
     )
+    except Exception as e:
+        return DirectoryStatsResponse(
+            path=path,
+            recursive=False,
+            total_notebooks=0,
+            total_directories=0,
+            total_files=0,
+            language_breakdown=LanguageBreakdown(),
+            total_size_bytes=0,
+            error_message=f"Failed to get directory stats: {str(e)}",
+        )
 
 
 def search_directories(
@@ -341,6 +420,7 @@ def search_directories(
     Returns:
         DirectorySearchResponse with matching directories at current level
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Compile regex pattern
@@ -353,7 +433,6 @@ def search_directories(
     
     results = []
     
-    try:
         # List only immediate children (no recursive flag)
         items = client.workspace.list(path)
         
@@ -377,11 +456,6 @@ def search_directories(
                         created_at=item.created_at,
                         modified_at=item.modified_at
                     ))
-    except Exception as e:
-        # Path doesn't exist or no permission
-        import logging
-        logging.getLogger(__name__).warning(f"Error searching directories in {path}: {e}")
-        pass
     
     return DirectorySearchResponse(
         path=path,
@@ -390,4 +464,13 @@ def search_directories(
         results=results,
         total_matches=len(results)
     )
+    except Exception as e:
+        return DirectorySearchResponse(
+            path=path,
+            pattern=pattern,
+            recursive=False,
+            results=[],
+            total_matches=0,
+            error_message=f"Failed to search directories: {str(e)}",
+        )
 

@@ -886,12 +886,15 @@ export class PostgresAgentRunner extends AgentRunner {
         // CRITICAL: For stopped runs, finalizeRunEvents creates RUN_ERROR (not RUN_FINISHED)
         // We need to manually add RUN_FINISHED for stopped runs
         if (stopRequested) {
-          // Check if RUN_FINISHED already exists
-          const hasRunFinished = appendedEvents.some(e => 
+          // Check if RUN_FINISHED already exists in appendedEvents or currentEvents
+          const hasRunFinishedInAppended = appendedEvents.some(e => 
+            e.type === 'RUN_FINISHED' || e.type === EventType.RUN_FINISHED
+          );
+          const hasRunFinishedInCurrent = currentEvents.some(e => 
             e.type === 'RUN_FINISHED' || e.type === EventType.RUN_FINISHED
           );
           
-          if (!hasRunFinished) {
+          if (!hasRunFinishedInAppended && !hasRunFinishedInCurrent) {
             // Add RUN_FINISHED event for stopped runs with all required fields
             appendedEvents.push({
               type: EventType.RUN_FINISHED,
@@ -899,17 +902,33 @@ export class PostgresAgentRunner extends AgentRunner {
               runId: runId,
               timestamp: Date.now(),
             });
+          } else if (this.debug) {
+            console.log(`[PostgresAgentRunner] Skipping manual RUN_FINISHED addition for stopped run ${runId} (already exists)`);
           }
         }
       
       // Emit finalization events
       // CRITICAL: Filter out RUN_ERROR events when run was stopped by user
       // User-initiated stops should not show error banners on the frontend
+      // CRITICAL: Deduplicate RUN_FINISHED events to prevent "run already finished" errors
       const threadSubject = this.activeSubjects.get(threadId)?.threadSubject;
+      let hasEmittedRunFinished = false;
+      
       for (const event of appendedEvents) {
         // Skip RUN_ERROR events for stopped runs (user-initiated)
         if (stopRequested && (event.type === 'RUN_ERROR' || event.type === EventType.RUN_ERROR)) {
           continue;
+        }
+        
+        // Skip duplicate RUN_FINISHED events (only emit the first one)
+        if (event.type === 'RUN_FINISHED' || event.type === EventType.RUN_FINISHED) {
+          if (hasEmittedRunFinished) {
+            if (this.debug) {
+              console.log(`[PostgresAgentRunner] Skipping duplicate RUN_FINISHED event for run ${runId}`);
+            }
+            continue;
+          }
+          hasEmittedRunFinished = true;
         }
         
         if (!runSubject.closed) {

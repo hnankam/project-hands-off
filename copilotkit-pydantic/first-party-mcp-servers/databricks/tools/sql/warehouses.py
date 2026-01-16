@@ -27,39 +27,75 @@ from models import (
 
 def list_warehouses(
     host_credential_key: str,
-    token_credential_key: str
+    token_credential_key: str,
+    limit: int = 25,
+    page: int = 0,
 ) -> ListWarehousesResponse:
     """
-    List all SQL warehouses that the user has access to.
+    Retrieve a paginated list of SQL warehouses accessible to the user.
     
     Use this to discover available compute resources for SQL execution.
     Essential for agents to find warehouses before executing statements.
     
     Args:
-        host_credential_key: Credential key for workspace URL
-        token_credential_key: Credential key for access token
+        host_credential_key: Globally unique key identifying the Databricks workspace host credential
+        token_credential_key: Globally unique key identifying the access token credential
+        limit: Number of warehouses to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
     
     Returns:
-        ListWarehousesResponse with warehouse information
+        ListWarehousesResponse containing:
+        - warehouses: List of WarehouseInfo objects with warehouse metadata
+        - count: Integer number of warehouses returned in this page (0 to limit)
+        - has_more: Boolean indicating if additional warehouses exist beyond this page
+        
+    Pagination:
+        - Returns up to `limit` warehouses per call
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available
     """
+    try:
+    from itertools import islice
+    
     client = get_workspace_client(host_credential_key, token_credential_key)
     
+    response = client.warehouses.list()
+    
+    skip = page * limit
+    warehouses_iterator = islice(response, skip, skip + limit)
+    
     warehouses = []
-    for endpoint in client.warehouses.list():
+    for endpoint in warehouses_iterator:
         endpoint_dict = endpoint.as_dict()
         warehouses.append(_convert_warehouse_info(endpoint_dict))
     
+    # Check for more results
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
+    
     return ListWarehousesResponse(
         warehouses=warehouses,
-        count=len(warehouses)
+        count=len(warehouses),
+        has_more=has_more,
     )
+    except Exception as e:
+        return ListWarehousesResponse(
+            warehouses=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list warehouses: {str(e)}",
+        )
 
 
 def get_warehouse(
     host_credential_key: str,
     token_credential_key: str,
     warehouse_id: str
-) -> WarehouseInfo:
+) -> Optional[WarehouseInfo]:
     """
     Get detailed information about a specific SQL warehouse.
     
@@ -72,11 +108,17 @@ def get_warehouse(
         warehouse_id: ID of the SQL warehouse
     
     Returns:
-        WarehouseInfo with complete warehouse details
+        WarehouseInfo with complete warehouse details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     response = client.warehouses.get(id=warehouse_id)
     return _convert_warehouse_info(response.as_dict())
+    except Exception as e:
+        return WarehouseInfo(
+            id=warehouse_id,
+            error_message=f"Failed to get warehouse: {str(e)}",
+        )
 
 
 def create_warehouse(
@@ -116,6 +158,7 @@ def create_warehouse(
     Returns:
         CreateWarehouseResponse with created warehouse details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert tags
@@ -145,6 +188,13 @@ def create_warehouse(
         state=created.state.value if created.state else "UNKNOWN",
         message=f"Warehouse '{name}' created successfully"
     )
+    except Exception as e:
+        return CreateWarehouseResponse(
+            id=None,
+            name=name,
+            state=None,
+            error_message=f"Failed to create warehouse: {str(e)}",
+        )
 
 
 def update_warehouse(
@@ -182,6 +232,7 @@ def update_warehouse(
     Returns:
         UpdateWarehouseResponse with updated warehouse details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Convert tags if provided
@@ -210,6 +261,11 @@ def update_warehouse(
         state=updated.state.value if updated.state else None,
         message=f"Warehouse {warehouse_id} updated successfully"
     )
+    except Exception as e:
+        return UpdateWarehouseResponse(
+            id=warehouse_id,
+            error_message=f"Failed to update warehouse: {str(e)}",
+        )
 
 
 def delete_warehouse(
@@ -231,6 +287,7 @@ def delete_warehouse(
     Returns:
         DeleteWarehouseResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     client.warehouses.delete(id=warehouse_id)
     
@@ -238,6 +295,11 @@ def delete_warehouse(
         id=warehouse_id,
         message=f"Warehouse {warehouse_id} deleted successfully"
     )
+    except Exception as e:
+        return DeleteWarehouseResponse(
+            id=warehouse_id,
+            error_message=f"Failed to delete warehouse: {str(e)}",
+        )
 
 
 def start_warehouse(
@@ -261,6 +323,7 @@ def start_warehouse(
     Returns:
         StartWarehouseResponse with warehouse state
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Start warehouse and wait for RUNNING state
@@ -271,6 +334,12 @@ def start_warehouse(
         state=started.state.value if started.state else "UNKNOWN",
         message=f"Warehouse {warehouse_id} is now {started.state.value if started.state else 'UNKNOWN'}"
     )
+    except Exception as e:
+        return StartWarehouseResponse(
+            id=warehouse_id,
+            state=None,
+            error_message=f"Failed to start warehouse: {str(e)}",
+        )
 
 
 def stop_warehouse(
@@ -294,6 +363,7 @@ def stop_warehouse(
     Returns:
         StopWarehouseResponse with warehouse state
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Stop warehouse and wait for STOPPED state
@@ -304,6 +374,12 @@ def stop_warehouse(
         state=stopped.state.value if stopped.state else "UNKNOWN",
         message=f"Warehouse {warehouse_id} is now {stopped.state.value if stopped.state else 'UNKNOWN'}"
     )
+    except Exception as e:
+        return StopWarehouseResponse(
+            id=warehouse_id,
+            state=None,
+            error_message=f"Failed to stop warehouse: {str(e)}",
+        )
 
 
 # ============================================================================

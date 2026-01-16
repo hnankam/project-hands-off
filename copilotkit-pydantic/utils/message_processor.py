@@ -12,12 +12,100 @@ from pydantic_ai.messages import (
     SystemPromptPart,
     ToolCallPart,
     ToolReturnPart,
+    TextPart,
+    UserPromptPart,
 )
 from pydantic_ai.ag_ui import StateDeps
+from ag_ui.core import AssistantMessage, UserMessage, ToolMessage, ToolCall, FunctionCall, TextInputContent
 
 from config import logger
 from core.models import AgentState, UnifiedDeps
 from pydantic_ai.models import ModelRequestParameters
+
+
+def pydantic_to_agui_messages(pydantic_messages: list[ModelMessage]) -> list:
+    """Convert Pydantic AI ModelMessages to AG-UI messages.
+    
+    Converts ModelRequest/ModelResponse to UserMessage/AssistantMessage/ToolMessage
+    while preserving tool calls and returns. This conversion is needed because
+    RunAgentInput.messages expects AG-UI format messages.
+    
+    Args:
+        pydantic_messages: List of ModelMessage objects (ModelRequest, ModelResponse)
+        
+    Returns:
+        List of AG-UI messages (UserMessage, AssistantMessage, ToolMessage)
+        
+    Note:
+        - UserPromptPart in ModelRequest → UserMessage with TextInputContent
+        - TextPart and ToolCallPart in ModelResponse → AssistantMessage with content and toolCalls
+        - ToolReturnPart in ModelRequest → ToolMessage
+        - No IDs are created - lets AG-UI handle message IDs
+    """
+    import uuid
+    
+    agui_messages = []
+    
+    for msg in pydantic_messages:
+        # 1. USER MESSAGES & TOOL RETURNS (both in ModelRequest)
+        if isinstance(msg, ModelRequest):
+            # Extract text content from UserPromptPart and TextPart
+            text_contents = []
+            tool_returns = []
+            
+            for part in msg.parts:
+                if isinstance(part, UserPromptPart):
+                    text_contents.append(TextInputContent(text=part.content))
+                elif isinstance(part, TextPart):
+                    text_contents.append(TextInputContent(text=part.content))
+                elif isinstance(part, ToolReturnPart):
+                    # Tool returns become separate ToolMessage
+                    tool_returns.append(part)
+            
+            # Add UserMessage if there's text content
+            if text_contents:
+                agui_messages.append(UserMessage(
+                    id=str(uuid.uuid4()),
+                    content=text_contents
+                ))
+            
+            # Add ToolMessages for tool returns
+            for tool_return in tool_returns:
+                agui_messages.append(ToolMessage(
+                    id=str(uuid.uuid4()),
+                    toolCallId=str(tool_return.tool_call_id),
+                    content=str(tool_return.content)
+                ))
+        
+        # 2. ASSISTANT MESSAGES (Text & Tool Calls)
+        elif isinstance(msg, ModelResponse):
+            # Extract text content and tool calls
+            text_parts = []
+            tool_calls = []
+            
+            for part in msg.parts:
+                if isinstance(part, TextPart):
+                    text_parts.append(part.content)
+                elif isinstance(part, ToolCallPart):
+                    # Convert ToolCallPart to AG-UI ToolCall
+                    tool_calls.append(ToolCall(
+                        id=str(part.tool_call_id),
+                        function=FunctionCall(
+                            name=part.tool_name,
+                            arguments=str(part.args) if isinstance(part.args, dict) else part.args
+                        )
+                    ))
+            
+            # Create AssistantMessage if there's content or tool calls
+            if text_parts or tool_calls:
+                content = ' '.join(text_parts) if text_parts else None
+                agui_messages.append(AssistantMessage(
+                    id=str(uuid.uuid4()),
+                    content=content,
+                    toolCalls=tool_calls if tool_calls else None
+                ))
+    
+    return agui_messages
 
 
 async def keep_recent_messages(

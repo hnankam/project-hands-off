@@ -64,6 +64,7 @@ def list_vector_search_endpoints(
     Returns:
         ListEndpointsResponse with endpoints
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     endpoints = []
@@ -78,13 +79,19 @@ def list_vector_search_endpoints(
         endpoints=endpoints,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListEndpointsResponse(
+            endpoints=[],
+            next_page_token=None,
+            error_message=f"Failed to list vector search endpoints: {str(e)}",
+        )
 
 
 def get_vector_search_endpoint(
     host_credential_key: str,
     token_credential_key: str,
     endpoint_name: str,
-) -> EndpointInfoModel:
+) -> Optional[EndpointInfoModel]:
     """
     Get a vector search endpoint.
     
@@ -98,6 +105,7 @@ def get_vector_search_endpoint(
     Returns:
         EndpointInfoModel with endpoint details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     endpoint = client.vector_search_endpoints.get_endpoint(
@@ -105,6 +113,9 @@ def get_vector_search_endpoint(
     )
     
     return _convert_to_endpoint_info(endpoint)
+    except Exception as e:
+        print(f"Error getting vector search endpoint: {e}")
+        return None
 
 
 def create_vector_search_endpoint(
@@ -138,6 +149,7 @@ def create_vector_search_endpoint(
         - Monitor endpoint_status to check when it's ONLINE
         - Once ONLINE, you can create vector search indexes on this endpoint
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.vectorsearch import EndpointType
@@ -158,6 +170,11 @@ def create_vector_search_endpoint(
     return CreateEndpointResponse(
         endpoint=_convert_to_endpoint_info(endpoint),
     )
+    except Exception as e:
+        return CreateEndpointResponse(
+            endpoint=None,
+            error_message=f"Failed to create vector search endpoint: {str(e)}",
+        )
 
 
 def delete_vector_search_endpoint(
@@ -186,6 +203,7 @@ def delete_vector_search_endpoint(
         - This operation is irreversible
         - Endpoint deletion may take several minutes
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.vector_search_endpoints.delete_endpoint(
@@ -195,6 +213,11 @@ def delete_vector_search_endpoint(
     return DeleteEndpointResponse(
         endpoint_name=endpoint_name,
     )
+    except Exception as e:
+        return DeleteEndpointResponse(
+            endpoint_name=endpoint_name,
+            error_message=f"Failed to delete vector search endpoint: {str(e)}",
+        )
 
 
 def update_endpoint_budget_policy(
@@ -218,6 +241,7 @@ def update_endpoint_budget_policy(
     Returns:
         UpdateEndpointBudgetPolicyResponse confirming update
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.vector_search_endpoints.update_endpoint_budget_policy(
@@ -229,6 +253,12 @@ def update_endpoint_budget_policy(
         endpoint_name=endpoint_name,
         budget_policy_id=budget_policy_id,
     )
+    except Exception as e:
+        return UpdateEndpointBudgetPolicyResponse(
+            endpoint_name=endpoint_name,
+            budget_policy_id=budget_policy_id,
+            error_message=f"Failed to update endpoint budget policy: {str(e)}",
+        )
 
 
 def update_endpoint_custom_tags(
@@ -252,6 +282,7 @@ def update_endpoint_custom_tags(
     Returns:
         UpdateEndpointCustomTagsResponse confirming update
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.vectorsearch import CustomTag
@@ -271,6 +302,12 @@ def update_endpoint_custom_tags(
         endpoint_name=endpoint_name,
         custom_tags=tag_models,
     )
+    except Exception as e:
+        return UpdateEndpointCustomTagsResponse(
+            endpoint_name=endpoint_name,
+            custom_tags=[],
+            error_message=f"Failed to update endpoint custom tags: {str(e)}",
+        )
 
 
 def retrieve_endpoint_metrics(
@@ -309,6 +346,7 @@ def retrieve_endpoint_metrics(
         - Common metrics: query_latency, throughput, cpu_utilization
         - Time range is limited based on retention policy
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.vectorsearch import Metric
@@ -351,4 +389,11 @@ def retrieve_endpoint_metrics(
         metrics=metric_series,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return RetrieveMetricsResponse(
+            endpoint_name=endpoint_name,
+            metrics=[],
+            next_page_token=None,
+            error_message=f"Failed to retrieve endpoint metrics: {str(e)}",
+        )
 

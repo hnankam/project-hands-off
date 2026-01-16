@@ -8,7 +8,7 @@ This module provides tools for managing backlog and epic operations:
 
 from typing import Any, Optional, Dict, List
 from pydantic import BaseModel, Field
-from ...cache import get_jira_client
+from cache import get_jira_client
 
 
 # ============================================================================
@@ -49,10 +49,10 @@ class GetEpicIssuesResponse(BaseModel):
 # ============================================================================
 
 def move_issues_to_backlog(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_keys: List[str],
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> MoveToBacklogResponse:
     """
@@ -65,10 +65,10 @@ def move_issues_to_backlog(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_keys: List of issue keys to move (e.g., ["PROJ-123", "PROJ-124"])
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -93,7 +93,7 @@ def move_issues_to_backlog(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.move_issues_to_backlog(issue_keys)
     
     return MoveToBacklogResponse(
@@ -104,10 +104,10 @@ def move_issues_to_backlog(
 
 
 def add_issues_to_backlog(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_keys: List[str],
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> AddToBacklogResponse:
     """
@@ -120,10 +120,10 @@ def add_issues_to_backlog(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         issue_keys: List of issue keys to add (e.g., ["PROJ-123", "PROJ-124"])
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
@@ -148,7 +148,7 @@ def add_issues_to_backlog(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.add_issues_to_backlog(issue_keys)
     
     return AddToBacklogResponse(
@@ -159,10 +159,10 @@ def add_issues_to_backlog(
 
 
 def get_epic_issues(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     epic_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     fields: Optional[str] = "*all",
     start_at: int = 0,
     max_results: int = 50,
@@ -177,10 +177,10 @@ def get_epic_issues(
     - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Globally unique key for the Jira instance URL credential
+        token_credential_key: Globally unique key for the API token credential
         epic_key: Epic key (e.g., "PROJ-1")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Globally unique key for the username credential (Cloud only, default: "")
         fields: Comma-separated list of fields to return (default: "*all")
         start_at: Starting index for pagination (default: 0)
         max_results: Maximum results per page (default: 50)
@@ -212,7 +212,7 @@ def get_epic_issues(
             cloud=False
         )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     issues_data = client.epic_issues(
         epic_key,
         start=start_at,

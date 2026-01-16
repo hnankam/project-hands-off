@@ -83,6 +83,7 @@ def create_execution_context(
     Returns:
         CreateExecutionContextResponse with context information
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.compute import Language
@@ -96,6 +97,11 @@ def create_execution_context(
     return CreateExecutionContextResponse(
         context=_convert_context_status_to_model(context_status),
     )
+    except Exception as e:
+        return CreateExecutionContextResponse(
+            context=None,
+            error_message=f"Failed to create execution context: {str(e)}",
+        )
 
 
 def get_context_status(
@@ -119,6 +125,7 @@ def get_context_status(
     Returns:
         ContextStatusModel with context status
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     context_status = client.command_execution.context_status(
@@ -127,6 +134,8 @@ def get_context_status(
     )
     
     return _convert_context_status_to_model(context_status)
+    except Exception as e:
+        return None
 
 
 def destroy_execution_context(
@@ -150,6 +159,7 @@ def destroy_execution_context(
     Returns:
         DestroyContextResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.command_execution.destroy(
@@ -161,6 +171,12 @@ def destroy_execution_context(
         cluster_id=cluster_id,
         context_id=context_id,
     )
+    except Exception as e:
+        return DestroyContextResponse(
+            cluster_id=cluster_id,
+            context_id=context_id,
+            error_message=f"Failed to destroy execution context: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -192,6 +208,7 @@ def execute_command(
     Returns:
         ExecuteCommandResponse with command status and results
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.compute import Language
@@ -207,6 +224,11 @@ def execute_command(
     return ExecuteCommandResponse(
         command=_convert_command_status_to_model(command_status),
     )
+    except Exception as e:
+        return ExecuteCommandResponse(
+            command=None,
+            error_message=f"Failed to execute command: {str(e)}",
+        )
 
 
 def get_command_status(
@@ -232,6 +254,7 @@ def get_command_status(
     Returns:
         CommandStatusModel with command status and results
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     command_status = client.command_execution.command_status(
@@ -241,6 +264,8 @@ def get_command_status(
     )
     
     return _convert_command_status_to_model(command_status)
+    except Exception as e:
+        return None
 
 
 def cancel_command(
@@ -266,6 +291,7 @@ def cancel_command(
     Returns:
         CancelCommandResponse with cancellation status
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Wait for cancellation to complete
@@ -278,4 +304,9 @@ def cancel_command(
     return CancelCommandResponse(
         command=_convert_command_status_to_model(command_status),
     )
+    except Exception as e:
+        return CancelCommandResponse(
+            command=None,
+            error_message=f"Failed to cancel command: {str(e)}",
+        )
 

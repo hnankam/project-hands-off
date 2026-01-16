@@ -77,6 +77,7 @@ def create_account_metastore(
         - Storage root must be a valid cloud storage path
         - Region must match the cloud provider region format
     """
+    try:
     client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import CreateAccountsMetastore
@@ -93,6 +94,11 @@ def create_account_metastore(
     return CreateAccountMetastoreResponse(
         metastore=_convert_to_metastore_info(metastore_info),
     )
+    except Exception as e:
+        return CreateAccountMetastoreResponse(
+            metastore=None,
+            error_message=f"Failed to create account metastore: {str(e)}",
+        )
 
 
 def get_account_metastore(
@@ -115,6 +121,7 @@ def get_account_metastore(
     Returns:
         GetAccountMetastoreResponse with metastore details
     """
+    try:
     client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
     # Get the metastore
@@ -126,36 +133,78 @@ def get_account_metastore(
     return GetAccountMetastoreResponse(
         metastore=_convert_to_metastore_info(metastore_info),
     )
+    except Exception as e:
+        return GetAccountMetastoreResponse(
+            metastore=None,
+            error_message=f"Failed to get account metastore {metastore_id}: {str(e)}",
+        )
 
 
 def list_account_metastores(
     host_credential_key: str,
     account_id_credential_key: str,
     token_credential_key: str,
+    limit: int = 25,
+    page: int = 0,
 ) -> ListAccountMetastoresResponse:
     """
-    List all Unity Catalog metastores.
+    Retrieve a paginated list of Unity Catalog metastores in the account.
     
-    Retrieves all metastores associated with the account.
+    Retrieves all metastores associated with the account. Metastores are the top-level
+    container for Unity Catalog data governance across multiple workspaces.
     
     Args:
         host_credential_key: Globally unique key for the credential containing Databricks account console URL
         account_id_credential_key: Globally unique key for the credential containing Databricks account ID
         token_credential_key: Globally unique key for the credential containing authentication token
+        limit: Number of metastores to return in a single request. Must be positive integer. Default: 25
+        page: Zero-indexed page number for pagination. Default: 0
         
     Returns:
-        ListAccountMetastoresResponse with list of metastores
+        ListAccountMetastoresResponse containing:
+        - metastores: List of MetastoreInfo objects with metastore configurations
+        - count: Integer number of metastores returned in this page (0 to limit)
+        - has_more: Boolean indicating if additional metastores exist beyond this page
+        
+    Pagination:
+        - Returns up to `limit` metastores per call
+        - Set page=0 for first results, increment page by 1 for subsequent calls
+        - has_more=True indicates more results available
     """
+    try:
+    from itertools import islice
+    
     client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
-    # List all metastores
+    response = client.metastores.list()
+    
+    skip = page * limit
+    metastores_iterator = islice(response, skip, skip + limit)
+    
     metastores = []
-    for metastore in client.metastores.list():
+    for metastore in metastores_iterator:
         metastores.append(_convert_to_metastore_info(metastore))
+    
+    # Check for more results
+    has_more = False
+    try:
+        next(response)
+        has_more = True
+    except StopIteration:
+        has_more = False
     
     return ListAccountMetastoresResponse(
         metastores=metastores,
+        count=len(metastores),
+        has_more=has_more,
     )
+    except Exception as e:
+        return ListAccountMetastoresResponse(
+            metastores=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list account metastores: {str(e)}",
+        )
 
 
 def update_account_metastore(
@@ -180,6 +229,7 @@ def update_account_metastore(
     Returns:
         UpdateAccountMetastoreResponse with updated metastore info
     """
+    try:
     client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import UpdateAccountsMetastore
@@ -199,6 +249,11 @@ def update_account_metastore(
     return UpdateAccountMetastoreResponse(
         metastore=_convert_to_metastore_info(metastore_info),
     )
+    except Exception as e:
+        return UpdateAccountMetastoreResponse(
+            metastore=None,
+            error_message=f"Failed to update account metastore {metastore_id}: {str(e)}",
+        )
 
 
 def delete_account_metastore(
@@ -231,6 +286,7 @@ def delete_account_metastore(
         - All catalogs, schemas, and tables in the metastore will be deleted
         - This operation cannot be undone
     """
+    try:
     client = get_account_client(host_credential_key, account_id_credential_key, token_credential_key)
     
     # Delete the metastore
@@ -242,3 +298,8 @@ def delete_account_metastore(
     return DeleteAccountMetastoreResponse(
         metastore_id=metastore_id,
     )
+    except Exception as e:
+        return DeleteAccountMetastoreResponse(
+            metastore_id=metastore_id,
+            error_message=f"Failed to delete account metastore {metastore_id}: {str(e)}",
+        )

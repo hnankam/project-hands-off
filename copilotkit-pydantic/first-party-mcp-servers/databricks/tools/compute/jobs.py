@@ -70,6 +70,7 @@ def list_jobs(
         - has_more=False indicates this is the final page
         - Empty list (count=0) with has_more=False means no jobs match criteria
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Cap limit at 20 when expand_tasks is True to reduce response size
@@ -161,6 +162,13 @@ def list_jobs(
         count=len(jobs_list),
         has_more=has_more,
     )
+    except Exception as e:
+        return ListJobsResponse(
+            jobs=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list jobs: {str(e)}",
+        )
 
 
 def get_job(
@@ -182,6 +190,7 @@ def get_job(
     Returns:
         JobInfo with complete job details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     job = client.jobs.get(job_id=job_id)
@@ -237,6 +246,8 @@ def get_job(
         settings=settings,
         run_as_user_name=getattr(job, 'run_as_user_name', None),
     )
+    except Exception as e:
+        return None
 
 
 def create_job(
@@ -290,6 +301,7 @@ def create_job(
             "existing_cluster_id": "cluster-id"
         }
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import Task, CronSchedule, JobEmailNotifications, WebhookNotifications, JobNotificationSettings, JobRunAs, GitSource, JobCluster
@@ -325,6 +337,11 @@ def create_job(
     )
     
     return CreateJobResponse(job_id=response.job_id)
+    except Exception as e:
+        return CreateJobResponse(
+            job_id=None,
+            error_message=f"Failed to create job: {str(e)}",
+        )
 
 
 def update_job(
@@ -350,6 +367,7 @@ def update_job(
     Returns:
         UpdateJobResponse confirming update
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import JobSettings
@@ -363,6 +381,11 @@ def update_job(
     )
     
     return UpdateJobResponse(job_id=job_id)
+    except Exception as e:
+        return UpdateJobResponse(
+            job_id=job_id,
+            error_message=f"Failed to update job {job_id}: {str(e)}",
+        )
 
 
 def reset_job(
@@ -386,6 +409,7 @@ def reset_job(
     Returns:
         UpdateJobResponse confirming reset
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import JobSettings
@@ -398,6 +422,11 @@ def reset_job(
     )
     
     return UpdateJobResponse(job_id=job_id, message="Job reset successfully")
+    except Exception as e:
+        return UpdateJobResponse(
+            job_id=job_id,
+            error_message=f"Failed to reset job {job_id}: {str(e)}",
+        )
 
 
 def delete_job(
@@ -418,11 +447,17 @@ def delete_job(
     Returns:
         DeleteJobResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.jobs.delete(job_id=job_id)
     
     return DeleteJobResponse(job_id=job_id)
+    except Exception as e:
+        return DeleteJobResponse(
+            job_id=job_id,
+            error_message=f"Failed to delete job {job_id}: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -464,6 +499,7 @@ def run_now(
     Returns:
         RunNowResponse with run ID
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     response = client.jobs.run_now(
@@ -482,6 +518,12 @@ def run_now(
         run_id=response.run_id,
         number_in_job=response.number_in_job,
     )
+    except Exception as e:
+        return RunNowResponse(
+            run_id=None,
+            number_in_job=None,
+            error_message=f"Failed to run job {job_id}: {str(e)}",
+        )
 
 
 def submit_run(
@@ -519,6 +561,7 @@ def submit_run(
     Returns:
         SubmitRunResponse with run ID
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import SubmitTask, GitSource, JobEmailNotifications, WebhookNotifications, JobNotificationSettings, JobRunAs
@@ -543,6 +586,11 @@ def submit_run(
     )
     
     return SubmitRunResponse(run_id=response.run_id)
+    except Exception as e:
+        return SubmitRunResponse(
+            run_id=None,
+            error_message=f"Failed to submit run: {str(e)}",
+        )
 
 
 def get_run(
@@ -566,6 +614,7 @@ def get_run(
     Returns:
         RunInfo with complete run details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     run = client.jobs.get_run(
@@ -627,6 +676,8 @@ def get_run(
         cluster_spec=run.cluster_spec.as_dict() if run.cluster_spec else None,
         trigger=run.trigger.value if run.trigger else None,
     )
+    except Exception as e:
+        return None
 
 
 def list_runs(
@@ -672,6 +723,7 @@ def list_runs(
         - has_more=True indicates more results available
         - Filters (job_id, state, time range) apply consistently across all pages
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Cap limit at 20 when expand_tasks is True to reduce response size
@@ -756,6 +808,13 @@ def list_runs(
         count=len(runs_list),
         has_more=has_more,
     )
+    except Exception as e:
+        return ListRunsResponse(
+            runs=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list runs: {str(e)}",
+        )
 
 
 def cancel_run(
@@ -777,11 +836,17 @@ def cancel_run(
     Returns:
         CancelRunResponse confirming cancellation
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.jobs.cancel_run(run_id=run_id)
     
     return CancelRunResponse(run_id=run_id)
+    except Exception as e:
+        return CancelRunResponse(
+            run_id=run_id,
+            error_message=f"Failed to cancel run {run_id}: {str(e)}",
+        )
 
 
 def cancel_all_runs(
@@ -804,6 +869,7 @@ def cancel_all_runs(
     Returns:
         Dict with cancellation status
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.jobs.cancel_all_runs(
@@ -815,6 +881,8 @@ def cancel_all_runs(
         "job_id": job_id,
         "message": "All runs canceled successfully"
     }
+    except Exception as e:
+        return {"error": f"Failed to cancel all runs: {str(e)}"}
 
 
 def delete_run(
@@ -835,11 +903,17 @@ def delete_run(
     Returns:
         DeleteRunResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.jobs.delete_run(run_id=run_id)
     
     return DeleteRunResponse(run_id=run_id)
+    except Exception as e:
+        return DeleteRunResponse(
+            run_id=run_id,
+            error_message=f"Failed to delete run {run_id}: {str(e)}",
+        )
 
 
 def repair_run(
@@ -881,6 +955,7 @@ def repair_run(
     Returns:
         RepairRunResponse with repair ID
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     response = client.jobs.repair_run(
@@ -901,6 +976,12 @@ def repair_run(
         run_id=run_id,
         repair_id=response.repair_id,
     )
+    except Exception as e:
+        return RepairRunResponse(
+            run_id=run_id,
+            repair_id=None,
+            error_message=f"Failed to repair run {run_id}: {str(e)}",
+        )
 
 
 def get_run_output(
@@ -922,6 +1003,7 @@ def get_run_output(
     Returns:
         RunOutputInfo with output details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     output = client.jobs.get_run_output(run_id=run_id)
@@ -955,6 +1037,8 @@ def get_run_output(
         error_trace=output.error_trace,
         metadata=metadata,
     )
+    except Exception as e:
+        return None
 
 
 def export_run(
@@ -977,6 +1061,7 @@ def export_run(
     Returns:
         ExportRunResponse with exported views
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import ViewsToExport
@@ -1000,6 +1085,11 @@ def export_run(
             )
     
     return ExportRunResponse(views=views)
+    except Exception as e:
+        return ExportRunResponse(
+            views=[],
+            error_message=f"Failed to export run {run_id}: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -1024,11 +1114,14 @@ def get_job_permissions(
     Returns:
         Dict with permission details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     permissions = client.jobs.get_permissions(job_id=job_id)
     
     return permissions.as_dict()
+    except Exception as e:
+        return {"error": f"Failed to get job permissions for {job_id}: {str(e)}"}
 
 
 def set_job_permissions(
@@ -1062,6 +1155,7 @@ def set_job_permissions(
         - CAN_MANAGE_RUN - Trigger runs, cancel runs
         - CAN_MANAGE - Full control (edit, delete, permissions)
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import JobAccessControlRequest
@@ -1074,6 +1168,8 @@ def set_job_permissions(
     )
     
     return permissions.as_dict()
+    except Exception as e:
+        return {"error": f"Failed to set job permissions for {job_id}: {str(e)}"}
 
 
 def update_job_permissions(
@@ -1096,6 +1192,7 @@ def update_job_permissions(
     Returns:
         Dict with updated permission details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.jobs import JobAccessControlRequest
@@ -1108,6 +1205,8 @@ def update_job_permissions(
     )
     
     return permissions.as_dict()
+    except Exception as e:
+        return {"error": f"Failed to update job permissions for {job_id}: {str(e)}"}
 
 
 def get_job_permission_levels(
@@ -1128,8 +1227,11 @@ def get_job_permission_levels(
     Returns:
         Dict with available permission levels
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     levels = client.jobs.get_permission_levels(job_id=job_id)
     
     return levels.as_dict()
+    except Exception as e:
+        return {"error": f"Failed to get job permission levels for {job_id}: {str(e)}"}

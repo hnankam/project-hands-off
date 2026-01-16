@@ -131,6 +131,7 @@ def list_functions(
     Returns:
         ListFunctionsResponse with list of functions and pagination info
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     # Cap limit at 20 when include_browse is True to reduce response size
@@ -162,6 +163,13 @@ def list_functions(
         count=len(functions_list),
         has_more=has_more,
     )
+    except Exception as e:
+        return ListFunctionsResponse(
+            functions=[],
+            count=0,
+            has_more=False,
+            error_message=f"Failed to list functions: {str(e)}",
+        )
 
 
 def get_function(
@@ -169,7 +177,7 @@ def get_function(
     token_credential_key: str,
     name: str,
     include_browse: Optional[bool] = None,
-) -> FunctionInfoModel:
+) -> Optional[FunctionInfoModel]:
     """
     Get function details.
     
@@ -185,6 +193,7 @@ def get_function(
     Returns:
         FunctionInfoModel with complete function details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     function = client.functions.get(
@@ -193,6 +202,11 @@ def get_function(
     )
     
     return _convert_function_to_model(function)
+    except Exception as e:
+        return FunctionInfoModel(
+            full_name=name,
+            error_message=f"Failed to get function: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -257,6 +271,7 @@ def create_function(
     Returns:
         CreateFunctionResponse with created function information
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.catalog import (
@@ -325,6 +340,11 @@ def create_function(
     return CreateFunctionResponse(
         function_info=_convert_function_to_model(function),
     )
+    except Exception as e:
+        return CreateFunctionResponse(
+            function_info=None,
+            error_message=f"Failed to create function: {str(e)}",
+        )
 
 
 def delete_function(
@@ -349,6 +369,7 @@ def delete_function(
     Returns:
         DeleteFunctionResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.functions.delete(
@@ -357,6 +378,11 @@ def delete_function(
     )
     
     return DeleteFunctionResponse(name=name)
+    except Exception as e:
+        return DeleteFunctionResponse(
+            name=name,
+            error_message=f"Failed to delete function: {str(e)}",
+        )
 
 
 def update_function_owner(
@@ -380,6 +406,7 @@ def update_function_owner(
     Returns:
         UpdateFunctionResponse with updated function information
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     function = client.functions.update(
@@ -390,4 +417,9 @@ def update_function_owner(
     return UpdateFunctionResponse(
         function_info=_convert_function_to_model(function),
     )
+    except Exception as e:
+        return UpdateFunctionResponse(
+            function_info=None,
+            error_message=f"Failed to update function owner: {str(e)}",
+        )
 

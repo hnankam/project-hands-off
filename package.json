@@ -45,8 +45,8 @@
   },
   "dependencies": {
     "@better-auth/sso": "^1.4.5",
-    "@copilotkit/react-core": "^1.50.1",
-    "@copilotkit/react-ui": "^1.50.1",
+    "@copilotkit/react-core": "^1.51.2",
+    "@copilotkit/react-ui": "^1.51.2",
     "@huggingface/transformers": "^3.7.5",
     "@surrealdb/wasm": "^1.4.1",
     "@themaximalist/vectordb.js": "^0.1.2",

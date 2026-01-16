@@ -62,26 +62,30 @@ class IssueModel(BaseModel):
 
 class CreateIssueResponse(BaseModel):
     """Response for creating an issue."""
-    issue: IssueModel = Field(..., description="Created issue")
+    issue: Optional[IssueModel] = Field(None, description="Created issue")
     message: str = Field(default="Issue created successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetIssueResponse(BaseModel):
     """Response for getting an issue."""
-    issue: IssueModel = Field(..., description="Issue details")
+    issue: Optional[IssueModel] = Field(None, description="Issue details")
     message: str = Field(default="Issue retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateIssueResponse(BaseModel):
     """Response for updating an issue."""
     issue_key: str = Field(..., description="Updated issue key")
     message: str = Field(default="Issue updated successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteIssueResponse(BaseModel):
     """Response for deleting an issue."""
     issue_key: str = Field(..., description="Deleted issue key")
     message: str = Field(default="Issue deleted successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class SearchIssuesResponse(BaseModel):
@@ -91,6 +95,7 @@ class SearchIssuesResponse(BaseModel):
     start_at: int = Field(default=0, description="Starting index")
     max_results: int = Field(default=50, description="Maximum results returned")
     message: str = Field(default="Issues retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -110,6 +115,7 @@ class GetTransitionsResponse(BaseModel):
     transitions: list[TransitionModel] = Field(default_factory=list, description="Available transitions")
     issue_key: str = Field(..., description="Issue key")
     message: str = Field(default="Transitions retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class TransitionIssueResponse(BaseModel):
@@ -117,6 +123,7 @@ class TransitionIssueResponse(BaseModel):
     issue_key: str = Field(..., description="Issue key")
     transition_name: str = Field(..., description="Transition performed")
     message: str = Field(default="Issue transitioned successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -134,9 +141,10 @@ class CommentModel(BaseModel):
 
 class AddCommentResponse(BaseModel):
     """Response for adding a comment."""
-    comment: CommentModel = Field(..., description="Created comment")
+    comment: Optional[CommentModel] = Field(None, description="Created comment")
     issue_key: str = Field(..., description="Issue key")
     message: str = Field(default="Comment added successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetCommentsResponse(BaseModel):
@@ -145,6 +153,7 @@ class GetCommentsResponse(BaseModel):
     issue_key: str = Field(..., description="Issue key")
     total: int = Field(default=0, description="Total number of comments")
     message: str = Field(default="Comments retrieved successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -167,6 +176,7 @@ class AddAttachmentResponse(BaseModel):
     attachments: list[AttachmentModel] = Field(default_factory=list, description="Created attachments")
     issue_key: str = Field(..., description="Issue key")
     message: str = Field(default="Attachment(s) added successfully", description="Status message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================

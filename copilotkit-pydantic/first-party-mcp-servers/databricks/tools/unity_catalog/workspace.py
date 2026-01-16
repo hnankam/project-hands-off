@@ -18,6 +18,7 @@ def list_workspace_files(host_credential_key: str, token_credential_key: str, pa
     Returns:
         List of workspace objects with path, type, language, etc.
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     files = []
@@ -37,4 +38,6 @@ def list_workspace_files(host_credential_key: str, token_credential_key: str, pa
         
         files.append(file_dict)
     return files
+    except Exception as e:
+        return [{"error": f"Failed to list workspace files: {str(e)}"}]
 

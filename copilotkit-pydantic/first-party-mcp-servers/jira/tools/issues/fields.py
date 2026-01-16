@@ -10,7 +10,7 @@ This module provides tools for managing issue fields including:
 
 from typing import Any, Optional, Dict, List
 from pydantic import BaseModel, Field
-from ...cache import get_jira_client
+from cache import get_jira_client
 
 
 # ============================================================================
@@ -78,54 +78,28 @@ class UpdateWithHistoryResponse(BaseModel):
 # ============================================================================
 
 def get_issue_field_value(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     field: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> IssueFieldValueResponse:
     """
-    Get the value of a specific issue field.
-
-    Retrieves the current value of a single field from a Jira issue.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Get the current value of a single field from an issue.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         issue_key: Issue key (e.g., "PROJ-123")
         field: Field name or ID (e.g., "summary", "customfield_10000")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
         IssueFieldValueResponse with the field value
-
-    Example:
-        # Get summary field (Cloud)
-        response = get_issue_field_value(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            issue_key="PROJ-123",
-            field="summary",
-            username="user@example.com",
-            cloud=True
-        )
-        print(f"Summary: {response.value}")
-
-        # Get custom field (Server/DC)
-        response = get_issue_field_value(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            issue_key="PROJ-456",
-            field="customfield_10000",
-            cloud=False
-        )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     value = client.issue_field_value(issue_key, field)
     
     return IssueFieldValueResponse(
@@ -136,54 +110,28 @@ def get_issue_field_value(
 
 
 def bulk_update_issue_field(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_keys: List[str],
     fields: Dict[str, Any],
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> BulkUpdateResponse:
     """
-    Bulk update fields for multiple issues.
-
-    Updates the same fields across multiple issues in a single operation.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Update the same fields across multiple issues in a single operation.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         issue_keys: List of issue keys to update
         fields: Dictionary of field names/IDs and their new values
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        BulkUpdateResponse with update results
-
-    Example:
-        # Bulk update priority (Cloud)
-        response = bulk_update_issue_field(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            issue_keys=["PROJ-1", "PROJ-2", "PROJ-3"],
-            fields={"priority": {"name": "High"}},
-            username="user@example.com",
-            cloud=True
-        )
-        print(f"Updated {response.updated_count} issues")
-
-        # Bulk add labels (Server/DC)
-        response = bulk_update_issue_field(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            issue_keys=["DGROWTH-100", "DGROWTH-101"],
-            fields={"labels": ["urgent", "backend"]},
-            cloud=False
-        )
+        BulkUpdateResponse with update results and count
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.bulk_update_issue_field(issue_keys, fields)
     
     return BulkUpdateResponse(
@@ -194,59 +142,32 @@ def bulk_update_issue_field(
 
 
 def append_issue_field_value(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
     field: str,
     value: Dict[str, Any],
-    username: str = "",
+    username_credential_key: str = "",
     notify_users: bool = True,
     cloud: bool = False,
 ) -> AppendFieldValueResponse:
     """
-    Append a value to an issue field.
-
-    Appends a new value to an existing field (useful for multi-value fields).
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Append a new value to an existing field (useful for multi-value fields).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         issue_key: Issue key (e.g., "PROJ-123")
         field: Field name or ID
         value: Value to append
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         notify_users: Whether to notify users of the change (default: True)
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
         AppendFieldValueResponse with success message
-
-    Example:
-        # Append a watcher (Cloud)
-        response = append_issue_field_value(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            issue_key="PROJ-123",
-            field="customfield_10000",
-            value={"name": "john.doe"},
-            username="user@example.com",
-            cloud=True
-        )
-
-        # Append a label (Server/DC)
-        response = append_issue_field_value(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            issue_key="PROJ-456",
-            field="labels",
-            value={"add": "new-label"},
-            cloud=False
-        )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.issue_field_value_append(issue_key, field, value, notify_users=notify_users)
     
     return AppendFieldValueResponse(
@@ -257,54 +178,30 @@ def append_issue_field_value(
 
 
 def get_custom_fields(
-    url: str,
-    api_token: str,
-    username: str = "",
+    url_credential_key: str,
+    token_credential_key: str,
+    username_credential_key: str = "",
     search: Optional[str] = None,
     start: int = 1,
     limit: int = 50,
     cloud: bool = False,
 ) -> CustomFieldsResponse:
     """
-    Get existing custom fields or find by filter.
-
-    Retrieves a list of custom fields, optionally filtered by search term.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Get a list of custom fields, optionally filtered by search term.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
+        username_credential_key: Credential key for username (Cloud only, default: "")
         search: Search term to filter custom fields (optional)
         start: Starting index (default: 1)
         limit: Maximum results per page (default: 50)
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        CustomFieldsResponse with list of custom fields
-
-    Example:
-        # Get all custom fields (Cloud)
-        response = get_custom_fields(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            username="user@example.com",
-            cloud=True
-        )
-        for field in response.fields:
-            print(f"{field.id}: {field.name}")
-
-        # Search for specific custom fields (Server/DC)
-        response = get_custom_fields(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            search="sprint",
-            cloud=False
-        )
+        CustomFieldsResponse with list of custom fields and pagination info
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     fields_data = client.get_custom_fields(search=search, start=start, limit=limit)
     
     # Parse custom fields
@@ -319,51 +216,26 @@ def get_custom_fields(
 
 
 def issue_exists(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> IssueExistsResponse:
     """
-    Check if an issue exists.
-
-    Verifies whether an issue with the given key exists in Jira.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Check if an issue with the given key exists.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         issue_key: Issue key to check (e.g., "PROJ-123")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        IssueExistsResponse with existence status
-
-    Example:
-        # Check if issue exists (Cloud)
-        response = issue_exists(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            issue_key="PROJ-123",
-            username="user@example.com",
-            cloud=True
-        )
-        if response.exists:
-            print("Issue exists!")
-
-        # Check if issue exists (Server/DC)
-        response = issue_exists(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            issue_key="DGROWTH-999",
-            cloud=False
-        )
+        IssueExistsResponse with existence status (exists: bool)
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     exists = client.issue_exists(issue_key)
     
     return IssueExistsResponse(
@@ -373,51 +245,26 @@ def issue_exists(
 
 
 def issue_deleted(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> IssueDeletedResponse:
     """
-    Check if an issue is deleted.
-
-    Verifies whether an issue has been deleted from Jira.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Check if an issue has been deleted.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         issue_key: Issue key to check (e.g., "PROJ-123")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        IssueDeletedResponse with deletion status
-
-    Example:
-        # Check if issue is deleted (Cloud)
-        response = issue_deleted(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            issue_key="PROJ-123",
-            username="user@example.com",
-            cloud=True
-        )
-        if response.deleted:
-            print("Issue was deleted")
-
-        # Check if issue is deleted (Server/DC)
-        response = issue_deleted(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            issue_key="DGROWTH-999",
-            cloud=False
-        )
+        IssueDeletedResponse with deletion status (deleted: bool)
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     deleted = client.issue_deleted(issue_key)
     
     return IssueDeletedResponse(
@@ -427,10 +274,10 @@ def issue_deleted(
 
 
 def update_issue_with_history_metadata(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     issue_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     fields: Optional[Dict[str, Any]] = None,
     update: Optional[Dict[str, Any]] = None,
     history_metadata: Optional[Dict[str, Any]] = None,
@@ -438,18 +285,13 @@ def update_issue_with_history_metadata(
     cloud: bool = False,
 ) -> UpdateWithHistoryResponse:
     """
-    Update issue fields with history metadata.
-
-    Updates issue fields while also recording custom history metadata.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Update issue fields while also recording custom history metadata.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         issue_key: Issue key (e.g., "PROJ-123")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         fields: Dictionary of fields to update (optional)
         update: Dictionary of update operations (optional)
         history_metadata: Custom history metadata (optional)
@@ -458,34 +300,8 @@ def update_issue_with_history_metadata(
 
     Returns:
         UpdateWithHistoryResponse with success message
-
-    Example:
-        # Update with history metadata (Cloud)
-        response = update_issue_with_history_metadata(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            issue_key="PROJ-123",
-            username="user@example.com",
-            fields={"summary": "Updated via API"},
-            history_metadata={
-                "type": "api_update",
-                "description": "Updated via automation",
-                "actor": {"id": "automation"}
-            },
-            cloud=True
-        )
-
-        # Update with history metadata (Server/DC)
-        response = update_issue_with_history_metadata(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            issue_key="PROJ-456",
-            fields={"priority": {"name": "High"}},
-            update={"labels": [{"add": "automated"}]},
-            cloud=False
-        )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
+    client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
     client.update_issue_with_history_metadata(
         issue_key=issue_key,
         fields=fields or {},

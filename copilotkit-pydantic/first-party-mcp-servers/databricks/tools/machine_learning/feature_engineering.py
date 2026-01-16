@@ -97,6 +97,7 @@ def list_features(
     Returns:
         ListFeaturesResponse with features
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     features = []
@@ -112,13 +113,19 @@ def list_features(
         features=features,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListFeaturesResponse(
+            features=[],
+            next_page_token=None,
+            error_message=f"Failed to list features: {str(e)}",
+        )
 
 
 def get_feature(
     host_credential_key: str,
     token_credential_key: str,
     full_name: str,
-) -> FeatureModel:
+) -> Optional[FeatureModel]:
     """
     Get a feature.
     
@@ -130,13 +137,16 @@ def get_feature(
         full_name: Full feature name (catalog.schema.table.column)
         
     Returns:
-        FeatureModel with feature details
+        FeatureModel with feature details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     feature = client.feature_engineering.get_feature(full_name=full_name)
     
     return _convert_to_feature(feature)
+    except Exception as e:
+        return None
 
 
 def create_feature(
@@ -168,6 +178,7 @@ def create_feature(
     Returns:
         CreateFeatureResponse with created feature
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import Feature
@@ -189,6 +200,11 @@ def create_feature(
     return CreateFeatureResponse(
         feature=_convert_to_feature(feature),
     )
+    except Exception as e:
+        return CreateFeatureResponse(
+            feature=None,
+            error_message=f"Failed to create feature: {str(e)}",
+        )
 
 
 def update_feature(
@@ -215,6 +231,7 @@ def update_feature(
     Returns:
         UpdateFeatureResponse with updated feature
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import Feature
@@ -237,6 +254,11 @@ def update_feature(
     return UpdateFeatureResponse(
         feature=_convert_to_feature(feature),
     )
+    except Exception as e:
+        return UpdateFeatureResponse(
+            feature=None,
+            error_message=f"Failed to update feature: {str(e)}",
+        )
 
 
 def delete_feature(
@@ -257,6 +279,7 @@ def delete_feature(
     Returns:
         DeleteFeatureResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.feature_engineering.delete_feature(full_name=full_name)
@@ -264,6 +287,11 @@ def delete_feature(
     return DeleteFeatureResponse(
         full_name=full_name,
     )
+    except Exception as e:
+        return DeleteFeatureResponse(
+            full_name=None,
+            error_message=f"Failed to delete feature: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -290,6 +318,7 @@ def list_kafka_configs(
     Returns:
         ListKafkaConfigsResponse with Kafka configs
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     configs = []
@@ -305,13 +334,19 @@ def list_kafka_configs(
         kafka_configs=configs,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListKafkaConfigsResponse(
+            kafka_configs=[],
+            next_page_token=None,
+            error_message=f"Failed to list Kafka configs: {str(e)}",
+        )
 
 
 def get_kafka_config(
     host_credential_key: str,
     token_credential_key: str,
     name: str,
-) -> KafkaConfigModel:
+) -> Optional[KafkaConfigModel]:
     """
     Get a Kafka config.
     
@@ -323,13 +358,16 @@ def get_kafka_config(
         name: Kafka config name
         
     Returns:
-        KafkaConfigModel with config details
+        KafkaConfigModel with config details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     config = client.feature_engineering.get_kafka_config(name=name)
     
     return _convert_to_kafka_config(config)
+    except Exception as e:
+        return None
 
 
 def create_kafka_config(
@@ -361,6 +399,7 @@ def create_kafka_config(
     Returns:
         CreateKafkaConfigResponse with created config
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import KafkaConfig
@@ -384,6 +423,11 @@ def create_kafka_config(
     return CreateKafkaConfigResponse(
         kafka_config=_convert_to_kafka_config(kafka_config),
     )
+    except Exception as e:
+        return CreateKafkaConfigResponse(
+            kafka_config=None,
+            error_message=f"Failed to create Kafka config: {str(e)}",
+        )
 
 
 def update_kafka_config(
@@ -416,6 +460,7 @@ def update_kafka_config(
     Returns:
         UpdateKafkaConfigResponse with updated config
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import KafkaConfig, FieldMask
@@ -443,6 +488,11 @@ def update_kafka_config(
     return UpdateKafkaConfigResponse(
         kafka_config=_convert_to_kafka_config(kafka_config),
     )
+    except Exception as e:
+        return UpdateKafkaConfigResponse(
+            kafka_config=None,
+            error_message=f"Failed to update Kafka config: {str(e)}",
+        )
 
 
 def delete_kafka_config(
@@ -463,6 +513,7 @@ def delete_kafka_config(
     Returns:
         DeleteKafkaConfigResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.feature_engineering.delete_kafka_config(name=name)
@@ -470,6 +521,11 @@ def delete_kafka_config(
     return DeleteKafkaConfigResponse(
         name=name,
     )
+    except Exception as e:
+        return DeleteKafkaConfigResponse(
+            name=None,
+            error_message=f"Failed to delete Kafka config: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -498,6 +554,7 @@ def list_materialized_features(
     Returns:
         ListMaterializedFeaturesResponse with materialized features
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     mat_features = []
@@ -514,13 +571,19 @@ def list_materialized_features(
         materialized_features=mat_features,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListMaterializedFeaturesResponse(
+            materialized_features=[],
+            next_page_token=None,
+            error_message=f"Failed to list materialized features: {str(e)}",
+        )
 
 
 def get_materialized_feature(
     host_credential_key: str,
     token_credential_key: str,
     materialized_feature_id: str,
-) -> MaterializedFeatureModel:
+) -> Optional[MaterializedFeatureModel]:
     """
     Get a materialized feature.
     
@@ -532,8 +595,9 @@ def get_materialized_feature(
         materialized_feature_id: Materialized feature ID
         
     Returns:
-        MaterializedFeatureModel with details
+        MaterializedFeatureModel with details, or None on error
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     mat_feature = client.feature_engineering.get_materialized_feature(
@@ -541,6 +605,8 @@ def get_materialized_feature(
     )
     
     return _convert_to_materialized_feature(mat_feature)
+    except Exception as e:
+        return None
 
 
 def create_materialized_feature(
@@ -570,6 +636,7 @@ def create_materialized_feature(
     Returns:
         CreateMaterializedFeatureResponse with created materialized feature
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import MaterializedFeature
@@ -592,6 +659,11 @@ def create_materialized_feature(
     return CreateMaterializedFeatureResponse(
         materialized_feature=_convert_to_materialized_feature(mat_feature),
     )
+    except Exception as e:
+        return CreateMaterializedFeatureResponse(
+            materialized_feature=None,
+            error_message=f"Failed to create materialized feature: {str(e)}",
+        )
 
 
 def batch_create_materialized_features(
@@ -616,6 +688,7 @@ def batch_create_materialized_features(
     Returns:
         BatchCreateMaterializedFeaturesResponse with created features
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import CreateMaterializedFeatureRequest
@@ -636,6 +709,11 @@ def batch_create_materialized_features(
     return BatchCreateMaterializedFeaturesResponse(
         materialized_features=mat_features,
     )
+    except Exception as e:
+        return BatchCreateMaterializedFeaturesResponse(
+            materialized_features=[],
+            error_message=f"Failed to batch create materialized features: {str(e)}",
+        )
 
 
 def update_materialized_feature(
@@ -665,6 +743,7 @@ def update_materialized_feature(
     Returns:
         UpdateMaterializedFeatureResponse with updated feature
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.ml import MaterializedFeature
@@ -688,6 +767,11 @@ def update_materialized_feature(
     return UpdateMaterializedFeatureResponse(
         materialized_feature=_convert_to_materialized_feature(mat_feature),
     )
+    except Exception as e:
+        return UpdateMaterializedFeatureResponse(
+            materialized_feature=None,
+            error_message=f"Failed to update materialized feature: {str(e)}",
+        )
 
 
 def delete_materialized_feature(
@@ -708,6 +792,7 @@ def delete_materialized_feature(
     Returns:
         DeleteMaterializedFeatureResponse confirming deletion
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.feature_engineering.delete_materialized_feature(
@@ -717,4 +802,9 @@ def delete_materialized_feature(
     return DeleteMaterializedFeatureResponse(
         materialized_feature_id=materialized_feature_id,
     )
+    except Exception as e:
+        return DeleteMaterializedFeatureResponse(
+            materialized_feature_id=None,
+            error_message=f"Failed to delete materialized feature: {str(e)}",
+        )
 

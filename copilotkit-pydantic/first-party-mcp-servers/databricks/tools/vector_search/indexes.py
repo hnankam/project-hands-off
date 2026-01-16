@@ -81,6 +81,7 @@ def list_vector_search_indexes(
     Returns:
         ListIndexesResponse with indexes
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     indexes = []
@@ -96,6 +97,12 @@ def list_vector_search_indexes(
         indexes=indexes,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return ListIndexesResponse(
+            indexes=[],
+            next_page_token=None,
+            error_message=f"Failed to list vector search indexes: {str(e)}",
+        )
 
 
 def get_vector_search_index(
@@ -103,7 +110,7 @@ def get_vector_search_index(
     token_credential_key: str,
     index_name: str,
     ensure_reranker_compatible: Optional[bool] = None,
-) -> VectorIndexModel:
+) -> Optional[VectorIndexModel]:
     """
     Get a vector search index.
     
@@ -118,6 +125,7 @@ def get_vector_search_index(
     Returns:
         VectorIndexModel with index details
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     index = client.vector_search_indexes.get_index(
@@ -126,6 +134,9 @@ def get_vector_search_index(
     )
     
     return _convert_to_vector_index(index)
+    except Exception as e:
+        print(f"Error getting vector search index: {e}")
+        return None
 
 
 def create_vector_search_index(
@@ -158,6 +169,7 @@ def create_vector_search_index(
     Returns:
         CreateIndexResponse with created index
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     from databricks.sdk.service.vectorsearch import (
@@ -194,6 +206,11 @@ def create_vector_search_index(
     return CreateIndexResponse(
         index=_convert_to_vector_index(index),
     )
+    except Exception as e:
+        return CreateIndexResponse(
+            index=None,
+            error_message=f"Failed to create vector search index: {str(e)}",
+        )
 
 
 def delete_vector_search_index(
@@ -221,6 +238,7 @@ def delete_vector_search_index(
         - The underlying Delta Table (for Delta Sync) is not deleted
         - Index deletion may take several minutes
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.vector_search_indexes.delete_index(index_name=index_name)
@@ -228,6 +246,11 @@ def delete_vector_search_index(
     return DeleteIndexResponse(
         index_name=index_name,
     )
+    except Exception as e:
+        return DeleteIndexResponse(
+            index_name=index_name,
+            error_message=f"Failed to delete vector search index: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -267,6 +290,7 @@ def query_vector_search_index(
     Returns:
         QueryVectorIndexResponse with search results
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.vector_search_indexes.query_index(
@@ -303,6 +327,13 @@ def query_vector_search_index(
         results=query_results,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return QueryVectorIndexResponse(
+            index_name=index_name,
+            results=[],
+            next_page_token=None,
+            error_message=f"Failed to query vector search index: {str(e)}",
+        )
 
 
 def query_vector_search_next_page(
@@ -328,6 +359,7 @@ def query_vector_search_next_page(
     Returns:
         QueryVectorIndexResponse with next page of results
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.vector_search_indexes.query_next_page(
@@ -357,6 +389,13 @@ def query_vector_search_next_page(
         results=query_results,
         next_page_token=next_token,
     )
+    except Exception as e:
+        return QueryVectorIndexResponse(
+            index_name=index_name,
+            results=[],
+            next_page_token=None,
+            error_message=f"Failed to query next page: {str(e)}",
+        )
 
 
 def scan_vector_search_index(
@@ -382,6 +421,7 @@ def scan_vector_search_index(
     Returns:
         ScanVectorIndexResponse with scan results
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.vector_search_indexes.scan_index(
@@ -405,6 +445,13 @@ def scan_vector_search_index(
         results=scan_results,
         last_primary_key=last_key,
     )
+    except Exception as e:
+        return ScanVectorIndexResponse(
+            index_name=index_name,
+            results=[],
+            last_primary_key=None,
+            error_message=f"Failed to scan vector search index: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -440,6 +487,7 @@ def upsert_vector_search_data(
         - Primary key values are used for upsert logic
         - Existing records with same primary key are updated
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.vector_search_indexes.upsert_data_vector_index(
@@ -453,6 +501,12 @@ def upsert_vector_search_data(
         index_name=index_name,
         upserted_count=upserted,
     )
+    except Exception as e:
+        return UpsertDataResponse(
+            index_name=index_name,
+            upserted_count=None,
+            error_message=f"Failed to upsert vector search data: {str(e)}",
+        )
 
 
 def delete_vector_search_data(
@@ -483,6 +537,7 @@ def delete_vector_search_data(
         - Non-existent primary keys are silently ignored
         - Deletion is permanent and cannot be undone
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     result = client.vector_search_indexes.delete_data_vector_index(
@@ -496,6 +551,12 @@ def delete_vector_search_data(
         index_name=index_name,
         deleted_count=deleted,
     )
+    except Exception as e:
+        return DeleteDataResponse(
+            index_name=index_name,
+            deleted_count=None,
+            error_message=f"Failed to delete vector search data: {str(e)}",
+        )
 
 
 # ============================================================================
@@ -529,6 +590,7 @@ def sync_vector_search_index(
         - For CONTINUOUS pipeline type, sync happens automatically
         - Sync process may take several minutes depending on data size
     """
+    try:
     client = get_workspace_client(host_credential_key, token_credential_key)
     
     client.vector_search_indexes.sync_index(index_name=index_name)
@@ -536,4 +598,9 @@ def sync_vector_search_index(
     return SyncIndexResponse(
         index_name=index_name,
     )
+    except Exception as e:
+        return SyncIndexResponse(
+            index_name=index_name,
+            error_message=f"Failed to sync vector search index: {str(e)}",
+        )
 

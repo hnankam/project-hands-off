@@ -282,6 +282,7 @@ AutoScrollDiv.displayName = 'AutoScrollDiv';
  * - Incremental chunk processing: O(1) per new chunk
  * - Raw text during streaming: No markdown rendering overhead
  * - Markdown on completion: Full formatting when done
+ * - Memoized to prevent unnecessary re-renders that cause flickering
  */
 const AuxAgentMessageCard: React.FC<{
   agentKey: string;
@@ -289,7 +290,7 @@ const AuxAgentMessageCard: React.FC<{
   chunks: string[]; // Array of text chunks from activity state
   error?: string;
   instanceId?: string;
-}> = ({ agentKey, status, chunks, error, instanceId }) => {
+}> = memo(({ agentKey, status, chunks, error, instanceId }) => {
   const { isLight } = useStorage(themeStorage);
   
   // Generate a stable cache key
@@ -574,93 +575,93 @@ const AuxAgentMessageCard: React.FC<{
 
       {/* Content - Collapsible with smart auto-scroll */}
       <div
-        className="gallery-carousel"
         style={{
-          maxHeight: isExpanded ? '400px' : '0',
+          maxHeight: isExpanded ? '1000px' : '0',
           opacity: isExpanded ? 1 : 0,
           overflow: 'hidden',
           transition: 'max-height 0.3s ease-in-out, opacity 0.3s ease-in-out',
         }}
       >
-        <AutoScrollDiv
-          content={displayText}
-          isStreaming={isWorking}
-          style={{
-            padding: '8px',
-            maxHeight: '380px',
-            overflowY: 'auto',
-          }}
-        >
-          {status === 'error' && error ? (
-            <div
-              style={{
-                padding: '8px 12px',
-                borderRadius: '6px',
-                backgroundColor: isLight ? 'rgba(239, 68, 68, 0.1)' : 'rgba(248, 113, 113, 0.1)',
-                border: `1px solid ${isLight ? 'rgba(239, 68, 68, 0.2)' : 'rgba(248, 113, 113, 0.2)'}`,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+        <div className="gallery-content" style={{ padding: '8px' }}>
+          <AutoScrollDiv
+            content={displayText}
+            isStreaming={isWorking}
+            style={{
+              maxHeight: '400px',
+              overflow: 'auto',
+            }}
+          >
+            {status === 'error' && error ? (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  backgroundColor: isLight ? 'rgba(239, 68, 68, 0.1)' : 'rgba(248, 113, 113, 0.1)',
+                  border: `1px solid ${isLight ? 'rgba(239, 68, 68, 0.2)' : 'rgba(248, 113, 113, 0.2)'}`,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    style={{ color: isLight ? '#ef4444' : '#f87171', flexShrink: 0, marginTop: '2px' }}
+                  >
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                  </svg>
+                  <span style={{ fontSize: '13px', color: isLight ? '#b91c1c' : '#fca5a5', lineHeight: 1.5 }}>
+                    {error}
+                  </span>
+                </div>
+              </div>
+            ) : renderedContent ? (
+              <div
+                className="aux-agent-content"
+                style={{
+                  fontSize: '13px',
+                  color: textColor,
+                  lineHeight: 1.6,
+                }}
+              >
+                {renderedContent}
+                {isWorking && (
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      width: '6px',
+                      height: '14px',
+                      marginLeft: '2px',
+                      backgroundColor: cursorColor,
+                      animation: 'blink 1s step-end infinite',
+                      verticalAlign: 'middle',
+                    }}
+                  />
+                )}
+              </div>
+            ) : isWorking ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: mutedTextColor, fontSize: '13px' }}>
                 <svg
                   width="16"
                   height="16"
                   viewBox="0 0 24 24"
-                  fill="currentColor"
-                  style={{ color: isLight ? '#ef4444' : '#f87171', flexShrink: 0, marginTop: '2px' }}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  style={{ animation: 'spin 1s linear infinite' }}
                 >
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                  <path d="M12 2a10 10 0 0 1 10 10" strokeOpacity="0.75" strokeLinecap="round" />
                 </svg>
-                <span style={{ fontSize: '13px', color: isLight ? '#b91c1c' : '#fca5a5', lineHeight: 1.5 }}>
-                  {error}
-                </span>
+                <span>Processing...</span>
               </div>
-            </div>
-          ) : renderedContent ? (
-            <div
-              className="aux-agent-content"
-              style={{
-                fontSize: '13px',
-                color: textColor,
-                lineHeight: 1.6,
-              }}
-            >
-              {renderedContent}
-              {isWorking && (
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: '6px',
-                    height: '14px',
-                    marginLeft: '2px',
-                    backgroundColor: cursorColor,
-                    animation: 'blink 1s step-end infinite',
-                    verticalAlign: 'middle',
-                  }}
-                />
-              )}
-            </div>
-          ) : isWorking ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: mutedTextColor, fontSize: '13px' }}>
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                style={{ animation: 'spin 1s linear infinite' }}
-              >
-                <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-                <path d="M12 2a10 10 0 0 1 10 10" strokeOpacity="0.75" strokeLinecap="round" />
-              </svg>
-              <span>Processing...</span>
-            </div>
-          ) : (
-            <span style={{ fontSize: '13px', color: mutedTextColor, fontStyle: 'italic' }}>
-              No response
-            </span>
-          )}
-        </AutoScrollDiv>
+            ) : (
+              <span style={{ fontSize: '13px', color: mutedTextColor, fontStyle: 'italic' }}>
+                No response
+              </span>
+            )}
+          </AutoScrollDiv>
+        </div>
       </div>
 
       {/* CSS for animations */}
@@ -676,7 +677,9 @@ const AuxAgentMessageCard: React.FC<{
       `}</style>
     </div>
   );
-};
+});
+
+AuxAgentMessageCard.displayName = 'AuxAgentMessageCard';
 
 // ============================================================================
 // ACTIVITY MESSAGE RENDERER COMPONENT

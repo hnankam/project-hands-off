@@ -10,7 +10,7 @@ This module provides tools for managing Jira projects:
 
 from typing import Any, Optional, Dict, List
 from pydantic import BaseModel, Field
-from ..cache import get_jira_client
+from cache import get_jira_client
 
 
 # ============================================================================
@@ -31,31 +31,38 @@ class ProjectInfo(BaseModel):
 
 class ListProjectsResponse(BaseModel):
     """Response for listing projects."""
-    projects: List[ProjectInfo] = Field(..., description="List of projects")
-    total: int = Field(..., description="Total number of projects")
+    projects: List[ProjectInfo] = Field(default_factory=list, description="List of projects")
+    total: int = Field(0, description="Total number of projects")
+    start_at: int = Field(0, description="Starting index for pagination")
+    max_results: int = Field(50, description="Maximum results returned")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetProjectResponse(BaseModel):
     """Response for getting a project."""
-    project: Dict[str, Any] = Field(..., description="Complete project details")
+    project: Optional[Dict[str, Any]] = Field(None, description="Complete project details")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteProjectResponse(BaseModel):
     """Response for deleting a project."""
     project_key: str = Field(..., description="Deleted project key")
     message: str = Field(..., description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ArchiveProjectResponse(BaseModel):
     """Response for archiving a project."""
     project_key: str = Field(..., description="Archived project key")
     message: str = Field(..., description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateProjectResponse(BaseModel):
     """Response for updating a project."""
     project_key: str = Field(..., description="Updated project key")
     message: str = Field(..., description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ComponentInfo(BaseModel):
@@ -71,8 +78,9 @@ class ComponentInfo(BaseModel):
 class GetProjectComponentsResponse(BaseModel):
     """Response for getting project components."""
     project_key: str = Field(..., description="Project key")
-    components: List[ComponentInfo] = Field(..., description="List of components")
-    total: int = Field(..., description="Total number of components")
+    components: List[ComponentInfo] = Field(default_factory=list, description="List of components")
+    total: int = Field(0, description="Total number of components")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class VersionInfo(BaseModel):
@@ -90,34 +98,39 @@ class VersionInfo(BaseModel):
 class GetProjectVersionsResponse(BaseModel):
     """Response for getting project versions."""
     project_key: str = Field(..., description="Project key")
-    versions: List[VersionInfo] = Field(..., description="List of versions")
-    total: int = Field(..., description="Total number of versions")
+    versions: List[VersionInfo] = Field(default_factory=list, description="List of versions")
+    total: int = Field(0, description="Total number of versions")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class AddVersionResponse(BaseModel):
     """Response for adding a version."""
     project_key: str = Field(..., description="Project key")
-    version: VersionInfo = Field(..., description="Created version")
+    version: Optional[VersionInfo] = Field(None, description="Created version")
     message: str = Field(..., description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateVersionResponse(BaseModel):
     """Response for updating a version."""
     version_id: str = Field(..., description="Version ID")
     message: str = Field(..., description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetProjectIssuesCountResponse(BaseModel):
     """Response for getting project issues count."""
     project_key: str = Field(..., description="Project key")
-    count: int = Field(..., description="Total issue count")
+    count: int = Field(0, description="Total issue count")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetAllProjectIssuesResponse(BaseModel):
     """Response for getting all project issues."""
     project_key: str = Field(..., description="Project key")
-    issues: List[Dict[str, Any]] = Field(..., description="List of issues")
-    total: int = Field(..., description="Total number of issues")
+    issues: List[Dict[str, Any]] = Field(default_factory=list, description="List of issues")
+    total: int = Field(0, description="Total number of issues")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -125,491 +138,354 @@ class GetAllProjectIssuesResponse(BaseModel):
 # ============================================================================
 
 def list_projects(
-    url: str,
-    api_token: str,
-    username: str = "",
+    url_credential_key: str,
+    token_credential_key: str,
+    username_credential_key: str = "",
     included_archived: Optional[bool] = None,
     expand: Optional[str] = None,
+    start_at: int = 0,
+    max_results: int = 50,
     cloud: bool = False,
 ) -> ListProjectsResponse:
     """
-    List all projects visible to the user.
-
-    Returns all projects which are visible for the currently logged in user.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    List all projects visible to the user with pagination support.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
+        username_credential_key: Credential key for username (Cloud only, default: "")
         included_archived: Include archived projects (optional)
         expand: Fields to expand (optional, e.g., "description,lead")
+        start_at: Starting index for pagination (default: 0)
+        max_results: Maximum results to return (default: 50)
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        ListProjectsResponse with all accessible projects
-
-    Example:
-        # List all projects (Cloud)
-        response = list_projects(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            username="user@example.com",
-            cloud=True
-        )
-        for project in response.projects:
-            print(f"{project.key}: {project.name}")
-
-        # List including archived projects (Server/DC)
-        response = list_projects(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            included_archived=True,
-            expand="description,lead",
-            cloud=False
-        )
+        ListProjectsResponse with paginated projects
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
-    projects_data = client.projects(included_archived=included_archived, expand=expand)
-    
-    # Parse projects
-    projects = [ProjectInfo(**proj) for proj in projects_data]
-    
-    return ListProjectsResponse(
-        projects=projects,
-        total=len(projects)
-    )
+    try:
+        client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
+        projects_data = client.projects(included_archived=included_archived, expand=expand)
+        
+        # Parse all projects
+        all_projects = [ProjectInfo(**proj) for proj in projects_data]
+        
+        # Apply manual pagination
+        total_projects = len(all_projects)
+        paginated_projects = all_projects[start_at:start_at + max_results]
+        
+        return ListProjectsResponse(
+            projects=paginated_projects,
+            total=total_projects,
+            start_at=start_at,
+            max_results=max_results
+        )
+    except Exception as e:
+        return ListProjectsResponse(
+            projects=[],
+            total=0,
+            start_at=start_at,
+            max_results=max_results,
+            error_message=f"Failed to list projects: {str(e)}"
+        )
 
 
 def get_project(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     project_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     expand: Optional[str] = None,
     cloud: bool = False,
 ) -> GetProjectResponse:
     """
-    Get project details.
-
-    Retrieves complete information about a specific project.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Get project details by key.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         project_key: Project key (e.g., "PROJ")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         expand: Fields to expand (optional, e.g., "description,lead,issueTypes")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
         GetProjectResponse with complete project details
-
-    Example:
-        # Get project details (Cloud)
-        response = get_project(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            project_key="PROJ",
-            username="user@example.com",
-            expand="description,lead,issueTypes",
-            cloud=True
-        )
-        print(f"Project: {response.project['name']}")
-        print(f"Lead: {response.project.get('lead', {}).get('displayName')}")
-
-        # Get project (Server/DC)
-        response = get_project(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            project_key="DGROWTH",
-            cloud=False
-        )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
-    project_data = client.project(project_key, expand=expand)
-    
-    return GetProjectResponse(
-        project=project_data
-    )
+    try:
+        client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
+        project_data = client.project(project_key, expand=expand)
+        
+        return GetProjectResponse(
+            project=project_data
+        )
+    except Exception as e:
+        return GetProjectResponse(
+            project=None,
+            error_message=f"Failed to get project: {str(e)}"
+        )
 
 
 def delete_project(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     project_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> DeleteProjectResponse:
     """
-    Delete a project.
-
-    Permanently deletes a project and all its associated data.
-    **WARNING:** This operation is irreversible!
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Permanently delete a project and all its associated data.
+    
+    **Warning:** This operation is irreversible!
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         project_key: Project key to delete
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        DeleteProjectResponse with confirmation
-
-    Example:
-        # Delete project (Cloud) - USE WITH CAUTION!
-        response = delete_project(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            project_key="OLD",
-            username="user@example.com",
-            cloud=True
-        )
-        print(response.message)
-
-        # Delete project (Server/DC)
-        response = delete_project(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            project_key="DEPRECATED",
-            cloud=False
-        )
+        DeleteProjectResponse with confirmation message
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
-    client.delete_project(project_key)
-    
-    return DeleteProjectResponse(
-        project_key=project_key,
-        message=f"Successfully deleted project {project_key}"
-    )
+    try:
+        client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
+        client.delete_project(project_key)
+        
+        return DeleteProjectResponse(
+            project_key=project_key,
+            message=f"Successfully deleted project {project_key}"
+        )
+    except Exception as e:
+        return DeleteProjectResponse(
+            project_key=project_key,
+            message="",
+            error_message=f"Failed to delete project: {str(e)}"
+        )
 
 
 def archive_project(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     project_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> ArchiveProjectResponse:
     """
-    Archive a project.
+    Archive a project, making it read-only and hiding it from most views.
 
-    Archives a project, making it read-only and hiding it from most views.
     Archived projects can be restored later.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         project_key: Project key to archive
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        ArchiveProjectResponse with confirmation
-
-    Example:
-        # Archive project (Cloud)
-        response = archive_project(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            project_key="OLD",
-            username="user@example.com",
-            cloud=True
-        )
-        print(response.message)
-
-        # Archive project (Server/DC)
-        response = archive_project(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            project_key="COMPLETED",
-            cloud=False
-        )
+        ArchiveProjectResponse with confirmation message
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
-    client.archive_project(project_key)
-    
-    return ArchiveProjectResponse(
-        project_key=project_key,
-        message=f"Successfully archived project {project_key}"
-    )
+    try:
+        client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
+        client.archive_project(project_key)
+        
+        return ArchiveProjectResponse(
+            project_key=project_key,
+            message=f"Successfully archived project {project_key}"
+        )
+    except Exception as e:
+        return ArchiveProjectResponse(
+            project_key=project_key,
+            message="",
+            error_message=f"Failed to archive project: {str(e)}"
+        )
 
 
 def update_project(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     project_key: str,
     data: Dict[str, Any],
-    username: str = "",
+    username_credential_key: str = "",
     expand: str = "lead,description",
     cloud: bool = False,
 ) -> UpdateProjectResponse:
     """
-    Update project details.
-
-    Updates project properties like name, description, lead, etc.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Update project properties like name, description, lead, etc.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         project_key: Project key to update
         data: Dictionary of fields to update (e.g., {"name": "New Name", "description": "..."})
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         expand: Fields to expand (default: "lead,description")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        UpdateProjectResponse with confirmation
-
-    Example:
-        # Update project (Cloud)
-        response = update_project(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            project_key="PROJ",
-            data={
-                "name": "Updated Project Name",
-                "description": "New project description",
-                "lead": {"name": "john.doe"}
-            },
-            username="user@example.com",
-            cloud=True
-        )
-
-        # Update project description only (Server/DC)
-        response = update_project(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            project_key="DGROWTH",
-            data={"description": "Updated Q4 2025"},
-            cloud=False
-        )
+        UpdateProjectResponse with confirmation message
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
-    client.update_project(project_key, data, expand=expand)
-    
-    return UpdateProjectResponse(
-        project_key=project_key,
-        message=f"Successfully updated project {project_key}"
-    )
+    try:
+        client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
+        client.update_project(project_key, data, expand=expand)
+        
+        return UpdateProjectResponse(
+            project_key=project_key,
+            message=f"Successfully updated project {project_key}"
+        )
+    except Exception as e:
+        return UpdateProjectResponse(
+            project_key=project_key,
+            message="",
+            error_message=f"Failed to update project: {str(e)}"
+        )
 
 
 def get_project_components(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     project_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> GetProjectComponentsResponse:
     """
-    Get project components.
-
-    Retrieves all components (subsystems/modules) defined in a project.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Get all components (subsystems/modules) defined in a project.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         project_key: Project key
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
         GetProjectComponentsResponse with all components
-
-    Example:
-        # Get components (Cloud)
-        response = get_project_components(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            project_key="PROJ",
-            username="user@example.com",
-            cloud=True
-        )
-        for comp in response.components:
-            print(f"{comp.name}: {comp.description}")
-
-        # Get components (Server/DC)
-        response = get_project_components(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            project_key="DGROWTH",
-            cloud=False
-        )
-        print(f"Project has {response.total} components")
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
-    components_data = client.get_project_components(project_key)
-    
-    # Parse components
-    components = [ComponentInfo(**comp) for comp in components_data]
-    
-    return GetProjectComponentsResponse(
-        project_key=project_key,
-        components=components,
-        total=len(components)
-    )
+    try:
+        client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
+        components_data = client.get_project_components(project_key)
+        
+        # Parse components
+        components = [ComponentInfo(**comp) for comp in components_data]
+        
+        return GetProjectComponentsResponse(
+            project_key=project_key,
+            components=components,
+            total=len(components)
+        )
+    except Exception as e:
+        return GetProjectComponentsResponse(
+            project_key=project_key,
+            components=[],
+            total=0,
+            error_message=f"Failed to get project components: {str(e)}"
+        )
 
 
 def get_project_versions(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     project_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     expand: Optional[str] = None,
     cloud: bool = False,
 ) -> GetProjectVersionsResponse:
     """
-    Get project versions.
-
-    Retrieves all versions (releases) defined in a project.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Get all versions (releases) defined in a project.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         project_key: Project key
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         expand: Fields to expand (optional)
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
         GetProjectVersionsResponse with all versions
-
-    Example:
-        # Get versions (Cloud)
-        response = get_project_versions(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            project_key="PROJ",
-            username="user@example.com",
-            cloud=True
-        )
-        for version in response.versions:
-            status = "Released" if version.released else "Unreleased"
-            print(f"{version.name}: {status}")
-
-        # Get versions (Server/DC)
-        response = get_project_versions(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            project_key="DGROWTH",
-            cloud=False
-        )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
-    versions_data = client.get_project_versions(project_key, expand=expand)
-    
-    # Parse versions
-    versions = [VersionInfo(**ver) for ver in versions_data]
-    
-    return GetProjectVersionsResponse(
-        project_key=project_key,
-        versions=versions,
-        total=len(versions)
-    )
+    try:
+        client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
+        versions_data = client.get_project_versions(project_key, expand=expand)
+        
+        # Parse versions
+        versions = [VersionInfo(**ver) for ver in versions_data]
+        
+        return GetProjectVersionsResponse(
+            project_key=project_key,
+            versions=versions,
+            total=len(versions)
+        )
+    except Exception as e:
+        return GetProjectVersionsResponse(
+            project_key=project_key,
+            versions=[],
+            total=0,
+            error_message=f"Failed to get project versions: {str(e)}"
+        )
 
 
 def add_version(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     project_key: str,
     project_id: int,
     version_name: str,
-    username: str = "",
+    username_credential_key: str = "",
     is_archived: bool = False,
     is_released: bool = False,
     cloud: bool = False,
 ) -> AddVersionResponse:
     """
-    Add a version to a project.
-
-    Creates a new version (release) in a project.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Create a new version (release) for a project.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         project_key: Project key
         project_id: Project ID (numeric)
         version_name: Version name (e.g., "v1.0.0", "Release 2025-Q1")
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         is_archived: Whether version is archived (default: False)
         is_released: Whether version is released (default: False)
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        AddVersionResponse with created version
-
-    Example:
-        # Add version (Cloud)
-        response = add_version(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            project_key="PROJ",
-            project_id=10000,
-            version_name="v2.0.0",
-            username="user@example.com",
-            cloud=True
-        )
-        print(f"Created version: {response.version.name}")
-
-        # Add released version (Server/DC)
-        response = add_version(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            project_key="DGROWTH",
-            project_id=12345,
-            version_name="Release 2025-Q1",
-            is_released=True,
-            cloud=False
-        )
+        AddVersionResponse with created version information
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
-    version_data = client.add_version(
-        project_key,
-        project_id,
-        version_name,
-        is_archived=is_archived,
-        is_released=is_released
-    )
-    
-    # Parse version
-    version = VersionInfo(**version_data)
-    
-    return AddVersionResponse(
-        project_key=project_key,
-        version=version,
-        message=f"Successfully added version {version_name} to project {project_key}"
-    )
+    try:
+        client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
+        version_data = client.add_version(
+            project_key,
+            project_id,
+            version_name,
+            is_archived=is_archived,
+            is_released=is_released
+        )
+        
+        # Parse version
+        version = VersionInfo(**version_data)
+        
+        return AddVersionResponse(
+            project_key=project_key,
+            version=version,
+            message=f"Successfully added version {version_name} to project {project_key}"
+        )
+    except Exception as e:
+        return AddVersionResponse(
+            project_key=project_key,
+            version=None,
+            message="",
+            error_message=f"Failed to add version: {str(e)}"
+        )
 
 
 def update_version(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     version_id: str,
-    username: str = "",
+    username_credential_key: str = "",
     name: Optional[str] = None,
     description: Optional[str] = None,
     is_archived: Optional[bool] = None,
@@ -619,18 +495,13 @@ def update_version(
     cloud: bool = False,
 ) -> UpdateVersionResponse:
     """
-    Update an existing version.
-
-    Updates properties of a project version.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
+    Update properties of a project version.
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         version_id: Version ID to update
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         name: New version name (optional)
         description: New description (optional)
         is_archived: Archive status (optional)
@@ -640,176 +511,123 @@ def update_version(
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        UpdateVersionResponse with confirmation
-
-    Example:
-        # Release a version (Cloud)
-        response = update_version(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            version_id="10000",
-            username="user@example.com",
-            is_released=True,
-            release_date="2025-12-31",
-            cloud=True
-        )
-
-        # Update version name and description (Server/DC)
-        response = update_version(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            version_id="12345",
-            name="v2.0.0 - Final",
-            description="Final release for Q4 2025",
-            cloud=False
-        )
+        UpdateVersionResponse with confirmation message
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
-    client.update_version(
-        version_id,
-        name=name,
-        description=description,
-        is_archived=is_archived,
-        is_released=is_released,
-        start_date=start_date,
-        release_date=release_date
-    )
-    
-    return UpdateVersionResponse(
-        version_id=version_id,
-        message=f"Successfully updated version {version_id}"
-    )
+    try:
+        client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
+        client.update_version(
+            version_id,
+            name=name,
+            description=description,
+            is_archived=is_archived,
+            is_released=is_released,
+            start_date=start_date,
+            release_date=release_date
+        )
+        
+        return UpdateVersionResponse(
+            version_id=version_id,
+            message=f"Successfully updated version {version_id}"
+        )
+    except Exception as e:
+        return UpdateVersionResponse(
+            version_id=version_id,
+            message="",
+            error_message=f"Failed to update version: {str(e)}"
+        )
 
 
 def get_project_issues_count(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     project_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     cloud: bool = False,
 ) -> GetProjectIssuesCountResponse:
     """
     Get total count of issues in a project.
 
-    Returns the total number of issues in a project.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
-
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         project_key: Project key
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
         GetProjectIssuesCountResponse with issue count
-
-    Example:
-        # Get issue count (Cloud)
-        response = get_project_issues_count(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            project_key="PROJ",
-            username="user@example.com",
-            cloud=True
-        )
-        print(f"Project has {response.count} issues")
-
-        # Get issue count (Server/DC)
-        response = get_project_issues_count(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            project_key="DGROWTH",
-            cloud=False
-        )
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
-    count = client.get_project_issues_count(project_key)
-    
-    return GetProjectIssuesCountResponse(
-        project_key=project_key,
-        count=count
-    )
+    try:
+        client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
+        count = client.get_project_issues_count(project_key)
+        
+        return GetProjectIssuesCountResponse(
+            project_key=project_key,
+            count=count
+        )
+    except Exception as e:
+        return GetProjectIssuesCountResponse(
+            project_key=project_key,
+            count=0,
+            error_message=f"Failed to get project issues count: {str(e)}"
+        )
 
 
 def get_all_project_issues(
-    url: str,
-    api_token: str,
+    url_credential_key: str,
+    token_credential_key: str,
     project_key: str,
-    username: str = "",
+    username_credential_key: str = "",
     fields: str = "*all",
     start: int = 0,
     limit: int = 500,
     cloud: bool = False,
 ) -> GetAllProjectIssuesResponse:
     """
-    Get all issues from a project.
+    Get all issues from a project with pagination support.
 
-    Retrieves all issues in a project with pagination support.
     **Note:** For large projects, use pagination to avoid timeouts.
-    Authentication is token-based:
-    - For Jira Cloud (cloud=True): Use username (email) and API token.
-    - For Jira Server/Data Center (cloud=False): Use an empty username string and a Personal Access Token (PAT).
 
     Args:
-        url: Jira instance URL
-        api_token: API token (Cloud) or Personal Access Token/PAT (Server/Data Center)
+        url_credential_key: Credential key for Jira instance URL
+        token_credential_key: Credential key for API token
         project_key: Project key
-        username: Email address (required for Cloud), can be omitted for Server/Data Center (default: "")
+        username_credential_key: Credential key for username (Cloud only, default: "")
         fields: Fields to return (default: "*all")
         start: Starting index for pagination (default: 0)
         limit: Maximum results per page (default: 500)
         cloud: Whether this is Jira Cloud (True) or Server/Data Center (False). Defaults to False.
 
     Returns:
-        GetAllProjectIssuesResponse with issues
-
-    Example:
-        # Get all issues (Cloud)
-        response = get_all_project_issues(
-            url="https://yoursite.atlassian.net",
-            api_token="your_api_token",
-            project_key="PROJ",
-            username="user@example.com",
-            limit=100,
-            cloud=True
-        )
-        print(f"Retrieved {response.total} issues")
-        for issue in response.issues:
-            print(f"  {issue['key']}: {issue['fields']['summary']}")
-
-        # Get issues with specific fields (Server/DC)
-        response = get_all_project_issues(
-            url="https://jira.corp.company.com",
-            api_token="your_pat",
-            project_key="DGROWTH",
-            fields="summary,status,assignee",
-            start=0,
-            limit=50,
-            cloud=False
-        )
+        GetAllProjectIssuesResponse with issues and total count
     """
-    client = get_jira_client(url, username, api_token, cloud=cloud)
-    issues_data = client.get_all_project_issues(
-        project_key,
-        fields=fields,
-        start=start,
-        limit=limit
-    )
-    
-    # Handle different response formats
-    if isinstance(issues_data, dict):
-        issues = issues_data.get('issues', [])
-        total = issues_data.get('total', len(issues))
-    else:
-        issues = issues_data if isinstance(issues_data, list) else []
-        total = len(issues)
-    
-    return GetAllProjectIssuesResponse(
-        project_key=project_key,
-        issues=issues,
-        total=total
-    )
+    try:
+        client = get_jira_client(url_credential_key, token_credential_key, username_credential_key, cloud=cloud)
+        issues_data = client.get_all_project_issues(
+            project_key,
+            fields=fields,
+            start=start,
+            limit=limit
+        )
+        
+        # Handle different response formats
+        if isinstance(issues_data, dict):
+            issues = issues_data.get('issues', [])
+            total = issues_data.get('total', len(issues))
+        else:
+            issues = issues_data if isinstance(issues_data, list) else []
+            total = len(issues)
+        
+        return GetAllProjectIssuesResponse(
+            project_key=project_key,
+            issues=issues,
+            total=total
+        )
+    except Exception as e:
+        return GetAllProjectIssuesResponse(
+            project_key=project_key,
+            issues=[],
+            total=0,
+            error_message=f"Failed to get project issues: {str(e)}"
+        )
 
