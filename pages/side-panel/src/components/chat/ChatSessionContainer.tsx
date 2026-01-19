@@ -54,6 +54,8 @@ const PanelsWrapper: FC<{
   onPlansUpdate: (plans: Record<string, any>) => void;
   onGraphsUpdate: (graphs: Record<string, any>) => void;
   onWidthChange: (width: number) => void;
+  initialPanelWidth?: number;
+  chatFontSize?: 'small' | 'medium' | 'large';
 }> = ({
   isLight,
   showPlansPanel,
@@ -66,7 +68,38 @@ const PanelsWrapper: FC<{
   onPlansUpdate,
   onGraphsUpdate,
   onWidthChange,
+  initialPanelWidth = 384,
+  chatFontSize = 'medium',
 }) => {
+  // Detect container size for responsive behavior
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isSmallView, setIsSmallView] = useState(false);
+  const SMALL_VIEW_THRESHOLD = 600; // Switch to overlay mode below this width
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const checkSize = () => {
+      const width = container.offsetWidth || container.clientWidth;
+      setIsSmallView(width < SMALL_VIEW_THRESHOLD);
+    };
+
+    // Initial check
+    checkSize();
+
+    // Use ResizeObserver for efficient size tracking
+    const resizeObserver = new ResizeObserver(() => {
+      checkSize();
+    });
+
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
+
   // Get agent setState to sync panel updates back to CopilotKit
   const { state: currentAgentState, setState: setAgentState } = useCopilotAgent<UnifiedAgentState>({
     agentId: 'dynamic_agent',
@@ -107,29 +140,34 @@ const PanelsWrapper: FC<{
 
   return (
     <div 
+      ref={containerRef}
       className="absolute top-0 bottom-0 right-0 z-50" 
-      style={{ pointerEvents: 'none' }}
+      style={{ pointerEvents: 'none', width: '100%', height: '100%' }}
     >
-      <div style={{ pointerEvents: 'auto', height: '100%' }}>
-        <PlansPanel
-          isLight={isLight}
-          isOpen={showPlansPanel}
-          onClose={onClosePlans}
-          plans={agentPlans}
-          sessionId={sessionId}
-          onPlansUpdate={handlePlansUpdate}
-          onWidthChange={onWidthChange}
-        />
-        <GraphsPanel
-          isLight={isLight}
-          isOpen={showGraphsPanel}
-          onClose={onCloseGraphs}
-          graphs={agentGraphs}
-          sessionId={sessionId}
-          onGraphsUpdate={handleGraphsUpdate}
-          onWidthChange={onWidthChange}
-        />
-      </div>
+      <PlansPanel
+        isLight={isLight}
+        isOpen={showPlansPanel}
+        onClose={onClosePlans}
+        plans={agentPlans}
+        sessionId={sessionId}
+        onPlansUpdate={handlePlansUpdate}
+        onWidthChange={onWidthChange}
+        initialWidth={initialPanelWidth}
+        isSmallView={isSmallView}
+        chatFontSize={chatFontSize}
+      />
+      <GraphsPanel
+        isLight={isLight}
+        isOpen={showGraphsPanel}
+        onClose={onCloseGraphs}
+        graphs={agentGraphs}
+        sessionId={sessionId}
+        onGraphsUpdate={handleGraphsUpdate}
+        onWidthChange={onWidthChange}
+        initialWidth={initialPanelWidth}
+        isSmallView={isSmallView}
+        chatFontSize={chatFontSize}
+      />
     </div>
   );
 };
@@ -518,7 +556,161 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
     // Plans and Graphs panels
     const [showPlansPanel, setShowPlansPanel] = useState(false);
     const [showGraphsPanel, setShowGraphsPanel] = useState(false);
-    const [panelWidth, setPanelWidth] = useState(384); // Track actual panel width for dynamic resizing
+    
+    // Refs to track current panel state (avoid stale closures)
+    const plansPanelRef = useRef(false);
+    const graphsPanelRef = useRef(false);
+    
+    // Sync refs with state
+    useEffect(() => {
+      plansPanelRef.current = showPlansPanel;
+    }, [showPlansPanel]);
+    
+    useEffect(() => {
+      graphsPanelRef.current = showGraphsPanel;
+    }, [showGraphsPanel]);
+    
+    // Load persisted panel width from localStorage
+    const getPersistedPanelWidth = useCallback(() => {
+      try {
+        const saved = localStorage.getItem('panel-width');
+        if (saved) {
+          const width = parseInt(saved, 10);
+          if (!isNaN(width) && width >= 300 && width <= 800) {
+            return width;
+          }
+        }
+      } catch (error) {
+        console.error('[ChatSessionContainer] Failed to load panel width:', error);
+      }
+      return 384; // Default width
+    }, []);
+    
+    const [panelWidth, setPanelWidth] = useState(getPersistedPanelWidth); // Track actual panel width for dynamic resizing
+    
+    // Detect viewport size for responsive behavior (before panel margin is applied)
+    const chatWrapperRef = useRef<HTMLDivElement | null>(null);
+    const [isSmallChatView, setIsSmallChatView] = useState(() => {
+      // Initial check using window width
+      if (typeof window !== 'undefined') {
+        return window.innerWidth < 600;
+      }
+      return false;
+    });
+    const SMALL_VIEW_THRESHOLD = 600; // Switch to overlay mode below this width
+    
+    useEffect(() => {
+      const wrapper = chatWrapperRef.current;
+      
+      const checkSize = () => {
+        // Check wrapper width first (most accurate), then parent, then window
+        let width = window.innerWidth;
+        
+        if (wrapper) {
+          const wrapperWidth = wrapper.offsetWidth || wrapper.clientWidth;
+          if (wrapperWidth > 0) {
+            width = wrapperWidth;
+          } else {
+            // Try parent container
+            const parent = wrapper.parentElement;
+            if (parent) {
+              const parentWidth = parent.offsetWidth || parent.clientWidth;
+              if (parentWidth > 0) {
+                width = parentWidth;
+              }
+            }
+          }
+        }
+        
+        const isSmall = width < SMALL_VIEW_THRESHOLD;
+        setIsSmallChatView(isSmall);
+      };
+
+      // Initial check with a small delay to ensure DOM is ready
+      const timeoutId = setTimeout(checkSize, 0);
+      
+      // Use ResizeObserver for wrapper if available
+      if (wrapper) {
+        const resizeObserver = new ResizeObserver(() => {
+          checkSize();
+        });
+        resizeObserver.observe(wrapper);
+        
+        // Also listen to window resize as fallback
+        window.addEventListener('resize', checkSize);
+        
+        return () => {
+          clearTimeout(timeoutId);
+          resizeObserver.disconnect();
+          window.removeEventListener('resize', checkSize);
+        };
+      } else {
+        // Fallback to window resize only
+        window.addEventListener('resize', checkSize);
+        return () => {
+          clearTimeout(timeoutId);
+          window.removeEventListener('resize', checkSize);
+        };
+      }
+    }, []);
+    
+    // Persist panel width to localStorage
+    const handlePanelWidthChange = useCallback((width: number) => {
+      setPanelWidth(width);
+      try {
+        localStorage.setItem('panel-width', width.toString());
+      } catch (error) {
+        console.error('[ChatSessionContainer] Failed to save panel width:', error);
+      }
+    }, []);
+    
+    // Handle plans panel toggle - close graphs panel if open
+    const handlePlansClick = useCallback((e?: React.MouseEvent) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      
+      // Use refs to get current state (avoids stale closures)
+      const graphsIsOpen = graphsPanelRef.current;
+      const plansIsOpen = plansPanelRef.current;
+      
+      if (graphsIsOpen) {
+        // Open plans panel first, then close graphs panel immediately
+        setShowPlansPanel(true);
+        setShowGraphsPanel(false);
+      } else if (plansIsOpen) {
+        // If plans panel is already open, close it
+        setShowPlansPanel(false);
+      } else {
+        // Open plans panel
+        setShowPlansPanel(true);
+      }
+    }, []);
+    
+    // Handle graphs panel toggle - close plans panel if open
+    const handleGraphsClick = useCallback((e?: React.MouseEvent) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      
+      // Use refs to get current state (avoids stale closures)
+      const plansIsOpen = plansPanelRef.current;
+      const graphsIsOpen = graphsPanelRef.current;
+      
+      if (plansIsOpen) {
+        // Open graphs panel first, then close plans panel immediately
+        setShowGraphsPanel(true);
+        setShowPlansPanel(false);
+      } else if (graphsIsOpen) {
+        // If graphs panel is already open, close it
+        setShowGraphsPanel(false);
+      } else {
+        // Open graphs panel
+        setShowGraphsPanel(true);
+      }
+    }, []);
     
     // State for agent plans/graphs - must be state (not ref) so React re-renders panels when it changes
     const [agentPlans, setAgentPlans] = useState<Record<string, any>>({});
@@ -1196,17 +1388,17 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
           }}
           onUsageClick={() => setIsUsagePopupOpen(true)}
           currentPageUrl={managedTabUrl}
-          onPlansClick={() => {
-            setShowPlansPanel(true);
-          }}
-          onGraphsClick={() => {
-            setShowGraphsPanel(true);
-          }}
+          onPlansClick={handlePlansClick}
+          onGraphsClick={handleGraphsClick}
+          hasPlans={Object.keys(agentPlans).length > 0}
+          hasGraphs={Object.keys(agentGraphs).length > 0}
         />
       ),
       [
         isLight,
         isPanelInteractive,
+        agentPlans,
+        agentGraphs,
         currentTabId,
         isPanelVisible,
         contentState,
@@ -1493,7 +1685,10 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                 />
                 
                 {/* Wrapper for chat container and panels */}
-                <div className="relative flex flex-1 flex-col overflow-hidden h-full">
+                <div 
+                  ref={chatWrapperRef}
+                  className="relative flex flex-1 flex-col overflow-hidden h-full"
+                >
                   {/* Chat Container */}
                   <div
                     className={`copilot-chat-container flex flex-1 flex-col overflow-hidden ${!isLight ? 'dark' : ''} font-size-${chatFontSize} transition-opacity duration-300 transition-all`}
@@ -1502,7 +1697,8 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                         '--copilot-kit-primary-color': themeColor,
                         opacity: isCounterReady ? 1 : 0,
                         visibility: isCounterReady ? 'visible' : 'hidden',
-                        marginRight: (showPlansPanel || showGraphsPanel) ? `${panelWidth}px` : '0px',
+                        // In small view, always full width (panels overlay). In large view, apply margin when panels are open.
+                        marginRight: isSmallChatView ? '0px' : ((showPlansPanel || showGraphsPanel) ? `${panelWidth}px` : '0px'),
                       } as CSSProperties
                     }>
                     <div className="relative flex flex-1 flex-col overflow-hidden h-full">
@@ -1558,7 +1754,9 @@ export const ChatSessionContainer: FC<ChatSessionContainerProps> = memo(
                         graphs: updatedGraphs,
                       };
                     }}
-                    onWidthChange={setPanelWidth}
+                    onWidthChange={handlePanelWidthChange}
+                    initialPanelWidth={panelWidth}
+                    chatFontSize={chatFontSize}
                   />
                 )}
               </SharedAgentProvider>

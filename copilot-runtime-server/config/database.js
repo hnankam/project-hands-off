@@ -48,7 +48,7 @@ export function getPool() {
       max: 5,  // Small pool - Neon's pooler handles real connection pooling
       min: 0,  // No minimum connections - create on demand
       idleTimeoutMillis: 120000,  // 2 minutes - shorter for Neon to avoid stale connections
-      connectionTimeoutMillis: 10000,  // 10s for cold starts
+      connectionTimeoutMillis: 30000,  // 30s for cold starts
       allowExitOnIdle: false,
       statement_timeout: 10000,  // 10 second statement timeout
       query_timeout: 10000,  // Query timeout
@@ -73,7 +73,7 @@ export function getPool() {
       // console.log('[DB] Client connected to Neon pool');
     });
     
-    console.log('✓ PostgreSQL pool initialized for Neon (max=5, min=0, timeout=10s)');
+    console.log('✓ PostgreSQL pool initialized for Neon (max=5, min=0, timeout=30s)');
   }
   
   return pool;

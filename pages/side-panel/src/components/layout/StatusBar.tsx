@@ -53,8 +53,10 @@ export interface StatusBarProps {
   // Current page URL for detecting restricted pages
   currentPageUrl?: string | null;
   // Plans and Graphs panels
-  onPlansClick?: () => void;
-  onGraphsClick?: () => void;
+  onPlansClick?: (e?: React.MouseEvent) => void;
+  onGraphsClick?: (e?: React.MouseEvent) => void;
+  hasPlans?: boolean; // Show plans button only if there's at least 1 plan
+  hasGraphs?: boolean; // Show graphs button only if there's at least 1 graph
 }
 
 export const StatusBar: FC<StatusBarProps> = memo(({
@@ -77,6 +79,8 @@ export const StatusBar: FC<StatusBarProps> = memo(({
   currentPageUrl,
   onPlansClick,
   onGraphsClick,
+  hasPlans = false,
+  hasGraphs = false,
 }) => {
   // Get the current page URL from available sources
   const currentUrl = useMemo(() => {
@@ -325,9 +329,14 @@ export const StatusBar: FC<StatusBarProps> = memo(({
         </button>
         
         {/* Plans Button */}
-        {onPlansClick && (
+        {onPlansClick && hasPlans && (
           <button
-            onClick={onPlansClick}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onPlansClick(e);
+            }}
             className={`h-[26px] w-[26px] flex items-center justify-center rounded-md transition-colors border ${
               isLight
                 ? 'text-gray-600 hover:bg-gray-100 border-gray-200'
@@ -355,9 +364,14 @@ export const StatusBar: FC<StatusBarProps> = memo(({
         )}
         
         {/* Graphs Button */}
-        {onGraphsClick && (
+        {onGraphsClick && hasGraphs && (
           <button
-            onClick={onGraphsClick}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onGraphsClick(e);
+            }}
             className={`h-[26px] w-[26px] flex items-center justify-center rounded-md transition-colors border ${
               isLight
                 ? 'text-gray-600 hover:bg-gray-100 border-gray-200'

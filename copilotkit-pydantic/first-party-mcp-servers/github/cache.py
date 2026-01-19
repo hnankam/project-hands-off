@@ -1,39 +1,60 @@
-"""GitHub client connection pooling with TTL-based cache."""
+"""GitHub client connection pooling with TTL-based cache.
+
+Credentials are resolved from credential keys at runtime.
+The cache keys are based on credential keys, not the resolved values.
+"""
+
+import sys
+from pathlib import Path
 
 from github import Github
 from cachetools import TTLCache
-import hashlib
 from threading import Lock
 import logging
 
+# Add parent directory to path to import shared module
+parent_path = Path(__file__).parent.parent
+if str(parent_path) not in sys.path:
+    sys.path.insert(0, str(parent_path))
+
+from shared.credential_resolver import resolve_credential  # type: ignore
+
 logger = logging.getLogger(__name__)
 
+# Cache configuration
+# - maxsize: Maximum number of cached clients
+# - ttl: Time-to-live in seconds (1 hour)
 github_client_cache = TTLCache(maxsize=1000, ttl=3600)
 cache_lock = Lock()
 
 
-def get_github_client(token: str, base_url: str = "https://api.github.com") -> Github:
+def get_github_client(token_credential_key: str, base_url_credential_key: str = "") -> Github:
     """
     Get cached GitHub client or create new one.
-
-    Caches clients by hash of (token + base_url) to reuse connections
-    for the same user/GitHub instance combination.
+    
+    Caches clients by credential keys. Credentials are resolved from the database
+    using the shared credential_resolver module.
 
     Args:
-        token: Personal Access Token or Fine-grained token
-        base_url: GitHub API base URL (default: public GitHub, use for GitHub Enterprise)
+        token_credential_key: Globally unique key for the GitHub Personal Access Token credential
+        base_url_credential_key: Globally unique key for the GitHub API base URL credential (optional, defaults to public GitHub)
 
     Returns:
         Github instance (cached or new)
     """
-    cache_key = hashlib.sha256(f"{token}:{base_url}".encode()).hexdigest()
+    # Cache key is based on credential keys (stable and readable)
+    cache_key = f"gh:{token_credential_key}:{base_url_credential_key}"
 
     with cache_lock:
         if cache_key in github_client_cache:
-            logger.debug(f"Cache HIT for GitHub: {base_url}")
+            logger.debug(f"Cache HIT for GitHub client (token_key: {token_credential_key})")
             return github_client_cache[cache_key]
 
-        logger.info(f"Cache MISS - creating new GitHub client for: {base_url}")
+        logger.info(f"Cache MISS - creating new GitHub client (token_key: {token_credential_key})")
+
+        # Resolve credential keys to actual values
+        token = resolve_credential(token_credential_key)
+        base_url = resolve_credential(base_url_credential_key) if base_url_credential_key else "https://api.github.com"
 
         # Create GitHub client
         if base_url == "https://api.github.com":
@@ -43,7 +64,9 @@ def get_github_client(token: str, base_url: str = "https://api.github.com") -> G
             # GitHub Enterprise
             client = Github(base_url=base_url, login_or_token=token)
 
+        # Store in cache
         github_client_cache[cache_key] = client
+        
         return client
 
 

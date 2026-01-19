@@ -95,34 +95,39 @@ class IssueInfo(BaseModel):
 
 class ListRepositoriesResponse(BaseModel):
     """Response for listing repositories."""
-    repositories: List[RepositoryInfo] = Field(..., description="List of repositories")
-    total: int = Field(..., description="Total number of repositories across all pages")
-    page: int = Field(..., description="Current page number (0-indexed)")
-    per_page: int = Field(..., description="Number of items per page")
-    has_next_page: bool = Field(..., description="Whether more pages are available")
+    repositories: List[RepositoryInfo] = Field(default_factory=list, description="List of repositories")
+    total: int = Field(0, description="Total number of repositories across all pages")
+    page: int = Field(0, description="Current page number (0-indexed)")
+    per_page: int = Field(30, description="Number of items per page")
+    has_next_page: bool = Field(False, description="Whether more pages are available")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetRepositoryResponse(BaseModel):
     """Response for getting a repository."""
-    repository: Dict[str, Any] = Field(..., description="Complete repository details")
+    repository: Optional[Dict[str, Any]] = Field(None, description="Complete repository details")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateRepositoryResponse(BaseModel):
     """Response for creating a repository."""
-    repository: RepositoryInfo = Field(..., description="Created repository")
-    message: str = Field(..., description="Success message")
+    repository: Optional[RepositoryInfo] = Field(None, description="Created repository")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteRepositoryResponse(BaseModel):
     """Response for deleting a repository."""
-    repo_name: str = Field(..., description="Deleted repository name")
-    message: str = Field(..., description="Success message")
+    repo_name: Optional[str] = Field(None, description="Deleted repository name")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ForkRepositoryResponse(BaseModel):
     """Response for forking a repository."""
-    repository: RepositoryInfo = Field(..., description="Forked repository")
-    message: str = Field(..., description="Success message")
+    repository: Optional[RepositoryInfo] = Field(None, description="Forked repository")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -131,39 +136,44 @@ class ForkRepositoryResponse(BaseModel):
 
 class ListBranchesResponse(BaseModel):
     """Response for listing branches."""
-    repo_name: str = Field(..., description="Repository name")
-    branches: List[BranchInfo] = Field(..., description="List of branches")
-    total: int = Field(..., description="Total number of branches across all pages")
-    page: int = Field(..., description="Current page number (0-indexed)")
-    per_page: int = Field(..., description="Number of items per page")
-    has_next_page: bool = Field(..., description="Whether more pages are available")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    branches: List[BranchInfo] = Field(default_factory=list, description="List of branches")
+    total: int = Field(0, description="Total number of branches across all pages")
+    page: int = Field(0, description="Current page number (0-indexed)")
+    per_page: int = Field(30, description="Number of items per page")
+    has_next_page: bool = Field(False, description="Whether more pages are available")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetBranchResponse(BaseModel):
     """Response for getting a branch."""
-    repo_name: str = Field(..., description="Repository name")
-    branch: Dict[str, Any] = Field(..., description="Branch details")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    branch: Optional[Dict[str, Any]] = Field(None, description="Branch details")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateBranchResponse(BaseModel):
     """Response for creating a branch."""
-    repo_name: str = Field(..., description="Repository name")
-    branch_name: str = Field(..., description="Created branch name")
-    message: str = Field(..., description="Success message")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    branch_name: Optional[str] = Field(None, description="Created branch name")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteBranchResponse(BaseModel):
     """Response for deleting a branch."""
-    repo_name: str = Field(..., description="Repository name")
-    branch_name: str = Field(..., description="Deleted branch name")
-    message: str = Field(..., description="Success message")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    branch_name: Optional[str] = Field(None, description="Deleted branch name")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class ProtectBranchResponse(BaseModel):
     """Response for protecting a branch."""
-    repo_name: str = Field(..., description="Repository name")
-    branch_name: str = Field(..., description="Protected branch name")
-    message: str = Field(..., description="Success message")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    branch_name: Optional[str] = Field(None, description="Protected branch name")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -172,28 +182,31 @@ class ProtectBranchResponse(BaseModel):
 
 class ListCommitsResponse(BaseModel):
     """Response for listing commits."""
-    repo_name: str = Field(..., description="Repository name")
-    commits: List[CommitInfo] = Field(..., description="List of commits")
-    total: int = Field(..., description="Total number of commits across all pages")
-    page: int = Field(..., description="Current page number (0-indexed)")
-    per_page: int = Field(..., description="Number of items per page")
-    has_next_page: bool = Field(..., description="Whether more pages are available")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    commits: List[CommitInfo] = Field(default_factory=list, description="List of commits")
+    total: int = Field(0, description="Total number of commits across all pages")
+    page: int = Field(0, description="Current page number (0-indexed)")
+    per_page: int = Field(30, description="Number of items per page")
+    has_next_page: bool = Field(False, description="Whether more pages are available")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetCommitResponse(BaseModel):
     """Response for getting a commit."""
-    repo_name: str = Field(..., description="Repository name")
-    commit: Dict[str, Any] = Field(..., description="Complete commit details")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    commit: Optional[Dict[str, Any]] = Field(None, description="Complete commit details")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CompareCommitsResponse(BaseModel):
     """Response for comparing commits."""
-    repo_name: str = Field(..., description="Repository name")
-    base: str = Field(..., description="Base commit/branch")
-    head: str = Field(..., description="Head commit/branch")
-    ahead_by: int = Field(..., description="Commits ahead")
-    behind_by: int = Field(..., description="Commits behind")
-    commits: List[Dict[str, Any]] = Field(..., description="Commit differences")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    base: Optional[str] = Field(None, description="Base commit/branch")
+    head: Optional[str] = Field(None, description="Head commit/branch")
+    ahead_by: int = Field(0, description="Commits ahead")
+    behind_by: int = Field(0, description="Commits behind")
+    commits: List[Dict[str, Any]] = Field(default_factory=list, description="Commit differences")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -202,32 +215,36 @@ class CompareCommitsResponse(BaseModel):
 
 class ListPullRequestsResponse(BaseModel):
     """Response for listing pull requests."""
-    repo_name: str = Field(..., description="Repository name")
-    pull_requests: List[PullRequestInfo] = Field(..., description="List of PRs")
-    total: int = Field(..., description="Total number of PRs across all pages")
-    page: int = Field(..., description="Current page number (0-indexed)")
-    per_page: int = Field(..., description="Number of items per page")
-    has_next_page: bool = Field(..., description="Whether more pages are available")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    pull_requests: List[PullRequestInfo] = Field(default_factory=list, description="List of PRs")
+    total: int = Field(0, description="Total number of PRs across all pages")
+    page: int = Field(0, description="Current page number (0-indexed)")
+    per_page: int = Field(30, description="Number of items per page")
+    has_next_page: bool = Field(False, description="Whether more pages are available")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetPullRequestResponse(BaseModel):
     """Response for getting a pull request."""
-    repo_name: str = Field(..., description="Repository name")
-    pull_request: Dict[str, Any] = Field(..., description="Complete PR details")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    pull_request: Optional[Dict[str, Any]] = Field(None, description="Complete PR details")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreatePullRequestResponse(BaseModel):
     """Response for creating a pull request."""
-    pull_request: PullRequestInfo = Field(..., description="Created PR")
-    message: str = Field(..., description="Success message")
+    pull_request: Optional[PullRequestInfo] = Field(None, description="Created PR")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class MergePullRequestResponse(BaseModel):
     """Response for merging a pull request."""
-    repo_name: str = Field(..., description="Repository name")
-    pr_number: int = Field(..., description="Merged PR number")
-    sha: str = Field(..., description="Merge commit SHA")
-    message: str = Field(..., description="Success message")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    pr_number: Optional[int] = Field(None, description="Merged PR number")
+    sha: Optional[str] = Field(None, description="Merge commit SHA")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -236,31 +253,35 @@ class MergePullRequestResponse(BaseModel):
 
 class ListIssuesResponse(BaseModel):
     """Response for listing issues."""
-    repo_name: str = Field(..., description="Repository name")
-    issues: List[IssueInfo] = Field(..., description="List of issues")
-    total: int = Field(..., description="Total number of issues across all pages")
-    page: int = Field(..., description="Current page number (0-indexed)")
-    per_page: int = Field(..., description="Number of items per page")
-    has_next_page: bool = Field(..., description="Whether more pages are available")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    issues: List[IssueInfo] = Field(default_factory=list, description="List of issues")
+    total: int = Field(0, description="Total number of issues across all pages")
+    page: int = Field(0, description="Current page number (0-indexed)")
+    per_page: int = Field(30, description="Number of items per page")
+    has_next_page: bool = Field(False, description="Whether more pages are available")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class GetIssueResponse(BaseModel):
     """Response for getting an issue."""
-    repo_name: str = Field(..., description="Repository name")
-    issue: Dict[str, Any] = Field(..., description="Complete issue details")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    issue: Optional[Dict[str, Any]] = Field(None, description="Complete issue details")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateIssueResponse(BaseModel):
     """Response for creating an issue."""
-    issue: IssueInfo = Field(..., description="Created issue")
-    message: str = Field(..., description="Success message")
+    issue: Optional[IssueInfo] = Field(None, description="Created issue")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateIssueResponse(BaseModel):
     """Response for updating an issue."""
-    repo_name: str = Field(..., description="Repository name")
-    issue_number: int = Field(..., description="Updated issue number")
-    message: str = Field(..., description="Success message")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    issue_number: Optional[int] = Field(None, description="Updated issue number")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 # ============================================================================
@@ -269,33 +290,37 @@ class UpdateIssueResponse(BaseModel):
 
 class GetFileContentResponse(BaseModel):
     """Response for getting file content."""
-    repo_name: str = Field(..., description="Repository name")
-    path: str = Field(..., description="File path")
-    content: str = Field(..., description="File content (decoded)")
-    sha: str = Field(..., description="File blob SHA")
-    size: int = Field(..., description="File size in bytes")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    path: Optional[str] = Field(None, description="File path")
+    content: Optional[str] = Field(None, description="File content (decoded)")
+    sha: Optional[str] = Field(None, description="File blob SHA")
+    size: int = Field(0, description="File size in bytes")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class CreateFileResponse(BaseModel):
     """Response for creating a file."""
-    repo_name: str = Field(..., description="Repository name")
-    path: str = Field(..., description="File path")
-    commit_sha: str = Field(..., description="Commit SHA")
-    message: str = Field(..., description="Success message")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    path: Optional[str] = Field(None, description="File path")
+    commit_sha: Optional[str] = Field(None, description="Commit SHA")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class UpdateFileResponse(BaseModel):
     """Response for updating a file."""
-    repo_name: str = Field(..., description="Repository name")
-    path: str = Field(..., description="File path")
-    commit_sha: str = Field(..., description="Commit SHA")
-    message: str = Field(..., description="Success message")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    path: Optional[str] = Field(None, description="File path")
+    commit_sha: Optional[str] = Field(None, description="Commit SHA")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 
 
 class DeleteFileResponse(BaseModel):
     """Response for deleting a file."""
-    repo_name: str = Field(..., description="Repository name")
-    path: str = Field(..., description="File path")
-    commit_sha: str = Field(..., description="Commit SHA")
-    message: str = Field(..., description="Success message")
+    repo_name: Optional[str] = Field(None, description="Repository name")
+    path: Optional[str] = Field(None, description="File path")
+    commit_sha: Optional[str] = Field(None, description="Commit SHA")
+    message: Optional[str] = Field(None, description="Success message")
+    error_message: Optional[str] = Field(None, description="Error message if operation failed")
 

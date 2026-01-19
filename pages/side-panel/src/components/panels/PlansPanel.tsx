@@ -11,6 +11,9 @@ interface PlansPanelProps {
   sessionId?: string;
   onPlansUpdate?: (plans: Record<string, any>) => void;
   onWidthChange?: (width: number) => void;
+  initialWidth?: number;
+  isSmallView?: boolean;
+  chatFontSize?: 'small' | 'medium' | 'large';
 }
 
 const MIN_PANEL_WIDTH = 300;
@@ -24,12 +27,23 @@ export const PlansPanel: React.FC<PlansPanelProps> = ({
   plans, 
   sessionId, 
   onPlansUpdate,
-  onWidthChange 
+  onWidthChange,
+  initialWidth = DEFAULT_PANEL_WIDTH,
+  isSmallView = false,
+  chatFontSize = 'medium'
 }) => {
-  const [width, setWidth] = useState(DEFAULT_PANEL_WIDTH);
+  const [width, setWidth] = useState(initialWidth);
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartX = useRef(0);
-  const resizeStartWidth = useRef(DEFAULT_PANEL_WIDTH);
+  const resizeStartWidth = useRef(initialWidth);
+
+  // Update width when initialWidth changes (e.g., when reopening panel)
+  React.useEffect(() => {
+    if (isOpen && initialWidth !== width) {
+      setWidth(initialWidth);
+      resizeStartWidth.current = initialWidth;
+    }
+  }, [isOpen, initialWidth, width]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -75,25 +89,39 @@ export const PlansPanel: React.FC<PlansPanelProps> = ({
   const planEntries = plans ? Object.entries(plans) : [];
 
   return (
-    <div
-      className={cn(
-        'absolute right-0 top-0 bottom-0 z-40 border-l flex flex-col',
-        isLight ? 'bg-white border-gray-200' : 'border-gray-700'
+    <>
+      {/* Backdrop for small view overlay */}
+      {isSmallView && (
+        <div
+          className="absolute inset-0 bg-black/50 z-30"
+          onClick={onClose}
+          style={{ pointerEvents: 'auto' }}
+        />
       )}
-      style={{ 
-        backgroundColor: isLight ? '#ffffff' : '#0D1117',
-        width: `${width}px`,
-        transition: isResizing ? 'none' : 'width 0.2s ease-in-out'
-      }}
-    >
-      {/* Resize handle */}
+      
       <div
         className={cn(
-          'absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500/50 transition-colors',
-          isResizing && 'bg-blue-500'
+          'absolute right-0 top-0 bottom-0 z-40 flex flex-col border-l font-size-' + chatFontSize,
+          isLight ? 'bg-white border-gray-200' : 'border-gray-700'
         )}
-        onMouseDown={handleMouseDown}
-      />
+        style={{ 
+          backgroundColor: isLight ? '#ffffff' : '#0D1117',
+          width: isSmallView ? '85vw' : `${width}px`,
+          maxWidth: isSmallView ? '400px' : undefined,
+          transition: isResizing ? 'none' : 'width 0.2s ease-in-out',
+          pointerEvents: 'auto',
+        }}
+      >
+        {/* Resize handle - only show in large view */}
+        {!isSmallView && (
+          <div
+            className={cn(
+              'absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500/50 transition-colors',
+              isResizing && 'bg-blue-500'
+            )}
+            onMouseDown={handleMouseDown}
+          />
+        )}
       {/* Header */}
       <div className={cn(
         'flex items-center justify-between px-2 py-1 border-b h-[34px]',
@@ -176,6 +204,7 @@ export const PlansPanel: React.FC<PlansPanelProps> = ({
         )}
       </div>
     </div>
+    </>
   );
 };
 

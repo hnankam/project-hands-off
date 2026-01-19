@@ -5,9 +5,168 @@
  * - Table: Styled table matching graph card design
  * - CustomTableWrapper: Wrapper for Streamdown table elements
  */
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect, memo, FC } from 'react';
 import { useStorage } from '@extension/shared';
 import { themeStorage } from '@extension/storage';
+
+// =============================================================================
+// Table Auto-Scroll Container
+// =============================================================================
+
+interface TableAutoScrollContainerProps {
+  children: React.ReactNode;
+  colors: {
+    cellBg: string;
+  };
+  tableRef: React.RefObject<HTMLTableElement>;
+}
+
+/**
+ * Auto-scrolling container for table content.
+ * Scrolls to bottom as new rows are added during streaming,
+ * but respects user scrolling up.
+ */
+const TableAutoScrollContainer: FC<TableAutoScrollContainerProps> = memo(({ children, colors, tableRef }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUp = useRef(false);
+  const lastRowCount = useRef(0);
+  const isAutoScrolling = useRef(false);
+  const prevScrollTopRef = useRef(0);
+  const scrollRafRef = useRef<number | null>(null);
+  const observationTimeoutRef = useRef<number | null>(null);
+
+  const threshold = 50;
+
+  // Check if user is near the bottom of the container
+  const isNearBottom = useCallback((element: HTMLDivElement): boolean => {
+    const { scrollTop, scrollHeight, clientHeight } = element;
+    if (scrollHeight <= clientHeight) return true;
+    return scrollHeight - scrollTop - clientHeight <= threshold;
+  }, []);
+
+  // Handle scroll events to detect user scrolling up
+  const handleScroll = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    
+    // Skip if this is an auto-scroll we triggered
+    if (isAutoScrolling.current) return;
+
+    const currentScrollTop = element.scrollTop;
+    const prevScrollTop = prevScrollTopRef.current;
+    const nearBottom = isNearBottom(element);
+    
+    // Detect scroll direction (5px threshold to avoid noise)
+    const scrolledUp = currentScrollTop < prevScrollTop - 5;
+    
+    // Update previous scroll position
+    prevScrollTopRef.current = currentScrollTop;
+    
+    // If user scrolled up and not near bottom, disable auto-scroll
+    if (scrolledUp && !nearBottom) {
+      isUserScrolledUp.current = true;
+    }
+    // If user is near bottom (regardless of scroll direction), re-enable auto-scroll
+    else if (nearBottom) {
+      isUserScrolledUp.current = false;
+    }
+  }, [isNearBottom]);
+
+  // Scroll to bottom
+  const scrollToBottom = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    
+    isAutoScrolling.current = true;
+    // Use RAF to batch with render for smoother visual
+    if (scrollRafRef.current) {
+      cancelAnimationFrame(scrollRafRef.current);
+    }
+    scrollRafRef.current = requestAnimationFrame(() => {
+      if (element) {
+        element.scrollTop = element.scrollHeight - element.clientHeight;
+        isAutoScrolling.current = false;
+        scrollRafRef.current = null;
+      }
+    });
+  }, []);
+
+  // Observe table changes to detect new rows
+  useEffect(() => {
+    const table = tableRef.current;
+    const scrollContainer = scrollRef.current;
+    if (!table || !scrollContainer) return;
+
+    // Use MutationObserver to detect when rows are added
+    const observer = new MutationObserver(() => {
+      // Clear any pending timeout
+      if (observationTimeoutRef.current) {
+        clearTimeout(observationTimeoutRef.current);
+      }
+
+      // Debounce to batch rapid changes
+      observationTimeoutRef.current = window.setTimeout(() => {
+        const currentTable = tableRef.current;
+        if (!currentTable) return;
+        
+        const currentRowCount = currentTable.querySelectorAll('tbody tr').length;
+        const rowCountGrew = currentRowCount > lastRowCount.current;
+        lastRowCount.current = currentRowCount;
+
+        // Only auto-scroll if rows were added AND user hasn't scrolled up
+        if (rowCountGrew && !isUserScrolledUp.current) {
+          scrollToBottom();
+        }
+      }, 50);
+    });
+
+    // Observe changes to the table (child additions/modifications)
+    observer.observe(table, {
+      childList: true,
+      subtree: true,
+    });
+
+    // Initial row count
+    lastRowCount.current = table.querySelectorAll('tbody tr').length;
+
+    return () => {
+      observer.disconnect();
+      if (observationTimeoutRef.current) {
+        clearTimeout(observationTimeoutRef.current);
+      }
+    };
+  }, [scrollToBottom]);
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
+      if (observationTimeoutRef.current) {
+        clearTimeout(observationTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      style={{
+        overflowX: 'auto',
+        overflowY: 'auto',
+        maxHeight: '400px',
+        WebkitOverflowScrolling: 'touch',
+        backgroundColor: colors.cellBg,
+      }}
+    >
+      {children}
+    </div>
+  );
+});
+
+TableAutoScrollContainer.displayName = 'TableAutoScrollContainer';
 
 // =============================================================================
 // Table - Styled table component matching graph card design
@@ -193,16 +352,8 @@ export const Table: React.FC<TableProps> = ({ children, isLight, hideToolbar = f
         </div>
       </div>
       )}
-      {/* Table Content */}
-      <div
-        style={{
-          overflowX: 'auto',
-          overflowY: 'auto',
-          maxHeight: '400px',
-          WebkitOverflowScrolling: 'touch',
-          backgroundColor: colors.cellBg,
-        }}
-      >
+      {/* Table Content with Auto-Scroll */}
+      <TableAutoScrollContainer colors={colors} tableRef={tableRef}>
         <table
           ref={tableRef}
           style={{
@@ -219,7 +370,7 @@ export const Table: React.FC<TableProps> = ({ children, isLight, hideToolbar = f
         >
           {children}
         </table>
-      </div>
+      </TableAutoScrollContainer>
       {/* Inject scoped styles for th, td, tr hover */}
       <style>{`
         #${tableId} {

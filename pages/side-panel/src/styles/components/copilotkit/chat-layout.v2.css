@@ -89,6 +89,28 @@
   /* line-height: 1.55 !important; */
 }
 
+/* Panel font size variants - match chat container font sizes */
+.font-size-small,
+.font-size-small p,
+.font-size-small div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *),
+.font-size-small span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *) {
+  font-size: 13px !important;
+}
+
+.font-size-medium,
+.font-size-medium p,
+.font-size-medium div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *),
+.font-size-medium span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *) {
+  font-size: 16px !important;
+}
+
+.font-size-large,
+.font-size-large p,
+.font-size-large div:not([role=group]):not([class*=controls]):not([class*=actions]):not([class*=suggestions]):not([class*=gallery]):not([class*=action-status]):not(.attachment-file-name):not(.attachment-file-type-size):not(.chat-disclaimer):not(.attachment-modal *),
+.font-size-large span:not([role=group] span):not([class*=gallery]):not(.attachment-modal *) {
+  font-size: 19px !important;
+}
+
 /* Target CopilotKit V2 DOM structure */
 .copilot-chat-container > div {
   height: 100%;

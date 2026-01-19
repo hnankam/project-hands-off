@@ -584,6 +584,10 @@ export class PostgresAgentRunner extends AgentRunner {
           if (!event.runId) {
             event.runId = run.runId;
           }
+          // Ensure each event has a threadId (add if missing)
+          if (!event.threadId) {
+            event.threadId = threadId;
+          }
           // Filter messages in RUN_STARTED input (modify in place)
           // All messages (user, assistant, tool) are stored in RUN_STARTED input.messages
           if (event.type === EventType.RUN_STARTED && event.input?.messages) {
@@ -1156,6 +1160,10 @@ export class PostgresAgentRunner extends AgentRunner {
           if (!event.runId) {
             event.runId = run.runId;
           }
+          // Ensure each event has a threadId (add if missing)
+          if (!event.threadId) {
+            event.threadId = threadId;
+          }
           // Filter messages in RUN_STARTED input (modify in place)
           // All messages (user, assistant, tool) are stored in RUN_STARTED input.messages
           if (event.type === EventType.RUN_STARTED && event.input?.messages) {
@@ -1250,6 +1258,7 @@ export class PostgresAgentRunner extends AgentRunner {
       
       // Emit historic events
       const emittedMessageIds = new Set();
+      const emittedRunIds = new Set(); // Track emitted runIds to prevent duplicate RUN_FINISHED
       const toolCallEventsEmitted = [];
       
       for (const event of truncatedEvents) {
@@ -1272,6 +1281,10 @@ export class PostgresAgentRunner extends AgentRunner {
         connectionSubject.next(event);
         if ('messageId' in event && typeof event.messageId === 'string') {
           emittedMessageIds.add(event.messageId);
+        }
+        // Track RUN_FINISHED events by runId to prevent duplicates
+        if ((event.type === 'RUN_FINISHED' || event.type === EventType.RUN_FINISHED) && event.runId) {
+          emittedRunIds.add(event.runId);
         }
       }
       
@@ -1298,9 +1311,19 @@ export class PostgresAgentRunner extends AgentRunner {
         if (activeSubjects?.threadSubject) {
           activeSubjects.threadSubject.subscribe({
             next: (event) => {
-              // Deduplicate
+              // Deduplicate by messageId
               if ('messageId' in event && emittedMessageIds.has(event.messageId)) {
                 return;
+              }
+              // Deduplicate RUN_FINISHED events by runId
+              if ((event.type === 'RUN_FINISHED' || event.type === EventType.RUN_FINISHED) && event.runId) {
+                if (emittedRunIds.has(event.runId)) {
+                  if (this.debug) {
+                    console.log(`[PostgresAgentRunner] Skipping duplicate RUN_FINISHED for runId ${event.runId} from active run subscription`);
+                  }
+                  return;
+                }
+                emittedRunIds.add(event.runId);
               }
               connectionSubject.next(event);
             },
@@ -1743,12 +1766,25 @@ export class PostgresAgentRunner extends AgentRunner {
   async completeRun(runId, events, status) {
     console.log(`[PostgresAgentRunner] completeRun: runId=${runId}, status=${status}, events=${events.length}`);
     
+    // CRITICAL: Validate events to prevent orphaned RUN_FINISHED
+    // If we have RUN_FINISHED but no RUN_STARTED, filter out the RUN_FINISHED
+    // This prevents data corruption that causes duplicate RUN_FINISHED errors
+    const hasRunStarted = events.some(e => e.type === 'RUN_STARTED' || e.type === EventType.RUN_STARTED);
+    const hasRunFinished = events.some(e => e.type === 'RUN_FINISHED' || e.type === EventType.RUN_FINISHED);
+    
+    let validatedEvents = events;
+    if (hasRunFinished && !hasRunStarted) {
+      console.warn(`[PostgresAgentRunner] ⚠️  Preventing orphaned RUN_FINISHED: run ${runId} has RUN_FINISHED but no RUN_STARTED`);
+      validatedEvents = events.filter(e => e.type !== 'RUN_FINISHED' && e.type !== EventType.RUN_FINISHED);
+      console.log(`[PostgresAgentRunner] Filtered events: ${events.length} -> ${validatedEvents.length}`);
+    }
+    
     const result = await this.pool.query(
       `UPDATE agent_runs 
        SET status = $2, events = $3, completed_at = NOW() 
        WHERE run_id = $1
        RETURNING run_id, status, jsonb_array_length(events) as event_count`,
-      [runId, status, JSON.stringify(events)]
+      [runId, status, JSON.stringify(validatedEvents)]
     );
     
     if (result.rows.length > 0) {
@@ -1919,7 +1955,7 @@ export class PostgresAgentRunner extends AgentRunner {
     const createSyntheticFinished = (run, runStartedEvent, reason) => ({
       type: 'RUN_FINISHED',
       threadId: runStartedEvent?.threadId || threadId,
-          runId: run.runId,
+      runId: run.runId,
       metadata: {
         synthetic: true,
         reason

@@ -271,6 +271,7 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
   const [bulkScope, setBulkScope] = useState<'organization' | 'team'>('organization');
   const [bulkTeamIds, setBulkTeamIds] = useState<string[]>([]);
   const [applyingBulkEdit, setApplyingBulkEdit] = useState(false);
+  const [deletingTools, setDeletingTools] = useState(false);
 
   const canSubmitServer = serverForm.serverKey.trim() !== '' && serverForm.displayName.trim() !== '';
   const canSubmitEditServer = editServerForm 
@@ -1049,6 +1050,92 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
     }
   };
 
+  const handleBulkDeleteTools = async (type: ToolType) => {
+    const items = groupedTools[type] || [];
+    const toolIdsToDelete = items.filter(item => selectedTools.has(item.id));
+    
+    if (toolIdsToDelete.length === 0) return;
+
+    // Filter out readonly tools (they can't be deleted)
+    const deletableTools = toolIdsToDelete.filter(tool => !tool.readonly);
+    
+    if (deletableTools.length === 0) {
+      onError('Selected tools cannot be deleted (read-only tools)');
+      return;
+    }
+
+    // Confirm deletion
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${deletableTools.length} tool(s)? This action cannot be undone.`
+    );
+    
+    if (!confirmed) return;
+
+    setDeletingTools(true);
+    try {
+      const params = new URLSearchParams({ organizationId: selectedOrgId });
+      if (teamFilterIds.length > 0) {
+        params.append('teamId', teamFilterIds[0]);
+      }
+
+      // Delete tools sequentially to handle errors properly
+      const deletePromises = deletableTools.map(async (tool) => {
+        const response = await fetch(`${baseURL}/api/admin/tools/${tool.id}?${params.toString()}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `Failed to delete ${tool.toolName}`);
+        }
+        
+        return tool;
+      });
+
+      const results = await Promise.allSettled(deletePromises);
+      
+      // Check for failures
+      const failures = results.filter(r => r.status === 'rejected');
+      const successes = results.filter(r => r.status === 'fulfilled');
+      
+      if (failures.length > 0) {
+        const errorMessages = failures.map((f: any) => f.reason?.message || 'Unknown error').join(', ');
+        onError(`Failed to delete ${failures.length} tool(s): ${errorMessages}`);
+      }
+      
+      if (successes.length > 0) {
+        onSuccess(`Successfully deleted ${successes.length} tool(s)`);
+        // Refresh tools list
+        await loadTools();
+      }
+
+      // Clear selections and exit edit mode for this type
+      const itemsOfType = items.map(t => t.id);
+      // Check if there are other selections before clearing
+      const hasOtherSelections = Array.from(selectedTools).some(id => !itemsOfType.includes(id));
+      
+      setSelectedTools(prev => {
+        const next = new Set(prev);
+        itemsOfType.forEach(id => next.delete(id));
+        return next;
+      });
+      
+      // Exit edit mode if no more selections
+      if (!hasOtherSelections) {
+        setEditMode(prev => ({
+          ...prev,
+          [type]: false,
+        }));
+      }
+    } catch (error) {
+      console.error('Error deleting tools:', error);
+      onError('Failed to delete tools');
+    } finally {
+      setDeletingTools(false);
+    }
+  };
+
   const renderToolAccordion = (type: ToolType, title: string, description: string) => {
     const items = groupedTools[type] || [];
     const isExpanded = expandedSections.has(type);
@@ -1134,6 +1221,30 @@ const ToolsTab: React.FC<ToolsTabProps> = ({ isLight, organizations, preselected
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
               </svg>
             </button>
+            {isEditing && hasSelections && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBulkDeleteTools(type);
+                }}
+                disabled={deletingTools}
+                className={cn(
+                  'p-1 rounded transition-colors',
+                  deletingTools
+                    ? 'opacity-50 cursor-not-allowed'
+                    : '',
+                  isLight
+                    ? 'text-red-600 hover:text-red-700 hover:bg-red-50'
+                    : 'text-red-400 hover:text-red-300 hover:bg-red-900/20',
+                )}
+                title={`Delete ${selectedCount} selected tool(s)`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            )}
         </div>
         </div>
 

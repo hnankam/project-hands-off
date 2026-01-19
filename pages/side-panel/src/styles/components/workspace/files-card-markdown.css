@@ -168,6 +168,15 @@
   color: #cccccc;
 }
 
+/* Email addresses rendered as inline code with blue text */
+.markdown-content code.email-code-text {
+  color: #3b82f6; /* blue-500 */
+}
+
+.dark .markdown-content code.email-code-text {
+  color: #60a5fa; /* blue-400 */
+}
+
 /* Lists */
 .files-card-markdown .markdown-content ul,
 .files-card-markdown .markdown-content ol {

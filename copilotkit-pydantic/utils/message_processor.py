@@ -136,7 +136,7 @@ async def keep_recent_messages(
     """
 
     # current_tokens = await ctx.model.count_tokens(messages, model_settings={}, model_request_parameters=ModelRequestParameters())
-    # Error: Token counting ahead of the request is not supported by InstrumentedModel
+    # Error: AsyncAnthropicBedrock client does not support `count_tokens` api.
 
     logger.info(f"Message History Usage: {ctx.usage.total_tokens} = {ctx.usage.input_tokens} + {ctx.usage.output_tokens}")
     # logger.info(f"Current Tokens: {current_tokens.input_tokens} + {current_tokens.output_tokens}")
